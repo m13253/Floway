@@ -13,7 +13,12 @@ import {
   type PerformanceGroupBy,
 } from "./aggregate.ts";
 
-const BUCKETS = new Set<PerformanceBucketGranularity>(["hour", "day", "all"]);
+const BUCKETS = new Set<PerformanceBucketGranularity>([
+  "hour",
+  "8h",
+  "day",
+  "all",
+]);
 const GROUP_BYS = new Set<PerformanceGroupBy>([
   "none",
   "keyId",

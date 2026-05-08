@@ -45,26 +45,34 @@ function expectedTodayChartLabels() {
   const labels = [];
   const cur = new Date();
   cur.setMinutes(0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
   for (let i = 23; i >= 0; i--) {
     const d = new Date(cur.getTime() - i * 3600000);
     const h = d.getHours();
-    labels.push(
-      String(h).padStart(2, "0") + ":00 \u2013 " +
-        String((h + 1) % 24).padStart(2, "0") + ":00",
-    );
+    labels.push(pad(h) + ":00 \u2013 " + pad((h + 1) % 24) + ":00");
   }
   return labels;
 }
 
-function expectedDailyChartLabels(days: number) {
+function expected8hChartLabels(count: number) {
+  const start = new Date();
+  start.setMinutes(0, 0, 0);
+  start.setHours(start.getHours() - (start.getHours() % 8));
   const labels = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    d.setHours(0, 0, 0, 0);
-    labels.push(
-      d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-    );
+  let prevDateKey: string | null = null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(start.getTime() - i * 8 * 3600000);
+    const dateKey = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" +
+      pad(d.getDate());
+    const startH = d.getHours();
+    const endH = (startH + 8) % 24;
+    const time = pad(startH) + ":00 – " + pad(endH) + ":00";
+    const datePrefix = dateKey !== prevDateKey
+      ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " "
+      : "";
+    labels.push(datePrefix + time);
+    prevDateKey = dateKey;
   }
   return labels;
 }
@@ -243,22 +251,23 @@ Deno.test("dashboardApp renders performance chart over the full hourly range", (
   assertEquals(charts[0].data.datasets[0].data.at(-1), 600);
 });
 
-Deno.test("dashboardApp renders performance chart with usage-style date labels", () => {
+Deno.test("dashboardApp renders performance chart with 8h buckets for 7d range", () => {
   const { app, charts } = createDashboardHarness();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const start = new Date();
+  start.setMinutes(0, 0, 0);
+  start.setHours(start.getHours() - (start.getHours() % 8));
 
   app.tab = "performance";
   app.performanceRange = "7d";
   app.performancePercentile = "p95Ms";
   app.performanceSeries = [
-    { bucket: app.localDateKey(today), group: "claude-opus-4-7", p95Ms: 600 },
+    { bucket: app.local8hBucketKey(start), group: "claude-opus-4-7", p95Ms: 600 },
   ];
 
   app.renderPerformanceChart();
 
-  assertEquals(charts[0].data.labels, expectedDailyChartLabels(7));
-  assertEquals(charts[0].data.datasets[0].data.length, 7);
+  assertEquals(charts[0].data.labels, expected8hChartLabels(21));
+  assertEquals(charts[0].data.datasets[0].data.length, 21);
   assertEquals(charts[0].data.datasets[0].data.at(-1), 600);
 });
 

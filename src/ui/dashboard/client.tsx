@@ -1059,6 +1059,37 @@ export function dashboardAssets() {
                           return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
                         },
 
+                        local8hBucketStart(d) {
+                          const aligned = new Date(d);
+                          aligned.setMinutes(0, 0, 0);
+                          aligned.setHours(aligned.getHours() - (aligned.getHours() % 8));
+                          return aligned;
+                        },
+
+                        local8hBucketKey(d) {
+                          return this.localHourKey(this.local8hBucketStart(d));
+                        },
+
+                        build8hBucketMap(count) {
+                          const map = new Map();
+                          const start = this.local8hBucketStart(new Date());
+                          let prevDateKey = null;
+                          for (let i = count - 1; i >= 0; i--) {
+                            const d = new Date(start.getTime() - i * 8 * 3600000);
+                            const key = this.localHourKey(d);
+                            const dateKey = this.localDateKey(d);
+                            const startH = d.getHours();
+                            const endH = (startH + 8) % 24;
+                            const time = pad2(startH) + ':00 \\u2013 ' + pad2(endH) + ':00';
+                            const datePrefix = dateKey !== prevDateKey
+                              ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' '
+                              : '';
+                            map.set(key, datePrefix + time);
+                            prevDateKey = dateKey;
+                          }
+                          return map;
+                        },
+
                         usageRangeParams() {
                           const now = new Date();
                           const rangeStart = new Date(now);
@@ -1066,8 +1097,7 @@ export function dashboardAssets() {
                             rangeStart.setTime(now.getTime() - 23 * 3600000);
                             rangeStart.setMinutes(0, 0, 0);
                           } else if (this.tokenRange === '7d') {
-                            rangeStart.setDate(rangeStart.getDate() - 6);
-                            rangeStart.setHours(0, 0, 0, 0);
+                            rangeStart.setTime(this.local8hBucketStart(now).getTime() - 20 * 8 * 3600000);
                           } else {
                             rangeStart.setDate(rangeStart.getDate() - 29);
                             rangeStart.setHours(0, 0, 0, 0);
@@ -1153,8 +1183,7 @@ export function dashboardAssets() {
                             rangeStart.setTime(now.getTime() - 23 * 3600000);
                             rangeStart.setMinutes(0, 0, 0);
                           } else if (this.performanceRange === '7d') {
-                            rangeStart.setDate(rangeStart.getDate() - 6);
-                            rangeStart.setHours(0, 0, 0, 0);
+                            rangeStart.setTime(this.local8hBucketStart(now).getTime() - 20 * 8 * 3600000);
                           } else {
                             rangeStart.setDate(rangeStart.getDate() - 29);
                             rangeStart.setHours(0, 0, 0, 0);
@@ -1166,7 +1195,9 @@ export function dashboardAssets() {
                         },
 
                         performanceBucketGranularity() {
-                          return this.performanceRange === 'today' ? 'hour' : 'day';
+                          if (this.performanceRange === 'today') return 'hour';
+                          if (this.performanceRange === '7d') return '8h';
+                          return 'day';
                         },
 
                         buildPerformanceBucketMap() {
@@ -1178,10 +1209,12 @@ export function dashboardAssets() {
                             for (let i = 23; i >= 0; i--) {
                               const d = new Date(cur.getTime() - i * 3600000);
                               const h = d.getHours();
-                              bucketMap.set(this.localHourKey(d), String(h).padStart(2, '0') + ':00 \\u2013 ' + String((h + 1) % 24).padStart(2, '0') + ':00');
+                              bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
                             }
+                          } else if (this.performanceRange === '7d') {
+                            return this.build8hBucketMap(21);
                           } else {
-                            const days = this.performanceRange === '7d' ? 7 : 30;
+                            const days = 30;
                             for (let i = days - 1; i >= 0; i--) {
                               const d = new Date(now);
                               d.setDate(d.getDate() - i);
@@ -1347,10 +1380,12 @@ export function dashboardAssets() {
                                 for (let i = 23; i >= 0; i--) {
                                   const d = new Date(cur.getTime() - i * 3600000);
                                   const h = d.getHours();
-                                  bucketMap.set(this.localHourKey(d), String(h).padStart(2, '0') + ':00 \\u2013 ' + String((h + 1) % 24).padStart(2, '0') + ':00');
+                                  bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
                                 }
+                              } else if (this.tokenRange === '7d') {
+                                return this.build8hBucketMap(21);
                               } else {
-                                const days = this.tokenRange === '7d' ? 7 : 30;
+                                const days = 30;
                                 for (let i = days - 1; i >= 0; i--) {
                                   const d = new Date(now);
                                   d.setDate(d.getDate() - i);
@@ -1361,8 +1396,13 @@ export function dashboardAssets() {
                               return bucketMap;
                             },
 
+                            tokenBucketKeyFor(d) {
+                              if (this.tokenRange === 'today') return this.localHourKey(d);
+                              if (this.tokenRange === '7d') return this.local8hBucketKey(d);
+                              return this.localDateKey(d);
+                            },
+
                             aggregateBuckets(records, dimension, metric = this.tokenChartMetric) {
-                              const isDaily = this.tokenRange !== 'today';
                               const bucketMap = this.buildBucketMap();
                               const agg = new Map();
                               const detail = new Map();
@@ -1372,7 +1412,7 @@ export function dashboardAssets() {
                               }
                               for (const r of records) {
                                 const utc = new Date(r.hour + ':00:00Z');
-                                const bucket = isDaily ? this.localDateKey(utc) : this.localHourKey(utc);
+                                const bucket = this.tokenBucketKeyFor(utc);
                                 if (!agg.has(bucket)) continue;
                                 const m = agg.get(bucket);
                                 const val = dimension === 'model' ? r.model : r[dimension];
@@ -1401,7 +1441,6 @@ export function dashboardAssets() {
                             },
 
                             aggregateSearchUsageBuckets(records) {
-                              const isDaily = this.tokenRange !== 'today';
                               const bucketMap = this.buildBucketMap();
                               const agg = new Map();
                               const detail = new Map();
@@ -1411,7 +1450,7 @@ export function dashboardAssets() {
                               }
                               for (const r of records) {
                                 const utc = new Date(r.hour + ':00:00Z');
-                                const bucket = isDaily ? this.localDateKey(utc) : this.localHourKey(utc);
+                                const bucket = this.tokenBucketKeyFor(utc);
                                 if (!agg.has(bucket)) continue;
                                 const m = agg.get(bucket);
                                 m.set(r.keyId, (m.get(r.keyId) || 0) + r.requests);

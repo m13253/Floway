@@ -5,7 +5,7 @@ import {
 import { displayModelName } from "../../lib/model-name.ts";
 import type { PerformanceTelemetryRecord } from "../../repo/types.ts";
 
-export type PerformanceBucketGranularity = "hour" | "day" | "all";
+export type PerformanceBucketGranularity = "hour" | "8h" | "day" | "all";
 export type PerformanceGroupBy =
   | "none"
   | "keyId"
@@ -93,9 +93,12 @@ function displayBucket(
   const utcMs = Date.parse(`${hour}:00:00Z`);
   const localMs = utcMs - options.timezoneOffsetMinutes * 60_000;
   const localIso = new Date(localMs).toISOString();
-  return options.bucket === "hour"
-    ? localIso.slice(0, 13)
-    : localIso.slice(0, 10);
+  if (options.bucket === "hour") return localIso.slice(0, 13);
+  if (options.bucket === "day") return localIso.slice(0, 10);
+  // 8h: align local hour to {00, 08, 16}.
+  const hourOfDay = Number(localIso.slice(11, 13));
+  const aligned = hourOfDay - (hourOfDay % 8);
+  return `${localIso.slice(0, 11)}${String(aligned).padStart(2, "0")}`;
 }
 
 function displayGroup(
