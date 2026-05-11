@@ -87,6 +87,12 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   }
 };
 
+const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
+  const collected = [];
+  for await (const frame of frames) collected.push(frame);
+  return collected;
+};
+
 Deno.test("translateToSourceEvents emits exactly one [DONE] for structured responses stream", async () => {
   const doneCount = await countDoneSentinels([
     toProtocolFrame({
@@ -191,7 +197,7 @@ Deno.test("translateToSourceEvents stops after Responses terminal completion", a
   assertEquals(doneCount, 1);
 });
 
-Deno.test("translateToSourceEvents rejects Responses error events", async () => {
+Deno.test("translateToSourceEvents translates Responses error events to Chat errors", async () => {
   async function* stream() {
     yield toProtocolFrame({
       type: "error",
@@ -200,14 +206,19 @@ Deno.test("translateToSourceEvents rejects Responses error events", async () => 
     });
   }
 
-  await assertRejects(
-    async () => await drain(translateToSourceEvents(stream())),
-    Error,
-    "Upstream Responses stream error: overloaded_error: upstream overloaded",
-  );
+  const frames = await collect(translateToSourceEvents(stream()));
+
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "event");
+  if (frames[0].type !== "event") throw new Error("expected event frame");
+  assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
+    message: "upstream overloaded",
+    type: "overloaded_error",
+    code: "overloaded_error",
+  });
 });
 
-Deno.test("translateToSourceEvents rejects Responses failed terminal events", async () => {
+Deno.test("translateToSourceEvents translates Responses failed terminal events to Chat errors", async () => {
   async function* stream() {
     yield toProtocolFrame({
       type: "response.failed",
@@ -224,11 +235,16 @@ Deno.test("translateToSourceEvents rejects Responses failed terminal events", as
     });
   }
 
-  await assertRejects(
-    async () => await drain(translateToSourceEvents(stream())),
-    Error,
-    "Upstream Responses stream failed: server_error: upstream failed",
-  );
+  const frames = await collect(translateToSourceEvents(stream()));
+
+  assertEquals(frames.length, 1);
+  assertEquals(frames[0].type, "event");
+  if (frames[0].type !== "event") throw new Error("expected event frame");
+  assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
+    message: "upstream failed",
+    type: "server_error",
+    code: "server_error",
+  });
 });
 
 Deno.test("translateToSourceEvents rejects truncated Responses streams without terminal events", async () => {

@@ -113,6 +113,7 @@ export const serveResponses = async (
   c: Context,
 ): Promise<Response> => {
   let lastPerformance: PerformanceTelemetryContext | undefined;
+  let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<ResponsesPayload>();
     // previous_response_id and item_reference require stateful server-side
@@ -125,6 +126,7 @@ export const serveResponses = async (
     }
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const wantsStream = payload.stream === true;
+    downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
     const ctx: ResponsesSourceContext = { payload, apiKeyId };
@@ -187,6 +189,7 @@ export const serveResponses = async (
                 runtimeLocation,
                 scheduleBackground,
                 fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
               }),
               attemptPayload.model,
               performance,
@@ -212,6 +215,7 @@ export const serveResponses = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -245,6 +249,7 @@ export const serveResponses = async (
             runtimeLocation,
             scheduleBackground,
             fetchOptions: plan.fetchOptions,
+            downstreamAbortSignal: downstreamAbortController?.signal,
           });
 
           return withResultMetadata(
@@ -259,7 +264,12 @@ export const serveResponses = async (
       },
     );
 
-    return await respondResponses(c, result, wantsStream);
+    return await respondResponses(
+      c,
+      result,
+      wantsStream,
+      downstreamAbortController,
+    );
   } catch (error) {
     return await respondResponses(
       c,
@@ -269,6 +279,7 @@ export const serveResponses = async (
         lastPerformance,
       ),
       false,
+      downstreamAbortController,
     );
   }
 };

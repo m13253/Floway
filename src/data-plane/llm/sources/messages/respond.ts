@@ -9,6 +9,7 @@ import {
 } from "./events/to-response.ts";
 import { messagesProtocolEventsToSSEFrames } from "./events/to-sse.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
+import { downstreamMessagesPingKeepAliveFrame } from "../../shared/stream/keep-alive.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
@@ -58,6 +59,7 @@ export const respondMessages = async (
   c: Context,
   result: StreamExecuteResult<MessagesStreamEventData>,
   wantsStream: boolean,
+  downstreamAbortController?: AbortController,
 ): Promise<Response> => {
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
@@ -118,6 +120,8 @@ export const respondMessages = async (
       ),
     ),
     {
+      keepAlive: { frame: downstreamMessagesPingKeepAliveFrame },
+      downstreamAbortController,
       onError: (error) => {
         markPerformanceFailure(performanceFailureCapture);
         return internalMessagesStreamErrorFrame(error);

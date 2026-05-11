@@ -11,6 +11,7 @@ import type { SourceResponseStreamEvent } from "./events/protocol.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
+import { downstreamSSECommentKeepAliveFrame } from "../../shared/stream/keep-alive.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
 import {
   type PerformanceFailureCapture,
@@ -70,6 +71,7 @@ export const respondResponses = async (
   c: Context,
   result: StreamExecuteResult<SourceResponseStreamEvent>,
   wantsStream: boolean,
+  downstreamAbortController?: AbortController,
 ): Promise<Response> => {
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
@@ -128,6 +130,8 @@ export const respondResponses = async (
     c,
     responsesProtocolEventsToSSEFrames(events),
     {
+      keepAlive: { frame: downstreamSSECommentKeepAliveFrame },
+      downstreamAbortController,
       onError: (error) => {
         markPerformanceFailure(performanceFailureCapture);
         return internalResponsesStreamErrorFrame(error);

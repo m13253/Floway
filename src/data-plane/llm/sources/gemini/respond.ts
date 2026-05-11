@@ -14,6 +14,7 @@ import type {
 } from "../../shared/errors/result.ts";
 import { decodeUpstreamErrorBody } from "../../shared/errors/upstream-error.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
+import { downstreamSSECommentKeepAliveFrame } from "../../shared/stream/keep-alive.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
 import {
   markPerformanceFailure,
@@ -193,6 +194,7 @@ export const respondGemini = async (
   c: Context,
   result: StreamExecuteResult<GeminiStreamEvent>,
   wantsStream: boolean,
+  downstreamAbortController?: AbortController,
 ): Promise<Response> => {
   if (result.type === "upstream-error") {
     const googleRpcResponse = upstreamGoogleRpcErrorResponse(result);
@@ -255,6 +257,8 @@ export const respondGemini = async (
     c,
     geminiProtocolEventsToSSEFrames(events),
     {
+      keepAlive: { frame: downstreamSSECommentKeepAliveFrame },
+      downstreamAbortController,
       onError: (error) => {
         markPerformanceFailure(performanceFailureCapture);
         return geminiErrorEventFrame(

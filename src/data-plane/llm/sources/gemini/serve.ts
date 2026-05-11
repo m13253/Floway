@@ -60,9 +60,11 @@ export const serveGemini = async (
   wantsStream: boolean,
 ): Promise<Response> => {
   let lastPerformance: PerformanceTelemetryContext | undefined;
+  let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<GeminiGenerateContentRequest>();
     const apiKeyId = c.get("apiKeyId") as string | undefined;
+    downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
     const ctx: GeminiSourceContext = { payload, apiKeyId };
@@ -125,6 +127,7 @@ export const serveGemini = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -154,6 +157,7 @@ export const serveGemini = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -182,6 +186,7 @@ export const serveGemini = async (
             runtimeLocation,
             scheduleBackground,
             fetchOptions: plan.fetchOptions,
+            downstreamAbortSignal: downstreamAbortController?.signal,
           });
 
           return withResultMetadata(
@@ -196,7 +201,12 @@ export const serveGemini = async (
       },
     );
 
-    return await respondGemini(c, result, wantsStream);
+    return await respondGemini(
+      c,
+      result,
+      wantsStream,
+      downstreamAbortController,
+    );
   } catch (error) {
     return await respondGemini(
       c,
@@ -206,6 +216,7 @@ export const serveGemini = async (
         lastPerformance,
       ),
       false,
+      downstreamAbortController,
     );
   }
 };

@@ -27,6 +27,26 @@ const getUsageOnlyChatChunks = (
       : [];
   });
 
+const responsesCyberPolicyFailureEvent = (model: string) => ({
+  event: "response.failed",
+  data: {
+    type: "response.failed",
+    response: {
+      id: "resp_stream_policy_failure",
+      object: "response",
+      model,
+      status: "failed",
+      output: [],
+      output_text: "",
+      error: {
+        message: "This request was flagged for cyber policy.",
+        type: "invalid_request_error",
+        code: "cyber_policy",
+      },
+    },
+  },
+});
+
 Deno.test("/v1/chat/completions malformed JSON returns structured internal debug error", async () => {
   const { apiKey } = await setupAppTest();
 
@@ -1217,6 +1237,140 @@ Deno.test("/v1/chat/completions via responses emits requested usage-only SSE chu
       completion_tokens: 5,
       total_tokens: 26,
       prompt_tokens_details: { cached_tokens: 7 },
+    });
+  });
+});
+
+Deno.test("/v1/chat/completions via responses streams final HTTP cyber policy retry failure", async () => {
+  const { apiKey } = await setupAppTest();
+  const model = "gpt-responses-chat-cyber-policy";
+  let responseAttempts = 0;
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: model, supported_endpoints: ["/responses"] },
+      ]));
+    }
+    if (url.pathname === "/responses") {
+      responseAttempts += 1;
+      if (responseAttempts === 1) {
+        return sseResponse([responsesCyberPolicyFailureEvent(model)]);
+      }
+
+      return jsonResponse({
+        error: {
+          message: `blocked ${responseAttempts}`,
+          type: "invalid_request_error",
+          code: "cyber_policy",
+        },
+      }, 400);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    assertEquals(response.status, 200);
+    const events = parseSSEText(await response.text());
+    assertEquals(responseAttempts, 11);
+    assertEquals(events.length, 1);
+
+    const payload = JSON.parse(events[0].data);
+    assertEquals(payload.error, {
+      message: "blocked 11",
+      type: "invalid_request_error",
+      code: "cyber_policy",
+    });
+  });
+});
+
+Deno.test("/v1/chat/completions via responses streams later HTTP retry failure", async () => {
+  const { apiKey } = await setupAppTest();
+  const model = "gpt-responses-chat-server-error";
+  let responseAttempts = 0;
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: model, supported_endpoints: ["/responses"] },
+      ]));
+    }
+    if (url.pathname === "/responses") {
+      responseAttempts += 1;
+      if (responseAttempts === 1) {
+        return sseResponse([responsesCyberPolicyFailureEvent(model)]);
+      }
+
+      return jsonResponse({
+        error: {
+          message: "upstream failed after retry",
+          type: "server_error",
+          code: "upstream_failed",
+        },
+      }, 500);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
+
+    assertEquals(response.status, 200);
+    const events = parseSSEText(await response.text());
+    assertEquals(responseAttempts, 2);
+    assertEquals(events.length, 1);
+
+    const payload = JSON.parse(events[0].data);
+    assertEquals(payload.error, {
+      message: "upstream failed after retry",
+      type: "server_error",
+      code: "upstream_failed",
     });
   });
 });

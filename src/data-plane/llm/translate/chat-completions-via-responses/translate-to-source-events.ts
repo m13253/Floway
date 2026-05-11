@@ -21,43 +21,93 @@ import {
   type UpstreamResponseStreamEvent,
 } from "../upstream-protocol.ts";
 
-const responsesErrorMessage = (event: ResponseStreamEvent): string => {
-  if (event.type === "error") {
-    const error = event as Extract<ResponseStreamEvent, { type: "error" }>;
-    return `${error.code ? `${error.code}: ` : ""}${error.message}`;
-  }
+interface ChatErrorPayload {
+  error: {
+    message: string;
+    type: string;
+    code?: string;
+    name?: string;
+    stack?: string;
+    cause?: unknown;
+    source_api?: string;
+    target_api?: string;
+  };
+}
 
-  if (event.type === "response.failed") {
-    const response = (event as Extract<
-      ResponseStreamEvent,
-      { type: "response.failed" }
-    >).response as ResponsesResult;
-    return `${response.error?.type ?? "api_error"}: ${
-      response.error?.message ?? "Response failed due to unknown error."
-    }`;
-  }
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
-  return "Response stream failed due to unknown error.";
+const stringField = (value: unknown, fallback: string): string =>
+  typeof value === "string" && value.length > 0 ? value : fallback;
+
+const debugFieldsFrom = (value: Record<string, unknown>) => ({
+  ...(typeof value.name === "string" ? { name: value.name } : {}),
+  ...(typeof value.stack === "string" ? { stack: value.stack } : {}),
+  ...(value.cause !== undefined ? { cause: value.cause } : {}),
+  ...(typeof value.source_api === "string"
+    ? { source_api: value.source_api }
+    : {}),
+  ...(typeof value.target_api === "string"
+    ? { target_api: value.target_api }
+    : {}),
+});
+
+const chatErrorPayloadFromResponsesError = (
+  event: Extract<ResponseStreamEvent, { type: "error" }>,
+): ChatErrorPayload => ({
+  error: {
+    message: event.message,
+    type: event.code ?? "api_error",
+    ...(event.code ? { code: event.code } : {}),
+    ...(event.name ? { name: event.name } : {}),
+    ...(event.stack ? { stack: event.stack } : {}),
+    ...(event.cause !== undefined ? { cause: event.cause } : {}),
+    ...(event.source_api ? { source_api: event.source_api } : {}),
+    ...(event.target_api ? { target_api: event.target_api } : {}),
+  },
+});
+
+const chatErrorPayloadFromResponsesFailure = (
+  event: Extract<ResponseStreamEvent, { type: "response.failed" }>,
+): ChatErrorPayload => {
+  const response = event.response as ResponsesResult;
+  const error = isRecord(response.error) ? response.error : undefined;
+
+  return {
+    error: {
+      message: stringField(
+        error?.message,
+        "Response failed due to unknown error.",
+      ),
+      type: stringField(error?.type, "api_error"),
+      ...(typeof error?.code === "string" ? { code: error.code } : {}),
+      ...(error ? debugFieldsFrom(error) : {}),
+    },
+  };
 };
 
-const throwOnResponsesFatalEvent = (event: ResponseStreamEvent): void => {
+const chatErrorFrameFromResponsesFatalEvent = (
+  event: ResponseStreamEvent,
+): EventFrame<ChatCompletionChunk> | undefined => {
   if (event.type === "error") {
-    throw new Error(
-      `Upstream Responses stream error: ${responsesErrorMessage(event)}`,
-      {
-        cause: event,
-      },
+    // OpenAI-compatible Chat streams can carry top-level error payloads;
+    // ChatCompletionChunk only models successful chunk payloads.
+    return eventFrame(
+      chatErrorPayloadFromResponsesError(
+        event as Extract<ResponseStreamEvent, { type: "error" }>,
+      ) as unknown as ChatCompletionChunk,
     );
   }
 
   if (event.type === "response.failed") {
-    throw new Error(
-      `Upstream Responses stream failed: ${responsesErrorMessage(event)}`,
-      {
-        cause: event,
-      },
+    return eventFrame(
+      chatErrorPayloadFromResponsesFailure(
+        event as Extract<ResponseStreamEvent, { type: "response.failed" }>,
+      ) as unknown as ChatCompletionChunk,
     );
   }
+
+  return undefined;
 };
 
 export const translateToSourceEvents = async function* (
@@ -75,7 +125,11 @@ export const translateToSourceEvents = async function* (
       upstreamResponsesStreamAlgebra,
     )
   ) {
-    throwOnResponsesFatalEvent(event);
+    const failureFrame = chatErrorFrameFromResponsesFatalEvent(event);
+    if (failureFrame) {
+      yield failureFrame;
+      return;
+    }
 
     if (
       event.type === "response.output_item.added" ||

@@ -4,6 +4,7 @@ import {
   assertFalse,
   assertStringIncludes,
 } from "@std/assert";
+import { FakeTime } from "@std/testing/time";
 import {
   copilotModels,
   jsonResponse,
@@ -13,6 +14,35 @@ import {
   sseResponse,
   withMockedFetch,
 } from "../../../../test-helpers.ts";
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from "../../shared/stream/proxy-sse.ts";
+
+type PromiseState<T> =
+  | { type: "pending" }
+  | { type: "fulfilled"; value: T }
+  | { type: "rejected"; error: unknown };
+
+const promiseStateWithin = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<PromiseState<T>> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then(
+        (value): PromiseState<T> => ({ type: "fulfilled", value }),
+        (error): PromiseState<T> => ({ type: "rejected", error }),
+      ),
+      new Promise<PromiseState<T>>((resolve) => {
+        timeoutId = setTimeout(() => resolve({ type: "pending" }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
+};
+
+const decodeChunk = (value: Uint8Array | undefined): string =>
+  new TextDecoder().decode(value);
 
 Deno.test("/v1/responses rejects previous_response_id at the entrypoint", async () => {
   const { apiKey } = await setupAppTest();
@@ -194,6 +224,130 @@ Deno.test("/v1/responses direct mode converts apply_patch and fixes mismatched s
   assertEquals(tool.name, "apply_patch");
   assertEquals((tool.parameters as Record<string, unknown>).type, "object");
   assertFalse("service_tier" in upstreamBody!);
+});
+
+Deno.test("/v1/responses direct mode emits keepalive before the first upstream Responses frame", async () => {
+  const { apiKey } = await setupAppTest();
+  const encoder = new TextEncoder();
+  let upstreamStarted!: () => void;
+  const upstreamStartedPromise = new Promise<void>((resolve) => {
+    upstreamStarted = resolve;
+  });
+  let upstreamController:
+    | ReadableStreamDefaultController<Uint8Array>
+    | undefined;
+  let upstreamCanceled = false;
+  const upstreamBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      upstreamController = controller;
+    },
+    cancel() {
+      upstreamCanceled = true;
+    },
+  });
+  const completedFrame = encoder.encode(
+    `event: response.completed\ndata: ${
+      JSON.stringify({
+        type: "response.completed",
+        response: {
+          id: "resp_idle_keepalive",
+          object: "response",
+          model: "gpt-idle-responses",
+          status: "completed",
+          output_text: "",
+          output: [],
+        },
+      })
+    }\n\n`,
+  );
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: "gpt-idle-responses", supported_endpoints: ["/responses"] },
+      ]));
+    }
+    if (url.pathname === "/responses") {
+      upstreamStarted();
+      return new Response(upstreamBody, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const time = new FakeTime();
+    try {
+      const responsePromise = requestApp("/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey.key,
+        },
+        body: JSON.stringify({
+          model: "gpt-idle-responses",
+          input: [{ type: "message", role: "user", content: "Hi" }],
+          instructions: null,
+          temperature: 1,
+          top_p: null,
+          max_output_tokens: 32,
+          tools: null,
+          tool_choice: "auto",
+          metadata: null,
+          stream: true,
+          store: false,
+          parallel_tool_calls: true,
+        }),
+      });
+
+      await upstreamStartedPromise;
+      const responseStatePromise = promiseStateWithin(responsePromise, 1);
+      await time.tickAsync(1);
+      const responseState = await responseStatePromise;
+      if (responseState.type !== "fulfilled") {
+        upstreamController?.enqueue(completedFrame);
+        upstreamController?.close();
+        const response = await responsePromise;
+        await response.body?.cancel();
+      }
+
+      assertEquals(responseState.type, "fulfilled");
+      if (responseState.type !== "fulfilled") return;
+
+      const reader = responseState.value.body!.getReader();
+      try {
+        const read = reader.read();
+        await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+        const chunk = await read;
+
+        assertEquals(chunk.done, false);
+        assertEquals(decodeChunk(chunk.value), ": keepalive\n\n");
+
+        await reader.cancel("client stopped while upstream was idle");
+        for (let i = 0; i < 10; i++) {
+          if (upstreamCanceled) break;
+          await Promise.resolve();
+        }
+        assertEquals(upstreamCanceled, true);
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+    } finally {
+      time.restore();
+    }
+  });
 });
 
 Deno.test("/v1/responses streams malformed upstream Responses SSE as an error event", async () => {

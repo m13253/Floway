@@ -1,12 +1,28 @@
 import { type SseFrame, sseFrame } from "./types.ts";
 
+interface ParseSSEStreamOptions {
+  signal?: AbortSignal;
+}
+
 export const parseSSEStream = async function* (
   body: ReadableStream<Uint8Array>,
+  options: ParseSSEStreamOptions = {},
 ): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
+  const { signal } = options;
   const decoder = new TextDecoder();
   let buffer = "";
   let currentEvent = "";
+  let cancelPromise: Promise<void> | undefined;
+
+  const cancelReader = (reason?: unknown): Promise<void> => {
+    cancelPromise ??= reader.cancel(reason).catch(() => {});
+    return cancelPromise;
+  };
+
+  const cancelReaderOnAbort = () => {
+    cancelReader(signal?.reason);
+  };
 
   const readLine = (rawLine: string): SseFrame | null => {
     const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
@@ -24,9 +40,18 @@ export const parseSSEStream = async function* (
     return null;
   };
 
+  if (signal?.aborted) {
+    await cancelReader(signal.reason);
+    return;
+  }
+
+  signal?.addEventListener("abort", cancelReaderOnAbort, { once: true });
+
   try {
     while (true) {
+      if (signal?.aborted) return;
       const { done, value } = await reader.read();
+      if (signal?.aborted) return;
       if (done) {
         buffer += decoder.decode();
         break;
@@ -51,6 +76,7 @@ export const parseSSEStream = async function* (
       }
     }
   } finally {
-    await reader.cancel();
+    signal?.removeEventListener("abort", cancelReaderOnAbort);
+    await (cancelPromise ?? reader.cancel());
   }
 };

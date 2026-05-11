@@ -19,22 +19,29 @@ const setup = (): TelemetryHarness => {
 
 const baseInput = (
   harness: TelemetryHarness,
-  overrides: { sourceApi?: "messages" | "responses" | "chat-completions"; model?: string; stream?: boolean } = {},
-) => ({
-  sourceApi: overrides.sourceApi ?? "messages",
-  payload: {
-    model: overrides.model ?? "claude-test",
-    stream: overrides.stream ?? true,
-  },
-  githubToken: "token",
-  accountType: "individual",
-  apiKeyId: "key_a",
-  clientStream: overrides.stream ?? true,
-  runtimeLocation: "SJC",
-  scheduleBackground: (promise: Promise<unknown>) => {
-    harness.background.push(promise);
-  },
-}) as const;
+  overrides: {
+    sourceApi?: "messages" | "responses" | "chat-completions";
+    model?: string;
+    stream?: boolean;
+    downstreamAbortSignal?: AbortSignal;
+  } = {},
+) =>
+  ({
+    sourceApi: overrides.sourceApi ?? "messages",
+    payload: {
+      model: overrides.model ?? "claude-test",
+      stream: overrides.stream ?? true,
+    },
+    githubToken: "token",
+    accountType: "individual",
+    apiKeyId: "key_a",
+    clientStream: overrides.stream ?? true,
+    runtimeLocation: "SJC",
+    downstreamAbortSignal: overrides.downstreamAbortSignal,
+    scheduleBackground: (promise: Promise<unknown>) => {
+      harness.background.push(promise);
+    },
+  }) as const;
 
 Deno.test("withUpstreamTelemetry records EOF-without-terminal as upstream failure", async () => {
   const harness = setup();
@@ -110,6 +117,29 @@ Deno.test("withUpstreamTelemetry does not record consumer-cancelled streams", as
   assertEquals(await harness.repo.performance.listAll(), []);
 });
 
+Deno.test("withUpstreamTelemetry does not record downstream-signal-aborted streams", async () => {
+  const harness = setup();
+  const downstreamAbortController = new AbortController();
+
+  const events = withUpstreamTelemetry(
+    (async function* () {
+      downstreamAbortController.abort();
+    })(),
+    baseInput(harness, {
+      downstreamAbortSignal: downstreamAbortController.signal,
+    }),
+    "messages",
+    performance.now(),
+  );
+
+  for await (const _event of events) {
+    // Drain the aborted stream to EOF.
+  }
+  await Promise.all(harness.background);
+
+  assertEquals(await harness.repo.performance.listAll(), []);
+});
+
 Deno.test("withUpstreamTelemetry records failed Responses JSON as upstream failure", async () => {
   const harness = setup();
 
@@ -128,7 +158,11 @@ Deno.test("withUpstreamTelemetry records failed Responses JSON as upstream failu
         },
       };
     })(),
-    baseInput(harness, { sourceApi: "responses", model: "gpt-failed-json", stream: false }),
+    baseInput(harness, {
+      sourceApi: "responses",
+      model: "gpt-failed-json",
+      stream: false,
+    }),
     "responses",
     performance.now(),
   );
@@ -154,7 +188,8 @@ Deno.test("withUpstreamTelemetry records Messages SSE error event as upstream fa
       yield {
         type: "sse" as const,
         event: "error",
-        data: '{"type":"error","error":{"type":"overloaded_error","message":"slow down"}}',
+        data:
+          '{"type":"error","error":{"type":"overloaded_error","message":"slow down"}}',
       };
     })(),
     baseInput(harness),
@@ -179,7 +214,10 @@ Deno.test("withUpstreamTelemetry records Responses SSE failure event as upstream
   const events = withUpstreamTelemetry(
     (async function* () {
       yield { type: "sse" as const, data: '{"type":"response.created"}' };
-      yield { type: "sse" as const, data: '{"type":"response.failed","response":{"status":"failed"}}' };
+      yield {
+        type: "sse" as const,
+        data: '{"type":"response.failed","response":{"status":"failed"}}',
+      };
     })(),
     baseInput(harness, { sourceApi: "responses", model: "gpt-failed-stream" }),
     "responses",
@@ -205,7 +243,10 @@ Deno.test("withUpstreamTelemetry treats DONE as terminal only for chat-completio
       (async function* () {
         yield { type: "sse" as const, data: "[DONE]" };
       })(),
-      baseInput(harness, { sourceApi: targetApi, model: `gpt-${targetApi}-done` }),
+      baseInput(harness, {
+        sourceApi: targetApi,
+        model: `gpt-${targetApi}-done`,
+      }),
       targetApi,
       performance.now(),
     );
@@ -252,7 +293,10 @@ Deno.test("withUpstreamTelemetry snapshots duration when the success frame arriv
 
 Deno.test("recordUpstreamHttpFailure records a single error for non-2xx responses", async () => {
   const harness = setup();
-  recordUpstreamHttpFailure(baseInput(harness, { sourceApi: "messages" }), "messages");
+  recordUpstreamHttpFailure(
+    baseInput(harness, { sourceApi: "messages" }),
+    "messages",
+  );
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();

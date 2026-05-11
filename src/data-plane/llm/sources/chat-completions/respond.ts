@@ -10,6 +10,7 @@ import { chatProtocolEventsToSSEFrames } from "./events/to-sse.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
+import { downstreamSSECommentKeepAliveFrame } from "../../shared/stream/keep-alive.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
 import {
   type HiddenChatStreamUsageCapture,
@@ -58,6 +59,7 @@ export const respondChatCompletions = async (
   result: StreamExecuteResult<ChatCompletionChunk>,
   wantsStream: boolean,
   includeUsageChunk: boolean,
+  downstreamAbortController?: AbortController,
 ): Promise<Response> => {
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
@@ -127,6 +129,8 @@ export const respondChatCompletions = async (
         },
       ),
       {
+        keepAlive: { frame: downstreamSSECommentKeepAliveFrame },
+        downstreamAbortController,
         onError: (error) => {
           markPerformanceFailure(performanceFailureCapture);
           return internalChatStreamErrorFrame(error);

@@ -14,6 +14,7 @@ export interface EmitInput<TPayload extends { model: string }> {
   runtimeLocation?: string;
   scheduleBackground?: BackgroundScheduler;
   fetchOptions?: CopilotFetchOptions;
+  downstreamAbortSignal?: AbortSignal;
 }
 
 export type RawEmitResult<TJson> = ExecuteResult<StreamFrame<TJson>>;

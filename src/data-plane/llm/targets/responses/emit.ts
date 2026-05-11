@@ -51,6 +51,7 @@ export const emitToResponses = async (
           {
             method: "POST",
             body: JSON.stringify(input.payload),
+            signal: input.downstreamAbortSignal,
           },
           input.githubToken,
           input.accountType,
@@ -74,7 +75,9 @@ export const emitToResponses = async (
 
         if (isSSEResponse(response)) {
           return eventResult(withUpstreamTelemetry(
-            parseSSEStream(response.body),
+            parseSSEStream(response.body, {
+              signal: input.downstreamAbortSignal,
+            }),
             input,
             "responses",
             upstreamStartedAt,

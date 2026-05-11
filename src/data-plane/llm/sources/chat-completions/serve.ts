@@ -61,11 +61,13 @@ export const serveChatCompletions = async (
   // Target interceptors may force upstream usage for gateway accounting, but
   // Chat SSE exposes usage only when the caller requested `include_usage`.
   let includeUsageChunk = false;
+  let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<ChatCompletionsPayload>();
     includeUsageChunk = payload.stream_options?.include_usage === true;
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const wantsStream = payload.stream === true;
+    downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
     const ctx: ChatCompletionsSourceContext = { payload, apiKeyId };
@@ -121,6 +123,7 @@ export const serveChatCompletions = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -147,6 +150,7 @@ export const serveChatCompletions = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -171,6 +175,7 @@ export const serveChatCompletions = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             }),
             attemptPayload.model,
             performance,
@@ -184,6 +189,7 @@ export const serveChatCompletions = async (
       result,
       wantsStream,
       includeUsageChunk,
+      downstreamAbortController,
     );
   } catch (error) {
     return await respondChatCompletions(
@@ -195,6 +201,7 @@ export const serveChatCompletions = async (
       ),
       false,
       includeUsageChunk,
+      downstreamAbortController,
     );
   }
 };

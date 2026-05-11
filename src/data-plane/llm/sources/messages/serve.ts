@@ -56,10 +56,12 @@ export const serveMessages = async (
   c: Context,
 ): Promise<Response> => {
   let lastPerformance: PerformanceTelemetryContext | undefined;
+  let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<MessagesPayload>();
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const wantsStream = payload.stream === true;
+    downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
     const rawBeta = c.req.header("anthropic-beta");
@@ -119,6 +121,7 @@ export const serveMessages = async (
                   runtimeLocation,
                   scheduleBackground,
                   fetchOptions: plan.fetchOptions,
+                  downstreamAbortSignal: downstreamAbortController?.signal,
                   rawBeta: plan.rawBeta,
                 }),
                 attemptPayload.model,
@@ -143,6 +146,7 @@ export const serveMessages = async (
                 runtimeLocation,
                 scheduleBackground,
                 fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
               });
 
               return withResultMetadata(
@@ -168,6 +172,7 @@ export const serveMessages = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
             return withResultMetadata(
@@ -180,7 +185,12 @@ export const serveMessages = async (
       },
     );
 
-    return await respondMessages(c, result, wantsStream);
+    return await respondMessages(
+      c,
+      result,
+      wantsStream,
+      downstreamAbortController,
+    );
   } catch (error) {
     return await respondMessages(
       c,
@@ -190,6 +200,7 @@ export const serveMessages = async (
         lastPerformance,
       ),
       false,
+      downstreamAbortController,
     );
   }
 };

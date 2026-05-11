@@ -61,11 +61,13 @@ export function withUpstreamTelemetry<T>(
       }
     } finally {
       // EOF without any terminal frame, or an upstream-thrown error mid-stream,
-      // means upstream failed to produce a complete response. Record as a
-      // failure. Client-initiated cancel skips this branch because the for
-      // await body unwinds via a return completion that bypasses the assignment
-      // above and never sets upstreamEnded.
-      if (!recorded && upstreamEnded) {
+      // means upstream failed to produce a complete response. Client-initiated
+      // cancel may now also reach the upstream reader via AbortSignal; that can
+      // make the wrapped iterator end as EOF, so keep it out of upstream health.
+      if (
+        !recorded && upstreamEnded &&
+        input.downstreamAbortSignal?.aborted !== true
+      ) {
         recordOnce("failure", performance.now() - startedAt);
       }
     }
