@@ -87,6 +87,10 @@ const reasoningTokensFromUsage = (
   return typeof reasoningTokens === "number" ? reasoningTokens : undefined;
 };
 
+// OpenAI prompt_tokens already includes prompt_tokens_details.cached_tokens,
+// matching Gemini's inclusive promptTokenCount semantics. Pass both through
+// directly — no folding. Contrast with gemini-via-messages, where Anthropic's
+// input_tokens excludes cache buckets and must be summed.
 const mapUsage = (
   usage?: ChatCompletionChunk["usage"],
 ): GeminiUsageMetadata | undefined => {
@@ -101,6 +105,11 @@ const mapUsage = (
   const thoughtsTokenCount = reasoningTokensFromUsage(usage);
   if (thoughtsTokenCount !== undefined) {
     metadata.thoughtsTokenCount = thoughtsTokenCount;
+  }
+
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  if (cachedTokens !== undefined) {
+    metadata.cachedContentTokenCount = cachedTokens;
   }
 
   return metadata;

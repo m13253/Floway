@@ -314,3 +314,35 @@ Deno.test("translateToSourceEvents throws on Responses error stream events", asy
     "Upstream Responses stream error: bad request",
   );
 });
+
+Deno.test("translateToSourceEvents surfaces input cached_tokens as cachedContentTokenCount", async () => {
+  const frames = await collect([
+    eventFrame({
+      type: "response.completed",
+      response: response("completed", {
+        usage: {
+          input_tokens: 100,
+          output_tokens: 8,
+          total_tokens: 108,
+          input_tokens_details: { cached_tokens: 30 },
+        },
+      }),
+    }),
+  ]);
+
+  assertEquals(frames, [
+    geminiFrame({
+      candidates: [{
+        index: 0,
+        content: { role: "model", parts: [] },
+        finishReason: "STOP",
+      }],
+      usageMetadata: {
+        promptTokenCount: 100,
+        candidatesTokenCount: 8,
+        totalTokenCount: 108,
+        cachedContentTokenCount: 30,
+      },
+    }),
+  ]);
+});

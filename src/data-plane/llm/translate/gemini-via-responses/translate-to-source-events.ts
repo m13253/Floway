@@ -125,6 +125,10 @@ const geminiResponse = (
   ...(usageMetadata !== undefined ? { usageMetadata } : {}),
 });
 
+// Responses input_tokens already includes input_tokens_details.cached_tokens,
+// matching Gemini's inclusive promptTokenCount semantics. Pass both through
+// directly — no folding. Contrast with gemini-via-messages, where Anthropic's
+// input_tokens excludes cache buckets and must be summed.
 const mapUsage = (
   usage: ResponsesResult["usage"],
 ): GeminiUsageMetadata | undefined => {
@@ -137,6 +141,11 @@ const mapUsage = (
     ...(usage.output_tokens_details?.reasoning_tokens !== undefined
       ? {
         thoughtsTokenCount: usage.output_tokens_details.reasoning_tokens,
+      }
+      : {}),
+    ...(usage.input_tokens_details?.cached_tokens !== undefined
+      ? {
+        cachedContentTokenCount: usage.input_tokens_details.cached_tokens,
       }
       : {}),
   };

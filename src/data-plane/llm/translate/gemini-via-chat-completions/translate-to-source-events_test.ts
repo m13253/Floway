@@ -265,3 +265,33 @@ Deno.test("translateToSourceEvents throws on upstream Chat error payloads", asyn
     "Upstream Chat Completions stream error: invalid_request_error: bad request",
   );
 });
+
+Deno.test("translateToSourceEvents surfaces cached_tokens as cachedContentTokenCount", async () => {
+  const usage = {
+    prompt_tokens: 100,
+    completion_tokens: 8,
+    total_tokens: 108,
+    prompt_tokens_details: { cached_tokens: 30 },
+  };
+
+  const frames = await collect([
+    eventFrame(chunk({}, "stop", usage)),
+    doneFrame(),
+  ]);
+
+  assertEquals(frames, [
+    geminiFrame({
+      candidates: [{
+        index: 0,
+        content: { role: "model", parts: [] },
+        finishReason: "STOP",
+      }],
+      usageMetadata: {
+        promptTokenCount: 100,
+        candidatesTokenCount: 8,
+        totalTokenCount: 108,
+        cachedContentTokenCount: 30,
+      },
+    }),
+  ]);
+});
