@@ -8,7 +8,11 @@ import {
   type PerformanceTelemetryContext,
   runtimeLocationFromRequest,
 } from "../../../../lib/performance-telemetry.ts";
-import { normalizeGeminiRequest } from "./normalize/request.ts";
+import {
+  type GeminiSourceContext,
+  geminiSourceInterceptors,
+} from "./interceptors/index.ts";
+import { runSourceInterceptors } from "../run-interceptors.ts";
 import { respondGemini } from "./respond.ts";
 import { geminiModelResolutionIntent, planGeminiRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
@@ -28,7 +32,7 @@ import {
   type StreamExecuteResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
-import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
+import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import { countGeminiTokens } from "../../../gemini/count-tokens.ts";
 
 const withTranslatedEvents = <T>(
@@ -50,52 +54,6 @@ const withResultMetadata = <T>(
     ? { ...result, usageModel, performance }
     : { ...result, performance };
 
-const hasEventPayload = (event: GeminiStreamEvent): boolean => {
-  if ("error" in event) return true;
-  return (event.candidates?.length ?? 0) > 0 ||
-    event.usageMetadata !== undefined || event.modelVersion !== undefined ||
-    event.responseId !== undefined;
-};
-
-const suppressThoughtParts = async function* (
-  frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
-  for await (const frame of frames) {
-    if (frame.type !== "event" || "error" in frame.event) {
-      yield frame;
-      continue;
-    }
-
-    const candidates = frame.event.candidates?.flatMap((candidate) => {
-      const parts = candidate.content.parts.filter((part) =>
-        part.thought !== true
-      );
-      if (!parts.length && candidate.finishReason === undefined) return [];
-
-      return [{
-        ...candidate,
-        content: { ...candidate.content, parts },
-      }];
-    });
-
-    const event: GeminiStreamEvent = {
-      ...frame.event,
-      ...(candidates !== undefined ? { candidates } : {}),
-    };
-
-    if (hasEventPayload(event)) yield eventFrame(event);
-  }
-};
-
-const applyGeminiResponseOptions = (
-  result: StreamExecuteResult<GeminiStreamEvent>,
-  payload: GeminiGenerateContentRequest,
-): StreamExecuteResult<GeminiStreamEvent> =>
-  result.type === "events" &&
-    payload.generationConfig?.thinkingConfig?.includeThoughts !== true
-    ? { ...result, events: suppressThoughtParts(result.events) }
-    : result;
-
 export const serveGemini = async (
   c: Context,
   model: string,
@@ -104,15 +62,10 @@ export const serveGemini = async (
   let lastPerformance: PerformanceTelemetryContext | undefined;
   try {
     const payload = await c.req.json<GeminiGenerateContentRequest>();
-    normalizeGeminiRequest(payload);
-
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
-    const modelId = await resolveModelForRequest(
-      model,
-      geminiModelResolutionIntent(payload),
-    );
+    const ctx: GeminiSourceContext = { payload, apiKeyId };
     const performanceFor = (
       usageModel: string,
       targetApi: PerformanceTelemetryContext["targetApi"],
@@ -127,32 +80,99 @@ export const serveGemini = async (
       };
       return lastPerformance;
     };
-    performanceFor(modelId, "gemini");
 
-    const result = await withAccountFallback(
-      modelId,
-      async ({ account }) => {
-        const attemptPayload = structuredClone(payload);
-        const capabilities = await getModelCapabilities(
-          modelId,
-          account.token,
-          account.accountType,
+    const result = await runSourceInterceptors(
+      ctx,
+      geminiSourceInterceptors,
+      async () => {
+        const modelId = await resolveModelForRequest(
+          model,
+          geminiModelResolutionIntent(ctx.payload),
         );
-        const plan = planGeminiRequest(
-          attemptPayload,
-          modelId,
-          capabilities,
-          wantsStream,
-        );
+        performanceFor(modelId, "gemini");
 
-        if (plan.target === "messages") {
-          const targetPayload = buildMessagesTargetRequest(
+        return await withAccountFallback(modelId, async ({ account }) => {
+          const attemptPayload = structuredClone(ctx.payload);
+          const capabilities = await getModelCapabilities(
+            modelId,
+            account.token,
+            account.accountType,
+          );
+          const plan = planGeminiRequest(
+            attemptPayload,
+            modelId,
+            capabilities,
+            wantsStream,
+          );
+
+          if (plan.target === "messages") {
+            const targetPayload = buildMessagesTargetRequest(
+              attemptPayload,
+              modelId,
+              wantsStream,
+            );
+            const performance = performanceFor(
+              targetPayload.model,
+              "messages",
+            );
+            const result = await emitToMessages({
+              sourceApi: "gemini",
+              payload: targetPayload,
+              githubToken: account.token,
+              accountType: account.accountType,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+            });
+
+            return withResultMetadata(
+              withTranslatedEvents(result, translateMessagesToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          }
+
+          if (plan.target === "responses") {
+            const targetPayload = buildResponsesTargetRequest(
+              attemptPayload,
+              modelId,
+              wantsStream,
+            );
+            const performance = performanceFor(
+              targetPayload.model,
+              "responses",
+            );
+            const result = await emitToResponses({
+              sourceApi: "gemini",
+              payload: targetPayload,
+              githubToken: account.token,
+              accountType: account.accountType,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+            });
+
+            return withResultMetadata(
+              withTranslatedEvents(result, translateResponsesToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          }
+
+          const targetPayload = buildChatCompletionsTargetRequest(
             attemptPayload,
             modelId,
             wantsStream,
           );
-          const performance = performanceFor(targetPayload.model, "messages");
-          const result = await emitToMessages({
+          const performance = performanceFor(
+            targetPayload.model,
+            "chat-completions",
+          );
+          const result = await emitToChatCompletions({
             sourceApi: "gemini",
             payload: targetPayload,
             githubToken: account.token,
@@ -165,72 +185,18 @@ export const serveGemini = async (
           });
 
           return withResultMetadata(
-            withTranslatedEvents(result, translateMessagesToSourceEvents),
+            withTranslatedEvents(
+              result,
+              translateChatCompletionsToSourceEvents,
+            ),
             targetPayload.model,
             performance,
           );
-        }
-
-        if (plan.target === "responses") {
-          const targetPayload = buildResponsesTargetRequest(
-            attemptPayload,
-            modelId,
-            wantsStream,
-          );
-          const performance = performanceFor(targetPayload.model, "responses");
-          const result = await emitToResponses({
-            sourceApi: "gemini",
-            payload: targetPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-          });
-
-          return withResultMetadata(
-            withTranslatedEvents(result, translateResponsesToSourceEvents),
-            targetPayload.model,
-            performance,
-          );
-        }
-
-        const targetPayload = buildChatCompletionsTargetRequest(
-          attemptPayload,
-          modelId,
-          wantsStream,
-        );
-        const performance = performanceFor(
-          targetPayload.model,
-          "chat-completions",
-        );
-        const result = await emitToChatCompletions({
-          sourceApi: "gemini",
-          payload: targetPayload,
-          githubToken: account.token,
-          accountType: account.accountType,
-          apiKeyId,
-          clientStream: wantsStream,
-          runtimeLocation,
-          scheduleBackground,
-          fetchOptions: plan.fetchOptions,
         });
-
-        return withResultMetadata(
-          withTranslatedEvents(result, translateChatCompletionsToSourceEvents),
-          targetPayload.model,
-          performance,
-        );
       },
     );
 
-    return await respondGemini(
-      c,
-      applyGeminiResponseOptions(result, payload),
-      wantsStream,
-    );
+    return await respondGemini(c, result, wantsStream);
   } catch (error) {
     return await respondGemini(
       c,

@@ -1,16 +1,21 @@
-export type SourceInterceptor<TResult> = (
-  result: TResult,
-) => TResult | Promise<TResult>;
+import type { StreamExecuteResult } from "../shared/errors/result.ts";
 
-export const runSourceInterceptors = async <TResult>(
-  result: TResult,
-  interceptors: readonly SourceInterceptor<TResult>[],
-): Promise<TResult> => {
-  let intercepted = result;
+export type SourceRun<TEvent> = () => Promise<StreamExecuteResult<TEvent>>;
 
-  for (const interceptor of interceptors) {
-    intercepted = await interceptor(intercepted);
-  }
+export type SourceInterceptor<TContext, TEvent> = (
+  ctx: TContext,
+  run: SourceRun<TEvent>,
+) => Promise<StreamExecuteResult<TEvent>>;
 
-  return intercepted;
+export const runSourceInterceptors = async <TContext, TEvent>(
+  ctx: TContext,
+  interceptors: readonly SourceInterceptor<TContext, TEvent>[],
+  attempt: SourceRun<TEvent>,
+): Promise<StreamExecuteResult<TEvent>> => {
+  const run = (index: number): Promise<StreamExecuteResult<TEvent>> =>
+    index < interceptors.length
+      ? interceptors[index](ctx, () => run(index + 1))
+      : attempt();
+
+  return await run(0);
 };

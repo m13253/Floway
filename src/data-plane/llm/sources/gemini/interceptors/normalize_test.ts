@@ -1,8 +1,28 @@
 import { assertEquals } from "@std/assert";
 import type { GeminiGenerateContentRequest } from "../../../../../lib/gemini-types.ts";
-import { normalizeGeminiRequest } from "./request.ts";
+import { stripSafetySettings } from "./strip-safety-settings.ts";
+import { stripUnsupportedPartFieldsFromPayload } from "./strip-unsupported-part-fields.ts";
+import { stripUnsupportedToolsFromPayload } from "./strip-unsupported-tools.ts";
 
-Deno.test("normalizeGeminiRequest strips unsupported part fields and preserves supported fields", () => {
+const runStripSafetySettings = async (
+  payload: GeminiGenerateContentRequest,
+): Promise<void> => {
+  await stripSafetySettings({ payload }, () =>
+    Promise.resolve({
+      type: "events" as const,
+      events: (async function* () {})(),
+    }));
+};
+
+const normalize = async (
+  payload: GeminiGenerateContentRequest,
+): Promise<void> => {
+  stripUnsupportedPartFieldsFromPayload(payload);
+  stripUnsupportedToolsFromPayload(payload);
+  await runStripSafetySettings(payload);
+};
+
+Deno.test("gemini source interceptors strip unsupported part fields and preserve supported fields", async () => {
   const payload: GeminiGenerateContentRequest = {
     contents: [{
       role: "user",
@@ -30,7 +50,7 @@ Deno.test("normalizeGeminiRequest strips unsupported part fields and preserves s
     },
   };
 
-  normalizeGeminiRequest(payload);
+  await normalize(payload);
 
   assertEquals(payload, {
     contents: [{
@@ -54,7 +74,7 @@ Deno.test("normalizeGeminiRequest strips unsupported part fields and preserves s
   });
 });
 
-Deno.test("normalizeGeminiRequest removes parts that only contain unsupported file or code fields", () => {
+Deno.test("gemini source interceptors remove parts that only contain unsupported file or code fields", async () => {
   const payload: GeminiGenerateContentRequest = {
     contents: [{
       role: "user",
@@ -76,7 +96,7 @@ Deno.test("normalizeGeminiRequest removes parts that only contain unsupported fi
     },
   };
 
-  normalizeGeminiRequest(payload);
+  await normalize(payload);
 
   assertEquals(payload, {
     contents: [{
@@ -89,7 +109,7 @@ Deno.test("normalizeGeminiRequest removes parts that only contain unsupported fi
   });
 });
 
-Deno.test("normalizeGeminiRequest strips unsupported tool capabilities and removes empty tool groups", () => {
+Deno.test("gemini source interceptors strip unsupported tool capabilities and remove empty tool groups", async () => {
   const payload: GeminiGenerateContentRequest = {
     tools: [{
       functionDeclarations: [{
@@ -115,7 +135,7 @@ Deno.test("normalizeGeminiRequest strips unsupported tool capabilities and remov
     }],
   };
 
-  normalizeGeminiRequest(payload);
+  await normalize(payload);
 
   assertEquals(payload, {
     tools: [{
@@ -131,7 +151,7 @@ Deno.test("normalizeGeminiRequest strips unsupported tool capabilities and remov
   });
 });
 
-Deno.test("normalizeGeminiRequest removes safety settings without inventing missing defaults", () => {
+Deno.test("gemini source interceptors remove safety settings without inventing missing defaults", async () => {
   const payload: GeminiGenerateContentRequest = {
     cachedContent: "cachedContents/example",
     safetySettings: [{
@@ -140,7 +160,7 @@ Deno.test("normalizeGeminiRequest removes safety settings without inventing miss
     }],
   };
 
-  normalizeGeminiRequest(payload);
+  await normalize(payload);
 
   assertEquals(payload, {
     cachedContent: "cachedContents/example",

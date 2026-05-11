@@ -5,7 +5,8 @@ import type {
   GeminiGenerateContentRequest,
 } from "../../lib/gemini-types.ts";
 import { toInternalDebugError } from "../llm/shared/errors/internal-debug-error.ts";
-import { normalizeGeminiRequest } from "../llm/sources/gemini/normalize/request.ts";
+import { stripUnsupportedPartFieldsFromPayload } from "../llm/sources/gemini/interceptors/strip-unsupported-part-fields.ts";
+import { stripUnsupportedToolsFromPayload } from "../llm/sources/gemini/interceptors/strip-unsupported-tools.ts";
 import { geminiModelResolutionIntent } from "../llm/sources/gemini/plan.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../llm/translate/gemini-via-messages/build-target-request.ts";
 import { resolveModelForRequest } from "../llm/shared/models/resolve-model.ts";
@@ -63,6 +64,17 @@ const countTokensRequestToGenerateContentRequest = (
 ): GeminiGenerateContentRequest =>
   request.generateContentRequest ?? { contents: request.contents };
 
+// count_tokens reuses Gemini source request normalization, but cannot run the
+// full streaming source-interceptor pipeline. Apply the same payload mutations
+// directly so its translated request shape matches `generateContent`.
+const normalizeCountTokensRequest = (
+  payload: GeminiGenerateContentRequest,
+): void => {
+  stripUnsupportedPartFieldsFromPayload(payload);
+  stripUnsupportedToolsFromPayload(payload);
+  delete payload.safetySettings;
+};
+
 const totalTokensFromUpstream = (value: unknown): number | null => {
   if (!value || typeof value !== "object") return null;
   const payload = value as { input_tokens?: unknown; total_tokens?: unknown };
@@ -80,7 +92,7 @@ export const countGeminiTokens = async (
     const generateContentRequest = countTokensRequestToGenerateContentRequest(
       request,
     );
-    normalizeGeminiRequest(generateContentRequest);
+    normalizeCountTokensRequest(generateContentRequest);
 
     const modelId = await resolveModelForRequest(
       model,

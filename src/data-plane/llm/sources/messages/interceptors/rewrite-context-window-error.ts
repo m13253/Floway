@@ -1,5 +1,6 @@
 import type { MessagesStreamEventData } from "../../../../../lib/messages-types.ts";
-import type { StreamExecuteResult } from "../../../shared/errors/result.ts";
+import type { SourceInterceptor } from "../../run-interceptors.ts";
+import type { MessagesSourceContext } from "./types.ts";
 
 const isContextWindowError = (text: string): boolean =>
   text.includes("Request body is too large for model context window") ||
@@ -12,16 +13,18 @@ const isContextWindowError = (text: string): boolean =>
  * particular uses that shape to trigger compaction instead of surfacing a raw
  * upstream error.
  *
- * This workaround is source-owned on `messages/respond.ts`, not target-owned,
- * because the same Messages client contract must hold whether `/v1/messages`
- * was served natively or translated via `/responses` or `/chat/completions`.
+ * This workaround is source-owned because the same Messages client contract
+ * must hold whether `/v1/messages` was served natively or translated via
+ * `/responses` or `/chat/completions`.
  *
  * References:
  * - https://docs.claude.com/en/docs/claude-code/common-workflows#prompt-too-long
  */
-export const rewriteContextWindowError = (
-  result: StreamExecuteResult<MessagesStreamEventData>,
-): StreamExecuteResult<MessagesStreamEventData> => {
+export const rewriteContextWindowError: SourceInterceptor<
+  MessagesSourceContext,
+  MessagesStreamEventData
+> = async (_ctx, run) => {
+  const result = await run();
   if (result.type !== "upstream-error") return result;
 
   const body = new TextDecoder().decode(result.body);

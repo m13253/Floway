@@ -1,4 +1,6 @@
-import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
+import type { MessagesStreamEventData } from "../../../../../lib/messages-types.ts";
+import type { SourceInterceptor } from "../../run-interceptors.ts";
+import type { MessagesSourceContext } from "./types.ts";
 
 /**
  * Claude Code's prompt-caching-scope beta adds `cache_control.scope`, but
@@ -11,9 +13,7 @@ import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
  * - https://github.com/caozhiyuan/copilot-api/issues/144
  * - https://github.com/caozhiyuan/copilot-api/commit/ce8224c55933f811abe5bf9ba42f9336a7852997
  */
-const stripBlockCacheControlScope = (
-  block: Record<string, unknown>,
-): void => {
+const stripBlockScope = (block: Record<string, unknown>): void => {
   const cacheControl = block.cache_control;
   if (!cacheControl || typeof cacheControl !== "object") return;
 
@@ -21,14 +21,17 @@ const stripBlockCacheControlScope = (
   block.cache_control = Object.keys(rest).length > 0 ? rest : undefined;
 };
 
-export const stripMessagesCacheControlScope = (
-  payload: MessagesPayload,
-): void => {
+export const stripCacheControlScope: SourceInterceptor<
+  MessagesSourceContext,
+  MessagesStreamEventData
+> = (ctx, run) => {
+  const { payload } = ctx;
+
   if (Array.isArray(payload.system)) {
     for (
       const block of payload.system as unknown as Record<string, unknown>[]
     ) {
-      stripBlockCacheControlScope(block);
+      stripBlockScope(block);
     }
   }
 
@@ -38,7 +41,9 @@ export const stripMessagesCacheControlScope = (
     for (
       const block of message.content as unknown as Record<string, unknown>[]
     ) {
-      stripBlockCacheControlScope(block);
+      stripBlockScope(block);
     }
   }
+
+  return run();
 };

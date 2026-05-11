@@ -8,8 +8,6 @@ import {
   collectMessagesProtocolEventsToResponse,
 } from "./events/to-response.ts";
 import { messagesProtocolEventsToSSEFrames } from "./events/to-sse.ts";
-import { messagesSourceInterceptors } from "./interceptors/index.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
@@ -58,14 +56,9 @@ const isMessagesCompletionFrame = (
 
 export const respondMessages = async (
   c: Context,
-  initialResult: StreamExecuteResult<MessagesStreamEventData>,
+  result: StreamExecuteResult<MessagesStreamEventData>,
   wantsStream: boolean,
 ): Promise<Response> => {
-  const result = await runSourceInterceptors(
-    initialResult,
-    messagesSourceInterceptors,
-  );
-
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
       performance: result.performance,

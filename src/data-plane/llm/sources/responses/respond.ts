@@ -8,12 +8,10 @@ import {
 } from "./events/to-response.ts";
 import { responsesProtocolEventsToSSEFrames } from "./events/to-sse.ts";
 import type { SourceResponseStreamEvent } from "./events/protocol.ts";
-import { responsesSourceInterceptors } from "./interceptors/index.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
 import {
   type PerformanceFailureCapture,
   withUsageResponseMetadata,
@@ -70,14 +68,9 @@ const isResponsesCompletionFrame = (
 
 export const respondResponses = async (
   c: Context,
-  initialResult: StreamExecuteResult<SourceResponseStreamEvent>,
+  result: StreamExecuteResult<SourceResponseStreamEvent>,
   wantsStream: boolean,
 ): Promise<Response> => {
-  const result = await runSourceInterceptors(
-    initialResult,
-    responsesSourceInterceptors,
-  );
-
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
       performance: result.performance,

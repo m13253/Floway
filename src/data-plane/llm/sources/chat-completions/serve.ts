@@ -3,7 +3,11 @@ import type {
   ChatCompletionChunk,
   ChatCompletionsPayload,
 } from "../../../../lib/chat-completions-types.ts";
-import { normalizeChatRequest } from "./normalize/request.ts";
+import {
+  type ChatCompletionsSourceContext,
+  chatCompletionsSourceInterceptors,
+} from "./interceptors/index.ts";
+import { runSourceInterceptors } from "../run-interceptors.ts";
 import { planChatRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import {
@@ -54,18 +58,17 @@ export const serveChatCompletions = async (
   c: Context,
 ): Promise<Response> => {
   let lastPerformance: PerformanceTelemetryContext | undefined;
+  // Target interceptors may force upstream usage for gateway accounting, but
+  // Chat SSE exposes usage only when the caller requested `include_usage`.
+  let includeUsageChunk = false;
   try {
     const payload = await c.req.json<ChatCompletionsPayload>();
-    normalizeChatRequest(payload);
-    // Target interceptors may force upstream usage for gateway accounting, but
-    // Chat SSE exposes usage only when the caller requested `include_usage`.
-    const includeUsageChunk = payload.stream_options?.include_usage === true;
+    includeUsageChunk = payload.stream_options?.include_usage === true;
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const wantsStream = payload.stream === true;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
-    const intent = chatModelResolutionIntent(payload);
-    const modelId = await resolveModelForRequest(payload.model, intent);
+    const ctx: ChatCompletionsSourceContext = { payload, apiKeyId };
     const performanceFor = (
       model: string,
       targetApi: PerformanceTelemetryContext["targetApi"],
@@ -80,87 +83,99 @@ export const serveChatCompletions = async (
       };
       return lastPerformance;
     };
-    performanceFor(modelId, "chat-completions");
 
-    const result = await withAccountFallback(
-      modelId,
-      async ({ account }) => {
-        const attemptPayload = structuredClone(payload);
-        attemptPayload.model = modelId;
-        const capabilities = await getModelCapabilities(
-          modelId,
-          account.token,
-          account.accountType,
-        );
-        const plan = planChatRequest(attemptPayload, capabilities);
+    const result = await runSourceInterceptors(
+      ctx,
+      chatCompletionsSourceInterceptors,
+      async () => {
+        const intent = chatModelResolutionIntent(ctx.payload);
+        const modelId = await resolveModelForRequest(ctx.payload.model, intent);
+        performanceFor(modelId, "chat-completions");
 
-        if (plan.target === "messages") {
-          performanceFor(attemptPayload.model, "messages");
-          const targetPayload = await buildMessagesTargetRequest(
-            attemptPayload,
+        return await withAccountFallback(modelId, async ({ account }) => {
+          const attemptPayload = structuredClone(ctx.payload);
+          attemptPayload.model = modelId;
+          const capabilities = await getModelCapabilities(
+            modelId,
+            account.token,
+            account.accountType,
           );
-          const performance = performanceFor(targetPayload.model, "messages");
-          const result = await emitToMessages({
-            sourceApi: "chat-completions",
-            payload: targetPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-          });
+          const plan = planChatRequest(attemptPayload, capabilities);
 
+          if (plan.target === "messages") {
+            performanceFor(attemptPayload.model, "messages");
+            const targetPayload = await buildMessagesTargetRequest(
+              attemptPayload,
+            );
+            const performance = performanceFor(
+              targetPayload.model,
+              "messages",
+            );
+            const result = await emitToMessages({
+              sourceApi: "chat-completions",
+              payload: targetPayload,
+              githubToken: account.token,
+              accountType: account.accountType,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+            });
+
+            return withResultMetadata(
+              withTranslatedEvents(result, translateMessagesToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          }
+
+          if (plan.target === "responses") {
+            performanceFor(attemptPayload.model, "responses");
+            const targetPayload = buildResponsesTargetRequest(attemptPayload);
+            const performance = performanceFor(
+              targetPayload.model,
+              "responses",
+            );
+            const result = await emitToResponses({
+              sourceApi: "chat-completions",
+              payload: targetPayload,
+              githubToken: account.token,
+              accountType: account.accountType,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+            });
+
+            return withResultMetadata(
+              withTranslatedEvents(result, translateResponsesToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          }
+
+          const performance = performanceFor(
+            attemptPayload.model,
+            "chat-completions",
+          );
           return withResultMetadata(
-            withTranslatedEvents(result, translateMessagesToSourceEvents),
-            targetPayload.model,
+            await emitToChatCompletions({
+              sourceApi: "chat-completions",
+              payload: attemptPayload,
+              githubToken: account.token,
+              accountType: account.accountType,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+            }),
+            attemptPayload.model,
             performance,
           );
-        }
-
-        if (plan.target === "responses") {
-          performanceFor(attemptPayload.model, "responses");
-          const targetPayload = buildResponsesTargetRequest(attemptPayload);
-          const performance = performanceFor(targetPayload.model, "responses");
-          const result = await emitToResponses({
-            sourceApi: "chat-completions",
-            payload: targetPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-          });
-
-          return withResultMetadata(
-            withTranslatedEvents(result, translateResponsesToSourceEvents),
-            targetPayload.model,
-            performance,
-          );
-        }
-
-        const performance = performanceFor(
-          attemptPayload.model,
-          "chat-completions",
-        );
-        return withResultMetadata(
-          await emitToChatCompletions({
-            sourceApi: "chat-completions",
-            payload: attemptPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-          }),
-          attemptPayload.model,
-          performance,
-        );
+        });
       },
     );
 
@@ -179,7 +194,7 @@ export const serveChatCompletions = async (
         lastPerformance,
       ),
       false,
-      false,
+      includeUsageChunk,
     );
   }
 };

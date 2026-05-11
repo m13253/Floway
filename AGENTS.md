@@ -123,11 +123,13 @@ Each source entry follows the same pipeline:
 
 ```text
 serve
-  -> normalize
-  -> plan
-  -> build
-  -> emit
-  -> translate events
+  -> source interceptors wrap:
+       resolve model
+         -> account fallback (per attempt:
+              plan
+                -> build target request
+                -> emit (target interceptors wrap upstream attempt)
+                -> translate events to source shape)
   -> respond
 ```
 
@@ -149,7 +151,7 @@ Boundary-owned workarounds are interceptor-driven:
 
 - target emit interceptors live under
   `src/data-plane/llm/targets/<target>/interceptors/`
-- source respond/result interceptors live under
+- source pipeline interceptors live under
   `src/data-plane/llm/sources/<source>/interceptors/`
 - each such directory owns one `index.ts` registration array; change that array
   when adding, removing, or reordering interceptors
@@ -157,12 +159,18 @@ Boundary-owned workarounds are interceptor-driven:
 Keep the main `emit.ts` and `respond.ts` flows stable. Workaround churn should
 mostly stay inside interceptor files and their registration arrays.
 
-Target and source interceptors are intentionally different:
+Source and target interceptors share the same `(ctx, run) => result` shape but
+wrap different scopes:
 
-- target interceptors wrap the upstream attempt and may patch request, inspect
-  errors, retry, and patch event results
-- source interceptors transform already-produced source-shaped results before
-  final HTTP response shaping
+- source interceptors wrap the entire source pipeline (model resolution +
+  account fallback + emit + translate). They may mutate `ctx.payload` before
+  `run()`, inspect or transform the awaited source-shaped result, carry state
+  across both halves, or retry the whole pipeline. They run once per request,
+  not per fallback attempt — so a source interceptor cannot see per-account
+  state.
+- target interceptors wrap a single upstream attempt inside `emit`. They may
+  patch the per-attempt request, inspect upstream errors, retry that attempt,
+  and patch event results. Per-account state belongs here.
 
 ### Pairwise Translation Rule
 
@@ -282,25 +290,23 @@ Current placement:
 - `src/data-plane/llm/shared/models/resolve-model.ts`
   - resolve Claude compatibility aliases and variants before account fallback
   - keep account fallback model-fixed after one final upstream ID is selected
-- `src/data-plane/llm/sources/messages/normalize/`
+- `src/data-plane/llm/sources/messages/interceptors/`
   - strip `x-anthropic-billing-header` prompt attribution
   - strip `cache_control.scope`
   - remove unsupported `web_search` tools
-- `src/data-plane/llm/sources/messages/interceptors/rewrite-context-window-error.ts`
   - rewrite upstream context-window errors into the Anthropic compact
     `invalid_request_error` envelope expected by Messages clients
-- `src/data-plane/llm/sources/responses/normalize/`
+- `src/data-plane/llm/sources/responses/interceptors/`
   - rewrite `apply_patch` from `custom` to `function`
   - remove unsupported `image_generation` tools and forced tool choices
-- `src/data-plane/llm/sources/gemini/normalize/`
+- `src/data-plane/llm/sources/gemini/interceptors/`
   - strip unsupported Gemini file/code part fields
   - strip unsupported Gemini tool capabilities, including `googleSearch`, until
     it can be routed through the web-search shim
   - strip `safetySettings`
-- `src/data-plane/llm/sources/gemini/serve.ts`
-  - hide `thought: true` summary parts by default
-  - only expose Gemini thought summaries when
-    `generationConfig.thinkingConfig.includeThoughts === true`
+  - hide `thought: true` summary parts by default; only expose Gemini thought
+    summaries when `generationConfig.thinkingConfig.includeThoughts === true`
+- `src/data-plane/llm/translate/gemini-via-chat-completions/translate-to-source-events.ts`
   - preserve `thoughtSignature` on the next visible text or function-call action
     part so clients can echo it next turn
 - `src/data-plane/llm/sources/gemini/respond.ts`

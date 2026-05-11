@@ -7,12 +7,10 @@ import type { ChatCompletionChunk } from "../../../../lib/chat-completions-types
 import { chatCompletionsErrorPayloadMessage } from "../../../../lib/chat-completions-errors.ts";
 import { collectChatProtocolEventsToCompletion } from "./events/to-response.ts";
 import { chatProtocolEventsToSSEFrames } from "./events/to-sse.ts";
-import { chatCompletionsSourceInterceptors } from "./interceptors/index.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { proxySSE } from "../../shared/stream/proxy-sse.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
 import {
   type HiddenChatStreamUsageCapture,
   type PerformanceFailureCapture,
@@ -57,15 +55,10 @@ const isChatCompletionCompletionFrame = (
 
 export const respondChatCompletions = async (
   c: Context,
-  initialResult: StreamExecuteResult<ChatCompletionChunk>,
+  result: StreamExecuteResult<ChatCompletionChunk>,
   wantsStream: boolean,
   includeUsageChunk: boolean,
 ): Promise<Response> => {
-  const result = await runSourceInterceptors(
-    initialResult,
-    chatCompletionsSourceInterceptors,
-  );
-
   if (result.type === "upstream-error") {
     return withUsageResponseMetadata(c, upstreamErrorToResponse(result), {
       performance: result.performance,

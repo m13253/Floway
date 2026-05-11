@@ -1,4 +1,7 @@
 import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
+import type { SourceInterceptor } from "../../run-interceptors.ts";
+import type { SourceResponseStreamEvent } from "../events/protocol.ts";
+import type { ResponsesSourceContext } from "./types.ts";
 
 /**
  * Public Responses supports both function tools and custom tools, but
@@ -6,14 +9,14 @@ import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
  * function tool with a single `input` string parameter. Codex expects that
  * parameter name, and other Copilot gateways normalize to the same shape.
  *
- * We do this in source normalize so both native `/responses` and translated
+ * We do this in source so both native `/responses` and translated
  * `/chat/completions -> /responses` traffic share one schema before routing.
  *
  * References:
  * - https://github.com/caozhiyuan/copilot-api/commit/afb7a5c77bdd8a04e57f1c8d210a8659cd28b1f8
  * - https://platform.openai.com/docs/guides/function-calling
  */
-export const fixApplyPatchTools = (payload: ResponsesPayload): void => {
+const fixPayload = (payload: ResponsesPayload): void => {
   if (!Array.isArray(payload.tools)) return;
 
   payload.tools = payload.tools.map((tool) =>
@@ -35,4 +38,12 @@ export const fixApplyPatchTools = (payload: ResponsesPayload): void => {
       strict: false,
     }
   ) as ResponsesPayload["tools"];
+};
+
+export const fixApplyPatchTools: SourceInterceptor<
+  ResponsesSourceContext,
+  SourceResponseStreamEvent
+> = (ctx, run) => {
+  fixPayload(ctx.payload);
+  return run();
 };

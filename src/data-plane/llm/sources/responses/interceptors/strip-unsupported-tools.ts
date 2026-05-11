@@ -1,11 +1,14 @@
 import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
+import type { SourceInterceptor } from "../../run-interceptors.ts";
+import type { SourceResponseStreamEvent } from "../events/protocol.ts";
+import type { ResponsesSourceContext } from "./types.ts";
 
 const UNSUPPORTED_RESPONSES_TOOL_TYPES = new Set(["image_generation"]);
 
-const isUnsupportedResponsesToolType = (type: unknown): type is string =>
+const isUnsupportedToolType = (type: unknown): type is string =>
   typeof type === "string" && UNSUPPORTED_RESPONSES_TOOL_TYPES.has(type);
 
-const stripUnsupportedResponsesToolChoice = (
+const stripToolChoice = (
   payload: ResponsesPayload,
   removedUnsupportedTool: boolean,
 ): void => {
@@ -13,7 +16,7 @@ const stripUnsupportedResponsesToolChoice = (
 
   if (
     choice && typeof choice === "object" &&
-    isUnsupportedResponsesToolType((choice as { type?: unknown }).type)
+    isUnsupportedToolType((choice as { type?: unknown }).type)
   ) {
     delete payload.tool_choice;
     return;
@@ -30,14 +33,14 @@ const stripUnsupportedResponsesToolChoice = (
 /**
  * Public Responses exposes hosted `image_generation`, but Copilot's Responses
  * upstream does not support that server-side tool or its forced `tool_choice`.
- * Strip both at source normalize so native `/responses` and translated
- * fallback paths share the same cleaned request before planning.
+ * Strip both at source so native `/responses` and translated fallback paths
+ * share the same cleaned request before planning.
  *
  * References:
  * - https://platform.openai.com/docs/guides/tools-image-generation
  * - https://github.com/caozhiyuan/copilot-api/blob/1d21b4aca31f89ad49a0c3bf1a71e3561d445855/src/routes/responses/handler.ts#L167-L184
  */
-export const stripUnsupportedResponsesTools = (
+export const stripUnsupportedToolsFromPayload = (
   payload: ResponsesPayload,
 ): void => {
   let removedUnsupportedTool = false;
@@ -45,7 +48,7 @@ export const stripUnsupportedResponsesTools = (
   if (Array.isArray(payload.tools)) {
     const tools = payload.tools.filter((tool) => {
       const type = (tool as unknown as { type?: unknown }).type;
-      const unsupported = isUnsupportedResponsesToolType(type);
+      const unsupported = isUnsupportedToolType(type);
       removedUnsupportedTool ||= unsupported;
       return !unsupported;
     });
@@ -57,5 +60,13 @@ export const stripUnsupportedResponsesTools = (
     }
   }
 
-  stripUnsupportedResponsesToolChoice(payload, removedUnsupportedTool);
+  stripToolChoice(payload, removedUnsupportedTool);
+};
+
+export const stripUnsupportedTools: SourceInterceptor<
+  ResponsesSourceContext,
+  SourceResponseStreamEvent
+> = (ctx, run) => {
+  stripUnsupportedToolsFromPayload(ctx.payload);
+  return run();
 };

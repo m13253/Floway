@@ -25,8 +25,6 @@ import {
 } from "./events/protocol.ts";
 import { collectGeminiProtocolEventsToResponse } from "./events/to-response.ts";
 import { geminiProtocolEventsToSSEFrames } from "./events/to-sse.ts";
-import { geminiSourceInterceptors } from "./interceptors/index.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
 
 const geminiStatusForHttpStatus = (status: number): string => {
   switch (status) {
@@ -193,14 +191,9 @@ const isGeminiCompletionFrame = (
 
 export const respondGemini = async (
   c: Context,
-  initialResult: StreamExecuteResult<GeminiStreamEvent>,
+  result: StreamExecuteResult<GeminiStreamEvent>,
   wantsStream: boolean,
 ): Promise<Response> => {
-  const result = await runSourceInterceptors(
-    initialResult,
-    geminiSourceInterceptors,
-  );
-
   if (result.type === "upstream-error") {
     const googleRpcResponse = upstreamGoogleRpcErrorResponse(result);
     return withUsageResponseMetadata(

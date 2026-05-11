@@ -1,9 +1,10 @@
 import type { Context } from "hono";
-import type {
-  MessagesPayload,
-  MessagesStreamEventData,
-} from "../../../../lib/messages-types.ts";
-import { normalizeMessagesRequest } from "./normalize/request.ts";
+import type { MessagesPayload } from "../../../../lib/messages-types.ts";
+import {
+  type MessagesSourceContext,
+  messagesSourceInterceptors,
+} from "./interceptors/index.ts";
+import { runSourceInterceptors } from "../run-interceptors.ts";
 import { planMessagesRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import {
@@ -30,6 +31,7 @@ import {
   runtimeLocationFromRequest,
 } from "../../../../lib/performance-telemetry.ts";
 import { backgroundSchedulerFromContext } from "../../../../lib/background.ts";
+import type { MessagesStreamEventData } from "../../../../lib/messages-types.ts";
 
 const withTranslatedEvents = <T>(
   result: StreamExecuteResult<T>,
@@ -56,14 +58,12 @@ export const serveMessages = async (
   let lastPerformance: PerformanceTelemetryContext | undefined;
   try {
     const payload = await c.req.json<MessagesPayload>();
-    normalizeMessagesRequest(payload);
     const apiKeyId = c.get("apiKeyId") as string | undefined;
     const wantsStream = payload.stream === true;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
     const rawBeta = c.req.header("anthropic-beta");
-    const intent = messagesModelResolutionIntent(payload, rawBeta);
-    const modelId = await resolveModelForRequest(payload.model, intent);
+    const ctx: MessagesSourceContext = { payload, apiKeyId };
     const performanceFor = (
       model: string,
       targetApi: PerformanceTelemetryContext["targetApi"],
@@ -78,26 +78,89 @@ export const serveMessages = async (
       };
       return lastPerformance;
     };
-    performanceFor(modelId, "messages");
 
-    const result = await withAccountFallback(
-      modelId,
-      async ({ account }) => {
-        const attemptPayload = structuredClone(payload);
-        attemptPayload.model = modelId;
-        const capabilities = await getModelCapabilities(
+    const result = await runSourceInterceptors(
+      ctx,
+      messagesSourceInterceptors,
+      async () => {
+        const intent = messagesModelResolutionIntent(ctx.payload, rawBeta);
+        const modelId = await resolveModelForRequest(ctx.payload.model, intent);
+        performanceFor(modelId, "messages");
+
+        return await withAccountFallback(
           modelId,
-          account.token,
-          account.accountType,
-        );
-        const plan = planMessagesRequest(attemptPayload, capabilities, rawBeta);
+          async ({ account }) => {
+            const attemptPayload = structuredClone(ctx.payload);
+            attemptPayload.model = modelId;
+            const capabilities = await getModelCapabilities(
+              modelId,
+              account.token,
+              account.accountType,
+            );
+            const plan = planMessagesRequest(
+              attemptPayload,
+              capabilities,
+              rawBeta,
+            );
 
-        if (plan.target === "messages") {
-          const performance = performanceFor(attemptPayload.model, "messages");
-          return withResultMetadata(
-            await emitToMessages({
+            if (plan.target === "messages") {
+              const performance = performanceFor(
+                attemptPayload.model,
+                "messages",
+              );
+              return withResultMetadata(
+                await emitToMessages({
+                  sourceApi: "messages",
+                  payload: attemptPayload,
+                  githubToken: account.token,
+                  accountType: account.accountType,
+                  apiKeyId,
+                  clientStream: wantsStream,
+                  runtimeLocation,
+                  scheduleBackground,
+                  fetchOptions: plan.fetchOptions,
+                  rawBeta: plan.rawBeta,
+                }),
+                attemptPayload.model,
+                performance,
+              );
+            }
+
+            if (plan.target === "responses") {
+              performanceFor(attemptPayload.model, "responses");
+              const targetPayload = buildResponsesTargetRequest(attemptPayload);
+              const performance = performanceFor(
+                targetPayload.model,
+                "responses",
+              );
+              const result = await emitToResponses({
+                sourceApi: "messages",
+                payload: targetPayload,
+                githubToken: account.token,
+                accountType: account.accountType,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+              });
+
+              return withResultMetadata(
+                withTranslatedEvents(result, translateResponsesToSourceEvents),
+                targetPayload.model,
+                performance,
+              );
+            }
+
+            performanceFor(attemptPayload.model, "chat-completions");
+            const targetPayload = buildChatTargetRequest(attemptPayload);
+            const performance = performanceFor(
+              targetPayload.model,
+              "chat-completions",
+            );
+            const result = await emitToChatCompletions({
               sourceApi: "messages",
-              payload: attemptPayload,
+              payload: targetPayload,
               githubToken: account.token,
               accountType: account.accountType,
               apiKeyId,
@@ -105,67 +168,19 @@ export const serveMessages = async (
               runtimeLocation,
               scheduleBackground,
               fetchOptions: plan.fetchOptions,
-              rawBeta: plan.rawBeta,
-            }),
-            attemptPayload.model,
-            performance,
-          );
-        }
+            });
 
-        if (plan.target === "responses") {
-          performanceFor(attemptPayload.model, "responses");
-          const targetPayload = buildResponsesTargetRequest(attemptPayload);
-          const performance = performanceFor(targetPayload.model, "responses");
-          const result = await emitToResponses({
-            sourceApi: "messages",
-            payload: targetPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-          });
-
-          return withResultMetadata(
-            withTranslatedEvents(result, translateResponsesToSourceEvents),
-            targetPayload.model,
-            performance,
-          );
-        }
-
-        performanceFor(attemptPayload.model, "chat-completions");
-        const targetPayload = buildChatTargetRequest(attemptPayload);
-        const performance = performanceFor(
-          targetPayload.model,
-          "chat-completions",
-        );
-        const result = await emitToChatCompletions({
-          sourceApi: "messages",
-          payload: targetPayload,
-          githubToken: account.token,
-          accountType: account.accountType,
-          apiKeyId,
-          clientStream: wantsStream,
-          runtimeLocation,
-          scheduleBackground,
-          fetchOptions: plan.fetchOptions,
-        });
-
-        return withResultMetadata(
-          withTranslatedEvents(result, translateChatToSourceEvents),
-          targetPayload.model,
-          performance,
+            return withResultMetadata(
+              withTranslatedEvents(result, translateChatToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          },
         );
       },
     );
 
-    return await respondMessages(
-      c,
-      result,
-      wantsStream,
-    );
+    return await respondMessages(c, result, wantsStream);
   } catch (error) {
     return await respondMessages(
       c,
