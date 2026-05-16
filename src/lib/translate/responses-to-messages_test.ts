@@ -1,4 +1,5 @@
 import { assertEquals, assertFalse } from "@std/assert";
+import { MESSAGES_FALLBACK_MAX_TOKENS } from "../messages-types.ts";
 import {
   translateResponsesToMessages,
   translateResponsesToMessagesResponse,
@@ -51,7 +52,7 @@ Deno.test("translateResponsesToMessages maps reasoning.effort directly to output
   assertFalse("thinking" in result);
 });
 
-Deno.test("translateResponsesToMessages leaves max_tokens undefined when neither source nor fallbackMaxOutputTokens supplies one", async () => {
+Deno.test("translateResponsesToMessages defaults max_tokens to MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one", async () => {
   const result = await translateResponsesToMessages({
     model: "claude-test",
     input: [{ type: "message", role: "user", content: "hi" }],
@@ -67,10 +68,10 @@ Deno.test("translateResponsesToMessages leaves max_tokens undefined when neither
     parallel_tool_calls: true,
   });
 
-  assertEquals(result.max_tokens, undefined);
+  assertEquals(result.max_tokens, MESSAGES_FALLBACK_MAX_TOKENS);
 });
 
-Deno.test("translateResponsesToMessages uses fallbackMaxOutputTokens when the source omitted max_output_tokens", async () => {
+Deno.test("translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens", async () => {
   const result = await translateResponsesToMessages({
     model: "claude-test",
     input: [{ type: "message", role: "user", content: "hi" }],

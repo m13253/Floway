@@ -1,4 +1,4 @@
-import type { MessagesTargetPayload } from "../../../../lib/messages-types.ts";
+import type { MessagesPayload } from "../../../../lib/messages-types.ts";
 import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
 import { translateResponsesToMessages } from "../../../../lib/translate/responses-to-messages.ts";
 import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
@@ -6,7 +6,7 @@ import type { ModelCapabilities } from "../../shared/models/get-model-capabiliti
 export const buildTargetRequest = (
   payload: ResponsesPayload,
   capabilities: ModelCapabilities,
-): Promise<MessagesTargetPayload> =>
+): Promise<MessagesPayload> =>
   translateResponsesToMessages(payload, {
     fallbackMaxOutputTokens: capabilities.maxOutputTokens,
   });

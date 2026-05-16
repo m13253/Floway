@@ -1,11 +1,11 @@
 import {
+  MESSAGES_FALLBACK_MAX_TOKENS,
   MESSAGES_THINKING_PLACEHOLDER,
   type MessagesAssistantContentBlock,
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
   type MessagesResponse,
-  type MessagesTargetPayload,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -378,7 +378,7 @@ export const translateResponsesToMessagesResponse = (
 export const translateResponsesToMessages = async (
   payload: ResponsesPayload,
   options: TranslateResponsesToMessagesOptions = {},
-): Promise<MessagesTargetPayload> => {
+): Promise<MessagesPayload> => {
   const { messages, systemParts } = await translateResponsesInput(
     payload.input,
     options.loadRemoteImage ?? fetchRemoteImage,
@@ -388,7 +388,7 @@ export const translateResponsesToMessages = async (
   ): part is string => Boolean(part)).join("\n\n");
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ??
-    options.fallbackMaxOutputTokens;
+    options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
 
   // Responses `metadata` is intentionally omitted on the Messages path instead
   // of being coerced into Anthropic `metadata.user_id`, prompt-cache, or safety
@@ -396,7 +396,7 @@ export const translateResponsesToMessages = async (
   return {
     model: payload.model,
     messages,
-    ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
+    max_tokens: maxTokens,
     ...(system ? { system } : {}),
     ...(payload.temperature != null
       ? { temperature: payload.temperature }

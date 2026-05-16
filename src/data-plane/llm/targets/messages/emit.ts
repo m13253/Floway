@@ -3,9 +3,9 @@ import {
   isCopilotTokenFetchError,
 } from "../../../../lib/copilot.ts";
 import type {
+  MessagesPayload,
   MessagesResponse,
   MessagesStreamEventData,
-  MessagesTargetPayload,
 } from "../../../../lib/messages-types.ts";
 import { readUpstreamError } from "../../shared/errors/upstream-error.ts";
 import {
@@ -25,7 +25,7 @@ import {
 import { messagesStreamFramesToEvents } from "./events/from-stream.ts";
 import { messagesTargetInterceptors } from "./interceptors/index.ts";
 
-export interface EmitToMessagesInput extends EmitInput<MessagesTargetPayload> {
+export interface EmitToMessagesInput extends EmitInput<MessagesPayload> {
   rawBeta?: string;
 }
 

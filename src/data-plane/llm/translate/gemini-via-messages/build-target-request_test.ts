@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import type { GeminiGenerateContentRequest } from "../../../../lib/gemini-types.ts";
+import { MESSAGES_FALLBACK_MAX_TOKENS } from "../../../../lib/messages-types.ts";
 import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import { buildTargetRequest } from "./build-target-request.ts";
 
@@ -34,7 +35,7 @@ Deno.test("buildTargetRequest maps system, default max tokens, and multimodal us
     {
       model: "claude-test",
       stream: true,
-      max_tokens: 4096,
+      max_tokens: MESSAGES_FALLBACK_MAX_TOKENS,
       system: "Be precise.\n\nUse markdown.",
       messages: [{
         role: "user",
@@ -246,7 +247,7 @@ Deno.test("buildTargetRequest maps tool declarations and tool choice modes", () 
       model: "claude-test",
       stream: false,
       messages: [],
-      max_tokens: 4096,
+      max_tokens: MESSAGES_FALLBACK_MAX_TOKENS,
       tools: [{
         type: "custom",
         name: "lookup",
@@ -321,7 +322,7 @@ Deno.test("buildTargetRequest filters tools to multiple allowed names for ANY mo
       model: "claude-test",
       stream: false,
       messages: [],
-      max_tokens: 4096,
+      max_tokens: MESSAGES_FALLBACK_MAX_TOKENS,
       tools: [{
         type: "custom",
         name: "lookup",

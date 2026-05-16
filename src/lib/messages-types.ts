@@ -1,5 +1,25 @@
 export const MESSAGES_THINKING_PLACEHOLDER = "Thinking...";
 
+/**
+ * Messages requires `max_tokens`, but the Chat Completions, Responses, and
+ * Gemini sources may omit their output-token cap. When we translate one of
+ * those sources to a Messages target, the data-plane prefers the model's
+ * advertised `/models` output cap (`capabilities.maxOutputTokens`); this
+ * constant is the last-resort gateway policy default when both the source
+ * payload and the model capability are silent.
+ *
+ * There is no single ecosystem standard catch-all value here: `new-api`
+ * defaults Claude to `8192`, while `one-api` and LiteLLM use `4096`. We keep
+ * `8192` to match the gateway's prior behavior. Native Messages requests are
+ * untouched: their `max_tokens` is whatever the client sent.
+ *
+ * References:
+ * - https://github.com/BerriAI/litellm/blob/e9e86ed956ba53d5192e10b75634fe0246e836a7/litellm/llms/anthropic/chat/transformation.py
+ * - https://github.com/QuantumNous/new-api/blob/65b16547329625f619cf797ae1eb9b748525056c/setting/model_setting/claude.go
+ * - https://github.com/songquanpeng/one-api/blob/8df4a2670b98266bd287c698243fff327d9748cf/relay/adaptor/anthropic/main.go
+ */
+export const MESSAGES_FALLBACK_MAX_TOKENS = 8192;
+
 export type MessagesThinkingDisplay = "omitted" | "summarized" | "full";
 
 export interface MessagesPayload {
@@ -26,12 +46,6 @@ export interface MessagesPayload {
   output_config?: { effort?: string };
   service_tier?: "auto" | "standard_only";
 }
-
-export type MessagesTargetPayload =
-  & Omit<MessagesPayload, "max_tokens">
-  & {
-    max_tokens?: number;
-  };
 
 export interface MessagesSearchResultLocationCitation {
   type: "search_result_location";

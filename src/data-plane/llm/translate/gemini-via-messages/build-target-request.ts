@@ -6,13 +6,14 @@ import type {
   GeminiPart,
   GeminiThinkingConfig,
 } from "../../../../lib/gemini-types.ts";
-import type {
-  MessagesAssistantContentBlock,
-  MessagesImageBlock,
-  MessagesPayload,
-  MessagesTool,
-  MessagesToolResultBlock,
-  MessagesUserContentBlock,
+import {
+  MESSAGES_FALLBACK_MAX_TOKENS,
+  type MessagesAssistantContentBlock,
+  type MessagesImageBlock,
+  type MessagesPayload,
+  type MessagesTool,
+  type MessagesToolResultBlock,
+  type MessagesUserContentBlock,
 } from "../../../../lib/messages-types.ts";
 import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 
@@ -351,8 +352,10 @@ export const buildTargetRequest = (
 ): MessagesPayload => {
   // Gemini can omit maxOutputTokens, but MessagesPayload requires max_tokens.
   // Prefer the model's advertised `/models` cap when one is known; otherwise
-  // fall back to a fixed policy default consistent with prior behavior.
-  const fallbackMaxOutputTokens = capabilities.maxOutputTokens ?? 4096;
+  // fall back to the gateway policy default shared with the other *-to-Messages
+  // translators.
+  const fallbackMaxOutputTokens = capabilities.maxOutputTokens ??
+    MESSAGES_FALLBACK_MAX_TOKENS;
   const request: MessagesPayload = {
     model,
     stream: wantsStream,

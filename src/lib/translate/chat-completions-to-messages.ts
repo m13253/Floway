@@ -6,12 +6,12 @@ import type {
   Tool,
 } from "../chat-completions-types.ts";
 import {
+  MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
   type MessagesMessage,
   type MessagesPayload,
   type MessagesRedactedThinkingBlock,
   type MessagesResponse,
-  type MessagesTargetPayload,
   type MessagesTextBlock,
   type MessagesThinkingBlock,
   type MessagesToolResultBlock,
@@ -230,7 +230,7 @@ const translateChatCompletionsToolChoice = (
 export const translateChatCompletionsToMessages = async (
   payload: ChatCompletionsPayload,
   options: TranslateChatCompletionsToMessagesOptions = {},
-): Promise<MessagesTargetPayload> => {
+): Promise<MessagesPayload> => {
   const systemParts: string[] = [];
   const nonSystemMessages: Message[] = [];
 
@@ -259,18 +259,15 @@ export const translateChatCompletionsToMessages = async (
     options.loadRemoteImage ?? fetchRemoteImage,
   );
 
-  const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens;
+  const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ??
+    MESSAGES_FALLBACK_MAX_TOKENS;
 
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
     model: payload.model,
     messages,
-    // Messages requires `max_tokens`, but Chat Completions can omit it. Data-
-    // plane callers forward the model's advertised cap via
-    // `fallbackMaxOutputTokens`; the Messages target keeps a last-resort fill
-    // for everything else.
-    ...(maxTokens != null ? { max_tokens: maxTokens } : {}),
+    max_tokens: maxTokens,
     ...(systemParts.length > 0 ? { system: systemParts.join("\n\n") } : {}),
     ...(payload.temperature != null
       ? { temperature: payload.temperature }

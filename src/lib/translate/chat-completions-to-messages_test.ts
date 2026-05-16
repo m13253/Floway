@@ -4,16 +4,17 @@ import {
   translateChatCompletionsToMessages,
 } from "./chat-completions-to-messages.ts";
 import type { ChatCompletionsPayload } from "../chat-completions-types.ts";
-import type {
-  MessagesAssistantContentBlock,
-  MessagesClientTool,
-  MessagesRedactedThinkingBlock,
-  MessagesTargetPayload,
-  MessagesTextBlock,
-  MessagesThinkingBlock,
-  MessagesToolResultBlock,
-  MessagesToolUseBlock,
-  MessagesUserContentBlock,
+import {
+  MESSAGES_FALLBACK_MAX_TOKENS,
+  type MessagesAssistantContentBlock,
+  type MessagesClientTool,
+  type MessagesPayload,
+  type MessagesRedactedThinkingBlock,
+  type MessagesTextBlock,
+  type MessagesThinkingBlock,
+  type MessagesToolResultBlock,
+  type MessagesToolUseBlock,
+  type MessagesUserContentBlock,
 } from "../messages-types.ts";
 
 // ── Helpers ──
@@ -27,7 +28,7 @@ function mkPayload(
 }
 
 function assistantBlocks(
-  result: MessagesTargetPayload,
+  result: MessagesPayload,
   msgIndex = 0,
 ): MessagesAssistantContentBlock[] {
   const msg = result.messages[msgIndex];
@@ -36,7 +37,7 @@ function assistantBlocks(
 }
 
 function userBlocks(
-  result: MessagesTargetPayload,
+  result: MessagesPayload,
   msgIndex = 0,
 ): MessagesUserContentBlock[] {
   const msg = result.messages[msgIndex];
@@ -604,14 +605,14 @@ Deno.test("content with only non-parseable image → empty text fallback", async
 
 // ── Field mapping ──
 
-Deno.test("max_tokens is left undefined when neither payload nor fallbackMaxOutputTokens supply one", async () => {
+Deno.test("max_tokens defaults to MESSAGES_FALLBACK_MAX_TOKENS when neither payload nor fallbackMaxOutputTokens supply one", async () => {
   const result = await translateChatCompletionsToMessages(mkPayload({
     messages: [{ role: "user", content: "Hi" }],
   }));
-  assertEquals(result.max_tokens, undefined);
+  assertEquals(result.max_tokens, MESSAGES_FALLBACK_MAX_TOKENS);
 });
 
-Deno.test("max_tokens uses fallbackMaxOutputTokens when the payload omits it", async () => {
+Deno.test("max_tokens uses fallbackMaxOutputTokens over the gateway const when the payload omits it", async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({ messages: [{ role: "user", content: "Hi" }] }),
     { fallbackMaxOutputTokens: 6144 },
