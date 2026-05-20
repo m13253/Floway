@@ -127,7 +127,7 @@ Deno.test("Deno KV performance repo records, queries, and clears telemetry", asy
   }
 });
 
-Deno.test("Deno KV migrates old accounting identity keys before reading", async () => {
+Deno.test("Deno KV migrates legacy telemetry model identity keys before reading", async () => {
   const kv = await Deno.openKv();
   try {
     for (

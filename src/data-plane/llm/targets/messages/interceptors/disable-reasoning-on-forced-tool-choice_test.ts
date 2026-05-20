@@ -1,16 +1,18 @@
 import { assertEquals } from "@std/assert";
-import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
+import type { MessagesPayload } from "../../../../shared/protocol/messages.ts";
 import {
   stubProvider,
   stubUpstreamModel,
-  testAccounting,
+  testTelemetryModelIdentity,
 } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 
 const okEvents = () =>
-  Promise.resolve(eventResult((async function* () {})(), testAccounting));
+  Promise.resolve(
+    eventResult((async function* () {})(), testTelemetryModelIdentity),
+  );
 
 const emitInput = (payload: MessagesPayload): EmitToMessagesInput => ({
   sourceApi: "messages",

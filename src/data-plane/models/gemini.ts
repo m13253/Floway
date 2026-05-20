@@ -1,5 +1,8 @@
 import type { Context } from "hono";
-import { ModelsFetchError, ModelsRequestError } from "./cache.ts";
+import {
+  ModelsFetchError,
+  ModelsRequestError,
+} from "../providers/upstream-model-cache.ts";
 import { endpointsIncludeLlmGeneration } from "../providers/endpoints.ts";
 import { getModels } from "../providers/registry.ts";
 import type { Model } from "../providers/types.ts";

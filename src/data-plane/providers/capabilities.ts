@@ -1,4 +1,4 @@
-import type { ModelEndpoint, UpstreamModel } from "../../../providers/types.ts";
+import type { ModelEndpoint, UpstreamModel } from "./types.ts";
 
 export interface ModelCapabilities {
   maxOutputTokens?: number;

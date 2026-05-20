@@ -3,11 +3,20 @@
 
 import type { Context } from "hono";
 
-import { ModelsFetchError } from "../models/cache.ts";
-import { getModelCapabilities } from "../llm/shared/models/get-model-capabilities.ts";
+import type { BackgroundScheduler } from "../../runtime/background.ts";
+import { backgroundSchedulerFromContext } from "../../runtime/background.ts";
+import { ModelsFetchError } from "../providers/upstream-model-cache.ts";
+import { getModelCapabilities } from "../providers/capabilities.ts";
 import { resolveModelForRequest } from "../providers/registry.ts";
 import { runOnModel, skipProvider } from "../providers/run.ts";
-import { recordUsageForApiKey } from "../llm/sources/accounting.ts";
+import {
+  type PerformanceTelemetryContext,
+  recordPerformanceError,
+  recordPerformanceLatency,
+  recordRequestPerformanceForApiKey,
+  runtimeLocationFromRequest,
+} from "../shared/telemetry/performance.ts";
+import { recordUsageForApiKey } from "../shared/telemetry/usage.ts";
 import type { TokenUsage } from "../../repo/types.ts";
 
 interface EmbeddingsRequestBody {
@@ -88,15 +97,36 @@ const tokenUsageFromEmbeddingsResponse = (
   };
 };
 
+const recordUpstreamPerformance = (
+  scheduler: BackgroundScheduler | undefined,
+  context: PerformanceTelemetryContext | undefined,
+  failed: boolean,
+  durationMs: number,
+): void => {
+  if (!context) return;
+  const promise = failed
+    ? recordPerformanceError(context, "upstream_success")
+    : recordPerformanceLatency(context, "upstream_success", durationMs);
+  scheduler ? scheduler(promise) : void promise;
+};
+
 export const embeddings = async (c: Context): Promise<Response> => {
+  const requestStartedAt = performance.now();
+  const apiKeyId = c.get("apiKeyId") as string | undefined;
+  const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
+  const scheduleBackground = backgroundSchedulerFromContext(c);
+  const recordUsage = recordUsageForApiKey(apiKeyId);
+  const recordRequestPerformance = recordRequestPerformanceForApiKey(
+    apiKeyId,
+    scheduleBackground,
+  );
+  let lastPerformance: PerformanceTelemetryContext | undefined;
+
   try {
     const request = prepareEmbeddingsRequest(await c.req.text());
     if (request.type === "invalid") {
       return apiErrorResponse(c, request.message, 400);
     }
-    const recordUsage = recordUsageForApiKey(
-      c.get("apiKeyId") as string | undefined,
-    );
 
     const { id: modelId, model } = await resolveModelForRequest(request.model);
     if (!model) {
@@ -118,21 +148,72 @@ export const embeddings = async (c: Context): Promise<Response> => {
           ));
         }
         const { model: _model, ...body } = request.body;
+        const upstreamStartedAt = performance.now();
         const { response, modelKey } = await binding.provider.callEmbeddings(
           binding.upstreamModel,
           body,
         );
-        if (response.ok) {
-          const parsed = await response.clone().json() as unknown;
-          const usage = tokenUsageFromEmbeddingsResponse(parsed);
-          if (usage) {
-            await recordUsage({
-              model: modelId,
-              upstream: binding.upstream,
-              modelKey,
-            }, usage);
+        const perfContext: PerformanceTelemetryContext | undefined = apiKeyId
+          ? {
+            keyId: apiKeyId,
+            model: modelId,
+            upstream: binding.upstream,
+            modelKey,
+            sourceApi: "embeddings",
+            targetApi: "embeddings",
+            stream: false,
+            runtimeLocation,
           }
+          : undefined;
+        if (perfContext) lastPerformance = perfContext;
+
+        if (!response.ok) {
+          recordUpstreamPerformance(
+            scheduleBackground,
+            perfContext,
+            true,
+            performance.now() - upstreamStartedAt,
+          );
+          recordRequestPerformance(
+            perfContext,
+            true,
+            performance.now() - requestStartedAt,
+          );
+          return proxyJsonResponse(response);
         }
+
+        let parsed: unknown;
+        try {
+          parsed = await response.clone().json() as unknown;
+        } catch (error) {
+          recordUpstreamPerformance(
+            scheduleBackground,
+            perfContext,
+            true,
+            performance.now() - upstreamStartedAt,
+          );
+          throw error;
+        }
+
+        recordUpstreamPerformance(
+          scheduleBackground,
+          perfContext,
+          false,
+          performance.now() - upstreamStartedAt,
+        );
+        const usage = tokenUsageFromEmbeddingsResponse(parsed);
+        if (usage) {
+          await recordUsage({
+            model: modelId,
+            upstream: binding.upstream,
+            modelKey,
+          }, usage);
+        }
+        recordRequestPerformance(
+          perfContext,
+          false,
+          performance.now() - requestStartedAt,
+        );
         return proxyJsonResponse(response);
       },
     );
@@ -142,6 +223,11 @@ export const embeddings = async (c: Context): Promise<Response> => {
     const response = modelsLoadErrorResponse(e);
     if (response) return response;
 
+    recordRequestPerformance(
+      lastPerformance,
+      true,
+      performance.now() - requestStartedAt,
+    );
     return apiErrorResponse(c, errorMessage(e), 502);
   }
 };

@@ -1,11 +1,11 @@
 import { assertEquals } from "@std/assert";
 import { eventResult } from "../../../../shared/errors/result.ts";
-import type { MessagesResponse } from "../../../../shared/protocol/messages.ts";
+import type { MessagesResponse } from "../../../../../shared/protocol/messages.ts";
 import { jsonFrame, sseFrame } from "../../../../shared/stream/types.ts";
 import {
   stubProvider,
   stubUpstreamModel,
-  testAccounting,
+  testTelemetryModelIdentity,
 } from "../../../../../../test-helpers.ts";
 import type { EmitToMessagesInput } from "../../emit.ts";
 import {
@@ -145,7 +145,9 @@ Deno.test("withThinkingDisplayPromoted overrides omitted but preserves full", as
   const fullCtx = makeCtx({ type: "adaptive", display: "full" });
 
   const run = () =>
-    Promise.resolve(eventResult((async function* () {})(), testAccounting));
+    Promise.resolve(
+      eventResult((async function* () {})(), testTelemetryModelIdentity),
+    );
 
   await withThinkingDisplayPromoted(omittedCtx, run);
   await withThinkingDisplayPromoted(fullCtx, run);
@@ -161,12 +163,16 @@ Deno.test("withThinkingDisplayPromoted leaves disabled or absent thinking untouc
   await withThinkingDisplayPromoted(
     disabledCtx,
     () =>
-      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+      Promise.resolve(
+        eventResult((async function* () {})(), testTelemetryModelIdentity),
+      ),
   );
   await withThinkingDisplayPromoted(
     absentCtx,
     () =>
-      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+      Promise.resolve(
+        eventResult((async function* () {})(), testTelemetryModelIdentity),
+      ),
   );
 
   assertEquals(disabledCtx.payload.thinking, { type: "disabled" });
@@ -180,7 +186,9 @@ Deno.test("withThinkingDisplayPromoted leaves unknown display values for upstrea
   await withThinkingDisplayPromoted(
     ctx,
     () =>
-      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+      Promise.resolve(
+        eventResult((async function* () {})(), testTelemetryModelIdentity),
+      ),
   );
 
   assertEquals((ctx.payload.thinking as { display?: unknown }).display, "omit");
@@ -210,7 +218,7 @@ Deno.test("withThinkingDisplayPromoted simulates omitted display on target SSE r
             delta: { type: "signature_delta", signature: "sig_unchanged" },
           }));
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -248,7 +256,7 @@ Deno.test("withThinkingDisplayPromoted simulates omitted display on target JSON 
             { type: "text", text: "visible" },
           ]));
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 

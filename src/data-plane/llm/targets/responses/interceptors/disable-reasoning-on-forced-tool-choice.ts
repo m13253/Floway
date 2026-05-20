@@ -1,7 +1,7 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 

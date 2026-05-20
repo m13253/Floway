@@ -1,10 +1,10 @@
 import { assertEquals } from "@std/assert";
-import type { GeminiGenerateContentRequest } from "../../../shared/protocol/gemini.ts";
+import type { GeminiGenerateContentRequest } from "../../../../shared/protocol/gemini.ts";
 import { stripSafetySettings } from "./strip-safety-settings.ts";
 import { stripUnsupportedPartFieldsFromPayload } from "./strip-unsupported-part-fields.ts";
 import { stripUnsupportedToolsFromPayload } from "./strip-unsupported-tools.ts";
 
-const testAccounting = {
+const testTelemetryModelIdentity = {
   model: "test-model",
   upstream: "test-upstream",
   modelKey: "test-model-key",
@@ -17,7 +17,7 @@ const runStripSafetySettings = async (
     Promise.resolve({
       type: "events" as const,
       events: (async function* () {})(),
-      accounting: testAccounting,
+      modelIdentity: testTelemetryModelIdentity,
     }));
 };
 

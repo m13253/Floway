@@ -6,7 +6,7 @@ import type {
   MessagesTextCitation,
   MessagesToolUseBlock,
   MessagesWebSearchToolResultBlock,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);

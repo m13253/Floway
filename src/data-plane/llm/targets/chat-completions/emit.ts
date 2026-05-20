@@ -2,7 +2,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import { readUpstreamError } from "../../shared/errors/upstream-error.ts";
 import {
   eventResult,
@@ -20,7 +20,7 @@ import {
 } from "../telemetry.ts";
 import { chatCompletionsStreamFramesToEvents } from "./events/from-stream.ts";
 import { interceptorsForChatCompletions } from "./interceptors/index.ts";
-import type { ModelAccounting } from "../../../../repo/types.ts";
+import type { TelemetryModelIdentity } from "../../../../repo/types.ts";
 
 const isSSEResponse = (response: Response): boolean =>
   (response.headers.get("content-type") ?? "").includes("text/event-stream");
@@ -34,7 +34,7 @@ const chatCompletionsRawResultToProtocolResult = (
   result.type === "events"
     ? eventResult(
       chatCompletionsStreamFramesToEvents(result.events),
-      result.accounting,
+      result.modelIdentity,
       result.performance,
     )
     : result;
@@ -42,7 +42,7 @@ const chatCompletionsRawResultToProtocolResult = (
 export const emitToChatCompletions = async (
   input: EmitToChatCompletionsInput,
 ): Promise<EmitResult<ChatCompletionChunk>> => {
-  let accounting: ModelAccounting | undefined;
+  let modelIdentity: TelemetryModelIdentity | undefined;
   try {
     const result = await runTargetInterceptors<
       EmitToChatCompletionsInput,
@@ -58,7 +58,7 @@ export const emitToChatCompletions = async (
           body,
           input.downstreamAbortSignal,
         );
-        accounting = {
+        modelIdentity = {
           model: input.model,
           upstream: input.upstream,
           modelKey,
@@ -66,11 +66,11 @@ export const emitToChatCompletions = async (
         const perfContext = targetPerformanceContext(
           input,
           "chat-completions",
-          accounting,
+          modelIdentity,
         );
 
         if (!response.ok) {
-          recordUpstreamHttpFailure(input, "chat-completions", accounting);
+          recordUpstreamHttpFailure(input, "chat-completions", modelIdentity);
           return {
             ...(await readUpstreamError(response)),
             performance: perfContext,
@@ -97,9 +97,9 @@ export const emitToChatCompletions = async (
               input,
               "chat-completions",
               upstreamStartedAt,
-              accounting,
+              modelIdentity,
             ),
-            accounting,
+            modelIdentity,
             perfContext,
           );
         }
@@ -112,9 +112,9 @@ export const emitToChatCompletions = async (
             input,
             "chat-completions",
             upstreamStartedAt,
-            accounting,
+            modelIdentity,
           ),
-          accounting,
+          modelIdentity,
           perfContext,
         );
       },
@@ -125,8 +125,8 @@ export const emitToChatCompletions = async (
     return internalErrorResult(
       502,
       toInternalDebugError(error, input.sourceApi, "chat-completions"),
-      accounting
-        ? targetPerformanceContext(input, "chat-completions", accounting)
+      modelIdentity
+        ? targetPerformanceContext(input, "chat-completions", modelIdentity)
         : undefined,
     );
   }

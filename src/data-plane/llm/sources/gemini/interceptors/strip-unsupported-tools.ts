@@ -2,7 +2,7 @@ import type {
   GeminiGenerateContentRequest,
   GeminiStreamEvent,
   GeminiToolGroup,
-} from "../../../shared/protocol/gemini.ts";
+} from "../../../../shared/protocol/gemini.ts";
 import type { SourceInterceptor } from "../../run-interceptors.ts";
 import type { GeminiSourceContext } from "./index.ts";
 

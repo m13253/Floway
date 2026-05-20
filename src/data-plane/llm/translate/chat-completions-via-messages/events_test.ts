@@ -3,11 +3,11 @@ import {
   createMessagesToChatCompletionsStreamState,
   translateMessagesEventToChatCompletionsChunks,
 } from "./events.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import type {
   ChatCompletionChunk,
   Delta,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 
 // ── Helpers ──
 

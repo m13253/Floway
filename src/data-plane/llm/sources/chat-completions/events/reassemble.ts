@@ -4,8 +4,8 @@ import type {
   ChatReasoningItem,
   ChoiceNonStreaming,
   ToolCall,
-} from "../../../shared/protocol/chat-completions.ts";
-import { chatCompletionsErrorPayloadMessage } from "../../../shared/protocol/chat-completions-errors.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
+import { chatCompletionsErrorPayloadMessage } from "../../../../shared/protocol/chat-completions-errors.ts";
 import { protocolEventsUntilTerminal } from "../../../shared/stream/protocol-algebra.ts";
 import { type ProtocolFrame } from "../../../shared/stream/types.ts";
 import { chatCompletionSourceStreamAlgebra } from "./protocol.ts";

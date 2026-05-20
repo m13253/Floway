@@ -1,9 +1,9 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import { responsesResultToEvents } from "../../targets/responses/events/from-result.ts";
 import { translateToSourceEvents } from "./events.ts";

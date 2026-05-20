@@ -1,9 +1,9 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import type { EmitInput } from "../../emit-types.ts";
-import type { OptionalInterceptor } from "../../optional-fix.ts";
+import type { OptionalInterceptor } from "../../optional-interceptor.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";

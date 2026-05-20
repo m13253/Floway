@@ -9,7 +9,7 @@ import type {
   MessagesToolResultBlock,
   MessagesToolResultContentBlock,
   MessagesUserContentBlock,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import {
   collectMessagesProtocolEventsToResponse,
 } from "../events/to-response.ts";
@@ -33,7 +33,7 @@ import {
   withMessagesWebSearchShim,
 } from "./web-search-shim.ts";
 
-const testAccounting = {
+const testTelemetryModelIdentity = {
   model: "test-model",
   upstream: "test-upstream",
   modelKey: "test-model-key",
@@ -930,7 +930,7 @@ Deno.test("withMessagesWebSearchShim allows replay-only history when the search 
             }],
           }],
         })),
-        accounting: testAccounting,
+        modelIdentity: testTelemetryModelIdentity,
       }),
   );
 
@@ -978,7 +978,7 @@ Deno.test("withMessagesWebSearchShim emits native-like citation deltas for repla
             }],
           }],
         })),
-        accounting: testAccounting,
+        modelIdentity: testTelemetryModelIdentity,
       }),
   );
 

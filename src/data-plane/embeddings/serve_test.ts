@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { clearCopilotTokenCache } from "../../shared/copilot.ts";
-import { clearModelsCache } from "../models/cache.ts";
+import { clearModelsCache } from "../providers/upstream-model-cache.ts";
 import {
   copilotModels,
   flushAsyncWork,
@@ -124,6 +124,26 @@ Deno.test("/v1/embeddings records usage under request model when upstream omits 
   assertEquals(usage.length, 1);
   assertEquals(usage[0].model, "text-embedding-real");
   assertEquals(usage[0].inputTokens, 1);
+
+  const performanceRows = await repo.performance.listAll();
+  const requestTotal = performanceRows.find((row) =>
+    row.metricScope === "request_total"
+  );
+  const upstreamSuccess = performanceRows.find((row) =>
+    row.metricScope === "upstream_success"
+  );
+  assertExists(requestTotal);
+  assertExists(upstreamSuccess);
+  assertEquals(requestTotal.sourceApi, "embeddings");
+  assertEquals(requestTotal.targetApi, "embeddings");
+  assertEquals(requestTotal.model, "text-embedding-real");
+  assertEquals(requestTotal.requests, 1);
+  assertEquals(requestTotal.errors, 0);
+  assertEquals(upstreamSuccess.sourceApi, "embeddings");
+  assertEquals(upstreamSuccess.targetApi, "embeddings");
+  assertEquals(upstreamSuccess.model, "text-embedding-real");
+  assertEquals(upstreamSuccess.requests, 1);
+  assertEquals(upstreamSuccess.errors, 0);
 });
 
 Deno.test("/v1/embeddings routes to custom upstream when model is only declared there", async () => {

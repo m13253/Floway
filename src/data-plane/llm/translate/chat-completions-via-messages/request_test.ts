@@ -3,7 +3,7 @@ import {
   type RemoteImageLoader,
   translateChatCompletionsToMessages,
 } from "./request.ts";
-import type { ChatCompletionsPayload } from "../../shared/protocol/chat-completions.ts";
+import type { ChatCompletionsPayload } from "../../../shared/protocol/chat-completions.ts";
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -15,7 +15,7 @@ import {
   type MessagesToolResultBlock,
   type MessagesToolUseBlock,
   type MessagesUserContentBlock,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 
 // ── Helpers ──
 

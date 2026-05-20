@@ -9,10 +9,8 @@ import {
   type SourceResponseStreamEvent,
 } from "./protocol.ts";
 import type { TokenUsage } from "../../../../../repo/types.ts";
-import {
-  hasTokenUsage,
-  tokenUsageFromResponsesResult,
-} from "../../accounting.ts";
+import { hasTokenUsage } from "../../../../shared/telemetry/usage.ts";
+import { tokenUsageFromResponsesResult } from "../usage.ts";
 
 export const responsesProtocolEventToSSEFrame = (
   event: SourceResponseStreamEvent,

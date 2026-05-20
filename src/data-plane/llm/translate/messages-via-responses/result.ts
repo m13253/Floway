@@ -1,12 +1,12 @@
 import type {
   MessagesAssistantContentBlock,
   MessagesResponse,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import type {
   ResponseOutputContentBlock,
   ResponseOutputItem,
   ResponsesResult,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { packReasoningSignature } from "../shared/messages-responses-signature.ts";
 import { parseToolArgumentsObject } from "../shared/tool-arguments.ts";
 

@@ -1,7 +1,7 @@
-import type { ChatCompletionsPayload } from "../llm/shared/protocol/chat-completions.ts";
-import type { EmbeddingsPayload } from "../embeddings/types.ts";
-import type { MessagesPayload } from "../llm/shared/protocol/messages.ts";
-import type { ResponsesPayload } from "../llm/shared/protocol/responses.ts";
+import type { ChatCompletionsPayload } from "../shared/protocol/chat-completions.ts";
+import type { EmbeddingsPayload } from "../shared/protocol/embeddings.ts";
+import type { MessagesPayload } from "../shared/protocol/messages.ts";
+import type { ResponsesPayload } from "../shared/protocol/responses.ts";
 
 export type ModelEndpoint =
   | "chat_completions"

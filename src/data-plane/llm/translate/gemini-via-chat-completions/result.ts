@@ -1,10 +1,10 @@
 import type {
   ChatCompletionChunk,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   GeminiFinishReason,
   GeminiUsageMetadata,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 
 type ChatStreamChoice = ChatCompletionChunk["choices"][0];
 

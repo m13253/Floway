@@ -1,4 +1,4 @@
-import type { GeminiStreamEvent } from "../../../shared/protocol/gemini.ts";
+import type { GeminiStreamEvent } from "../../../../shared/protocol/gemini.ts";
 import { protocolFramesUntilTerminal } from "../../../shared/stream/protocol-algebra.ts";
 import {
   type ProtocolFrame,
@@ -11,10 +11,8 @@ import {
   isGeminiFinishedEvent,
 } from "./protocol.ts";
 import type { TokenUsage } from "../../../../../repo/types.ts";
-import {
-  hasTokenUsage,
-  tokenUsageFromGeminiResponse,
-} from "../../accounting.ts";
+import { hasTokenUsage } from "../../../../shared/telemetry/usage.ts";
+import { tokenUsageFromGeminiResponse } from "../usage.ts";
 
 export const geminiProtocolFrameToSSEFrame = (
   frame: ProtocolFrame<GeminiStreamEvent>,

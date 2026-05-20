@@ -1,6 +1,6 @@
 import { getRepo } from "../../../../../../repo/index.ts";
-import type { ResponsesPayload } from "../../../../shared/protocol/responses.ts";
-import type { ResponsesResult } from "../../../../shared/protocol/responses.ts";
+import type { ResponsesPayload } from "../../../../../shared/protocol/responses.ts";
+import type { ResponsesResult } from "../../../../../shared/protocol/responses.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";
 
 /**

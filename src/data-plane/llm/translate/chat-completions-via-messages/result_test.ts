@@ -3,7 +3,7 @@ import { translateMessagesToChatCompletionsResponse } from "./result.ts";
 import type {
   MessagesAssistantContentBlock,
   MessagesResponse,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 
 // ── Helpers ──
 

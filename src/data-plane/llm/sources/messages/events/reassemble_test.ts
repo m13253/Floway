@@ -10,7 +10,7 @@ import type {
   MessagesToolResultContentBlock,
   MessagesWebSearchResultBlock,
   MessagesWebSearchToolResultBlock,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import { reassembleMessagesEvents } from "./reassemble.ts";
 
 function makeEvents<T = MessagesStreamEventData>(

@@ -3,8 +3,8 @@ import {
   type InternalDebugError,
   toInternalDebugError,
 } from "../../shared/errors/internal-debug-error.ts";
-import type { ChatCompletionChunk } from "../../shared/protocol/chat-completions.ts";
-import { chatCompletionsErrorPayloadMessage } from "../../shared/protocol/chat-completions-errors.ts";
+import type { ChatCompletionChunk } from "../../../shared/protocol/chat-completions.ts";
+import { chatCompletionsErrorPayloadMessage } from "../../../shared/protocol/chat-completions-errors.ts";
 import { collectChatProtocolEventsToCompletion } from "./events/reassemble.ts";
 import { chatProtocolEventsToSSEFrames } from "./events/to-sse.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
@@ -17,12 +17,16 @@ import {
 } from "../../shared/stream/types.ts";
 import {
   type RecordRequestPerformance,
+} from "../../../shared/telemetry/performance.ts";
+import {
   type RecordUsage,
   recordUsageIfPresent,
+} from "../../../shared/telemetry/usage.ts";
+import {
   type SourceStreamOutcome,
-  tokenUsageFromChatResponse,
   trackSourceStreamOutcome,
-} from "../accounting.ts";
+} from "../telemetry.ts";
+import { tokenUsageFromChatResponse } from "./usage.ts";
 
 const internalChatErrorPayload = (error: InternalDebugError) => ({
   error: {
@@ -93,7 +97,7 @@ export const respondChatCompletions = async (
         result.events,
       );
       await recordUsageIfPresent(
-        result.accounting,
+        result.modelIdentity,
         tokenUsageFromChatResponse(response),
         recordUsage,
       );
@@ -126,7 +130,7 @@ export const respondChatCompletions = async (
       ),
       {
         includeUsageChunk,
-        onUsage: (usage) => recordUsage(result.accounting, usage),
+        onUsage: (usage) => recordUsage(result.modelIdentity, usage),
       },
     ),
     {

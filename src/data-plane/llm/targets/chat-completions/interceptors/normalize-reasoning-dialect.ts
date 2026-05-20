@@ -3,7 +3,7 @@ import type {
   ChatCompletionsPayload,
   ChatReasoningItem,
   Message,
-} from "../../../shared/protocol/chat-completions.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 
@@ -21,7 +21,7 @@ import type { TargetInterceptor } from "../../run-interceptors.ts";
  * field is omitted.
  *
  * Gating: bound to the `deepseek-reasoning-dialect` flag (declared in
- * ../../optional-fixes.ts) and enabled per-upstream via
+ * ../../../providers/fixes.ts) and enabled per-upstream via
  * `Upstream.enabledFixes`. The assembler in ../index.ts only attaches this
  * interceptor when the upstream opted in, so the body below is unconditional.
  *

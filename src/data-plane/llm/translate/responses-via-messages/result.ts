@@ -1,11 +1,11 @@
-import type { MessagesResponse } from "../../shared/protocol/messages.ts";
+import type { MessagesResponse } from "../../../shared/protocol/messages.ts";
 import type {
   ResponseOutputFunctionCall,
   ResponseOutputItem,
   ResponseOutputMessage,
   ResponseOutputReasoning,
   ResponsesResult,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
 import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 

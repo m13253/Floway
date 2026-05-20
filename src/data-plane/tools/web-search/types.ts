@@ -1,4 +1,4 @@
-import type { MessagesWebSearchErrorCode } from "../../llm/shared/protocol/messages.ts";
+import type { MessagesWebSearchErrorCode } from "../../shared/protocol/messages.ts";
 import type { WebSearchProviderName } from "../../../shared/web-search-providers.ts";
 
 export type { WebSearchProviderName } from "../../../shared/web-search-providers.ts";

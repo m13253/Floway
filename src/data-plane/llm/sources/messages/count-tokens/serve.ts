@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import { ModelsFetchError } from "../../../../models/cache.ts";
-import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
-import { getModelCapabilities } from "../../../shared/models/get-model-capabilities.ts";
+import { ModelsFetchError } from "../../../../providers/upstream-model-cache.ts";
+import type { MessagesPayload } from "../../../../shared/protocol/messages.ts";
+import { getModelCapabilities } from "../../../../providers/capabilities.ts";
 import { resolveModelForRequest } from "../../../../providers/registry.ts";
 import { runOnModel, skipProvider } from "../../../../providers/run.ts";
 

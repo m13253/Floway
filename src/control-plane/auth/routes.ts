@@ -7,7 +7,7 @@ import { getRepo } from "../../repo/index.ts";
 import type { GitHubAccount } from "../../repo/types.ts";
 import { clearCopilotTokenCache } from "../../shared/copilot.ts";
 import { getEnv } from "../../runtime/env.ts";
-import { clearModelsCache } from "../../data-plane/models/cache.ts";
+import { clearModelsCache } from "../../data-plane/providers/upstream-model-cache.ts";
 import {
   detectAccountType,
   fetchGitHubUser,

@@ -1,5 +1,5 @@
-import { ModelsFetchError } from "../../../models/cache.ts";
-import type { PerformanceTelemetryContext } from "../../../shared/performance/telemetry.ts";
+import { ModelsFetchError } from "../../../providers/upstream-model-cache.ts";
+import type { PerformanceTelemetryContext } from "../../../shared/telemetry/performance.ts";
 import type { UpstreamErrorResult } from "./result.ts";
 
 export const modelLoadErrorResult = (

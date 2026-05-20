@@ -6,11 +6,11 @@ import {
   flushChatCompletionsToResponsesEvents,
   translateChatCompletionsChunkToResponsesEvents,
 } from "../responses-via-chat-completions/events.ts";
-import type { ChatCompletionChunk } from "../../shared/protocol/chat-completions.ts";
+import type { ChatCompletionChunk } from "../../../shared/protocol/chat-completions.ts";
 import type {
   ResponseInputReasoning,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 type ResponseOutputItemDoneEvent = Extract<
   ResponseStreamEvent,

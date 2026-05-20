@@ -5,7 +5,7 @@ import {
   assertStringIncludes,
 } from "@std/assert";
 import { clearCopilotTokenCache } from "../../../../shared/copilot.ts";
-import { clearModelsCache } from "../../../models/cache.ts";
+import { clearModelsCache } from "../../../providers/upstream-model-cache.ts";
 import {
   copilotModels,
   jsonResponse,

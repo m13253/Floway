@@ -5,14 +5,14 @@ import type {
   GeminiGenerationConfig,
   GeminiPart,
   GeminiThinkingConfig,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 import type {
   ResponseInputContent,
   ResponseInputItem,
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 type UnmatchedToolCallIds = Record<string, string[]>;
 

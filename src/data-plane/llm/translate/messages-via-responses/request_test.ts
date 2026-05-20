@@ -4,7 +4,7 @@ import { translateMessagesToResponses } from "./request.ts";
 import type {
   ResponseInputReasoning,
   ResponseOutputReasoning,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 Deno.test("translateMessagesToResponses synthesizes an rs-prefixed id when the signature is not packed", () => {
   const result = translateMessagesToResponses({

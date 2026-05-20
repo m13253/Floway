@@ -3,11 +3,11 @@ import type {
   GeminiPart,
   GeminiStreamEvent,
   GeminiUsageMetadata,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 type ResponseTerminalEvent = Extract<
   ResponseStreamEvent,

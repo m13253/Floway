@@ -1,7 +1,7 @@
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../../shared/protocol/chat-completions.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
 import {
   asJsonObject,
   type JsonObject,
@@ -12,7 +12,7 @@ import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 /**
  * Normalize OpenAI-compatible upstream `usage` into the OpenAI standard shape
- * so translation and accounting can read one contract regardless of vendor:
+ * so translation and telemetry can read one contract regardless of vendor:
  *
  * 1. Cache token field names are rewritten into
  *    `prompt_tokens_details.cached_tokens` (the standard). Variants observed:

@@ -2,12 +2,12 @@ import type {
   ChatCompletionChunk,
   ChatReasoningItem,
   Delta,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   ResponseOutputItem,
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import {
   createResponsesOutputOrderState,
   recordResponseOutputOrderEvent,

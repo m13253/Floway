@@ -2,7 +2,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatReasoningItem,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   ResponseOutputFunctionCall,
   ResponseOutputItem,
@@ -10,7 +10,7 @@ import type {
   ResponseOutputReasoning,
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { toResponseReasoningItem } from "../shared/chat-responses-reasoning.ts";
 import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 import { checkWhitespaceOverflow } from "../shared/tool-arguments.ts";

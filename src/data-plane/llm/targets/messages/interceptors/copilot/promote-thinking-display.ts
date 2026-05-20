@@ -1,7 +1,7 @@
 import type {
   MessagesResponse,
   MessagesThinkingDisplay,
-} from "../../../../shared/protocol/messages.ts";
+} from "../../../../../shared/protocol/messages.ts";
 import { copilotRawModelId } from "../../../../../providers/copilot/model-name.ts";
 import type { StreamFrame } from "../../../../shared/stream/types.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";

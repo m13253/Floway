@@ -2,8 +2,11 @@ import { assertEquals } from "@std/assert";
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../../shared/protocol/chat-completions.ts";
-import { stubUpstream, testAccounting } from "../../../../../test-helpers.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
+import {
+  stubUpstream,
+  testTelemetryModelIdentity,
+} from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import {
   jsonFrame,
@@ -62,7 +65,7 @@ Deno.test("withDeepseekReasoningDialect renames outbound reasoning_text on a dee
       (async function* () {
         yield* [];
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 
@@ -114,7 +117,7 @@ Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reaso
       (async function* () {
         yield* [];
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 
@@ -154,7 +157,7 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
       (async function* () {
         yield* [];
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 
@@ -187,7 +190,7 @@ Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to
         (async function* () {
           yield sseFrame(upstreamChunk);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -232,7 +235,7 @@ Deno.test("withDeepseekReasoningDialect renames inbound non-stream message.reaso
         (async function* () {
           yield jsonFrame(upstreamResponse);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 

@@ -192,7 +192,7 @@ function withDefaultAccountType(account: GitHubAccount): GitHubAccount {
     : { ...account, accountType: "individual" };
 }
 
-class DenoKvProviderAccountingIdentityMigration {
+class DenoKvTelemetryModelIdentityMigration {
   private promise: Promise<void> | undefined;
 
   constructor(private kv: Deno.Kv) {}
@@ -222,7 +222,7 @@ class DenoKvProviderAccountingIdentityMigration {
         [
           "usage",
           keyId,
-          migrateStoredAccountingModel(legacyModelKey),
+          publicModelIdFromLegacyTelemetryModelKey(legacyModelKey),
           "",
           legacyModelKey,
           hour,
@@ -274,7 +274,7 @@ class DenoKvProviderAccountingIdentityMigration {
           hour,
           metricScope,
           keyId,
-          migrateStoredAccountingModel(legacyModelKey),
+          publicModelIdFromLegacyTelemetryModelKey(legacyModelKey),
           "",
           legacyModelKey,
           sourceApi,
@@ -330,7 +330,7 @@ class DenoKvProviderAccountingIdentityMigration {
           hour,
           metricScope,
           keyId,
-          migrateStoredAccountingModel(legacyModelKey),
+          publicModelIdFromLegacyTelemetryModelKey(legacyModelKey),
           "",
           legacyModelKey,
           sourceApi,
@@ -377,7 +377,7 @@ const isDenoKvStringTuple = (
 ): values is readonly string[] =>
   values.every((value) => typeof value === "string");
 
-const migrateStoredAccountingModel = (modelKey: string): string => {
+const publicModelIdFromLegacyTelemetryModelKey = (modelKey: string): string => {
   if (modelKey === "codex-auto-review") return "gpt-5.4";
   let model = modelKey.startsWith("claude-")
     ? modelKey.replaceAll(".", "-")
@@ -392,7 +392,8 @@ const migrateStoredAccountingModel = (modelKey: string): string => {
 class DenoKvUsageRepo implements UsageRepo {
   constructor(
     private kv: Deno.Kv,
-    private accountingMigration: DenoKvProviderAccountingIdentityMigration,
+    private telemetryModelIdentityMigration:
+      DenoKvTelemetryModelIdentityMigration,
   ) {}
 
   async record(
@@ -407,7 +408,7 @@ class DenoKvUsageRepo implements UsageRepo {
     cacheReadTokens = 0,
     cacheCreationTokens = 0,
   ): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     const upstreamKey = upstream ?? "";
     let op = this.kv.atomic()
       .sum(
@@ -440,7 +441,7 @@ class DenoKvUsageRepo implements UsageRepo {
   async query(
     opts: { keyId?: string; start: string; end: string },
   ): Promise<UsageRecord[]> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     const prefix: Deno.KvKey = opts.keyId ? ["usage", opts.keyId] : ["usage"];
     const map = new Map<string, UsageRecord>();
 
@@ -479,7 +480,7 @@ class DenoKvUsageRepo implements UsageRepo {
   }
 
   async listAll(): Promise<UsageRecord[]> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     const map = new Map<string, UsageRecord>();
     for await (const entry of this.kv.list<Deno.KvU64>({ prefix: ["usage"] })) {
       const { keyId, model, upstream, modelKey, hour, metric } =
@@ -514,7 +515,7 @@ class DenoKvUsageRepo implements UsageRepo {
   }
 
   async set(record: UsageRecord): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     const upstreamKey = record.upstream ?? "";
     const modelKey = record.modelKey;
     await this.kv.set(
@@ -580,7 +581,7 @@ class DenoKvUsageRepo implements UsageRepo {
   }
 
   async deleteAll(): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     for await (const entry of this.kv.list({ prefix: ["usage"] })) {
       await this.kv.delete(entry.key);
     }
@@ -677,7 +678,8 @@ class DenoKvSearchUsageRepo implements SearchUsageRepo {
 class DenoKvPerformanceRepo implements PerformanceRepo {
   constructor(
     private kv: Deno.Kv,
-    private accountingMigration: DenoKvProviderAccountingIdentityMigration,
+    private telemetryModelIdentityMigration:
+      DenoKvTelemetryModelIdentityMigration,
   ) {}
 
   private dimensionKey(sample: PerformanceDimensions): Deno.KvKeyPart[] {
@@ -696,7 +698,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
   }
 
   async recordLatency(sample: PerformanceLatencySample): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     const durationMs = Math.max(0, Math.round(sample.durationMs));
     const dimensionKey = this.dimensionKey(sample);
     const bucket = latencyBucketForMs(durationMs);
@@ -717,7 +719,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
   }
 
   async recordError(sample: PerformanceErrorSample): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     await this.kv.atomic()
       .sum(
         ["performance", "summary", ...this.dimensionKey(sample), "errors"],
@@ -732,7 +734,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
     start: string;
     end: string;
   }): Promise<PerformanceTelemetryRecord[]> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     return await this.collect({
       summarySelector: {
         start: ["performance", "summary", opts.start],
@@ -747,7 +749,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     return await this.collect({
       summarySelector: { prefix: ["performance", "summary"] },
       bucketSelector: { prefix: ["performance", "bucket"] },
@@ -756,7 +758,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     await this.deleteDimension(record);
     const dimensionKey = this.dimensionKey(record);
     let atomic = this.kv.atomic()
@@ -788,7 +790,7 @@ class DenoKvPerformanceRepo implements PerformanceRepo {
   }
 
   async deleteAll(): Promise<void> {
-    await this.accountingMigration.ensure();
+    await this.telemetryModelIdentityMigration.ensure();
     for await (const entry of this.kv.list({ prefix: ["performance"] })) {
       await this.kv.delete(entry.key);
     }
@@ -1052,14 +1054,18 @@ export class DenoKvRepo implements Repo {
   upstreamConfigs: UpstreamConfigRepo;
 
   constructor(kv: Deno.Kv) {
-    const accountingMigration = new DenoKvProviderAccountingIdentityMigration(
-      kv,
-    );
+    const telemetryModelIdentityMigration =
+      new DenoKvTelemetryModelIdentityMigration(
+        kv,
+      );
     this.apiKeys = new DenoKvApiKeyRepo(kv);
     this.github = new DenoKvGitHubRepo(kv);
-    this.usage = new DenoKvUsageRepo(kv, accountingMigration);
+    this.usage = new DenoKvUsageRepo(kv, telemetryModelIdentityMigration);
     this.searchUsage = new DenoKvSearchUsageRepo(kv);
-    this.performance = new DenoKvPerformanceRepo(kv, accountingMigration);
+    this.performance = new DenoKvPerformanceRepo(
+      kv,
+      telemetryModelIdentityMigration,
+    );
     this.cache = new DenoKvCacheRepo(kv);
     this.searchConfig = new DenoKvSearchConfigRepo(kv);
     this.upstreamConfigs = new DenoKvUpstreamConfigRepo(kv);

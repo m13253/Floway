@@ -4,7 +4,7 @@ import type {
   Message,
   Tool,
   ToolCall,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   MessagesAssistantContentBlock,
   MessagesAssistantMessage,
@@ -18,7 +18,7 @@ import type {
   MessagesUserContentBlock,
   MessagesUserMessage,
   MessagesWebSearchToolResultBlock,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 
 const toChatCompletionsContent = (
   content:

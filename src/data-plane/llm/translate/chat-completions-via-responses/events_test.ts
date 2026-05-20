@@ -2,7 +2,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { chatProtocolEventsToSSEFrames } from "../../sources/chat-completions/events/to-sse.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import { responsesResultToEvents } from "../../targets/responses/events/from-result.ts";

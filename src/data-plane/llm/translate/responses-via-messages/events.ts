@@ -6,7 +6,7 @@ import type {
   MessagesMessageDeltaEvent,
   MessagesMessageStartEvent,
   MessagesStreamEventData,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
 import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 import type {
@@ -16,7 +16,7 @@ import type {
   ResponseOutputReasoning,
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { protocolEventsUntilTerminal } from "../../shared/stream/protocol-algebra.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import type { SourceResponseStreamEvent } from "../../sources/responses/events/protocol.ts";

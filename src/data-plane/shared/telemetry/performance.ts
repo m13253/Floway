@@ -1,4 +1,5 @@
 import { getEnv } from "../../../runtime/env.ts";
+import type { BackgroundScheduler } from "../../../runtime/background.ts";
 import { getRepo } from "../../../repo/index.ts";
 import type {
   PerformanceApiName,
@@ -18,6 +19,12 @@ export interface PerformanceTelemetryContext {
   stream: boolean;
   runtimeLocation: string;
 }
+
+export type RecordRequestPerformance = (
+  context: PerformanceTelemetryContext | undefined,
+  failed: boolean,
+  durationMs: number,
+) => void;
 
 const currentHour = (): string => new Date().toISOString().slice(0, 13);
 
@@ -70,3 +77,26 @@ export async function recordPerformanceError(
     console.warn("Failed to record performance error:", error);
   }
 }
+
+export const recordRequestTotal = (
+  scheduler: BackgroundScheduler | undefined,
+  context: PerformanceTelemetryContext,
+  failed: boolean,
+  durationMs: number,
+): void => {
+  const promise = failed
+    ? recordPerformanceError(context, "request_total")
+    : recordPerformanceLatency(context, "request_total", durationMs);
+  scheduler ? scheduler(promise) : void promise;
+};
+
+export const recordRequestPerformanceForApiKey = (
+  keyId: string | undefined,
+  scheduler: BackgroundScheduler | undefined,
+): RecordRequestPerformance => {
+  if (!keyId) return () => {};
+  return (context, failed, durationMs) => {
+    if (!context) return;
+    recordRequestTotal(scheduler, { ...context, keyId }, failed, durationMs);
+  };
+};

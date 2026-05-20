@@ -1,7 +1,7 @@
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import {
   doneFrame,
   eventFrame,

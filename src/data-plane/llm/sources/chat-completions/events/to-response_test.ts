@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import type { ChatCompletionResponse } from "../../../shared/protocol/chat-completions.ts";
+import type { ChatCompletionResponse } from "../../../../shared/protocol/chat-completions.ts";
 import { eventFrame } from "../../../shared/stream/types.ts";
 import { chatCompletionResultToEvents } from "../../../targets/chat-completions/events/from-result.ts";
 import { collectChatProtocolEventsToCompletion } from "./reassemble.ts";

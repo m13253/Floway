@@ -1,12 +1,12 @@
 import type {
   GeminiPart,
   GeminiStreamEvent,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 import type {
   ResponseOutputFunctionCall,
   ResponseOutputReasoning,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { protocolEventsUntilTerminal } from "../../shared/stream/protocol-algebra.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import { geminiResponse, mapTerminalFinishReason, mapUsage } from "./result.ts";

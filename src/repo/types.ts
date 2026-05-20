@@ -33,7 +33,7 @@ export interface UsageRecord {
   cacheCreationTokens?: number;
 }
 
-export interface ModelAccounting {
+export interface TelemetryModelIdentity {
   model: string;
   upstream: string;
   modelKey: string;
@@ -58,7 +58,8 @@ export type PerformanceApiName =
   | "messages"
   | "responses"
   | "chat-completions"
-  | "gemini";
+  | "gemini"
+  | "embeddings";
 
 export interface PerformanceDimensions {
   hour: string;
@@ -193,7 +194,7 @@ export interface UpstreamConfig {
   sortOrder: number;
   createdAt: string;
   // Behavior flag ids the admin opted into for this upstream. See
-  // src/data-plane/llm/targets/optional-fixes.ts for the catalog.
+  // src/data-plane/providers/fixes.ts for the catalog.
   // Always sorted + deduped at the repo boundary.
   enabledFixes: string[];
   // Optional per-endpoint path overrides. The final URL is `baseUrl + path`

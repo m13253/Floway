@@ -2,7 +2,7 @@ import type {
   ChatCompletionsPayload,
   ContentPart,
   Tool,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   ResponseInputContent,
   ResponseInputItem,
@@ -10,7 +10,7 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import {
   scalarToResponseReasoningItem,
   translateChatReasoningItems,

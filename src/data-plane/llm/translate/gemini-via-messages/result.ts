@@ -3,8 +3,8 @@ import type {
   GeminiPart,
   GeminiStreamEvent,
   GeminiUsageMetadata,
-} from "../../shared/protocol/gemini.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/gemini.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 
 export const geminiResponse = (
   parts: GeminiPart[],

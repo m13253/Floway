@@ -1,4 +1,4 @@
-import type { ResponseStreamEvent } from "../../../shared/protocol/responses.ts";
+import type { ResponseStreamEvent } from "../../../../shared/protocol/responses.ts";
 import type { ProtocolTerminalAlgebra } from "../../../shared/stream/protocol-algebra.ts";
 
 export type SourceResponseStreamEvent = ResponseStreamEvent & {

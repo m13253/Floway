@@ -1,6 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { Hono } from "hono";
-import type { GeminiErrorResponse } from "../../shared/protocol/gemini.ts";
+import type { GeminiErrorResponse } from "../../../shared/protocol/gemini.ts";
 import type { InternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { StreamExecuteResult } from "../../shared/errors/result.ts";
 import { eventFrame } from "../../shared/stream/types.ts";
@@ -8,7 +8,7 @@ import { respondGemini } from "./respond.ts";
 
 const encoder = new TextEncoder();
 
-const testAccounting = {
+const testTelemetryModelIdentity = {
   model: "test-model",
   upstream: "test-upstream",
   modelKey: "test-model-key",
@@ -46,7 +46,7 @@ Deno.test("respondGemini preserves non-stream Gemini error event HTTP code", asy
     events: (async function* () {
       yield eventFrame(errorEvent);
     })(),
-    accounting: testAccounting,
+    modelIdentity: testTelemetryModelIdentity,
   });
 
   assertEquals(response.status, 504);

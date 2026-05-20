@@ -1,5 +1,5 @@
 import type { SourceInterceptor } from "../../run-interceptors.ts";
-import type { ResponsesPayload } from "../../../shared/protocol/responses.ts";
+import type { ResponsesPayload } from "../../../../shared/protocol/responses.ts";
 import type { SourceResponseStreamEvent } from "../events/protocol.ts";
 import { fixApplyPatchTools } from "./fix-apply-patch-tools.ts";
 import { stripUnsupportedTools } from "./strip-unsupported-tools.ts";

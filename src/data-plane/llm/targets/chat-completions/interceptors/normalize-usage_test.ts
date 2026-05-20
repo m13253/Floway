@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
-import { testAccounting } from "../../../../../test-helpers.ts";
+import { testTelemetryModelIdentity } from "../../../../../test-helpers.ts";
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../../shared/protocol/chat-completions.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import {
   jsonFrame,
@@ -47,7 +47,7 @@ Deno.test("withUsageNormalized rewrites DeepSeek prompt_cache_hit_tokens on non-
             },
           } as unknown as ChatCompletionResponse);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -82,7 +82,7 @@ Deno.test("withUsageNormalized rewrites Kimi flat cached_tokens on non-stream re
             },
           } as unknown as ChatCompletionResponse);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -114,7 +114,7 @@ Deno.test("withUsageNormalized leaves standard prompt_tokens_details untouched",
             },
           } as unknown as ChatCompletionResponse);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -144,7 +144,7 @@ Deno.test("withUsageNormalized passes responses without usage through unchanged"
         (async function* () {
           yield jsonFrame(original);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -173,7 +173,7 @@ Deno.test("withUsageNormalized relocates DeepSeek usage from a non-empty choices
             },
           }));
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -215,7 +215,7 @@ Deno.test("withUsageNormalized rewrites usage in-place on a spec-compliant carri
             },
           }));
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -243,7 +243,7 @@ Deno.test("withUsageNormalized leaves stream chunks without usage untouched", as
         (async function* () {
           yield sseFrame(chunk);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -260,7 +260,7 @@ Deno.test("withUsageNormalized passes [DONE] sentinel through verbatim", async (
         (async function* () {
           yield sseFrame("[DONE]");
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 

@@ -1,13 +1,13 @@
 import type { Context } from "hono";
 import { getRepo } from "../../repo/index.ts";
-import { invalidateUpstreamModels } from "../../data-plane/models/cache.ts";
+import { invalidateUpstreamModels } from "../../data-plane/providers/upstream-model-cache.ts";
 import { createOpenAiUpstream } from "../../shared/upstream/openai.ts";
 import { validateUpstreamPath } from "../../shared/upstream/join.ts";
 import type { EndpointKey, UpstreamConfig } from "../../repo/types.ts";
 import {
   getFixCatalog,
   isKnownFixId,
-} from "../../data-plane/llm/targets/optional-fixes.ts";
+} from "../../data-plane/providers/fixes.ts";
 import { upstreamConfigToJson } from "./serialize.ts";
 
 const ALLOWED_ENDPOINTS = new Set([

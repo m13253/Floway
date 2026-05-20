@@ -1,4 +1,4 @@
-import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../../shared/protocol/messages.ts";
 import {
   type ProtocolFrame,
   type SseFrame,
@@ -7,7 +7,7 @@ import {
 import { protocolEventsUntilTerminal } from "../../../shared/stream/protocol-algebra.ts";
 import { messagesSourceStreamAlgebra } from "./protocol.ts";
 import type { TokenUsage } from "../../../../../repo/types.ts";
-import { hasTokenUsage } from "../../accounting.ts";
+import { hasTokenUsage } from "../../../../shared/telemetry/usage.ts";
 
 export const messagesProtocolEventToSSEFrame = (
   event: MessagesStreamEventData,

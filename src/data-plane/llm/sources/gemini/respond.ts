@@ -2,16 +2,20 @@ import type { Context } from "hono";
 import type {
   GeminiErrorResponse,
   GeminiStreamEvent,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 import type { InternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import {
   type RecordRequestPerformance,
+} from "../../../shared/telemetry/performance.ts";
+import {
   type RecordUsage,
   recordUsageIfPresent,
+} from "../../../shared/telemetry/usage.ts";
+import {
   type SourceStreamOutcome,
-  tokenUsageFromGeminiResponse,
   trackSourceStreamOutcome,
-} from "../accounting.ts";
+} from "../telemetry.ts";
+import { tokenUsageFromGeminiResponse } from "./usage.ts";
 import type {
   StreamExecuteResult,
   UpstreamErrorResult,
@@ -245,7 +249,7 @@ export const respondGemini = async (
     try {
       const response = await collectGeminiProtocolEventsToResponse(events);
       await recordUsageIfPresent(
-        result.accounting,
+        result.modelIdentity,
         tokenUsageFromGeminiResponse(response),
         recordUsage,
       );
@@ -270,7 +274,7 @@ export const respondGemini = async (
   const response = proxySSE(
     c,
     geminiProtocolEventsToSSEFrames(events, {
-      onUsage: (usage) => recordUsage(result.accounting, usage),
+      onUsage: (usage) => recordUsage(result.modelIdentity, usage),
     }),
     {
       keepAlive: { frame: downstreamSSECommentKeepAliveFrame },

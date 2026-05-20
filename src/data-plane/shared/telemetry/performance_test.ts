@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { initEnv } from "../../../runtime/env.ts";
-import { runtimeLocationFromRequest } from "./telemetry.ts";
+import { runtimeLocationFromRequest } from "./performance.ts";
 
 Deno.test("runtimeLocationFromRequest prefers Cloudflare colo", () => {
   initEnv(() => "fallback-location");

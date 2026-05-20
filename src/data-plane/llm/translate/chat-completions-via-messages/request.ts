@@ -3,7 +3,7 @@ import type {
   ContentPart,
   Message,
   Tool,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -13,14 +13,14 @@ import {
   type MessagesThinkingBlock,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import {
   fetchRemoteImage,
   type RemoteImageLoader,
   resolveImageUrlToMessagesImage,
 } from "../shared/remote-images.ts";
 import { parseToolArgumentsObject } from "../shared/tool-arguments.ts";
-import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import type { ModelCapabilities } from "../../../providers/capabilities.ts";
 
 export type { RemoteImageLoader } from "../shared/remote-images.ts";
 

@@ -1,13 +1,13 @@
 import type {
   ChatCompletionResponse,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   MessagesRedactedThinkingBlock,
   MessagesResponse,
   MessagesTextBlock,
   MessagesThinkingBlock,
   MessagesToolUseBlock,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import { parseToolArgumentsObject } from "../shared/tool-arguments.ts";
 
 export const toMessagesId = (id: string): string =>

@@ -1,7 +1,7 @@
 import type {
   MessagesResponse,
   MessagesStreamEventData,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import {
   doneFrame,
   eventFrame,

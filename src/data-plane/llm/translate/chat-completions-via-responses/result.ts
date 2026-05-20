@@ -2,8 +2,8 @@ import type {
   ChatCompletionResponse,
   ChatReasoningItem,
   ToolCall,
-} from "../../shared/protocol/chat-completions.ts";
-import type { ResponsesResult } from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/chat-completions.ts";
+import type { ResponsesResult } from "../../../shared/protocol/responses.ts";
 import { toChatReasoningItem } from "../shared/chat-responses-reasoning.ts";
 
 export const mapResponsesFinishReasonToChatCompletionsFinishReason = (

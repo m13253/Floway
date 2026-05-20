@@ -1,4 +1,4 @@
-import type { GeminiStreamEvent } from "../../../shared/protocol/gemini.ts";
+import type { GeminiStreamEvent } from "../../../../shared/protocol/gemini.ts";
 import type { SourceInterceptor } from "../../run-interceptors.ts";
 import {
   eventFrame,

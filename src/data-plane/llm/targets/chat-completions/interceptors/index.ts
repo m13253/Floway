@@ -1,5 +1,5 @@
-import type { ChatCompletionResponse } from "../../../shared/protocol/chat-completions.ts";
-import type { OptionalInterceptor } from "../../optional-fix.ts";
+import type { ChatCompletionResponse } from "../../../../shared/protocol/chat-completions.ts";
+import type { OptionalInterceptor } from "../../optional-interceptor.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
@@ -12,9 +12,9 @@ import { withUsageNormalized } from "./normalize-usage.ts";
 //   - `include-usage-stream-options` ensures upstreams emit a final usage
 //     chunk in streaming mode.
 //   - `normalize-usage` normalizes vendor variants (DeepSeek / Kimi /
-//     standard OpenAI) into the OpenAI standard usage shape so accounting
+//     standard OpenAI) into the OpenAI standard usage shape so telemetry
 //     reads one contract.
-// Turning either off would silently break per-key accounting, so neither
+// Turning either off would silently break per-key telemetry, so neither
 // is surfaced as a flag.
 const baseInterceptors = [
   withUsageStreamOptionsIncluded,

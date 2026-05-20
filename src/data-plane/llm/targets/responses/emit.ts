@@ -1,7 +1,7 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { readUpstreamError } from "../../shared/errors/upstream-error.ts";
 import {
   eventResult,
@@ -20,7 +20,7 @@ import {
 import { type SequencedResponseStreamEvent } from "./events/from-result.ts";
 import { responsesStreamFramesToEvents } from "./events/from-stream.ts";
 import { interceptorsForResponses } from "./interceptors/index.ts";
-import type { ModelAccounting } from "../../../../repo/types.ts";
+import type { TelemetryModelIdentity } from "../../../../repo/types.ts";
 
 const isSSEResponse = (response: Response): boolean =>
   (response.headers.get("content-type") ?? "").includes("text/event-stream");
@@ -31,7 +31,7 @@ const responsesRawResultToProtocolResult = (
   result.type === "events"
     ? eventResult(
       responsesStreamFramesToEvents(result.events),
-      result.accounting,
+      result.modelIdentity,
       result.performance,
     )
     : result;
@@ -39,7 +39,7 @@ const responsesRawResultToProtocolResult = (
 export const emitToResponses = async (
   input: EmitInput<ResponsesPayload>,
 ): Promise<EmitResult<SequencedResponseStreamEvent>> => {
-  let accounting: ModelAccounting | undefined;
+  let modelIdentity: TelemetryModelIdentity | undefined;
   try {
     input.payload.stream = true;
 
@@ -57,7 +57,7 @@ export const emitToResponses = async (
           body,
           input.downstreamAbortSignal,
         );
-        accounting = {
+        modelIdentity = {
           model: input.model,
           upstream: input.upstream,
           modelKey,
@@ -65,11 +65,11 @@ export const emitToResponses = async (
         const perfContext = targetPerformanceContext(
           input,
           "responses",
-          accounting,
+          modelIdentity,
         );
 
         if (!response.ok) {
-          recordUpstreamHttpFailure(input, "responses", accounting);
+          recordUpstreamHttpFailure(input, "responses", modelIdentity);
           return {
             ...(await readUpstreamError(response)),
             performance: perfContext,
@@ -96,9 +96,9 @@ export const emitToResponses = async (
               input,
               "responses",
               upstreamStartedAt,
-              accounting,
+              modelIdentity,
             ),
-            accounting,
+            modelIdentity,
             perfContext,
           );
         }
@@ -111,9 +111,9 @@ export const emitToResponses = async (
             input,
             "responses",
             upstreamStartedAt,
-            accounting,
+            modelIdentity,
           ),
-          accounting,
+          modelIdentity,
           perfContext,
         );
       },
@@ -124,8 +124,8 @@ export const emitToResponses = async (
     return internalErrorResult(
       502,
       toInternalDebugError(error, input.sourceApi, "responses"),
-      accounting
-        ? targetPerformanceContext(input, "responses", accounting)
+      modelIdentity
+        ? targetPerformanceContext(input, "responses", modelIdentity)
         : undefined,
     );
   }

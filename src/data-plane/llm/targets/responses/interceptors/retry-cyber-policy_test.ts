@@ -2,14 +2,14 @@ import { assertEquals } from "@std/assert";
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
 import {
   stubProvider,
   stubUpstreamModel,
-  testAccounting,
+  testTelemetryModelIdentity,
 } from "../../../../../test-helpers.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
@@ -74,8 +74,8 @@ const completedResponse = (): ResponsesResult => ({
   usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
 });
 
-const accountingFor = (modelKey: string) => ({
-  ...testAccounting,
+const modelIdentityFor = (modelKey: string) => ({
+  ...testTelemetryModelIdentity,
   modelKey,
 });
 
@@ -135,7 +135,7 @@ Deno.test("withCyberPolicyRetried retries fatal upstream cyber policy errors fiv
       (async function* () {
         yield jsonFrame(completedResponse());
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 
@@ -174,7 +174,7 @@ Deno.test("withCyberPolicyRetried retries fatal Responses SSE cyber policy failu
             "response.failed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       ));
     }
 
@@ -189,7 +189,7 @@ Deno.test("withCyberPolicyRetried retries fatal Responses SSE cyber policy failu
           "response.completed",
         );
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 
@@ -245,7 +245,7 @@ Deno.test("withCyberPolicyRetried attributes streaming retries to the final prov
             "response.failed",
           );
         })(),
-        accountingFor("first-model-key"),
+        modelIdentityFor("first-model-key"),
         performanceFor("first-model-key"),
       ));
     }
@@ -261,20 +261,20 @@ Deno.test("withCyberPolicyRetried attributes streaming retries to the final prov
           "response.completed",
         );
       })(),
-      accountingFor("final-model-key"),
+      modelIdentityFor("final-model-key"),
       performanceFor("final-model-key"),
     ));
   });
 
   assertEquals(result.type, "events");
   if (result.type !== "events") throw new Error("expected events result");
-  assertEquals(result.accounting.modelKey, "first-model-key");
+  assertEquals(result.modelIdentity.modelKey, "first-model-key");
 
   const frames = [];
   for await (const frame of result.events) frames.push(frame);
 
   assertEquals(frames.length, 1);
-  assertEquals(result.accounting.modelKey, "final-model-key");
+  assertEquals(result.modelIdentity.modelKey, "final-model-key");
   assertEquals(result.performance?.modelKey, "final-model-key");
 });
 
@@ -312,7 +312,7 @@ Deno.test("withCyberPolicyRetried returns successful streams without draining th
             "response.completed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -354,7 +354,7 @@ Deno.test("withCyberPolicyRetried returns streaming results before the first ups
             "response.completed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -403,7 +403,7 @@ Deno.test("withCyberPolicyRetried does not start another streaming retry after d
           downstreamAbortController.abort();
           yield cyberPolicyFrame;
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       ));
     },
   );
@@ -449,7 +449,7 @@ Deno.test("withCyberPolicyRetried streams the final HTTP cyber policy failure af
             "response.failed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       ));
     }
 
@@ -510,7 +510,7 @@ Deno.test("withCyberPolicyRetried streams a later HTTP upstream failure after a 
             "response.failed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       ));
     }
 
@@ -569,7 +569,7 @@ Deno.test("withCyberPolicyRetried preserves debug fields for later internal fail
             "response.failed",
           );
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       ));
     }
 

@@ -1,5 +1,5 @@
-import type { ChatCompletionChunk } from "../../../shared/protocol/chat-completions.ts";
-import { chatCompletionsErrorPayloadMessage } from "../../../shared/protocol/chat-completions-errors.ts";
+import type { ChatCompletionChunk } from "../../../../shared/protocol/chat-completions.ts";
+import { chatCompletionsErrorPayloadMessage } from "../../../../shared/protocol/chat-completions-errors.ts";
 import type { ProtocolTerminalAlgebra } from "../../../shared/stream/protocol-algebra.ts";
 
 export const chatCompletionSourceStreamAlgebra = {

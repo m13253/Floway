@@ -12,7 +12,7 @@ const collectFrames = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return frames;
 };
 
-const testAccounting = {
+const testTelemetryModelIdentity = {
   model: "test-model",
   upstream: "test-upstream",
   modelKey: "test-model-key",
@@ -50,7 +50,7 @@ Deno.test("runSourceInterceptors lets one interceptor patch payload before run a
         (async function* () {
           yield eventFrame(ctx.payload.value);
         })(),
-        testAccounting,
+        testTelemetryModelIdentity,
       )),
   );
 
@@ -91,7 +91,7 @@ Deno.test("runSourceInterceptors lets one interceptor inspect an upstream error,
           (async function* () {
             yield eventFrame(ctx.payload.value);
           })(),
-          testAccounting,
+          testTelemetryModelIdentity,
         ),
     );
   });

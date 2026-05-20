@@ -1,7 +1,7 @@
 import type {
   CachedModelInfo,
   CachedModelsResponse,
-} from "../../models/cache.ts";
+} from "../upstream-model-cache.ts";
 
 // Raw shape returned by Copilot's upstream /models endpoint. Keep it inside
 // the Copilot provider so the rest of the data plane sees only UpstreamModel.

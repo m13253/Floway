@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { MessagesPayload } from "../../shared/protocol/messages.ts";
+import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
 import {
   type MessagesSourceContext,
   messagesSourceInterceptors,
@@ -9,7 +9,7 @@ import {
   type SourceInterceptor,
 } from "../run-interceptors.ts";
 import { planMessagesRequest } from "./plan.ts";
-import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import { getModelCapabilities } from "../../../providers/capabilities.ts";
 import { resolveModelForRequest } from "../../../providers/registry.ts";
 import { runOnModel, skipProvider } from "../../../providers/run.ts";
 import { buildTargetRequest as buildChatTargetRequest } from "../../translate/messages-via-chat-completions/request.ts";
@@ -31,15 +31,13 @@ import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import { modelLoadErrorResult } from "../../shared/errors/model-load-error.ts";
 import {
   type PerformanceTelemetryContext,
+  recordRequestPerformanceForApiKey,
   runtimeLocationFromRequest,
-} from "../../../shared/performance/telemetry.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+} from "../../../shared/telemetry/performance.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import type { ModelProviderBinding } from "../../../providers/types.ts";
 import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
-import {
-  recordRequestPerformanceForApiKey,
-  recordUsageForApiKey,
-} from "../accounting.ts";
+import { recordUsageForApiKey } from "../../../shared/telemetry/usage.ts";
 
 const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;

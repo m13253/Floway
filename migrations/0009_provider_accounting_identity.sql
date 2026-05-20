@@ -1,3 +1,7 @@
+-- This migration was named before the project terminology changed from
+-- "accounting" to "telemetry". Do not rename it: the filename is part of the
+-- D1 migration identity once applied.
+
 CREATE TEMP TABLE __model_name_source (
   model_key TEXT PRIMARY KEY
 );
@@ -18,7 +22,7 @@ CREATE TEMP TABLE __model_name_migration (
 
 -- Historical rows used the provider/upstream model id as `model`. From this
 -- migration onward, `model` is the public model id and `model_key` preserves
--- the old provider-owned accounting key. Keep this conversion here only; the
+-- the old provider-owned telemetry key. Keep this conversion here only; the
 -- runtime must treat stored `model` as already display/public-normalized.
 INSERT INTO __model_name_migration (model_key, model)
 WITH dot_normalized AS (
@@ -106,8 +110,8 @@ CREATE TABLE performance_summary_new (
   model TEXT NOT NULL,
   upstream TEXT,
   model_key TEXT NOT NULL,
-  source_api TEXT NOT NULL CHECK (source_api IN ('messages', 'responses', 'chat-completions', 'gemini')),
-  target_api TEXT NOT NULL CHECK (target_api IN ('messages', 'responses', 'chat-completions', 'gemini')),
+  source_api TEXT NOT NULL CHECK (source_api IN ('messages', 'responses', 'chat-completions', 'gemini', 'embeddings')),
+  target_api TEXT NOT NULL CHECK (target_api IN ('messages', 'responses', 'chat-completions', 'gemini', 'embeddings')),
   stream INTEGER NOT NULL CHECK (stream IN (0, 1)),
   runtime_location TEXT NOT NULL DEFAULT 'unknown',
   requests INTEGER NOT NULL DEFAULT 0,
@@ -177,8 +181,8 @@ CREATE TABLE performance_latency_buckets_new (
   model TEXT NOT NULL,
   upstream TEXT,
   model_key TEXT NOT NULL,
-  source_api TEXT NOT NULL CHECK (source_api IN ('messages', 'responses', 'chat-completions', 'gemini')),
-  target_api TEXT NOT NULL CHECK (target_api IN ('messages', 'responses', 'chat-completions', 'gemini')),
+  source_api TEXT NOT NULL CHECK (source_api IN ('messages', 'responses', 'chat-completions', 'gemini', 'embeddings')),
+  target_api TEXT NOT NULL CHECK (target_api IN ('messages', 'responses', 'chat-completions', 'gemini', 'embeddings')),
   stream INTEGER NOT NULL CHECK (stream IN (0, 1)),
   runtime_location TEXT NOT NULL DEFAULT 'unknown',
   lower_ms INTEGER NOT NULL,

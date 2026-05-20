@@ -1,9 +1,9 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { getFixCatalog, isKnownFixId } from "./optional-fixes.ts";
+import { getFixCatalog, isKnownFixId } from "./fixes.ts";
 
 const FIX_ID_PATTERN = /^[a-z][a-z0-9-]+$/;
 
-Deno.test("optional-fixes: every id is unique and well-formed", () => {
+Deno.test("provider fixes: every id is unique and well-formed", () => {
   const seen = new Set<string>();
   for (const entry of getFixCatalog()) {
     assertEquals(
@@ -16,7 +16,7 @@ Deno.test("optional-fixes: every id is unique and well-formed", () => {
   }
 });
 
-Deno.test("optional-fixes: appliesTo is non-empty and lists known endpoints only", () => {
+Deno.test("provider fixes: appliesTo is non-empty and lists known endpoints only", () => {
   const known = new Set(["messages", "responses", "chat_completions"]);
   for (const entry of getFixCatalog()) {
     assertEquals(
@@ -34,14 +34,14 @@ Deno.test("optional-fixes: appliesTo is non-empty and lists known endpoints only
   }
 });
 
-Deno.test("optional-fixes: isKnownFixId agrees with catalog", () => {
+Deno.test("provider fixes: isKnownFixId agrees with catalog", () => {
   for (const entry of getFixCatalog()) {
     assertEquals(isKnownFixId(entry.id), true);
   }
   assertEquals(isKnownFixId("nonexistent-fix"), false);
 });
 
-Deno.test("optional-fixes: deepseek-reasoning-dialect is in catalog and chat_completions-scoped", () => {
+Deno.test("provider fixes: deepseek-reasoning-dialect is in catalog and chat_completions-scoped", () => {
   const entry = getFixCatalog().find((e) =>
     e.id === "deepseek-reasoning-dialect"
   );
@@ -49,7 +49,7 @@ Deno.test("optional-fixes: deepseek-reasoning-dialect is in catalog and chat_com
   assertEquals(entry.appliesTo, ["chat_completions"]);
 });
 
-Deno.test("optional-fixes: messages-web-search-shim is messages-scoped", () => {
+Deno.test("provider fixes: messages-web-search-shim is messages-scoped", () => {
   const entry = getFixCatalog().find((e) =>
     e.id === "messages-web-search-shim"
   );
@@ -57,7 +57,7 @@ Deno.test("optional-fixes: messages-web-search-shim is messages-scoped", () => {
   assertEquals(entry.appliesTo, ["messages"]);
 });
 
-Deno.test("optional-fixes: vendor-style flags are present and span all LLM endpoints", () => {
+Deno.test("provider fixes: vendor-style flags are present and span all LLM endpoints", () => {
   const vendorIds = [
     "vendor-deepseek",
     "vendor-qwen",

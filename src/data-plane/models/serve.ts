@@ -2,7 +2,10 @@
 // protocol shape without leaking provider bindings or raw upstream variants.
 
 import type { Context } from "hono";
-import { ModelsFetchError, ModelsRequestError } from "./cache.ts";
+import {
+  ModelsFetchError,
+  ModelsRequestError,
+} from "../providers/upstream-model-cache.ts";
 import { loadAnthropicModels, loadMergedModels } from "./load.ts";
 
 const modelListingFailureMessage = "Upstream model listing failed";

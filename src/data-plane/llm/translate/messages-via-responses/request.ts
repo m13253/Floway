@@ -10,7 +10,7 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
 import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 import type {
@@ -19,7 +19,7 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 const flushPendingContent = (
   pending: ResponseInputContent[],

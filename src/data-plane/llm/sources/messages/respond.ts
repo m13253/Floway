@@ -3,7 +3,7 @@ import {
   type InternalDebugError,
   toInternalDebugError,
 } from "../../shared/errors/internal-debug-error.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import {
   collectMessagesProtocolEventsToResponse,
 } from "./events/to-response.ts";
@@ -14,12 +14,16 @@ import { upstreamErrorToResponse } from "../../shared/errors/upstream-error.ts";
 import { type ProtocolFrame, sseFrame } from "../../shared/stream/types.ts";
 import {
   type RecordRequestPerformance,
+} from "../../../shared/telemetry/performance.ts";
+import {
   type RecordUsage,
   recordUsageIfPresent,
+} from "../../../shared/telemetry/usage.ts";
+import {
   type SourceStreamOutcome,
-  tokenUsageFromMessagesResponse,
   trackSourceStreamOutcome,
-} from "../accounting.ts";
+} from "../telemetry.ts";
+import { tokenUsageFromMessagesResponse } from "./usage.ts";
 
 const internalMessagesErrorPayload = (error: InternalDebugError) => ({
   type: "error",
@@ -94,7 +98,7 @@ export const respondMessages = async (
         result.events,
       );
       await recordUsageIfPresent(
-        result.accounting,
+        result.modelIdentity,
         tokenUsageFromMessagesResponse(response),
         recordUsage,
       );
@@ -125,7 +129,7 @@ export const respondMessages = async (
         isMessagesCompletionFrame,
       ),
       {
-        onUsage: (usage) => recordUsage(result.accounting, usage),
+        onUsage: (usage) => recordUsage(result.modelIdentity, usage),
       },
     ),
     {

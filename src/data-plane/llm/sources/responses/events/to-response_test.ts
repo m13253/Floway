@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import type { ResponsesResult } from "../../../shared/protocol/responses.ts";
+import type { ResponsesResult } from "../../../../shared/protocol/responses.ts";
 import { eventFrame } from "../../../shared/stream/types.ts";
 import { responsesResultToEvents } from "../../../targets/responses/events/from-result.ts";
 import type { SourceResponseStreamEvent } from "./protocol.ts";

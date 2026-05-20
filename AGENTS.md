@@ -30,7 +30,13 @@ Deno KV on Deno runtime, in-memory for tests), TypeScript, and `deno test`.
 - `src/data-plane/`: client-facing compatibility APIs, model/provider routing,
   protocol translation, embeddings, and data-plane tools.
 - `src/data-plane/providers/`: provider interface, provider registry, model
-  merge, and concrete provider implementations.
+  merge, upstream model discovery/cache, model capabilities, provider fix
+  catalog, and concrete provider implementations.
+- `src/data-plane/shared/protocol/`: protocol DTOs shared by providers, sources,
+  targets, translators, model listing, and embeddings.
+- `src/data-plane/shared/telemetry/`: data-plane telemetry primitives shared by
+  LLM and embeddings. `usage.ts` owns token usage recording; `performance.ts`
+  owns request/upstream latency and error recording.
 - `src/repo/`: persistence interfaces and implementations.
 - `src/runtime/`: runtime integration helpers.
 - `src/shared/`: project-wide helpers that are not owned by one plane.
@@ -89,9 +95,15 @@ Model listing belongs in `src/data-plane/models/`: `/v1/models` is
 OpenAI-shaped, `/models` is Anthropic-shaped, and `/v1beta/models` is
 Gemini-shaped. Public data-plane model APIs must not expose provider bindings,
 raw upstream variants, or UI-only provider metadata; `/api/models` may add
-dashboard-owned compatibility fields. Gemini generation request/response
-protocol types and handling belong under `src/data-plane/llm/` because Gemini is
-a source API, not a separate data-plane brand boundary.
+dashboard-owned compatibility fields. Upstream model discovery/cache belongs to
+`src/data-plane/providers/`, not `src/data-plane/models/`.
+
+Gemini generation handling belongs under `src/data-plane/llm/` because Gemini is
+a source API, not a separate data-plane brand boundary. Protocol DTOs that are
+needed outside the LLM routing graph live in `src/data-plane/shared/protocol/`.
+Usage and performance are telemetry, not LLM concepts: shared recording lives in
+`src/data-plane/shared/telemetry/`, while source-specific usage mappers stay in
+the owning source directory such as `src/data-plane/llm/sources/messages/`.
 
 The LLM pipeline is:
 
@@ -139,7 +151,7 @@ Claude compatibility aliases and Copilot raw variant selection live in the
 provider layer. Until there is a general model-alias feature, Responses rewrites
 `codex-auto-review` to `gpt-5.4` with reasoning effort `low` at the Responses
 source entry, before model resolution and usage/performance metadata. Historical
-accounting rows are converted to the public model id only in migrations.
+telemetry rows are converted to the public model id only in migrations.
 
 ## Contracts
 

@@ -1,4 +1,4 @@
-import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../../shared/protocol/messages.ts";
 import type { SourceInterceptor } from "../../run-interceptors.ts";
 import type { MessagesSourceContext } from "./index.ts";
 

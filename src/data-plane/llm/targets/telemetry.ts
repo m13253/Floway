@@ -2,12 +2,12 @@ import {
   type PerformanceTelemetryContext,
   recordPerformanceError,
   recordPerformanceLatency,
-} from "../../shared/performance/telemetry.ts";
+} from "../../shared/telemetry/performance.ts";
 import type { PerformanceApiName } from "../../../repo/types.ts";
-import type { ModelAccounting } from "../../../repo/types.ts";
+import type { TelemetryModelIdentity } from "../../../repo/types.ts";
 import type { EmitInput } from "./emit-types.ts";
 import type { SseFrame, StreamFrame } from "../shared/stream/types.ts";
-import { chatCompletionsErrorPayloadMessage } from "../shared/protocol/chat-completions-errors.ts";
+import { chatCompletionsErrorPayloadMessage } from "../../shared/protocol/chat-completions-errors.ts";
 
 type TerminalKind = "success" | "failure";
 
@@ -16,14 +16,14 @@ export function withUpstreamTelemetry<T>(
   input: EmitInput<{ model: string; stream?: boolean | null }>,
   targetApi: PerformanceApiName,
   startedAt: number,
-  accounting: ModelAccounting,
+  modelIdentity: TelemetryModelIdentity,
 ): AsyncIterable<T> {
   return (async function* () {
     let recorded = false;
     const recordOnce = (kind: TerminalKind, durationMs: number) => {
       if (recorded || !input.apiKeyId) return;
       recorded = true;
-      const context = upstreamContext(input, targetApi, accounting);
+      const context = upstreamContext(input, targetApi, modelIdentity);
       const promise = kind === "success"
         ? recordPerformanceLatency(context, "upstream_success", durationMs)
         : recordPerformanceError(context, "upstream_success");
@@ -78,11 +78,11 @@ export function withUpstreamTelemetry<T>(
 export function recordUpstreamHttpFailure(
   input: EmitInput<{ model: string; stream?: boolean | null }>,
   targetApi: PerformanceApiName,
-  accounting: ModelAccounting,
+  modelIdentity: TelemetryModelIdentity,
 ): void {
   if (!input.apiKeyId) return;
   const promise = recordPerformanceError(
-    upstreamContext(input, targetApi, accounting),
+    upstreamContext(input, targetApi, modelIdentity),
     "upstream_success",
   );
   input.scheduleBackground ? input.scheduleBackground(promise) : void promise;
@@ -91,9 +91,9 @@ export function recordUpstreamHttpFailure(
 export function targetPerformanceContext(
   input: EmitInput<{ model: string; stream?: boolean | null }>,
   targetApi: PerformanceApiName,
-  accounting: ModelAccounting,
+  modelIdentity: TelemetryModelIdentity,
 ): PerformanceTelemetryContext {
-  return upstreamContext(input, targetApi, accounting);
+  return upstreamContext(input, targetApi, modelIdentity);
 }
 
 function classifyTerminalFrame(
@@ -172,13 +172,13 @@ function classifySseTerminal(
 function upstreamContext(
   input: EmitInput<{ model: string; stream?: boolean | null }>,
   targetApi: PerformanceApiName,
-  accounting: ModelAccounting,
+  modelIdentity: TelemetryModelIdentity,
 ): PerformanceTelemetryContext {
   return {
     keyId: input.apiKeyId ?? "unknown",
-    model: accounting.model,
-    upstream: accounting.upstream,
-    modelKey: accounting.modelKey,
+    model: modelIdentity.model,
+    upstream: modelIdentity.upstream,
+    modelKey: modelIdentity.modelKey,
     sourceApi: input.sourceApi,
     targetApi,
     stream: input.clientStream ?? input.payload.stream === true,

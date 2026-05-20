@@ -1,8 +1,8 @@
 import type {
   ChatCompletionResponse,
   ToolCall,
-} from "../../shared/protocol/chat-completions.ts";
-import type { MessagesResponse } from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/chat-completions.ts";
+import type { MessagesResponse } from "../../../shared/protocol/messages.ts";
 
 export const mapMessagesStopReasonToChatCompletionsFinishReason = (
   stopReason: MessagesResponse["stop_reason"],

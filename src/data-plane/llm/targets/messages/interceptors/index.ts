@@ -1,5 +1,5 @@
-import type { MessagesResponse } from "../../../shared/protocol/messages.ts";
-import type { OptionalInterceptor } from "../../optional-fix.ts";
+import type { MessagesResponse } from "../../../../shared/protocol/messages.ts";
+import type { OptionalInterceptor } from "../../optional-interceptor.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";

@@ -1,7 +1,7 @@
 import type {
   GeminiGenerateContentRequest,
   GeminiStreamEvent,
-} from "../../../shared/protocol/gemini.ts";
+} from "../../../../shared/protocol/gemini.ts";
 import type { SourceInterceptor } from "../../run-interceptors.ts";
 import { stripSafetySettings } from "./strip-safety-settings.ts";
 import { stripUnsupportedPartFields } from "./strip-unsupported-part-fields.ts";

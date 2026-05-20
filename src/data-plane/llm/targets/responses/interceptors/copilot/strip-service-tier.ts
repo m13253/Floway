@@ -1,14 +1,14 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../shared/protocol/responses.ts";
+} from "../../../../../shared/protocol/responses.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";
 import type { EmitInput } from "../../../emit-types.ts";
 
 /**
  * Copilot does not expose a compatible `service_tier` control on native or
  * translated Responses handling. Strip it only after planning has committed to
- * the Responses target so source-side behavior and accounting still see the
+ * the Responses target so source-side behavior and telemetry still see the
  * caller's original request.
  *
  * References:

@@ -1,4 +1,4 @@
-import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import type { ModelCapabilities } from "../../../providers/capabilities.ts";
 
 export type ResponsesPlan =
   | { target: "responses" }

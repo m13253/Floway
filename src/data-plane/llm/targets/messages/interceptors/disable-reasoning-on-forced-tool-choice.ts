@@ -1,7 +1,7 @@
 import type {
   MessagesPayload,
   MessagesResponse,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
 

@@ -16,12 +16,16 @@ import {
 } from "../../shared/stream/types.ts";
 import {
   type RecordRequestPerformance,
+} from "../../../shared/telemetry/performance.ts";
+import {
   type RecordUsage,
   recordUsageIfPresent,
+} from "../../../shared/telemetry/usage.ts";
+import {
   type SourceStreamOutcome,
-  tokenUsageFromResponsesResult,
   trackSourceStreamOutcome,
-} from "../accounting.ts";
+} from "../telemetry.ts";
+import { tokenUsageFromResponsesResult } from "./usage.ts";
 
 const internalResponsesErrorPayload = (error: InternalDebugError) => ({
   error: {
@@ -119,7 +123,7 @@ export const respondResponses = async (
         streamOutcome.failed = true;
       }
       await recordUsageIfPresent(
-        result.accounting,
+        result.modelIdentity,
         tokenUsageFromResponsesResult(response),
         recordUsage,
       );
@@ -140,7 +144,7 @@ export const respondResponses = async (
   const response = proxySSE(
     c,
     responsesProtocolEventsToSSEFrames(events, {
-      onUsage: (usage) => recordUsage(result.accounting, usage),
+      onUsage: (usage) => recordUsage(result.modelIdentity, usage),
     }),
     {
       keepAlive: { frame: downstreamSSECommentKeepAliveFrame },

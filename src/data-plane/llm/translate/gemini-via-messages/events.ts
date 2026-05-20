@@ -2,8 +2,8 @@ import type {
   GeminiPart,
   GeminiStreamEvent,
   GeminiUsageMetadata,
-} from "../../shared/protocol/gemini.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/gemini.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import { protocolEventsUntilTerminal } from "../../shared/stream/protocol-algebra.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import { geminiResponse, messagesStopReasonToGemini } from "./result.ts";

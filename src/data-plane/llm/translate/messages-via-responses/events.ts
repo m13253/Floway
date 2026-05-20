@@ -1,10 +1,10 @@
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import { packReasoningSignature } from "../shared/messages-responses-signature.ts";
 import type {
   ResponseOutputItem,
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import {
   createResponsesOutputOrderState,
   recordResponseOutputOrderEvent,

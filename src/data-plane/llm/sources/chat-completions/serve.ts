@@ -2,9 +2,9 @@ import type { Context } from "hono";
 import type {
   ChatCompletionChunk,
   ChatCompletionsPayload,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import { planChatRequest } from "./plan.ts";
-import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import { getModelCapabilities } from "../../../providers/capabilities.ts";
 import { resolveModelForRequest } from "../../../providers/registry.ts";
 import { runOnModel, skipProvider } from "../../../providers/run.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../../translate/chat-completions-via-messages/request.ts";
@@ -25,14 +25,12 @@ import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts
 import { modelLoadErrorResult } from "../../shared/errors/model-load-error.ts";
 import {
   type PerformanceTelemetryContext,
+  recordRequestPerformanceForApiKey,
   runtimeLocationFromRequest,
-} from "../../../shared/performance/telemetry.ts";
+} from "../../../shared/telemetry/performance.ts";
 import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
-import {
-  recordRequestPerformanceForApiKey,
-  recordUsageForApiKey,
-} from "../accounting.ts";
+import { recordUsageForApiKey } from "../../../shared/telemetry/usage.ts";
 
 const unsupportedChatModelResult = (
   model: string,
@@ -74,7 +72,7 @@ export const serveChatCompletions = async (
     scheduleBackground,
   );
   let lastPerformance: PerformanceTelemetryContext | undefined;
-  // Target interceptors may force upstream usage for gateway accounting, but
+  // Target interceptors may force upstream usage for gateway telemetry, but
   // Chat SSE exposes usage only when the caller requested `include_usage`.
   let includeUsageChunk = false;
   let downstreamAbortController: AbortController | undefined;

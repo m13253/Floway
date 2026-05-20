@@ -2,7 +2,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import { reassembleResponsesEvents } from "./reassemble.ts";
 
 type ResponsesReassembleEvent = ResponseStreamEvent | {

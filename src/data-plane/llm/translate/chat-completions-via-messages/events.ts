@@ -1,8 +1,8 @@
 import type {
   ChatCompletionChunk,
   Delta,
-} from "../../shared/protocol/chat-completions.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/chat-completions.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import { mapMessagesStopReasonToChatCompletionsFinishReason } from "./result.ts";
 import { protocolEventsUntilTerminal } from "../../shared/stream/protocol-algebra.ts";
 import {

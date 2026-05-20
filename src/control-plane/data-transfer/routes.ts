@@ -4,7 +4,7 @@ import type { Context } from "hono";
 import { normalizeSearchConfig } from "../../data-plane/tools/web-search/search-config.ts";
 import type { SearchConfig } from "../../data-plane/tools/web-search/types.ts";
 import { isWebSearchProviderName } from "../../shared/web-search-providers.ts";
-import { invalidateUpstreamModels } from "../../data-plane/models/cache.ts";
+import { invalidateUpstreamModels } from "../../data-plane/providers/upstream-model-cache.ts";
 import { getRepo } from "../../repo/index.ts";
 import type {
   ApiKey,
@@ -42,6 +42,7 @@ const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>([
   "responses",
   "chat-completions",
   "gemini",
+  "embeddings",
 ]);
 
 const hasOwn = (value: object, key: string) =>

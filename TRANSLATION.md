@@ -131,11 +131,11 @@ Native Responses target:
 
 Native Chat Completions target:
 
-- forces upstream streaming usage when needed for gateway accounting
+- forces upstream streaming usage when needed for gateway usage telemetry
 
 The Chat source still only exposes final usage-only SSE chunks to clients when
 the caller requested `stream_options.include_usage: true`. Hidden upstream usage
-is preserved separately for gateway accounting.
+is preserved separately for gateway usage telemetry.
 
 ## Gemini Source
 
@@ -331,7 +331,7 @@ Request mapping:
   maps to `reasoning_effort: "none"`; enabled thinking without explicit effort
   is omitted.
 - streaming translated requests force upstream `stream_options.include_usage` so
-  gateway accounting can see usage.
+  gateway usage telemetry can see usage.
 - Messages tools become OpenAI function tools; explicit `strict` is preserved
   and omitted `strict` remains omitted.
 - Messages `tool_choice` maps to OpenAI `tool_choice` where representable.

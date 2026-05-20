@@ -1,12 +1,12 @@
 import type { Context } from "hono";
-import type { ResponsesPayload } from "../../shared/protocol/responses.ts";
+import type { ResponsesPayload } from "../../../shared/protocol/responses.ts";
 import {
   type ResponsesSourceContext,
   responsesSourceInterceptors,
 } from "./interceptors/index.ts";
 import { runSourceInterceptors } from "../run-interceptors.ts";
 import { planResponsesRequest } from "./plan.ts";
-import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import { getModelCapabilities } from "../../../providers/capabilities.ts";
 import { resolveModelForRequest } from "../../../providers/registry.ts";
 import { runOnModel, skipProvider } from "../../../providers/run.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../../translate/responses-via-messages/request.ts";
@@ -29,13 +29,11 @@ import type { SourceResponseStreamEvent } from "./events/protocol.ts";
 import { modelLoadErrorResult } from "../../shared/errors/model-load-error.ts";
 import {
   type PerformanceTelemetryContext,
-  runtimeLocationFromRequest,
-} from "../../../shared/performance/telemetry.ts";
-import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
-import {
   recordRequestPerformanceForApiKey,
-  recordUsageForApiKey,
-} from "../accounting.ts";
+  runtimeLocationFromRequest,
+} from "../../../shared/telemetry/performance.ts";
+import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
+import { recordUsageForApiKey } from "../../../shared/telemetry/usage.ts";
 
 const CODEX_AUTO_REVIEW_ALIAS = "codex-auto-review";
 const CODEX_AUTO_REVIEW_TARGET = "gpt-5.4";
@@ -113,7 +111,7 @@ const rewriteResponsesEntryModelAlias = (
 
   // TODO: Replace this source-entry hardcode with generic model alias support.
   // Codex sends auto-review requests over the Responses wire API, so rewriting
-  // here keeps downstream routing, performance telemetry, and usage accounting
+  // here keeps downstream routing, performance telemetry, and usage telemetry
   // on the real model name.
   // References:
   // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/model-provider/src/provider.rs#L73-L96

@@ -1,7 +1,7 @@
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import { protocolEventsUntilTerminal } from "../../../shared/stream/protocol-algebra.ts";
 import { type ProtocolFrame } from "../../../shared/stream/types.ts";
 import {

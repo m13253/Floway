@@ -2,7 +2,7 @@ import type {
   ResponseFunctionTool,
   ResponsesPayload,
   ResponseTool,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import type { SourceInterceptor } from "../../run-interceptors.ts";
 import type { SourceResponseStreamEvent } from "../events/protocol.ts";
 import type { ResponsesSourceContext } from "./index.ts";

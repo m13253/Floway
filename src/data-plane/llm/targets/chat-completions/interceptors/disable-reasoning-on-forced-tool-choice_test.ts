@@ -1,16 +1,18 @@
 import { assertEquals } from "@std/assert";
-import type { ChatCompletionsPayload } from "../../../shared/protocol/chat-completions.ts";
+import type { ChatCompletionsPayload } from "../../../../shared/protocol/chat-completions.ts";
 import {
   stubProvider,
   stubUpstreamModel,
-  testAccounting,
+  testTelemetryModelIdentity,
 } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 
 const okEvents = () =>
-  Promise.resolve(eventResult((async function* () {})(), testAccounting));
+  Promise.resolve(
+    eventResult((async function* () {})(), testTelemetryModelIdentity),
+  );
 
 const emitInput = (
   payload: ChatCompletionsPayload,

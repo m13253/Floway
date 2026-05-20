@@ -1,11 +1,15 @@
 import { app } from "./app.ts";
 import { clearCopilotTokenCache } from "./shared/copilot.ts";
-import { clearModelsCache } from "./data-plane/models/cache.ts";
+import { clearModelsCache } from "./data-plane/providers/upstream-model-cache.ts";
 import { initEnv } from "./runtime/env.ts";
 import type { SearchConfig } from "./data-plane/tools/web-search/types.ts";
 import { InMemoryRepo } from "./repo/memory.ts";
 import { initRepo } from "./repo/index.ts";
-import type { ApiKey, GitHubAccount, ModelAccounting } from "./repo/types.ts";
+import type {
+  ApiKey,
+  GitHubAccount,
+  TelemetryModelIdentity,
+} from "./repo/types.ts";
 
 interface SetupOptions {
   adminKey?: string;
@@ -247,7 +251,7 @@ export const stubUpstreamModel = (
   ...overrides,
 });
 
-export const testAccounting: ModelAccounting = {
+export const testTelemetryModelIdentity: TelemetryModelIdentity = {
   model: "test-model",
   upstream: "test-upstream",
   modelKey: "test-model-key",

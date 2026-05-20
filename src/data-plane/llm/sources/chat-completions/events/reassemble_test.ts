@@ -2,7 +2,7 @@ import { assertEquals, assertRejects } from "@std/assert";
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
-} from "../../../shared/protocol/chat-completions.ts";
+} from "../../../../shared/protocol/chat-completions.ts";
 import { reassembleChatCompletionChunks } from "./reassemble.ts";
 
 function makeEvents<T = ChatCompletionChunk>(

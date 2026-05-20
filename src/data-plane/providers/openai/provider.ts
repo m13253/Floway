@@ -2,7 +2,7 @@ import type { UpstreamConfig } from "../../../repo/types.ts";
 import { createOpenAiUpstream } from "../../../shared/upstream/openai.ts";
 import type { EndpointKey } from "../../../repo/types.ts";
 import { messagesWebSearchShimInterceptors } from "../../llm/sources/messages/interceptors/index.ts";
-import { loadModels } from "../../models/cache.ts";
+import { loadModels } from "../upstream-model-cache.ts";
 import { publicPathsToModelEndpoints } from "../endpoints.ts";
 import { withModelInfoDefaults } from "../model-info.ts";
 import type {

@@ -8,7 +8,7 @@ import {
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
   type MessagesUserMessage,
-} from "../../shared/protocol/messages.ts";
+} from "../../../shared/protocol/messages.ts";
 import type {
   ResponseFunctionTool,
   ResponseInputImage,
@@ -18,7 +18,7 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 import { packReasoningSignature } from "../shared/messages-responses-signature.ts";
 import {
   fetchRemoteImage,
@@ -26,7 +26,7 @@ import {
   resolveImageUrlToMessagesImage,
 } from "../shared/remote-images.ts";
 import { parseToolArgumentsObject } from "../shared/tool-arguments.ts";
-import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
+import type { ModelCapabilities } from "../../../providers/capabilities.ts";
 
 interface TranslateResponsesToMessagesOptions {
   loadRemoteImage?: RemoteImageLoader;

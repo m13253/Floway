@@ -18,7 +18,7 @@ const setup = (): TelemetryHarness => {
   return { repo, background: [] };
 };
 
-const testAccounting = {
+const testTelemetryModelIdentity = {
   model: "claude-test",
   upstream: "copilot:1",
   modelKey: "claude-test-raw",
@@ -63,7 +63,7 @@ Deno.test("withUpstreamTelemetry records EOF-without-terminal as upstream failur
     baseInput(harness),
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {
@@ -89,7 +89,7 @@ Deno.test("withUpstreamTelemetry records upstream-thrown stream errors as upstre
     baseInput(harness),
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   let thrown: unknown;
@@ -120,7 +120,7 @@ Deno.test("withUpstreamTelemetry does not record consumer-cancelled streams", as
     baseInput(harness),
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   )[Symbol.asyncIterator]();
 
   await iterator.next();
@@ -144,7 +144,7 @@ Deno.test("withUpstreamTelemetry does not record downstream-signal-aborted strea
     }),
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {
@@ -180,7 +180,7 @@ Deno.test("withUpstreamTelemetry records failed Responses JSON as upstream failu
     }),
     "responses",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {
@@ -211,7 +211,7 @@ Deno.test("withUpstreamTelemetry records Messages SSE error event as upstream fa
     baseInput(harness),
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {
@@ -239,7 +239,7 @@ Deno.test("withUpstreamTelemetry records Responses SSE failure event as upstream
     baseInput(harness, { sourceApi: "responses", model: "gpt-failed-stream" }),
     "responses",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {
@@ -267,7 +267,7 @@ Deno.test("withUpstreamTelemetry treats DONE as terminal only for chat-completio
       }),
       targetApi,
       performance.now(),
-      testAccounting,
+      testTelemetryModelIdentity,
     );
 
     for await (const _event of events) {
@@ -295,7 +295,7 @@ Deno.test("withUpstreamTelemetry snapshots duration when the success frame arriv
     baseInput(harness, { model: "claude-timing" }),
     "messages",
     startedAt,
-    testAccounting,
+    testTelemetryModelIdentity,
   )[Symbol.asyncIterator]();
 
   assertEquals((await iterator.next()).done, false);
@@ -316,7 +316,7 @@ Deno.test("recordUpstreamHttpFailure records a single error for non-2xx response
   recordUpstreamHttpFailure(
     baseInput(harness, { sourceApi: "messages" }),
     "messages",
-    testAccounting,
+    testTelemetryModelIdentity,
   );
   await Promise.all(harness.background);
 
@@ -350,7 +350,7 @@ Deno.test("withUpstreamTelemetry skips recording when apiKeyId is absent", async
     },
     "messages",
     performance.now(),
-    testAccounting,
+    testTelemetryModelIdentity,
   );
 
   for await (const _event of events) {

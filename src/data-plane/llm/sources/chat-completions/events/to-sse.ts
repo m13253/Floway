@@ -1,4 +1,4 @@
-import type { ChatCompletionChunk } from "../../../shared/protocol/chat-completions.ts";
+import type { ChatCompletionChunk } from "../../../../shared/protocol/chat-completions.ts";
 import {
   type ProtocolFrame,
   type SseFrame,
@@ -7,7 +7,7 @@ import {
 import { protocolFramesUntilTerminal } from "../../../shared/stream/protocol-algebra.ts";
 import { chatCompletionSourceStreamAlgebra } from "./protocol.ts";
 import type { TokenUsage } from "../../../../../repo/types.ts";
-import { tokenUsageFromChatUsage } from "../../accounting.ts";
+import { tokenUsageFromChatUsage } from "../usage.ts";
 
 export const chatProtocolEventToSSEFrame = (
   frame: ProtocolFrame<ChatCompletionChunk>,

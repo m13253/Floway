@@ -3,11 +3,11 @@ import {
   createMessagesToResponsesStreamState,
   translateMessagesEventToResponsesEvents,
 } from "./events.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import type {
   ResponsesResult,
   ResponseStreamEvent,
-} from "../../shared/protocol/responses.ts";
+} from "../../../shared/protocol/responses.ts";
 
 type ResponseOutputItemAddedEvent = Extract<
   ResponseStreamEvent,

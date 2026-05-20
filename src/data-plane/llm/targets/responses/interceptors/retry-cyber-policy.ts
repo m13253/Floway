@@ -1,7 +1,7 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../shared/protocol/responses.ts";
+} from "../../../../shared/protocol/responses.ts";
 import type { EmitInput, RawEmitResult } from "../../emit-types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import { sseFrame, type StreamFrame } from "../../../shared/stream/types.ts";
@@ -259,9 +259,9 @@ const updateStreamingResultIdentity = (
   }
 
   if (latest.type !== "events") return;
-  returned.accounting.model = latest.accounting.model;
-  returned.accounting.upstream = latest.accounting.upstream;
-  returned.accounting.modelKey = latest.accounting.modelKey;
+  returned.modelIdentity.model = latest.modelIdentity.model;
+  returned.modelIdentity.upstream = latest.modelIdentity.upstream;
+  returned.modelIdentity.modelKey = latest.modelIdentity.modelKey;
 };
 
 const retryCyberPolicyEvents = async function* (
@@ -347,7 +347,7 @@ export const withCyberPolicyRetried: TargetInterceptor<
     if (current.type === "events") {
       const returned: EventsResult = {
         ...current,
-        accounting: { ...current.accounting },
+        modelIdentity: { ...current.modelIdentity },
       };
       returned.events = retryCyberPolicyEvents(ctx, run, current, returned);
       return returned;

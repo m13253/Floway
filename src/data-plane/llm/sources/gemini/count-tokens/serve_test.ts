@@ -1,5 +1,5 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { clearModelsCache } from "../../../../models/cache.ts";
+import { clearModelsCache } from "../../../../providers/upstream-model-cache.ts";
 import { clearCopilotTokenCache } from "../../../../../shared/copilot.ts";
 import {
   copilotModels,

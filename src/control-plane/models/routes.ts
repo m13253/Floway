@@ -12,7 +12,7 @@ import type { Model, ModelMetadata } from "../../data-plane/providers/types.ts";
 import {
   ModelsFetchError,
   ModelsRequestError,
-} from "../../data-plane/models/cache.ts";
+} from "../../data-plane/providers/upstream-model-cache.ts";
 
 interface ControlPlaneModelInfo extends ModelInfo {
   // Compatibility hint for the existing dashboard picker grouping. Public

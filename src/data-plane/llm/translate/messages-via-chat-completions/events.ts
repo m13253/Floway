@@ -1,5 +1,5 @@
-import type { ChatCompletionChunk } from "../../shared/protocol/chat-completions.ts";
-import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { ChatCompletionChunk } from "../../../shared/protocol/chat-completions.ts";
+import type { MessagesStreamEventData } from "../../../shared/protocol/messages.ts";
 import {
   mapChatCompletionsFinishReasonToMessagesStopReason,
   mapChatCompletionsUsageToMessagesUsage,

@@ -1,4 +1,4 @@
-import type { CachedModelInfo } from "../models/cache.ts";
+import type { CachedModelInfo } from "./upstream-model-cache.ts";
 import type { ModelMetadata } from "./types.ts";
 
 export interface RawModelMetadata extends CachedModelInfo {}

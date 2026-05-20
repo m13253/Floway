@@ -5,7 +5,7 @@ import {
   getModelsForUpstream,
   invalidateUpstreamModels,
   loadModels,
-} from "./cache.ts";
+} from "./upstream-model-cache.ts";
 import { createCopilotUpstream } from "../../shared/upstream/copilot.ts";
 import {
   copilotModels,

@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { getModelCapabilities } from "./get-model-capabilities.ts";
-import type { UpstreamModel } from "../../../providers/types.ts";
+import { getModelCapabilities } from "./capabilities.ts";
+import type { UpstreamModel } from "./types.ts";
 
 const upstreamModel = (
   overrides: Partial<UpstreamModel> = {},

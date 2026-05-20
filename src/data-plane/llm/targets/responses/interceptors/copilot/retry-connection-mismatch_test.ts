@@ -2,10 +2,10 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../shared/protocol/responses.ts";
+} from "../../../../../shared/protocol/responses.ts";
 import { initRepo } from "../../../../../../repo/index.ts";
 import { InMemoryRepo } from "../../../../../../repo/memory.ts";
-import { testAccounting } from "../../../../../../test-helpers.ts";
+import { testTelemetryModelIdentity } from "../../../../../../test-helpers.ts";
 import { eventResult } from "../../../../shared/errors/result.ts";
 import { jsonFrame } from "../../../../shared/stream/types.ts";
 import { withConnectionMismatchRetried } from "./retry-connection-mismatch.ts";
@@ -105,7 +105,7 @@ Deno.test("withConnectionMismatchRetried rewrites already-spotted ids before the
           } satisfies ResponsesResult,
         );
       })(),
-      testAccounting,
+      testTelemetryModelIdentity,
     ));
   });
 

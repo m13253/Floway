@@ -1,6 +1,6 @@
 import {
   MESSAGES_WEB_SEARCH_ERROR_CODES,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import type {
   MessagesAssistantContentBlock,
   MessagesClientTool,
@@ -18,7 +18,7 @@ import type {
   MessagesWebSearchErrorCode,
   MessagesWebSearchResultBlock,
   MessagesWebSearchToolResultError,
-} from "../../../shared/protocol/messages.ts";
+} from "../../../../shared/protocol/messages.ts";
 import { collectMessagesProtocolEventsToResponse } from "../events/to-response.ts";
 import { messagesResultToEvents } from "../events/from-result.ts";
 import { internalErrorResult } from "../../../shared/errors/result.ts";

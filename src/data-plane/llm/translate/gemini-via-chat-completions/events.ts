@@ -1,15 +1,15 @@
-import { chatCompletionsErrorPayloadMessage } from "../../shared/protocol/chat-completions-errors.ts";
+import { chatCompletionsErrorPayloadMessage } from "../../../shared/protocol/chat-completions-errors.ts";
 import type {
   ChatCompletionChunk,
   Delta,
-} from "../../shared/protocol/chat-completions.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import type {
   GeminiCandidate,
   GeminiGenerateContentResponse,
   GeminiPart,
   GeminiStreamEvent,
   GeminiUsageMetadata,
-} from "../../shared/protocol/gemini.ts";
+} from "../../../shared/protocol/gemini.ts";
 import { protocolEventsUntilTerminal } from "../../shared/stream/protocol-algebra.ts";
 import { eventFrame, type ProtocolFrame } from "../../shared/stream/types.ts";
 import { mapFinishReason, mapUsage } from "./result.ts";

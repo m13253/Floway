@@ -1,14 +1,14 @@
 import type { Context } from "hono";
-import { ModelsFetchError } from "../../../../models/cache.ts";
+import { ModelsFetchError } from "../../../../providers/upstream-model-cache.ts";
 import type {
   GeminiContent,
   GeminiGenerateContentRequest,
-} from "../../../shared/protocol/gemini.ts";
+} from "../../../../shared/protocol/gemini.ts";
 import { toInternalDebugError } from "../../../shared/errors/internal-debug-error.ts";
 import { stripUnsupportedPartFieldsFromPayload } from "../interceptors/strip-unsupported-part-fields.ts";
 import { stripUnsupportedToolsFromPayload } from "../interceptors/strip-unsupported-tools.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../../../translate/gemini-via-messages/request.ts";
-import { getModelCapabilities } from "../../../shared/models/get-model-capabilities.ts";
+import { getModelCapabilities } from "../../../../providers/capabilities.ts";
 import { resolveModelForRequest } from "../../../../providers/registry.ts";
 import { runOnModel, skipProvider } from "../../../../providers/run.ts";
 
