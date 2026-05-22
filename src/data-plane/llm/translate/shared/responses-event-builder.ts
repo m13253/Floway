@@ -1,6 +1,7 @@
 import type * as Responses from '../../../shared/protocol/responses.ts';
 
 type ResponseOutputContentBlock = Responses.ResponseOutputContentBlock;
+type ResponseOutputCustomToolCall = Responses.ResponseOutputCustomToolCall;
 type ResponseOutputFunctionCall = Responses.ResponseOutputFunctionCall;
 type ResponseOutputItem = Responses.ResponseOutputItem;
 type ResponseOutputMessage = Responses.ResponseOutputMessage;
@@ -39,6 +40,13 @@ const textPart = (text: string): OutputTextPart => ({
       item_id: itemId,
       output_index: outputIndex,
       [state === 'delta' ? 'delta' : 'arguments']: text,
+    } as ResponseStreamEvent),
+  customToolCallInputEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponseStreamEvent =>
+    ({
+      type: `response.custom_tool_call_input.${state}`,
+      item_id: itemId,
+      output_index: outputIndex,
+      [state === 'delta' ? 'delta' : 'input']: text,
     } as ResponseStreamEvent),
   reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): ResponseStreamEvent => ({
     type: `response.reasoning_summary_part.${state}`,
@@ -94,6 +102,12 @@ export const seq = (state: ResponsesSequenceState, events: ResponseStreamEvent[]
     arguments: args,
     status,
   }),
+  customToolCallItem = (callId: string, name: string, input: string): ResponseOutputCustomToolCall => ({
+    type: 'custom_tool_call',
+    call_id: callId,
+    name,
+    input,
+  }),
   started = (state: ResponsesSequenceState, response: ResponsesResult) =>
     seq(state, [
       { type: 'response.created', response },
@@ -141,6 +155,12 @@ export const seq = (state: ResponsesSequenceState, events: ResponseStreamEvent[]
   argumentsDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) => seq(state, [functionCallArgumentsEvent('delta', outputIndex, itemId, delta)]),
   functionCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, args: string, item: ResponseOutputFunctionCall) =>
     seq(state, [functionCallArgumentsEvent('done', outputIndex, itemId, args), outputItemEvent('done', outputIndex, item)]),
+  customToolCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, input: string, item: ResponseOutputCustomToolCall) =>
+    seq(state, [
+      ...(input.length > 0 ? [customToolCallInputEvent('delta', outputIndex, itemId, input)] : []),
+      customToolCallInputEvent('done', outputIndex, itemId, input),
+      outputItemEvent('done', outputIndex, item),
+    ]),
   reasoningStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
     seq(state, [outputItemEvent('added', outputIndex, reasoningItem(itemId, '')), reasoningSummaryPartEvent('added', outputIndex, itemId, 0, '')]),
   reasoningDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) => seq(state, [reasoningSummaryTextEvent('delta', outputIndex, itemId, 0, delta)]),

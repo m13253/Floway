@@ -290,3 +290,83 @@ test('max_tokens stream stop becomes response.incomplete', () => {
   });
   assertEquals(incomplete.response.usage?.output_tokens, 7);
 });
+
+test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
+  const state = createMessagesToResponsesStreamState('resp_ctc', 'claude-test', new Set(['apply_patch']));
+
+  translateMessagesEventToResponsesEvents(
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_ctc',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 0 },
+      },
+    } as MessagesStreamEventData,
+    state,
+  );
+
+  const startEvents = translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'call_ctc', name: 'apply_patch', input: {} },
+    } as MessagesStreamEventData,
+    state,
+  );
+
+  const added = startEvents.find((e): e is ResponseOutputItemAddedEvent => e.type === 'response.output_item.added');
+  if (!added) throw new Error('expected output_item.added');
+  assertEquals(added.item.type, 'custom_tool_call');
+  if (added.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(added.item.name, 'apply_patch');
+  assertEquals(added.item.input, '');
+
+  // Wrapped function-tool arguments split across two deltas. The translator
+  // buffers without emitting and only surfaces the freeform input at stop time.
+  const deltaA = translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '{"input":"*** Begin Patch' },
+    } as MessagesStreamEventData,
+    state,
+  );
+  const deltaB = translateMessagesEventToResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '\\n*** End Patch"}' },
+    } as MessagesStreamEventData,
+    state,
+  );
+  assertEquals(deltaA, []);
+  assertEquals(deltaB, []);
+
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+
+  assertEquals(
+    stopEvents.map(e => e.type),
+    [
+      'response.custom_tool_call_input.delta',
+      'response.custom_tool_call_input.done',
+      'response.output_item.done',
+    ],
+  );
+
+  const inputDelta = stopEvents[0] as Extract<ResponseStreamEvent, { type: 'response.custom_tool_call_input.delta' }>;
+  const inputDone = stopEvents[1] as Extract<ResponseStreamEvent, { type: 'response.custom_tool_call_input.done' }>;
+  const itemDone = stopEvents[2] as ResponseOutputItemDoneEvent;
+
+  assertEquals(inputDelta.delta, '*** Begin Patch\n*** End Patch');
+  assertEquals(inputDone.input, '*** Begin Patch\n*** End Patch');
+  assertEquals(itemDone.item.type, 'custom_tool_call');
+  if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(itemDone.item.input, '*** Begin Patch\n*** End Patch');
+  assertEquals(itemDone.item.call_id, 'call_ctc');
+});

@@ -11,7 +11,6 @@ import {
   type MessagesUserMessage,
 } from '../../../shared/protocol/messages.ts';
 import type {
-  ResponseFunctionTool,
   ResponseInputImage,
   ResponseInputItem,
   ResponseInputMessage,
@@ -20,6 +19,7 @@ import type {
   ResponseTool,
   ResponseToolChoice,
 } from '../../../shared/protocol/responses.ts';
+import { buildCustomToolInputSchema } from '../shared/custom-tool-wrap.ts';
 import { responsesReasoningToMessagesBlock } from '../shared/messages-responses-reasoning.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/remote-images.ts';
 import { parseToolArgumentsObject } from '../shared/tool-arguments.ts';
@@ -33,6 +33,17 @@ interface TranslateResponsesToMessagesOptions {
    * rather than being silently capped by a target-side default later.
    */
   fallbackMaxOutputTokens?: number;
+}
+
+/**
+ * Names of Responses `custom` tools the request translator wrapped as
+ * single-string function tools. Returned alongside the translated payload so
+ * the trip's events translator can project wrapped function calls back into
+ * `custom_tool_call` outputs.
+ */
+export interface ResponsesToMessagesResult {
+  target: MessagesPayload;
+  customToolNames: Set<string>;
 }
 
 const extractSystemText = (message: ResponseInputMessage): string => {
@@ -143,6 +154,23 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
         is_error: item.status === 'incomplete' ? true : undefined,
       });
       break;
+    case 'custom_tool_call':
+      // Project the freeform invocation back into the wrapped function-tool
+      // shape so the translated target sees a coherent history.
+      appendAssistantBlock(messages, {
+        type: 'tool_use',
+        id: item.call_id,
+        name: item.name,
+        input: { input: item.input },
+      });
+      break;
+    case 'custom_tool_call_output':
+      appendUserBlock(messages, {
+        type: 'tool_result',
+        tool_use_id: item.call_id,
+        content: item.output,
+      });
+      break;
     case 'reasoning': {
       const block = responsesReasoningToMessagesBlock(item);
       if (block) appendAssistantBlock(messages, block);
@@ -154,23 +182,35 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
   return { messages, systemParts };
 };
 
-const translateTools = (tools?: ResponseTool[] | null): MessagesTool[] | undefined => {
+const translateTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
   if (!tools || tools.length === 0) return undefined;
 
-  // Hosted Responses tool entries (web_search, image_generation, ...) and
-  // Freeform `custom` tools do not carry the `name`/`parameters` pair Anthropic
-  // Messages requires. The source cleanup strips them for translated targets;
-  // keep this narrow as defense-in-depth so malformed tool entries are never
-  // forwarded upstream.
-  const functionTools = tools.filter((tool): tool is ResponseFunctionTool => tool.type === 'function');
-  if (functionTools.length === 0) return undefined;
-
-  return functionTools.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.parameters,
-    strict: tool.strict,
-  }));
+  // Hosted Responses tool entries (web_search, image_generation, …) have no
+  // upstream execution shim on translated targets and are stripped by the
+  // source-level cleanup before we get here. Freeform `custom` tools are
+  // wrapped as single-string function tools and tracked in customToolNames so
+  // the events translator can reverse the wrapping on the way back.
+  const out: MessagesTool[] = [];
+  for (const tool of tools) {
+    if (tool.type === 'function') {
+      out.push({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.parameters,
+        strict: tool.strict,
+      });
+      continue;
+    }
+    if (tool.type === 'custom') {
+      customToolNames.add(tool.name);
+      out.push({
+        name: tool.name,
+        description: tool.description,
+        input_schema: buildCustomToolInputSchema(tool.format),
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
 };
 
 const translateToolChoice = (toolChoice: ResponseToolChoice | undefined): MessagesPayload['tool_choice'] => {
@@ -189,10 +229,20 @@ const translateToolChoice = (toolChoice: ResponseToolChoice | undefined): Messag
     }
   }
 
-  return toolChoice.type === 'function' && toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
+  // Both function and wrapped custom tools land on the target as named tool
+  // choices since they share the function-tool wire shape after translation.
+  if (toolChoice.type === 'function' || toolChoice.type === 'custom') {
+    return toolChoice.name ? { type: 'tool', name: toolChoice.name } : undefined;
+  }
+  return undefined;
 };
 
-export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<MessagesPayload> => {
+export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
+  const customToolNames = new Set<string>();
+  // Tools first so customToolNames is populated before input history processing
+  // sees the same trip's tool-name set (it doesn't currently consume the set,
+  // but ordering reflects the wrap-then-project flow at one place).
+  const tools = translateTools(payload.tools, customToolNames);
   const { messages, systemParts } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
   const system = [payload.instructions, ...systemParts].filter((part): part is string => Boolean(part)).join('\n\n');
   const effort = payload.reasoning?.effort;
@@ -201,7 +251,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   // Responses `metadata` is intentionally omitted on the Messages path instead
   // of being coerced into Anthropic `metadata.user_id`, prompt-cache, or safety
   // semantics.
-  return {
+  const target: MessagesPayload = {
     model: payload.model,
     messages,
     max_tokens: maxTokens,
@@ -209,13 +259,13 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     ...(payload.stream != null ? { stream: payload.stream } : {}),
-    tools: translateTools(payload.tools),
+    tools,
     tool_choice: translateToolChoice(payload.tool_choice),
     ...(effort === 'none' ? { thinking: { type: 'disabled' as const } } : effort ? { output_config: { effort } } : {}),
   };
+
+  return { target, customToolNames };
 };
 
-export const buildTargetRequest = (payload: ResponsesPayload, capabilities: ModelCapabilities): Promise<MessagesPayload> =>
-  translateResponsesToMessages(payload, {
-    fallbackMaxOutputTokens: capabilities.maxOutputTokens,
-  });
+export const buildTargetRequest = (payload: ResponsesPayload, capabilities: ModelCapabilities): Promise<ResponsesToMessagesResult> =>
+  translateResponsesToMessages(payload, { fallbackMaxOutputTokens: capabilities.maxOutputTokens });

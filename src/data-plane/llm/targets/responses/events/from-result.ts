@@ -1,4 +1,4 @@
-import type { ResponseOutputFunctionCall, ResponseOutputItem, ResponseOutputMessage, ResponseOutputReasoning, ResponsesResult, ResponseStreamEvent } from '../../../../shared/protocol/responses.ts';
+import type { ResponseOutputCustomToolCall, ResponseOutputFunctionCall, ResponseOutputItem, ResponseOutputMessage, ResponseOutputReasoning, ResponsesResult, ResponseStreamEvent } from '../../../../shared/protocol/responses.ts';
 import type { SequencedResponsesStreamEvent } from '../../../shared/protocol/responses.ts';
 import { type EventFrame, eventFrame } from '../../../shared/stream/types.ts';
 
@@ -196,12 +196,47 @@ const responseFunctionCallEvents = (item: ResponseOutputFunctionCall, outputInde
   return events;
 };
 
-const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => {
-  if (item.type === 'message') return responseMessageEvents(item, outputIndex);
-  if (item.type === 'reasoning') {
-    return responseReasoningEvents(item, outputIndex);
+const responseCustomToolCallEvents = (item: ResponseOutputCustomToolCall, outputIndex: number): ResponseStreamEvent[] => {
+  const itemId = item.id ?? `ctc_${outputIndex}`;
+  const events: ResponseStreamEvent[] = [
+    {
+      type: 'response.output_item.added',
+      output_index: outputIndex,
+      item: { ...item, input: '' },
+    },
+  ];
+
+  if (item.input.length > 0) {
+    events.push({
+      type: 'response.custom_tool_call_input.delta',
+      item_id: itemId,
+      output_index: outputIndex,
+      delta: item.input,
+    });
   }
-  return responseFunctionCallEvents(item, outputIndex);
+
+  events.push({
+    type: 'response.custom_tool_call_input.done',
+    item_id: itemId,
+    output_index: outputIndex,
+    input: item.input,
+  });
+  events.push({
+    type: 'response.output_item.done',
+    output_index: outputIndex,
+    item,
+  });
+
+  return events;
+};
+
+const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => {
+  switch (item.type) {
+  case 'message': return responseMessageEvents(item, outputIndex);
+  case 'reasoning': return responseReasoningEvents(item, outputIndex);
+  case 'function_call': return responseFunctionCallEvents(item, outputIndex);
+  case 'custom_tool_call': return responseCustomToolCallEvents(item, outputIndex);
+  }
 };
 
 export const responsesResultToEvents = (response: ResponsesResult): EventFrame<SequencedResponsesStreamEvent>[] => {

@@ -165,3 +165,83 @@ test('translateToSourceEvents rejects Chat streams without DONE', async () => {
 
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Chat Completions stream ended without a DONE sentinel.');
 });
+
+test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool calls into custom_tool_call shape', () => {
+  const state = createChatCompletionsToResponsesStreamState(new Set(['apply_patch']));
+
+  // Initial chunk announces the tool call name; wrapped tools should not emit
+  // an incremental arguments delta even when args bytes already arrived.
+  const startEvents = translateChatCompletionsChunkToResponsesEvents(
+    {
+      id: 'chatcmpl_ctc',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'gpt-test',
+      choices: [
+        {
+          index: 0,
+          delta: {
+            role: 'assistant',
+            tool_calls: [
+              {
+                index: 0,
+                id: 'call_ctc',
+                type: 'function',
+                function: { name: 'apply_patch', arguments: '{"input":"*** Begin Patch' },
+              },
+            ],
+          },
+          finish_reason: null,
+        },
+      ],
+    } satisfies ChatCompletionChunk,
+    state,
+  );
+
+  // Only output_item.added should fire; no arguments delta.
+  assertEquals(
+    startEvents.map(e => e.type),
+    ['response.created', 'response.in_progress', 'response.output_item.added'],
+  );
+  const added = startEvents.find((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
+  if (!added) throw new Error('expected output_item.added');
+  assertEquals(added.item.type, 'custom_tool_call');
+
+  // Second chunk completes the wrapped JSON; still no live delta.
+  const continueEvents = translateChatCompletionsChunkToResponsesEvents(
+    {
+      id: 'chatcmpl_ctc',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'gpt-test',
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                function: { arguments: '\\n*** End Patch"}' },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+    } satisfies ChatCompletionChunk,
+    state,
+  );
+  assertEquals(continueEvents, []);
+
+  const finalEvents = flushChatCompletionsToResponsesEvents(state);
+  const types = finalEvents.map(e => e.type);
+  assertEquals(types.includes('response.custom_tool_call_input.delta'), true);
+  assertEquals(types.includes('response.custom_tool_call_input.done'), true);
+
+  const itemDone = finalEvents.find((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+  if (!itemDone) throw new Error('expected output_item.done');
+  assertEquals(itemDone.item.type, 'custom_tool_call');
+  if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
+  assertEquals(itemDone.item.input, '*** Begin Patch\n*** End Patch');
+  assertEquals(itemDone.item.call_id, 'call_ctc');
+});

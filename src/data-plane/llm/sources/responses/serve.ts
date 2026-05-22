@@ -15,10 +15,8 @@ import type { ProtocolFrame } from '../../shared/stream/types.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { translateToSourceEvents as responsesViaChatCompletionsEvents } from '../../translate/responses-via-chat-completions/events.ts';
-import { buildTargetRequest as responsesViaChatCompletionsRequest } from '../../translate/responses-via-chat-completions/request.ts';
-import { translateToSourceEvents as responsesViaMessagesEvents } from '../../translate/responses-via-messages/events.ts';
-import { buildTargetRequest as responsesViaMessagesRequest } from '../../translate/responses-via-messages/request.ts';
+import { translateResponsesViaChatCompletions } from '../../translate/responses-via-chat-completions/translate.ts';
+import { translateResponsesViaMessages } from '../../translate/responses-via-messages/translate.ts';
 import { type SourceEmit, viaTranslation } from '../../translate/types.ts';
 import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
 
@@ -129,21 +127,9 @@ export const serveResponses = async (c: Context): Promise<Response> => {
 
         const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, ResponsesStreamEvent>> = {
           responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
-          messages: viaTranslation({
-            targetApi: 'messages',
-            buildTargetPayload: (payload, ctx) => responsesViaMessagesRequest(payload, ctx.capabilities),
-            // Synthetic response id generated per Translation invocation so that
-            // Responses callers can correlate a Messages-backed response. Built
-            // here inside the dispatch map so the lifetime is "one viaTranslation
-            // call" — fresh on every binding attempt.
-            translateEvents: (frames, ctx) => responsesViaMessagesEvents(frames, `resp_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`, ctx.model),
-          }, async (tgtPayload: MessagesPayload) =>
+          messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
             await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), request)),
-          'chat-completions': viaTranslation({
-            targetApi: 'chat-completions',
-            buildTargetPayload: payload => responsesViaChatCompletionsRequest(payload),
-            translateEvents: frames => responsesViaChatCompletionsEvents(frames),
-          }, async (tgtPayload: ChatCompletionsPayload) =>
+          'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
             await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', model, tgtPayload), request)),
         };
 

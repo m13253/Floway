@@ -15,12 +15,9 @@ import type { ProtocolFrame } from '../../shared/stream/types.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { translateToSourceEvents as geminiViaChatCompletionsEvents } from '../../translate/gemini-via-chat-completions/events.ts';
-import { buildTargetRequest as geminiViaChatCompletionsRequest } from '../../translate/gemini-via-chat-completions/request.ts';
-import { translateToSourceEvents as geminiViaMessagesEvents } from '../../translate/gemini-via-messages/events.ts';
-import { buildTargetRequest as geminiViaMessagesRequest } from '../../translate/gemini-via-messages/request.ts';
-import { translateToSourceEvents as geminiViaResponsesEvents } from '../../translate/gemini-via-responses/events.ts';
-import { buildTargetRequest as geminiViaResponsesRequest } from '../../translate/gemini-via-responses/request.ts';
+import { translateGeminiViaChatCompletions } from '../../translate/gemini-via-chat-completions/translate.ts';
+import { translateGeminiViaMessages } from '../../translate/gemini-via-messages/translate.ts';
+import { translateGeminiViaResponses } from '../../translate/gemini-via-responses/translate.ts';
 import { type SourceEmit, viaTranslation } from '../../translate/types.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
 
@@ -94,23 +91,11 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
         const invocation: GeminiInvocation = geminiInvocation(binding, target, modelId, attemptPayload);
 
         const emits: Record<LlmTargetApi, SourceEmit<GeminiGenerateContentRequest, GeminiStreamEvent>> = {
-          messages: viaTranslation({
-            targetApi: 'messages',
-            buildTargetPayload: (payload, ctx) => geminiViaMessagesRequest(payload, ctx.model, ctx.wantsStream, ctx.capabilities),
-            translateEvents: frames => geminiViaMessagesEvents(frames),
-          }, async (tgtPayload: MessagesPayload) =>
+          messages: viaTranslation(translateGeminiViaMessages, async (tgtPayload: MessagesPayload) =>
             await emitToMessages(geminiInvocation(binding, 'messages', modelId, tgtPayload), request)),
-          responses: viaTranslation({
-            targetApi: 'responses',
-            buildTargetPayload: (payload, ctx) => geminiViaResponsesRequest(payload, ctx.model, ctx.wantsStream),
-            translateEvents: frames => geminiViaResponsesEvents(frames),
-          }, async (tgtPayload: ResponsesPayload) =>
+          responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) =>
             await emitToResponses(geminiInvocation(binding, 'responses', modelId, tgtPayload), request)),
-          'chat-completions': viaTranslation({
-            targetApi: 'chat-completions',
-            buildTargetPayload: (payload, ctx) => geminiViaChatCompletionsRequest(payload, ctx.model, ctx.wantsStream),
-            translateEvents: frames => geminiViaChatCompletionsEvents(frames),
-          }, async (tgtPayload: ChatCompletionsPayload) =>
+          'chat-completions': viaTranslation(translateGeminiViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
             await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', modelId, tgtPayload), request)),
         };
 

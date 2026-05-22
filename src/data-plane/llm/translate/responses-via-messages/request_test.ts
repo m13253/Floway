@@ -23,8 +23,8 @@ test('translateResponsesToMessages maps reasoning.effort none to thinking.disabl
     reasoning: { effort: 'none', summary: 'detailed' },
   });
 
-  assertEquals(result.thinking, { type: 'disabled' });
-  assertFalse('output_config' in result);
+  assertEquals(result.target.thinking, { type: 'disabled' });
+  assertFalse('output_config' in result.target);
 });
 
 test('translateResponsesToMessages maps reasoning.effort directly to output_config.effort', async () => {
@@ -44,8 +44,8 @@ test('translateResponsesToMessages maps reasoning.effort directly to output_conf
     reasoning: { effort: 'minimal', summary: 'detailed' },
   });
 
-  assertEquals(result.output_config, { effort: 'minimal' });
-  assertFalse('thinking' in result);
+  assertEquals(result.target.output_config, { effort: 'minimal' });
+  assertFalse('thinking' in result.target);
 });
 
 test('translateResponsesToMessages defaults max_tokens to MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
@@ -64,7 +64,7 @@ test('translateResponsesToMessages defaults max_tokens to MESSAGES_FALLBACK_MAX_
     parallel_tool_calls: true,
   });
 
-  assertEquals(result.max_tokens, MESSAGES_FALLBACK_MAX_TOKENS);
+  assertEquals(result.target.max_tokens, MESSAGES_FALLBACK_MAX_TOKENS);
 });
 
 test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
@@ -86,7 +86,7 @@ test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway
     { fallbackMaxOutputTokens: 4096 },
   );
 
-  assertEquals(result.max_tokens, 4096);
+  assertEquals(result.target.max_tokens, 4096);
 });
 
 test('translateResponsesToMessages preserves reasoning summaries without Anthropic signatures', async () => {
@@ -111,7 +111,7 @@ test('translateResponsesToMessages preserves reasoning summaries without Anthrop
     parallel_tool_calls: true,
   });
 
-  const assistant = result.messages[0];
+  const assistant = result.target.messages[0];
   if (assistant.role !== 'assistant' || !Array.isArray(assistant.content)) {
     throw new Error('expected assistant message with content blocks');
   }
@@ -138,7 +138,7 @@ test('translateResponsesToMessages omits generic metadata instead of coercing it
     parallel_tool_calls: true,
   });
 
-  assertFalse('metadata' in result);
+  assertFalse('metadata' in result.target);
 });
 
 test('translateResponsesToMessages resolves remote input images through the shared loader', async () => {
@@ -177,7 +177,7 @@ test('translateResponsesToMessages resolves remote input images through the shar
     },
   );
 
-  const message = result.messages[0];
+  const message = result.target.messages[0];
   if (message.role !== 'user' || !Array.isArray(message.content)) {
     throw new Error('expected user message with content blocks');
   }
@@ -219,10 +219,106 @@ test('translateResponsesToMessages drops reasoning input without readable summar
   });
 
   assertEquals(
-    result.messages.map(m => ({ role: m.role, content: m.content })),
+    result.target.messages.map(m => ({ role: m.role, content: m.content })),
     [
       { role: 'user', content: 'hi' },
       { role: 'user', content: 'follow up' },
     ],
   );
+});
+
+test('translateResponsesToMessages wraps custom tools as single-string function tools and records their names', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: 'hi',
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: [
+      {
+        type: 'custom',
+        name: 'apply_patch',
+        description: 'apply a patch',
+        format: { type: 'grammar', syntax: 'lark', definition: 'start: "ok"' },
+      },
+    ],
+    tool_choice: { type: 'custom', name: 'apply_patch' },
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  assertEquals(result.customToolNames.has('apply_patch'), true);
+  assertEquals(result.target.tools, [
+    {
+      name: 'apply_patch',
+      description: 'apply a patch',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['input'],
+        properties: {
+          input: {
+            type: 'string',
+            description: 'Lark grammar: start: "ok"',
+          },
+        },
+      },
+    },
+  ]);
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
+});
+
+test('translateResponsesToMessages projects custom_tool_call history into wrapped tool_use shape', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'apply this patch' },
+      {
+        type: 'custom_tool_call',
+        call_id: 'call_1',
+        name: 'apply_patch',
+        input: '*** Begin Patch\n*** End Patch',
+      },
+      {
+        type: 'custom_tool_call_output',
+        call_id: 'call_1',
+        output: 'ok',
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: [{ type: 'custom', name: 'apply_patch' }],
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  assertEquals(result.target.messages[1], {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool_use',
+        id: 'call_1',
+        name: 'apply_patch',
+        input: { input: '*** Begin Patch\n*** End Patch' },
+      },
+    ],
+  });
+  assertEquals(result.target.messages[2], {
+    role: 'user',
+    content: [
+      {
+        type: 'tool_result',
+        tool_use_id: 'call_1',
+        content: 'ok',
+      },
+    ],
+  });
 });

@@ -1,16 +1,14 @@
 import type { ResponsesPayload } from '../../../../shared/protocol/responses.ts';
-import type { LlmTargetApi, ResponsesInterceptor } from '../../../interceptors.ts';
+import type { ResponsesInterceptor } from '../../../interceptors.ts';
 
-// Hosted Responses tool entries the gateway cannot yet execute or translate.
-// Codex emits `web_search`, `image_generation`, `tool_search`, and `namespace`
-// entries under `type` alongside ordinary `function` tools. Keep stripping
-// those at the source boundary until the gateway owns an execution shim for
-// them.
+// Hosted Responses tool entries the gateway has no execution shim for. Codex
+// emits these alongside ordinary function and Freeform `custom` tools — we
+// strip them so translators do not see entries that lack a translator-friendly
+// `name`/`parameters` pair.
 //
-// Freeform `custom` tools are valid native Responses tools and Copilot accepts
-// Codex's grammar-shaped `apply_patch` directly. They still cannot be projected
-// into Anthropic Messages or Chat Completions function schemas, so the strip
-// pass removes `custom` only when the selected target is translated.
+// `custom` tools are NOT stripped here. Native Responses targets accept them
+// directly, and translated targets wrap them into single-string function tools
+// inside the pair translator.
 //
 // Once the source-owned web-search shim grows a Responses entry-point we can
 // drop `web_search` from this set and let the shim execute it.
@@ -21,40 +19,35 @@ import type { LlmTargetApi, ResponsesInterceptor } from '../../../interceptors.t
 // - https://github.com/caozhiyuan/copilot-api/blob/1d21b4aca31f89ad49a0c3bf1a71e3561d445855/src/routes/responses/handler.ts#L167-L184
 const HOSTED_RESPONSES_TOOL_TYPES = new Set(['image_generation', 'web_search', 'tool_search', 'namespace']);
 
-const isUnsupportedToolType = (type: unknown, targetApi: LlmTargetApi): type is string =>
-  typeof type === 'string' && (HOSTED_RESPONSES_TOOL_TYPES.has(type) || (targetApi !== 'responses' && type === 'custom'));
+const isHostedToolType = (type: unknown): type is string => typeof type === 'string' && HOSTED_RESPONSES_TOOL_TYPES.has(type);
 
-const stripToolChoice = (payload: ResponsesPayload, targetApi: LlmTargetApi, removedUnsupportedTool: boolean): void => {
+const stripToolChoice = (payload: ResponsesPayload, removedTool: boolean): void => {
   const choice = payload.tool_choice;
 
-  if (choice && typeof choice === 'object' && isUnsupportedToolType(choice.type, targetApi)) {
+  if (choice && typeof choice === 'object' && isHostedToolType(choice.type)) {
     delete payload.tool_choice;
     return;
   }
 
-  if (removedUnsupportedTool && choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+  if (removedTool && choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
     delete payload.tool_choice;
   }
 };
 
 /**
- * Strip Responses tool entries the selected target cannot honor after target
- * planning. Native Responses can receive custom tools directly; translated
- * Messages and Chat Completions targets can only receive function-shaped tools.
- *
- * Forced tool choices that target a removed entry are dropped along with it.
- * If every tool was removed and the caller forced `required`, drop the choice
- * too — leaving it would force the upstream to invoke a tool that no longer
- * exists.
+ * Strip hosted Responses tool entries the gateway cannot yet execute. Forced
+ * tool choices that target a removed entry are dropped along with it; if every
+ * tool was removed and the caller forced `required`, drop the choice too —
+ * leaving it would force the upstream to invoke a tool that no longer exists.
  */
-export const stripUnsupportedToolsFromPayload = (payload: ResponsesPayload, targetApi: LlmTargetApi): void => {
-  let removedUnsupportedTool = false;
+export const stripUnsupportedToolsFromPayload = (payload: ResponsesPayload): void => {
+  let removedTool = false;
 
   if (Array.isArray(payload.tools)) {
     const tools = payload.tools.filter(tool => {
-      const unsupported = isUnsupportedToolType(tool.type, targetApi);
-      removedUnsupportedTool ||= unsupported;
-      return !unsupported;
+      const hosted = isHostedToolType(tool.type);
+      removedTool ||= hosted;
+      return !hosted;
     });
 
     if (tools.length === 0) {
@@ -64,10 +57,10 @@ export const stripUnsupportedToolsFromPayload = (payload: ResponsesPayload, targ
     }
   }
 
-  stripToolChoice(payload, targetApi, removedUnsupportedTool);
+  stripToolChoice(payload, removedTool);
 };
 
 export const stripUnsupportedTools: ResponsesInterceptor = (ctx, _request, run) => {
-  stripUnsupportedToolsFromPayload(ctx.payload, ctx.targetApi);
+  stripUnsupportedToolsFromPayload(ctx.payload);
   return run();
 };

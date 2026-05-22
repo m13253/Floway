@@ -9,6 +9,7 @@ import type {
 import type { ResponseOutputItem, ResponsesResult, ResponseStreamEvent } from '../../../shared/protocol/responses.ts';
 import type { ResponsesStreamEvent } from '../../shared/protocol/responses.ts';
 import { eventFrame, type ProtocolFrame } from '../../shared/stream/types.ts';
+import { unwrapCustomToolInput } from '../shared/custom-tool-wrap.ts';
 import { makeResponsesReasoningId } from '../shared/reasoning.ts';
 import * as responses from '../shared/responses-event-builder.ts';
 
@@ -47,6 +48,14 @@ type OutputBlockInfo =
     toolCallId: string;
     toolName: string;
     toolArguments: string;
+  }
+  | {
+    type: 'custom_tool_use';
+    outputIndex: number;
+    itemId: string;
+    toolCallId: string;
+    toolName: string;
+    wrappedArguments: string;
   };
 
 interface MessagesToResponsesStreamState {
@@ -62,6 +71,7 @@ interface MessagesToResponsesStreamState {
   cacheReadInputTokens?: number;
   cacheCreationInputTokens?: number;
   stopReason?: MessagesMessageDeltaEvent['delta']['stop_reason'];
+  customToolNames: ReadonlySet<string>;
 }
 
 const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult => {
@@ -117,6 +127,20 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
   }
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
+    if (state.customToolNames.has(event.content_block.name)) {
+      const itemId = `ctc_${outputIndex}`;
+      state.blockMap.set(event.index, {
+        type: 'custom_tool_use',
+        outputIndex,
+        itemId,
+        toolCallId: event.content_block.id,
+        toolName: event.content_block.name,
+        wrappedArguments: '',
+      });
+
+      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(event.content_block.id, event.content_block.name, ''));
+    }
+
     const itemId = `fc_${outputIndex}`;
     const info: OutputBlockInfo = {
       type: 'tool_use',
@@ -155,6 +179,13 @@ const handleContentBlockDelta = (event: MessagesContentBlockDeltaEvent, state: M
     if (event.delta.type !== 'input_json_delta') return [];
     info.toolArguments += event.delta.partial_json;
     return responses.argumentsDelta(state, info.outputIndex, info.itemId, event.delta.partial_json);
+  case 'custom_tool_use':
+    // Buffer the wrapped JSON argument blob without emitting a delta; we need
+    // the complete value to extract the freeform `input` field at stop time.
+    if (event.delta.type === 'input_json_delta') {
+      info.wrappedArguments += event.delta.partial_json;
+    }
+    return [];
   }
 };
 
@@ -182,6 +213,15 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
     return responses.textDone(state, info.outputIndex, info.itemId, info.blockText, item);
   }
 
+  if (info.type === 'custom_tool_use') {
+    const input = unwrapCustomToolInput(info.wrappedArguments);
+    const item = responses.customToolCallItem(info.toolCallId, info.toolName, input);
+
+    state.completedItems.push(item);
+
+    return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
+  }
+
   const item = responses.functionCallItem(info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
@@ -189,7 +229,7 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   return responses.functionCallDone(state, info.outputIndex, info.itemId, info.toolArguments, item);
 };
 
-export const createMessagesToResponsesStreamState = (responseId: string, model: string): MessagesToResponsesStreamState => ({
+export const createMessagesToResponsesStreamState = (responseId: string, model: string, customToolNames: ReadonlySet<string> = new Set()): MessagesToResponsesStreamState => ({
   responseId,
   model,
   outputIndex: 0,
@@ -199,6 +239,7 @@ export const createMessagesToResponsesStreamState = (responseId: string, model: 
   completedItems: [],
   inputTokens: 0,
   outputTokens: 0,
+  customToolNames,
 });
 
 export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEventData, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
@@ -243,8 +284,9 @@ export const translateToSourceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
   responseId: string,
   model: string,
+  customToolNames: ReadonlySet<string> = new Set(),
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const state = createMessagesToResponsesStreamState(responseId, model);
+  const state = createMessagesToResponsesStreamState(responseId, model, customToolNames);
 
   for await (const event of upstreamMessagesEventsUntilTerminal(frames)) {
     for (const translated of translateMessagesEventToResponsesEvents(event, state)) {

@@ -1,7 +1,8 @@
 import type { ChatCompletionsPayload, Message, Tool, ToolCall } from '../../../shared/protocol/chat-completions.ts';
-import type { ResponseFunctionTool, ResponseInputItem, ResponsesPayload, ResponseTool, ResponseToolChoice } from '../../../shared/protocol/responses.ts';
+import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '../../../shared/protocol/responses.ts';
 import { responsesContentToChatContent, responsesContentToText } from '../shared/chat-responses-content.ts';
 import { addResponseReasoningToChatProjection, type ChatReasoningProjection, chatReasoningProjectionFields, createChatReasoningProjection } from '../shared/chat-responses-reasoning.ts';
+import { buildCustomToolInputSchema } from '../shared/custom-tool-wrap.ts';
 
 interface AssistantAccumulator {
   message: Message;
@@ -22,31 +23,37 @@ const appendAssistantText = (assistant: AssistantAccumulator | null, text: strin
   return next;
 };
 
-const appendAssistantToolCall = (assistant: AssistantAccumulator | null, item: Extract<ResponseInputItem, { type: 'function_call' }>): AssistantAccumulator => {
+const appendAssistantToolCall = (
+  assistant: AssistantAccumulator | null,
+  call: { call_id: string; name: string; arguments: string },
+): AssistantAccumulator => {
   const next = ensureAssistant(assistant);
   next.message.tool_calls = [
     ...(next.message.tool_calls ?? []),
     {
-      id: item.call_id,
+      id: call.call_id,
       type: 'function',
       function: {
-        name: item.name,
-        arguments: item.arguments,
+        name: call.name,
+        arguments: call.arguments,
       },
     } satisfies ToolCall,
   ];
   return next;
 };
 
-const translateResponseTools = (tools?: ResponseTool[] | null): Tool[] | undefined => {
-  // Same defense-in-depth as the responses-to-messages translator: source
-  // cleanup strips hosted server tools and Freeform `custom` tools for
-  // translated targets. Anything left without `name`/`parameters` is dropped
-  // here rather than forwarded as a malformed function tool.
-  const functionTools = tools?.filter((tool): tool is ResponseFunctionTool => tool.type === 'function') ?? [];
+const translateResponseTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): Tool[] | undefined => {
+  if (!tools || tools.length === 0) return undefined;
 
-  return functionTools.length > 0
-    ? functionTools.map(tool => ({
+  // Source cleanup strips hosted server tools (web_search, image_generation,
+  // ...) before we get here. Freeform `custom` tools are wrapped as
+  // single-string function tools so the Chat target can still invoke them;
+  // names are recorded in customToolNames so the events translator can
+  // recover the freeform shape on the way back.
+  const out: Tool[] = [];
+  for (const tool of tools) {
+    if (tool.type === 'function') {
+      out.push({
         type: 'function',
         function: {
           name: tool.name,
@@ -54,17 +61,31 @@ const translateResponseTools = (tools?: ResponseTool[] | null): Tool[] | undefin
           strict: tool.strict,
           ...(tool.description ? { description: tool.description } : {}),
         },
-      }))
-    : undefined;
+      });
+      continue;
+    }
+    if (tool.type === 'custom') {
+      customToolNames.add(tool.name);
+      out.push({
+        type: 'function',
+        function: {
+          name: tool.name,
+          parameters: buildCustomToolInputSchema(tool.format),
+          strict: false,
+          ...(tool.description ? { description: tool.description } : {}),
+        },
+      });
+    }
+  }
+  return out.length > 0 ? out : undefined;
 };
 
 const translateResponseToolChoice = (choice?: ResponseToolChoice): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
-  // Source cleanup strips hosted server tools and translated-only Freeform
-  // tools. Any remaining non-function forced choice would point at a tool that
-  // no longer exists in the translated target payload.
-  if (choice.type !== 'function') return undefined;
+  // Both function and wrapped custom tools land on the target as named function
+  // choices since they share the function-tool wire shape after translation.
+  if (choice.type !== 'function' && choice.type !== 'custom') return undefined;
   return { type: 'function', function: { name: choice.name } };
 };
 
@@ -93,8 +114,24 @@ const buildChatResponseFormat = (text: ResponsesPayload['text']): ChatCompletion
   return format;
 };
 
-export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ChatCompletionsPayload => {
+/**
+ * Names of Responses `custom` tools the request translator wrapped as
+ * single-string function tools. Returned alongside the translated payload so
+ * the trip's events translator can project wrapped function calls back into
+ * `custom_tool_call` outputs.
+ */
+export interface ResponsesToChatCompletionsResult {
+  target: ChatCompletionsPayload;
+  customToolNames: Set<string>;
+}
+
+export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ResponsesToChatCompletionsResult => {
+  const customToolNames = new Set<string>();
   const responseFormat = buildChatResponseFormat(payload.text);
+  // Tools first so customToolNames is populated before input history processing
+  // sees the same trip's tool-name set (it doesn't currently consume the set,
+  // but ordering reflects the wrap-then-project flow at one place).
+  const tools = translateResponseTools(payload.tools, customToolNames);
   const messages: Message[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
 
   if (typeof payload.input === 'string') {
@@ -132,6 +169,27 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
         continue;
       }
 
+      if (item.type === 'custom_tool_call') {
+        // Project the freeform invocation into the wrapped function-tool shape
+        // so the translated target sees a coherent tool-call history.
+        assistant = appendAssistantToolCall(assistant, {
+          call_id: item.call_id,
+          name: item.name,
+          arguments: JSON.stringify({ input: item.input }),
+        });
+        continue;
+      }
+
+      if (item.type === 'custom_tool_call_output') {
+        flushAssistant();
+        messages.push({
+          role: 'tool',
+          tool_call_id: item.call_id,
+          content: item.output,
+        });
+        continue;
+      }
+
       // item_reference items are connection-bound pointers with no inline
       // content to translate; skip them.
       if (item.type === 'item_reference') continue;
@@ -153,7 +211,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
 
   // Same-purpose OpenAI fields pass through directly here, while broader
   // Responses-only state such as `previous_response_id` remains native-only.
-  return {
+  const target: ChatCompletionsPayload = {
     model: payload.model,
     messages,
     ...(payload.max_output_tokens !== undefined ? { max_tokens: payload.max_output_tokens } : {}),
@@ -170,9 +228,11 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
     // Chat Completions has no request-level counterpart for Responses
     // `reasoning`; only explicit reasoning items survive this translation.
-    tools: translateResponseTools(payload.tools),
+    tools,
     tool_choice: translateResponseToolChoice(payload.tool_choice),
   };
+
+  return { target, customToolNames };
 };
 
 export const buildTargetRequest = translateResponsesToChatCompletions;

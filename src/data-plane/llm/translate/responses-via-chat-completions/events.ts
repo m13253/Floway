@@ -3,6 +3,7 @@ import type { ResponseOutputItem, ResponseOutputReasoning, ResponsesResult, Resp
 import type { ResponsesStreamEvent } from '../../shared/protocol/responses.ts';
 import { eventFrame, type ProtocolFrame } from '../../shared/stream/types.ts';
 import { toResponseReasoningItem } from '../shared/chat-responses-reasoning.ts';
+import { unwrapCustomToolInput } from '../shared/custom-tool-wrap.ts';
 import { makeResponsesReasoningId } from '../shared/reasoning.ts';
 import * as responses from '../shared/responses-event-builder.ts';
 import { checkWhitespaceOverflow } from '../shared/tool-arguments.ts';
@@ -47,6 +48,7 @@ interface PendingTextItem {
 interface FunctionCallStreamItem {
   outputIndex: number;
   itemId: string;
+  kind: 'function' | 'custom';
 }
 
 interface PendingFunctionCallItem {
@@ -85,9 +87,10 @@ interface ChatCompletionsToResponsesStreamState {
   usage?: ResponsesResult['usage'];
   pendingFinishReason?: ChatFinishReason;
   completed: boolean;
+  customToolNames: ReadonlySet<string>;
 }
 
-export const createChatCompletionsToResponsesStreamState = (): ChatCompletionsToResponsesStreamState => ({
+export const createChatCompletionsToResponsesStreamState = (customToolNames: ReadonlySet<string> = new Set()): ChatCompletionsToResponsesStreamState => ({
   responseCreated: false,
   outputIndex: 0,
   sequenceNumber: 0,
@@ -99,6 +102,7 @@ export const createChatCompletionsToResponsesStreamState = (): ChatCompletionsTo
   deferredAfterReasoning: [],
   reasoningItemsSeen: false,
   completed: false,
+  customToolNames,
 });
 
 const buildResult = (state: ChatCompletionsToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult =>
@@ -163,7 +167,16 @@ const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): Respo
   for (const functionCall of [...state.openFunctionCalls.values()]
     .filter((item): item is StartedFunctionCallItem => item.streamItem !== undefined && Boolean(item.callId) && Boolean(item.name))
     .sort((a, b) => a.streamItem.outputIndex - b.streamItem.outputIndex)) {
-    const { outputIndex, itemId } = functionCall.streamItem;
+    const { outputIndex, itemId, kind } = functionCall.streamItem;
+
+    if (kind === 'custom') {
+      const input = unwrapCustomToolInput(functionCall.arguments);
+      const item = responses.customToolCallItem(functionCall.callId, functionCall.name, input);
+
+      state.completedItems[outputIndex] = item;
+      events.push(...responses.customToolCallDone(state, outputIndex, itemId, input, item));
+      continue;
+    }
 
     const item = responses.functionCallItem(functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
 
@@ -201,9 +214,20 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompleti
     return [];
   }
 
+  const isCustom = state.customToolNames.has(current.name);
   const outputIndex = state.outputIndex++;
-  const streamItem = { outputIndex, itemId: `fc_${outputIndex}` };
+  const streamItem: FunctionCallStreamItem = {
+    outputIndex,
+    itemId: isCustom ? `ctc_${outputIndex}` : `fc_${outputIndex}`,
+    kind: isCustom ? 'custom' : 'function',
+  };
   current.streamItem = streamItem;
+
+  if (isCustom) {
+    // Wrapped custom tool calls buffer arguments fully; we cannot emit input
+    // deltas until we can parse the JSON wrap and extract the freeform value.
+    return responses.itemAdded(state, outputIndex, responses.customToolCallItem(current.callId, current.name, ''));
+  }
 
   const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(current.callId, current.name, '', 'in_progress'));
 
@@ -234,6 +258,14 @@ const emitToolCallsDelta = (toolCalls: ChatStreamToolCalls, state: ChatCompletio
     };
 
     if (toolCall.id) current.callId = toolCall.id;
+    // OpenAI's documented Chat Completions stream contract delivers each tool
+    // call's `function.name` in a single delta — we pin `kind` once `name` is
+    // first present (in startFunctionCall) and never re-evaluate. A custom
+    // upstream that fragmented `name` across deltas would race the kind
+    // decision; we don't defend against that here because emitting
+    // `response.output_item.added` as a function tool first and then trying
+    // to retract it for a custom tool isn't a wire-supported transition.
+    // Reference: https://github.com/openai/openai-python/blob/main/src/openai/lib/streaming/chat/_completions.py
     if (toolCall.function?.name) current.name = toolCall.function.name;
     state.openFunctionCalls.set(toolCall.index, current);
     events.push(...startFunctionCall(current, state));
@@ -259,7 +291,9 @@ const emitToolCallsDelta = (toolCalls: ChatStreamToolCalls, state: ChatCompletio
 
     current.arguments += toolCall.function.arguments;
 
-    if (current.streamItem) {
+    // Wrapped custom tool calls have no live delta on the Responses side; the
+    // freeform input is extracted at close time. Function tools keep streaming.
+    if (current.streamItem?.kind === 'function') {
       events.push(...responses.argumentsDelta(state, current.streamItem.outputIndex, current.streamItem.itemId, toolCall.function.arguments));
     }
   }
@@ -373,8 +407,11 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
 
 export const flushChatCompletionsToResponsesEvents = (state: ChatCompletionsToResponsesStreamState): ResponseStreamEvent[] => finalize(state);
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const state = createChatCompletionsToResponsesStreamState();
+export const translateToSourceEvents = async function* (
+  frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>,
+  customToolNames: ReadonlySet<string> = new Set(),
+): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  const state = createChatCompletionsToResponsesStreamState(customToolNames);
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     for (const event of translateChatCompletionsChunkToResponsesEvents(chunk, state)) {

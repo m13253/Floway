@@ -13,10 +13,8 @@ import type { ProtocolFrame } from '../../shared/stream/types.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { translateToSourceEvents as chatCompletionsViaMessagesEvents } from '../../translate/chat-completions-via-messages/events.ts';
-import { buildTargetRequest as chatCompletionsViaMessagesRequest } from '../../translate/chat-completions-via-messages/request.ts';
-import { translateToSourceEvents as chatCompletionsViaResponsesEvents } from '../../translate/chat-completions-via-responses/events.ts';
-import { buildTargetRequest as chatCompletionsViaResponsesRequest } from '../../translate/chat-completions-via-responses/request.ts';
+import { translateChatCompletionsViaMessages } from '../../translate/chat-completions-via-messages/translate.ts';
+import { translateChatCompletionsViaResponses } from '../../translate/chat-completions-via-responses/translate.ts';
 import { type SourceEmit, viaTranslation } from '../../translate/types.ts';
 import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
 
@@ -77,17 +75,9 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
 
         const emits: Record<LlmTargetApi, SourceEmit<ChatCompletionsPayload, ChatCompletionChunk>> = {
           'chat-completions': async srcPayload => await emitToChatCompletions({ ...invocation, payload: srcPayload }, request),
-          messages: viaTranslation({
-            targetApi: 'messages',
-            buildTargetPayload: (payload, ctx) => chatCompletionsViaMessagesRequest(payload, ctx.capabilities),
-            translateEvents: frames => chatCompletionsViaMessagesEvents(frames),
-          }, async (tgtPayload: MessagesPayload) =>
+          messages: viaTranslation(translateChatCompletionsViaMessages, async (tgtPayload: MessagesPayload) =>
             await emitToMessages(chatInvocation(binding, 'messages', model, tgtPayload), request)),
-          responses: viaTranslation({
-            targetApi: 'responses',
-            buildTargetPayload: payload => chatCompletionsViaResponsesRequest(payload),
-            translateEvents: frames => chatCompletionsViaResponsesEvents(frames),
-          }, async (tgtPayload: ResponsesPayload) =>
+          responses: viaTranslation(translateChatCompletionsViaResponses, async (tgtPayload: ResponsesPayload) =>
             await emitToResponses(chatInvocation(binding, 'responses', model, tgtPayload), request)),
         };
 

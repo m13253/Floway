@@ -101,11 +101,11 @@ Copilot Messages provider target boundary:
 
 Responses source boundary:
 
-- preserves native Responses `custom` tools such as Codex `apply_patch` when
-  the selected upstream target is Responses
-- removes unsupported hosted Responses tools and translated-only `custom` tools,
-  plus forced tool choices that target removed tools, before target request
-  construction/emission
+- removes unsupported hosted Responses entries (`image_generation`, `web_search`,
+  `tool_search`, `namespace`) and forced tool choices that targeted them before
+  target request construction/emission. Freeform `custom` tools are preserved:
+  native Responses targets receive them directly; translated targets wrap them
+  as single-string function tools (see "Responses Custom Tool Wrapping").
 
 Gemini source boundary:
 
@@ -296,8 +296,11 @@ Request mapping:
 - `reasoning.effort: "none"` maps to disabled thinking; any other explicit
   effort maps to `output_config.effort`.
 - Responses function tools become Messages tools, preserving explicit `strict`.
+  Freeform `custom` tools are wrapped as single-string function tools; see
+  "Responses Custom Tool Wrapping".
 - Responses `tool_choice` maps to the corresponding Messages tool choice when
-  representable.
+  representable. `{type:'custom', name}` collapses onto the wrapped function
+  tool name.
 
 Response mapping:
 
@@ -318,6 +321,9 @@ Known losses:
   `metadata.user_id`.
 - `previous_response_id` and other Responses-native state are not emulated on
   translated Messages paths.
+- Freeform `custom` tool `format.definition` is preserved as a
+  `Lark grammar: ${definition}` description on the wrapped `input` parameter;
+  other `format` fields are not preserved.
 - Remote image fetch failures and unsupported image media types drop that image
   rather than failing the request.
 
@@ -459,6 +465,8 @@ Request mapping:
 - Responses `text.format` maps directly to Chat `response_format`; `text: {}`
   omits `response_format`, while `text: null` stays explicit `null`.
 - Responses function tools become Chat function tools, preserving `strict`.
+  Freeform `custom` tools are wrapped as single-string function tools; see
+  "Responses Custom Tool Wrapping".
 
 Response mapping:
 
@@ -479,8 +487,42 @@ Known losses:
   explicit effort.
 - `previous_response_id` and other Responses-native state are not emulated on
   translated Chat paths.
+- Freeform `custom` tool `format.definition` is preserved as a
+  `Lark grammar: ${definition}` description on the wrapped `input` parameter;
+  other `format` fields are not preserved.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
+
+## Responses Custom Tool Wrapping
+
+Responses Freeform `custom` tools have no Anthropic or Chat Completions
+counterpart. The Responses-to-Messages and Responses-to-Chat-Completions
+translators wrap each `custom` tool as a single-string function tool with the
+schema:
+
+```json
+{ "type": "object", "additionalProperties": false,
+  "required": ["input"], "properties": { "input": { "type": "string" } } }
+```
+
+When the source `custom` tool provides `format.definition` (the Lark grammar
+source), the translator copies it into the `input` parameter's `description`
+prefixed with `Lark grammar: ` so target models still see what shape the
+freeform value should follow. Other `format` fields (`type`, `syntax`, ...)
+are not preserved. Tool names get tracked per trip; the events translator
+recognizes wrapped function calls coming back from the target by name,
+unwraps the `input` field from the JSON arguments blob, and projects the
+result as `custom_tool_call` output items plus
+`response.custom_tool_call_input.delta` / `.done` events to the Responses
+caller. Wrapped tool-call argument deltas are buffered and emitted as a single
+input delta at stop time because freeform values cannot be safely split out of
+partial JSON. Tool choice referencing a `custom` tool maps to the
+function-shape choice for the wrapped target. Historical `custom_tool_call` /
+`custom_tool_call_output` input items are projected into the wrapped
+function-tool history shape so multi-turn conversations remain coherent.
+
+Native Responses targets continue to receive `custom` tools, tool choices, and
+historical custom tool call items unchanged.
 
 ## Streaming Semantics
 

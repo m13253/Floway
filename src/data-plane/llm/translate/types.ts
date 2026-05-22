@@ -1,32 +1,35 @@
 import type { ModelCapabilities } from '../../providers/capabilities.ts';
-import type { LlmTargetApi } from '../interceptors.ts';
 import type { ExecuteResult } from '../shared/errors/result.ts';
 import type { ProtocolFrame } from '../shared/stream/types.ts';
 
 /**
- * Per-translation context. Carries everything a translator might read that is
- * not on the source payload itself. Concrete pair translators consume only the
- * fields they need; closures inside a Translation may also keep private
- * per-invocation state (for example, a synthetic response id per call).
+ * Per-trip context. Carries everything a translator might read that is not on
+ * the source payload itself. Concrete pair translators consume only the fields
+ * they need.
  */
-export interface TranslationBuildContext {
+export interface TranslationContext {
   readonly model: string;
   readonly wantsStream: boolean;
   readonly capabilities: ModelCapabilities;
 }
 
 /**
- * Pure cross-protocol translation. The source serve treats Translation as
- * opaque: it knows which target the planner selected (via `targetApi`), hands
- * in the source payload to receive a target payload, and maps the target's
- * protocol events back into the source's protocol events. The caller never
- * inspects translator internals.
+ * One pairwise translation trip. The function body owns the trip: it builds
+ * the target payload and returns an events translator closure that maps
+ * target-protocol events back into source-protocol events. Trip-scoped state
+ * (synthetic ids, custom-tool name sets, etc.) lives as locals captured by
+ * the returned closure — the source serve never sees them.
+ *
+ * Stateless pairs simply return a function reference for `events`. Stateful
+ * pairs let the closure capture whatever locals the trip needs.
  */
-export interface Translation<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent> {
-  readonly targetApi: LlmTargetApi;
-  buildTargetPayload(src: SrcPayload, ctx: TranslationBuildContext): TgtPayload | Promise<TgtPayload>;
-  translateEvents(events: AsyncIterable<ProtocolFrame<TgtEvent>>, ctx: TranslationBuildContext): AsyncIterable<ProtocolFrame<SrcEvent>>;
-}
+export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent> = (
+  src: SrcPayload,
+  ctx: TranslationContext,
+) => Promise<{
+  target: TgtPayload;
+  events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
+}>;
 
 /**
  * Common signature for native and translated source emits. The source serve
@@ -35,20 +38,20 @@ export interface Translation<SrcPayload, SrcEvent, TgtPayload extends { model: s
  */
 export type SourceEmit<SrcPayload, SrcEvent> = (
   srcPayload: SrcPayload,
-  ctx: TranslationBuildContext,
+  ctx: TranslationContext,
 ) => Promise<ExecuteResult<ProtocolFrame<SrcEvent>>>;
 
 /**
- * Factory: combines a Translation with a target-protocol emit into a
- * SourceEmit. Non-event results pass through unchanged so source error shaping
+ * Combine a translation trip with a target-protocol emit into a SourceEmit.
+ * Non-event target results pass through unchanged so source error shaping
  * observes the original upstream/internal failure context.
  */
 export const viaTranslation = <SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent>(
-  translation: Translation<SrcPayload, SrcEvent, TgtPayload, TgtEvent>,
-  targetEmit: (tgtPayload: TgtPayload) => Promise<ExecuteResult<ProtocolFrame<TgtEvent>>>,
-): SourceEmit<SrcPayload, SrcEvent> => async (srcPayload, ctx) => {
-  const tgtPayload = await translation.buildTargetPayload(srcPayload, ctx);
-  const tgtResult = await targetEmit(tgtPayload);
-  if (tgtResult.type !== 'events') return tgtResult;
-  return { ...tgtResult, events: translation.translateEvents(tgtResult.events, ctx) };
+  translate: TranslateTrip<SrcPayload, SrcEvent, TgtPayload, TgtEvent>,
+  emit: (target: TgtPayload) => Promise<ExecuteResult<ProtocolFrame<TgtEvent>>>,
+): SourceEmit<SrcPayload, SrcEvent> => async (src, ctx) => {
+  const { target, events } = await translate(src, ctx);
+  const result = await emit(target);
+  if (result.type !== 'events') return result;
+  return { ...result, events: events(result.events) };
 };

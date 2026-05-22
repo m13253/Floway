@@ -56,12 +56,12 @@ test('translateResponsesToChatCompletions merges adjacent assistant reasoning te
     reasoning: { effort: 'medium' },
   });
 
-  assertEquals(result.model, 'gpt-test');
-  assertEquals(result.max_tokens, 256);
-  assertEquals(result.metadata, { trace_id: 'trace_123' });
-  assertEquals(result.store, false);
-  assertEquals(result.parallel_tool_calls, true);
-  assertEquals(result.response_format, {
+  assertEquals(result.target.model, 'gpt-test');
+  assertEquals(result.target.max_tokens, 256);
+  assertEquals(result.target.metadata, { trace_id: 'trace_123' });
+  assertEquals(result.target.store, false);
+  assertEquals(result.target.parallel_tool_calls, true);
+  assertEquals(result.target.response_format, {
     type: 'json_schema',
     json_schema: {
       name: 'shape',
@@ -69,10 +69,10 @@ test('translateResponsesToChatCompletions merges adjacent assistant reasoning te
       schema: { type: 'object' },
     },
   });
-  assertEquals(result.prompt_cache_key, 'cache-key');
-  assertEquals(result.safety_identifier, 'safe-id');
-  assertEquals(result.reasoning_effort, 'medium');
-  assertEquals(result.messages, [
+  assertEquals(result.target.prompt_cache_key, 'cache-key');
+  assertEquals(result.target.safety_identifier, 'safe-id');
+  assertEquals(result.target.reasoning_effort, 'medium');
+  assertEquals(result.target.messages, [
     { role: 'system', content: 'system prompt' },
     { role: 'user', content: 'Hi' },
     {
@@ -132,7 +132,7 @@ test('translateResponsesToChatCompletions preserves all reasoning items and proj
     parallel_tool_calls: null,
   });
 
-  assertEquals(result.messages, [
+  assertEquals(result.target.messages, [
     {
       role: 'assistant',
       content: null,
@@ -161,10 +161,10 @@ test('translateResponsesToChatCompletions preserves explicit null prompt cache a
     safety_identifier: null,
   });
 
-  assertEquals('prompt_cache_key' in result, true);
-  assertEquals(result.prompt_cache_key, null);
-  assertEquals('safety_identifier' in result, true);
-  assertEquals(result.safety_identifier, null);
+  assertEquals('prompt_cache_key' in result.target, true);
+  assertEquals(result.target.prompt_cache_key, null);
+  assertEquals('safety_identifier' in result.target, true);
+  assertEquals(result.target.safety_identifier, null);
 });
 
 test('translateResponsesToChatCompletions omits response_format when Responses text.format is absent', () => {
@@ -174,7 +174,7 @@ test('translateResponsesToChatCompletions omits response_format when Responses t
     text: {},
   });
 
-  assertEquals('response_format' in result, false);
+  assertEquals('response_format' in result.target, false);
 });
 
 test('translateResponsesToChatCompletions preserves explicit null text format', () => {
@@ -184,7 +184,7 @@ test('translateResponsesToChatCompletions preserves explicit null text format', 
     text: null,
   });
 
-  assertEquals(result.response_format, null);
+  assertEquals(result.target.response_format, null);
 });
 
 test('translateResponsesToChatCompletions reshapes flat json_schema text format into Chat Completions shape', () => {
@@ -206,7 +206,7 @@ test('translateResponsesToChatCompletions reshapes flat json_schema text format 
     },
   });
 
-  assertEquals(result.response_format, {
+  assertEquals(result.target.response_format, {
     type: 'json_schema',
     json_schema: {
       name: 'review_output',
@@ -223,7 +223,7 @@ test('translateResponsesToChatCompletions passes through plain text format witho
     text: { format: { type: 'text' } },
   });
 
-  assertEquals(result.response_format, { type: 'text' });
+  assertEquals(result.target.response_format, { type: 'text' });
 });
 
 test('translateResponsesToChatCompletions does not double-wrap an already-wrapped json_schema', () => {
@@ -238,7 +238,7 @@ test('translateResponsesToChatCompletions does not double-wrap an already-wrappe
     },
   });
 
-  assertEquals(result.response_format, {
+  assertEquals(result.target.response_format, {
     type: 'json_schema',
     json_schema: { name: 'already', strict: false, schema: {} },
   });
@@ -1150,13 +1150,13 @@ test('translateResponsesToChatCompletions filters out builtin tools that have no
   });
 
   // Only the two function tools should survive.
-  assertEquals(result.tools?.length, 2);
-  assertEquals(result.tools![0].function.name, 'get_weather');
-  assertEquals(result.tools![0].function.strict, false);
-  assertEquals(result.tools![0].function.description, 'Get weather for a city');
-  assertEquals(result.tools![1].function.name, 'lookup');
-  assertEquals(result.tools![1].function.strict, true);
-  assertEquals(result.tools![1].function.description, undefined);
+  assertEquals(result.target.tools?.length, 2);
+  assertEquals(result.target.tools![0].function.name, 'get_weather');
+  assertEquals(result.target.tools![0].function.strict, false);
+  assertEquals(result.target.tools![0].function.description, 'Get weather for a city');
+  assertEquals(result.target.tools![1].function.name, 'lookup');
+  assertEquals(result.target.tools![1].function.strict, true);
+  assertEquals(result.target.tools![1].function.description, undefined);
 });
 
 test('translateResponsesToChatCompletions returns undefined tools when only builtin tools are present', () => {
@@ -1175,7 +1175,7 @@ test('translateResponsesToChatCompletions returns undefined tools when only buil
     text: null,
   });
 
-  assertEquals(result.tools, undefined);
+  assertEquals(result.target.tools, undefined);
 });
 
 test('translateResponsesToChatCompletions drops forced builtin tool_choice but keeps function tool_choice', () => {
@@ -1199,7 +1199,7 @@ test('translateResponsesToChatCompletions drops forced builtin tool_choice but k
     text: null,
   });
 
-  assertEquals(resultWithBuiltinChoice.tool_choice, undefined);
+  assertEquals(resultWithBuiltinChoice.target.tool_choice, undefined);
 
   // Forced function tool_choice should be preserved.
   const resultWithFunctionChoice = translateResponsesToChatCompletions({
@@ -1221,7 +1221,7 @@ test('translateResponsesToChatCompletions drops forced builtin tool_choice but k
     text: null,
   });
 
-  assertEquals(resultWithFunctionChoice.tool_choice, {
+  assertEquals(resultWithFunctionChoice.target.tool_choice, {
     type: 'function',
     function: { name: 'get_weather' },
   });
@@ -1244,5 +1244,103 @@ test('translateResponsesToChatCompletions returns undefined tool_choice for stri
     text: null,
   });
 
-  assertEquals(result.tool_choice, 'auto');
+  assertEquals(result.target.tool_choice, 'auto');
+});
+
+test('translateResponsesToChatCompletions wraps custom tools as single-string function tools and records their names', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: 'hi',
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: null,
+    tools: [
+      {
+        type: 'custom',
+        name: 'apply_patch',
+        description: 'apply a patch',
+        format: { type: 'grammar', syntax: 'lark', definition: 'start: "ok"' },
+      },
+    ],
+    tool_choice: { type: 'custom' as const, name: 'apply_patch' },
+    metadata: null,
+    stream: null,
+    store: null,
+    parallel_tool_calls: null,
+    text: null,
+  });
+
+  assertEquals(result.customToolNames.has('apply_patch'), true);
+  assertEquals(result.target.tools, [
+    {
+      type: 'function',
+      function: {
+        name: 'apply_patch',
+        description: 'apply a patch',
+        parameters: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['input'],
+          properties: {
+            input: {
+              type: 'string',
+              description: 'Lark grammar: start: "ok"',
+            },
+          },
+        },
+        strict: false,
+      },
+    },
+  ]);
+  assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'apply_patch' } });
+});
+
+test('translateResponsesToChatCompletions projects custom_tool_call history into wrapped tool_calls shape', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'user', content: 'apply this patch' },
+      {
+        type: 'custom_tool_call',
+        call_id: 'call_1',
+        name: 'apply_patch',
+        input: '*** Begin Patch\n*** End Patch',
+      },
+      {
+        type: 'custom_tool_call_output',
+        call_id: 'call_1',
+        output: 'ok',
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: null,
+    tools: [{ type: 'custom', name: 'apply_patch' }],
+    tool_choice: 'auto' as ResponseToolChoice,
+    metadata: null,
+    stream: null,
+    store: null,
+    parallel_tool_calls: null,
+    text: null,
+  });
+
+  const assistant = result.target.messages.find(m => m.role === 'assistant');
+  if (!assistant) throw new Error('expected assistant message');
+  assertEquals(assistant.tool_calls?.[0], {
+    id: 'call_1',
+    type: 'function',
+    function: {
+      name: 'apply_patch',
+      arguments: JSON.stringify({ input: '*** Begin Patch\n*** End Patch' }),
+    },
+  });
+
+  const tool = result.target.messages.find(m => m.role === 'tool');
+  assertEquals(tool, {
+    role: 'tool',
+    tool_call_id: 'call_1',
+    content: 'ok',
+  });
 });

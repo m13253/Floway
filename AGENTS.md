@@ -177,16 +177,18 @@ not accept target-specific callback tables or call back into target behavior.
 
 Request translation is direct and pairwise. Do not introduce a canonical
 internal request IR. Each cross-protocol pair lives under
-`src/data-plane/llm/translate/<source>-via-<target>/` and contains exactly
-two files: `request.ts` builds the target-shape payload from the source
-payload, and `events.ts` translates target protocol events back into source
-protocol events (including any terminal projection of usage/stop_reason
-from terminal target frames). Source serves construct each non-native
-target as a `Translation<>` literal inline inside their
-`Record<LlmTargetApi, SourceEmit<...>>` dispatch map, combined with
-`viaTranslation(translation, targetEmit)`; there are no per-pair `index.ts`
-or `result.ts` files. Cross-pair helpers (envelope shapers shared between
-Gemini pairs, etc.) live in `translate/shared/`.
+`src/data-plane/llm/translate/<source>-via-<target>/` and exposes a single
+`translateXxxViaYyy: TranslateTrip<...>` from `translate.ts`. A trip function
+builds the target-shape payload and returns the events translator as a closure,
+so trip-scoped state (synthetic ids, custom-tool name sets, etc.) lives as
+locals shared between the two halves of the trip — the source serve never sees
+them. Substantive request/event helpers stay in sibling `request.ts` and
+`events.ts` files so existing unit tests target them directly; small pairs may
+inline. Source serves dispatch via
+`viaTranslation(translateXxxViaYyy, targetEmit)` inside their
+`Record<LlmTargetApi, SourceEmit<...>>` map — the map key is the only source of
+truth for which target was picked. Cross-pair helpers (envelope shapers shared
+between Gemini pairs, etc.) live in `translate/shared/`.
 
 Workarounds belong at the owning boundary:
 

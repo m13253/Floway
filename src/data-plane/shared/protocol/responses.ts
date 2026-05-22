@@ -28,7 +28,14 @@ export interface ResponsesPayload {
   service_tier?: string | null;
 }
 
-export type ResponseInputItem = ResponseInputMessage | ResponseFunctionToolCallItem | ResponseFunctionCallOutputItem | ResponseInputReasoning | ResponseItemReference;
+export type ResponseInputItem =
+  | ResponseInputMessage
+  | ResponseFunctionToolCallItem
+  | ResponseFunctionCallOutputItem
+  | ResponseCustomToolCallItem
+  | ResponseCustomToolCallOutputItem
+  | ResponseInputReasoning
+  | ResponseItemReference;
 
 export interface ResponseInputMessage {
   type: 'message';
@@ -70,6 +77,25 @@ interface ResponseFunctionCallOutputItem {
   status?: 'completed' | 'incomplete';
 }
 
+// Freeform custom tool invocation echoed back to the model in conversation
+// history. The model's own emission of a custom tool call is identical in
+// shape (it is also a `custom_tool_call` item).
+interface ResponseCustomToolCallItem {
+  type: 'custom_tool_call';
+  call_id: string;
+  name: string;
+  input: string;
+  id?: string;
+  namespace?: string;
+}
+
+interface ResponseCustomToolCallOutputItem {
+  type: 'custom_tool_call_output';
+  call_id: string;
+  output: string;
+  id?: string;
+}
+
 export interface ResponseItemReference {
   type: 'item_reference';
   id: string;
@@ -85,11 +111,12 @@ export interface ResponseFunctionTool {
 
 // Codex and other Responses clients ship hosted server tools (web_search,
 // image_generation, tool_search, namespace) and Freeform `custom` tools
-// alongside ordinary function tools. Native Responses targets can receive
-// `custom` tools directly, while translated targets can only project function
-// tools. The wire-level tools array is therefore a heterogeneous union and
-// translators must narrow on `type === "function"` before reading `name` /
-// `parameters`.
+// alongside ordinary function tools. Native Responses targets pass `custom`
+// through; translated targets wrap each `custom` as a single-string-parameter
+// function tool and unwrap matching function calls back into `custom_tool_call`
+// outputs. The wire-level tools array is still a heterogeneous union and
+// translators must narrow on `type === "function"` (or `"custom"`) before
+// reading `name` / `parameters`.
 export interface ResponseHostedTool {
   type: 'web_search' | 'image_generation' | 'tool_search' | 'namespace';
   [key: string]: unknown;
@@ -132,7 +159,11 @@ export interface ResponsesResult {
   };
 }
 
-export type ResponseOutputItem = ResponseOutputMessage | ResponseOutputFunctionCall | ResponseOutputReasoning;
+export type ResponseOutputItem =
+  | ResponseOutputMessage
+  | ResponseOutputFunctionCall
+  | ResponseOutputCustomToolCall
+  | ResponseOutputReasoning;
 
 export interface ResponseOutputMessage {
   type: 'message';
@@ -158,6 +189,15 @@ export interface ResponseOutputFunctionCall {
   name: string;
   arguments: string;
   status: string;
+}
+
+export interface ResponseOutputCustomToolCall {
+  type: 'custom_tool_call';
+  call_id: string;
+  name: string;
+  input: string;
+  id?: string;
+  namespace?: string;
 }
 
 export interface ResponseOutputReasoning {
@@ -248,6 +288,18 @@ export type ResponseStreamEvent =
     item_id: string;
     output_index: number;
     arguments: string;
+  }
+  | {
+    type: 'response.custom_tool_call_input.delta';
+    item_id: string;
+    output_index: number;
+    delta: string;
+  }
+  | {
+    type: 'response.custom_tool_call_input.done';
+    item_id: string;
+    output_index: number;
+    input: string;
   }
   | { type: 'response.completed'; response: ResponsesResult }
   | { type: 'response.incomplete'; response: ResponsesResult }
