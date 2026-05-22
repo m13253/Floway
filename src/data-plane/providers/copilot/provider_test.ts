@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
 import { createCopilotProvider } from './provider.ts';
-import { assertEquals } from '../../../test-assert.ts';
+import { assertEquals, assertRejects } from '../../../test-assert.ts';
 import { copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
   await withMockedFetch(
@@ -50,8 +50,8 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
 });
 
 test('Copilot provider exposes only Responses for Claude when available', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
   await withMockedFetch(
@@ -99,8 +99,8 @@ test('Copilot provider exposes only Responses for Claude when available', async 
 });
 
 test('Copilot provider owns the claude-* Messages capability workaround', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   let upstreamBody: Record<string, unknown> | undefined;
 
@@ -161,8 +161,8 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
 });
 
 test('Copilot provider selects raw variants that support the target endpoint', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   let responsesBody: Record<string, unknown> | undefined;
 
@@ -222,22 +222,45 @@ test('Copilot provider selects raw variants that support the target endpoint', a
 });
 
 test('Copilot provider owns default response retry fix', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider({
+    ...copilotUpstream,
+    enabledFixes: ['messages-web-search-shim'],
+  });
 
+  assertEquals(instance.upstream, 'up_copilot');
+  assertEquals(instance.name, copilotUpstream.name);
   assertEquals(instance.enabledFixes.has('retry-cyber-policy'), true);
+  assertEquals(instance.enabledFixes.has('messages-web-search-shim'), true);
 });
 
 test('Copilot provider enables Copilot-owned Messages source interceptors by default', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
 
   assertEquals(instance.sourceInterceptors?.messages, messagesCopilotSourceInterceptors);
 });
 
+test('Copilot provider rejects malformed account type instead of falling back', async () => {
+  const { copilotUpstream } = await setupAppTest();
+
+  await assertRejects(
+    () =>
+      createCopilotProvider({
+        ...copilotUpstream,
+        config: {
+          ...(copilotUpstream.config as Record<string, unknown>),
+          accountType: 'toString',
+        },
+      }),
+    Error,
+    'accountType must be one of individual, business, enterprise',
+  );
+});
+
 test('Copilot provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
 

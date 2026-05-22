@@ -2,9 +2,8 @@
 // behind the generic Upstream interface. Reuses shared/copilot.ts so the token
 // cache (in-process + KV) stays shared across all callers.
 
-import type { EndpointKey } from '../../repo/types.ts';
-import { copilotFetch, isCopilotTokenFetchError } from '../copilot.ts';
-import type { Upstream, UpstreamFetchOptions } from './types.ts';
+import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from '../copilot.ts';
+import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 
 export interface CopilotUpstreamFetchOptions extends UpstreamFetchOptions {
   vision?: boolean;
@@ -14,8 +13,6 @@ export interface CopilotUpstreamFetchOptions extends UpstreamFetchOptions {
 export interface CopilotUpstream extends Upstream {
   fetch(endpoint: EndpointKey, init: RequestInit, options?: CopilotUpstreamFetchOptions): Promise<Response>;
 }
-
-const COPILOT_UPSTREAM_ID = 'copilot';
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
@@ -33,22 +30,10 @@ const COPILOT_PATHS: Record<EndpointKey, string> = {
 
 export const COPILOT_SUPPORTED_ENDPOINTS = ['/chat/completions', '/responses', '/v1/messages', '/embeddings'];
 
-// Encode the active token into the upstream id so the per-upstream models
-// cache is invalidated when the GitHub account or accountType changes. The
-// hash keeps the id stable across requests with the same credentials.
-const tokenHash = async (token: string, accountType: string): Promise<string> => {
-  const bytes = new TextEncoder().encode(`${accountType}:${token}`);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 16);
-};
-
-export const createCopilotUpstream = async (githubToken: string, accountType: string): Promise<CopilotUpstream> => {
-  const tag = await tokenHash(githubToken, accountType);
+export const createCopilotUpstream = (id: string, name: string, githubToken: string, accountType: CopilotAccountType): CopilotUpstream => {
   return {
-    id: `${COPILOT_UPSTREAM_ID}:${tag}`,
-    name: 'GitHub Copilot',
+    id,
+    name,
     kind: 'copilot',
     supportedEndpoints: COPILOT_SUPPORTED_ENDPOINTS,
     // Admin's explicit opt-in set. Empty for Copilot: Copilot provider code
@@ -68,5 +53,3 @@ export const createCopilotUpstream = async (githubToken: string, accountType: st
     },
   };
 };
-
-export { COPILOT_UPSTREAM_ID };

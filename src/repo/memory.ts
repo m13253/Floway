@@ -4,8 +4,6 @@ import type {
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
-  GitHubAccount,
-  GitHubRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -15,8 +13,8 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
-  UpstreamConfig,
-  UpstreamConfigRepo,
+  UpstreamRecord,
+  UpstreamRepo,
   UsageRecord,
   UsageRepo,
 } from './types.ts';
@@ -52,50 +50,6 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
 
   deleteAll(): Promise<void> {
     this.store.clear();
-    return Promise.resolve();
-  }
-}
-
-class MemoryGitHubRepo implements GitHubRepo {
-  private accounts = new Map<number, GitHubAccount>();
-  private order: number[] = [];
-
-  listAccounts(): Promise<GitHubAccount[]> {
-    const rank = new Map(this.order.map((id, index) => [id, index]));
-    return Promise.resolve([...this.accounts.values()].sort((a, b) => (rank.get(a.user.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.user.id) ?? Number.MAX_SAFE_INTEGER) || a.user.id - b.user.id));
-  }
-
-  getAccount(userId: number): Promise<GitHubAccount | null> {
-    return Promise.resolve(this.accounts.get(userId) ?? null);
-  }
-
-  saveAccount(userId: number, account: GitHubAccount): Promise<void> {
-    this.accounts.set(userId, { ...account, user: { ...account.user } });
-    if (!this.order.includes(userId)) this.order.push(userId);
-    return Promise.resolve();
-  }
-
-  deleteAccount(userId: number): Promise<void> {
-    this.accounts.delete(userId);
-    this.order = this.order.filter(id => id !== userId);
-    return Promise.resolve();
-  }
-
-  setOrder(userIds: number[]): Promise<void> {
-    const seen = new Set<number>();
-    const ordered = userIds.filter(id => {
-      if (!this.accounts.has(id) || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-    const rest = [...this.accounts.keys()].filter(id => !seen.has(id)).sort((a, b) => a - b);
-    this.order = [...ordered, ...rest];
-    return Promise.resolve();
-  }
-
-  deleteAllAccounts(): Promise<void> {
-    this.accounts.clear();
-    this.order = [];
     return Promise.resolve();
   }
 }
@@ -378,20 +332,22 @@ class MemorySearchConfigRepo implements SearchConfigRepo {
   }
 }
 
-class MemoryUpstreamConfigRepo implements UpstreamConfigRepo {
-  private store = new Map<string, UpstreamConfig>();
+class MemoryUpstreamRepo implements UpstreamRepo {
+  private store = new Map<string, UpstreamRecord>();
 
-  list(): Promise<UpstreamConfig[]> {
-    return Promise.resolve([...this.store.values()].map(cloneUpstreamConfig).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
+  list(): Promise<UpstreamRecord[]> {
+    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)));
   }
 
-  getById(id: string): Promise<UpstreamConfig | null> {
+  getById(id: string): Promise<UpstreamRecord | null> {
     const found = this.store.get(id);
-    return Promise.resolve(found ? cloneUpstreamConfig(found) : null);
+    return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
   }
 
-  save(config: UpstreamConfig): Promise<void> {
-    this.store.set(config.id, cloneUpstreamConfig(config));
+  save(upstream: UpstreamRecord): Promise<void> {
+    const existing = this.store.get(upstream.id);
+    const preserved = existing ? { ...upstream, createdAt: existing.createdAt } : upstream;
+    this.store.set(preserved.id, cloneUpstreamRecord(preserved));
     return Promise.resolve();
   }
 
@@ -405,31 +361,30 @@ class MemoryUpstreamConfigRepo implements UpstreamConfigRepo {
   }
 }
 
-const cloneUpstreamConfig = (config: UpstreamConfig): UpstreamConfig => ({
-  ...config,
-  supportedEndpoints: [...config.supportedEndpoints],
-  enabledFixes: [...config.enabledFixes],
-  ...(config.pathOverrides ? { pathOverrides: { ...config.pathOverrides } } : {}),
+const normalizeEnabledFixes = (enabledFixes: string[]): string[] => [...new Set(enabledFixes)].sort();
+
+const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
+  ...upstream,
+  config: structuredClone(upstream.config),
+  enabledFixes: normalizeEnabledFixes(upstream.enabledFixes),
 });
 
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
-  github: GitHubRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
-  upstreamConfigs: UpstreamConfigRepo;
+  upstreams: UpstreamRepo;
 
   constructor() {
     this.apiKeys = new MemoryApiKeyRepo();
-    this.github = new MemoryGitHubRepo();
     this.usage = new MemoryUsageRepo();
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.cache = new MemoryCacheRepo();
     this.searchConfig = new MemorySearchConfigRepo();
-    this.upstreamConfigs = new MemoryUpstreamConfigRepo();
+    this.upstreams = new MemoryUpstreamRepo();
   }
 }

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../../shared/copilot.ts';
 import { assertEquals, assertExists } from '../../../../../test-assert.ts';
-import { copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../../../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../../../../test-helpers.ts';
 import { clearModelsCache } from '../../../../providers/upstream-model-cache.ts';
 
 test('/v1beta/models/:model:countTokens translates Gemini request to Messages count_tokens', async () => {
@@ -162,21 +162,23 @@ test('/v1beta/models/:model:countTokens internal failures include debug fields',
 
 test('/v1beta/models/:model:countTokens rejects custom-upstream-only models', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -214,21 +216,23 @@ test('/v1beta/models/:model:countTokens rejects custom-upstream-only models', as
 
 test('/v1beta/models/:model:countTokens preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

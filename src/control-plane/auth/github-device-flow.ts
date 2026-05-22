@@ -1,7 +1,11 @@
-import type { GitHubAccount } from '../../repo/types.ts';
-import { githubHeaders } from '../../shared/copilot.ts';
+import { githubHeaders, isCopilotAccountType, type CopilotAccountType } from '../../shared/copilot.ts';
 
-type GitHubUser = GitHubAccount['user'];
+export interface GitHubUser {
+  login: string;
+  avatar_url: string;
+  name: string | null;
+  id: number;
+}
 
 const GITHUB_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
 const GITHUB_SCOPES = 'read:user';
@@ -69,30 +73,17 @@ export const fetchGitHubUser = async (githubToken: string) => {
     },
   });
 
-  if (userResp.ok) {
-    return (await userResp.json()) as GitHubUser;
-  }
-
-  return {
-    login: 'unknown',
-    avatar_url: '',
-    name: null,
-    id: 0,
-  } satisfies GitHubUser;
+  if (!userResp.ok) throw new Error(`GitHub user lookup failed: ${userResp.status} ${await userResp.text()}`);
+  return (await userResp.json()) as GitHubUser;
 };
 
-export const detectAccountType = async (githubToken: string): Promise<string> => {
-  try {
-    const resp = await fetch('https://api.github.com/copilot_internal/user', {
-      headers: await githubHeaders(githubToken),
-    });
-    if (!resp.ok) return 'individual';
-    const data = (await resp.json()) as { copilot_plan?: string };
-    if (data.copilot_plan && ['individual', 'business', 'enterprise'].includes(data.copilot_plan)) {
-      return data.copilot_plan;
-    }
-    return 'individual';
-  } catch {
-    return 'individual';
-  }
+export const detectAccountType = async (githubToken: string): Promise<CopilotAccountType> => {
+  const resp = await fetch('https://api.github.com/copilot_internal/user', {
+    headers: await githubHeaders(githubToken),
+  });
+  if (!resp.ok) throw new Error(`GitHub Copilot account type detection failed: ${resp.status} ${await resp.text()}`);
+
+  const data = (await resp.json()) as { copilot_plan?: unknown };
+  if (!isCopilotAccountType(data.copilot_plan)) throw new Error(`Unknown GitHub Copilot plan: ${String(data.copilot_plan)}`);
+  return data.copilot_plan;
 };

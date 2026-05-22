@@ -9,17 +9,6 @@ export interface ApiKey {
   lastUsedAt?: string;
 }
 
-export interface GitHubAccount {
-  token: string;
-  accountType: string;
-  user: {
-    login: string;
-    avatar_url: string;
-    name: string | null;
-    id: number;
-  };
-}
-
 export interface UsageRecord {
   keyId: string;
   model: string;
@@ -91,15 +80,6 @@ export interface ApiKeyRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface GitHubRepo {
-  listAccounts(): Promise<GitHubAccount[]>;
-  getAccount(userId: number): Promise<GitHubAccount | null>;
-  saveAccount(userId: number, account: GitHubAccount): Promise<void>;
-  deleteAccount(userId: number): Promise<void>;
-  setOrder(userIds: number[]): Promise<void>;
-  deleteAllAccounts(): Promise<void>;
-}
-
 export interface UsageRepo {
   record(
     keyId: string,
@@ -148,47 +128,34 @@ export interface SearchConfigRepo {
   save(config: unknown): Promise<void>;
 }
 
-// Logical endpoint keys used by the gateway-internal upstream dispatcher.
-// `messages_count_tokens` is intentionally a logical key: it is a sub-path of
-// `messages` and follows whatever path the admin chose for messages, so the
-// UI never exposes it as a separate configurable endpoint.
-export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'models';
+export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure';
 
-export interface UpstreamConfig {
+export interface UpstreamRecord {
   id: string;
+  provider: UpstreamProviderKind;
   name: string;
-  baseUrl: string;
-  bearerToken: string;
-  supportedEndpoints: string[];
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
-  // Behavior flag ids the admin opted into for this upstream. See
-  // src/data-plane/providers/fixes.ts for the catalog.
-  // Always sorted + deduped at the repo boundary.
+  updatedAt: string;
+  config: unknown;
   enabledFixes: string[];
-  // Optional per-endpoint path overrides. The final URL is `baseUrl + path`
-  // with no automatic `/v1` prefixing — admins enter the exact path the
-  // upstream serves. `messages_count_tokens` follows `messages` and is not
-  // overridable independently.
-  pathOverrides?: Partial<Record<Exclude<EndpointKey, 'messages_count_tokens'>, string>>;
 }
 
-export interface UpstreamConfigRepo {
-  list(): Promise<UpstreamConfig[]>;
-  getById(id: string): Promise<UpstreamConfig | null>;
-  save(config: UpstreamConfig): Promise<void>;
+export interface UpstreamRepo {
+  list(): Promise<UpstreamRecord[]>;
+  getById(id: string): Promise<UpstreamRecord | null>;
+  save(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
 }
 
 export interface Repo {
   apiKeys: ApiKeyRepo;
-  github: GitHubRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
-  upstreamConfigs: UpstreamConfigRepo;
+  upstreams: UpstreamRepo;
 }

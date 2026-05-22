@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
-import { copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsCache } from '../../../providers/upstream-model-cache.ts';
 import type { ResponsesResult } from '../../../shared/protocol/responses.ts';
 import type { SearchConfig } from '../../../tools/web-search/types.ts';
@@ -1638,6 +1638,93 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
   assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, true);
 });
 
+test('/v1/messages routes Azure Responses-only deployments through OpenAI v1 Responses', async () => {
+  const { repo, apiKey, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  await repo.upstreams.save({
+    id: 'up_azure_responses',
+    provider: 'azure',
+    name: 'Azure Responses',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-05-22T00:00:00.000Z',
+    enabledFixes: [],
+    config: {
+      endpoint: 'https://example.openai.azure.com/openai/v1',
+      apiKey: 'az-key',
+      deployments: [
+        {
+          deployment: 'gpt-5.4-pro',
+          supportedEndpoints: ['/responses'],
+        },
+      ],
+    },
+  });
+
+  let upstreamBody: Record<string, unknown> | undefined;
+  let upstreamApiKey: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'example.openai.azure.com' && url.pathname === '/openai/v1/responses') {
+        upstreamApiKey = request.headers.get('api-key');
+        upstreamBody = JSON.parse(await request.text());
+        return sseResponse([
+          {
+            event: 'response.completed',
+            data: {
+              type: 'response.completed',
+              response: {
+                id: 'resp_azure',
+                object: 'response',
+                model: 'gpt-5.4-pro',
+                status: 'completed',
+                output_text: 'ok',
+                output: [
+                  {
+                    type: 'message',
+                    role: 'assistant',
+                    content: [{ type: 'output_text', text: 'ok' }],
+                  },
+                ],
+                usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+              },
+            },
+          },
+        ]);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-5.4-pro',
+          max_tokens: 64,
+          stream: false,
+          messages: [{ role: 'user', content: 'Reply with ok.' }],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      const body = await response.json();
+      assertEquals(body.id, 'resp_azure');
+      assertEquals(body.content[0].text, 'ok');
+    },
+  );
+
+  assertEquals(upstreamApiKey, 'az-key');
+  assertExists(upstreamBody);
+  assertEquals(upstreamBody!.model, 'gpt-5.4-pro');
+  assertEquals(upstreamBody!.max_output_tokens, 64);
+});
+
 test('/v1/messages preserves output_config.effort max when translating to responses', async () => {
   const { apiKey } = await setupAppTest();
 
@@ -2152,21 +2239,21 @@ test('/v1/messages strips cache_control.scope only for Copilot Messages', async 
 
 test('/v1/messages preserves cache_control.scope for custom Messages providers', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_messages',
     name: 'Messages Provider',
-    baseUrl: 'https://messages.example.com',
-    bearerToken: 'sk-messages',
-    supportedEndpoints: ['/v1/messages'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://messages.example.com',
+      bearerToken: 'sk-messages',
+      supportedEndpoints: ['/v1/messages'],
+    },
+  }));
 
   let upstreamBody: Record<string, unknown> | undefined;
 
@@ -2251,21 +2338,21 @@ test('/v1/messages forwards native web search unchanged to custom Messages provi
   const { apiKey, repo } = await setupAppTest({
     searchConfig: ENABLED_SEARCH_CONFIG,
   });
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_messages_native_search',
     name: 'Messages Native Search Provider',
-    baseUrl: 'https://messages-native-search.example.com',
-    bearerToken: 'sk-messages',
-    supportedEndpoints: ['/v1/messages'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://messages-native-search.example.com',
+      bearerToken: 'sk-messages',
+      supportedEndpoints: ['/v1/messages'],
+    },
+  }));
 
   let upstreamBody: Record<string, unknown> | undefined;
 
@@ -2331,21 +2418,21 @@ test('/v1/messages applies native web search shim to custom Messages providers w
   const { apiKey, repo } = await setupAppTest({
     searchConfig: ENABLED_SEARCH_CONFIG,
   });
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_messages_shimmed_search',
     name: 'Messages Shimmed Search Provider',
-    baseUrl: 'https://messages-shimmed-search.example.com',
-    bearerToken: 'sk-messages',
-    supportedEndpoints: ['/v1/messages'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: ['messages-web-search-shim'],
-  });
+    config: {
+      baseUrl: 'https://messages-shimmed-search.example.com',
+      bearerToken: 'sk-messages',
+      supportedEndpoints: ['/v1/messages'],
+    },
+  }));
 
   let upstreamBody: Record<string, unknown> | undefined;
 
@@ -2420,21 +2507,21 @@ test('/v1/messages applies native web search shim to custom Responses targets', 
   const { apiKey, repo } = await setupAppTest({
     searchConfig: ENABLED_SEARCH_CONFIG,
   });
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_responses_search',
     name: 'Responses Search Provider',
-    baseUrl: 'https://responses-search.example.com',
-    bearerToken: 'sk-responses',
-    supportedEndpoints: ['/responses'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://responses-search.example.com',
+      bearerToken: 'sk-responses',
+      supportedEndpoints: ['/responses'],
+    },
+  }));
 
   let upstreamBody: Record<string, unknown> | undefined;
   let searchBody: Record<string, unknown> | undefined;
@@ -2530,21 +2617,21 @@ test('/v1/messages applies native web search shim to custom Chat Completions tar
   const { apiKey, repo } = await setupAppTest({
     searchConfig: ENABLED_SEARCH_CONFIG,
   });
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_search',
     name: 'Chat Search Provider',
-    baseUrl: 'https://chat-search.example.com',
-    bearerToken: 'sk-chat',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://chat-search.example.com',
+      bearerToken: 'sk-chat',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   let upstreamBody: Record<string, unknown> | undefined;
   let searchBody: Record<string, unknown> | undefined;
@@ -3476,21 +3563,21 @@ test('/v1/messages routes native web search through translated /chat/completions
 
 test('/v1/messages rejects embedding-only custom upstream model instead of legacy chat fallback', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Only',
-    baseUrl: 'https://embed.example.com',
-    bearerToken: 'sk-embed',
-    supportedEndpoints: ['/embeddings'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://embed.example.com',
+      bearerToken: 'sk-embed',
+      supportedEndpoints: ['/embeddings'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -3529,21 +3616,21 @@ test('/v1/messages rejects embedding-only custom upstream model instead of legac
 
 test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

@@ -1,9 +1,15 @@
 # Copilot Gateway
 
-Copilot Gateway is a Cloudflare Workers API proxy that exposes GitHub Copilot
-accounts and optional OpenAI-compatible upstreams through standard LLM APIs:
-Anthropic Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, and
-Google Gemini-compatible model routes.
+Copilot Gateway is a Cloudflare Workers API proxy that exposes unified upstreams
+through standard LLM APIs: Anthropic Messages, OpenAI Responses, OpenAI Chat
+Completions, Embeddings, and Google Gemini-compatible model routes.
+
+An upstream can be a GitHub Copilot account, a custom OpenAI-compatible bearer
+provider, or an Azure deployment group. Azure deployments may use Azure OpenAI /
+Foundry OpenAI v1 endpoints and, when configured, Azure Foundry Anthropic
+Messages endpoints. The gateway merges model catalogs from enabled upstreams and
+routes each request through the first provider binding that can serve the
+requested public model and source API.
 
 It is built for coding agents such as
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code),
@@ -36,10 +42,18 @@ source API's shape.
 
 ### Prerequisites
 
-- A GitHub account with an active [Copilot](https://github.com/features/copilot)
-  subscription
-- Node.js 20.3 or newer
-- pnpm 10.x
+- At least one upstream credential:
+  - a GitHub account with an active [Copilot](https://github.com/features/copilot)
+    subscription,
+  - a bearer token for an OpenAI-compatible custom provider, or
+  - one Azure endpoint URL, API key, and deployment list for Azure OpenAI /
+    Foundry OpenAI v1 or Azure Foundry Anthropic deployments. The endpoint must
+    be an HTTPS Azure URL on `*.openai.azure.com` or
+    `*.services.ai.azure.com`, and can be a resource root, a Foundry project
+    endpoint, an OpenAI v1 URL, an Anthropic base URL, or an Anthropic messages
+    target URI.
+- Node.js 20.3 or newer.
+- pnpm 10.x.
 
 ### Deploy to Cloudflare Workers
 
@@ -81,10 +95,41 @@ the same environment, background scheduling, and repository binding semantics.
 ### Initial Setup
 
 1. Open the deployed URL in a browser and log in with your `ADMIN_KEY`.
-2. Go to the **Upstream** tab and connect the GitHub account with the Copilot
-   subscription through the device OAuth flow.
-3. Go to the **API Keys** tab and create an API key for clients.
+2. Open **Settings -> Upstreams** and use **Add Upstream** to add at least one
+   provider. The add flow covers Custom, Azure, and Copilot. The Settings list
+   is the routing order: use the row arrow buttons to reorder providers, the
+   switch to enable or disable one provider, and the edit panel for provider
+   configuration, saved-upstream connection tests, and Copilot quota.
+   - **Custom** configures an OpenAI-compatible provider with a base URL,
+     bearer token, supported endpoints, and optional path overrides.
+   - **Azure** configures one Azure endpoint URL, one API key, and deployments.
+     The endpoint must be an HTTPS Azure URL on `*.openai.azure.com` or
+     `*.services.ai.azure.com`; it may be a resource root, a Foundry project
+     endpoint, an OpenAI v1 URL ending in `/openai/v1`, an Anthropic URL ending
+     in `/anthropic` or `/anthropic/v1`, or the Foundry Claude target URI ending
+     in `/anthropic/v1/messages`. Each deployment uses the
+     deployment name for upstream calls; a blank public model id defaults to
+     that deployment name. OpenAI v1 can serve Azure-hosted OpenAI and other
+     Foundry models such as DeepSeek, Grok, and Kimi when those deployments
+     expose Responses, Chat Completions, or Embeddings. Native Messages uses the
+     Anthropic protocol base derived from the same endpoint; Messages source
+     requests can also translate through Responses or Chat Completions. In the
+     dashboard each deployment row chooses a compact API type preset such as
+     Responses, Responses+Chat, Chat, Messages, or Embeddings; the saved config
+     stores the corresponding `supportedEndpoints` capability set. Claude
+     deployments should normally be configured as Messages; Chat Completions
+     clients can still route to them through gateway translation. Optional
+     display/catalog metadata such as `display_name`, limits, and
+     `model_picker_enabled` can be supplied through the API or import payloads;
+     the main dashboard form keeps only the routing-critical fields visible.
+   - **Copilot** starts GitHub device OAuth and creates or refreshes a Copilot
+     upstream for that account.
+3. Create a client API key under **API Keys**.
 4. Copy the generated Claude Code or Codex CLI configuration snippets.
+
+Copilot quota is shown inside the Copilot upstream edit panel. Import/export is
+available from Settings and uses the latest `version: 2` payload with unified
+`upstreams` data.
 
 ## Optional Native Messages Web Search
 
@@ -94,7 +139,7 @@ unless the selected provider opts into gateway execution. When the selected
 target cannot execute Anthropic server tools, the post-plan Messages protocol
 interceptor runs the gateway shim, which requires an enabled search provider.
 
-Configure it in the dashboard under **Upstream -> Search**.
+Configure it in the dashboard under **Settings -> Web Search**.
 
 Provider choices:
 
@@ -134,7 +179,10 @@ Claude Code / Codex CLI / any client
   `-- GET/POST /v1beta/models/...
         |
         v
-  GitHub Copilot API or configured OpenAI-compatible upstreams
+  Unified upstream providers
+  |-- GitHub Copilot accounts
+  |-- Custom providers
+  `-- Azure OpenAI / Foundry OpenAI v1 and Foundry Anthropic deployments
 ```
 
 Most request handling is platform-neutral Hono and Web APIs. Runtime-specific

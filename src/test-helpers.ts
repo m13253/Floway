@@ -4,7 +4,7 @@ import { clearModelsCache } from './data-plane/providers/upstream-model-cache.ts
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
-import type { ApiKey, GitHubAccount, TelemetryModelIdentity } from './repo/types.ts';
+import type { ApiKey, TelemetryModelIdentity, UpstreamRecord } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { clearCopilotTokenCache } from './shared/copilot.ts';
 import type { Upstream } from './shared/upstream/types.ts';
@@ -12,7 +12,8 @@ import type { Upstream } from './shared/upstream/types.ts';
 interface SetupOptions {
   adminKey?: string;
   apiKey?: ApiKey;
-  githubAccount?: GitHubAccount;
+  githubAccount?: CopilotAccountFixture;
+  copilotUpstream?: UpstreamRecord;
   searchConfig?: SearchConfig;
 }
 
@@ -23,7 +24,19 @@ interface AppTestContext {
   repo: InMemoryRepo;
   adminKey: string;
   apiKey: ApiKey;
-  githubAccount: GitHubAccount;
+  githubAccount: CopilotAccountFixture;
+  copilotUpstream: UpstreamRecord;
+}
+
+interface CopilotAccountFixture {
+  token: string;
+  accountType: string;
+  user: {
+    login: string;
+    avatar_url: string;
+    name: string | null;
+    id: number;
+  };
 }
 
 interface SSEChunk {
@@ -32,6 +45,52 @@ interface SSEChunk {
 }
 
 let fetchLock: Promise<void> = Promise.resolve();
+
+const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
+
+export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture, overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+  const config = {
+    githubToken: githubAccount.token,
+    accountType: githubAccount.accountType,
+    user: githubAccount.user,
+  };
+  const { config: overrideConfig, ...rest } = overrides;
+
+  return {
+    id: 'up_copilot',
+    provider: 'copilot',
+    name: githubAccount.user.login ? `GitHub Copilot (${githubAccount.user.login})` : 'GitHub Copilot',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: TEST_UPSTREAM_TIMESTAMP,
+    updatedAt: TEST_UPSTREAM_TIMESTAMP,
+    enabledFixes: [],
+    ...rest,
+    config: overrideConfig ?? config,
+  };
+};
+
+export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+  const config = {
+    baseUrl: 'https://custom.example.com',
+    bearerToken: 'sk-custom',
+    supportedEndpoints: ['/chat/completions'],
+  };
+  const { config: overrideConfig, ...rest } = overrides;
+
+  return {
+    id: 'up_custom',
+    provider: 'custom',
+    name: 'Custom Provider',
+    enabled: true,
+    sortOrder: 100,
+    createdAt: TEST_UPSTREAM_TIMESTAMP,
+    updatedAt: TEST_UPSTREAM_TIMESTAMP,
+    enabledFixes: [],
+    ...rest,
+    config: overrideConfig ?? config,
+  };
+};
 
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
@@ -61,13 +120,14 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
       avatar_url: 'https://example.com/avatar.png',
     },
   };
-  await repo.github.saveAccount(githubAccount.user.id, githubAccount);
+  const copilotUpstream = options.copilotUpstream ?? buildCopilotUpstreamRecord(githubAccount);
+  await repo.upstreams.save(copilotUpstream);
 
   if (options.searchConfig !== undefined) {
     await repo.searchConfig.save(options.searchConfig);
   }
 
-  return { repo, adminKey, apiKey, githubAccount };
+  return { repo, adminKey, apiKey, githubAccount, copilotUpstream };
 }
 
 export async function withMockedFetch<T>(handler: (request: Request) => Promise<Response> | Response, run: () => Promise<T>): Promise<T> {
@@ -286,7 +346,7 @@ export function copilotModels(
 export const stubUpstream = (overrides: Partial<Upstream> = {}): Upstream => ({
   id: 'test-upstream',
   name: 'Test Upstream',
-  kind: 'openai',
+  kind: 'custom',
   supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages'],
   enabledFixes: new Set<string>(),
   fetch: () => Promise.reject(new Error('stubUpstream.fetch was called')),

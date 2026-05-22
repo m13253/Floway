@@ -1,4 +1,4 @@
-// Generic upstream abstraction for OpenAI-compatible LLM providers.
+// Generic upstream abstraction for configured LLM providers.
 // Each upstream owns its base URL, auth headers, and per-endpoint path rules.
 //
 // Callers identify the endpoint by a logical key (`messages`, `responses`,
@@ -8,13 +8,17 @@
 // stored `pathOverrides` config so admins can point one endpoint at a subpath
 // without disturbing the others.
 
-import type { EndpointKey } from '../../repo/types.ts';
-
 export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
 }
 
-export type UpstreamKind = 'copilot' | 'openai';
+export type UpstreamKind = 'copilot' | 'custom' | 'azure';
+
+// Logical endpoint keys used by the gateway-internal upstream dispatcher.
+// `messages_count_tokens` is intentionally a logical key: it is a sub-path of
+// `messages` and follows the same provider-owned path policy, so the UI never
+// exposes it as a separate configurable endpoint.
+export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'models';
 
 export interface Upstream {
   id: string;

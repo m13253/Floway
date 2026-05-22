@@ -2,7 +2,7 @@
 -- "accounting" to "telemetry". Do not rename it: the filename is part of the
 -- D1 migration identity once applied.
 
-CREATE TEMP TABLE __model_name_source (
+CREATE TABLE __model_name_source (
   model_key TEXT PRIMARY KEY
 );
 
@@ -15,7 +15,7 @@ SELECT model FROM performance_summary;
 INSERT OR IGNORE INTO __model_name_source (model_key)
 SELECT model FROM performance_latency_buckets;
 
-CREATE TEMP TABLE __model_name_migration (
+CREATE TABLE __model_name_migration (
   model_key TEXT PRIMARY KEY,
   model TEXT NOT NULL
 );

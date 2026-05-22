@@ -1,25 +1,29 @@
 import { test } from 'vitest';
 
-import { createOpenAiProvider } from './provider.ts';
-import type { UpstreamConfig } from '../../../repo/types.ts';
+import { createCustomProvider } from './provider.ts';
+import type { UpstreamRecord } from '../../../repo/types.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../../../test-helpers.ts';
 
-const baseConfig = (overrides: Partial<UpstreamConfig> = {}): UpstreamConfig => ({
-  id: 'oai-test',
-  name: 'OpenAI Test',
-  baseUrl: 'https://oai.example.com',
-  bearerToken: 'sk-test',
-  supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages', '/v1/messages/count_tokens', '/embeddings'],
+const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
+  id: 'up_custom_test',
+  provider: 'custom',
+  name: 'Custom Test',
   enabled: true,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
   enabledFixes: [],
+  config: {
+    baseUrl: 'https://custom.example.com',
+    bearerToken: 'sk-test',
+    supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages', '/embeddings'],
+  },
   ...overrides,
 });
 
-test('OpenAI provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const instance = createOpenAiProvider(baseConfig());
+test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
+  const instance = createCustomProvider(baseRecord());
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
 

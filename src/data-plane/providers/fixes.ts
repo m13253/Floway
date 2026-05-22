@@ -1,6 +1,6 @@
 // Flag catalog. Single source of truth for every admin-toggleable
 // per-upstream behavior flag exposed by the dashboard, validated by the
-// /api/upstreams endpoint, and stored in upstream_configs.enabled_fixes.
+// /api/upstreams endpoint, and stored in upstreams.enabled_fixes.
 //
 // The catalog only describes flags — what the toggle says to the admin
 // and which endpoints it applies to. Source/target interceptor code references

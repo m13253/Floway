@@ -1,21 +1,22 @@
-import type { UpstreamConfig, EndpointKey } from '../../../repo/types.ts';
-import { createOpenAiUpstream } from '../../../shared/upstream/openai.ts';
+import type { UpstreamRecord } from '../../../repo/types.ts';
+import { createCustomUpstream } from '../../../shared/upstream/custom.ts';
+import type { EndpointKey } from '../../../shared/upstream/types.ts';
 import { messagesWebSearchShimInterceptors } from '../../llm/sources/messages/interceptors/index.ts';
 import { isStreamingEndpoint, publicPathsToModelEndpoints } from '../endpoints.ts';
 import { withModelInfoDefaults } from '../model-info.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import { loadModels } from '../upstream-model-cache.ts';
 
-interface OpenAiProviderData {
+interface CustomProviderData {
   rawModelId: string;
 }
 
-const providerData = (model: UpstreamModel): OpenAiProviderData => model.providerData as OpenAiProviderData;
+const providerData = (model: UpstreamModel): CustomProviderData => model.providerData as CustomProviderData;
 
-export const createOpenAiProvider = (config: UpstreamConfig): ModelProviderInstance => {
-  const upstream = createOpenAiUpstream(config);
-  const configuredEndpoints = publicPathsToModelEndpoints(config.supportedEndpoints);
-  const enabledFixes = new Set(config.enabledFixes);
+export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
+  const upstream = createCustomUpstream(record);
+  const configuredEndpoints = publicPathsToModelEndpoints(upstream.supportedEndpoints);
+  const enabledFixes = new Set(record.enabledFixes);
 
   const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<ProviderCallResult> => {
     const requestBody = isStreamingEndpoint(endpoint)
@@ -52,7 +53,7 @@ export const createOpenAiProvider = (config: UpstreamConfig): ModelProviderInsta
           supportedEndpoints: rawEndpoints,
           providerData: {
             rawModelId: rawModel.id,
-          } satisfies OpenAiProviderData,
+          } satisfies CustomProviderData,
         });
       }
       return models;
@@ -66,8 +67,9 @@ export const createOpenAiProvider = (config: UpstreamConfig): ModelProviderInsta
   };
 
   return {
-    upstream: `openai:${config.id}`,
-    name: config.name,
+    upstream: record.id,
+    providerKind: 'custom',
+    name: record.name,
     provider,
     enabledFixes,
     ...(enabledFixes.has('messages-web-search-shim')

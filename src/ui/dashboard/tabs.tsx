@@ -76,6 +76,116 @@ function endpointRow(method: 'GET' | 'POST', path: string, name: string, docsHre
   `;
 }
 
+function renderUpstreamsSettingsCard() {
+  return html`
+    <div class="glass-card p-5 sm:p-6 animate-in delay-1">
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="min-w-0">
+          <h3 class="text-white font-semibold mb-1">Upstreams</h3>
+          <p class="text-sm text-gray-400">Ordered providers used for model routing and fallback.</p>
+        </div>
+        <button @click="openNewUpstreamModal()" class="btn-primary !py-2.5 !px-3 text-xs whitespace-nowrap">
+          Add Upstream
+        </button>
+      </div>
+
+      <template x-if="!upstreamsLoaded">
+        <div class="space-y-2">
+          <div class="h-14 bg-surface-600 rounded animate-pulse"></div>
+          <div class="h-14 bg-surface-600 rounded animate-pulse"></div>
+        </div>
+      </template>
+
+      <template x-if="upstreamsLoaded && upstreams.length === 0">
+        <p class="text-sm text-gray-500">No upstreams configured. Add an upstream to serve models.</p>
+      </template>
+
+      <template x-if="upstreamsLoaded && upstreams.length > 0">
+        <div class="space-y-2">
+          <template x-for="up in upstreams" :key="up.id">
+            <div class="rounded-lg border border-white/5 bg-surface-800/80 p-3">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0 flex-1">
+                  <div class="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
+                    <span class="rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" :class="providerBadgeClass(up.provider)" x-text="providerLabel(up.provider)"></span>
+                    <span class="rounded bg-surface-900/70 px-2 py-0.5 text-[11px] font-medium text-gray-400" x-text="upstreamModelSummary(up)"></span>
+                  </div>
+                  <p class="truncate text-sm font-semibold text-white" x-text="up.name"></p>
+                  <p class="truncate text-xs text-gray-500" :title="upstreamSubtitle(up)" x-text="upstreamSubtitle(up)"></p>
+                </div>
+
+                <div class="flex shrink-0 items-center justify-end gap-1.5">
+                  <label class="relative inline-flex h-7 w-12 cursor-pointer items-center" title="Toggle upstream">
+                    <input
+                      type="checkbox"
+                      class="peer sr-only"
+                      :checked="up.enabled"
+                      @change="setUpstreamEnabled(up, $event.target.checked)"
+                      aria-label="Toggle upstream enabled"
+                    />
+                    <span class="h-6 w-11 rounded-full bg-surface-600 transition-colors peer-checked:bg-accent-emerald/70"></span>
+                    <span class="absolute left-1 h-4 w-4 rounded-full bg-gray-300 transition-transform peer-checked:translate-x-5 peer-checked:bg-white"></span>
+                  </label>
+
+                  <button
+                    type="button"
+                    @click="moveUpstream(up.id, -1)"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                    :disabled="upstreamMoveDisabled(up.id, -1)"
+                    aria-label="Move upstream up"
+                    title="Move up"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="m18 15-6-6-6 6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    @click="moveUpstream(up.id, 1)"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                    :disabled="upstreamMoveDisabled(up.id, 1)"
+                    aria-label="Move upstream down"
+                    title="Move down"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+
+                  <button
+                    type="button"
+                    @click="openUpstreamModal(up)"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan"
+                    aria-label="Edit upstream"
+                    title="Edit"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                      <path d="m15 5 4 4" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    @click="deleteUpstream(up.id, up.name)"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
+                    aria-label="Delete upstream"
+                    title="Delete"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  `;
+}
+
 export function renderDashboardHeader() {
   return html`
     <header class="border-b border-white/5 bg-surface-900/80 backdrop-blur-md sticky top-0 z-50">
@@ -700,19 +810,6 @@ export function renderSettingsTab() {
   return html`
     <template x-if="isAdmin">
       <div x-show="tab === 'settings'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
-        <template x-if="meLoaded && githubAccounts.length === 0">
-          <div class="glass-card p-5 sm:p-6 mb-5 glow-border animate-in flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div class="min-w-0">
-              <h3 class="text-white font-medium mb-1">Connect GitHub Account</h3>
-              <p class="text-sm text-gray-400">Link your GitHub account to use Copilot API with your own token.</p>
-            </div>
-            <button @click="startGithubAuth()" class="btn-primary w-full sm:w-auto" :disabled="deviceFlow.loading">
-              <span x-show="!deviceFlow.loading">Connect GitHub</span>
-              <span x-show="deviceFlow.loading" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Connecting… </span>
-            </button>
-          </div>
-        </template>
-
         <template x-if="deviceFlow.userCode">
           <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-in overflow-y-auto p-4">
             <div class="glass-card p-6 sm:p-8 max-w-md w-full glow-cyan">
@@ -728,7 +825,7 @@ export function renderSettingsTab() {
               </p>
               <a :href="deviceFlow.verificationUri" target="_blank" class="btn-primary w-full block text-center mb-4"> Open GitHub </a>
 
-              <div class="flex items-center justify-center gap-2 text-sm text-gray-500">${spinner('h-4 w-4')} Waiting for authorization...</div>
+              <div class="flex items-center justify-center gap-2 text-sm text-gray-500">${spinner('h-4 w-4')} Waiting for authorization…</div>
 
               <button @click="cancelDeviceFlow()" class="btn-ghost w-full mt-4">Cancel</button>
             </div>
@@ -737,359 +834,421 @@ export function renderSettingsTab() {
 
         <template x-if="upstreamModal.open">
           <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-in overflow-y-auto">
-            <div class="flex min-h-full items-start justify-center p-4 sm:items-center">
-              <div class="glass-card p-6 sm:p-8 max-w-lg w-full glow-cyan my-auto">
-                <h3 class="text-white text-lg font-semibold mb-4" x-text="upstreamModal.id ? 'Edit Upstream' : 'Add Upstream'"></h3>
+            <div @click.self="closeUpstreamModal()" class="flex min-h-full items-start justify-center p-3 sm:p-5">
+              <div class="glass-card w-full max-w-4xl glow-cyan my-auto overflow-hidden">
+                <div class="border-b border-white/[0.06] px-4 py-3 sm:px-5">
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="flex min-w-0 items-center gap-3">
+                      <span class="shrink-0 rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide" :class="providerBadgeClass(upstreamModal.provider)" x-text="providerLabel(upstreamModal.provider)"></span>
+                      <h3 class="truncate text-base font-semibold text-white" x-text="upstreamModal.name || (upstreamModal.id ? 'Edit Upstream' : 'Add Upstream')"></h3>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <label class="relative inline-flex h-9 w-12 cursor-pointer items-center justify-center" title="Toggle upstream">
+                        <input type="checkbox" class="peer sr-only" x-model="upstreamModal.enabled" aria-label="Toggle upstream enabled in editor" />
+                        <span class="h-6 w-11 rounded-full bg-surface-600 transition-colors peer-checked:bg-accent-emerald/70"></span>
+                        <span class="absolute left-1.5 h-4 w-4 rounded-full bg-gray-300 transition-transform peer-checked:translate-x-5 peer-checked:bg-white"></span>
+                      </label>
+                      <button @click="closeUpstreamModal()" class="inline-flex h-9 w-9 items-center justify-center rounded-md text-gray-500 hover:bg-white/[0.04] hover:text-white" aria-label="Close upstream editor" title="Close">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-                <div class="space-y-4">
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">Name</label>
-                    <input type="text" class="w-full" placeholder="e.g. OpenAI Production" x-model="upstreamModal.name" />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">Base URL</label>
-                    <input type="text" class="w-full font-mono text-sm" placeholder="https://api.openai.com" x-model="upstreamModal.baseUrl" />
-                    <p class="text-[11px] text-gray-600 mt-1">Final URL is base + path. Override individual paths below if your provider mounts the API under a subpath.</p>
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">
-                      <span x-text="upstreamModal.id ? 'Bearer Token (leave blank to keep)' : 'Bearer Token'"></span>
-                    </label>
-                    <input type="password" autocomplete="off" class="w-full font-mono text-sm" placeholder="sk-..." x-model="upstreamModal.bearerToken" />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">Supported Endpoints</label>
-                    <div class="space-y-2">
-                      <template x-for="ep in ['/chat/completions','/responses','/v1/messages','/embeddings']" :key="ep">
-                        <label class="flex items-center gap-2 text-sm text-gray-300">
-                          <input type="checkbox" class="accent-accent-cyan" :checked="upstreamModal.supportedEndpoints.includes(ep)" @change="toggleUpstreamEndpoint(ep)" />
-                          <span class="font-mono" x-text="ep"></span>
-                        </label>
-                      </template>
-                    </div>
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      @click="upstreamModal.enabledFixesOpen = !upstreamModal.enabledFixesOpen"
-                      :aria-expanded="upstreamModal.enabledFixesOpen.toString()"
-                      class="flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 uppercase tracking-widest mb-2 hover:text-gray-300 transition-colors"
-                    >
-                      <span>Enabled Fixes</span>
-                      <span class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600">
-                        <span x-show="!upstreamModal.enabledFixesOpen && upstreamModal.enabledFixes.length > 0" x-text="upstreamModal.enabledFixes.length + ' enabled'"></span>
-                        <svg class="h-3 w-3 transition-transform" :class="upstreamModal.enabledFixesOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                      </span>
-                    </button>
-                    <div x-show="upstreamModal.enabledFixesOpen" x-cloak>
-                      <p x-show="upstreamFixCatalog.length === 0" class="text-[11px] text-gray-600">No opt-in upstream behavior flags are registered.</p>
-                      <div x-show="upstreamFixCatalog.length > 0" class="max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-surface-700/40 p-3 space-y-2">
-                        <template x-for="fix in upstreamFixCatalog" :key="fix.id">
-                          <label class="flex items-start gap-2 text-sm text-gray-300">
-                            <input type="checkbox" class="accent-accent-cyan mt-0.5" :checked="upstreamModal.enabledFixes.includes(fix.id)" @change="toggleUpstreamFix(fix.id)" />
-                            <span class="flex-1">
-                              <span class="font-mono text-xs text-white" x-text="fix.label || fix.id"></span>
-                              <span x-show="fix.description" class="block text-[11px] text-gray-500 mt-0.5" x-text="fix.description"></span>
-                            </span>
-                          </label>
-                        </template>
+                <div class="max-h-[calc(100dvh-9rem)] overflow-y-auto px-4 py-4 sm:px-5">
+                  <div class="flex flex-col gap-4">
+                    <template x-if="!upstreamModal.id">
+                      <div>
+                        <p class="mb-2 text-xs font-medium text-gray-500">Provider</p>
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <button type="button" @click="setUpstreamModalProvider('custom')" class="rounded-lg border p-3 text-left transition-colors" :class="upstreamModal.provider === 'custom' ? 'border-accent-amber/40 bg-accent-amber/5' : 'border-white/10 bg-surface-800/40 hover:border-white/20'">
+                            <span class="block text-sm font-semibold text-white">Custom</span>
+                            <span class="mt-1 block text-xs text-gray-500">OpenAI-compatible bearer provider</span>
+                          </button>
+                          <button type="button" @click="setUpstreamModalProvider('azure')" class="rounded-lg border p-3 text-left transition-colors" :class="upstreamModal.provider === 'azure' ? 'border-accent-emerald/40 bg-accent-emerald/5' : 'border-white/10 bg-surface-800/40 hover:border-white/20'">
+                            <span class="block text-sm font-semibold text-white">Azure</span>
+                            <span class="mt-1 block text-xs text-gray-500">Azure OpenAI and Foundry deployments</span>
+                          </button>
+                          <button type="button" @click="setUpstreamModalProvider('copilot')" class="rounded-lg border p-3 text-left transition-colors" :class="upstreamModal.provider === 'copilot' ? 'border-accent-cyan/40 bg-accent-cyan/5' : 'border-white/10 bg-surface-800/40 hover:border-white/20'">
+                            <span class="block text-sm font-semibold text-white">Copilot</span>
+                            <span class="mt-1 block text-xs text-gray-500">Connect a GitHub Copilot account</span>
+                          </button>
+                        </div>
                       </div>
+                    </template>
+
+                    <div>
+                      <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
+                      <input type="text" class="!py-2.5 !px-3 !text-xs" placeholder="e.g. OpenAI Production" x-model="upstreamModal.name" aria-label="Upstream name" />
                     </div>
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      @click="upstreamModal.pathOverridesOpen = !upstreamModal.pathOverridesOpen"
-                      :aria-expanded="upstreamModal.pathOverridesOpen.toString()"
-                      class="flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 uppercase tracking-widest mb-2 hover:text-gray-300 transition-colors"
-                    >
-                      <span>Path Overrides</span>
-                      <span class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600">
-                        <span x-show="!upstreamModal.pathOverridesOpen && upstreamModalOverrideCount() > 0" x-text="upstreamModalOverrideCount() + ' set'"></span>
-                        <svg class="h-3 w-3 transition-transform" :class="upstreamModal.pathOverridesOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                      </span>
-                    </button>
-                    <div x-show="upstreamModal.pathOverridesOpen" x-cloak>
-                      <p class="text-[11px] text-gray-600 mb-2">
-                        Leave blank to use the OpenAI default
-                        <code class="font-mono">/v1/&lt;endpoint&gt;</code>.
-                        <code class="font-mono">/v1/messages/count_tokens</code>
-                        follows the messages path automatically.
-                      </p>
-                      <div class="space-y-2">
-                        <template x-for="key in ['chat_completions','responses','messages','embeddings','models']" :key="key">
-                          <div class="flex items-center gap-2">
-                            <span class="font-mono text-xs text-gray-500 w-32 shrink-0" x-text="key"></span>
-                            <input type="text" class="flex-1 font-mono text-xs" :placeholder="'/v1/' + key.replace('_', '/')" x-model="upstreamModal.pathOverrides[key]" />
+
+                    <template x-if="upstreamModal.provider === 'custom'">
+                      <div class="flex flex-col gap-4">
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div>
+                            <label class="mb-1.5 block text-xs font-medium text-gray-500">Base URL</label>
+                            <input type="text" class="!py-2.5 !px-3 !text-xs font-mono" placeholder="e.g. https://api.openai.com" x-model="upstreamModal.baseUrl" />
+                          </div>
+                          <div>
+                            <label class="mb-1.5 block text-xs font-medium text-gray-500">
+                              <span x-text="upstreamModal.id ? 'Bearer Token (leave blank to keep)' : 'Bearer Token'"></span>
+                            </label>
+                            <input type="password" autocomplete="off" class="!py-2.5 !px-3 !text-xs font-mono" placeholder="sk-xxxxx" x-model="upstreamModal.bearerToken" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p class="mb-2 text-xs font-medium text-gray-500">Supported Endpoints</p>
+                          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            <template x-for="ep in endpointList()" :key="ep">
+                              <label class="flex items-center gap-2 rounded-md border border-white/10 bg-surface-800/50 px-3 py-2 text-xs text-gray-300">
+                                <input type="checkbox" class="accent-accent-cyan" :checked="upstreamModal.supportedEndpoints.includes(ep)" @change="toggleUpstreamEndpoint(ep)" />
+                                <span class="font-mono text-[11px]" x-text="endpointLabel(ep)"></span>
+                              </label>
+                            </template>
+                          </div>
+                        </div>
+
+                        <div>
+                          <button
+                            type="button"
+                            @click="upstreamModal.pathOverridesOpen = !upstreamModal.pathOverridesOpen"
+                            :aria-expanded="upstreamModal.pathOverridesOpen.toString()"
+                            class="mb-2 flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 transition-colors hover:text-gray-300"
+                          >
+                            <span class="flex items-center gap-1.5">
+                              <span>Path Overrides</span>
+                              <span x-show="upstreamModalOverrideCount() > 0" class="font-mono text-[10px] text-accent-emerald" x-text="'(+' + upstreamModalOverrideCount() + ')' "></span>
+                            </span>
+                            <span class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600">
+                              <svg class="h-3 w-3 transition-transform" :class="upstreamModal.pathOverridesOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </span>
+                          </button>
+                          <div x-show="upstreamModal.pathOverridesOpen" x-cloak class="rounded-lg border border-white/10 bg-surface-800/40 p-3">
+                            <p class="mb-2 text-[11px] text-gray-600">
+                              Leave blank to use the OpenAI default <code class="font-mono">/v1/&lt;endpoint&gt;</code>. Count tokens follows the messages path.
+                            </p>
+                            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <template x-for="key in ['chat_completions','responses','messages','embeddings','models']" :key="key">
+                                <label class="min-w-0">
+                                  <span class="mb-1 block truncate font-mono text-[10px] text-gray-500" x-text="key"></span>
+                                  <input type="text" class="!py-2 !px-2.5 !text-[11px] font-mono" :placeholder="'/v1/' + key.replace('_', '/')" x-model="upstreamModal.pathOverrides[key]" />
+                                </label>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="upstreamModal.provider === 'azure'">
+                      <div class="flex flex-col gap-4">
+                        <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                          <div>
+                            <label class="mb-1.5 block text-xs font-medium text-gray-500">Endpoint</label>
+                            <input
+                              type="text"
+                              class="!py-2.5 !px-3 !text-xs font-mono"
+                              placeholder="e.g. https://resource.openai.azure.com/openai/v1"
+                              x-model="upstreamModal.endpoint"
+                              aria-label="Azure endpoint"
+                            />
+                          </div>
+                          <div>
+                            <label class="mb-1.5 block text-xs font-medium text-gray-500">
+                              <span x-text="upstreamModal.id ? 'API Key (leave blank to keep)' : 'API Key'"></span>
+                            </label>
+                            <input
+                              type="password"
+                              autocomplete="off"
+                              class="!py-2.5 !px-3 !text-xs font-mono"
+                              placeholder="xxxxx"
+                              x-model="upstreamModal.apiKey"
+                              aria-label="Azure API key"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div class="mb-2 flex items-center justify-between gap-3">
+                            <p class="text-xs font-medium text-gray-500">Deployments</p>
+                            <div x-show="!upstreamModal.deploymentsJsonMode" class="flex items-center gap-2">
+                              <button type="button" @click="addAzureDeployment()" class="btn-ghost !py-1.5 !px-2.5 text-xs">Add Deployment</button>
+                              <button type="button" @click="setAzureDeploymentsJsonMode(true)" class="btn-ghost !py-1.5 !px-2.5 text-xs">Edit as JSON</button>
+                            </div>
+                            <button x-show="upstreamModal.deploymentsJsonMode" x-cloak type="button" @click="setAzureDeploymentsJsonMode(false)" class="btn-ghost !py-1.5 !px-2.5 text-xs">Edit with UI</button>
+                          </div>
+                          <div x-show="!upstreamModal.deploymentsJsonMode" class="flex flex-col gap-2">
+                            <template x-for="(deployment, index) in upstreamModal.deployments" :key="index">
+                              <div class="overflow-hidden rounded-lg border border-white/10 bg-surface-800/35">
+                                <div class="flex items-center gap-1">
+                                  <button type="button" @click="toggleAzureDeployment(index)" class="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-white/[0.03]" :aria-expanded="deployment.open.toString()">
+                                    <span class="min-w-0 truncate text-sm font-semibold text-white" x-text="azureDeploymentTitle(deployment)"></span>
+                                    <svg class="h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform" :class="deployment.open ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <polyline points="6 9 12 15 18 9" />
+                                    </svg>
+                                  </button>
+                                  <button type="button" @click="removeAzureDeployment(index)" class="mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-600 hover:bg-white/[0.04] hover:text-accent-rose" aria-label="Remove deployment" title="Remove deployment">
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                      <line x1="18" y1="6" x2="6" y2="18" />
+                                      <line x1="6" y1="6" x2="18" y2="18" />
+                                    </svg>
+                                  </button>
+                                </div>
+
+                                <div x-show="deployment.open" x-cloak class="border-t border-white/[0.06] p-3">
+                                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                    <label class="min-w-0">
+                                      <span class="mb-1.5 block text-xs font-medium text-gray-500">Display Name</span>
+                                      <input type="text" class="!py-2 !px-2.5 !text-xs" placeholder="e.g. GPT 5.4 Pro" x-model="deployment.display_name" aria-label="Azure deployment display name" />
+                                    </label>
+                                    <label class="min-w-0">
+                                      <span class="mb-1.5 block text-xs font-medium text-gray-500">Deployment</span>
+                                      <input type="text" class="!py-2 !px-2.5 !text-xs font-mono" placeholder="e.g. gpt-5.4-pro" x-model="deployment.deployment" aria-label="Azure deployment name" />
+                                    </label>
+                                    <label class="min-w-0">
+                                      <span class="mb-1.5 block text-xs font-medium text-gray-500">Public Model ID</span>
+                                      <input type="text" class="!py-2 !px-2.5 !text-xs font-mono" :placeholder="deployment.deployment" x-model="deployment.publicModelId" aria-label="Azure public model id" />
+                                    </label>
+                                    <label class="min-w-0">
+                                      <span class="mb-1.5 block text-xs font-medium text-gray-500">API Type</span>
+                                      <select x-model="deployment.apiType" class="!py-2 !px-2.5 !text-xs font-mono" aria-label="Azure deployment API type">
+                                        <template x-for="type in azureDeploymentApiTypes()" :key="type">
+                                          <option :value="type" x-text="azureDeploymentApiTypeLabel(type)"></option>
+                                        </template>
+                                      </select>
+                                    </label>
+                                  </div>
+
+                                  <div class="mt-4">
+                                    <p class="mb-2 text-xs font-semibold text-gray-400">Context Limits</p>
+                                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                      <label class="min-w-0">
+                                        <span class="mb-1 block text-[11px] font-medium text-gray-500">Context Window</span>
+                                        <input type="number" class="!py-2 !px-2.5 !text-[11px] font-mono" placeholder="e.g. 1050000" x-model="deployment.capabilities.limits.max_context_window_tokens" />
+                                      </label>
+                                      <label class="min-w-0">
+                                        <span class="mb-1 block text-[11px] font-medium text-gray-500">Prompt Tokens</span>
+                                        <input type="number" class="!py-2 !px-2.5 !text-[11px] font-mono" placeholder="e.g. 922000" x-model="deployment.capabilities.limits.max_prompt_tokens" />
+                                      </label>
+                                      <label class="min-w-0">
+                                        <span class="mb-1 block text-[11px] font-medium text-gray-500">Output Tokens</span>
+                                        <input type="number" class="!py-2 !px-2.5 !text-[11px] font-mono" placeholder="e.g. 128000" x-model="deployment.capabilities.limits.max_output_tokens" />
+                                      </label>
+                                      <label class="min-w-0">
+                                        <span class="mb-1 block text-[11px] font-medium text-gray-500">Non-stream Output</span>
+                                        <input type="number" class="!py-2 !px-2.5 !text-[11px] font-mono" placeholder="e.g. 128000" x-model="deployment.capabilities.limits.max_non_streaming_output_tokens" />
+                                      </label>
+                                    </div>
+                                  </div>
+
+                                  <div class="mt-4">
+                                    <p class="mb-2 text-xs font-semibold text-gray-400">Capabilities</p>
+                                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                      <template x-for="flag in ['tool_calls','parallel_tool_calls','streaming','vision','adaptive_thinking']" :key="flag">
+                                        <label class="flex items-center gap-2 rounded-md border border-white/5 bg-surface-900/40 px-2.5 py-2 text-[11px] text-gray-300">
+                                          <input type="checkbox" class="accent-accent-cyan" x-model="deployment.capabilities.supports[flag]" />
+                                          <span class="font-mono" x-text="flag"></span>
+                                        </label>
+                                      </template>
+                                    </div>
+                                    <label class="mt-3 block min-w-0 lg:max-w-md">
+                                      <span class="mb-1 block text-[11px] font-medium text-gray-500">Reasoning Effort</span>
+                                      <input type="text" class="!py-2 !px-2.5 !text-[11px] font-mono" placeholder="e.g. low, medium, high" x-model="deployment.capabilities.supports.reasoning_effort" />
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                          <div x-show="upstreamModal.deploymentsJsonMode" x-cloak class="rounded-lg border border-white/10 bg-surface-900/70">
+                            <div class="relative h-72 overflow-hidden rounded-lg">
+                              <pre x-ref="azureDeploymentsJsonHighlight" aria-hidden="true" class="absolute inset-0 m-0 overflow-auto whitespace-pre p-3 text-[11px] font-mono"><code class="language-json" x-html="azureDeploymentsJsonHighlighted()"></code></pre>
+                              <textarea
+                                spellcheck="false"
+                                wrap="off"
+                                x-model="upstreamModal.deploymentsJson"
+                                @input="upstreamModal.deploymentsJsonError = null"
+                                @scroll="syncAzureDeploymentsJsonScroll($event)"
+                                class="absolute inset-0 !m-0 !h-full !resize-none !overflow-auto !rounded-lg !border-0 !bg-transparent !p-3 !text-[11px] font-mono text-transparent caret-gray-100 outline-none selection:bg-accent-cyan/25 focus:!shadow-none focus:!border-0"
+                                style="color: transparent; -webkit-text-fill-color: transparent; caret-color: #e0e0e0; line-height: 1.6;"
+                                aria-label="Azure deployments JSON"
+                              ></textarea>
+                            </div>
+                            <p x-show="upstreamModal.deploymentsJsonError" x-cloak class="border-t border-accent-rose/20 px-3 py-2 text-xs text-accent-rose" x-text="upstreamModal.deploymentsJsonError"></p>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="upstreamModal.provider === 'copilot'">
+                      <div class="flex flex-col gap-3">
+                        <template x-if="!upstreamModal.id">
+                          <div class="rounded-lg border border-white/10 bg-surface-800/40 p-4">
+                            <p class="text-sm font-semibold text-white">Connect GitHub Copilot</p>
+                            <p class="mt-1 text-xs leading-relaxed text-gray-500">GitHub device auth creates or refreshes a Copilot upstream for the signed-in account.</p>
+                            <button type="button" @click="closeUpstreamModal(); startGithubAuth()" class="btn-primary mt-3 w-full sm:w-auto" :disabled="deviceFlow.loading">
+                              <span x-show="!deviceFlow.loading">Connect GitHub</span>
+                              <span x-show="deviceFlow.loading" class="flex items-center gap-1.5"> ${spinner('h-3 w-3')} Connecting… </span>
+                            </button>
+                          </div>
+                        </template>
+
+                        <template x-if="upstreamModal.id">
+                          <div class="rounded-lg border border-white/10 bg-surface-800/40 p-3">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div class="flex min-w-0 items-center gap-3">
+                                <img x-show="upstreamModal.copilotUser?.avatar_url" :src="upstreamModal.copilotUser?.avatar_url" alt="" class="h-10 w-10 shrink-0 rounded-lg ring-1 ring-white/10" />
+                                <div class="min-w-0">
+                                  <p class="truncate text-sm font-semibold text-white" x-text="upstreamModal.copilotUser?.name || upstreamModal.copilotUser?.login || 'GitHub Copilot'"></p>
+                                  <p class="truncate text-xs text-gray-500">
+                                    <span x-text="upstreamModal.copilotUser?.login ? '@' + upstreamModal.copilotUser.login : 'Connected account'"></span>
+                                    <span class="mx-1 text-gray-700">·</span>
+                                    <span x-text="upstreamModal.accountType || 'copilot'"></span>
+                                  </p>
+                                </div>
+                              </div>
+                              <button type="button" @click="loadCopilotQuotaForModal()" class="btn-ghost !py-2 !px-3 text-xs" :disabled="upstreamModal.copilotQuota.loading">
+                                <span x-show="!upstreamModal.copilotQuota.loading">Refresh Quota</span>
+                                <span x-show="upstreamModal.copilotQuota.loading" class="flex items-center gap-1.5"> ${spinner('h-3 w-3')} Loading… </span>
+                              </button>
+                            </div>
+
+                            <div class="mt-3 border-t border-white/[0.06] pt-3">
+                              <p class="mb-2 text-xs font-medium text-gray-500">Copilot quota</p>
+                              <template x-if="upstreamModal.copilotQuota.loading">
+                                <div class="flex flex-col gap-2">
+                                  <div class="h-2 rounded bg-surface-600 animate-pulse"></div>
+                                  <div class="grid grid-cols-3 gap-2">
+                                    <div class="h-12 rounded bg-surface-600 animate-pulse"></div>
+                                    <div class="h-12 rounded bg-surface-600 animate-pulse"></div>
+                                    <div class="h-12 rounded bg-surface-600 animate-pulse"></div>
+                                  </div>
+                                </div>
+                              </template>
+                              <template x-if="upstreamModal.copilotQuota.error">
+                                <p class="break-words text-sm text-red-300" x-text="upstreamModal.copilotQuota.error"></p>
+                              </template>
+                              <template x-if="upstreamModal.copilotQuota.data">
+                                <div>
+                                  <div class="progress-track">
+                                    <div
+                                      class="progress-fill"
+                                      :class="upstreamModal.copilotQuota.percent > 90 ? 'bg-accent-rose' : upstreamModal.copilotQuota.percent > 70 ? 'bg-gradient-to-r from-accent-amber to-accent-rose' : 'bg-gradient-to-r from-accent-cyan to-accent-emerald'"
+                                      :style="'width:' + upstreamModal.copilotQuota.percent + '%'"
+                                    ></div>
+                                  </div>
+                                  <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                    <div class="rounded-md border border-white/5 bg-surface-900/40 p-2">
+                                      <p class="text-xs font-medium text-gray-500">Premium</p>
+                                      <p class="mt-0.5 font-mono text-sm font-semibold text-white">
+                                        <span x-text="upstreamModal.copilotQuota.data.quota_snapshots.premium_interactions.remaining"></span>
+                                        <span class="text-gray-600"> / </span>
+                                        <span x-text="upstreamModal.copilotQuota.data.quota_snapshots.premium_interactions.entitlement"></span>
+                                      </p>
+                                    </div>
+                                    <div class="rounded-md border border-white/5 bg-surface-900/40 p-2">
+                                      <p class="text-xs font-medium text-gray-500">Chat</p>
+                                      <p class="mt-0.5 font-mono text-sm font-semibold text-white" x-text="upstreamModal.copilotQuota.data.quota_snapshots.chat.unlimited ? '\u221e' : upstreamModal.copilotQuota.data.quota_snapshots.chat.remaining"></p>
+                                    </div>
+                                    <div class="rounded-md border border-white/5 bg-surface-900/40 p-2">
+                                      <p class="text-xs font-medium text-gray-500">Resets</p>
+                                      <p class="mt-0.5 truncate text-xs font-medium text-white" x-text="formatDate(upstreamModal.copilotQuota.data.quota_reset_date)"></p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </template>
+                            </div>
                           </div>
                         </template>
                       </div>
-                    </div>
+                    </template>
+
+                    <template x-if="upstreamModal.provider !== 'copilot'">
+                      <div class="flex flex-col gap-3">
+                        <div>
+                          <button
+                            type="button"
+                            @click="upstreamModal.enabledFixesOpen = !upstreamModal.enabledFixesOpen"
+                            :aria-expanded="upstreamModal.enabledFixesOpen.toString()"
+                            class="mb-2 flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 transition-colors hover:text-gray-300"
+                          >
+                            <span class="flex items-center gap-1.5">
+                              <span>Enabled Fixes</span>
+                              <span x-show="upstreamModal.enabledFixes.length > 0" class="font-mono text-[10px] text-accent-emerald" x-text="'(+' + upstreamModal.enabledFixes.length + ')' "></span>
+                            </span>
+                            <span class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600">
+                              <svg class="h-3 w-3 transition-transform" :class="upstreamModal.enabledFixesOpen ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </span>
+                          </button>
+                          <div x-show="upstreamModal.enabledFixesOpen" x-cloak>
+                            <p x-show="upstreamFixCatalog.length === 0" class="text-[11px] text-gray-600">No opt-in upstream behavior flags are registered.</p>
+                            <div x-show="upstreamFixCatalog.length > 0" class="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-lg border border-white/10 bg-surface-800/40 p-3">
+                              <template x-for="fix in upstreamFixCatalog" :key="fix.id">
+                                <label class="flex items-start gap-2 text-sm text-gray-300">
+                                  <input type="checkbox" class="accent-accent-cyan mt-0.5" :checked="upstreamModal.enabledFixes.includes(fix.id)" @change="toggleUpstreamFix(fix.id)" />
+                                  <span class="min-w-0 flex-1">
+                                    <span class="break-all font-mono text-xs text-white" :title="fix.label || fix.id" x-text="fix.label || fix.id"></span>
+                                    <span x-show="fix.description" class="mt-0.5 block text-[11px] text-gray-500" x-text="fix.description"></span>
+                                  </span>
+                                </label>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+
+                    <template x-if="upstreamModal.id && upstreamTestResult">
+                      <div class="rounded-md border p-3" :class="upstreamTestResult.ok ? 'border-accent-emerald/20 bg-accent-emerald/5' : 'border-red-500/20 bg-red-500/5'">
+                        <p class="mb-1 text-xs font-medium" :class="upstreamTestResult.ok ? 'text-accent-emerald' : 'text-red-300'" x-text="upstreamTestTitle()"></p>
+                        <p class="break-all text-[11px] text-gray-400" x-text="upstreamTestDetail()"></p>
+                      </div>
+                    </template>
+
+                    <template x-if="upstreamModal.error">
+                      <p class="break-words rounded-md border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-300" x-text="upstreamModal.error"></p>
+                    </template>
                   </div>
-                  <div class="flex items-center justify-between gap-3 flex-wrap">
-                    <label class="flex items-center gap-2 text-sm text-gray-300">
-                      <input type="checkbox" class="accent-accent-cyan" x-model="upstreamModal.enabled" />
-                      Enabled
-                    </label>
-                    <label class="flex items-center gap-2 text-sm text-gray-300">
-                      Order
-                      <input type="number" class="w-20" x-model.number="upstreamModal.sortOrder" />
-                    </label>
-                  </div>
-                  <template x-if="upstreamModal.error">
-                    <p class="text-sm text-red-300" x-text="upstreamModal.error"></p>
-                  </template>
                 </div>
 
-                <div class="flex flex-col sm:flex-row gap-2 mt-6">
-                  <button @click="saveUpstream()" class="btn-primary flex-1" :disabled="upstreamModal.saving">
+                <div class="flex flex-col gap-2 border-t border-white/[0.06] px-4 py-3 sm:flex-row sm:justify-end sm:px-5">
+                  <button
+                    x-show="upstreamModal.id"
+                    type="button"
+                    @click="testUpstream(upstreamModal.id)"
+                    class="btn-ghost order-2 sm:order-1"
+                    :disabled="upstreamTestingId === upstreamModal.id || upstreamModal.saving"
+                  >
+                    <span x-show="upstreamTestingId !== upstreamModal.id">Test Upstream</span>
+                    <span x-show="upstreamTestingId === upstreamModal.id" class="flex items-center justify-center gap-1.5"> ${spinner('h-3 w-3')} Testing… </span>
+                  </button>
+                  <button @click="closeUpstreamModal()" class="btn-ghost order-3 sm:order-2">Cancel</button>
+                  <button
+                    x-show="upstreamModal.provider !== 'copilot' || upstreamModal.id"
+                    @click="saveUpstream()"
+                    class="btn-primary order-1 sm:order-3"
+                    :disabled="upstreamModal.saving || !upstreamModal.name.trim()"
+                  >
                     <span x-show="!upstreamModal.saving">Save</span>
                     <span x-show="upstreamModal.saving" class="flex items-center justify-center gap-2"> ${spinner('h-4 w-4')} Saving… </span>
                   </button>
-                  <button @click="closeUpstreamModal()" class="btn-ghost">Cancel</button>
                 </div>
               </div>
             </div>
           </div>
         </template>
 
-        <div class="glass-card p-5 sm:p-6 mb-5 animate-in delay-3">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
-            <div class="min-w-0">
-              <h3 class="text-white font-semibold mb-1">Custom Upstreams</h3>
-              <p class="text-sm text-gray-400">Route requests to OpenAI-compatible APIs alongside (or instead of) GitHub Copilot.</p>
-            </div>
-            <button @click="openUpstreamModal()" class="btn-ghost text-xs self-start sm:self-auto">+ Add Upstream</button>
-          </div>
-
-          <template x-if="!upstreamsLoaded">
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div class="h-12 bg-surface-600 rounded animate-pulse"></div>
-              <div class="h-12 bg-surface-600 rounded animate-pulse"></div>
-            </div>
-          </template>
-
-          <template x-if="upstreamsLoaded && upstreams.length === 0">
-            <p class="text-sm text-gray-500">No custom upstreams configured. Requests fall back to GitHub Copilot.</p>
-          </template>
-
-          <template x-if="upstreamsLoaded && upstreams.length > 0">
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <template x-for="up in upstreams" :key="up.id">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-white/5 bg-surface-800 p-3">
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 mb-1 flex-wrap">
-                      <span class="w-2 h-2 rounded-full shrink-0" :class="up.enabled ? 'bg-accent-emerald' : 'bg-gray-600'"></span>
-                      <p class="text-sm font-medium text-white truncate" x-text="up.name"></p>
-                      <span class="text-[10px] text-gray-500 font-mono" x-text="'sort: ' + up.sort_order"></span>
-                      <span
-                        x-show="up.enabled_fixes && up.enabled_fixes.length > 0"
-                        class="text-[10px] uppercase tracking-widest text-accent-amber font-mono"
-                        x-text="up.enabled_fixes.length + ' fix' + (up.enabled_fixes.length === 1 ? '' : 'es')"
-                      ></span>
-                    </div>
-                    <p class="text-xs text-gray-500 font-mono truncate" x-text="up.base_url"></p>
-                    <p class="text-[11px] text-gray-600 mt-1">
-                      <span x-text="up.supported_endpoints.join(', ')"></span>
-                    </p>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-2">
-                    <button @click="testUpstream(up.id)" class="btn-ghost text-xs" :disabled="upstreamTestingId === up.id">
-                      <span x-show="upstreamTestingId !== up.id">Test</span>
-                      <span x-show="upstreamTestingId === up.id" class="flex items-center gap-1"> ${spinner('h-3 w-3')} Testing </span>
-                    </button>
-                    <button @click="openUpstreamModal(up)" class="btn-ghost text-xs">Edit</button>
-                    <button
-                      @click="deleteUpstream(up.id, up.name)"
-                      class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1"
-                      aria-label="Delete upstream"
-                      title="Delete"
-                    >
-                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </template>
-
-          <template x-if="upstreamTestResult">
-            <div class="rounded-lg border p-3 mt-3" :class="upstreamTestResult.ok ? 'border-accent-emerald/20 bg-accent-emerald/5' : 'border-red-500/20 bg-red-500/5'">
-              <p
-                class="text-xs font-medium mb-1"
-                :class="upstreamTestResult.ok ? 'text-accent-emerald' : 'text-red-300'"
-                x-text="upstreamTestResult.ok ? ('OK · ' + upstreamTestResult.model_count + ' models') : ('Error · status ' + (upstreamTestResult.status ?? 'n/a'))"
-              ></p>
-              <p
-                class="text-[11px] text-gray-400 break-all"
-                x-text="upstreamTestResult.ok ? upstreamTestResult.models.slice(0, 8).join(', ') + (upstreamTestResult.models.length > 8 ? '…' : '') : (upstreamTestResult.body ?? upstreamTestResult.error ?? '')"
-              ></p>
-            </div>
-          </template>
-        </div>
-
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <div class="flex flex-col gap-5">
-            <div class="glass-card p-5 sm:p-6 animate-in">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-white font-semibold">GitHub Accounts</h3>
-                <template x-if="meLoaded && githubAccounts.length > 0">
-                  <button @click="startGithubAuth()" class="btn-ghost text-xs" :disabled="deviceFlow.loading">
-                    <span x-show="!deviceFlow.loading">+ Add</span>
-                    <span x-show="deviceFlow.loading" class="flex items-center gap-1.5"> ${spinner('h-3 w-3')} Adding… </span>
-                  </button>
-                </template>
-              </div>
-              <template x-if="!meLoaded">
-                <div class="space-y-3">
-                  <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-lg bg-surface-600 animate-pulse shrink-0"></div>
-                    <div class="space-y-1.5 flex-1">
-                      <div class="h-4 w-28 bg-surface-600 rounded animate-pulse"></div>
-                      <div class="h-3 w-20 bg-surface-600 rounded animate-pulse"></div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-              <template x-if="meLoaded && githubAccounts.length === 0">
-                <p class="text-sm text-gray-500">No GitHub accounts connected</p>
-              </template>
-              <template x-if="meLoaded && githubAccounts.length > 0">
-                <div class="space-y-1">
-                  <template x-for="(acct, index) in githubAccounts" :key="acct.id">
-                    <div
-                      @click="selectGithubAccount(acct.id)"
-                      class="rounded-lg px-3 py-2.5 transition-colors"
-                      :class="selectedGithubAccountId === acct.id ? 'bg-accent-cyan/5 border border-accent-cyan/15' : 'hover:bg-white/[0.03] cursor-pointer border border-transparent'"
-                    >
-                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
-                        <div class="flex min-w-0 flex-1 items-start gap-3">
-                          <img :src="acct.avatar_url" class="w-9 h-9 shrink-0 rounded-lg ring-1 ring-white/5" />
-                          <div class="min-w-0 flex-1">
-                            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <p class="min-w-0 truncate text-sm text-white font-medium" x-text="acct.name || acct.login"></p>
-                            </div>
-                            <p class="text-xs text-gray-500 truncate" x-text="'@' + acct.login"></p>
-                          </div>
-                        </div>
-                        <div class="flex w-full shrink-0 items-center justify-end gap-1 border-t border-white/[0.04] pt-2 sm:w-auto sm:border-t-0 sm:pt-0 sm:gap-1.5">
-                          <button
-                            @click.stop="moveGithubAccount(acct.id, -1)"
-                            class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1 disabled:opacity-30 disabled:hover:text-gray-600 disabled:hover:bg-transparent sm:min-h-9 sm:min-w-9"
-                            :disabled="index === 0"
-                            aria-label="Move account up"
-                            title="Move up"
-                          >
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <polyline points="18 15 12 9 6 15" />
-                            </svg>
-                          </button>
-                          <button
-                            @click.stop="moveGithubAccount(acct.id, 1)"
-                            class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1 disabled:opacity-30 disabled:hover:text-gray-600 disabled:hover:bg-transparent sm:min-h-9 sm:min-w-9"
-                            :disabled="index === githubAccounts.length - 1"
-                            aria-label="Move account down"
-                            title="Move down"
-                          >
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                          </button>
-                          <button
-                            @click.stop="disconnectGithub(acct.id, acct.login)"
-                            class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1 sm:min-h-9 sm:min-w-9"
-                            aria-label="Disconnect GitHub account"
-                            title="Disconnect"
-                          >
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </template>
-                </div>
-              </template>
-
-              <div class="mt-4 border-t border-white/[0.05] pt-4">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div class="min-w-0">
-                    <h3 class="flex min-w-0 max-w-full items-baseline font-semibold">
-                      <span class="shrink-0 text-white">Copilot Quota</span>
-                      <span
-                        class="ml-1 min-w-0 truncate text-gray-500"
-                        x-text="selectedGithubAccountId ? '· @' + (githubAccounts.find((acct) => acct.id === selectedGithubAccountId)?.login || 'selected') : '· none'"
-                      ></span>
-                    </h3>
-                    <template x-if="usageData">
-                      <p class="text-xs text-gray-500 mt-0.5"><span x-text="usageData.copilot_plan"></span> · Resets <span x-text="formatDate(usageData.quota_reset_date)"></span></p>
-                    </template>
-                  </div>
-                  <template x-if="usageData">
-                    <div class="shrink-0 sm:text-right">
-                      <p class="font-mono text-2xl font-bold text-white">
-                        <span x-text="usageData.quota_snapshots.premium_interactions.entitlement - usageData.quota_snapshots.premium_interactions.remaining"></span>
-                        <span class="mx-1 text-gray-500">/</span>
-                        <span x-text="usageData.quota_snapshots.premium_interactions.entitlement"></span>
-                      </p>
-                      <p class="text-xs text-gray-500 mt-0.5">premium requests used</p>
-                    </div>
-                  </template>
-                </div>
-
-                <template x-if="usageData">
-                  <div class="mt-3">
-                    <div class="progress-track">
-                      <div
-                        class="progress-fill"
-                        :class="usagePercent > 90 ? 'bg-accent-rose' : usagePercent > 70 ? 'bg-gradient-to-r from-accent-amber to-accent-rose' : 'bg-gradient-to-r from-accent-cyan to-accent-emerald'"
-                        :style="'width:' + usagePercent + '%'"
-                      ></div>
-                    </div>
-                    <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <div class="rounded-lg border border-white/5 bg-white/[0.03] p-3">
-                        <p class="text-[11px] uppercase tracking-widest text-gray-500">Premium Remaining</p>
-                        <p class="mt-1 font-mono text-sm font-semibold text-white" x-text="usageData.quota_snapshots.premium_interactions.remaining"></p>
-                      </div>
-                      <div class="rounded-lg border border-white/5 bg-white/[0.03] p-3">
-                        <p class="text-[11px] uppercase tracking-widest text-gray-500">Chat</p>
-                        <p class="mt-1 font-mono text-sm font-semibold text-white">
-                          <span x-text="usageData.quota_snapshots.chat.unlimited ? '\\u221e unlimited' : usageData.quota_snapshots.chat.remaining"></span>
-                        </p>
-                      </div>
-                      <div class="rounded-lg border border-white/5 bg-white/[0.03] p-3">
-                        <p class="text-[11px] uppercase tracking-widest text-gray-500">Completions</p>
-                        <p class="mt-1 font-mono text-sm font-semibold text-white">
-                          <span x-text="usageData.quota_snapshots.completions.unlimited ? '\\u221e unlimited' : usageData.quota_snapshots.completions.remaining"></span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <template x-if="!usageData && !usageError">
-                  <div class="mt-3 space-y-2">
-                    <div class="h-2 bg-surface-600 rounded animate-pulse"></div>
-                    <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <div class="h-16 bg-surface-600 rounded-lg animate-pulse"></div>
-                      <div class="h-16 bg-surface-600 rounded-lg animate-pulse"></div>
-                      <div class="h-16 bg-surface-600 rounded-lg animate-pulse"></div>
-                    </div>
-                  </div>
-                </template>
-                <template x-if="usageError">
-                  <p class="mt-3 text-sm text-gray-500">Unable to load quota</p>
-                </template>
-              </div>
-            </div>
+            ${renderUpstreamsSettingsCard()}
 
             <div class="glass-card p-5 sm:p-6 animate-in delay-2">
               <div class="mb-4">
@@ -1101,7 +1260,7 @@ export function renderSettingsTab() {
                 <div class="space-y-4">
                   <div class="flex items-center gap-2 text-xs text-gray-500">
                     ${spinner('h-3.5 w-3.5 text-gray-500')}
-                    <span>Loading saved search config...</span>
+                    <span>Loading saved search config…</span>
                   </div>
                   <div class="grid grid-cols-1 gap-3">
                     <div class="h-20 rounded-xl bg-surface-600 animate-pulse"></div>
@@ -1195,12 +1354,12 @@ export function renderSettingsTab() {
                   <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                     <button @click="saveSearchConfig()" class="btn-primary w-full sm:w-auto" :disabled="!searchConfigLoaded || searchConfigSaving">
                       <span x-show="!searchConfigSaving">Save Search Config</span>
-                      <span x-show="searchConfigSaving" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Saving... </span>
+                      <span x-show="searchConfigSaving" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Saving… </span>
                     </button>
 
                     <button @click="testSearchConfig()" class="btn-ghost w-full sm:w-auto" :disabled="!searchConfigLoaded || searchConfigTesting || searchConfigDraft.provider === 'disabled'">
                       <span x-show="!searchConfigTesting">Test Search</span>
-                      <span x-show="searchConfigTesting" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Testing... </span>
+                      <span x-show="searchConfigTesting" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Testing… </span>
                     </button>
 
                     <p class="text-xs text-gray-500" x-show="searchConfigDraft.provider === 'disabled'">Search testing is disabled until a provider is selected.</p>
@@ -1265,7 +1424,7 @@ export function renderSettingsTab() {
 
             <div class="glass-card p-5 sm:p-6 animate-in delay-2">
               <h3 class="text-white font-semibold mb-1">Export Data</h3>
-              <p class="text-sm text-gray-400 mb-4">Download all API keys, GitHub accounts, and usage data as a JSON file.</p>
+              <p class="text-sm text-gray-400 mb-4">Download API keys, upstreams, web search config, and usage data as a JSON file.</p>
               <label class="mb-4 flex items-start gap-3 rounded-md border border-white/5 bg-surface-800/50 p-3">
                 <input type="checkbox" class="mt-0.5 h-4 w-4 rounded border-white/10 bg-surface-900 text-accent-cyan" x-model="exportIncludePerformance" />
                 <span>
@@ -1282,7 +1441,7 @@ export function renderSettingsTab() {
                   </svg>
                   Export JSON
                 </span>
-                <span x-show="exportLoading" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Exporting... </span>
+                <span x-show="exportLoading" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Exporting… </span>
               </button>
 
               <div class="my-6 border-t border-white/[0.06]"></div>
@@ -1327,8 +1486,8 @@ export function renderSettingsTab() {
                       <p class="text-lg font-bold font-mono text-white" x-text="importPreview.apiKeys"></p>
                     </div>
                     <div class="bg-surface-800 rounded-lg p-3 text-center">
-                      <p class="text-xs text-gray-500 mb-1">GitHub Accounts</p>
-                      <p class="text-lg font-bold font-mono text-white" x-text="importPreview.githubAccounts"></p>
+                      <p class="text-xs text-gray-500 mb-1">Upstream Records</p>
+                      <p class="text-lg font-bold font-mono text-white" x-text="importPreview.upstreams"></p>
                     </div>
                     <div class="bg-surface-800 rounded-lg p-3 text-center">
                       <p class="text-xs text-gray-500 mb-1">Usage Records</p>
@@ -1377,7 +1536,7 @@ export function renderSettingsTab() {
                       </svg>
                       <span x-text="importMode === 'replace' ? 'Replace All Data' : 'Merge Data'"></span>
                     </span>
-                    <span x-show="importLoading" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Importing... </span>
+                    <span x-show="importLoading" class="flex items-center gap-2"> ${spinner('h-4 w-4')} Importing… </span>
                   </button>
                 </div>
               </template>

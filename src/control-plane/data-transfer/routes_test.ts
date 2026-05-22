@@ -5,55 +5,96 @@ import { exportData, importData } from './routes.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { ApiKey, GitHubAccount, PerformanceTelemetryRecord, SearchUsageRecord, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
+import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
-// ---- Fixtures ----
-
 const KEY_A: ApiKey = {
-  id: 'key-aaa',
+  id: 'key-a',
   name: 'Alice',
-  key: 'raw-key-aaa',
+  key: 'raw-a',
   createdAt: '2026-01-01T00:00:00.000Z',
   lastUsedAt: '2026-01-02T00:00:00.000Z',
 };
 
 const KEY_B: ApiKey = {
-  id: 'key-bbb',
+  id: 'key-b',
   name: 'Bob',
-  key: 'raw-key-bbb',
+  key: 'raw-b',
   createdAt: '2026-02-01T00:00:00.000Z',
 };
 
-const ACCOUNT_X: GitHubAccount = {
-  token: 'ghu_xxxx',
-  accountType: 'individual',
-  user: {
-    id: 100,
-    login: 'alice',
-    name: 'Alice',
-    avatar_url: 'https://example.com/a.png',
+const CUSTOM_UPSTREAM: UpstreamRecord = {
+  id: 'up_custom_a',
+  provider: 'custom',
+  name: 'Custom A',
+  enabled: true,
+  sortOrder: 10,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  enabledFixes: ['messages-web-search-shim'],
+  config: {
+    baseUrl: 'https://custom.example.com',
+    bearerToken: 'sk-custom',
+    supportedEndpoints: ['/chat/completions', '/responses'],
+    pathOverrides: { models: '/models' },
   },
 };
 
-const ACCOUNT_Y: GitHubAccount = {
-  token: 'ghu_yyyy',
-  accountType: 'enterprise',
-  user: {
-    id: 200,
-    login: 'bob',
-    name: null,
-    avatar_url: 'https://example.com/b.png',
+const COPILOT_UPSTREAM: UpstreamRecord = {
+  id: 'up_copilot_a',
+  provider: 'copilot',
+  name: 'GitHub Copilot (alice)',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  enabledFixes: [],
+  config: {
+    githubToken: 'ghu-alice',
+    accountType: 'individual',
+    user: {
+      id: 100,
+      login: 'alice',
+      name: 'Alice',
+      avatar_url: 'https://example.com/a.png',
+    },
+  },
+};
+
+const AZURE_UPSTREAM: UpstreamRecord = {
+  id: 'up_azure_a',
+  provider: 'azure',
+  name: 'Azure A',
+  enabled: true,
+  sortOrder: 20,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  enabledFixes: [],
+  config: {
+    endpoint: 'https://example.openai.azure.com',
+    apiKey: 'az-key',
+    deployments: [
+      {
+        deployment: 'gpt-prod',
+        publicModelId: 'gpt-public',
+        supportedEndpoints: ['/chat/completions', '/responses', '/embeddings'],
+      },
+      {
+        deployment: 'deepseek-prod',
+        supportedEndpoints: ['/chat/completions'],
+      },
+    ],
   },
 };
 
 const USAGE_1: UsageRecord = {
-  keyId: 'key-aaa',
-  model: 'claude-opus-4-6',
-  upstream: 'copilot:100',
-  modelKey: 'claude-opus-4.6',
+  keyId: 'key-a',
+  model: 'claude-opus-4-7',
+  upstream: 'up_copilot_a',
+  modelKey: 'claude-opus-4.7',
   hour: '2026-01-01T10',
   requests: 5,
   inputTokens: 1000,
@@ -63,10 +104,10 @@ const USAGE_1: UsageRecord = {
 };
 
 const USAGE_2: UsageRecord = {
-  keyId: 'key-bbb',
-  model: 'gpt-5.4',
-  upstream: 'openai:custom',
-  modelKey: 'gpt-5.4',
+  keyId: 'key-b',
+  model: 'gpt-public',
+  upstream: 'up_azure_a',
+  modelKey: 'gpt-prod',
   hour: '2026-01-01T11',
   requests: 3,
   inputTokens: 2000,
@@ -77,14 +118,14 @@ const USAGE_2: UsageRecord = {
 
 const SEARCH_USAGE_1: SearchUsageRecord = {
   provider: 'tavily',
-  keyId: 'key-aaa',
+  keyId: 'key-a',
   hour: '2026-01-01T10',
   requests: 2,
 };
 
 const SEARCH_USAGE_2: SearchUsageRecord = {
   provider: 'microsoft-grounding',
-  keyId: 'key-bbb',
+  keyId: 'key-b',
   hour: '2026-01-01T11',
   requests: 4,
 };
@@ -92,10 +133,10 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
 const PERFORMANCE_1: PerformanceTelemetryRecord = {
   hour: '2026-01-01T10',
   metricScope: 'request_total',
-  keyId: 'key-aaa',
+  keyId: 'key-a',
   model: 'claude-opus-4-7',
-  upstream: 'copilot:100',
-  modelKey: 'claude-opus-4.7-xhigh',
+  upstream: 'up_copilot_a',
+  modelKey: 'claude-opus-4.7',
   sourceApi: 'messages',
   targetApi: 'responses',
   stream: true,
@@ -109,10 +150,10 @@ const PERFORMANCE_1: PerformanceTelemetryRecord = {
 const PERFORMANCE_2: PerformanceTelemetryRecord = {
   hour: '2026-01-01T11',
   metricScope: 'upstream_success',
-  keyId: 'key-bbb',
-  model: 'gpt-5.3-codex',
-  upstream: 'openai:custom',
-  modelKey: 'gpt-5.3-codex',
+  keyId: 'key-b',
+  model: 'gpt-public',
+  upstream: 'up_azure_a',
+  modelKey: 'gpt-prod',
   sourceApi: 'responses',
   targetApi: 'chat-completions',
   stream: false,
@@ -123,103 +164,85 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   buckets: [{ lowerMs: 200, upperMs: 284, count: 3 }],
 };
 
-const PERFORMANCE_GEMINI: PerformanceTelemetryRecord = {
-  hour: '2026-01-01T12',
-  metricScope: 'request_total',
-  keyId: 'key-aaa',
-  model: 'claude-sonnet-4-5',
-  upstream: 'copilot:100',
-  modelKey: 'claude-sonnet-4.5',
-  sourceApi: 'gemini',
-  targetApi: 'messages',
-  stream: true,
-  runtimeLocation: 'SJC',
-  requests: 7,
-  errors: 0,
-  totalMsSum: 1400,
-  buckets: [{ lowerMs: 100, upperMs: 142, count: 7 }],
-};
-
-// ---- Helpers ----
-
-function setup() {
+const setup = () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const app = new Hono();
   app.get('/export', exportData);
   app.post('/import', importData);
   return { repo, app };
-}
+};
 
-async function doExport(app: Hono, includePerformance = false) {
+const doExport = async (app: Hono, includePerformance = false) => {
   const resp = await app.request(includePerformance ? '/export?include_performance=1' : '/export');
   assertEquals(resp.status, 200);
-  return await resp.json();
-}
+  return (await resp.json()) as Record<string, any>;
+};
 
-async function doImport(app: Hono, mode: string, data: any) {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 2) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, data }),
+    body: JSON.stringify({ mode, version, data }),
   });
-  return { status: resp.status, body: await resp.json() };
-}
+  return { status: resp.status, body: (await resp.json()) as Record<string, any> };
+};
 
-// ---- Tests: export structure ----
+const latestImportData = (overrides: Record<string, unknown> = {}) => ({
+  apiKeys: [],
+  upstreams: [],
+  usage: [],
+  searchUsage: [],
+  performanceIncluded: false,
+  searchConfig: DEFAULT_SEARCH_CONFIG,
+  ...overrides,
+});
 
-test('export — empty database returns correct structure', async () => {
+test('export emits latest v2 structure with upstreams only', async () => {
   const { app } = setup();
+
   const result = await doExport(app);
 
-  assertEquals(result.version, 1);
+  assertEquals(result.version, 2);
   assertEquals(typeof result.exportedAt, 'string');
-  assertEquals(Array.isArray(result.data.apiKeys), true);
-  assertEquals(result.data.apiKeys.length, 0);
-  assertEquals(Array.isArray(result.data.githubAccounts), true);
-  assertEquals(result.data.githubAccounts.length, 0);
-  assertEquals(Array.isArray(result.data.usage), true);
-  assertEquals(result.data.usage.length, 0);
-  assertEquals(Array.isArray(result.data.searchUsage), true);
-  assertEquals(result.data.searchUsage.length, 0);
+  assertEquals(result.data.apiKeys, []);
+  assertEquals(result.data.upstreams, []);
+  assertEquals(result.data.usage, []);
+  assertEquals(result.data.searchUsage, []);
   assertEquals(result.data.performanceIncluded, false);
   assertEquals(hasOwn(result.data, 'performance'), false);
   assertEquals(result.data.searchConfig, DEFAULT_SEARCH_CONFIG);
+  assertEquals(hasOwn(result.data, 'githubAccounts'), false);
+  assertEquals(hasOwn(result.data, 'upstreamConfigs'), false);
 });
 
-test('export — contains stored data without performance by default', async () => {
+test('export includes full upstream configs and omits performance by default', async () => {
   const { app, repo } = setup();
-
   await repo.apiKeys.save(KEY_A);
-  await repo.apiKeys.save(KEY_B);
-  await repo.github.saveAccount(ACCOUNT_X.user.id, ACCOUNT_X);
-  await repo.github.saveAccount(ACCOUNT_Y.user.id, ACCOUNT_Y);
+  await repo.upstreams.save(COPILOT_UPSTREAM);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.upstreams.save(AZURE_UPSTREAM);
   await repo.usage.set(USAGE_1);
-  await repo.usage.set(USAGE_2);
   await repo.searchUsage.set(SEARCH_USAGE_1);
-  await repo.searchUsage.set(SEARCH_USAGE_2);
   await repo.performance.set(PERFORMANCE_1);
-  await repo.performance.set(PERFORMANCE_2);
-  await repo.searchConfig.save({
-    provider: 'tavily',
-    tavily: { apiKey: 'tvly-test' },
-    microsoftGrounding: { apiKey: 'ms-test' },
-  });
+  await repo.searchConfig.save({ provider: 'tavily', tavily: { apiKey: 'tvly-test' }, microsoftGrounding: { apiKey: 'ms-test' } });
 
   const result = await doExport(app);
 
-  assertEquals(result.data.apiKeys.length, 2);
-  assertEquals(result.data.githubAccounts.length, 2);
-  assertEquals(result.data.usage.length, 2);
-  assertEquals(result.data.searchUsage.length, 2);
+  assertEquals(result.data.apiKeys, [KEY_A]);
+  assertEquals(result.data.upstreams.map((upstream: any) => upstream.id), ['up_copilot_a', 'up_custom_a', 'up_azure_a']);
+  assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_custom_a').config.bearerToken, 'sk-custom');
+  assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_copilot_a').config.githubToken, 'ghu-alice');
+  assertEquals(result.data.upstreams.find((upstream: any) => upstream.id === 'up_azure_a').config.apiKey, 'az-key');
+  assertEquals(result.data.usage, [USAGE_1]);
+  assertEquals(result.data.searchUsage, [SEARCH_USAGE_1]);
   assertEquals(result.data.performanceIncluded, false);
   assertEquals(hasOwn(result.data, 'performance'), false);
   assertEquals(result.data.searchConfig.provider, 'tavily');
 });
 
-test('export — includes performance only when requested', async () => {
+test('export includes performance only when requested', async () => {
   const { app, repo } = setup();
-
   await repo.performance.set(PERFORMANCE_1);
   await repo.performance.set(PERFORMANCE_2);
 
@@ -229,559 +252,278 @@ test('export — includes performance only when requested', async () => {
   assertEquals(defaultExport.data.performanceIncluded, false);
   assertEquals(hasOwn(defaultExport.data, 'performance'), false);
   assertEquals(fullExport.data.performanceIncluded, true);
-  assertEquals(fullExport.data.performance.length, 2);
+  assertEquals(fullExport.data.performance, [PERFORMANCE_1, PERFORMANCE_2]);
 });
 
-test('export — apiKeys contain all fields', async () => {
+test('import rejects missing or mismatched version before deleting data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
 
-  const result = await doExport(app);
-  const key = result.data.apiKeys[0];
-
-  assertEquals(key.id, KEY_A.id);
-  assertEquals(key.name, KEY_A.name);
-  assertEquals(key.key, KEY_A.key);
-  assertEquals(key.createdAt, KEY_A.createdAt);
-  assertEquals(key.lastUsedAt, KEY_A.lastUsedAt);
-});
-
-test('export — apiKey without lastUsedAt omits or nulls it', async () => {
-  const { app, repo } = setup();
-  await repo.apiKeys.save(KEY_B); // KEY_B has no lastUsedAt
-
-  const result = await doExport(app);
-  const key = result.data.apiKeys[0];
-
-  assertEquals(key.id, KEY_B.id);
-  // lastUsedAt should be absent or null/undefined
-  assertEquals(key.lastUsedAt == null, true);
-});
-
-test('export — githubAccounts contain all fields', async () => {
-  const { app, repo } = setup();
-  await repo.github.saveAccount(ACCOUNT_X.user.id, ACCOUNT_X);
-
-  const result = await doExport(app);
-  const account = result.data.githubAccounts[0];
-
-  assertEquals(account.token, ACCOUNT_X.token);
-  assertEquals(account.accountType, ACCOUNT_X.accountType);
-  assertEquals(account.user.id, ACCOUNT_X.user.id);
-  assertEquals(account.user.login, ACCOUNT_X.user.login);
-  assertEquals(account.user.name, ACCOUNT_X.user.name);
-  assertEquals(account.user.avatar_url, ACCOUNT_X.user.avatar_url);
-});
-
-test('export — githubAccount with null name', async () => {
-  const { app, repo } = setup();
-  await repo.github.saveAccount(ACCOUNT_Y.user.id, ACCOUNT_Y);
-
-  const result = await doExport(app);
-  assertEquals(result.data.githubAccounts[0].user.name, null);
-});
-
-test('export — usage records contain all fields', async () => {
-  const { app, repo } = setup();
-  await repo.usage.set(USAGE_1);
-
-  const result = await doExport(app);
-  const u = result.data.usage[0];
-
-  assertEquals(u.keyId, USAGE_1.keyId);
-  assertEquals(u.model, USAGE_1.model);
-  assertEquals(u.hour, USAGE_1.hour);
-  assertEquals(u.requests, USAGE_1.requests);
-  assertEquals(u.inputTokens, USAGE_1.inputTokens);
-  assertEquals(u.outputTokens, USAGE_1.outputTokens);
-  assertEquals(u.cacheReadTokens, USAGE_1.cacheReadTokens);
-  assertEquals(u.cacheCreationTokens, USAGE_1.cacheCreationTokens);
-});
-
-test('export — searchUsage records contain all fields', async () => {
-  const { app, repo } = setup();
-  await repo.searchUsage.set(SEARCH_USAGE_1);
-
-  const result = await doExport(app);
-  const u = result.data.searchUsage[0];
-
-  assertEquals(u.provider, SEARCH_USAGE_1.provider);
-  assertEquals(u.keyId, SEARCH_USAGE_1.keyId);
-  assertEquals(u.hour, SEARCH_USAGE_1.hour);
-  assertEquals(u.requests, SEARCH_USAGE_1.requests);
-});
-
-test('export — performance records contain raw dimensions and buckets', async () => {
-  const { app, repo } = setup();
-  await repo.performance.set(PERFORMANCE_1);
-
-  const result = await doExport(app, true);
-  assertEquals(result.data.performance, [PERFORMANCE_1]);
-});
-
-// ---- Tests: round-trip (import → export) ----
-
-test('round-trip — replace import then export yields equivalent data', async () => {
-  const { app } = setup();
-
-  const original = {
-    apiKeys: [KEY_A, KEY_B],
-    githubAccounts: [ACCOUNT_X, ACCOUNT_Y],
-    usage: [USAGE_1, USAGE_2],
-    searchUsage: [SEARCH_USAGE_1, SEARCH_USAGE_2],
-    performance: [PERFORMANCE_1, PERFORMANCE_2],
-  };
-
-  const { status, body } = await doImport(app, 'replace', original);
-  assertEquals(status, 200);
-  assertEquals(body.ok, true);
-  assertEquals(body.imported, {
-    apiKeys: 2,
-    githubAccounts: 2,
-    usage: 2,
-    searchUsage: 2,
-    upstreamConfigs: 0,
-    performance: 2,
+  const oldVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
+  const missingVersionResponse = await app.request('/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'replace', data: { apiKeys: [] } }),
   });
+  const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
-  const exported = await doExport(app, true);
-
-  // Sort for stable comparison
-  const sortById = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
-  const sortByUserId = (a: GitHubAccount, b: GitHubAccount) => a.user.id - b.user.id;
-  const sortByUsage = (a: UsageRecord, b: UsageRecord) => a.hour.localeCompare(b.hour) || a.keyId.localeCompare(b.keyId);
-  const sortBySearchUsage = (a: SearchUsageRecord, b: SearchUsageRecord) => a.hour.localeCompare(b.hour) || a.provider.localeCompare(b.provider) || a.keyId.localeCompare(b.keyId);
-  const sortByPerformance = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord) =>
-    a.hour.localeCompare(b.hour) || a.metricScope.localeCompare(b.metricScope) || a.keyId.localeCompare(b.keyId) || a.model.localeCompare(b.model);
-
-  exported.data.apiKeys.sort(sortById);
-  exported.data.githubAccounts.sort(sortByUserId);
-  exported.data.usage.sort(sortByUsage);
-  exported.data.searchUsage.sort(sortBySearchUsage);
-  exported.data.performance.sort(sortByPerformance);
-
-  const expected = { ...original };
-  expected.apiKeys = [...original.apiKeys].sort(sortById);
-  expected.githubAccounts = [...original.githubAccounts].sort(sortByUserId);
-  expected.usage = [...original.usage].sort(sortByUsage);
-  expected.searchUsage = [...original.searchUsage].sort(sortBySearchUsage);
-  expected.performance = [...original.performance].sort(sortByPerformance);
-
-  assertEquals(exported.data.apiKeys, expected.apiKeys);
-  assertEquals(exported.data.githubAccounts, expected.githubAccounts);
-  assertEquals(exported.data.usage, expected.usage);
-  assertEquals(exported.data.searchUsage, expected.searchUsage);
-  assertEquals(exported.data.performance, expected.performance);
+  assertEquals(oldVersion.status, 400);
+  assertEquals(oldVersion.body.error, 'version must be 2');
+  assertEquals(missingVersion.status, 400);
+  assertEquals(missingVersion.body.error, 'version must be 2');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals((await repo.upstreams.list()).map(upstream => upstream.id), ['up_custom_a']);
 });
 
-test('round-trip — merge import then export contains both old and new data', async () => {
+test('import replace writes v2 upstreams and clears replaced collections', async () => {
   const { app, repo } = setup();
-
-  // Pre-existing data
   await repo.apiKeys.save(KEY_A);
-  await repo.github.saveAccount(ACCOUNT_X.user.id, ACCOUNT_X);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
-  await repo.performance.set(PERFORMANCE_1);
+  await repo.searchConfig.save({ provider: 'tavily', tavily: { apiKey: 'old' }, microsoftGrounding: { apiKey: '' } });
 
-  // Merge new data
-  const newData = {
+  const result = await doImport(app, 'replace', {
     apiKeys: [KEY_B],
-    githubAccounts: [ACCOUNT_Y],
+    upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM)],
     usage: [USAGE_2],
     searchUsage: [SEARCH_USAGE_2],
-  };
-
-  const { status } = await doImport(app, 'merge', newData);
-  assertEquals(status, 200);
-
-  const exported = await doExport(app, true);
-
-  assertEquals(exported.data.apiKeys.length, 2);
-  assertEquals(exported.data.githubAccounts.length, 2);
-  assertEquals(exported.data.usage.length, 2);
-  assertEquals(exported.data.searchUsage.length, 2);
-});
-
-test('import replace — clears existing searchUsage before importing provided records', async () => {
-  const { app, repo } = setup();
-
-  await repo.searchUsage.set(SEARCH_USAGE_1);
-
-  const { status, body } = await doImport(app, 'replace', {
-    searchUsage: [SEARCH_USAGE_2],
+    performanceIncluded: false,
+    searchConfig: { provider: 'microsoft-grounding', tavily: { apiKey: '' }, microsoftGrounding: { apiKey: 'ms-new' } },
   });
 
-  assertEquals(status, 200);
-  assertEquals(body.imported.searchUsage, 1);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.searchUsage, [SEARCH_USAGE_2]);
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported, { apiKeys: 1, upstreams: 1, usage: 1, searchUsage: 1, performance: 0 });
+  assertEquals(await repo.apiKeys.list(), [KEY_B]);
+  assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
+  assertEquals(await repo.usage.listAll(), [USAGE_2]);
+  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
+  assertEquals(await repo.searchConfig.get(), { provider: 'microsoft-grounding', tavily: { apiKey: '' }, microsoftGrounding: { apiKey: 'ms-new' } });
 });
 
-test('import replace — clears existing performance before importing provided records', async () => {
+test('import merge upserts by repository key without clearing unrelated rows', async () => {
   const { app, repo } = setup();
-
-  await repo.performance.set(PERFORMANCE_1);
-
-  const { status, body } = await doImport(app, 'replace', {
-    performance: [PERFORMANCE_2],
-  });
-
-  assertEquals(status, 200);
-  assertEquals(body.imported.performance, 1);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.performance, [PERFORMANCE_2]);
-});
-
-test('import replace — preserves existing performance when payload omits performance', async () => {
-  const { app, repo } = setup();
-
-  await repo.performance.set(PERFORMANCE_1);
-
-  const { status, body } = await doImport(app, 'replace', {
-    apiKeys: [KEY_B],
-  });
-
-  assertEquals(status, 200);
-  assertEquals(body.imported.performance, 0);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.performance, [PERFORMANCE_1]);
-});
-
-test('import replace — preserves existing performance for legacy empty payloads without intent', async () => {
-  const { app, repo } = setup();
-
-  await repo.performance.set(PERFORMANCE_1);
-
-  const { status, body } = await doImport(app, 'replace', {
-    performance: [],
-  });
-
-  assertEquals(status, 200);
-  assertEquals(body.imported.performance, 0);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.performance, [PERFORMANCE_1]);
-});
-
-test('import replace — clears existing performance when explicitly included empty', async () => {
-  const { app, repo } = setup();
-
-  await repo.performance.set(PERFORMANCE_1);
-
-  const { status, body } = await doImport(app, 'replace', {
-    performanceIncluded: true,
-    performance: [],
-  });
-
-  assertEquals(status, 200);
-  assertEquals(body.imported.performance, 0);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.performance, []);
-});
-
-test('import replace — accepts Gemini performance records', async () => {
-  const { app } = setup();
-
-  const { status, body } = await doImport(app, 'replace', {
-    performance: [PERFORMANCE_GEMINI],
-  });
-
-  assertEquals(status, 200);
-  assertEquals(body.imported.performance, 1);
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.performance, [PERFORMANCE_GEMINI]);
-});
-
-test('import replace — rejects invalid searchUsage before clearing existing data', async () => {
-  const { app, repo } = setup();
-
   await repo.apiKeys.save(KEY_A);
-  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.usage.set({ ...USAGE_1, requests: 10 });
+  await repo.searchUsage.set({ ...SEARCH_USAGE_1, requests: 10 });
 
-  const resp = await app.request('/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'replace',
-      data: {
-        searchUsage: [
-          {
-            provider: 'disabled',
-            keyId: 'key-bad',
-            hour: '2026-01-01T12',
-            requests: 1,
-          },
-        ],
-      },
-    }),
-  });
-
-  assertEquals(resp.status, 400);
-  assertEquals(await resp.json(), {
-    error: 'invalid searchUsage record at index 0',
-  });
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.apiKeys, [KEY_A]);
-  assertEquals(exported.data.searchUsage, [SEARCH_USAGE_1]);
-});
-
-test('import replace — rejects invalid performance before clearing existing data', async () => {
-  const { app, repo } = setup();
-
-  await repo.apiKeys.save(KEY_A);
-  await repo.performance.set(PERFORMANCE_1);
-
-  const resp = await app.request('/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'replace',
-      data: {
-        performance: [{ ...PERFORMANCE_2, metricScope: 'bad' }],
-      },
-    }),
-  });
-
-  assertEquals(resp.status, 400);
-  assertEquals(await resp.json(), {
-    error: 'invalid performance record at index 0',
-  });
-
-  const exported = await doExport(app, true);
-  assertEquals(exported.data.apiKeys, [KEY_A]);
-  assertEquals(exported.data.performance, [PERFORMANCE_1]);
-});
-
-test('export/import include searchConfig and replace it as a singleton when present', async () => {
-  const { app, repo } = setup();
-
-  await repo.searchConfig.save({
-    provider: 'tavily',
-    tavily: { apiKey: 'tvly-original' },
-    microsoftGrounding: { apiKey: 'ms-original' },
-  });
-
-  const exported = await doExport(app);
-  assertEquals(exported.data.searchConfig.provider, 'tavily');
-
-  const { status } = await doImport(app, 'merge', {
-    apiKeys: [],
-    githubAccounts: [],
-    usage: [],
-    searchConfig: {
-      provider: 'microsoft-grounding',
-      tavily: { apiKey: 'tvly-imported' },
-      microsoftGrounding: { apiKey: 'ms-imported' },
-    },
-  });
-
-  assertEquals(status, 200);
-  assertEquals(await repo.searchConfig.get(), {
-    provider: 'microsoft-grounding',
-    tavily: { apiKey: 'tvly-imported' },
-    microsoftGrounding: { apiKey: 'ms-imported' },
-  });
-});
-
-test('import replace resets searchConfig to default when the payload omits it', async () => {
-  const { app, repo } = setup();
-
-  await repo.searchConfig.save({
-    provider: 'tavily',
-    tavily: { apiKey: 'tvly-original' },
-    microsoftGrounding: { apiKey: 'ms-original' },
-  });
-
-  const { status } = await doImport(app, 'replace', {
-    apiKeys: [],
-    githubAccounts: [],
-    usage: [],
-  });
-
-  assertEquals(status, 200);
-
-  const exported = await doExport(app);
-  assertEquals(exported.data.searchConfig, DEFAULT_SEARCH_CONFIG);
-});
-
-test('round-trip — double import with replace is idempotent', async () => {
-  const { app } = setup();
-
-  const data = {
-    apiKeys: [KEY_A],
-    githubAccounts: [ACCOUNT_X],
+  const updatedCustom = { ...CUSTOM_UPSTREAM, name: 'Custom Updated', updatedAt: '2026-03-01T00:00:00.000Z' } satisfies UpstreamRecord;
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_A, name: 'Alice Updated' }, KEY_B],
+    upstreams: [upstreamRecordToFullJson(updatedCustom), upstreamRecordToFullJson(COPILOT_UPSTREAM)],
     usage: [USAGE_1],
-  };
+    searchUsage: [SEARCH_USAGE_1],
+  }));
 
-  await doImport(app, 'replace', data);
-  await doImport(app, 'replace', data);
-
-  const exported = await doExport(app);
-  assertEquals(exported.data.apiKeys.length, 1);
-  assertEquals(exported.data.githubAccounts.length, 1);
-  assertEquals(exported.data.usage.length, 1);
+  assertEquals(result.status, 200);
+  assertEquals((await repo.apiKeys.list()).map(key => key.name), ['Alice Updated', 'Bob']);
+  assertEquals((await repo.upstreams.list()).map(upstream => [upstream.id, upstream.name]), [
+    ['up_copilot_a', 'GitHub Copilot (alice)'],
+    ['up_custom_a', 'Custom Updated'],
+  ]);
+  assertEquals(await repo.usage.listAll(), [USAGE_1]);
+  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
 });
 
-test('round-trip — export from A, import into B, export from B matches A', async () => {
-  // Simulate moving data between two deployments.
-  const repoA = new InMemoryRepo();
-  initRepo(repoA);
-  const appA = new Hono();
-  appA.get('/export', exportData);
-  appA.post('/import', importData);
-
-  await repoA.apiKeys.save(KEY_A);
-  await repoA.apiKeys.save(KEY_B);
-  await repoA.github.saveAccount(ACCOUNT_X.user.id, ACCOUNT_X);
-  await repoA.usage.set(USAGE_1);
-  await repoA.usage.set(USAGE_2);
-  await repoA.searchUsage.set(SEARCH_USAGE_1);
-  await repoA.searchUsage.set(SEARCH_USAGE_2);
-  await repoA.performance.set(PERFORMANCE_1);
-  await repoA.performance.set(PERFORMANCE_2);
-
-  const exportA = await doExport(appA, true);
-
-  // Platform B — fresh repo
-  const repoB = new InMemoryRepo();
-  initRepo(repoB);
-  const appB = new Hono();
-  appB.get('/export', exportData);
-  appB.post('/import', importData);
-
-  await doImport(appB, 'replace', exportA.data);
-  const exportB = await doExport(appB, true);
-
-  // Compare data (ignoring exportedAt timestamp)
-  const sortById = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
-  const sortByUserId = (a: GitHubAccount, b: GitHubAccount) => a.user.id - b.user.id;
-  const sortByUsage = (a: UsageRecord, b: UsageRecord) => a.hour.localeCompare(b.hour) || a.keyId.localeCompare(b.keyId);
-  const sortBySearchUsage = (a: SearchUsageRecord, b: SearchUsageRecord) => a.hour.localeCompare(b.hour) || a.provider.localeCompare(b.provider) || a.keyId.localeCompare(b.keyId);
-  const sortByPerformance = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord) =>
-    a.hour.localeCompare(b.hour) || a.metricScope.localeCompare(b.metricScope) || a.keyId.localeCompare(b.keyId) || a.model.localeCompare(b.model);
-
-  exportA.data.apiKeys.sort(sortById);
-  exportA.data.githubAccounts.sort(sortByUserId);
-  exportA.data.usage.sort(sortByUsage);
-  exportA.data.searchUsage.sort(sortBySearchUsage);
-  exportA.data.performance.sort(sortByPerformance);
-  exportB.data.apiKeys.sort(sortById);
-  exportB.data.githubAccounts.sort(sortByUserId);
-  exportB.data.usage.sort(sortByUsage);
-  exportB.data.searchUsage.sort(sortBySearchUsage);
-  exportB.data.performance.sort(sortByPerformance);
-
-  assertEquals(exportB.data.apiKeys, exportA.data.apiKeys);
-  assertEquals(exportB.data.githubAccounts, exportA.data.githubAccounts);
-  assertEquals(exportB.data.usage, exportA.data.usage);
-  assertEquals(exportB.data.searchUsage, exportA.data.searchUsage);
-  assertEquals(exportB.data.performance, exportA.data.performance);
-});
-
-// ---- Tests: import modes ----
-
-test('import replace — clears existing data', async () => {
+test('import replace handles performance inclusion explicitly', async () => {
   const { app, repo } = setup();
+  await repo.performance.set(PERFORMANCE_1);
 
+  const preserve = await doImport(app, 'replace', latestImportData());
+  assertEquals(preserve.status, 200);
+  assertEquals(await repo.performance.listAll(), [PERFORMANCE_1]);
+
+  const replace = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: true,
+    performance: [PERFORMANCE_2],
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+
+  assertEquals(replace.status, 200);
+  assertEquals(await repo.performance.listAll(), [PERFORMANCE_2]);
+});
+
+test('import rejects missing upstreams before clearing existing data', async () => {
+  const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
-  await repo.github.saveAccount(ACCOUNT_X.user.id, ACCOUNT_X);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.usage.set(USAGE_1);
+
+  const result = await doImport(app, 'replace', {
+    apiKeys: [KEY_B],
+    usage: [USAGE_2],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, 'invalid upstreams: upstreams must be an array');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+  assertEquals(await repo.usage.listAll(), [USAGE_1]);
+});
+
+test('import rejects invalid records before clearing existing data', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.searchUsage.set(SEARCH_USAGE_1);
+
+  const badApiKeys = await doImport(app, 'replace', {
+    apiKeys: [{ ...KEY_B, key: '' }],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  const badUsage = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [],
+    usage: [{ ...USAGE_2, requests: -1 }],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  const badUpstream = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk', supportedEndpoints: ['chat_completions'] } }],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  const badFixes = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), enabled_fixes: ['made-up-fix'] }],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  const badSearchUsage = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [{ provider: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+
+  assertEquals(badApiKeys.status, 400);
+  assertEquals(badApiKeys.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
+  assertEquals(badUsage.status, 400);
+  assertEquals(badUsage.body.error, 'invalid usage at index 0: record has invalid usage fields');
+  assertEquals(badUpstream.status, 400);
+  assertEquals(String(badUpstream.body.error).includes('invalid upstreams at index 0'), true);
+  assertEquals(badFixes.status, 400);
+  assertEquals(badFixes.body.error, 'invalid upstreams at index 0: Unknown enabled_fixes ids: made-up-fix');
+  assertEquals(badSearchUsage.status, 400);
+  assertEquals(badSearchUsage.body.error, 'invalid searchUsage record at index 0');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
+});
+
+test('import rejects api key unique identity conflicts before mutating', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+
+  const duplicateRawKey = await doImport(app, 'replace', latestImportData({
+    apiKeys: [KEY_B, { ...KEY_A, id: 'key-c', key: KEY_B.key }],
+  }));
+  const duplicateId = await doImport(app, 'replace', latestImportData({
+    apiKeys: [KEY_B, { ...KEY_B, name: 'Duplicate Bob' }],
+  }));
+  const mergeExistingRawKeyConflict = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_B, key: KEY_A.key }],
+  }));
+
+  assertEquals(duplicateRawKey.status, 400);
+  assertEquals(duplicateRawKey.body.error, 'invalid apiKeys: duplicate apiKeys raw key used by key-b and key-c');
+  assertEquals(duplicateId.status, 400);
+  assertEquals(duplicateId.body.error, 'invalid apiKeys: duplicate apiKeys id key-b at indexes 0 and 1');
+  assertEquals(mergeExistingRawKeyConflict.status, 400);
+  assertEquals(mergeExistingRawKeyConflict.body.error, 'invalid apiKeys: apiKeys raw key for key-b conflicts with existing api key key-a');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+});
+
+test('import rejects legacy provider-prefixed upstream identities before mutating', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+
+  const legacyUpstreamId = await doImport(app, 'replace', latestImportData({
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), id: 'openai:up_custom_a' }],
+  }));
+  const legacyUsageUpstream = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_1, upstream: 'copilot:1' }],
+  }));
+  const legacyPerformanceUpstream = await doImport(app, 'replace', latestImportData({
+    performanceIncluded: true,
+    performance: [{ ...PERFORMANCE_1, upstream: 'copilot:1' }],
+  }));
+
+  assertEquals(legacyUpstreamId.status, 400);
+  assertEquals(legacyUpstreamId.body.error, 'invalid upstreams at index 0: id must use a raw upstream id, not a legacy provider-prefixed identity');
+  assertEquals(legacyUsageUpstream.status, 400);
+  assertEquals(legacyUsageUpstream.body.error, 'invalid usage at index 0: upstream must use a raw upstream id, not a legacy provider-prefixed identity');
+  assertEquals(legacyPerformanceUpstream.status, 400);
+  assertEquals(legacyPerformanceUpstream.body.error, 'invalid performance record at index 0');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+});
+
+test('import rejects missing latest-v2 arrays before clearing existing data', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
 
-  // Replace with only KEY_B
-  await doImport(app, 'replace', {
-    apiKeys: [KEY_B],
-    githubAccounts: [],
-    usage: [],
-  });
+  const missingApiKeys = await doImport(app, 'replace', latestImportData({ apiKeys: undefined }));
+  const missingUsage = await doImport(app, 'replace', latestImportData({ usage: undefined }));
+  const missingSearchUsage = await doImport(app, 'replace', latestImportData({ searchUsage: undefined }));
 
-  const exported = await doExport(app);
-  assertEquals(exported.data.apiKeys.length, 1);
-  assertEquals(exported.data.apiKeys[0].id, KEY_B.id);
-  assertEquals(exported.data.githubAccounts.length, 0);
-  assertEquals(exported.data.usage.length, 0);
-  assertEquals(exported.data.searchUsage.length, 0);
-  assertEquals(exported.data.performanceIncluded, false);
-  assertEquals(hasOwn(exported.data, 'performance'), false);
+  assertEquals(missingApiKeys.status, 400);
+  assertEquals(missingApiKeys.body.error, 'invalid apiKeys: apiKeys must be an array');
+  assertEquals(missingUsage.status, 400);
+  assertEquals(missingUsage.body.error, 'invalid usage: usage must be an array');
+  assertEquals(missingSearchUsage.status, 400);
+  assertEquals(missingSearchUsage.body.error, 'invalid searchUsage: searchUsage must be an array');
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+  assertEquals(await repo.usage.listAll(), [USAGE_1]);
+  assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_1]);
 });
 
-test('import merge — upserts existing records by key', async () => {
-  const { app, repo } = setup();
-
-  // Pre-existing KEY_A with old name
-  await repo.apiKeys.save({ ...KEY_A, name: 'OldName' });
-
-  // Merge with KEY_A (new name) + KEY_B
-  await doImport(app, 'merge', {
-    apiKeys: [KEY_A, KEY_B],
-  });
-
-  const exported = await doExport(app);
-  assertEquals(exported.data.apiKeys.length, 2);
-  const updatedA = exported.data.apiKeys.find((k: ApiKey) => k.id === KEY_A.id);
-  assertEquals(updatedA.name, 'Alice'); // updated to imported value
-});
-
-test('import merge — usage set overwrites matching records', async () => {
-  const { app, repo } = setup();
-
-  // Existing usage
-  await repo.usage.set({
-    ...USAGE_1,
-    requests: 10,
-    inputTokens: 9999,
-    outputTokens: 8888,
-  });
-
-  // Merge with USAGE_1 (different values)
-  await doImport(app, 'merge', { usage: [USAGE_1] });
-
-  const exported = await doExport(app);
-  assertEquals(exported.data.usage.length, 1);
-  assertEquals(exported.data.usage[0].requests, USAGE_1.requests); // 5, not 10
-  assertEquals(exported.data.usage[0].inputTokens, USAGE_1.inputTokens);
-});
-
-// ---- Tests: validation ----
-
-test('import — rejects invalid mode', async () => {
+test('import validates mode and data before mutating', async () => {
   const { app } = setup();
-  const { status, body } = await doImport(app, 'invalid', { apiKeys: [] });
-  assertEquals(status, 400);
-  assertEquals(body.error, "mode must be 'merge' or 'replace'");
-});
 
-test('import — rejects missing data', async () => {
-  const { app } = setup();
-  const resp = await app.request('/import', {
+  const invalidMode = await doImport(app, 'invalid', {}, 2);
+  const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'merge' }),
+    body: JSON.stringify({ mode: 'replace', version: 2 }),
   });
-  assertEquals(resp.status, 400);
-  const body = await resp.json();
-  assertEquals(body.error, 'data is required');
-});
+  const missingUpstreams = await doImport(app, 'merge', {}, 2);
+  const emptyMerge = await doImport(app, 'merge', latestImportData(), 2);
 
-test('import — handles missing optional arrays gracefully', async () => {
-  const { app } = setup();
-  // data object with no arrays
-  const { status, body } = await doImport(app, 'replace', {});
-  assertEquals(status, 200);
-  assertEquals(body.ok, true);
-  assertEquals(body.imported, {
-    apiKeys: 0,
-    githubAccounts: 0,
-    usage: 0,
-    searchUsage: 0,
-    upstreamConfigs: 0,
-    performance: 0,
-  });
+  assertEquals(invalidMode.status, 400);
+  assertEquals(invalidMode.body.error, "mode must be 'merge' or 'replace'");
+  assertEquals(missingData.status, 400);
+  assertEquals(((await missingData.json()) as { error: string }).error, 'data is required');
+  assertEquals(missingUpstreams.status, 400);
+  assertEquals(missingUpstreams.body.error, 'invalid apiKeys: apiKeys must be an array');
+  assertEquals(emptyMerge.status, 200);
+  assertEquals(emptyMerge.body.imported, { apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 });
 });

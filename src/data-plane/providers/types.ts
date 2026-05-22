@@ -1,3 +1,4 @@
+import type { UpstreamProviderKind } from '../../repo/types.ts';
 import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
 import type { ChatCompletionsPayload } from '../shared/protocol/chat-completions.ts';
 import type { EmbeddingsPayload } from '../shared/protocol/embeddings.ts';
@@ -53,6 +54,7 @@ export interface UpstreamModel extends ModelMetadata {
 
 export interface ProviderModelRecord {
   upstream: string;
+  providerKind: UpstreamProviderKind;
   provider: ModelProvider;
   upstreamModel: UpstreamModel;
   enabledFixes: ReadonlySet<string>;
@@ -84,6 +86,7 @@ export interface ProviderTargetInterceptors {
 
 export interface ModelProviderInstance {
   upstream: string;
+  providerKind: UpstreamProviderKind;
   name: string;
   provider: ModelProvider;
   enabledFixes: ReadonlySet<string>;

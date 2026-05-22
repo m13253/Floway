@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { responsesStreamFramesToEvents } from './from-stream.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import type { ResponsesResult } from '../../../../shared/protocol/responses.ts';
-import { sseFrame } from '../../../shared/stream/types.ts';
+import { eventFrame, sseFrame } from '../../../shared/stream/types.ts';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -130,6 +130,51 @@ test('responsesStreamFramesToEvents expands upstream fast-path (created+in_progr
   assertEquals(frames.at(-1)?.type, 'done');
 });
 
+test('responsesStreamFramesToEvents passes wrapper frames through before a delayed fast-path terminal', async () => {
+  const response = makeResponse('completed');
+  let releaseTerminal!: () => void;
+  const terminalReady = new Promise<void>(resolve => {
+    releaseTerminal = resolve;
+  });
+  const iterator = responsesStreamFramesToEvents(
+    (async function* () {
+      yield sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 0 }), 'response.created');
+      yield sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress');
+      await terminalReady;
+      yield sseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed');
+      yield sseFrame('[DONE]');
+    })(),
+  )[Symbol.asyncIterator]();
+
+  const first = await iterator.next();
+  assertEquals(first.value, eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress' }, sequence_number: 0 }));
+
+  const second = await iterator.next();
+  assertEquals(second.value, eventFrame({ type: 'response.in_progress', response: { ...response, status: 'in_progress' }, sequence_number: 1 }));
+
+  releaseTerminal();
+  const rest = [];
+  while (true) {
+    const next = await iterator.next();
+    if (next.done) break;
+    rest.push(next.value);
+  }
+
+  assertEquals(
+    rest.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
+    [
+      'response.output_item.added',
+      'response.content_part.added',
+      'response.output_text.delta',
+      'response.output_text.done',
+      'response.content_part.done',
+      'response.output_item.done',
+      'response.completed',
+      'done',
+    ],
+  );
+});
+
 test('responsesStreamFramesToEvents passes structured upstream events through unchanged when upstream already streams them', async () => {
   const frames = await collect(
     responsesStreamFramesToEvents(
@@ -176,10 +221,9 @@ test('responsesStreamFramesToEvents passes structured upstream events through un
   assertEquals(sequenceNumbers, [0, 1, 2, 3]);
 });
 
-test('responsesStreamFramesToEvents discards pending wrapper frames when fast-path expansion kicks in', async () => {
-  // Pre-structured pending (the wrappers' sequence_number 0/1) must be
-  // dropped so they do not collide with the responsesResultToEvents-synthesized
-  // created/in_progress events that carry their own sequence numbers.
+test('responsesStreamFramesToEvents does not duplicate wrappers when fast-path expansion kicks in', async () => {
+  // Wrappers have already been forwarded downstream, so fast-path expansion
+  // synthesizes only the remaining content and terminal events.
   const frames = await collect(
     responsesStreamFramesToEvents(
       (async function* () {
@@ -191,8 +235,8 @@ test('responsesStreamFramesToEvents discards pending wrapper frames when fast-pa
     ),
   );
 
-  // After expansion the first event must be the synthesized response.created
-  // with sequence_number 0 (re-numbered), not a duplicate upstream wrapper.
+  // The upstream wrapper sequence numbers are kept and the synthesized content
+  // continues from the canonical responseResultToEvents ordering.
   const sequenceNumbers = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? (frame.event as { sequence_number?: number }).sequence_number : undefined));
   assertEquals(sequenceNumbers, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 });
@@ -206,7 +250,8 @@ test('responsesStreamFramesToEvents fast-paths response.failed terminal with err
   const frames = await collect(
     responsesStreamFramesToEvents(
       (async function* () {
-        yield sseFrame(JSON.stringify({ response: { ...failed, status: 'in_progress' }, sequence_number: 0 }), 'response.created');
+        const { error: _error, ...created } = failed;
+        yield sseFrame(JSON.stringify({ response: { ...created, status: 'in_progress' }, sequence_number: 0 }), 'response.created');
         yield sseFrame(JSON.stringify({ response: failed, sequence_number: 1 }), 'response.failed');
         yield sseFrame('[DONE]');
       })(),

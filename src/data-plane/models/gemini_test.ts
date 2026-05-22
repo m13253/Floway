@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../shared/copilot.ts';
 import { assertEquals } from '../../test-assert.ts';
-import { copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { clearModelsCache } from '../providers/upstream-model-cache.ts';
 
 test('/v1beta/models lists Copilot LLM models in Gemini model shape', async () => {
@@ -134,21 +134,21 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
 
 test('/v1beta/models includes custom upstream LLM models', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom LLM',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -186,21 +186,21 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
 
 test('/v1beta/models excludes custom upstream embedding-only models', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
-    baseUrl: 'https://embed.example.com',
-    bearerToken: 'sk-embed',
-    supportedEndpoints: ['/embeddings'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://embed.example.com',
+      bearerToken: 'sk-embed',
+      supportedEndpoints: ['/embeddings'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -228,21 +228,21 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
 
 test('/v1beta/models hides upstream identity when a provider returns an invalid model list', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_secret_gemini_provider',
     name: 'Secret Gemini Provider',
-    baseUrl: 'https://gemini-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://gemini-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -272,21 +272,21 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
 
 test('/v1beta/models hides upstream HTTP error bodies', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_http_secret_gemini_provider',
     name: 'HTTP Secret Gemini Provider',
-    baseUrl: 'https://gemini-http-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://gemini-http-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -319,21 +319,21 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
 
 test('/v1beta/models hides thrown upstream request errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_throw_secret_gemini_provider',
     name: 'Throw Secret Gemini Provider',
-    baseUrl: 'https://gemini-throw-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://gemini-throw-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -363,21 +363,21 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
 
 test('/v1beta/models hides malformed upstream response bodies', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_malformed_secret_gemini_provider',
     name: 'Malformed Secret Gemini Provider',
-    baseUrl: 'https://gemini-malformed-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://gemini-malformed-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

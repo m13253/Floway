@@ -5,6 +5,7 @@ import { modelEndpointsToPublicPaths } from '../../data-plane/providers/endpoint
 import { getModels } from '../../data-plane/providers/registry.ts';
 import type { ModelMetadata, ResolvedModel } from '../../data-plane/providers/types.ts';
 import { ModelsFetchError, ModelsRequestError } from '../../data-plane/providers/upstream-model-cache.ts';
+import type { UpstreamProviderKind } from '../../repo/types.ts';
 
 interface ControlPlaneModelInfo extends ModelInfo {
   // Compatibility hint for the existing dashboard picker grouping. Public
@@ -17,7 +18,8 @@ interface ControlPlaneModelInfo extends ModelInfo {
   capabilities: ModelMetadata['capabilities'];
   supported_endpoints: string[];
   supports_generation: boolean;
-  upstream_kind: 'copilot' | 'openai';
+  provider: UpstreamProviderKind;
+  upstream_ids: string[];
   billing?: ResolvedModel['billing'];
   policy?: ResolvedModel['policy'];
   model_picker_enabled?: boolean;
@@ -27,7 +29,11 @@ interface ControlPlaneModelsResponse extends Omit<ModelsResponse, 'data'> {
   data: ControlPlaneModelInfo[];
 }
 
-const modelUpstreamKind = (model: ResolvedModel): ControlPlaneModelInfo['upstream_kind'] => (model.providers.some(binding => binding.upstream.startsWith('copilot:')) ? 'copilot' : 'openai');
+const modelProvider = (model: ResolvedModel): UpstreamProviderKind => {
+  const first = model.providers[0];
+  if (!first) throw new Error(`Resolved model ${model.id} has no provider bindings`);
+  return first.providerKind;
+};
 
 const toControlPlaneModelInfo = (model: ResolvedModel): ControlPlaneModelInfo => {
   const displayName = model.display_name ?? model.name ?? model.id;
@@ -44,7 +50,8 @@ const toControlPlaneModelInfo = (model: ResolvedModel): ControlPlaneModelInfo =>
     capabilities: model.capabilities,
     supported_endpoints: modelEndpointsToPublicPaths(model.supportedEndpoints),
     supports_generation: model.supports_generation,
-    upstream_kind: modelUpstreamKind(model),
+    provider: modelProvider(model),
+    upstream_ids: [...new Set(model.providers.map(provider => provider.upstream))],
   };
   if (model.billing) info.billing = model.billing;
   if (model.policy) info.policy = model.policy;

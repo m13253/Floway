@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertStringIncludes } from '../../../../test-assert.ts';
-import { copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsCache } from '../../../providers/upstream-model-cache.ts';
 
 const getUsageOnlyChatChunks = (events: Array<{ event: string; data: string }>): Array<Record<string, unknown>> =>
@@ -367,17 +367,19 @@ test("/v1/chat/completions uses Copilot's provider-projected Responses endpoint 
 test('/v1/chat/completions plans per provider without letting a later native provider preempt provider order', async () => {
   const { apiKey, repo } = await setupAppTest();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_native_chat',
     name: 'Native Chat Provider',
-    baseUrl: 'https://chat.example.com',
-    bearerToken: 'sk-chat',
-    supportedEndpoints: ['/chat/completions'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://chat.example.com',
+      bearerToken: 'sk-chat',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   let upstreamPath = '';
   let upstreamBody: Record<string, unknown> | undefined;
@@ -1774,21 +1776,23 @@ test('/v1/chat/completions fills missing max_tokens from model limits on the mes
 
 test('/v1/chat/completions preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

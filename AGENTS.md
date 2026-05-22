@@ -15,8 +15,13 @@
 
 `copilot-gateway` is a Cloudflare Workers API proxy. It exposes Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, and Google
-Gemini-compatible APIs over GitHub Copilot accounts and optional custom
-OpenAI-compatible upstreams.
+Gemini-compatible APIs over unified upstream records. Supported provider kinds
+are `copilot`, `custom`, and `azure`.
+
+`custom` means an OpenAI-compatible bearer-token upstream. It is not an OpenAI
+official-account concept. Azure OpenAI / Foundry OpenAI v1 deployments and Azure
+Foundry Anthropic deployments use the `azure` provider. GitHub Copilot accounts
+are persisted as `copilot` upstreams.
 
 Stack: Hono + Web APIs, repository-backed persistence, D1 on Cloudflare Workers,
 in-memory repositories for tests, TypeScript, pnpm, and Vitest.
@@ -33,15 +38,21 @@ binding unless that becomes an explicit product goal.
 - `src/app.ts`: Hono app wiring, middleware, and plane mounting.
 - `src/control-plane/`: dashboard, auth, admin APIs, import/export, usage and
   performance views.
+- `src/control-plane/upstreams/`: unified upstream CRUD, custom/Azure probing,
+  Copilot device-flow auth, and Copilot per-upstream quota.
 - `src/data-plane/`: client-facing compatibility APIs, model/provider routing,
   protocol translation, embeddings, and data-plane tools.
 - `src/data-plane/providers/`: provider interface, provider registry, model
-  merge, provider-owned alias resolution, and concrete provider implementations.
+  merge, provider-owned alias resolution, optional fix catalog, and concrete
+  provider implementations.
 - `src/data-plane/providers/copilot/`: Copilot provider projection, raw model
   variant selection, endpoint capability projection, and Copilot-specific
   provider registrations.
-- `src/data-plane/providers/openai/`: custom OpenAI-compatible provider
-  behavior.
+- `src/data-plane/providers/custom/`: generic OpenAI-compatible provider
+  behavior for configured bearer-token upstreams.
+- `src/data-plane/providers/azure/`: Azure OpenAI / Foundry OpenAI v1 and
+  Azure Foundry Anthropic provider behavior, deployment catalog projection, and
+  API-key request construction.
 - `src/repo/`: persistence interfaces and implementations.
 - `src/runtime/`: runtime integration helpers for environment access and
   background scheduling.
@@ -52,12 +63,91 @@ binding unless that becomes an explicit product goal.
 Keep behavior in the subtree that owns the boundary where it is true. Avoid flat
 shared utility modules unless the rule is genuinely cross-boundary.
 
+## Unified Upstreams
+
+The `upstreams` table is the only runtime upstream store. Migration 0010
+replaces the old `github_accounts` and `upstream_configs` tables, rewrites
+legacy telemetry identities into upstream row ids, drops the old tables, and
+clears stale model cache entries. Do not add runtime compatibility for the old
+tables or prefixed identities.
+
+`UpstreamRecord` is the persistence contract:
+
+```text
+id: string
+provider: "copilot" | "custom" | "azure"
+name: string
+enabled: boolean
+sortOrder: number
+createdAt: string
+updatedAt: string
+config: unknown
+enabledFixes: string[]
+```
+
+The row id is the runtime upstream identity. Do not prefix it with provider type
+in usage, performance telemetry, model cache keys, or provider bindings.
+Provider selection and display should use the separate `provider` field.
+
+Provider-owned `config` JSON is intentionally opaque to the repo layer. The
+control plane validates configs before save, and provider factories assert them
+again before use. Malformed enabled upstream config is a real configuration
+error and should surface rather than being silently skipped.
+
+Provider config rules:
+
+- `custom`: `baseUrl`, `bearerToken`, `supportedEndpoints`, and optional
+  `pathOverrides`. Models come from the configured models endpoint. The provider
+  calls upstream models by their raw model id.
+- `azure`: one `endpoint`, `apiKey`, and deployment rows. `endpoint` must be an
+  HTTPS Azure URL on `*.openai.azure.com` or `*.services.ai.azure.com`; it may
+  be an Azure resource root, a Foundry project endpoint, an OpenAI v1 URL ending
+  in `/openai/v1`, or an Anthropic URL ending in `/anthropic` or
+  `/anthropic/v1`; the Foundry Claude target URI ending in
+  `/anthropic/v1/messages` is also accepted and normalized to the Anthropic
+  base. Runtime derives protocol bases from that one field.
+  OpenAI-shaped calls use `api-key` auth and append `/chat/completions`,
+  `/responses`, `/embeddings`, and `/models` to the derived OpenAI v1 base.
+  Foundry project endpoints derive OpenAI calls under
+  `/api/projects/<project>/openai/v1`. Native Messages calls use the
+  resource-level `/anthropic` base and call `/v1/messages` plus
+  `/v1/messages/count_tokens` with `x-api-key` auth and
+  `anthropic-version: 2023-06-01`. The Azure OpenAI / Foundry OpenAI v1 surface
+  is cross-provider for Foundry models such as DeepSeek, Grok, Kimi,
+  Microsoft/OpenAI, and similar deployments, but it is not the Anthropic/Claude
+  Messages endpoint shape. Gateway Messages requests can still route through
+  Azure Chat Completions or Responses via the normal planner. Each deployment's
+  `modelKey` is the deployment name; the public model id is `publicModelId` when
+  non-empty and otherwise defaults to the deployment name. The dashboard edits
+  Azure deployments as one row per deployment with a compact API type preset;
+  code persists the provider-owned `supportedEndpoints` capability set. Azure
+  deployment rows may also carry provider-owned catalog metadata such as
+  `display_name`, limits, and `model_picker_enabled`; keep that metadata out of
+  the main dashboard form unless a concrete UI workflow needs it. The configured
+  endpoint plus API key is not enough to fetch rich Azure deployment metadata;
+  Azure management-plane metadata requires ARM/AAD credentials and subscription
+  resource context. Do not add a Chat+Messages Azure preset unless Azure
+  documents a native deployment surface that supports both shapes; Chat source
+  calls to Messages-only Claude deployments should use the existing planner
+  translation.
+- `copilot`: `githubToken`, `accountType`, and `user`. Copilot auth and quota
+  are upstream-owned control-plane flows, not separate account resources.
+
+`enabledFixes` is a common upstream field for admin-opt-in behavior. Custom and
+Azure upstreams use it directly. Copilot providers union stored `enabledFixes`
+with provider-owned default fixes and structural workarounds; the dashboard does
+not expose Copilot default fixes as admin-editable toggles.
+
+Control-plane `/api/models` is UI-owned. It may expose `provider` and
+`upstream_ids` so the dashboard can group model pickers and count models per
+upstream row. Public data-plane model APIs must continue to hide provider
+bindings and upstream ids.
+
 ## Providers
 
-The data plane treats every Copilot account and every custom upstream config as
-a `ModelProvider`. The LLM pipeline must not branch on provider kind. Provider
-methods receive the exact `UpstreamModel` object previously returned by that
-provider.
+The data plane treats every enabled upstream row as a `ModelProviderInstance`.
+The LLM pipeline must not branch on provider kind. Provider methods receive the
+exact `UpstreamModel` object previously returned by that provider.
 
 Provider API shape:
 
@@ -77,17 +167,18 @@ registry separates public catalog data from execution bindings:
   bindings, raw upstream variants, or UI-only provider metadata.
 - `ResolvedModel` extends the catalog shape with ordered `ProviderModelRecord`
   bindings for execution.
-- `ProviderModelRecord` keeps the provider instance, upstream id, exact
+- `ProviderModelRecord` keeps the provider instance, upstream row id, exact
   `UpstreamModel`, enabled fixes, and provider-registered source/target
   interceptors.
 
 Request execution tries provider bindings in order only until the first binding
 that can serve the requested source shape. That provider's result is final for
-the request. If no binding can produce a plan, return a source-shaped
-unsupported-model error instead of inventing legacy model-name routing. Source
-and capability handlers should loop over provider bindings directly; do not hide
-provider eligibility behind callback-based wrappers or "try-next-provider"
-pseudo-results.
+the request. The only fallback is provider fallback across bindings for the same
+public model id. Copilot account fallback is removed. If no binding can produce
+a plan, return a source-shaped unsupported-model error instead of inventing
+legacy model-name routing. Source and capability handlers should loop over
+provider bindings directly; do not hide provider eligibility behind
+callback-based wrappers or "try-next-provider" pseudo-results.
 
 Provider-specific behavior is registered by the provider and then executed at
 the owning source or target boundary. Copilot behavior includes raw model
@@ -101,7 +192,7 @@ interceptor. Messages via Responses or Chat Completions always uses the gateway
 shim when native web-search tools are present, because those targets cannot run
 Anthropic server tools. Native Messages targets receive native web-search tools
 directly by default; Copilot providers enable the shim directly, while custom
-OpenAI-compatible providers enable it only through the `messages-web-search-shim`
+and Azure providers enable it only through the `messages-web-search-shim`
 upstream fix flag. Do not rewrite the shim as part of unrelated data-plane flow
 work.
 
@@ -222,15 +313,35 @@ source entry, before model resolution and usage/performance metadata.
 Historical accounting rows are converted to the public model id only in
 migrations.
 
-## Contracts
+## Control Plane Contracts
 
 Public data-plane compatibility APIs are stable external contracts.
 Control-plane APIs and data-plane tool management APIs are UI-owned and must
 stay consistent with frontend code, tests, and auth policy.
 
 Authentication has two roles: `admin` via `ADMIN_KEY`, and API key user via a
-stored API key. Mutating key APIs and GitHub account management are admin-only;
+stored API key. Mutating key APIs and upstream management are admin-only;
 `GET /api/token-usage` is intentionally visible to any authenticated user.
+
+Upstream control-plane routes:
+
+- `GET/POST /api/upstreams` and `PATCH/DELETE /api/upstreams/:id` manage all
+  provider kinds.
+- `POST /api/upstreams/:id/test` probes saved upstream connectivity. Custom and
+  Copilot tests use model listing; Azure tests probe declared deployment
+  endpoints.
+- `POST /api/upstreams/copilot/auth/start` and
+  `POST /api/upstreams/copilot/auth/poll` own Copilot device-flow connection.
+- `GET /api/upstreams/:id/copilot/quota` reads quota for one Copilot upstream.
+  Quota is shown only inside the Copilot upstream edit UI.
+
+Do not reintroduce separate GitHub-account management routes or a top-level
+Copilot quota route. Control-plane model DTOs expose `provider` as
+`copilot | custom | azure`; do not emit legacy provider-kind fields.
+
+Import/export is latest-only. Export payloads use `version: 2` and
+`data.upstreams`. Import must reject missing or mismatched versions before any
+mutation. It must not accept old split account/config payloads in runtime code.
 
 ## Errors and Style
 

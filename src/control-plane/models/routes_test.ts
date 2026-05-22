@@ -1,0 +1,62 @@
+import { test } from 'vitest';
+
+import type { UpstreamRecord } from '../../repo/types.ts';
+import { assertEquals } from '../../test-assert.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+
+const azureUpstream = (): UpstreamRecord => ({
+  id: 'up_azure_models',
+  provider: 'azure',
+  name: 'Azure Models',
+  enabled: true,
+  sortOrder: 200,
+  createdAt: '2026-05-21T00:00:00.000Z',
+  updatedAt: '2026-05-21T00:00:00.000Z',
+  enabledFixes: [],
+  config: {
+    endpoint: 'https://example.openai.azure.com',
+    apiKey: 'az-key',
+    deployments: [
+      {
+        deployment: 'azure-deployment',
+        publicModelId: 'azure-public',
+        supportedEndpoints: ['/responses'],
+      },
+    ],
+  },
+});
+
+test('/api/models exposes provider kind and not legacy upstream_kind', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
+  await repo.upstreams.save(azureUpstream());
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-sonnet-4', display_name: 'Claude Sonnet 4', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-model', supported_endpoints: ['/chat/completions'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/api/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { data: Array<Record<string, unknown>> };
+
+      assertEquals(body.data.find(model => model.id === 'claude-sonnet-4')?.provider, 'copilot');
+      assertEquals(body.data.find(model => model.id === 'custom-model')?.provider, 'custom');
+      assertEquals(body.data.find(model => model.id === 'azure-public')?.provider, 'azure');
+      assertEquals(body.data.find(model => model.id === 'custom-model')?.upstream_ids, ['up_custom_models']);
+      assertEquals(body.data.find(model => model.id === 'azure-public')?.upstream_ids, ['up_azure_models']);
+      assertEquals(body.data.some(model => Object.hasOwn(model, 'upstream_kind')), false);
+    },
+  );
+});

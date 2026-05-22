@@ -1,5 +1,5 @@
 import type { ModelEndpoint } from './types.ts';
-import type { EndpointKey } from '../../repo/types.ts';
+import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
 
 export type { ModelEndpoint };

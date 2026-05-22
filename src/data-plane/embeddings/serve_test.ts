@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../shared/copilot.ts';
 import { assertEquals, assertExists } from '../../test-assert.ts';
-import { copilotModels, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { clearModelsCache } from '../providers/upstream-model-cache.ts';
 
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
@@ -142,7 +142,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
 });
 
 test('/v1/embeddings records request and upstream performance', async () => {
-  const { apiKey, githubAccount, repo } = await setupAppTest();
+  const { apiKey, copilotUpstream, repo } = await setupAppTest();
 
   await withMockedFetch(
     request => {
@@ -196,7 +196,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
   for (const record of records) {
     assertEquals(record.keyId, apiKey.id);
     assertEquals(record.model, 'text-embedding-real');
-    assertEquals(record.upstream, `copilot:${githubAccount.user.id}`);
+    assertEquals(record.upstream, copilotUpstream.id);
     assertEquals(record.modelKey, 'text-embedding-real');
     assertEquals(record.sourceApi, 'embeddings');
     assertEquals(record.targetApi, 'embeddings');
@@ -208,21 +208,23 @@ test('/v1/embeddings records request and upstream performance', async () => {
 
 test('/v1/embeddings routes to custom upstream when model is only declared there', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
-    baseUrl: 'https://embed.example.com',
-    bearerToken: 'sk-embed',
-    supportedEndpoints: ['/embeddings'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://embed.example.com',
+      bearerToken: 'sk-embed',
+      supportedEndpoints: ['/embeddings'],
+    },
+  }));
 
   let forwardedUrl: string | undefined;
   let forwardedBody: Record<string, unknown> | undefined;
@@ -278,21 +280,23 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
 
 test('/v1/embeddings rejects model on custom upstream without /embeddings capability', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'Chat Only Provider',
-    baseUrl: 'https://chat.example.com',
-    bearerToken: 'sk-chat',
-    supportedEndpoints: ['/chat/completions'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://chat.example.com',
+      bearerToken: 'sk-chat',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -329,21 +333,23 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
 
 test('/v1/embeddings preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
-    baseUrl: 'https://embed.example.com',
-    bearerToken: 'sk-embed',
-    supportedEndpoints: ['/embeddings'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://embed.example.com',
+      bearerToken: 'sk-embed',
+      supportedEndpoints: ['/embeddings'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -381,17 +387,19 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
     name: 'Embedding Provider',
-    baseUrl: 'https://embed.example.com',
-    bearerToken: 'sk-embed',
-    supportedEndpoints: ['/embeddings'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://embed.example.com',
+      bearerToken: 'sk-embed',
+      supportedEndpoints: ['/embeddings'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

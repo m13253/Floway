@@ -1,7 +1,7 @@
 import { type Context, Hono, type Next } from 'hono';
 
 import { createKey, deleteKey, listKeys, renameKey, rotateKey } from './api-keys/routes.ts';
-import { authGithub, authGithubDisconnect, authGithubOrder, authGithubPoll, authLogin, authLogout, authMe } from './auth/routes.ts';
+import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
@@ -9,7 +9,7 @@ import { performanceOverview, performanceTelemetry } from './performance/routes.
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { createUpstream, deleteUpstream, listOptionalFixes, listUpstreams, testUpstream, updateUpstream } from './upstreams/routes.ts';
+import { copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, listOptionalFixes, listUpstreams, testUpstream, updateUpstream } from './upstreams/routes.ts';
 import { DashboardPage } from '../ui/dashboard.tsx';
 import { LoginPage } from '../ui/login.tsx';
 
@@ -33,14 +33,10 @@ export const mountControlPlane = (app: Hono) => {
 
   app.post('/auth/login', authLogin);
   app.post('/auth/logout', authLogout);
+  app.get('/auth/me', authMe);
 
   const adminAuth = new Hono();
   adminAuth.use('*', adminOnlyMiddleware);
-  adminAuth.get('/github', authGithub);
-  adminAuth.post('/github/poll', authGithubPoll);
-  adminAuth.delete('/github/:id', authGithubDisconnect);
-  adminAuth.post('/github/order', authGithubOrder);
-  adminAuth.get('/me', authMe);
   app.route('/auth', adminAuth);
 
   app.get('/api/keys', listKeys);
@@ -52,14 +48,16 @@ export const mountControlPlane = (app: Hono) => {
 
   const adminApi = new Hono();
   adminApi.use('*', adminOnlyMiddleware);
-  adminApi.get('/copilot-quota', copilotQuota);
   adminApi.post('/keys', createKey);
   adminApi.post('/keys/:id/rotate', rotateKey);
   adminApi.patch('/keys/:id', renameKey);
   adminApi.delete('/keys/:id', deleteKey);
   adminApi.get('/upstreams', listUpstreams);
   adminApi.get('/upstream-fixes', listOptionalFixes);
+  adminApi.post('/upstreams/copilot/auth/start', copilotAuthStart);
+  adminApi.post('/upstreams/copilot/auth/poll', copilotAuthPoll);
   adminApi.post('/upstreams', createUpstream);
+  adminApi.get('/upstreams/:id/copilot/quota', copilotQuota);
   adminApi.patch('/upstreams/:id', updateUpstream);
   adminApi.delete('/upstreams/:id', deleteUpstream);
   adminApi.post('/upstreams/:id/test', testUpstream);

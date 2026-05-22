@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
-import { copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseResponse, sseResponsesResponse, withMockedFetch } from '../../../../test-helpers.ts';
+import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseResponse, sseResponsesResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { FakeTime } from '../../../../test-time.ts';
 import { clearModelsCache } from '../../../providers/upstream-model-cache.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/stream/proxy-sse.ts';
@@ -1312,21 +1312,23 @@ test('/v1/responses prefers messages over chat completions when both translated 
 
 test('/v1/responses preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
     name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/responses'],
     enabled: true,
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://custom.example.com',
+      bearerToken: 'sk-custom',
+      supportedEndpoints: ['/responses'],
+    },
+  }));
 
   await withMockedFetch(
     request => {

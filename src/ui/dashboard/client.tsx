@@ -311,6 +311,259 @@ export function dashboardAssets() {
           return am !== bm ? am - bm : b.localeCompare(a);
         }
 
+        const UPSTREAM_ENDPOINTS = ['/chat/completions', '/responses', '/v1/messages', '/embeddings'];
+        const UPSTREAM_ENDPOINT_LABELS = {
+          '/chat/completions': 'Chat',
+          '/responses': 'Responses',
+          '/v1/messages': 'Messages',
+          '/embeddings': 'Embeddings',
+          '/models': 'Models',
+        };
+        const UPSTREAM_PROVIDER_LABELS = {
+          custom: 'Custom',
+          azure: 'Azure',
+          copilot: 'Copilot',
+        };
+        const AZURE_DEPLOYMENT_API_TYPES = ['responses', 'responses_chat', 'chat_completions', 'messages', 'embeddings'];
+        const AZURE_DEPLOYMENT_API_TYPE_LABELS = {
+          responses: 'Responses',
+          responses_chat: 'Responses + Chat',
+          chat_completions: 'Chat',
+          messages: 'Messages',
+          embeddings: 'Embeddings',
+        };
+        const AZURE_DEPLOYMENT_API_TYPE_ENDPOINTS = {
+          responses: ['/responses'],
+          responses_chat: ['/responses', '/chat/completions'],
+          chat_completions: ['/chat/completions'],
+          messages: ['/v1/messages'],
+          embeddings: ['/embeddings'],
+        };
+
+        function blankPathOverrides() {
+          return {
+            chat_completions: '',
+            responses: '',
+            messages: '',
+            embeddings: '',
+            models: '',
+          };
+        }
+
+        function blankAzureDeployment() {
+          return {
+            open: true,
+            deployment: '',
+            publicModelId: '',
+            apiType: 'responses',
+            supportedEndpoints: ['/responses'],
+            display_name: '',
+            capabilities: {
+              limits: {
+                max_context_window_tokens: '',
+                max_non_streaming_output_tokens: '',
+                max_prompt_tokens: '',
+                max_output_tokens: '',
+              },
+              supports: {
+                tool_calls: false,
+                parallel_tool_calls: false,
+                streaming: false,
+                vision: false,
+                adaptive_thinking: false,
+                reasoning_effort: '',
+              },
+            },
+          };
+        }
+
+        function optionalStringForInput(value) {
+          if (value === undefined || value === null) return '';
+          return String(value);
+        }
+
+        function optionalNumberForInput(value) {
+          return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+        }
+
+        function optionalStringArrayForInput(value) {
+          return Array.isArray(value) ? value.join(', ') : '';
+        }
+
+        function normalizeAzureDeploymentForModal(deployment, open = false) {
+          const source = cloneJson(deployment || {});
+          const capabilities = source.capabilities || {};
+          const limits = capabilities.limits || {};
+          const supports = capabilities.supports || {};
+          return {
+            ...blankAzureDeployment(),
+            open,
+            deployment: optionalStringForInput(source.deployment),
+            publicModelId: optionalStringForInput(source.publicModelId),
+            apiType: azureDeploymentApiTypeFromEndpoints(source.supportedEndpoints),
+            supportedEndpoints: Array.isArray(source.supportedEndpoints) ? [...source.supportedEndpoints] : ['/responses'],
+            display_name: optionalStringForInput(source.display_name),
+            capabilities: {
+              limits: {
+                max_context_window_tokens: optionalNumberForInput(limits.max_context_window_tokens),
+                max_non_streaming_output_tokens: optionalNumberForInput(limits.max_non_streaming_output_tokens),
+                max_prompt_tokens: optionalNumberForInput(limits.max_prompt_tokens),
+                max_output_tokens: optionalNumberForInput(limits.max_output_tokens),
+              },
+              supports: {
+                tool_calls: supports.tool_calls === true,
+                parallel_tool_calls: supports.parallel_tool_calls === true,
+                streaming: supports.streaming === true,
+                vision: supports.vision === true,
+                adaptive_thinking: supports.adaptive_thinking === true,
+                reasoning_effort: optionalStringArrayForInput(supports.reasoning_effort),
+              },
+            },
+          };
+        }
+
+        function azureDeploymentApiTypeFromEndpoints(endpoints) {
+          const set = new Set(Array.isArray(endpoints) ? endpoints : []);
+          if (set.has('/v1/messages') || set.has('/messages')) return 'messages';
+          if (set.has('/embeddings') || set.has('/v1/embeddings')) return 'embeddings';
+          const hasResponses = set.has('/responses') || set.has('/v1/responses');
+          const hasChat = set.has('/chat/completions') || set.has('/v1/chat/completions');
+          if (hasResponses && hasChat) return 'responses_chat';
+          if (hasChat) return 'chat_completions';
+          return 'responses';
+        }
+
+        function azureDeploymentEndpointsForApiType(type) {
+          return [...(AZURE_DEPLOYMENT_API_TYPE_ENDPOINTS[type] || AZURE_DEPLOYMENT_API_TYPE_ENDPOINTS.responses)];
+        }
+
+        function trimmedOptionalString(value) {
+          if (typeof value !== 'string') return undefined;
+          const trimmed = value.trim();
+          return trimmed ? trimmed : undefined;
+        }
+
+        function trimmedOptionalStringArray(value) {
+          if (typeof value !== 'string') return undefined;
+          const list = value.split(',').map(item => item.trim()).filter(Boolean);
+          return list.length > 0 ? list : undefined;
+        }
+
+        function trimmedOptionalNumber(value, field) {
+          if (value === undefined || value === null || value === '') return undefined;
+          const number = Number(value);
+          if (!Number.isFinite(number)) throw new Error(field + ' must be a number');
+          return number;
+        }
+
+        function assignDefined(target, key, value) {
+          if (value !== undefined) target[key] = value;
+        }
+
+        function cleanAzureDeploymentPayload(deployment) {
+          const metadata = {};
+          assignDefined(metadata, 'display_name', trimmedOptionalString(deployment.display_name));
+
+          const capabilities = {};
+
+          const limits = {};
+          assignDefined(limits, 'max_context_window_tokens', trimmedOptionalNumber(deployment.capabilities?.limits?.max_context_window_tokens, 'Context window'));
+          assignDefined(limits, 'max_non_streaming_output_tokens', trimmedOptionalNumber(deployment.capabilities?.limits?.max_non_streaming_output_tokens, 'Non-streaming output limit'));
+          assignDefined(limits, 'max_prompt_tokens', trimmedOptionalNumber(deployment.capabilities?.limits?.max_prompt_tokens, 'Prompt token limit'));
+          assignDefined(limits, 'max_output_tokens', trimmedOptionalNumber(deployment.capabilities?.limits?.max_output_tokens, 'Output token limit'));
+          if (Object.keys(limits).length > 0) capabilities.limits = limits;
+
+          const supports = {};
+          for (const key of ['tool_calls', 'parallel_tool_calls', 'streaming', 'vision', 'adaptive_thinking']) {
+            if (deployment.capabilities?.supports?.[key] === true) supports[key] = true;
+          }
+          assignDefined(supports, 'reasoning_effort', trimmedOptionalStringArray(deployment.capabilities?.supports?.reasoning_effort));
+          if (Object.keys(supports).length > 0) capabilities.supports = supports;
+          if (Object.keys(capabilities).length > 0) metadata.capabilities = capabilities;
+
+          return metadata;
+        }
+
+        function azureDeploymentPayloadFromModal(deployment) {
+          const apiType = deployment.apiType || azureDeploymentApiTypeFromEndpoints(deployment.supportedEndpoints);
+          return {
+            ...cleanAzureDeploymentPayload(deployment),
+            deployment: typeof deployment.deployment === 'string' ? deployment.deployment.trim() : '',
+            ...(nonEmptyString(deployment.publicModelId) ? { publicModelId: deployment.publicModelId.trim() } : {}),
+            supportedEndpoints: azureDeploymentEndpointsForApiType(apiType),
+          };
+        }
+
+        function azureDeploymentPayloadsFromUi(deployments) {
+          return deployments.map(azureDeploymentPayloadFromModal).filter(deployment => deployment.deployment);
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function parseAzureDeploymentsJson(text) {
+          let parsed;
+          try {
+            parsed = JSON.parse(text || '[]');
+          } catch (e) {
+            throw new Error('Deployments JSON is invalid: ' + (e.message || String(e)));
+          }
+          if (!Array.isArray(parsed)) throw new Error('Deployments JSON must be an array');
+          return parsed.map((deployment, index) => {
+            if (typeof deployment !== 'object' || deployment === null || Array.isArray(deployment)) {
+              throw new Error('Deployments JSON item ' + (index + 1) + ' must be an object');
+            }
+            return azureDeploymentPayloadFromModal(normalizeAzureDeploymentForModal(deployment, false));
+          });
+        }
+
+        function blankCopilotQuota() {
+          return { loading: false, error: null, data: null, percent: 0 };
+        }
+
+        function blankUpstreamModal(provider = 'custom', sortOrder = 100) {
+          return {
+            open: false,
+            id: null,
+            provider,
+            name: '',
+            enabled: true,
+            sortOrder,
+            enabledFixes: [],
+            enabledFixesOpen: false,
+            saving: false,
+            error: null,
+            baseUrl: '',
+            bearerToken: '',
+            supportedEndpoints: provider === 'custom' ? ['/chat/completions'] : [],
+            pathOverrides: blankPathOverrides(),
+            pathOverridesOpen: false,
+            endpoint: '',
+            apiKey: '',
+            deployments: [blankAzureDeployment()],
+            deploymentsJsonMode: false,
+            deploymentsJson: '',
+            deploymentsJsonError: null,
+            accountType: '',
+            copilotUser: null,
+            copilotQuota: blankCopilotQuota(),
+          };
+        }
+
+        function nonEmptyString(value) {
+          return typeof value === 'string' && value.trim() ? value.trim() : null;
+        }
+
+        function cloneJson(value) {
+          return JSON.parse(JSON.stringify(value));
+        }
+
         // Hono escapes interpolated strings in this template, but these helpers are
         // embedded as executable script source, so they must be injected raw.
         const draftFromSearchConfig = ${raw(draftFromSearchConfig.toString())};
@@ -322,12 +575,6 @@ export function dashboardAssets() {
           authKey: '',
           isAdmin,
           tab: initTab,
-          meLoaded: false,
-          githubAccounts: [],
-          selectedGithubAccountId: null,
-          usageData: null,
-          usageError: false,
-          usagePercent: 0,
           deviceFlow: { loading: false, userCode: null, verificationUri: null, deviceCode: null, pollTimer: null },
           keys: [],
           keysLoading: false,
@@ -380,9 +627,10 @@ export function dashboardAssets() {
           exportIncludePerformance: false,
           importFile: null,
           importData: null,
+          importVersion: null,
           importMode: 'merge',
           importLoading: false,
-          importPreview: { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 },
+          importPreview: { ready: false, exportedAt: null, apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 },
           // Models tab — chat playground
           allModels: [],
           modelsSearch: '',
@@ -408,38 +656,11 @@ export function dashboardAssets() {
           upstreamFixCatalog: [],
           upstreamFixCatalogLoaded: false,
           upstreamTestResult: null,
-          upstreamModal: {
-            open: false,
-            id: null,
-            name: '',
-            baseUrl: '',
-            bearerToken: '',
-            supportedEndpoints: ['/chat/completions'],
-            enabled: true,
-            sortOrder: 100,
-            enabledFixes: [],
-            pathOverrides: {
-              chat_completions: '',
-              responses: '',
-              messages: '',
-              embeddings: '',
-              models: '',
-            },
-            // Path overrides default to collapsed; auto-open in edit
-            // mode if the upstream already has any override set so the
-            // admin sees the live values without an extra click.
-            pathOverridesOpen: false,
-            saving: false,
-            error: null,
-          },
+          upstreamModal: blankUpstreamModal('custom', 100),
           _chatAbort: null,
 
           get baseUrl() {
             return location.origin;
-          },
-
-          get githubConnected() {
-            return this.githubAccounts.length > 0;
           },
 
           get chatModelInfo() {
@@ -588,7 +809,6 @@ export function dashboardAssets() {
             const modelsReady = this.ensureModelsLoaded();
 
             if (this.tab === 'settings' && this.isAdmin) {
-              this.loadMe().then(() => this.loadUsage());
               this.loadSearchConfig();
               this.loadUpstreams();
             } else if (this.tab === 'keys') {
@@ -600,7 +820,6 @@ export function dashboardAssets() {
             }
 
             setInterval(() => {
-              if (this.tab === 'settings' && this.isAdmin) this.loadUsage();
               if (this.tab === 'usage') this.loadUsageTabData();
               if (this.tab === 'performance') this.loadPerformanceTabData();
             }, 60000);
@@ -627,8 +846,6 @@ export function dashboardAssets() {
             this.tab = t;
             location.hash = '#' + t;
             if (t === 'settings' && this.isAdmin) {
-              if (!this.meLoaded) await this.loadMe();
-              await this.loadUsage();
               if (!this.searchConfigLoaded) this.loadSearchConfig();
               if (!this.upstreamsLoaded) this.loadUpstreams();
             } else if (t === 'usage') {
@@ -684,10 +901,10 @@ export function dashboardAssets() {
                 if (first) this.chatModelId = first.id;
               }
 
-              // Split models into copilot and custom-upstream groups so the
+              // Split models into Copilot and non-Copilot upstream groups so the
               // dashboard can present them separately. Copilot lists are
               // sorted by Claude tier (so claude-* SKUs sit near the top of
-              // their respective pickers) while custom-upstream lists are
+              // their respective pickers) while other upstream lists are
               // surfaced as-is — admins configure those by hand and there
               // is no canonical "tier" to apply.
               const messagesCapable = data.filter(m => {
@@ -700,15 +917,16 @@ export function dashboardAssets() {
               // key directly by model id.
               this.claudeContextMap = Object.fromEntries(data.filter(m => m.id.startsWith('claude-') && m.supported_endpoints?.includes('/v1/messages')).map(m => [m.id, modelContextWindow(m)]));
 
-              const SEPARATOR = '── Custom Upstreams ──';
-              const isCopilot = m => m.upstream_kind !== 'openai';
+              const SEPARATOR = '── Upstreams ──';
+              const isCopilot = m => m.provider === 'copilot';
               const dedupe = ids => [...new Set(ids)];
               // Restrict the Copilot Claude segment to claude-* SKUs that
               // natively speak /v1/messages. Other Copilot SKUs (gpt-*,
               // gemini-*, ...) are not useful as a Claude Code backend, and
               // claude SKUs that are translation-only on Copilot are too
               // narrow to be the right default for the Claude pickers.
-              // Custom upstreams are admin-curated and surfaced in full.
+              // Non-Copilot upstreams are admin-curated and surfaced in full,
+              // including Azure models served through Messages translation.
               //
               // Backend model merging has already collapsed dated and
               // variant aliases (-xhigh, -1m) into base ids, so we key
@@ -720,7 +938,7 @@ export function dashboardAssets() {
                   .filter(m => m.supported_endpoints?.includes('/v1/messages'))
                   .map(m => m.id),
               );
-              const customClaudeIds = messagesCapable
+              const upstreamClaudeIds = messagesCapable
                 .filter(m => !isCopilot(m))
                 .map(m => m.id)
                 .sort((a, b) => a.localeCompare(b));
@@ -730,7 +948,7 @@ export function dashboardAssets() {
                 // Only insert the separator when both segments are
                 // non-empty. With no Copilot models the picker would
                 // otherwise lead with a disabled separator row.
-                return copilotSorted.length > 0 && customClaudeIds.length > 0 ? [...copilotSorted, SEPARATOR, ...customClaudeIds] : [...copilotSorted, ...customClaudeIds];
+                return copilotSorted.length > 0 && upstreamClaudeIds.length > 0 ? [...copilotSorted, SEPARATOR, ...upstreamClaudeIds] : [...copilotSorted, ...upstreamClaudeIds];
               };
 
               this.claudeModelsBig = buildClaudePicker(sortClaudeBig);
@@ -771,54 +989,6 @@ export function dashboardAssets() {
               }
             } catch (e) {
               console.error('loadModels:', e);
-            }
-          },
-
-          async loadMe() {
-            try {
-              const resp = await fetch('/auth/me', { headers: this.authHeaders() });
-              if (resp.status === 401) {
-                this.logout();
-                return;
-              }
-              const data = await resp.json();
-              this.githubAccounts = data.accounts || [];
-              if (!this.githubAccounts.some(acct => acct.id === this.selectedGithubAccountId)) {
-                this.selectedGithubAccountId = this.githubAccounts[0]?.id ?? null;
-              }
-            } catch (e) {
-              console.error('loadMe:', e);
-            } finally {
-              this.meLoaded = true;
-            }
-          },
-
-          async loadUsage() {
-            // Quota is Copilot-only — skip the call when no GitHub
-            // account is selected so the dashboard doesn't log
-            // a 502 on every poll for users on custom upstreams.
-            if (!this.selectedGithubAccountId) {
-              this.usageData = null;
-              this.usageError = false;
-              this.usagePercent = 0;
-              return;
-            }
-            try {
-              const resp = await fetch('/api/copilot-quota?user_id=' + encodeURIComponent(this.selectedGithubAccountId), { headers: this.authHeaders() });
-              if (resp.status === 401) {
-                this.logout();
-                return;
-              }
-              if (resp.ok) {
-                this.usageData = await resp.json();
-                const pi = this.usageData.quota_snapshots.premium_interactions;
-                this.usagePercent = pi.entitlement > 0 ? Math.round(((pi.entitlement - pi.remaining) / pi.entitlement) * 100) : 0;
-                this.usageError = false;
-              } else {
-                this.usageError = true;
-              }
-            } catch {
-              this.usageError = true;
             }
           },
 
@@ -898,7 +1068,8 @@ export function dashboardAssets() {
                 console.error('loadUpstreams: HTTP', resp.status);
                 return;
               }
-              this.upstreams = await resp.json();
+              const items = await resp.json();
+              this.upstreams = Array.isArray(items) ? items : [];
               this.upstreamsLoaded = true;
             } catch (e) {
               console.error('loadUpstreams:', e);
@@ -922,53 +1093,173 @@ export function dashboardAssets() {
             }
           },
 
-          openUpstreamModal(existing) {
-            const blankOverrides = () => ({
-              chat_completions: '',
-              responses: '',
-              messages: '',
-              embeddings: '',
-              models: '',
-            });
-            if (existing) {
-              const overrides = { ...blankOverrides(), ...(existing.path_overrides ?? {}) };
-              const hasOverrides = Object.values(existing.path_overrides ?? {}).some(v => typeof v === 'string' && v.length > 0);
-              const existingFixes = Array.isArray(existing.enabled_fixes) ? [...existing.enabled_fixes] : [];
-              this.upstreamModal = {
-                open: true,
-                id: existing.id,
-                name: existing.name,
-                baseUrl: existing.base_url,
-                bearerToken: '',
-                supportedEndpoints: [...existing.supported_endpoints],
-                enabled: existing.enabled,
-                sortOrder: existing.sort_order,
-                enabledFixes: existingFixes,
-                enabledFixesOpen: existingFixes.length > 0,
-                pathOverrides: overrides,
-                pathOverridesOpen: hasOverrides,
-                saving: false,
-                error: null,
-              };
-            } else {
-              const nextSort = this.upstreams.reduce((m, u) => Math.max(m, u.sort_order), -1) + 1;
-              this.upstreamModal = {
-                open: true,
-                id: null,
-                name: '',
-                baseUrl: '',
-                bearerToken: '',
-                supportedEndpoints: ['/chat/completions'],
-                enabled: true,
-                sortOrder: nextSort,
-                enabledFixes: [],
-                enabledFixesOpen: false,
-                pathOverrides: blankOverrides(),
-                pathOverridesOpen: false,
-                saving: false,
-                error: null,
-              };
+          providerLabel(provider) {
+            return UPSTREAM_PROVIDER_LABELS[provider] || provider;
+          },
+
+          providerBadgeClass(provider) {
+            if (provider === 'copilot') return 'border-accent-cyan/25 bg-accent-cyan/10 text-accent-cyan';
+            if (provider === 'azure') return 'border-accent-emerald/25 bg-accent-emerald/10 text-accent-emerald';
+            return 'border-accent-amber/25 bg-accent-amber/10 text-accent-amber';
+          },
+
+          endpointLabel(endpoint) {
+            return UPSTREAM_ENDPOINT_LABELS[endpoint] || endpoint;
+          },
+
+          azureDeploymentApiTypes() {
+            return AZURE_DEPLOYMENT_API_TYPES;
+          },
+
+          azureDeploymentApiTypeLabel(type) {
+            return AZURE_DEPLOYMENT_API_TYPE_LABELS[type] || type;
+          },
+
+          endpointList() {
+            return UPSTREAM_ENDPOINTS;
+          },
+
+          nextUpstreamSortOrder() {
+            return this.upstreams.reduce((m, u) => Math.max(m, Number(u.sort_order ?? 0)), -1) + 1;
+          },
+
+          upstreamConfig(upstream) {
+            return upstream?.config && typeof upstream.config === 'object' ? upstream.config : {};
+          },
+
+          upstreamSubtitle(upstream) {
+            const config = this.upstreamConfig(upstream);
+            if (upstream.provider === 'copilot') {
+              const user = config.user || {};
+              return user.login ? '@' + user.login + ' · ' + (config.accountType || 'copilot') : 'GitHub Copilot account';
             }
+            if (upstream.provider === 'azure') {
+              const deployments = Array.isArray(config.deployments) ? config.deployments.length : 0;
+              return [config.endpoint || 'Azure AI endpoint', deployments + ' deployment' + (deployments === 1 ? '' : 's')].filter(Boolean).join(' · ');
+            }
+            return config.baseUrl || 'OpenAI-compatible endpoint';
+          },
+
+          upstreamModelCount(upstream) {
+            const config = this.upstreamConfig(upstream);
+            if (upstream.provider === 'azure' && Array.isArray(config.deployments)) return config.deployments.length;
+            return this.allModels.filter(model => Array.isArray(model.upstream_ids) && model.upstream_ids.includes(upstream.id)).length;
+          },
+
+          upstreamModelSummary(upstream) {
+            const count = this.upstreamModelCount(upstream);
+            return count + ' model' + (count === 1 ? '' : 's');
+          },
+
+          upstreamMoveDisabled(id, delta) {
+            const ordered = [...this.upstreams].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+            const index = ordered.findIndex(item => item.id === id);
+            return index === -1 || index + delta < 0 || index + delta >= ordered.length;
+          },
+
+          async moveUpstream(id, delta) {
+            const ordered = [...this.upstreams].sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+            const index = ordered.findIndex(item => item.id === id);
+            const target = ordered[index + delta];
+            const source = ordered[index];
+            if (!source || !target) return;
+
+            const sourceOrder = Number(source.sort_order ?? 0);
+            const targetOrder = Number(target.sort_order ?? 0);
+            source.sort_order = targetOrder;
+            target.sort_order = sourceOrder;
+            this.upstreams = ordered.sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0));
+
+            try {
+              const headers = { ...this.authHeaders(), 'Content-Type': 'application/json' };
+              const [sourceResp, targetResp] = await Promise.all([
+                fetch('/api/upstreams/' + source.id, { method: 'PATCH', headers, body: JSON.stringify({ sort_order: targetOrder }) }),
+                fetch('/api/upstreams/' + target.id, { method: 'PATCH', headers, body: JSON.stringify({ sort_order: sourceOrder }) }),
+              ]);
+              if (sourceResp.status === 401 || targetResp.status === 401) {
+                this.logout();
+                return;
+              }
+              if (!sourceResp.ok || !targetResp.ok) throw new Error('HTTP ' + (!sourceResp.ok ? sourceResp.status : targetResp.status));
+              await this.loadUpstreams();
+            } catch (e) {
+              alert('Reorder failed: ' + (e.message || String(e)));
+              await this.loadUpstreams();
+            }
+          },
+
+          async setUpstreamEnabled(upstream, enabled) {
+            const previous = !!upstream.enabled;
+            upstream.enabled = enabled;
+            try {
+              const resp = await fetch('/api/upstreams/' + upstream.id, {
+                method: 'PATCH',
+                headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+              });
+              if (resp.status === 401) {
+                this.logout();
+                return;
+              }
+              if (!resp.ok) throw new Error('HTTP ' + resp.status);
+              await this.loadUpstreams();
+              this.reloadModels();
+            } catch (e) {
+              upstream.enabled = previous;
+              alert('Update failed: ' + (e.message || String(e)));
+            }
+          },
+
+          setUpstreamModalProvider(provider) {
+            if (this.upstreamModal.id || this.upstreamModal.provider === provider) return;
+            const modal = blankUpstreamModal(provider, this.upstreamModal.sortOrder ?? this.nextUpstreamSortOrder());
+            modal.open = true;
+            modal.name = provider === 'azure' ? 'Azure AI' : provider === 'copilot' ? 'GitHub Copilot' : 'Custom upstream';
+            this.upstreamModal = modal;
+            this.upstreamTestResult = null;
+          },
+
+          openNewUpstreamModal(provider = 'custom') {
+            const modal = blankUpstreamModal(provider, this.nextUpstreamSortOrder());
+            modal.open = true;
+            modal.name = provider === 'azure' ? 'Azure AI' : provider === 'copilot' ? 'GitHub Copilot' : 'Custom upstream';
+            this.upstreamModal = modal;
+            this.upstreamTestResult = null;
+          },
+
+          openUpstreamModal(existing) {
+            if (!existing) {
+              this.openNewUpstreamModal('custom');
+              return;
+            }
+            const config = this.upstreamConfig(existing);
+            const existingFixes = Array.isArray(existing.enabled_fixes) ? [...existing.enabled_fixes] : [];
+            const modal = blankUpstreamModal(existing.provider, existing.sort_order ?? this.nextUpstreamSortOrder());
+            modal.open = true;
+            modal.id = existing.id;
+            modal.name = existing.name;
+            modal.enabled = existing.enabled;
+            modal.sortOrder = existing.sort_order;
+            modal.enabledFixes = existingFixes;
+
+            if (existing.provider === 'custom') {
+              const overrides = { ...blankPathOverrides(), ...(config.pathOverrides ?? {}) };
+              modal.baseUrl = config.baseUrl || '';
+              modal.supportedEndpoints = Array.isArray(config.supportedEndpoints) ? [...config.supportedEndpoints] : ['/chat/completions'];
+              modal.pathOverrides = overrides;
+            } else if (existing.provider === 'azure') {
+              modal.endpoint = config.endpoint || '';
+              modal.deployments = Array.isArray(config.deployments) && config.deployments.length > 0
+                ? config.deployments.map(deployment => normalizeAzureDeploymentForModal(deployment, false))
+                : [blankAzureDeployment()];
+            } else if (existing.provider === 'copilot') {
+              modal.accountType = config.accountType || '';
+              modal.copilotUser = config.user || null;
+            }
+
+            this.upstreamModal = modal;
+            this.upstreamTestResult = null;
+            if (existing.provider === 'copilot') this.loadCopilotQuotaForModal();
           },
 
           upstreamModalOverrideCount() {
@@ -979,11 +1270,108 @@ export function dashboardAssets() {
             this.upstreamModal.open = false;
           },
 
+          async loadCopilotQuotaForModal() {
+            if (!this.upstreamModal.id || this.upstreamModal.provider !== 'copilot') return;
+            this.upstreamModal.copilotQuota = { loading: true, error: null, data: null, percent: 0 };
+            try {
+              const resp = await fetch('/api/upstreams/' + this.upstreamModal.id + '/copilot/quota', { headers: this.authHeaders() });
+              if (resp.status === 401) {
+                this.logout();
+                return;
+              }
+              const body = await resp.json().catch(() => ({}));
+              if (!resp.ok) {
+                this.upstreamModal.copilotQuota = { loading: false, error: body.error || 'HTTP ' + resp.status, data: null, percent: 0 };
+                return;
+              }
+              const premium = body.quota_snapshots?.premium_interactions;
+              const entitlement = Number(premium?.entitlement ?? 0);
+              const remaining = Number(premium?.remaining ?? 0);
+              const used = entitlement > 0 ? Math.max(0, entitlement - remaining) : 0;
+              const percent = entitlement > 0 ? Math.min(100, Math.round((used / entitlement) * 100)) : 0;
+              this.upstreamModal.copilotQuota = { loading: false, error: null, data: body, percent };
+            } catch (e) {
+              this.upstreamModal.copilotQuota = { loading: false, error: e.message || String(e), data: null, percent: 0 };
+            }
+          },
+
           toggleUpstreamEndpoint(ep) {
             const list = this.upstreamModal.supportedEndpoints;
             const idx = list.indexOf(ep);
             if (idx === -1) list.push(ep);
             else list.splice(idx, 1);
+          },
+
+          addAzureDeployment() {
+            this.upstreamModal.deployments.push(blankAzureDeployment());
+          },
+
+          setAzureDeploymentsJsonMode(enabled) {
+            this.upstreamModal.error = null;
+            if (enabled) {
+              this.upstreamModal.deploymentsJson = JSON.stringify(azureDeploymentPayloadsFromUi(this.upstreamModal.deployments), null, 2);
+              this.upstreamModal.deploymentsJsonError = null;
+              this.upstreamModal.deploymentsJsonMode = true;
+              return;
+            }
+
+            try {
+              const deployments = this.parseAzureDeploymentsJsonForPayload();
+              this.upstreamModal.deployments = deployments.length > 0
+                ? deployments.map(deployment => normalizeAzureDeploymentForModal(deployment, false))
+                : [blankAzureDeployment()];
+              this.upstreamModal.deploymentsJsonMode = false;
+            } catch {
+              // Keep the editor open and show the parse error next to the JSON field.
+            }
+          },
+
+          parseAzureDeploymentsJsonForPayload() {
+            try {
+              const deployments = parseAzureDeploymentsJson(this.upstreamModal.deploymentsJson);
+              this.upstreamModal.deploymentsJsonError = null;
+              return deployments;
+            } catch (e) {
+              this.upstreamModal.deploymentsJsonError = e.message || String(e);
+              throw e;
+            }
+          },
+
+          azureDeploymentsJsonHighlighted() {
+            const text = this.upstreamModal.deploymentsJson || '';
+            try {
+              if (globalThis.Prism?.languages?.json) return globalThis.Prism.highlight(text, globalThis.Prism.languages.json, 'json');
+            } catch {}
+            return escapeHtml(text);
+          },
+
+          syncAzureDeploymentsJsonScroll(event) {
+            const target = event?.target;
+            const highlight = this.$refs.azureDeploymentsJsonHighlight;
+            if (!target || !highlight) return;
+            highlight.scrollTop = target.scrollTop;
+            highlight.scrollLeft = target.scrollLeft;
+          },
+
+          toggleAzureDeployment(index) {
+            const deployment = this.upstreamModal.deployments[index];
+            if (!deployment) return;
+            deployment.open = !deployment.open;
+          },
+
+          azureDeploymentTitle(deployment) {
+            return nonEmptyString(deployment.display_name)
+              || nonEmptyString(deployment.publicModelId)
+              || nonEmptyString(deployment.deployment)
+              || 'Untitled model';
+          },
+
+          removeAzureDeployment(index) {
+            if (this.upstreamModal.deployments.length <= 1) {
+              this.upstreamModal.deployments.splice(0, 1, blankAzureDeployment());
+              return;
+            }
+            this.upstreamModal.deployments.splice(index, 1);
           },
 
           toggleUpstreamFix(id) {
@@ -993,30 +1381,56 @@ export function dashboardAssets() {
             else list.splice(idx, 1);
           },
 
+          buildCustomUpstreamConfig() {
+            const overrides = {};
+            for (const [k, v] of Object.entries(this.upstreamModal.pathOverrides ?? {})) {
+              if (typeof v === 'string' && v.trim()) overrides[k] = v.trim();
+            }
+            const config = {
+              baseUrl: this.upstreamModal.baseUrl,
+              supportedEndpoints: this.upstreamModal.supportedEndpoints,
+            };
+            if (Object.keys(overrides).length > 0) config.pathOverrides = overrides;
+            else if (this.upstreamModal.id) config.pathOverrides = null;
+            if (nonEmptyString(this.upstreamModal.bearerToken)) config.bearerToken = this.upstreamModal.bearerToken.trim();
+            return config;
+          },
+
+          buildAzureUpstreamConfig() {
+            const deployments = this.upstreamModal.deploymentsJsonMode
+              ? this.parseAzureDeploymentsJsonForPayload()
+              : azureDeploymentPayloadsFromUi(this.upstreamModal.deployments);
+            const config = {
+              deployments,
+            };
+            config.endpoint = typeof this.upstreamModal.endpoint === 'string' ? this.upstreamModal.endpoint.trim() : '';
+            if (nonEmptyString(this.upstreamModal.apiKey)) config.apiKey = this.upstreamModal.apiKey.trim();
+            return config;
+          },
+
+          buildUpstreamPayload() {
+            const body = {
+              provider: this.upstreamModal.provider,
+              name: this.upstreamModal.name,
+              enabled: this.upstreamModal.enabled,
+              sort_order: this.upstreamModal.sortOrder,
+            };
+            if (this.upstreamModal.provider === 'custom') {
+              body.enabled_fixes = this.upstreamModal.enabledFixes;
+              body.config = this.buildCustomUpstreamConfig();
+            } else if (this.upstreamModal.provider === 'azure') {
+              body.enabled_fixes = this.upstreamModal.enabledFixes;
+              body.config = this.buildAzureUpstreamConfig();
+            }
+            return body;
+          },
+
           async saveUpstream() {
             this.upstreamModal.saving = true;
             this.upstreamModal.error = null;
             try {
               const isEdit = !!this.upstreamModal.id;
-              // Send only non-empty path overrides — blank input means
-              // "use the default", so the field should be absent rather
-              // than fail server-side validation as an empty string.
-              const overrides = {};
-              for (const [k, v] of Object.entries(this.upstreamModal.pathOverrides ?? {})) {
-                if (typeof v === 'string' && v.trim()) overrides[k] = v.trim();
-              }
-              const body = {
-                name: this.upstreamModal.name,
-                base_url: this.upstreamModal.baseUrl,
-                supported_endpoints: this.upstreamModal.supportedEndpoints,
-                enabled: this.upstreamModal.enabled,
-                sort_order: this.upstreamModal.sortOrder,
-                enabled_fixes: this.upstreamModal.enabledFixes,
-                path_overrides: Object.keys(overrides).length > 0 ? overrides : null,
-              };
-              if (this.upstreamModal.bearerToken) {
-                body.bearer_token = this.upstreamModal.bearerToken;
-              }
+              const body = this.buildUpstreamPayload();
               const url = isEdit ? '/api/upstreams/' + this.upstreamModal.id : '/api/upstreams';
               const resp = await fetch(url, {
                 method: isEdit ? 'PATCH' : 'POST',
@@ -1085,6 +1499,31 @@ export function dashboardAssets() {
             }
           },
 
+          upstreamTestTitle(result = this.upstreamTestResult) {
+            if (!result) return '';
+            const probes = Array.isArray(result.probes) ? result.probes : [];
+            if (probes.length > 0) {
+              const passed = probes.filter(probe => probe.ok).length;
+              const models = Number(result.model_count ?? 0);
+              return (result.ok ? 'OK' : 'Error') + ' · ' + passed + '/' + probes.length + ' probes' + (models > 0 ? ' · ' + models + ' models' : '');
+            }
+            return result.ok ? 'OK · ' + result.model_count + ' models' : 'Error · status ' + (result.status ?? 'n/a');
+          },
+
+          upstreamTestDetail(result = this.upstreamTestResult) {
+            if (!result) return '';
+            const probes = Array.isArray(result.probes) ? result.probes : [];
+            if (probes.length > 0) {
+              const failed = probes.filter(probe => !probe.ok);
+              const source = failed.length > 0 ? failed : probes;
+              return source
+                .slice(0, 4)
+                .map(probe => probe.deployment + ' ' + this.endpointLabel(probe.endpoint) + ' ' + (probe.status ?? probe.error ?? (probe.ok ? 'ok' : 'failed')))
+                .join(', ');
+            }
+            return result.ok ? (result.models || []).slice(0, 8).join(', ') + ((result.models || []).length > 8 ? '…' : '') : (result.body ?? result.error ?? '');
+          },
+
           formatDate(s) {
             return s ? new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
           },
@@ -1092,7 +1531,7 @@ export function dashboardAssets() {
           async startGithubAuth() {
             this.deviceFlow.loading = true;
             try {
-              const resp = await fetch('/auth/github', { headers: this.authHeaders() });
+              const resp = await fetch('/api/upstreams/copilot/auth/start', { method: 'POST', headers: this.authHeaders() });
               if (resp.status === 401) {
                 this.logout();
                 return;
@@ -1116,7 +1555,7 @@ export function dashboardAssets() {
           pollDeviceFlow(interval) {
             this.deviceFlow.pollTimer = setInterval(async () => {
               try {
-                const resp = await fetch('/auth/github/poll', {
+                const resp = await fetch('/api/upstreams/copilot/auth/poll', {
                   method: 'POST',
                   headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
                   body: JSON.stringify({ device_code: this.deviceFlow.deviceCode }),
@@ -1128,8 +1567,9 @@ export function dashboardAssets() {
                 const d = await resp.json();
                 if (d.status === 'complete') {
                   this.cancelDeviceFlow();
-                  await this.loadMe();
-                  await this.loadUsage();
+                  await this.loadUpstreams();
+                  await this.reloadModels();
+                  if (d.upstream) this.openUpstreamModal(d.upstream);
                 } else if (d.status === 'slow_down') {
                   clearInterval(this.deviceFlow.pollTimer);
                   this.pollDeviceFlow((d.interval || interval) + 1);
@@ -1151,69 +1591,6 @@ export function dashboardAssets() {
               verificationUri: null,
               deviceCode: null,
             });
-          },
-
-          async disconnectGithub(userId, login) {
-            if (!confirm('Disconnect @' + login + '? The stored token will be deleted.')) return;
-            try {
-              const resp = await fetch('/auth/github/' + userId, { method: 'DELETE', headers: this.authHeaders() });
-              if (resp.status === 401) {
-                this.logout();
-                return;
-              }
-              if (resp.ok) {
-                await this.loadMe();
-                if (!this.githubConnected) {
-                  this.usageData = null;
-                  this.usageError = false;
-                  this.usagePercent = 0;
-                } else {
-                  await this.loadUsage();
-                }
-              } else {
-                alert('Failed to disconnect GitHub account');
-              }
-            } catch (e) {
-              console.error('disconnectGithub:', e);
-            }
-          },
-
-          async selectGithubAccount(userId) {
-            if (this.selectedGithubAccountId === userId) return;
-            this.selectedGithubAccountId = userId;
-            await this.loadUsage();
-          },
-
-          async moveGithubAccount(userId, direction) {
-            const index = this.githubAccounts.findIndex(acct => acct.id === userId);
-            const nextIndex = index + direction;
-            if (index < 0 || nextIndex < 0 || nextIndex >= this.githubAccounts.length) return;
-
-            const ordered = [...this.githubAccounts];
-            const current = ordered[index];
-            ordered[index] = ordered[nextIndex];
-            ordered[nextIndex] = current;
-
-            try {
-              const resp = await fetch('/auth/github/order', {
-                method: 'POST',
-                headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: ordered.map(acct => acct.id) }),
-              });
-              if (resp.status === 401) {
-                this.logout();
-                return;
-              }
-              if (resp.ok) {
-                this.githubAccounts = ordered;
-                await this.loadMe();
-                await this.loadUsage();
-              } else {
-                alert('Failed to update account order');
-              }
-            } catch (e) {
-              console.error('moveGithubAccount:', e);
-            }
           },
 
           async loadKeys() {
@@ -2231,8 +2608,9 @@ export function dashboardAssets() {
             const file = event.target.files[0];
             if (!file) return;
             this.importFile = file;
-            this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
+            this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 };
             this.importData = null;
+            this.importVersion = null;
 
             const reader = new FileReader();
             reader.onload = e => {
@@ -2243,12 +2621,18 @@ export function dashboardAssets() {
                   this.importFile = null;
                   return;
                 }
+                if (json.version !== 2) {
+                  alert('Invalid export file: unsupported export version');
+                  this.importFile = null;
+                  return;
+                }
                 this.importData = json.data;
+                this.importVersion = json.version;
                 this.importPreview = {
                   ready: true,
                   exportedAt: json.exportedAt || null,
                   apiKeys: Array.isArray(json.data.apiKeys) ? json.data.apiKeys.length : 0,
-                  githubAccounts: Array.isArray(json.data.githubAccounts) ? json.data.githubAccounts.length : 0,
+                  upstreams: Array.isArray(json.data.upstreams) ? json.data.upstreams.length : 0,
                   usage: Array.isArray(json.data.usage) ? json.data.usage.length : 0,
                   searchUsage: Array.isArray(json.data.searchUsage) ? json.data.searchUsage.length : 0,
                   performance: Array.isArray(json.data.performance) ? json.data.performance.length : 0,
@@ -2271,7 +2655,7 @@ export function dashboardAssets() {
               const resp = await fetch('/api/import', {
                 method: 'POST',
                 headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: this.importMode, data: this.importData }),
+                body: JSON.stringify({ version: this.importVersion, mode: this.importMode, data: this.importData }),
               });
               if (resp.status === 401) {
                 this.logout();
@@ -2283,8 +2667,8 @@ export function dashboardAssets() {
                   'Import complete: ' +
                     result.imported.apiKeys +
                     ' keys, ' +
-                    result.imported.githubAccounts +
-                    ' accounts, ' +
+                    result.imported.upstreams +
+                    ' upstreams, ' +
                     result.imported.usage +
                     ' usage records, ' +
                     result.imported.searchUsage +
@@ -2294,7 +2678,8 @@ export function dashboardAssets() {
                 );
                 this.importFile = null;
                 this.importData = null;
-                this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
+                this.importVersion = null;
+                this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 };
               } else {
                 alert('Import failed: ' + (result.error || 'Unknown error'));
               }
@@ -2395,8 +2780,7 @@ export function dashboardAssets() {
               const decoder = new TextDecoder();
               let buf = '';
               let assistantText = '';
-              const idx = this.chatMessages.length;
-              this.chatMessages.push({ role: 'assistant', text: '' });
+              let assistantIndex = -1;
 
               while (true) {
                 const { done, value } = await reader.read();
@@ -2408,20 +2792,25 @@ export function dashboardAssets() {
                   if (!line.startsWith('data: ')) continue;
                   const payload = line.slice(6);
                   if (payload === '[DONE]') continue;
-                  try {
-                    const chunk = JSON.parse(payload);
-                    const delta = chunk.choices?.[0]?.delta?.content;
-                    if (delta) {
-                      assistantText += delta;
-                      this.chatMessages[idx].text = assistantText;
+                  const chunk = JSON.parse(payload);
+                  if (chunk.error) {
+                    throw new Error(chunk.error.message || JSON.stringify(chunk.error));
+                  }
+                  const delta = chunk.choices?.[0]?.delta?.content;
+                  if (delta) {
+                    if (assistantIndex === -1) {
+                      assistantIndex = this.chatMessages.length;
+                      this.chatMessages.push({ role: 'assistant', text: '' });
                     }
-                  } catch {}
+                    assistantText += delta;
+                    this.chatMessages[assistantIndex].text = assistantText;
+                  }
                 }
                 this.scrollChat();
               }
 
               if (!assistantText) {
-                this.chatMessages[idx].text = '(empty response)';
+                this.chatMessages.push({ role: 'assistant', text: '(empty response)' });
               }
             } catch (e) {
               if (e.name !== 'AbortError') {

@@ -4,8 +4,10 @@ import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
-import type { GitHubAccount, EndpointKey } from '../../../repo/types.ts';
+import type { UpstreamRecord } from '../../../repo/types.ts';
+import { isCopilotAccountType, type CopilotAccountType } from '../../../shared/copilot.ts';
 import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
+import type { EndpointKey } from '../../../shared/upstream/types.ts';
 import type { ChatCompletionsPayload } from '../../shared/protocol/chat-completions.ts';
 import type { MessagesPayload } from '../../shared/protocol/messages.ts';
 import type { ResponsesPayload } from '../../shared/protocol/responses.ts';
@@ -19,12 +21,78 @@ interface CopilotProviderData {
   rawModels: CopilotRawModel[];
 }
 
+interface CopilotUpstreamUser {
+  login: string;
+  avatar_url: string;
+  name: string | null;
+  id: number;
+}
+
+interface CopilotUpstreamConfig {
+  githubToken: string;
+  accountType: CopilotAccountType;
+  user: CopilotUpstreamUser;
+}
+
+type CopilotUpstreamRecord = UpstreamRecord & {
+  provider: 'copilot';
+  config: CopilotUpstreamConfig;
+};
+
 const COPILOT_DEFAULT_FIXES = ['retry-cyber-policy'] as const satisfies readonly OptionalFixId[];
 
 const ALLOWED_ANTHROPIC_BETAS = new Set(['interleaved-thinking-2025-05-14', 'context-management-2025-06-27', 'advanced-tool-use-2025-11-20']);
 const INTERLEAVED_THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
 const providerData = (model: UpstreamModel): CopilotProviderData => model.providerData as CopilotProviderData;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const stringField = (value: unknown, field: string): string => {
+  if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
+  return value;
+};
+
+const accountTypeField = (value: unknown): CopilotAccountType => {
+  if (!isCopilotAccountType(value)) {
+    throw new Error('Malformed copilot upstream config: accountType must be one of individual, business, enterprise');
+  }
+  return value;
+};
+
+const nullableStringField = (value: unknown, field: string): string | null => {
+  if (value !== null && typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string or null`);
+  return value;
+};
+
+const numberField = (value: unknown, field: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error(`Malformed copilot upstream config: ${field} must be an integer`);
+  return value;
+};
+
+const copilotUserField = (value: unknown): CopilotUpstreamUser => {
+  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: user must be an object');
+  return {
+    login: stringField(value.login, 'user.login'),
+    avatar_url: stringField(value.avatar_url, 'user.avatar_url'),
+    name: nullableStringField(value.name, 'user.name'),
+    id: numberField(value.id, 'user.id'),
+  };
+};
+
+const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
+  if (record.provider !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.provider}`);
+  if (!isRecord(record.config)) throw new Error('Malformed copilot upstream config: config must be an object');
+  return {
+    ...record,
+    provider: 'copilot',
+    config: {
+      githubToken: stringField(record.config.githubToken, 'githubToken'),
+      accountType: accountTypeField(record.config.accountType),
+      user: copilotUserField(record.config.user),
+    },
+  };
+};
 
 const withMessagesCountTokens = (endpoints: readonly ModelEndpoint[]): ModelEndpoint[] =>
   endpoints.includes('messages') && !endpoints.includes('messages_count_tokens') ? [...endpoints, 'messages_count_tokens'] : [...endpoints];
@@ -134,8 +202,9 @@ const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, un
   return { ...body, input: [body.input] };
 };
 
-export const createCopilotProvider = async (account: GitHubAccount): Promise<ModelProviderInstance> => {
-  const upstream = await createCopilotUpstream(account.token, account.accountType);
+export const createCopilotProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
+  const copilot = assertCopilotUpstreamRecord(record);
+  const upstream = createCopilotUpstream(copilot.id, copilot.name, copilot.config.githubToken, copilot.config.accountType);
 
   const call = async (
     endpoint: EndpointKey,
@@ -226,10 +295,11 @@ export const createCopilotProvider = async (account: GitHubAccount): Promise<Mod
   };
 
   return {
-    upstream: `copilot:${account.user.id}`,
-    name: account.user.login ? `GitHub Copilot (${account.user.login})` : 'GitHub Copilot',
+    upstream: copilot.id,
+    providerKind: 'copilot',
+    name: copilot.name,
     provider,
-    enabledFixes: new Set(COPILOT_DEFAULT_FIXES),
+    enabledFixes: new Set([...COPILOT_DEFAULT_FIXES, ...copilot.enabledFixes]),
     sourceInterceptors: {
       messages: messagesCopilotSourceInterceptors,
     },

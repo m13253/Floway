@@ -1,10 +1,17 @@
 import { getRepo } from '../repo/index.ts';
 
-const COPILOT_BASE_URLS: Record<string, string> = {
+const COPILOT_BASE_URLS = {
   individual: 'https://api.githubcopilot.com',
   business: 'https://api.business.githubcopilot.com',
   enterprise: 'https://api.enterprise.githubcopilot.com',
-};
+} as const;
+
+export type CopilotAccountType = keyof typeof COPILOT_BASE_URLS;
+
+const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const satisfies readonly CopilotAccountType[];
+
+export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
+  typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
 
 const COPILOT_VERSION = '0.38.2';
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`;
@@ -56,8 +63,8 @@ export async function clearCopilotTokenCache(): Promise<void> {
   }
 }
 
-function copilotBaseUrl(accountType: string): string {
-  return COPILOT_BASE_URLS[accountType] ?? COPILOT_BASE_URLS.individual;
+function copilotBaseUrl(accountType: CopilotAccountType): string {
+  return COPILOT_BASE_URLS[accountType];
 }
 
 async function fetchVSCodeVersion(): Promise<string> {
@@ -187,7 +194,7 @@ export interface CopilotFetchOptions {
   extraHeaders?: Record<string, string>;
 }
 
-export async function copilotFetch(path: string, init: RequestInit, githubToken: string, accountType: string, options?: CopilotFetchOptions): Promise<Response> {
+export async function copilotFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options?: CopilotFetchOptions): Promise<Response> {
   const token = await getCopilotToken(githubToken);
   const baseUrl = copilotBaseUrl(accountType);
   const editorVer = await getEditorVersion();

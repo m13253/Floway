@@ -1,8 +1,10 @@
+import { createAzureProvider } from './azure/provider.ts';
 import { createCopilotProvider } from './copilot/provider.ts';
+import { createCustomProvider } from './custom/provider.ts';
 import { endpointsIncludeLlmGeneration } from './endpoints.ts';
-import { createOpenAiProvider } from './openai/provider.ts';
 import type { CatalogModel, ModelEndpoint, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel } from './types.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
 
 interface ProviderModelsResult {
   models: ResolvedModel[];
@@ -10,18 +12,21 @@ interface ProviderModelsResult {
   lastError: unknown;
 }
 
+type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
+
+const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
+  copilot: createCopilotProvider,
+  custom: createCustomProvider,
+  azure: createAzureProvider,
+};
+
 export const listModelProviders = async (): Promise<ModelProviderInstance[]> => {
   const providers: ModelProviderInstance[] = [];
 
-  const accounts = await getRepo().github.listAccounts();
-  for (const account of accounts) {
-    providers.push(await createCopilotProvider(account));
-  }
-
-  const customConfigs = await getRepo().upstreamConfigs.list();
-  for (const config of customConfigs) {
-    if (!config.enabled) continue;
-    providers.push(createOpenAiProvider(config));
+  const upstreams = await getRepo().upstreams.list();
+  for (const upstream of upstreams) {
+    if (!upstream.enabled) continue;
+    providers.push(await providerFactories[upstream.provider](upstream));
   }
 
   return providers;
@@ -59,6 +64,7 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
         if (!upstreamModel.id) continue;
         const record: ProviderModelRecord = {
           upstream: instance.upstream,
+          providerKind: instance.providerKind,
           provider: instance.provider,
           upstreamModel,
           enabledFixes: instance.enabledFixes,
@@ -111,7 +117,7 @@ const modelWithProviderInstances = (model: ResolvedModel, providers: ReadonlySet
 export const getModels = async (): Promise<ResolvedModel[]> => {
   const providers = await listModelProviders();
   if (providers.length === 0) {
-    throw new Error('No upstream provider configured — connect GitHub Copilot or add a custom upstream in the dashboard');
+    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
   const { models, sawSuccess, lastError } = await collectProviderModels(providers);
@@ -154,7 +160,7 @@ const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId:
 export const resolveModelForRequest = async (modelId: string): Promise<ModelResolution> => {
   const providers = await listModelProviders();
   if (providers.length === 0) {
-    throw new Error('No upstream provider configured — connect GitHub Copilot or add a custom upstream in the dashboard');
+    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
   const { models, lastError } = await collectProviderModels(providers);

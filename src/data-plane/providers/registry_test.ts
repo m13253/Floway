@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
-import { getCatalogModels, resolveModelForRequest } from './registry.ts';
+import { getCatalogModels, listModelProviders, resolveModelForRequest } from './registry.ts';
 import { assertEquals } from '../../test-assert.ts';
-import { copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { createCopilotProvider } from './copilot/provider.ts';
 
 test('createCopilotProvider exposes provider-owned requested model aliases', async () => {
-  const { githubAccount } = await setupAppTest();
-  const instance = await createCopilotProvider(githubAccount);
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
   const resolveAlias = instance.resolveRequestedModelId;
 
   assertEquals(resolveAlias?.('claude-opus-4-7-20300101'), 'claude-opus-4-7');
@@ -16,20 +16,47 @@ test('createCopilotProvider exposes provider-owned requested model aliases', asy
   assertEquals(resolveAlias?.('codex-auto-review'), undefined);
 });
 
-test('getCatalogModels returns public catalog records without execution bindings', async () => {
+test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
-
-  await repo.upstreamConfigs.save({
-    id: 'up_custom',
-    name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom', sortOrder: 1 }));
+  await repo.upstreams.save({
+    id: 'up_azure',
+    provider: 'azure',
+    name: 'Azure Resource',
     enabled: true,
-    sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
+    sortOrder: 2,
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z',
+    config: {
+      endpoint: 'https://example.openai.azure.com',
+      apiKey: 'az-key',
+      deployments: [
+        {
+          deployment: 'gpt-prod',
+          supportedEndpoints: ['/chat/completions'],
+        },
+      ],
+    },
     enabledFixes: [],
   });
+  await repo.upstreams.save(buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
+
+  const providers = await listModelProviders();
+
+  assertEquals(
+    providers.map(provider => provider.upstream),
+    ['up_custom', 'up_azure', 'up_copilot'],
+  );
+  assertEquals(providers.some(provider => provider.upstream.includes(':')), false);
+});
+
+test('getCatalogModels returns public catalog records without execution bindings', async () => {
+  const { repo } = await setupAppTest();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord());
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 50 }));
 
   await withMockedFetch(
     request => {
@@ -83,26 +110,24 @@ test('getCatalogModels returns public catalog records without execution bindings
       const resolved = await resolveModelForRequest('shared-model');
       assertEquals(
         resolved.model?.providers.map(({ upstream }) => upstream),
-        [`copilot:${githubAccount.user.id}`, 'openai:up_custom'],
+        ['up_copilot', 'up_custom'],
       );
     },
   );
 });
 
 test('resolveModelForRequest applies provider-owned aliases only to that provider', async () => {
-  const { githubAccount, repo } = await setupAppTest();
+  const { repo } = await setupAppTest();
 
-  await repo.upstreamConfigs.save({
-    id: 'up_custom',
-    name: 'Custom Provider',
-    baseUrl: 'https://custom.example.com',
-    bearerToken: 'sk-custom',
-    supportedEndpoints: ['/v1/messages'],
-    enabled: true,
-    sortOrder: 100,
-    createdAt: '2026-05-01T00:00:00.000Z',
-    enabledFixes: [],
-  });
+  await repo.upstreams.save(
+    buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://custom.example.com',
+        bearerToken: 'sk-custom',
+        supportedEndpoints: ['/v1/messages'],
+      },
+    }),
+  );
 
   await withMockedFetch(
     request => {
@@ -137,7 +162,7 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
       assertEquals(resolved.model?.supportedEndpoints, ['messages', 'messages_count_tokens']);
       assertEquals(
         resolved.model?.providers.map(({ upstream }) => upstream),
-        [`copilot:${githubAccount.user.id}`],
+        ['up_copilot'],
       );
     },
   );

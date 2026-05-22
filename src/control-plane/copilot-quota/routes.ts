@@ -1,4 +1,4 @@
-// GET /api/copilot-quota — fetch Copilot usage/quota info from GitHub API
+// GET /api/upstreams/:id/copilot/quota — fetch Copilot usage/quota info for one upstream.
 
 import type { Context } from 'hono';
 
@@ -33,21 +33,24 @@ interface CopilotUsageResponse {
   };
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const githubTokenFromConfig = (config: unknown): string | null => {
+  if (!isRecord(config) || typeof config.githubToken !== 'string' || config.githubToken.length === 0) return null;
+  return config.githubToken;
+};
+
 export const copilotQuota = async (c: Context) => {
   try {
-    const userIdParam = c.req.query('user_id');
-    const userId = userIdParam === undefined ? undefined : Number(userIdParam);
-    if (userIdParam !== undefined && !Number.isSafeInteger(userId)) {
-      return c.json({ error: 'Invalid GitHub account ID' }, 400);
-    }
+    const id = c.req.param('id') ?? '';
+    const upstream = await getRepo().upstreams.getById(id);
+    if (!upstream) return c.json({ error: 'Upstream not found' }, 404);
+    if (upstream.provider !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
-    const githubRepo = getRepo().github;
-    const account = userId === undefined ? (await githubRepo.listAccounts())[0] ?? null : await githubRepo.getAccount(userId);
-    if (!account) {
-      throw new Error(userId === undefined ? 'No GitHub account connected — add one via the dashboard' : 'GitHub account not found');
-    }
+    const githubToken = githubTokenFromConfig(upstream.config);
+    if (!githubToken) return c.json({ error: 'Copilot upstream is missing githubToken' }, 400);
 
-    const resp = await fetch('https://api.github.com/copilot_internal/user', { headers: await githubHeaders(account.token) });
+    const resp = await fetch('https://api.github.com/copilot_internal/user', { headers: await githubHeaders(githubToken) });
 
     if (!resp.ok) {
       const text = await resp.text();
@@ -57,7 +60,7 @@ export const copilotQuota = async (c: Context) => {
     const data = (await resp.json()) as CopilotUsageResponse;
     return c.json(data);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return c.json({ error: msg }, 502);
+    console.error('Failed to fetch Copilot quota:', e);
+    return c.json({ error: 'Failed to fetch Copilot quota from GitHub' }, 502);
   }
 };

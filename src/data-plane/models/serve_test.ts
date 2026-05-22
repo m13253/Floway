@@ -1,7 +1,9 @@
 import { test } from 'vitest';
 
+import { clearCopilotTokenCache } from '../../shared/copilot.ts';
 import { assertEquals } from '../../test-assert.ts';
-import { copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { clearModelsCache } from '../providers/upstream-model-cache.ts';
 
 const SECOND_ACCOUNT = {
   token: 'ghu_second',
@@ -17,17 +19,16 @@ const SECOND_ACCOUNT = {
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();
 
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_oai',
     name: 'Test OpenAI',
-    baseUrl: 'https://oai.example.com',
-    bearerToken: 'sk-test',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: new Date().toISOString(),
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://oai.example.com',
+      bearerToken: 'sk-test',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -81,10 +82,13 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           supported_endpoints?: string[];
           supports_generation?: boolean;
           capabilities?: unknown;
+          provider?: unknown;
+          providerKind?: unknown;
           providers?: unknown;
           providerData?: unknown;
           supportedEndpoints?: unknown;
-          upstream_kind?: string;
+          upstream?: unknown;
+          upstreamModel?: unknown;
           billing?: unknown;
           policy?: unknown;
           model_picker_enabled?: boolean;
@@ -103,19 +107,23 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       assertEquals(claude!.supported_endpoints, undefined);
       assertEquals(claude!.supports_generation, undefined);
       assertEquals(claude!.capabilities, undefined);
-      assertEquals(claude!.upstream_kind, undefined);
+      assertEquals(claude!.provider, undefined);
       assertEquals(claude!.billing, undefined);
       assertEquals(claude!.policy, undefined);
       assertEquals(claude!.model_picker_enabled, undefined);
 
       const gpt4o = body.data.find(m => m.id === 'gpt-4o');
       assertEquals(gpt4o!.supported_endpoints, undefined);
-      assertEquals(gpt4o!.upstream_kind, undefined);
+      assertEquals(gpt4o!.provider, undefined);
 
       for (const model of body.data) {
+        assertEquals(model.provider, undefined);
+        assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
         assertEquals(model.supportedEndpoints, undefined);
+        assertEquals(model.upstream, undefined);
+        assertEquals(model.upstreamModel, undefined);
       }
 
       const controlResponse = await requestApp('/api/models', {
@@ -128,7 +136,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           name: string;
           display_name: string;
           supported_endpoints?: string[];
-          upstream_kind?: string;
+          provider?: 'copilot' | 'custom' | 'azure';
           billing?: unknown;
           policy?: unknown;
           model_picker_enabled?: boolean;
@@ -137,7 +145,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       const controlClaude = controlBody.data.find(m => m.id === 'claude-sonnet-4')!;
       assertEquals(controlClaude.name, 'Claude Sonnet 4');
       assertEquals(controlClaude.display_name, 'Claude Sonnet 4');
-      assertEquals(controlClaude.upstream_kind, 'copilot');
+      assertEquals(controlClaude.provider, 'copilot');
       assertEquals(controlClaude.billing, { is_premium: true, multiplier: 3 });
       assertEquals(controlClaude.policy, {
         state: 'enabled',
@@ -145,7 +153,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       });
       assertEquals(controlClaude.model_picker_enabled, true);
       assertEquals(controlClaude.supported_endpoints, ['/v1/messages']);
-      assertEquals(controlBody.data.find(m => m.id === 'gpt-4o')?.upstream_kind, 'openai');
+      assertEquals(controlBody.data.find(m => m.id === 'gpt-4o')?.provider, 'custom');
     },
   );
 });
@@ -209,18 +217,19 @@ test('/models returns Anthropic-shaped model list', async () => {
 
 test('/v1/models hides upstream identity when a provider returns an invalid model list', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.deleteAll();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_secret_provider',
     name: 'Secret Provider',
-    baseUrl: 'https://secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: new Date().toISOString(),
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -244,18 +253,19 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
 
 test('public model list endpoints hide upstream HTTP error bodies and headers', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.deleteAll();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_http_secret_provider',
     name: 'HTTP Secret Provider',
-    baseUrl: 'https://http-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: new Date().toISOString(),
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://http-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -291,18 +301,19 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
 
 test('public model list endpoints hide thrown upstream request errors', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.deleteAll();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_throw_secret_provider',
     name: 'Throw Secret Provider',
-    baseUrl: 'https://throw-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: new Date().toISOString(),
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://throw-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -331,18 +342,19 @@ test('public model list endpoints hide thrown upstream request errors', async ()
 
 test('public model list endpoints hide malformed upstream response bodies', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
-  await repo.upstreamConfigs.save({
+  await repo.upstreams.deleteAll();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_malformed_secret_provider',
     name: 'Malformed Secret Provider',
-    baseUrl: 'https://malformed-secret.example.com',
-    bearerToken: 'sk-secret',
-    supportedEndpoints: ['/chat/completions'],
-    enabled: true,
     sortOrder: 100,
-    createdAt: new Date().toISOString(),
-    enabledFixes: [],
-  });
+    config: {
+      baseUrl: 'https://malformed-secret.example.com',
+      bearerToken: 'sk-secret',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -374,7 +386,9 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
 
 test('/v1/models reports an upstream configuration error when no provider is configured', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.github.deleteAllAccounts();
+  await repo.upstreams.deleteAll();
+  clearModelsCache();
+  await clearCopilotTokenCache();
 
   const response = await requestApp('/v1/models', {
     headers: { 'x-api-key': apiKey.key },
@@ -382,12 +396,12 @@ test('/v1/models reports an upstream configuration error when no provider is con
 
   assertEquals(response.status, 502);
   const body = (await response.json()) as { error: { message: string } };
-  assertEquals(body.error.message, 'No upstream provider configured — connect GitHub Copilot or add a custom upstream in the dashboard');
+  assertEquals(body.error.message, 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
 });
 
 test('/v1/models returns the ordered union of every connected GitHub account', async () => {
   const { repo, apiKey, githubAccount } = await setupAppTest();
-  await repo.github.saveAccount(SECOND_ACCOUNT.user.id, SECOND_ACCOUNT);
+  await repo.upstreams.save(buildCopilotUpstreamRecord(SECOND_ACCOUNT, { id: 'up_copilot_second', sortOrder: 1 }));
 
   const tokenForGithubToken = new Map([
     [githubAccount.token, 'copilot-first'],
@@ -444,7 +458,7 @@ test('/v1/models returns the ordered union of every connected GitHub account', a
         data: Array<{
           id: string;
           supported_endpoints?: string[];
-          upstream_kind?: string;
+          provider?: string;
         }>;
       };
       assertEquals(
@@ -452,7 +466,7 @@ test('/v1/models returns the ordered union of every connected GitHub account', a
         ['shared-model', 'first-only', 'second-only'],
       );
       assertEquals(body.data[0].supported_endpoints, undefined);
-      assertEquals(body.data[0].upstream_kind, undefined);
+      assertEquals(body.data[0].provider, undefined);
     },
   );
 });

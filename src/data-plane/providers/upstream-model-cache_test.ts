@@ -37,7 +37,7 @@ test('models cache uses L1 cache for 120s and L2 cache for 600s', async () => {
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  const upstream = await createCopilotUpstream(githubAccount.token, githubAccount.accountType);
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
 
   let modelsFetches = 0;
 
@@ -100,7 +100,7 @@ test('models cache refreshes upstream after repo-backed cache expires', async ()
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  const upstream = await createCopilotUpstream(githubAccount.token, githubAccount.accountType);
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
 
   let modelsFetches = 0;
 
@@ -161,7 +161,7 @@ test('models cache ignores malformed repo-backed entries', async () => {
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  const upstream = await createCopilotUpstream(githubAccount.token, githubAccount.accountType);
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
 
   await repo.cache.set(
     `models_cache_v2:${upstream.id}`,
@@ -232,7 +232,7 @@ test('models cache uses stale data after soft expiry on configured load errors u
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  const upstream = await createCopilotUpstream(githubAccount.token, githubAccount.accountType);
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
 
   let modelsFetches = 0;
 
@@ -292,7 +292,7 @@ test('invalidateUpstreamModels clears both L1 and L2 cache for a given upstream'
   clearModelsCache();
   await clearCopilotTokenCache();
 
-  const upstream = await createCopilotUpstream(githubAccount.token, githubAccount.accountType);
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
 
   let modelsFetches = 0;
 

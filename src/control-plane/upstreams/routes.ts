@@ -1,252 +1,328 @@
 import type { Context } from 'hono';
 
-import { upstreamConfigToJson } from './serialize.ts';
+import { upstreamRecordToJson } from './serialize.ts';
 import { getFixCatalog, isKnownFixId } from '../../data-plane/providers/fixes.ts';
-import { invalidateUpstreamModels } from '../../data-plane/providers/upstream-model-cache.ts';
+import { clearModelsCache, invalidateUpstreamModels } from '../../data-plane/providers/upstream-model-cache.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { EndpointKey, UpstreamConfig } from '../../repo/types.ts';
-import { validateUpstreamPath } from '../../shared/upstream/join.ts';
-import { createOpenAiUpstream } from '../../shared/upstream/openai.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
+import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '../../shared/copilot.ts';
+import { assertAzureUpstreamRecord, createAzureUpstream } from '../../shared/upstream/azure.ts';
+import { createCopilotUpstream } from '../../shared/upstream/copilot.ts';
+import { assertCustomUpstreamRecord, createCustomUpstream } from '../../shared/upstream/custom.ts';
+import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
+import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 
-const ALLOWED_ENDPOINTS = new Set(['/chat/completions', '/responses', '/v1/messages', '/embeddings']);
-
-// Endpoints whose path the admin can override per upstream. `models` is not
-// in supported_endpoints (it's an upstream-wide capability lookup, not a
-// model-routing target) but its path is still admin-configurable for
-// providers that mount /models outside the chat-API subpath. count_tokens is
-// intentionally excluded: it follows whatever path messages resolves to.
-const OVERRIDABLE_ENDPOINTS: ReadonlySet<Exclude<EndpointKey, 'messages_count_tokens'>> = new Set(['chat_completions', 'responses', 'messages', 'embeddings', 'models']);
+const PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot']);
 
 interface UpstreamCreateBody {
+  provider?: unknown;
   name?: unknown;
-  base_url?: unknown;
-  bearer_token?: unknown;
-  supported_endpoints?: unknown;
   enabled?: unknown;
   sort_order?: unknown;
   enabled_fixes?: unknown;
-  path_overrides?: unknown;
+  config?: unknown;
 }
 
-interface UpstreamUpdateBody extends UpstreamCreateBody {}
+interface UpstreamUpdateBody extends Partial<UpstreamCreateBody> {}
 
-const validateString = (value: unknown, field: string): { ok: true; value: string } | { ok: false; error: string } => {
+interface CopilotUpstreamUser {
+  login: string;
+  avatar_url: string;
+  name: string | null;
+  id: number;
+}
+
+interface CopilotUpstreamConfig {
+  githubToken: string;
+  accountType: CopilotAccountType;
+  user: CopilotUpstreamUser;
+}
+
+type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const validationError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const validateString = (value: unknown, field: string): ValidationResult<string> => {
   if (typeof value !== 'string' || value.trim() === '') {
     return { ok: false, error: `${field} is required` };
   }
   return { ok: true, value: value.trim() };
 };
 
-const validateBaseUrl = (value: unknown): { ok: true; value: string } | { ok: false; error: string } => {
-  const str = validateString(value, 'base_url');
-  if (!str.ok) return str;
-  try {
-    const u = new URL(str.value);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-      return { ok: false, error: 'base_url must be http(s)' };
-    }
-  } catch {
-    return { ok: false, error: 'base_url must be a valid URL' };
+const validateProvider = (value: unknown): ValidationResult<UpstreamProviderKind> => {
+  if (typeof value !== 'string' || !PROVIDERS.has(value as UpstreamProviderKind)) {
+    return { ok: false, error: 'provider must be one of: custom, azure, copilot' };
   }
-  return str;
+  return { ok: true, value: value as UpstreamProviderKind };
 };
 
-const validateEndpoints = (value: unknown): { ok: true; value: string[] } | { ok: false; error: string } => {
-  if (!Array.isArray(value) || value.length === 0) {
-    return {
-      ok: false,
-      error: 'supported_endpoints must be a non-empty array',
-    };
-  }
-  const result: string[] = [];
-  for (const v of value) {
-    if (typeof v !== 'string' || !ALLOWED_ENDPOINTS.has(v)) {
-      return {
-        ok: false,
-        error: `Each supported_endpoints entry must be one of: ${[...ALLOWED_ENDPOINTS].join(', ')}`,
-      };
-    }
-    if (!result.includes(v)) result.push(v);
-  }
-  return { ok: true, value: result };
+const validateBoolean = (value: unknown, field: string): ValidationResult<boolean> => {
+  if (typeof value !== 'boolean') return { ok: false, error: `${field} must be a boolean` };
+  return { ok: true, value };
 };
 
-// Validate enabled_fixes against the flag catalog. Unknown ids are
-// hard-rejected so an admin typo surfaces at save time. We don't enforce
-// that a flag's `appliesTo` overlaps `supported_endpoints` — assembling
-// the per-target interceptor list naturally no-ops on flags that don't
-// match any registered descriptor for the endpoints actually served, so
-// an enabled-but-unreachable flag is harmless. Skipping the check also
-// avoids drift when `supported_endpoints` is edited without revisiting
-// `enabled_fixes`.
-const validateEnabledFixes = (value: unknown): { ok: true; value: string[] } | { ok: false; error: string } => {
+const validateSortOrder = (value: unknown): ValidationResult<number> => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return { ok: false, error: 'sort_order must be a finite number' };
+  return { ok: true, value: Math.floor(value) };
+};
+
+// Validate enabled_fixes against the flag catalog. Unknown ids are hard-rejected
+// so an admin typo surfaces at save time; endpoint applicability is enforced by
+// interceptor assembly at runtime.
+const validateEnabledFixes = (value: unknown): ValidationResult<string[]> => {
   if (!Array.isArray(value)) {
     return { ok: false, error: 'enabled_fixes must be an array of strings' };
   }
   const unknown: string[] = [];
   const known = new Set<string>();
-  for (const v of value) {
-    if (typeof v !== 'string') {
-      return {
-        ok: false,
-        error: 'enabled_fixes entries must be strings',
-      };
-    }
-    if (!isKnownFixId(v)) {
-      unknown.push(v);
+  for (const item of value) {
+    if (typeof item !== 'string') return { ok: false, error: 'enabled_fixes entries must be strings' };
+    if (!isKnownFixId(item)) {
+      unknown.push(item);
       continue;
     }
-    known.add(v);
+    known.add(item);
   }
-  if (unknown.length > 0) {
-    return {
-      ok: false,
-      error: `Unknown enabled_fixes ids: ${unknown.join(', ')}`,
-    };
-  }
+  if (unknown.length > 0) return { ok: false, error: `Unknown enabled_fixes ids: ${unknown.join(', ')}` };
   return { ok: true, value: [...known].sort() };
 };
 
-type PathOverrides = NonNullable<UpstreamConfig['pathOverrides']>;
+const stringField = (value: unknown, field: string): string => {
+  if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
+  return value;
+};
 
-const validatePathOverrides = (value: unknown): { ok: true; value: PathOverrides | undefined } | { ok: false; error: string } => {
-  if (value === null || value === undefined) {
-    return { ok: true, value: undefined };
-  }
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    return { ok: false, error: 'path_overrides must be an object' };
-  }
-  const result: PathOverrides = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (!OVERRIDABLE_ENDPOINTS.has(k as never)) {
-      return {
-        ok: false,
-        error: `path_overrides keys must be one of: ${[...OVERRIDABLE_ENDPOINTS].join(', ')}`,
-      };
-    }
-    const path = validateUpstreamPath(v, `path_overrides.${k}`);
-    if (!path.ok) return { ok: false, error: path.error };
-    result[k as keyof PathOverrides] = path.value;
+const nonEmptyStringField = (value: unknown, field: string): string => {
+  const str = stringField(value, field).trim();
+  if (str === '') throw new Error(`Malformed copilot upstream config: ${field} must be a non-empty string`);
+  return str;
+};
+
+const nullableStringField = (value: unknown, field: string): string | null => {
+  if (value !== null && typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string or null`);
+  return value;
+};
+
+const numberField = (value: unknown, field: string): number => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error(`Malformed copilot upstream config: ${field} must be an integer`);
+  return value;
+};
+
+const copilotUserField = (value: unknown): CopilotUpstreamUser => {
+  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: user must be an object');
+  return {
+    login: stringField(value.login, 'user.login'),
+    avatar_url: stringField(value.avatar_url, 'user.avatar_url'),
+    name: nullableStringField(value.name, 'user.name'),
+    id: numberField(value.id, 'user.id'),
+  };
+};
+
+const copilotConfigField = (value: unknown): CopilotUpstreamConfig => {
+  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: config must be an object');
+  if (!isCopilotAccountType(value.accountType)) {
+    throw new Error('Malformed copilot upstream config: accountType must be one of individual, business, enterprise');
   }
   return {
-    ok: true,
-    value: Object.keys(result).length > 0 ? result : undefined,
+    githubToken: nonEmptyStringField(value.githubToken, 'githubToken'),
+    accountType: value.accountType,
+    user: copilotUserField(value.user),
   };
+};
+
+const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
+  try {
+    if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
+    if (record.provider === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
+    return { ok: true, value: copilotConfigField(record.config) };
+  } catch (error) {
+    return { ok: false, error: validationError(error) };
+  }
+};
+
+const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, patch: unknown): ValidationResult<unknown> => {
+  if (!isRecord(patch)) return { ok: false, error: 'config must be an object' };
+  const next: Record<string, unknown> = {
+    ...(isRecord(existing) ? structuredClone(existing) : {}),
+    ...structuredClone(patch),
+  };
+
+  if (provider === 'custom' && patch.pathOverrides === null) delete next.pathOverrides;
+  return { ok: true, value: next };
 };
 
 const newId = (): string => `up_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
-export const listUpstreams = async (c: Context) => {
-  const repo = getRepo().upstreamConfigs;
-  const items = await repo.list();
-  return c.json(items.map(upstreamConfigToJson));
+const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
+
+const azureProbeRequest = (deployment: string, path: string): { endpoint: EndpointKey; body: Record<string, unknown> } => {
+  switch (path) {
+  case '/chat/completions':
+  case '/v1/chat/completions':
+    return {
+      endpoint: 'chat_completions',
+      body: {
+        model: deployment,
+        messages: [{ role: 'user', content: 'Reply with ok only.' }],
+        max_tokens: 16,
+      },
+    };
+  case '/responses':
+  case '/v1/responses':
+    return {
+      endpoint: 'responses',
+      body: {
+        model: deployment,
+        input: 'Reply with ok only.',
+        max_output_tokens: 16,
+      },
+    };
+  case '/v1/messages':
+  case '/messages':
+    return {
+      endpoint: 'messages',
+      body: {
+        model: deployment,
+        max_tokens: 16,
+        messages: [{ role: 'user', content: 'Reply with ok only.' }],
+      },
+    };
+  case '/embeddings':
+  case '/v1/embeddings':
+    return {
+      endpoint: 'embeddings',
+      body: {
+        model: deployment,
+        input: 'test',
+      },
+    };
+  default:
+    throw new Error(`Unsupported Azure deployment endpoint ${path}`);
+  }
 };
 
-export const listOptionalFixes = (c: Context) => {
-  return c.json(getFixCatalog());
+const azureDeploymentUsesOpenAi = (deployment: { supportedEndpoints: readonly string[] }): boolean =>
+  deployment.supportedEndpoints.some(endpoint => endpoint !== '/v1/messages' && endpoint !== '/messages');
+
+const probeModelsEndpoint = async (upstream: Upstream): Promise<{ ok: boolean; status?: number; models?: string[]; body?: string; error?: string }> => {
+  try {
+    const resp = await upstream.fetch('models', { method: 'GET' });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { ok: false, status: resp.status, body: text.slice(0, 1000) };
+    }
+    const data = (await resp.json()) as { data?: Array<{ id: string }> };
+    const ids = Array.isArray(data?.data) ? data.data.map(m => m.id).filter((v): v is string => typeof v === 'string') : [];
+    return { ok: true, status: resp.status, models: ids.slice(0, 50) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 };
+
+export const listUpstreams = async (c: Context) => {
+  const items = await getRepo().upstreams.list();
+  return c.json(items.map(upstreamRecordToJson));
+};
+
+export const listOptionalFixes = (c: Context) => c.json(getFixCatalog());
 
 export const createUpstream = async (c: Context) => {
   const body = await c.req.json<UpstreamCreateBody>();
 
+  const provider = validateProvider(body.provider);
+  if (!provider.ok) return c.json({ error: provider.error }, 400);
+
   const name = validateString(body.name, 'name');
   if (!name.ok) return c.json({ error: name.error }, 400);
 
-  const baseUrl = validateBaseUrl(body.base_url);
-  if (!baseUrl.ok) return c.json({ error: baseUrl.error }, 400);
+  if (body.config === undefined) return c.json({ error: 'config is required' }, 400);
 
-  const bearer = validateString(body.bearer_token, 'bearer_token');
-  if (!bearer.ok) return c.json({ error: bearer.error }, 400);
-
-  const endpoints = validateEndpoints(body.supported_endpoints);
-  if (!endpoints.ok) return c.json({ error: endpoints.error }, 400);
+  const enabled = body.enabled === undefined ? { ok: true as const, value: true } : validateBoolean(body.enabled, 'enabled');
+  if (!enabled.ok) return c.json({ error: enabled.error }, 400);
 
   const fixes = validateEnabledFixes(body.enabled_fixes ?? []);
   if (!fixes.ok) return c.json({ error: fixes.error }, 400);
 
-  const overrides = validatePathOverrides(body.path_overrides);
-  if (!overrides.ok) return c.json({ error: overrides.error }, 400);
+  const existing = await getRepo().upstreams.list();
+  const sortOrder = body.sort_order === undefined ? { ok: true as const, value: nextSortOrder(existing) } : validateSortOrder(body.sort_order);
+  if (!sortOrder.ok) return c.json({ error: sortOrder.error }, 400);
 
-  const repo = getRepo().upstreamConfigs;
-  const existing = await repo.list();
-  const sortOrder = typeof body.sort_order === 'number' ? Math.floor(body.sort_order) : existing.reduce((acc, c) => Math.max(acc, c.sortOrder), -1) + 1;
-
-  const config: UpstreamConfig = {
+  const now = new Date().toISOString();
+  const upstream: UpstreamRecord = {
     id: newId(),
+    provider: provider.value,
     name: name.value,
-    baseUrl: baseUrl.value.replace(/\/+$/, ''),
-    bearerToken: bearer.value,
-    supportedEndpoints: endpoints.value,
-    enabled: body.enabled === undefined ? true : Boolean(body.enabled),
-    sortOrder,
-    createdAt: new Date().toISOString(),
+    enabled: enabled.value,
+    sortOrder: sortOrder.value,
+    createdAt: now,
+    updatedAt: now,
     enabledFixes: fixes.value,
-    ...(overrides.value ? { pathOverrides: overrides.value } : {}),
+    config: body.config,
   };
 
-  await repo.save(config);
-  await invalidateUpstreamModels(config.id);
-  return c.json(upstreamConfigToJson(config), 201);
+  const config = normalizeConfig(upstream);
+  if (!config.ok) return c.json({ error: config.error }, 400);
+
+  const record = { ...upstream, config: config.value };
+  await getRepo().upstreams.save(record);
+  await invalidateUpstreamModels(record.id);
+  return c.json(upstreamRecordToJson(record), 201);
 };
 
 export const updateUpstream = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const repo = getRepo().upstreamConfigs;
-  const existing = await repo.getById(id);
+  const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
   const body = await c.req.json<UpstreamUpdateBody>();
-  const next: UpstreamConfig = { ...existing };
+  if (body.provider !== undefined) {
+    const provider = validateProvider(body.provider);
+    if (!provider.ok) return c.json({ error: provider.error }, 400);
+    if (provider.value !== existing.provider) return c.json({ error: 'provider cannot be changed' }, 400);
+  }
+
+  let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
 
   if (body.name !== undefined) {
     const name = validateString(body.name, 'name');
     if (!name.ok) return c.json({ error: name.error }, 400);
-    next.name = name.value;
-  }
-  if (body.base_url !== undefined) {
-    const baseUrl = validateBaseUrl(body.base_url);
-    if (!baseUrl.ok) return c.json({ error: baseUrl.error }, 400);
-    next.baseUrl = baseUrl.value.replace(/\/+$/, '');
-  }
-  if (body.bearer_token !== undefined) {
-    const bearer = validateString(body.bearer_token, 'bearer_token');
-    if (!bearer.ok) return c.json({ error: bearer.error }, 400);
-    next.bearerToken = bearer.value;
-  }
-  if (body.supported_endpoints !== undefined) {
-    const endpoints = validateEndpoints(body.supported_endpoints);
-    if (!endpoints.ok) return c.json({ error: endpoints.error }, 400);
-    next.supportedEndpoints = endpoints.value;
+    next = { ...next, name: name.value };
   }
   if (body.enabled !== undefined) {
-    next.enabled = Boolean(body.enabled);
+    const enabled = validateBoolean(body.enabled, 'enabled');
+    if (!enabled.ok) return c.json({ error: enabled.error }, 400);
+    next = { ...next, enabled: enabled.value };
   }
-  if (body.sort_order !== undefined && typeof body.sort_order === 'number') {
-    next.sortOrder = Math.floor(body.sort_order);
+  if (body.sort_order !== undefined) {
+    const sortOrder = validateSortOrder(body.sort_order);
+    if (!sortOrder.ok) return c.json({ error: sortOrder.error }, 400);
+    next = { ...next, sortOrder: sortOrder.value };
   }
   if (body.enabled_fixes !== undefined) {
     const fixes = validateEnabledFixes(body.enabled_fixes);
     if (!fixes.ok) return c.json({ error: fixes.error }, 400);
-    next.enabledFixes = fixes.value;
+    next = { ...next, enabledFixes: fixes.value };
   }
-  if (body.path_overrides !== undefined) {
-    const overrides = validatePathOverrides(body.path_overrides);
-    if (!overrides.ok) return c.json({ error: overrides.error }, 400);
-    if (overrides.value) {
-      next.pathOverrides = overrides.value;
-    } else {
-      delete next.pathOverrides;
-    }
+  if (body.config !== undefined) {
+    const config = mergeConfigPatch(existing.provider, existing.config, body.config);
+    if (!config.ok) return c.json({ error: config.error }, 400);
+    next = { ...next, config: config.value };
   }
 
-  await repo.save(next);
+  const config = normalizeConfig(next);
+  if (!config.ok) return c.json({ error: config.error }, 400);
+  next = { ...next, config: config.value };
+
+  await getRepo().upstreams.save(next);
   await invalidateUpstreamModels(next.id);
-  return c.json(upstreamConfigToJson(next));
+  return c.json(upstreamRecordToJson(next));
 };
 
 export const deleteUpstream = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const deleted = await getRepo().upstreamConfigs.delete(id);
+  const deleted = await getRepo().upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
   await invalidateUpstreamModels(id);
   return c.json({ ok: true });
@@ -254,35 +330,78 @@ export const deleteUpstream = async (c: Context) => {
 
 export const testUpstream = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const config = await getRepo().upstreamConfigs.getById(id);
+  const config = await getRepo().upstreams.getById(id);
   if (!config) return c.json({ error: 'Upstream not found' }, 404);
 
-  // Drop the cached model list before probing so an admin clicking "Test"
-  // immediately after editing config sees the live result, not a stale
-  // 600-second snapshot.
+  const normalized = normalizeConfig(config);
+  if (!normalized.ok) return c.json({ error: normalized.error }, 400);
+  const record = { ...config, config: normalized.value };
+  let upstream: Upstream;
+  if (record.provider === 'azure') {
+    upstream = createAzureUpstream(record);
+  } else if (record.provider === 'copilot') {
+    const copilot = record.config as CopilotUpstreamConfig;
+    upstream = createCopilotUpstream(record.id, record.name, copilot.githubToken, copilot.accountType);
+  } else {
+    upstream = createCustomUpstream(record);
+  }
+
   await invalidateUpstreamModels(id);
 
-  const upstream = createOpenAiUpstream(config);
+  if (record.provider === 'azure') {
+    const azure = assertAzureUpstreamRecord(record);
+    const modelsProbe = azure.config.deployments.some(azureDeploymentUsesOpenAi) ? await probeModelsEndpoint(upstream) : undefined;
+    const deploymentProbes = [];
+
+    for (const deployment of azure.config.deployments) {
+      for (const path of deployment.supportedEndpoints) {
+        try {
+          const probe = azureProbeRequest(deployment.deployment, path);
+          const resp = await upstream.fetch(probe.endpoint, {
+            method: 'POST',
+            body: JSON.stringify(probe.body),
+          });
+          deploymentProbes.push({
+            deployment: deployment.deployment,
+            endpoint: path,
+            ok: resp.ok,
+            status: resp.status,
+            ...(resp.ok ? {} : { body: (await resp.text()).slice(0, 1000) }),
+          });
+        } catch (e) {
+          deploymentProbes.push({
+            deployment: deployment.deployment,
+            endpoint: path,
+            ok: false,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+    }
+
+    const ok = (modelsProbe?.ok ?? true) && deploymentProbes.every(probe => probe.ok);
+    return c.json({
+      ok,
+      ...(modelsProbe ? { model_count: modelsProbe.models?.length ?? 0, models: modelsProbe.models ?? [], models_probe: modelsProbe } : {}),
+      probes: deploymentProbes,
+    });
+  }
+
   try {
-    const resp = await upstream.fetch('models', { method: 'GET' });
-    if (!resp.ok) {
-      const text = await resp.text();
+    const probe = await probeModelsEndpoint(upstream);
+    if (!probe.ok) {
       return c.json(
         {
-          ok: false,
-          status: resp.status,
-          body: text.slice(0, 1000),
+          ...probe,
         },
         200,
       );
     }
-    const data = (await resp.json()) as { data?: Array<{ id: string }> };
-    const ids = Array.isArray(data?.data) ? data.data.map(m => m.id).filter((v): v is string => typeof v === 'string') : [];
     return c.json({
       ok: true,
-      status: resp.status,
-      model_count: ids.length,
-      models: ids.slice(0, 50),
+      status: probe.status,
+      model_count: probe.models?.length ?? 0,
+      models: probe.models ?? [],
     });
   } catch (e) {
     return c.json(
@@ -292,5 +411,82 @@ export const testUpstream = async (c: Context) => {
       },
       200,
     );
+  }
+};
+
+export const copilotAuthStart = async (c: Context) => {
+  try {
+    const result = await startGitHubDeviceFlow();
+    if (!result.ok) return c.json({ error: result.error }, 502);
+    return c.json(result.data);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return c.json({ error: msg }, 502);
+  }
+};
+
+const copilotUpstreamName = (user: CopilotUpstreamUser): string => (user.login ? `GitHub Copilot (${user.login})` : 'GitHub Copilot');
+
+const copilotConfigUserId = (config: unknown): number | null => {
+  if (!isRecord(config) || !isRecord(config.user)) return null;
+  return typeof config.user.id === 'number' && Number.isSafeInteger(config.user.id) ? config.user.id : null;
+};
+
+export const copilotAuthPoll = async (c: Context) => {
+  try {
+    const body = await c.req.json<{ device_code?: unknown }>();
+    const deviceCode = validateString(body.device_code, 'device_code');
+    if (!deviceCode.ok) return c.json({ error: deviceCode.error }, 400);
+
+    const data = await pollGitHubDeviceFlow(deviceCode.value);
+
+    if (data.error === 'authorization_pending') return c.json({ status: 'pending' });
+    if (data.error === 'slow_down') return c.json({ status: 'slow_down', interval: data.interval });
+    if (data.error) return c.json({ status: 'error', error: data.error_description ?? data.error }, 400);
+
+    if (!data.access_token) return c.json({ status: 'error', error: 'Unknown response' }, 500);
+
+    const user = await fetchGitHubUser(data.access_token);
+    const accountType = await detectAccountType(data.access_token);
+    if (!isCopilotAccountType(accountType)) {
+      return c.json({ status: 'error', error: 'Unsupported Copilot account type' }, 502);
+    }
+
+    const repo = getRepo().upstreams;
+    const upstreams = await repo.list();
+    const existing = upstreams.find(upstream => upstream.provider === 'copilot' && copilotConfigUserId(upstream.config) === user.id);
+    const now = new Date().toISOString();
+    const config: CopilotUpstreamConfig = {
+      githubToken: data.access_token,
+      accountType,
+      user,
+    };
+
+    const record: UpstreamRecord = existing
+      ? {
+          ...existing,
+          config,
+          updatedAt: now,
+        }
+      : {
+          id: newId(),
+          provider: 'copilot',
+          name: copilotUpstreamName(user),
+          enabled: true,
+          sortOrder: nextSortOrder(upstreams),
+          createdAt: now,
+          updatedAt: now,
+          enabledFixes: [],
+          config,
+        };
+
+    await repo.save(record);
+    await clearCopilotTokenCache();
+    clearModelsCache();
+    await invalidateUpstreamModels(record.id);
+    return c.json({ status: 'complete', user, upstream: upstreamRecordToJson(record) });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return c.json({ error: msg }, 502);
   }
 };

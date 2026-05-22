@@ -1,6 +1,6 @@
 // Per-upstream model list cache. Each upstream adapter gets its own /models
 // cache key; provider code decides how those upstream adapters map to accounts
-// or configured custom providers.
+// or configured Custom/Azure providers.
 //
 // Tiers:
 //   L1 in-process (120s)            — avoids repeated repo reads on hot isolates

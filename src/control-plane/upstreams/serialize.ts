@@ -1,31 +1,65 @@
-import type { UpstreamConfig } from '../../repo/types.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
 
-// Public-facing serialization: omit the bearer token by default and instead
-// expose `bearer_token_set` so the dashboard can show whether a credential
-// is on file without exposing it. The full bearer is only revealed by the
-// admin export path, which already returns the entire repo dump.
-export const upstreamConfigToJson = (cfg: UpstreamConfig) => ({
-  id: cfg.id,
-  name: cfg.name,
-  base_url: cfg.baseUrl,
-  bearer_token_set: cfg.bearerToken.length > 0,
-  supported_endpoints: cfg.supportedEndpoints,
-  enabled: cfg.enabled,
-  sort_order: cfg.sortOrder,
-  created_at: cfg.createdAt,
-  enabled_fixes: cfg.enabledFixes,
-  ...(cfg.pathOverrides ? { path_overrides: cfg.pathOverrides } : {}),
+export interface SerializedUpstreamRecord {
+  id: string;
+  provider: UpstreamProviderKind;
+  name: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  enabled_fixes: string[];
+  config: unknown;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const clone = <T>(value: T): T => structuredClone(value);
+
+const hasSecret = (value: unknown): boolean => typeof value === 'string' && value.length > 0;
+
+const redactedConfig = (upstream: UpstreamRecord): unknown => {
+  const config = isRecord(upstream.config) ? upstream.config : {};
+
+  switch (upstream.provider) {
+  case 'custom':
+    return {
+      ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
+      ...(config.supportedEndpoints !== undefined ? { supportedEndpoints: clone(config.supportedEndpoints) } : {}),
+      ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
+      bearerTokenSet: hasSecret(config.bearerToken),
+    };
+  case 'azure':
+    return {
+      ...(config.endpoint !== undefined ? { endpoint: clone(config.endpoint) } : {}),
+      ...(config.deployments !== undefined ? { deployments: clone(config.deployments) } : {}),
+      apiKeySet: hasSecret(config.apiKey),
+    };
+  case 'copilot':
+    return {
+      ...(config.accountType !== undefined ? { accountType: clone(config.accountType) } : {}),
+      ...(config.user !== undefined ? { user: clone(config.user) } : {}),
+      githubTokenSet: hasSecret(config.githubToken),
+    };
+  default: {
+    const exhaustive: never = upstream.provider;
+    throw new Error(`Unknown upstream provider for redaction: ${String(exhaustive)}`);
+  }
+  }
+};
+
+const serializeBase = (upstream: UpstreamRecord, config: unknown): SerializedUpstreamRecord => ({
+  id: upstream.id,
+  provider: upstream.provider,
+  name: upstream.name,
+  enabled: upstream.enabled,
+  sort_order: upstream.sortOrder,
+  created_at: upstream.createdAt,
+  updated_at: upstream.updatedAt,
+  enabled_fixes: [...upstream.enabledFixes],
+  config,
 });
 
-export const upstreamConfigToFullJson = (cfg: UpstreamConfig) => ({
-  id: cfg.id,
-  name: cfg.name,
-  base_url: cfg.baseUrl,
-  bearer_token: cfg.bearerToken,
-  supported_endpoints: cfg.supportedEndpoints,
-  enabled: cfg.enabled,
-  sort_order: cfg.sortOrder,
-  created_at: cfg.createdAt,
-  enabled_fixes: cfg.enabledFixes,
-  ...(cfg.pathOverrides ? { path_overrides: cfg.pathOverrides } : {}),
-});
+export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstreamRecord => serializeBase(upstream, redactedConfig(upstream));
+
+export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUpstreamRecord => serializeBase(upstream, clone(upstream.config));

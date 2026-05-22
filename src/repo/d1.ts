@@ -2,8 +2,6 @@ import type {
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
-  GitHubAccount,
-  GitHubRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -14,8 +12,9 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
-  UpstreamConfig,
-  UpstreamConfigRepo,
+  UpstreamProviderKind,
+  UpstreamRecord,
+  UpstreamRepo,
   UsageRecord,
   UsageRepo,
 } from './types.ts';
@@ -42,7 +41,6 @@ export interface D1Database {
 }
 
 const SEARCH_CONFIG_KEY = 'search_config';
-const GITHUB_ACCOUNT_ORDER_KEY = 'github_account_order';
 
 const serializeStoredConfig = (value: unknown): string => JSON.stringify(value === undefined ? null : value);
 
@@ -109,126 +107,6 @@ function toApiKey(row: { id: string; name: string; key: string; created_at: stri
     key: row.key,
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at ?? undefined,
-  };
-}
-
-class D1GitHubRepo implements GitHubRepo {
-  constructor(private db: D1Database) {}
-
-  private async listAccountIds(): Promise<number[]> {
-    const { results } = await this.db.prepare('SELECT user_id FROM github_accounts ORDER BY user_id').all<{ user_id: number }>();
-    return results.map(row => row.user_id);
-  }
-
-  private async readOrder(): Promise<number[]> {
-    const orderRow = await this.db.prepare('SELECT value FROM config WHERE key = ?').bind(GITHUB_ACCOUNT_ORDER_KEY).first<{ value: string }>();
-
-    if (orderRow?.value) {
-      try {
-        const parsed = JSON.parse(orderRow.value) as unknown;
-        if (Array.isArray(parsed)) {
-          return parsed.filter((id): id is number => Number.isInteger(id));
-        }
-      } catch {
-        return [];
-      }
-    }
-
-    return [];
-  }
-
-  private async writeOrder(userIds: number[]): Promise<void> {
-    if (userIds.length === 0) {
-      await this.db.prepare('DELETE FROM config WHERE key = ?').bind(GITHUB_ACCOUNT_ORDER_KEY).run();
-      return;
-    }
-
-    await this.db
-      .prepare(
-        `INSERT INTO config (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      )
-      .bind(GITHUB_ACCOUNT_ORDER_KEY, JSON.stringify(userIds))
-      .run();
-  }
-
-  private async normalizeOrder(userIds: number[]): Promise<number[]> {
-    const accountIds = await this.listAccountIds();
-    const accountIdSet = new Set(accountIds);
-    const seen = new Set<number>();
-    const ordered = userIds.filter(id => {
-      if (!accountIdSet.has(id) || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-    const rest = accountIds.filter(id => !seen.has(id));
-    return [...ordered, ...rest];
-  }
-
-  async listAccounts(): Promise<GitHubAccount[]> {
-    const { results } = await this.db.prepare('SELECT user_id, token, account_type, login, name, avatar_url FROM github_accounts ORDER BY user_id').all<{
-      user_id: number;
-      token: string;
-      account_type: string;
-      login: string;
-      name: string | null;
-      avatar_url: string;
-    }>();
-    const rank = new Map((await this.readOrder()).map((id, index) => [id, index]));
-    return results.map(toGitHubAccount).sort((a, b) => (rank.get(a.user.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.user.id) ?? Number.MAX_SAFE_INTEGER) || a.user.id - b.user.id);
-  }
-
-  async getAccount(userId: number): Promise<GitHubAccount | null> {
-    const row = await this.db.prepare('SELECT user_id, token, account_type, login, name, avatar_url FROM github_accounts WHERE user_id = ?').bind(userId).first<{
-      user_id: number;
-      token: string;
-      account_type: string;
-      login: string;
-      name: string | null;
-      avatar_url: string;
-    }>();
-    return row ? toGitHubAccount(row) : null;
-  }
-
-  async saveAccount(userId: number, account: GitHubAccount): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO github_accounts (user_id, token, account_type, login, name, avatar_url) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (user_id) DO UPDATE SET token = excluded.token, account_type = excluded.account_type, login = excluded.login, name = excluded.name, avatar_url = excluded.avatar_url`,
-      )
-      .bind(userId, account.token, account.accountType, account.user.login, account.user.name, account.user.avatar_url)
-      .run();
-    const order = await this.readOrder();
-    if (!order.includes(userId)) {
-      await this.writeOrder(await this.normalizeOrder([...order, userId]));
-    }
-  }
-
-  async deleteAccount(userId: number): Promise<void> {
-    await this.db.prepare('DELETE FROM github_accounts WHERE user_id = ?').bind(userId).run();
-    await this.writeOrder(await this.normalizeOrder(await this.readOrder()));
-  }
-
-  async setOrder(userIds: number[]): Promise<void> {
-    await this.writeOrder(await this.normalizeOrder(userIds));
-  }
-
-  async deleteAllAccounts(): Promise<void> {
-    await this.db.prepare('DELETE FROM github_accounts').run();
-    await this.writeOrder([]);
-  }
-}
-
-function toGitHubAccount(row: { user_id: number; token: string; account_type: string; login: string; name: string | null; avatar_url: string }): GitHubAccount {
-  return {
-    token: row.token,
-    accountType: row.account_type,
-    user: {
-      id: row.user_id,
-      login: row.login,
-      name: row.name,
-      avatar_url: row.avatar_url,
-    },
   };
 }
 
@@ -758,160 +636,132 @@ class D1SearchConfigRepo implements SearchConfigRepo {
   }
 }
 
-class D1UpstreamConfigRepo implements UpstreamConfigRepo {
+class D1UpstreamRepo implements UpstreamRepo {
   constructor(private db: D1Database) {}
 
-  async list(): Promise<UpstreamConfig[]> {
+  async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides FROM upstream_configs ORDER BY sort_order, created_at')
-      .all<UpstreamConfigRow>();
-    return results.map(toUpstreamConfig);
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, enabled_fixes FROM upstreams ORDER BY sort_order, created_at')
+      .all<UpstreamRow>();
+    return results.map(toUpstreamRecord);
   }
 
-  async getById(id: string): Promise<UpstreamConfig | null> {
+  async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides FROM upstream_configs WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, enabled_fixes FROM upstreams WHERE id = ?')
       .bind(id)
-      .first<UpstreamConfigRow>();
-    return row ? toUpstreamConfig(row) : null;
+      .first<UpstreamRow>();
+    return row ? toUpstreamRecord(row) : null;
   }
 
-  async save(config: UpstreamConfig): Promise<void> {
+  async save(upstream: UpstreamRecord): Promise<void> {
+    // created_at is deliberately not in the ON CONFLICT update list: the row's first INSERT
+    // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstream_configs (id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, enabled_fixes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
+           provider = excluded.provider,
            name = excluded.name,
-           base_url = excluded.base_url,
-           bearer_token = excluded.bearer_token,
-           supported_endpoints = excluded.supported_endpoints,
            enabled = excluded.enabled,
            sort_order = excluded.sort_order,
-           enabled_fixes = excluded.enabled_fixes,
-           path_overrides = excluded.path_overrides`,
+           updated_at = excluded.updated_at,
+           config_json = excluded.config_json,
+           enabled_fixes = excluded.enabled_fixes`,
       )
       .bind(
-        config.id,
-        config.name,
-        config.baseUrl,
-        config.bearerToken,
-        JSON.stringify(config.supportedEndpoints),
-        config.enabled ? 1 : 0,
-        config.sortOrder,
-        config.createdAt,
-        JSON.stringify(config.enabledFixes),
-        config.pathOverrides ? JSON.stringify(config.pathOverrides) : null,
+        upstream.id,
+        upstream.provider,
+        upstream.name,
+        upstream.enabled ? 1 : 0,
+        upstream.sortOrder,
+        upstream.createdAt,
+        upstream.updatedAt,
+        serializeStoredConfig(upstream.config),
+        JSON.stringify(normalizeEnabledFixes(upstream.enabledFixes)),
       )
       .run();
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.prepare('DELETE FROM upstream_configs WHERE id = ?').bind(id).run();
+    const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
     return ((result.meta.changes as number) ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM upstream_configs').run();
+    await this.db.prepare('DELETE FROM upstreams').run();
   }
 }
 
-interface UpstreamConfigRow {
+interface UpstreamRow {
   id: string;
+  provider: string;
   name: string;
-  base_url: string;
-  bearer_token: string;
-  supported_endpoints: string;
   enabled: number;
   sort_order: number;
   created_at: string;
-  enabled_fixes: string | null;
-  path_overrides: string | null;
+  updated_at: string;
+  config_json: string;
+  enabled_fixes: string;
 }
 
-function toUpstreamConfig(row: UpstreamConfigRow): UpstreamConfig {
-  let supportedEndpoints: string[] = [];
+function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
+  let config: unknown;
   try {
-    const parsed = JSON.parse(row.supported_endpoints);
-    if (Array.isArray(parsed)) {
-      supportedEndpoints = parsed.filter((v): v is string => typeof v === 'string');
-    }
+    config = JSON.parse(row.config_json) as unknown;
   } catch {
-    // Stored value is malformed; treat as empty so upstream is not picked.
-  }
-
-  let pathOverrides: UpstreamConfig['pathOverrides'];
-  if (row.path_overrides) {
-    try {
-      const parsed = JSON.parse(row.path_overrides);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const result: Record<string, string> = {};
-        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-          if (typeof v === 'string') result[k] = v;
-        }
-        if (Object.keys(result).length > 0) {
-          pathOverrides = result as UpstreamConfig['pathOverrides'];
-        }
-      }
-    } catch {
-      // Malformed override JSON falls back to defaults rather than blocking
-      // the upstream from being used.
-    }
-  }
-
-  // Parse enabled_fixes JSON: keep all string entries, dedupe + sort.
-  // The repo intentionally does not check ids against the fix catalog —
-  // that's the control plane's job on write. Unknown ids surviving on
-  // read (e.g. from an older snapshot) are inert: the per-target
-  // interceptor assembler only matches registered fixIds.
-  let enabledFixes: string[] = [];
-  if (row.enabled_fixes) {
-    try {
-      const parsed = JSON.parse(row.enabled_fixes);
-      if (Array.isArray(parsed)) {
-        const seen = new Set<string>();
-        for (const v of parsed) {
-          if (typeof v === 'string') seen.add(v);
-        }
-        enabledFixes = [...seen].sort();
-      }
-    } catch {
-      // Malformed JSON falls back to empty — the upstream still works,
-      // just without any opt-in fixes until the admin re-saves.
-    }
+    throw new Error(`Malformed upstream config JSON for ${row.id}`);
   }
 
   return {
     id: row.id,
+    provider: assertUpstreamProviderKind(row.provider),
     name: row.name,
-    baseUrl: row.base_url,
-    bearerToken: row.bearer_token,
-    supportedEndpoints,
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
-    enabledFixes,
-    ...(pathOverrides ? { pathOverrides } : {}),
+    updatedAt: row.updated_at,
+    config,
+    enabledFixes: parseEnabledFixes(row.id, row.enabled_fixes),
   };
 }
 
+const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
+  if (provider === 'copilot' || provider === 'custom' || provider === 'azure') return provider;
+  throw new TypeError(`Invalid upstream provider kind: ${provider}`);
+};
+
+const normalizeEnabledFixes = (enabledFixes: string[]): string[] => [...new Set(enabledFixes)].sort();
+
+const parseEnabledFixes = (id: string, enabledFixesJson: string): string[] => {
+  try {
+    const parsed = JSON.parse(enabledFixesJson) as unknown;
+    if (Array.isArray(parsed) && parsed.every(value => typeof value === 'string')) {
+      return normalizeEnabledFixes(parsed);
+    }
+  } catch {
+    throw new Error(`Malformed upstream enabled_fixes JSON for ${id}`);
+  }
+
+  throw new Error(`Malformed upstream enabled_fixes JSON for ${id}`);
+};
+
 export class D1Repo implements Repo {
   apiKeys: ApiKeyRepo;
-  github: GitHubRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
-  upstreamConfigs: UpstreamConfigRepo;
+  upstreams: UpstreamRepo;
 
   constructor(db: D1Database) {
     this.apiKeys = new D1ApiKeyRepo(db);
-    this.github = new D1GitHubRepo(db);
     this.usage = new D1UsageRepo(db);
     this.searchUsage = new D1SearchUsageRepo(db);
     this.performance = new D1PerformanceRepo(db);
     this.cache = new D1CacheRepo(db);
     this.searchConfig = new D1SearchConfigRepo(db);
-    this.upstreamConfigs = new D1UpstreamConfigRepo(db);
+    this.upstreams = new D1UpstreamRepo(db);
   }
 }

@@ -22,6 +22,14 @@ const isStructuredResponsesEvent = (event: { type: string }): boolean =>
 const projectSseJsonEvent = (event: ResponseStreamEvent, eventName: string | undefined): SequencedResponsesStreamEvent =>
   eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as SequencedResponsesStreamEvent) : (event as SequencedResponsesStreamEvent);
 
+const isResponsesWrapperEvent = (event: Pick<ResponseStreamEvent, 'type'>): boolean =>
+  event.type === 'response.created' || event.type === 'response.in_progress';
+
+const remainingFastPathEvents = (response: ResponsesResult, sentWrapperTypes: ReadonlySet<ResponseStreamEvent['type']>): EventFrame<SequencedResponsesStreamEvent>[] => {
+  const expanded = responsesResultToEvents(response);
+  return sentWrapperTypes.size > 0 ? expanded.filter(frame => !sentWrapperTypes.has(frame.event.type)) : expanded;
+};
+
 // Some Responses upstreams (notably Copilot for short prompts) take a
 // "fast-path": they only emit `response.created` / `response.in_progress` and a
 // terminal `response.completed` / `response.incomplete` / `response.failed`,
@@ -34,50 +42,38 @@ const projectSseJsonEvent = (event: ResponseStreamEvent, eventName: string | und
 export const responsesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<SequencedResponsesStreamEvent>> =>
   (async function* () {
     let sawStructured = false;
-    const pending: EventFrame<SequencedResponsesStreamEvent>[] = [];
+    const sentWrapperTypes = new Set<ResponseStreamEvent['type']>();
 
     for await (const frame of parseTargetStreamFrames<ResponseStreamEvent>(frames, {
       protocol: 'Responses',
       malformedJsonEventName: 'response',
     })) {
       if (frame.type === 'done') {
-        for (const buffered of pending) yield buffered;
-        pending.length = 0;
         yield doneFrame();
         return;
       }
 
       const event = projectSseJsonEvent(frame.data, frame.frame.event);
+      if (event.type === 'ping') continue;
+
       const structured = isStructuredResponsesEvent(event);
       const terminal = isResponsesTerminalEvent(event);
+      const projected = eventFrame(event);
 
       if (!sawStructured && terminal && !structured && 'response' in event) {
-        // Fast-path: terminal arrived before any structured event. Discard the
-        // pending created/in_progress frames — responsesResultToEvents will
-        // re-synthesize them with consistent sequence numbers — and replace
-        // the terminal with the full expanded sequence.
-        pending.length = 0;
-        for (const expanded of responsesResultToEvents((event as { response: ResponsesResult }).response)) yield expanded;
+        // Fast-path: terminal arrived before any content-bearing structured
+        // event. If wrappers were already sent downstream, keep them and
+        // synthesize only the missing item/content events plus terminal.
+        for (const expanded of remainingFastPathEvents((event as { response: ResponsesResult }).response, sentWrapperTypes)) yield expanded;
         sawStructured = true;
         continue;
       }
 
       if (!sawStructured && structured) {
         sawStructured = true;
-        for (const buffered of pending) yield buffered;
-        pending.length = 0;
       }
 
-      const projected = eventFrame(event);
-      if (sawStructured) {
-        yield projected;
-      } else {
-        pending.push(projected);
-      }
+      if (!sawStructured && isResponsesWrapperEvent(event)) sentWrapperTypes.add(event.type);
+      yield projected;
     }
-
-    // Upstream ended without [DONE] or a terminal: pass through whatever we
-    // buffered so downstream gets the partial sequence. Translate layer
-    // detects the missing terminal and raises.
-    for (const buffered of pending) yield buffered;
   })();

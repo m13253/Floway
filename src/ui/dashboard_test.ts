@@ -158,6 +158,8 @@ function createDashboardHarness(options: { document?: unknown } = {}) {
   return { app: dashboardApp(), charts };
 }
 
+const waitForDashboardAsync = () => new Promise(resolve => setTimeout(resolve, 0));
+
 function usageRecord(offsetHours: number, overrides: Record<string, unknown>) {
   const date = new Date();
   date.setHours(date.getHours() + offsetHours, 0, 0, 0);
@@ -415,10 +417,10 @@ test('DashboardPage gates search config controls until saved config has loaded',
 
   assertStringIncludes(html, '<template x-if="!searchConfigLoaded">');
   assertStringIncludes(html, '<template x-if="searchConfigLoaded">');
-  assertStringIncludes(html, 'Loading saved search config...');
+  assertStringIncludes(html, 'Loading saved search config…');
 
   assert(html.indexOf('<template x-if="searchConfigLoaded">') < html.indexOf('Search Provider'));
-  assert(html.indexOf('Loading saved search config...') < html.indexOf('<template x-if="searchConfigLoaded">'));
+  assert(html.indexOf('Loading saved search config…') < html.indexOf('<template x-if="searchConfigLoaded">'));
 });
 
 test('DashboardPage renders helper functions inside script without HTML entity encoding', () => {
@@ -948,6 +950,7 @@ test('dashboardApp consumes merged model ids straight from /api/models', async (
               {
                 id: 'claude-opus-4-7',
                 name: 'Claude Opus 4.7',
+                provider: 'copilot',
                 model_picker_enabled: true,
                 capabilities: {
                   type: 'chat',
@@ -962,6 +965,7 @@ test('dashboardApp consumes merged model ids straight from /api/models', async (
               {
                 id: 'claude-sonnet-4-7',
                 name: 'Claude Sonnet 4.7',
+                provider: 'copilot',
                 model_picker_enabled: true,
                 capabilities: { type: 'chat', limits: {} },
                 supported_endpoints: ['/responses'],
@@ -969,6 +973,7 @@ test('dashboardApp consumes merged model ids straight from /api/models', async (
               {
                 id: 'gpt-5.5',
                 name: 'GPT 5.5',
+                provider: 'copilot',
                 model_picker_enabled: true,
                 capabilities: { type: 'chat', limits: {} },
                 supported_endpoints: ['/responses'],
@@ -999,6 +1004,312 @@ test('dashboardApp consumes merged model ids straight from /api/models', async (
     app.codexModel = 'claude-sonnet-4-7';
     assertStringIncludes(app.codexSnippet(), 'model = "claude-sonnet-4-7"');
     assertStringIncludes(app.claudeCodeSnippet(), 'ANTHROPIC_MODEL=claude-opus-4-7[1m]');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('dashboardApp groups model pickers by provider field', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = input => {
+    const url = String(input);
+    if (url.startsWith('/api/models')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: 'claude-opus-4-7',
+                name: 'Claude Opus 4.7',
+                provider: 'copilot',
+                model_picker_enabled: true,
+                capabilities: { type: 'chat', limits: {} },
+                supported_endpoints: ['/v1/messages'],
+              },
+              {
+                id: 'claude-haiku-4-7',
+                name: 'Claude Haiku 4.7',
+                provider: 'custom',
+                model_picker_enabled: true,
+                capabilities: { type: 'chat', limits: {} },
+                supported_endpoints: ['/v1/messages'],
+              },
+              {
+                id: 'gpt-5.5',
+                name: 'GPT 5.5',
+                provider: 'copilot',
+                model_picker_enabled: true,
+                capabilities: { type: 'chat', limits: {} },
+                supported_endpoints: ['/responses'],
+              },
+              {
+                id: 'azure-gpt-5.4',
+                name: 'Azure GPT 5.4',
+                provider: 'azure',
+                model_picker_enabled: true,
+                capabilities: { type: 'chat', limits: {} },
+                supported_endpoints: ['/responses'],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  try {
+    const { app } = createDashboardHarness();
+    await app.loadModels();
+
+    assertFalse(app.modelPickerSeparator.includes('Custom'));
+    assertEquals(app.claudeModelsBig, ['claude-opus-4-7', app.modelPickerSeparator, 'azure-gpt-5.4', 'claude-haiku-4-7']);
+    assertEquals(app.codexModels, ['gpt-5.5', app.modelPickerSeparator, 'azure-gpt-5.4']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('dashboardApp keeps supported Azure deployment metadata with a single endpoint field', () => {
+  const { app } = createDashboardHarness();
+
+  app.openUpstreamModal({
+    id: 'up_azure_ui',
+    provider: 'azure',
+    name: 'Azure UI',
+    enabled: true,
+    sort_order: 3,
+    enabled_fixes: [],
+    config: {
+      endpoint: 'https://example.openai.azure.com/openai/v1',
+      apiKeySet: true,
+      deployments: [
+        {
+          deployment: 'gpt-prod',
+          publicModelId: 'gpt-public',
+          supportedEndpoints: ['/responses', '/chat/completions'],
+          version: '2026-03-05',
+          object: 'model',
+          owned_by: 'azure',
+          created: 1772496000,
+          created_at: '2026-03-05',
+          description: 'Unused catalog text',
+          capabilities: {
+            family: 'gpt-legacy',
+            type: 'chat',
+            limits: { max_context_window_tokens: 128000 },
+            supports: { streaming: true, reasoning_effort: ['low'] },
+          },
+          billing: { multiplier: 2 },
+          policy: { state: 'enabled', terms: 'legacy terms' },
+          multiplier: 3,
+          restricted_to: ['legacy-tier'],
+          model_picker_enabled: false,
+        },
+      ],
+    },
+  });
+
+  assertEquals(app.upstreamModal.deployments[0].apiType, 'responses_chat');
+  assertEquals(app.upstreamModal.deployments[0].open, false);
+  const modalDeployment = app.upstreamModal.deployments[0];
+  for (const key of ['version', 'object', 'owned_by', 'created', 'created_at', 'description', 'billing', 'policy', 'model_picker_enabled', 'multiplier', 'restricted_to']) {
+    assertFalse(key in modalDeployment);
+  }
+  assertFalse('family' in modalDeployment.capabilities);
+  assertFalse('type' in modalDeployment.capabilities);
+  assertEquals(modalDeployment.capabilities.supports.streaming, true);
+  app.upstreamModal.endpoint = ' https://example.services.ai.azure.com/openai/v1 ';
+  app.upstreamModal.deployments[0].publicModelId = '';
+  app.upstreamModal.deployments[0].apiType = 'responses';
+
+  const payload = app.buildUpstreamPayload();
+
+  assertEquals(payload.config, {
+    deployments: [
+      {
+        capabilities: {
+          limits: { max_context_window_tokens: 128000 },
+          supports: { streaming: true, reasoning_effort: ['low'] },
+        },
+        deployment: 'gpt-prod',
+        supportedEndpoints: ['/responses'],
+      },
+    ],
+    endpoint: 'https://example.services.ai.azure.com/openai/v1',
+  });
+});
+
+test('dashboardApp saves manually configured Azure deployment metadata', () => {
+  const { app } = createDashboardHarness();
+
+  app.openNewUpstreamModal('azure');
+  const deployment = app.upstreamModal.deployments[0];
+  deployment.deployment = ' gpt-5.4-pro ';
+  deployment.publicModelId = ' gpt-5.4-pro-public ';
+  deployment.display_name = ' GPT-5.4 Pro ';
+  deployment.capabilities.limits.max_context_window_tokens = '1050000';
+  deployment.capabilities.limits.max_prompt_tokens = '922000';
+  deployment.capabilities.limits.max_output_tokens = '128000';
+  deployment.capabilities.limits.max_non_streaming_output_tokens = '64000';
+  deployment.capabilities.supports.tool_calls = true;
+  deployment.capabilities.supports.parallel_tool_calls = true;
+  deployment.capabilities.supports.streaming = true;
+  deployment.capabilities.supports.vision = true;
+  deployment.capabilities.supports.reasoning_effort = 'low, medium, high';
+
+  const payload = app.buildUpstreamPayload();
+
+  assertEquals(payload.config.deployments[0], {
+    display_name: 'GPT-5.4 Pro',
+    capabilities: {
+      limits: {
+        max_context_window_tokens: 1050000,
+        max_non_streaming_output_tokens: 64000,
+        max_prompt_tokens: 922000,
+        max_output_tokens: 128000,
+      },
+      supports: {
+        tool_calls: true,
+        parallel_tool_calls: true,
+        streaming: true,
+        vision: true,
+        reasoning_effort: ['low', 'medium', 'high'],
+      },
+    },
+    deployment: 'gpt-5.4-pro',
+    publicModelId: 'gpt-5.4-pro-public',
+    supportedEndpoints: ['/responses'],
+  });
+});
+
+test('dashboardApp edits Azure deployments as JSON and returns to structured UI', () => {
+  const { app } = createDashboardHarness();
+
+  app.openNewUpstreamModal('azure');
+  app.upstreamModal.deployments[0].deployment = 'gpt-5.4-pro';
+  app.upstreamModal.deployments[0].display_name = 'GPT 5.4 Pro';
+  app.upstreamModal.deployments[0].capabilities.limits.max_context_window_tokens = '1050000';
+
+  app.setAzureDeploymentsJsonMode(true);
+  assertEquals(app.upstreamModal.deploymentsJsonMode, true);
+  assertEquals(JSON.parse(app.upstreamModal.deploymentsJson), [
+    {
+      display_name: 'GPT 5.4 Pro',
+      capabilities: { limits: { max_context_window_tokens: 1050000 } },
+      deployment: 'gpt-5.4-pro',
+      supportedEndpoints: ['/responses'],
+    },
+  ]);
+
+  app.upstreamModal.deploymentsJson = JSON.stringify(
+    [
+      {
+        deployment: 'json-deploy',
+        publicModelId: 'json-public',
+        supportedEndpoints: ['/responses', '/chat/completions'],
+        display_name: 'JSON Model',
+        name: 'ignored-model-name',
+        capabilities: {
+          family: 'ignored-family',
+          type: 'ignored-type',
+          limits: { max_output_tokens: 64000 },
+          supports: { vision: true, reasoning_effort: ['high'] },
+        },
+      },
+    ],
+    null,
+    2,
+  );
+
+  assertEquals(app.buildUpstreamPayload().config.deployments, [
+    {
+      display_name: 'JSON Model',
+      capabilities: {
+        limits: { max_output_tokens: 64000 },
+        supports: { vision: true, reasoning_effort: ['high'] },
+      },
+      deployment: 'json-deploy',
+      publicModelId: 'json-public',
+      supportedEndpoints: ['/responses', '/chat/completions'],
+    },
+  ]);
+
+  app.setAzureDeploymentsJsonMode(false);
+  assertEquals(app.upstreamModal.deploymentsJsonMode, false);
+  assertEquals(app.upstreamModal.deployments[0].deployment, 'json-deploy');
+  assertEquals(app.upstreamModal.deployments[0].publicModelId, 'json-public');
+  assertEquals(app.upstreamModal.deployments[0].apiType, 'responses_chat');
+  assertFalse('name' in app.upstreamModal.deployments[0]);
+  assertFalse('family' in app.upstreamModal.deployments[0].capabilities);
+
+  app.setAzureDeploymentsJsonMode(true);
+  app.upstreamModal.deploymentsJson = '{';
+  app.setAzureDeploymentsJsonMode(false);
+  assertEquals(app.upstreamModal.deploymentsJsonMode, true);
+  assertStringIncludes(app.upstreamModal.deploymentsJsonError, 'Deployments JSON is invalid');
+});
+
+test('dashboardApp summarizes upstream model counts from provider bindings', () => {
+  const { app } = createDashboardHarness();
+  app.allModels = [
+    { id: 'custom-a', upstream_ids: ['up_custom_1'] },
+    { id: 'shared-model', upstream_ids: ['up_custom_1', 'up_copilot_1'] },
+    { id: 'copilot-only', upstream_ids: ['up_copilot_1'] },
+  ];
+
+  assertEquals(app.upstreamModelSummary({ id: 'up_custom_1', provider: 'custom', config: {} }), '2 models');
+  assertEquals(app.upstreamModelSummary({ id: 'up_copilot_1', provider: 'copilot', config: {} }), '2 models');
+  assertEquals(
+    app.upstreamModelSummary({
+      id: 'up_azure_1',
+      provider: 'azure',
+      config: {
+        deployments: [
+          { deployment: 'gpt-prod' },
+          { deployment: 'deepseek-prod' },
+        ],
+      },
+    }),
+    '2 models',
+  );
+});
+
+test('dashboardApp reorders and toggles upstreams through the unified API', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; body?: unknown }> = [];
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    return Promise.resolve(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+  }) as typeof fetch;
+
+  try {
+    const { app } = createDashboardHarness();
+    let upstreamReloads = 0;
+    let modelReloads = 0;
+    app.upstreams = [
+      { id: 'up_a', provider: 'custom', name: 'A', enabled: true, sort_order: 10, config: {} },
+      { id: 'up_b', provider: 'custom', name: 'B', enabled: true, sort_order: 20, config: {} },
+    ];
+    app.loadUpstreams = async () => {
+      upstreamReloads++;
+    };
+    app.reloadModels = () => {
+      modelReloads++;
+      return Promise.resolve();
+    };
+
+    await app.moveUpstream('up_b', -1);
+    await app.setUpstreamEnabled(app.upstreams[0], false);
+
+    assertEquals(calls, [
+      { url: '/api/upstreams/up_b', body: { sort_order: 10 } },
+      { url: '/api/upstreams/up_a', body: { sort_order: 20 } },
+      { url: '/api/upstreams/up_b', body: { enabled: false } },
+    ]);
+    assertEquals(upstreamReloads, 2);
+    assertEquals(modelReloads, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1133,16 +1444,68 @@ test('DashboardPage renders Settings as masonry settings columns', () => {
 
   assertStringIncludes(html, 'grid grid-cols-1 gap-5 lg:grid-cols-2');
   assertStringIncludes(html, 'flex flex-col gap-5');
-  assertStringIncludes(html, 'GitHub Accounts');
-  assertStringIncludes(html, 'Copilot Quota');
+  assertStringIncludes(html, '>Upstreams<');
+  assertStringIncludes(html, 'Add Upstream');
+  assertStringIncludes(html, 'aria-label="Move upstream up"');
+  assertStringIncludes(html, 'aria-label="Move upstream down"');
+  assertStringIncludes(html, 'aria-label="Toggle upstream enabled"');
+  assertStringIncludes(html, 'aria-label="Edit upstream"');
+  assertStringIncludes(html, 'aria-label="Delete upstream"');
+  assertStringIncludes(html, 'aria-label="Azure endpoint"');
+  assertStringIncludes(html, 'aria-label="Azure deployment display name"');
+  assertStringIncludes(html, 'aria-label="Azure deployment API type"');
+  assertStringIncludes(html, 'aria-label="Azure deployments JSON"');
+  assertStringIncludes(html, 'x-text="azureDeploymentTitle(deployment)"');
+  assertStringIncludes(html, 'Edit as JSON');
+  assertStringIncludes(html, 'Edit with UI');
+  assertStringIncludes(html, 'placeholder="e.g. GPT 5.4 Pro"');
+  assertStringIncludes(html, 'placeholder="e.g. https://resource.openai.azure.com/openai/v1"');
+  assertStringIncludes(html, ':placeholder="deployment.deployment"');
+  assertStringIncludes(html, 'Context Limits');
+  assertStringIncludes(html, 'Context Window');
+  assertStringIncludes(html, '@click.self="closeUpstreamModal()"');
+  assertStringIncludes(html, 'Responses + Chat');
+  assertStringIncludes(html, 'Connect GitHub');
+  assertStringIncludes(html, 'Test Upstream');
   assertStringIncludes(html, 'API Endpoints');
   assertStringIncludes(html, 'Web Search');
-  assertStringIncludes(html, 'Custom Upstreams');
   assertStringIncludes(html, 'Enabled Fixes');
   assertStringIncludes(html, 'Path Overrides');
   assertStringIncludes(html, 'Export Data');
   assertStringIncludes(html, 'Import Data');
   assertFalse(html.includes('Data Transfer'));
+  assertFalse(html.includes('Custom Upstreams'));
+  assertFalse(html.includes('GitHub Accounts'));
+  assertFalse(html.includes('Add Custom'));
+  assertFalse(html.includes('Add Azure'));
+  assertFalse(html.includes("x-text=\"'sort ' + up.sort_order\""));
+  assertFalse(html.includes('x-text="upstreamEndpointSummary(up)"'));
+  assertFalse(html.includes('x-text="upstreamSecretSummary(up)"'));
+  assertFalse(html.includes('@click="testUpstream(up.id)"'));
+  assertFalse(html.includes('dated deployment URLs are rejected'));
+  assertFalse(html.includes('Responses, Chat, and Embeddings use the derived OpenAI v1 URL'));
+  assertFalse(html.includes('Policy State'));
+  assertFalse(html.includes('Policy Terms'));
+  assertFalse(html.includes('Restricted To'));
+  assertFalse(html.includes('Multiplier'));
+  assertFalse(html.includes('Model Picker'));
+  assertFalse(html.includes('Model Name'));
+  assertFalse(html.includes('Token Limits'));
+  assertFalse(html.includes("deployment.deployment || 'gpt-5.4-pro'"));
+  assertFalse(html.includes('version 2 JSON'));
+  assertFalse(html.includes('version must be 2'));
+
+  const upstreamHeadingMatches = html.match(/>Upstreams</g) ?? [];
+  assertEquals(upstreamHeadingMatches.length, 1);
+
+  const toggle = html.indexOf('aria-label="Toggle upstream enabled"');
+  const moveUp = html.indexOf('aria-label="Move upstream up"');
+  const moveDown = html.indexOf('aria-label="Move upstream down"');
+  const edit = html.indexOf('aria-label="Edit upstream"');
+  assert(toggle >= 0);
+  assert(moveUp > toggle);
+  assert(moveDown > moveUp);
+  assert(edit > moveDown);
 });
 
 test('DashboardPage renders compact Settings endpoint rows with docs links', () => {
@@ -1169,19 +1532,19 @@ test('DashboardPage renders compact Settings endpoint rows with docs links', () 
   assertStringIncludes(html, 'https://platform.openai.com/docs/api-reference/models/list');
 });
 
-test('DashboardPage uses frontend-only selected GitHub account for quota display', () => {
+test('DashboardPage removes legacy GitHub account and top-level quota UI', () => {
   const html = DashboardPage().toString();
 
-  assertStringIncludes(html, 'selectedGithubAccountId: null');
-  assertStringIncludes(html, '@click="selectGithubAccount(acct.id)"');
-  assertStringIncludes(html, 'selectedGithubAccountId === acct.id');
-  assertStringIncludes(html, "'/api/copilot-quota?user_id='");
-  assertStringIncludes(html, 'async selectGithubAccount(userId)');
-  assertStringIncludes(html, 'class="ml-1 min-w-0 truncate text-gray-500"');
-  assertStringIncludes(html, "'· @' + (githubAccounts.find");
-  assertStringIncludes(html, 'usageData.copilot_plan');
+  assertStringIncludes(html, "'/api/upstreams/copilot/auth/start'");
+  assertStringIncludes(html, "'/api/upstreams/copilot/auth/poll'");
+  assertStringIncludes(html, "'/api/upstreams/' + this.upstreamModal.id + '/copilot/quota'");
+  assertFalse(html.includes('githubAccounts'));
+  assertFalse(html.includes('/auth/github'));
+  assertFalse(html.includes('/api/copilot-quota'));
+  assertFalse(html.includes('selectedGithubAccountId'));
+  assertFalse(html.includes('usageData.copilot_plan'));
   assertFalse(html.includes('Selected account:'));
-  assertFalse(html.includes('/auth/github/switch'));
+  assertFalse(html.includes('Copilot Quota</span>'));
 });
 
 test('DashboardPage renders Settings import preview responsively', () => {
@@ -1200,6 +1563,103 @@ test('DashboardPage renders Models playground as a mobile stack', () => {
   assertFalse(html.includes('style="height: calc(100vh - 140px); display: flex; overflow: hidden;"'));
 });
 
+test('dashboardApp keeps the Models playground waiting indicator until first content delta', async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let requestBody: { model: string; messages: unknown[]; stream: boolean } | null = null;
+
+  globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    assertEquals(String(input), '/v1/chat/completions');
+    requestBody = JSON.parse(String(init?.body));
+    return Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            stream = controller;
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ),
+    );
+  }) as typeof fetch;
+
+  try {
+    const { app } = createDashboardHarness();
+    app.$refs = { chatScroll: { scrollTop: 0, scrollHeight: 100 } };
+    app.$nextTick = (fn: () => void) => fn();
+    app.chatModelId = 'gpt-5.4-pro';
+    app.chatInput = 'Say ok.';
+
+    const pending = app.sendChatMessage();
+    await waitForDashboardAsync();
+
+    assertEquals(requestBody, {
+      model: 'gpt-5.4-pro',
+      messages: [{ role: 'user', content: 'Say ok.' }],
+      stream: true,
+    });
+    assertEquals(app.chatSending, true);
+    assertEquals(app.chatMessages, [{ role: 'user', text: 'Say ok.', imageUrl: null }]);
+
+    stream.enqueue(encoder.encode('data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n'));
+    await waitForDashboardAsync();
+    assertEquals(app.chatMessages, [{ role: 'user', text: 'Say ok.', imageUrl: null }]);
+
+    stream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
+    stream.enqueue(encoder.encode('data: [DONE]\n\n'));
+    stream.close();
+    await pending;
+
+    assertEquals(app.chatSending, false);
+    assertEquals(app.chatMessages, [
+      { role: 'user', text: 'Say ok.', imageUrl: null },
+      { role: 'assistant', text: 'ok' },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('dashboardApp shows streamed Models playground errors instead of empty responses', async () => {
+  const originalFetch = globalThis.fetch;
+  const encoder = new TextEncoder();
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+
+  globalThis.fetch = (() => Promise.resolve(
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          stream = controller;
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ),
+  )) as typeof fetch;
+
+  try {
+    const { app } = createDashboardHarness();
+    app.$refs = { chatScroll: { scrollTop: 0, scrollHeight: 100 } };
+    app.$nextTick = (fn: () => void) => fn();
+    app.chatModelId = 'deepseek-v4-pro';
+    app.chatInput = 'Say ok.';
+
+    const pending = app.sendChatMessage();
+    await waitForDashboardAsync();
+
+    stream.enqueue(encoder.encode('event: error\ndata: {"error":{"message":"upstream rejected the request"}}\n\n'));
+    await pending;
+
+    assertEquals(app.chatSending, false);
+    assertEquals(app.chatMessages, [
+      { role: 'user', text: 'Say ok.', imageUrl: null },
+      { role: 'assistant', text: '[Error] upstream rejected the request' },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('DashboardPage renders search usage chart after token summary content', () => {
   const html = DashboardPage().toString();
 
@@ -1212,18 +1672,28 @@ test('DashboardPage renders search usage chart after token summary content', () 
 test('DashboardPage import preview includes usage and performance records', () => {
   const html = DashboardPage().toString();
 
+  assertStringIncludes(html, 'json.version !== 2');
+  assertStringIncludes(html, 'version: this.importVersion');
+  assertStringIncludes(html, 'upstreams: 0');
+  assertStringIncludes(html, 'upstreams: Array.isArray(json.data.upstreams) ? json.data.upstreams.length : 0');
   assertStringIncludes(html, 'searchUsage: 0');
   assertStringIncludes(html, 'performance: 0');
   assertStringIncludes(html, 'searchUsage: Array.isArray(json.data.searchUsage) ? json.data.searchUsage.length : 0');
   assertStringIncludes(html, 'performance: Array.isArray(json.data.performance) ? json.data.performance.length : 0');
+  assertStringIncludes(html, 'Upstreams');
+  assertStringIncludes(html, 'x-text="importPreview.upstreams"');
   assertStringIncludes(html, 'Search Usage Records');
   assertStringIncludes(html, 'x-text="importPreview.searchUsage"');
   assertStringIncludes(html, 'Performance Records');
   assertStringIncludes(html, 'x-text="importPreview.performance"');
+  assertStringIncludes(html, 'result.imported.upstreams');
+  assertStringIncludes(html, "' upstreams, '");
   assertStringIncludes(html, 'result.imported.searchUsage');
   assertStringIncludes(html, "' search usage records, '");
   assertStringIncludes(html, 'result.imported.performance');
   assertStringIncludes(html, "' performance records'");
+  assertFalse(html.includes('importPreview.githubAccounts'));
+  assertFalse(html.includes('result.imported.githubAccounts'));
 });
 
 test('DashboardPage makes performance export opt-in', () => {
