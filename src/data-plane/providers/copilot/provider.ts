@@ -1,4 +1,5 @@
 import { fetchCopilotModels } from './fetch-models.ts';
+import { chatCompletionsCopilotInterceptors } from './interceptors/chat-completions/index.ts';
 import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
 import { responsesCopilotInterceptors } from './interceptors/responses/index.ts';
 import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
@@ -346,6 +347,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     targetInterceptors: {
       messages: messagesCopilotInterceptors,
       responses: responsesCopilotInterceptors,
+      chatCompletions: chatCompletionsCopilotInterceptors,
     },
     resolveRequestedModelId: copilotRequestedModelAliasTarget,
   };

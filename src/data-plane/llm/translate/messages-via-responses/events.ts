@@ -5,7 +5,7 @@ import { eventFrame, type ProtocolFrame } from '../../shared/stream/types.ts';
 import { responsesReasoningToMessagesBlock } from '../shared/messages-responses-reasoning.ts';
 import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/responses-stream-order.ts';
 import { type ResponseEvent, responsePartKey } from '../shared/responses-stream.ts';
-import { checkWhitespaceOverflow, parseToolArgumentsObject } from '../shared/tool-arguments.ts';
+import { parseToolArgumentsObject } from '../shared/tool-arguments.ts';
 
 const combineMessageTextContent = (content: ResponseOutputContentBlock[] | undefined): string => {
   if (!Array.isArray(content)) return '';
@@ -129,7 +129,6 @@ interface ResponsesToMessagesStreamState {
       blockIndex: number;
       toolCallId: string;
       name: string;
-      consecutiveWhitespace: number;
     }
   >;
 }
@@ -211,7 +210,6 @@ const handleOutputItemAdded = (event: ResponseEvent<'response.output_item.added'
     blockIndex,
     toolCallId,
     name,
-    consecutiveWhitespace: 0,
   });
 
   const events: MessagesStreamEventData[] = [];
@@ -348,24 +346,6 @@ const handleFunctionArgumentsDelta = (event: ResponseEvent<'response.function_ca
 
   const functionCallState = state.functionCallState.get(event.output_index);
   if (!functionCallState) return [];
-
-  const whitespace = checkWhitespaceOverflow(event.delta, functionCallState.consecutiveWhitespace);
-  functionCallState.consecutiveWhitespace = whitespace.count;
-
-  if (whitespace.exceeded) {
-    const events: MessagesStreamEventData[] = [];
-    console.warn('Infinite whitespace in Responses function call args, aborting');
-    closeAllBlocks(state, events);
-    state.messageCompleted = true;
-    events.push({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: 'Tool call arguments contained excessive whitespace.',
-      },
-    });
-    return events;
-  }
 
   state.emittedFunctionArgumentOutputIndexes.add(event.output_index);
 

@@ -6,7 +6,6 @@ import { toResponseReasoningItem } from '../shared/chat-responses-reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/custom-tool-wrap.ts';
 import { makeResponsesReasoningId } from '../shared/reasoning.ts';
 import * as responses from '../shared/responses-event-builder.ts';
-import { checkWhitespaceOverflow } from '../shared/tool-arguments.ts';
 
 const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionResponse['usage'] | undefined): ResponsesResult['usage'] | undefined =>
   usage
@@ -56,7 +55,6 @@ interface PendingFunctionCallItem {
   callId?: string;
   name?: string;
   arguments: string;
-  consecutiveWhitespace: number;
 }
 
 type StartedFunctionCallItem = PendingFunctionCallItem & {
@@ -254,7 +252,6 @@ const emitToolCallsDelta = (toolCalls: ChatStreamToolCalls, state: ChatCompletio
   for (const toolCall of toolCalls) {
     const current = state.openFunctionCalls.get(toolCall.index) ?? {
       arguments: '',
-      consecutiveWhitespace: 0,
     };
 
     if (toolCall.id) current.callId = toolCall.id;
@@ -271,23 +268,6 @@ const emitToolCallsDelta = (toolCalls: ChatStreamToolCalls, state: ChatCompletio
     events.push(...startFunctionCall(current, state));
 
     if (!toolCall.function?.arguments) continue;
-
-    const whitespace = checkWhitespaceOverflow(toolCall.function.arguments, current.consecutiveWhitespace);
-    current.consecutiveWhitespace = whitespace.count;
-
-    if (whitespace.exceeded) {
-      state.completed = true;
-      return [
-        ...events,
-        ...responses.seq(state, [
-          {
-            type: 'error',
-            message: 'Tool call arguments contained excessive whitespace, indicating a degenerate response.',
-            code: 'api_error',
-          },
-        ]),
-      ];
-    }
 
     current.arguments += toolCall.function.arguments;
 
@@ -309,7 +289,6 @@ const commitReasoningAndReplayDeferredDeltas = (state: ChatCompletionsToResponse
   state.deferredAfterReasoning = [];
 
   for (const item of deferred) {
-    if (state.completed) break;
     events.push(...(item.type === 'content' ? emitContentDelta(item.content, state) : emitToolCallsDelta(item.toolCalls, state)));
   }
 
@@ -321,7 +300,6 @@ const finalize = (state: ChatCompletionsToResponsesStreamState): ResponseStreamE
 
   const events = [...commitReasoningAndReplayDeferredDeltas(state), ...closeText(state), ...closeFunctionCalls(state)];
 
-  if (state.completed) return events;
   state.completed = true;
   const incomplete = state.pendingFinishReason === 'length';
   const status: ResponsesResult['status'] = incomplete ? 'incomplete' : 'completed';
@@ -361,7 +339,6 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
 
       if (hadPendingScalarReasoning) {
         events.push(...commitReasoningAndReplayDeferredDeltas(state));
-        if (state.completed) return events;
       }
     } else if (choice.delta.reasoning_text) {
       if (!state.reasoningItemsSeen) {
@@ -393,7 +370,6 @@ export const translateChatCompletionsChunkToResponsesEvents = (chunk: ChatComple
         });
       } else {
         events.push(...emitToolCallsDelta(choice.delta.tool_calls, state));
-        if (state.completed) return events;
       }
     }
 
