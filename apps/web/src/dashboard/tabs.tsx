@@ -1004,15 +1004,35 @@ export function renderSettingsTab() {
                           </div>
                           <div>
                             <label class="mb-1.5 block text-xs font-medium text-gray-500">
-                              <span x-text="upstreamModal.id ? 'Bearer Token (leave blank to keep)' : 'Bearer Token'"></span>
+                              <span x-text="upstreamModal.id ? (upstreamModal.authStyle === 'anthropic' ? 'API Key (leave blank to keep)' : 'Bearer Token (leave blank to keep)') : (upstreamModal.authStyle === 'anthropic' ? 'API Key' : 'Bearer Token')"></span>
                             </label>
-                            <input type="password" autocomplete="off" class="!py-2.5 !px-3 !text-xs font-mono" placeholder="sk-xxxxx" x-model="upstreamModal.bearerToken" />
+                            <input type="password" autocomplete="off" class="!py-2.5 !px-3 !text-xs font-mono" :placeholder="upstreamModal.authStyle === 'anthropic' ? 'sk-ant-xxxxx' : 'sk-xxxxx'" x-model="upstreamModal.bearerToken" />
+                          </div>
+                        </div>
+
+                        <div>
+                          <p class="mb-2 text-xs font-medium text-gray-500">Auth Style</p>
+                          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <label class="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 bg-surface-800/50 px-3 py-2 text-xs text-gray-300 transition-colors hover:border-white/20" :class="upstreamModal.authStyle === 'bearer' ? 'border-accent-cyan/40 bg-accent-cyan/5' : ''">
+                              <input type="radio" name="customAuthStyle" value="bearer" class="mt-0.5 accent-accent-cyan" :checked="upstreamModal.authStyle === 'bearer'" @change="upstreamModal.authStyle = 'bearer'" />
+                              <span class="flex flex-col gap-0.5">
+                                <span class="font-medium">Bearer</span>
+                                <span class="font-mono text-[10px] text-gray-600">Authorization: Bearer &lt;token&gt;</span>
+                              </span>
+                            </label>
+                            <label class="flex cursor-pointer items-start gap-2 rounded-md border border-white/10 bg-surface-800/50 px-3 py-2 text-xs text-gray-300 transition-colors hover:border-white/20" :class="upstreamModal.authStyle === 'anthropic' ? 'border-accent-cyan/40 bg-accent-cyan/5' : ''">
+                              <input type="radio" name="customAuthStyle" value="anthropic" class="mt-0.5 accent-accent-cyan" :checked="upstreamModal.authStyle === 'anthropic'" @change="upstreamModal.authStyle = 'anthropic'" />
+                              <span class="flex flex-col gap-0.5">
+                                <span class="font-medium">Anthropic</span>
+                                <span class="font-mono text-[10px] text-gray-600">x-api-key + anthropic-version</span>
+                              </span>
+                            </label>
                           </div>
                         </div>
 
                         <div>
                           <p class="mb-2 text-xs font-medium text-gray-500">Supported Endpoints</p>
-                          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                             <template x-for="ep in endpointList()" :key="ep">
                               <label class="flex items-center gap-2 rounded-md border border-white/10 bg-surface-800/50 px-3 py-2 text-xs text-gray-300">
                                 <input type="checkbox" class="accent-accent-cyan" :checked="upstreamModal.supportedEndpoints.includes(ep)" @change="toggleUpstreamEndpoint(ep)" />
@@ -1039,10 +1059,7 @@ export function renderSettingsTab() {
                               </svg>
                             </span>
                           </button>
-                          <div x-show="upstreamModal.pathOverridesOpen" x-cloak class="rounded-lg border border-white/10 bg-surface-800/40 p-3">
-                            <p class="mb-2 text-[11px] text-gray-600">
-                              Leave blank to use the OpenAI default <code class="font-mono">/v1/&lt;endpoint&gt;</code>. Count tokens follows the messages path.
-                            </p>
+                          <div x-show="upstreamModal.pathOverridesOpen" x-cloak>
                             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                               <template x-for="key in ['chat_completions','responses','messages','embeddings','models']" :key="key">
                                 <label class="min-w-0">
@@ -1051,6 +1068,9 @@ export function renderSettingsTab() {
                                 </label>
                               </template>
                             </div>
+                            <p class="mt-3 text-xs text-gray-400">
+                              Leave blank to use the OpenAI default <code class="font-mono">/v1/&lt;endpoint&gt;</code>. Count tokens follows the messages path.
+                            </p>
                           </div>
                         </div>
                       </div>

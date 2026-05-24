@@ -25,6 +25,7 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
   case 'custom':
     return {
       ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
+      ...(config.authStyle !== undefined ? { authStyle: clone(config.authStyle) } : {}),
       ...(config.supportedEndpoints !== undefined ? { supportedEndpoints: clone(config.supportedEndpoints) } : {}),
       ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
       bearerTokenSet: hasSecret(config.bearerToken),

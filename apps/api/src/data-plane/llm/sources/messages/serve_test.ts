@@ -3572,7 +3572,7 @@ test('/v1/messages rejects embedding-only custom upstream model instead of legac
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: ['/embeddings'],
+      supportedEndpoints: [],
     },
   }));
 

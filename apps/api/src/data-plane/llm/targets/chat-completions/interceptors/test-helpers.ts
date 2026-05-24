@@ -6,7 +6,7 @@ import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-com
 export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({
   id: 'test-model',
   limits: {},
-  supports_generation: true,
+  kind: 'chat',
   upstreamEndpoints: ['chat_completions', 'responses', 'messages'],
   enabledFlags: new Set<string>(),
   ...overrides,

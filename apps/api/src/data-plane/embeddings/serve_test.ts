@@ -222,7 +222,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: ['/embeddings'],
+      supportedEndpoints: [],
     },
   }));
 
@@ -347,7 +347,7 @@ test('/v1/embeddings preserves custom upstream /models HTTP errors', async () =>
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: ['/embeddings'],
+      supportedEndpoints: [],
     },
   }));
 
@@ -397,7 +397,7 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: ['/embeddings'],
+      supportedEndpoints: [],
     },
   }));
 

@@ -91,7 +91,7 @@ const geminiModelLoadError = (error: unknown): Response => {
 
 const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Promise<GeminiModel[]> => {
   const models = await getInternalModels(upstreamFilter);
-  return models.filter(model => model.supports_generation).map(toGeminiModel);
+  return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {

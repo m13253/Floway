@@ -33,6 +33,89 @@ test('fetchCustomModels returns the parsed response on 2xx', async () => {
   );
 });
 
+test('fetchCustomModels accepts an Anthropic-shape response with no top-level `object`', async () => {
+  const upstream = createCustomUpstream(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      data: [{ type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5', created_at: '2026-01-01T00:00:00Z' }],
+      has_more: false,
+      first_id: 'claude-opus-4-5',
+      last_id: 'claude-opus-4-5',
+    }),
+    async () => {
+      const result = await fetchCustomModels(upstream);
+      assertEquals(result.data.length, 1);
+      assertEquals(result.data[0].id, 'claude-opus-4-5');
+      assertEquals(result.data[0].display_name, 'Claude Opus 4.5');
+      assertEquals(result.data[0].created_at, '2026-01-01T00:00:00Z');
+    },
+  );
+});
+
+test('fetchCustomModels reads superset fields (display_name, limits, cost) from our own /models', async () => {
+  const upstream = createCustomUpstream(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      has_more: false,
+      first_id: 'm-1',
+      last_id: 'm-1',
+      data: [
+        {
+          id: 'm-1',
+          object: 'model',
+          type: 'model',
+          display_name: 'Model One',
+          created: 1700000000,
+          created_at: '2023-11-14T22:13:20Z',
+          owned_by: 'me',
+          limits: { max_output_tokens: 4096, max_context_window_tokens: 200000 },
+          kind: 'chat',
+          cost: { input: 1, output: 2, cache_read: 0.1, cache_write: 1.25 },
+        },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(upstream);
+      const model = result.data[0];
+      assertEquals(model.id, 'm-1');
+      assertEquals(model.display_name, 'Model One');
+      assertEquals(model.created, 1700000000);
+      assertEquals(model.created_at, '2023-11-14T22:13:20Z');
+      assertEquals(model.owned_by, 'me');
+      assertEquals(model.limits?.max_output_tokens, 4096);
+      assertEquals(model.limits?.max_context_window_tokens, 200000);
+      assertEquals(model.cost?.input, 1);
+      assertEquals(model.cost?.output, 2);
+      assertEquals(model.cost?.cache_read, 0.1);
+      assertEquals(model.cost?.cache_write, 1.25);
+    },
+  );
+});
+
+test('fetchCustomModels drops a `cost` block that is missing input or output', async () => {
+  const upstream = createCustomUpstream(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { input: 1 } }] }),
+    async () => {
+      const result = await fetchCustomModels(upstream);
+      assertEquals(result.data[0].cost, undefined);
+    },
+  );
+});
+
+test('fetchCustomModels skips entries whose id is not a non-empty string', async () => {
+  const upstream = createCustomUpstream(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'ok' }, { id: '' }, { id: 123 }, { display_name: 'no id' }] }),
+    async () => {
+      const result = await fetchCustomModels(upstream);
+      assertEquals(result.data.length, 1);
+      assertEquals(result.data[0].id, 'ok');
+    },
+  );
+});
+
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const upstream = createCustomUpstream(upstreamRecord());
   let thrown: unknown;
@@ -68,7 +151,7 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   const upstream = createCustomUpstream(upstreamRecord());
   let thrown: unknown;
   await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 123 }] }),
+    () => jsonResponse({ object: 'list', data: 'oops' }),
     async () => {
       try { await fetchCustomModels(upstream); } catch (e) { thrown = e; }
     },

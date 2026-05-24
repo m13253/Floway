@@ -1,12 +1,14 @@
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
+import { inferKindFromModelId } from './infer-kind.ts';
 import type { UpstreamRecord } from '../../../repo/types.ts';
 import { createCustomUpstream } from '../../../shared/upstream/custom.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { endpointsIncludeLlmGeneration, isStreamingEndpoint, publicPathsToModelEndpoints } from '../endpoints.ts';
+import { isStreamingEndpoint, publicPathsToModelEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
+import type { ModelEndpoint, ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -22,32 +24,51 @@ const HARD_MS = 2 * 60 * 60 * 1000;
 const L1_TTL_MS = 120_000;
 const providerData = (model: UpstreamModel): CustomProviderData => model.providerData as CustomProviderData;
 
-// Project an OpenAI-shaped raw model into the slim provider-neutral fields.
-// supports_generation/upstreamEndpoints/providerData/enabledFlags are added by
-// the caller.
-const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
-  const internal: Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
+// Endpoint routing for custom upstreams is decided per-model: `kind` comes
+// from a tiered detector (Tier 1: upstream /models published `kind`; Tier 2:
+// id heuristic; default: 'chat'), and `upstreamEndpoints` is then derived
+// from kind + the per-upstream `supportedEndpoints` config (which only
+// declares chat-protocol availability). Display metadata (display_name /
+// created) and `cost` are surfaced through to the public catalog when the
+// upstream chose to publish them.
+const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
+  const internal: Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
-    limits: {},
+    limits: model.limits ? { ...model.limits } : {},
   };
   if (model.owned_by !== undefined) internal.owned_by = model.owned_by;
-  if (model.created !== undefined) internal.created = model.created;
-  if (model.name !== undefined) internal.display_name = model.name;
+  // OpenAI carries unix `created`; Anthropic carries ISO `created_at`; our
+  // own /models carries both. Prefer the unix integer when both are present,
+  // otherwise derive it from the ISO string. We never store created_at on
+  // UpstreamModel — the public catalog rederives it from `created` so the
+  // internal shape stays single-source.
+  if (model.created !== undefined) {
+    internal.created = model.created;
+  } else if (model.created_at !== undefined) {
+    const ms = Date.parse(model.created_at);
+    if (!Number.isNaN(ms)) internal.created = Math.floor(ms / 1000);
+  }
+  const display = model.display_name ?? model.name;
+  if (display !== undefined) internal.display_name = display;
+  if (model.cost) internal.cost = model.cost;
   return internal;
 };
 
+const resolveModelKind = (model: CustomRawModel): ModelKind => model.kind ?? inferKindFromModelId(model.id);
+
 const finalizeCustomModels = (
   response: CustomModelsResponse,
-  configuredEndpoints: ReturnType<typeof publicPathsToModelEndpoints>,
+  configuredChatEndpoints: readonly ModelEndpoint[],
   enabledFlags: ReadonlySet<string>,
 ): UpstreamModel[] => {
   const models: UpstreamModel[] = [];
   for (const rawModel of response.data) {
     if (!rawModel.id) continue;
-    const upstreamEndpoints = rawModel.supported_endpoints ? publicPathsToModelEndpoints(rawModel.supported_endpoints) : configuredEndpoints;
+    const kind = resolveModelKind(rawModel);
+    const upstreamEndpoints: readonly ModelEndpoint[] = kind === 'embedding' ? ['embeddings'] : configuredChatEndpoints;
     models.push({
       ...customInternalModel(rawModel),
-      supports_generation: endpointsIncludeLlmGeneration(upstreamEndpoints),
+      kind,
       upstreamEndpoints,
       providerData: { rawModelId: rawModel.id } satisfies CustomProviderData,
       enabledFlags,
@@ -56,12 +77,31 @@ const finalizeCustomModels = (
   return models;
 };
 
+const pricingByRawIdFromResponse = (response: CustomModelsResponse): Map<string, ModelPricing> => {
+  const pricing = new Map<string, ModelPricing>();
+  for (const raw of response.data) {
+    if (raw.id && raw.cost) pricing.set(raw.id, raw.cost);
+  }
+  return pricing;
+};
+
 export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const upstream = createCustomUpstream(record);
-  const configuredEndpoints = publicPathsToModelEndpoints(upstream.supportedEndpoints);
+  const configuredChatEndpoints = publicPathsToModelEndpoints(upstream.supportedEndpoints);
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('custom'), [record.flagOverrides]);
+
+  // Last-known pricing keyed by raw model id. Populated whenever a fresh
+  // /models response flows through finalize(); read synchronously by
+  // getPricingForModelKey. Stays empty until the first list call lands.
+  // TODO: layer admin-supplied per-model pricing overrides on top of this
+  // when that feature ships, so admins can price upstreams whose /models
+  // doesn't expose `cost`.
+  let pricingByRawId: ReadonlyMap<string, ModelPricing> = new Map();
+  const rememberPricing = (response: CustomModelsResponse): void => {
+    pricingByRawId = pricingByRawIdFromResponse(response);
+  };
 
   const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<ProviderCallResult> => {
     const requestBody = isStreamingEndpoint(endpoint)
@@ -89,20 +129,23 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
         const stored = await readModelsStore<CustomModelsBlob>(record.id);
         const now = Date.now();
         if (stored && now - stored.fetchedAt < SOFT_MS) {
-          return finalizeCustomModels(stored.response, configuredEndpoints, upstreamFlags);
+          rememberPricing(stored.response);
+          return finalizeCustomModels(stored.response, configuredChatEndpoints, upstreamFlags);
         }
         try {
           const response = await fetchCustomModels(upstream);
           await writeModelsStore<CustomModelsBlob>(record.id, { response, fetchedAt: now });
-          return finalizeCustomModels(response, configuredEndpoints, upstreamFlags);
+          rememberPricing(response);
+          return finalizeCustomModels(response, configuredChatEndpoints, upstreamFlags);
         } catch (err) {
           if (stored && now - stored.fetchedAt < HARD_MS && isProviderModelsHttpStatus(err, 429)) {
-            return finalizeCustomModels(stored.response, configuredEndpoints, upstreamFlags);
+            rememberPricing(stored.response);
+            return finalizeCustomModels(stored.response, configuredChatEndpoints, upstreamFlags);
           }
           throw err;
         }
       }),
-    getPricingForModelKey: () => null,
+    getPricingForModelKey: modelKey => pricingByRawId.get(modelKey) ?? null,
     callChatCompletions: (model, body, signal) => call('chat_completions', model, body, signal),
     callResponses: (model, body, signal) => call('responses', model, body, signal),
     callMessages: (model, body, signal, anthropicBeta) => call('messages', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),

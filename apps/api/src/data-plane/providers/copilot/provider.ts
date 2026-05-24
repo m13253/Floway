@@ -12,7 +12,7 @@ import type { UpstreamRecord } from '../../../repo/types.ts';
 import { isCopilotAccountType, type CopilotAccountType } from '../../../shared/copilot.ts';
 import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { endpointsIncludeLlmGeneration, isStreamingEndpoint, publicPathsToModelEndpoints } from '../endpoints.ts';
+import { isStreamingEndpoint, kindForEndpoints, publicPathsToModelEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
@@ -53,16 +53,16 @@ const L1_TTL_MS = 120_000;
 const providerData = (model: UpstreamModel): CopilotProviderData => model.providerData as CopilotProviderData;
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields
-// shared by every provider. supports_generation/upstreamEndpoints/providerData/
+// shared by every provider. kind/upstreamEndpoints/providerData/
 // enabledFlags are added by the caller because they depend on Copilot's
 // endpoint knowledge and the upstream-level flag layer.
-const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
+const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
   const limits: UpstreamModel['limits'] = {};
   if (model.capabilities?.limits?.max_output_tokens !== undefined) limits.max_output_tokens = model.capabilities.limits.max_output_tokens;
   if (model.capabilities?.limits?.max_context_window_tokens !== undefined) limits.max_context_window_tokens = model.capabilities.limits.max_context_window_tokens;
   if (model.capabilities?.limits?.max_prompt_tokens !== undefined) limits.max_prompt_tokens = model.capabilities.limits.max_prompt_tokens;
 
-  const internal: Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
+  const internal: Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
     limits,
   };
@@ -244,7 +244,7 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
     const cost = pricingForCopilotPublicModelId(mergedModel.id);
     models.push({
       ...copilotInternalModel(mergedModel),
-      supports_generation: endpointsIncludeLlmGeneration(upstreamEndpoints),
+      kind: kindForEndpoints(upstreamEndpoints),
       upstreamEndpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
       ...(cost ? { cost } : {}),

@@ -18,10 +18,12 @@ Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, and Google
 Gemini-compatible APIs over unified upstream records. Supported provider kinds
 are `copilot`, `custom`, and `azure`.
 
-`custom` means an OpenAI-compatible bearer-token upstream. It is not an OpenAI
-official-account concept. Azure OpenAI / Foundry OpenAI v1 deployments and Azure
-Foundry Anthropic deployments use the `azure` provider. GitHub Copilot accounts
-are persisted as `copilot` upstreams.
+`custom` means a third-party LLM upstream reached over a static credential —
+either an OpenAI-shaped bearer-token API (OpenAI, OpenRouter, copilot-gateway,
+etc.) or an Anthropic-shaped `x-api-key` API (api.anthropic.com). It is not an
+OpenAI official-account concept. Azure OpenAI / Foundry OpenAI v1 deployments
+and Azure Foundry Anthropic deployments use the `azure` provider. GitHub
+Copilot accounts are persisted as `copilot` upstreams.
 
 Stack: Hono + Web APIs, repository-backed persistence, D1 on Cloudflare Workers,
 in-memory repositories for tests, TypeScript, pnpm, and Vitest.
@@ -113,8 +115,10 @@ will consume control-plane data only through public HTTP endpoints.
 - `apps/api/src/data-plane/providers/copilot/`: Copilot provider projection,
   raw model variant selection, endpoint capability projection, and
   Copilot-specific provider registrations.
-- `apps/api/src/data-plane/providers/custom/`: generic OpenAI-compatible
-  provider behavior for configured bearer-token upstreams.
+- `apps/api/src/data-plane/providers/custom/`: generic OpenAI-shaped or
+  Anthropic-shaped provider behavior for configured static-credential
+  upstreams. Owns the permissive `/models` parser that accepts OpenAI,
+  Anthropic, and copilot-gateway-own response shapes.
 - `apps/api/src/data-plane/providers/azure/`: Azure OpenAI / Foundry OpenAI v1
   and Azure Foundry Anthropic provider behavior, deployment catalog projection,
   and API-key request construction.
@@ -178,9 +182,29 @@ error and should surface rather than being silently skipped.
 
 Provider config rules:
 
-- `custom`: `baseUrl`, `bearerToken`, `supportedEndpoints`, and optional
-  `pathOverrides`. Models come from the configured models endpoint. The provider
-  calls upstream models by their raw model id.
+- `custom`: `baseUrl`, `bearerToken`, `authStyle` (`bearer` or `anthropic`),
+  `supportedEndpoints`, and optional `pathOverrides`. `authStyle: 'bearer'`
+  sends `Authorization: Bearer <token>` (OpenAI / OpenRouter /
+  copilot-gateway-style upstreams); `authStyle: 'anthropic'` sends
+  `x-api-key: <token>` plus `anthropic-version: 2023-06-01`
+  (api.anthropic.com-style upstreams). `supportedEndpoints` declares which
+  chat generation protocols this upstream speaks (`/chat/completions`,
+  `/responses`, `/v1/messages`); the embeddings endpoint is intentionally
+  not configurable there — embeddings routing is decided per-model from
+  `kind === 'embedding'`. An upstream that only serves embedding models
+  (e.g. Voyage) saves with an empty `supportedEndpoints` array. The `/models`
+  parser accepts OpenAI, Anthropic, and copilot-gateway-own container /
+  per-model shapes; entries are best-effort and unrecognized fields are
+  ignored. Per-model `kind` resolves through a two-tier detector: Tier 1
+  reads `kind` from the upstream `/models` response when present (only
+  copilot-gateway emits it today); Tier 2 falls back to an id-token
+  heuristic (see `apps/api/src/data-plane/providers/custom/infer-kind.ts`)
+  matching common embedding families (`embed`, `embedding`, `bge`, `e5`,
+  `gte`, `nomic`, `voyage`, ...). Everything else defaults to `chat`. The
+  /models response is otherwise read only for display metadata
+  (`display_name`/`created`/`created_at`/`owned_by`/`limits`) and an
+  optional `cost` block. The provider calls upstream models by their raw
+  model id.
 - `azure`: one `endpoint`, `apiKey`, and deployment rows. `endpoint` must be an
   HTTPS Azure URL on `*.openai.azure.com` or `*.services.ai.azure.com`; it may
   be an Azure resource root, a Foundry project endpoint, an OpenAI v1 URL ending
@@ -257,8 +281,17 @@ callMessagesCountTokens(upstreamModel, bodyWithoutModel, signal?, anthropicBeta?
 callEmbeddings(upstreamModel, bodyWithoutModel, signal?)
 ```
 
-`UpstreamModel.supportedEndpoints` is the source of truth for routing. The
-registry separates public catalog data from execution bindings:
+`UpstreamModel.kind` discriminates the endpoint family (`'chat'` for any
+generation protocol, `'embedding'` for `/embeddings`), and
+`UpstreamModel.upstreamEndpoints` is the precise per-protocol availability
+list used by the chat planner. Both are derived at the producer boundary and
+must stay consistent: `kind === 'embedding'` ⇔ `upstreamEndpoints ===
+['embeddings']`; `kind === 'chat'` ⇒ `upstreamEndpoints ⊂` generation
+endpoints. Embeddings routing in `apps/api/src/data-plane/embeddings/serve.ts`
+gates on `kind === 'embedding'`; chat planning gates on the
+`upstreamEndpoints` list directly.
+
+The registry separates public catalog data from execution bindings:
 
 - `CatalogModel` is the public model-listing DTO. It must not expose provider
   bindings, raw upstream variants, or UI-only provider metadata.
@@ -328,8 +361,14 @@ Each provider attaches pricing per upstream model and resolves
   validated as `input` + `output` paired and `cache_read` / `cache_write`
   independently optional. `getPricingForModelKey` resolves by deployment
   name.
-- `custom`: never priced. `getPricingForModelKey` always returns null;
-  `cost` is never attached to `UpstreamModel`.
+- `custom`: pricing flows through from the upstream `/models` response when
+  it publishes a `cost` block in the same `{input, output, cache_read?,
+  cache_write?}` shape (notably copilot-gateway's own /models output).
+  `getPricingForModelKey` resolves by raw model id against the cached list.
+  Upstreams that omit `cost` are never priced — pricing returns null and
+  no `cost` is attached to `UpstreamModel`. A TODO in
+  `apps/api/src/shared/upstream/custom.ts` tracks future admin-supplied
+  per-model pricing overrides analogous to `AzureDeploymentConfig.cost`.
 
 Public `/models` shapes (`/v1/models`, `/models`, `/v1beta/models`) and
 control-plane `/api/models` expose `cost` directly when present. Cost

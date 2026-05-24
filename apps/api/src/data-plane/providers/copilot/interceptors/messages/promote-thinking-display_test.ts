@@ -28,7 +28,7 @@ const stubProvider = (): ModelProvider => ({
 const stubUpstreamModel = (): UpstreamModel => ({
   id: 'test-model',
   limits: {},
-  supports_generation: true,
+  kind: 'chat',
   upstreamEndpoints: ['messages'],
   enabledFlags: new Set<string>(),
 });

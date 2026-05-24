@@ -1,6 +1,6 @@
 import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
-import type { ModelEndpoint } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint, ModelKind } from '@copilot-gateway/protocols/common';
 
 export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint => {
   switch (target) {
@@ -71,5 +71,11 @@ export const modelEndpointsToPublicPaths = (endpoints: readonly ModelEndpoint[])
   return paths;
 };
 
-export const endpointsIncludeLlmGeneration = (endpoints: readonly ModelEndpoint[]): boolean =>
-  endpoints.includes('messages') || endpoints.includes('responses') || endpoints.includes('chat_completions');
+// Derive the high-level model kind from the upstreamEndpoints list. Each
+// model belongs to exactly one kind: the presence of `'embeddings'` makes it
+// an embedding model; anything else is chat. Providers that produce mixed
+// endpoint lists (e.g. an upstream incorrectly tagging a chat model with both
+// `/embeddings` and `/chat/completions`) are not supported — that's a
+// configuration error, not a multi-kind model.
+export const kindForEndpoints = (endpoints: readonly ModelEndpoint[]): ModelKind =>
+  endpoints.includes('embeddings') ? 'embedding' : 'chat';

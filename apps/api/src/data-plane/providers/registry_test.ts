@@ -177,7 +177,7 @@ test('getInternalModels returns the catalog projection without execution binding
 
       assertEquals(model?.display_name, 'Shared Model');
       assertEquals(Object.hasOwn(model!, 'upstreamEndpoints'), false);
-      assertEquals(model?.supports_generation, true);
+      assertEquals(model?.kind, 'chat');
       assertEquals(Object.hasOwn(model!, 'providers'), false);
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
 

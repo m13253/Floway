@@ -1,7 +1,7 @@
 import type { UpstreamProviderKind } from '../../repo/types.ts';
 import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
 import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint, ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint, ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
 import type { EmbeddingsPayload } from '@copilot-gateway/protocols/embeddings';
 import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
 import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
@@ -13,8 +13,11 @@ import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
 // raw fields stay inside that provider's own types and projections; nothing
 // upstream-shaped leaks onto this neutral type.
 //
-// `supports_generation` is derived from `upstreamEndpoints` at the producer
-// boundary (see endpointsIncludeLlmGeneration).
+// `kind` is the high-level endpoint-family discriminator; `upstreamEndpoints`
+// (on UpstreamModel) is the precise per-protocol availability list used by
+// the planner. They are linked invariants enforced at the producer boundary:
+//   `kind === 'embedding'` ⇔ `upstreamEndpoints === ['embeddings']`
+//   `kind === 'chat'`      ⇒ `upstreamEndpoints ⊂ generation endpoints`.
 export interface InternalModel {
   id: string;
   display_name?: string;
@@ -25,7 +28,7 @@ export interface InternalModel {
     max_context_window_tokens?: number;
     max_prompt_tokens?: number;
   };
-  supports_generation: boolean;
+  kind: ModelKind;
   cost?: ModelPricing;
 }
 

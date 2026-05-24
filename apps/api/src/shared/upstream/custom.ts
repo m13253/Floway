@@ -1,23 +1,48 @@
-// Generic custom OpenAI-compatible upstream — third-party providers that expose
-// /v1/chat/completions, /v1/responses, /v1/embeddings, /v1/models with a
-// static bearer token.
+// Generic custom upstream — any third-party LLM provider that speaks an
+// OpenAI-shaped or Anthropic-shaped HTTP API under a single base URL with a
+// static credential. `authStyle` decides the credential header:
+//   - 'bearer'    -> Authorization: Bearer <token>   (OpenAI, OpenRouter,
+//                                                     copilot-gateway, ...)
+//   - 'anthropic' -> x-api-key: <token> + anthropic-version: 2023-06-01
+//                                                    (api.anthropic.com)
 //
-// The provider's base URL is stored without an API prefix (admin enters
-// e.g. https://api.openai.com); we join it to a per-endpoint path. The
-// default paths follow OpenAI's `/v1/*` layout, but admins can override
-// individual endpoints to handle providers that mount the API under a
-// subpath while still serving e.g. `/models` at the root.
+// The base URL is stored without an API prefix (admin enters e.g.
+// https://api.openai.com); we join it to a per-endpoint path. Default paths
+// follow `/v1/*`, but admins can override individual endpoints to handle
+// providers that mount the API under a subpath while still serving e.g.
+// `/models` at the root.
+//
+// TODO: support admin-supplied per-model pricing overrides (similar to
+// AzureDeploymentConfig.cost). Today, custom pricing is whatever the upstream
+// `/models` response itself reports under a `cost` field.
 
 import { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { UpstreamRecord } from '../../repo/types.ts';
 
+export type CustomAuthStyle = 'bearer' | 'anthropic';
+
 export interface CustomUpstreamConfig {
   baseUrl: string;
   bearerToken: string;
+  authStyle: CustomAuthStyle;
   supportedEndpoints: string[];
   pathOverrides?: Partial<Record<Exclude<EndpointKey, 'messages_count_tokens'>, string>>;
 }
+
+const ANTHROPIC_VERSION = '2023-06-01';
+
+const AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'anthropic']);
+
+const authStyleField = (value: unknown): CustomAuthStyle => {
+  // Records written before authStyle existed default to bearer, matching the
+  // previous fixed behavior.
+  if (value === undefined) return 'bearer';
+  if (typeof value !== 'string' || !AUTH_STYLES.has(value as CustomAuthStyle)) {
+    throw new Error('Malformed custom upstream config: authStyle must be "bearer" or "anthropic"');
+  }
+  return value as CustomAuthStyle;
+};
 
 type CustomUpstreamRecord = UpstreamRecord & {
   provider: 'custom';
@@ -46,16 +71,24 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const SUPPORTED_ENDPOINT_PATHS = new Set(['/chat/completions', '/v1/chat/completions', '/responses', '/v1/responses', '/v1/messages', '/messages', '/embeddings', '/v1/embeddings']);
+// supportedEndpoints declares which chat generation protocols this upstream
+// speaks. Embeddings is implicit: a per-model `kind === 'embedding'`
+// derivation (Tier 1: upstream /models published `kind`; Tier 2: id
+// heuristic) decides per-model whether the embeddings endpoint is used, so
+// `/embeddings` is intentionally NOT a valid entry here.
+const SUPPORTED_ENDPOINT_PATHS = new Set(['/chat/completions', '/v1/chat/completions', '/responses', '/v1/responses', '/v1/messages', '/messages']);
 
 const supportedEndpointsField = (value: unknown): string[] => {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error('Malformed custom upstream config: supportedEndpoints must be a non-empty string array');
+  // Empty is allowed: an upstream that only serves embedding models has no
+  // chat protocol to declare. supportedEndpoints stays an array contract so
+  // the storage shape is uniform across upstreams.
+  if (!Array.isArray(value)) {
+    throw new Error('Malformed custom upstream config: supportedEndpoints must be a string array');
   }
 
   const endpoints: string[] = [];
   for (const item of value) {
-    if (typeof item !== 'string') throw new Error('Malformed custom upstream config: supportedEndpoints must be a non-empty string array');
+    if (typeof item !== 'string') throw new Error('Malformed custom upstream config: supportedEndpoints must be a string array');
     if (!SUPPORTED_ENDPOINT_PATHS.has(item)) {
       throw new Error(`Malformed custom upstream config: unsupported supportedEndpoints entry ${item}`);
     }
@@ -92,6 +125,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     config: {
       baseUrl: baseUrlField(record.config.baseUrl),
       bearerToken: nonEmptyStringField(record.config.bearerToken, 'bearerToken'),
+      authStyle: authStyleField(record.config.authStyle),
       supportedEndpoints: supportedEndpointsField(record.config.supportedEndpoints),
       ...(record.config.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(record.config.pathOverrides) } : {}),
     },
@@ -127,7 +161,12 @@ export const createCustomUpstream = (record: UpstreamRecord): Upstream => {
     supportedEndpoints: config.supportedEndpoints,
     fetch: async (endpoint, init: RequestInit, options?: UpstreamFetchOptions) => {
       const headers = new Headers(init.headers);
-      headers.set('Authorization', `Bearer ${config.bearerToken}`);
+      if (config.authStyle === 'anthropic') {
+        headers.set('x-api-key', config.bearerToken);
+        if (!headers.has('anthropic-version')) headers.set('anthropic-version', ANTHROPIC_VERSION);
+      } else {
+        headers.set('Authorization', `Bearer ${config.bearerToken}`);
+      }
       if (init.body && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }

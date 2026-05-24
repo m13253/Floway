@@ -18,7 +18,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',
-    supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages', '/embeddings'],
+    supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages'],
   },
   ...overrides,
 });
@@ -36,7 +36,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       if (path === '/v1/models') {
         return jsonResponse({
           object: 'list',
-          data: [{ id: 'echo', object: 'model', supported_endpoints: ['/chat/completions', '/responses', '/v1/messages', '/v1/messages/count_tokens', '/embeddings'] }],
+          data: [{ id: 'echo', object: 'model' }],
         });
       }
 
@@ -184,4 +184,79 @@ test('Custom provider throws ProviderModelsUnavailableError when fetch fails bey
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
   assertEquals(thrown.httpResponse?.status, 429);
+});
+
+test('Custom provider uses configured supportedEndpoints regardless of per-model hints in the /models response', async () => {
+  await setupAppTest();
+  clearModelsStore();
+
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'm-1', supported_endpoints: ['/some/random/path'] }],
+    }),
+    async () => {
+      const provider = createCustomProvider(baseRecord({
+        id: 'up_custom_endpoints',
+        config: {
+          baseUrl: 'https://custom.example.com',
+          bearerToken: 'sk-test',
+          supportedEndpoints: ['/chat/completions'],
+        },
+      })).provider;
+      const [model] = await provider.getProvidedModels();
+      assertEquals([...model.upstreamEndpoints], ['chat_completions']);
+      assertEquals(model.kind, 'chat');
+    },
+  );
+});
+
+test('Custom provider projects display_name / created / limits / cost from a copilot-gateway-style /models response', async () => {
+  await setupAppTest();
+  clearModelsStore();
+
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{
+        id: 'm-rich',
+        type: 'model',
+        display_name: 'Rich Model',
+        created_at: '2026-04-01T00:00:00Z',
+        limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
+        cost: { input: 3, output: 15, cache_read: 0.3 },
+      }],
+    }),
+    async () => {
+      const instance = createCustomProvider(baseRecord({ id: 'up_custom_rich' }));
+      const [model] = await instance.provider.getProvidedModels();
+      assertEquals(model.display_name, 'Rich Model');
+      // 2026-04-01T00:00:00Z → 1774569600
+      assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
+      assertEquals(model.limits.max_output_tokens, 8192);
+      assertEquals(model.limits.max_context_window_tokens, 200000);
+      assertEquals(model.cost?.input, 3);
+      assertEquals(model.cost?.output, 15);
+      assertEquals(model.cost?.cache_read, 0.3);
+
+      const pricing = instance.provider.getPricingForModelKey('m-rich');
+      assertEquals(pricing?.input, 3);
+      assertEquals(pricing?.output, 15);
+
+      assertEquals(instance.provider.getPricingForModelKey('unknown'), null);
+    },
+  );
+});
+
+test('Custom provider falls back to `name` when display_name is missing (loose OpenAI-compat upstreams)', async () => {
+  await setupAppTest();
+  clearModelsStore();
+
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [{ id: 'm-named', name: 'Named Model' }] }),
+    async () => {
+      const [model] = await createCustomProvider(baseRecord({ id: 'up_custom_named' })).provider.getProvidedModels();
+      assertEquals(model.display_name, 'Named Model');
+    },
+  );
 });

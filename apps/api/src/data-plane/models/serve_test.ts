@@ -77,7 +77,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           object?: string;
           type?: string;
           display_name?: string;
-          supports_generation?: boolean;
+          kind?: 'chat' | 'embedding';
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;
@@ -110,7 +110,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       assertEquals(claude.object, 'model');
       assertEquals(claude.type, 'model');
       assertEquals(claude.display_name, 'Claude Sonnet 4');
-      assertEquals(claude.supports_generation, true);
+      assertEquals(claude.kind, 'chat');
       assertEquals(claude.limits, {});
       assertEquals(claude.capabilities, undefined);
 
@@ -234,7 +234,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             type: 'model',
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
-            supports_generation: true,
+            kind: 'chat',
             cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
           },
           {
@@ -243,7 +243,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             type: 'model',
             display_name: 'embedding-only',
             limits: {},
-            supports_generation: false,
+            kind: 'embedding',
           },
         ],
       });

@@ -9,6 +9,22 @@ export interface ModelPricing {
   cache_write?: number;
 }
 
+// High-level endpoint-family discriminator. A model belongs to exactly one
+// kind; cross-cutting features (vision, function calling, structured outputs)
+// are orthogonal and modeled separately when needed.
+//
+// Convention borrowed from Together AI's `type` field on /models
+// (https://docs.together.ai/reference/models-1): a single string enum is
+// the cleanest signal across providers, since each model id in practice maps
+// to one endpoint family (OpenAI gpt-* vs text-embedding-*; Cohere command-*
+// vs embed-*; Voyage's catalog is all embeddings; Mistral mistral-large vs
+// mistral-embed; etc.). We renamed `type` to `kind` to avoid colliding with
+// Anthropic's `type: 'model'` object discriminator already on PublicModel.
+//
+// Extend with 'audio_transcription' | 'audio_speech' | 'image_generation' |
+// 'moderation' | 'rerank' if/when the gateway routes those endpoint families.
+export type ModelKind = 'chat' | 'embedding';
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -28,7 +44,7 @@ export interface PublicModel {
     max_context_window_tokens?: number;
     max_prompt_tokens?: number;
   };
-  supports_generation: boolean;
+  kind: ModelKind;
   cost?: ModelPricing;
 }
 

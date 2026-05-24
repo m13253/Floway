@@ -272,7 +272,7 @@ export function dashboardAssets() {
         }
 
         function modelSupportsGeneration(model) {
-          return model.supports_generation === true;
+          return model.kind === 'chat';
         }
 
         function claudeTier(id) {
@@ -306,7 +306,7 @@ export function dashboardAssets() {
           return am !== bm ? am - bm : b.localeCompare(a);
         }
 
-        const UPSTREAM_ENDPOINTS = ['/chat/completions', '/responses', '/v1/messages', '/embeddings'];
+        const UPSTREAM_ENDPOINTS = ['/chat/completions', '/responses', '/v1/messages'];
         const UPSTREAM_ENDPOINT_LABELS = {
           '/chat/completions': 'Chat',
           '/responses': 'Responses',
@@ -542,6 +542,7 @@ export function dashboardAssets() {
             error: null,
             baseUrl: '',
             bearerToken: '',
+            authStyle: 'bearer',
             supportedEndpoints: provider === 'custom' ? ['/chat/completions'] : [],
             pathOverrides: blankPathOverrides(),
             pathOverridesOpen: false,
@@ -902,7 +903,6 @@ export function dashboardAssets() {
               const data = rawData.map(m => ({
                 ...m,
                 name: m.display_name || m.id,
-                supports_generation: modelSupportsGeneration(m),
               }));
 
               this.allModels = data;
@@ -919,10 +919,10 @@ export function dashboardAssets() {
               const dedupeIds = ms => [...new Set(ms.map(m => m.id))];
 
               this.claudeContextMap = Object.fromEntries(
-                data.filter(m => m.id.startsWith('claude-') && m.supports_generation).map(m => [m.id, modelContextWindow(m)]),
+                data.filter(m => m.id.startsWith('claude-') && modelSupportsGeneration(m)).map(m => [m.id, modelContextWindow(m)]),
               );
 
-              const claudeIds = dedupeIds(data.filter(m => m.id.startsWith('claude-') && m.supports_generation));
+              const claudeIds = dedupeIds(data.filter(m => m.id.startsWith('claude-') && modelSupportsGeneration(m)));
               this.claudeModelsBig = [...claudeIds].sort(sortClaudeBig);
               this.claudeModelsSonnet = [...claudeIds].sort(sortClaudeSonnet);
               this.claudeModelsSmall = [...claudeIds].sort(sortClaudeSmall);
@@ -933,7 +933,7 @@ export function dashboardAssets() {
               // Codex CLI talks the Responses protocol. The data plane
               // translates between protocols at runtime, so any
               // generation-capable gpt-*/codex-* id qualifies.
-              const codexCapable = data.filter(m => (m.id.startsWith('gpt-') || m.id.startsWith('codex-')) && m.supports_generation);
+              const codexCapable = data.filter(m => (m.id.startsWith('gpt-') || m.id.startsWith('codex-')) && modelSupportsGeneration(m));
               this.codexModels = dedupeIds(codexCapable).sort(sortCodex);
               this.codexModel = this.codexModels[0] || '';
 
@@ -1200,6 +1200,7 @@ export function dashboardAssets() {
             if (existing.provider === 'custom') {
               const overrides = { ...blankPathOverrides(), ...(config.pathOverrides ?? {}) };
               modal.baseUrl = config.baseUrl || '';
+              modal.authStyle = config.authStyle === 'anthropic' ? 'anthropic' : 'bearer';
               modal.supportedEndpoints = Array.isArray(config.supportedEndpoints) ? [...config.supportedEndpoints] : ['/chat/completions'];
               modal.pathOverrides = overrides;
             } else if (existing.provider === 'azure') {
@@ -1407,6 +1408,7 @@ export function dashboardAssets() {
             }
             const config = {
               baseUrl: this.upstreamModal.baseUrl,
+              authStyle: this.upstreamModal.authStyle === 'anthropic' ? 'anthropic' : 'bearer',
               supportedEndpoints: this.upstreamModal.supportedEndpoints,
             };
             if (Object.keys(overrides).length > 0) config.pathOverrides = overrides;

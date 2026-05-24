@@ -108,6 +108,78 @@ test('createCustomUpstream sends the configured bearer token', async () => {
   assertEquals(authHeader, 'Bearer sk-test');
 });
 
+test('createCustomUpstream defaults authStyle to bearer when omitted', async () => {
+  const upstream = createCustomUpstream(baseRecord);
+  let authHeader: string | null = null;
+  let xApiKey: string | null = null;
+  await withMockedFetch(
+    request => {
+      authHeader = request.headers.get('authorization');
+      xApiKey = request.headers.get('x-api-key');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await upstream.fetch('models', { method: 'GET' });
+    },
+  );
+
+  assertEquals(authHeader, 'Bearer sk-test');
+  assertEquals(xApiKey, null);
+});
+
+test('createCustomUpstream with authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
+  const upstream = createCustomUpstream({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      authStyle: 'anthropic',
+    },
+  });
+  let authHeader: string | null = null;
+  let xApiKey: string | null = null;
+  let anthropicVersion: string | null = null;
+  await withMockedFetch(
+    request => {
+      authHeader = request.headers.get('authorization');
+      xApiKey = request.headers.get('x-api-key');
+      anthropicVersion = request.headers.get('anthropic-version');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await upstream.fetch('messages', { method: 'POST', body: '{}' });
+    },
+  );
+
+  assertEquals(authHeader, null);
+  assertEquals(xApiKey, 'sk-test');
+  assertEquals(anthropicVersion, '2023-06-01');
+});
+
+test('createCustomUpstream with authStyle "anthropic" preserves a caller-supplied anthropic-version', async () => {
+  const upstream = createCustomUpstream({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      authStyle: 'anthropic',
+    },
+  });
+  let anthropicVersion: string | null = null;
+  await withMockedFetch(
+    request => {
+      anthropicVersion = request.headers.get('anthropic-version');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await upstream.fetch(
+        'messages',
+        { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
+      );
+    },
+  );
+
+  assertEquals(anthropicVersion, '2024-01-01');
+});
+
 test('createCustomUpstream rejects malformed opaque config instead of dropping endpoints', () => {
   assertThrows(
     () =>
@@ -146,5 +218,18 @@ test('createCustomUpstream rejects malformed opaque config instead of dropping e
       }),
     Error,
     'baseUrl must be an http(s) URL',
+  );
+
+  assertThrows(
+    () =>
+      createCustomUpstream({
+        ...baseRecord,
+        config: {
+          ...(baseRecord.config as Record<string, unknown>),
+          authStyle: 'apiKey',
+        },
+      }),
+    Error,
+    'authStyle must be "bearer" or "anthropic"',
   );
 });

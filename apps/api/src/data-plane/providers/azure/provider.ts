@@ -1,7 +1,7 @@
 import type { UpstreamRecord } from '../../../repo/types.ts';
 import { assertAzureUpstreamRecord, createAzureUpstream, type AzureDeploymentConfig } from '../../../shared/upstream/azure.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { endpointsIncludeLlmGeneration, isStreamingEndpoint, publicPathsToModelEndpoints } from '../endpoints.ts';
+import { isStreamingEndpoint, kindForEndpoints, publicPathsToModelEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
@@ -24,10 +24,9 @@ const withMessagesCountTokens = (endpoints: readonly ModelEndpoint[]): ModelEndp
 const azureDeploymentEndpoints = (deployment: AzureDeploymentConfig): ModelEndpoint[] => withMessagesCountTokens(publicPathsToModelEndpoints(deployment.supportedEndpoints));
 
 // Project an Azure deployment config row into the slim provider-neutral fields.
-// supports_generation/upstreamEndpoints/providerData/enabledFlags are added by
-// the caller.
-const azureInternalModel = (deployment: AzureDeploymentConfig): Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
-  const internal: Omit<UpstreamModel, 'supports_generation' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
+// kind/upstreamEndpoints/providerData/enabledFlags are added by the caller.
+const azureInternalModel = (deployment: AzureDeploymentConfig): Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
+  const internal: Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
     id: publicModelId(deployment),
     limits: { ...(deployment.limits ?? {}) },
   };
@@ -66,7 +65,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
         const upstreamEndpoints = azureDeploymentEndpoints(deployment);
         return {
           ...azureInternalModel(deployment),
-          supports_generation: endpointsIncludeLlmGeneration(upstreamEndpoints),
+          kind: kindForEndpoints(upstreamEndpoints),
           upstreamEndpoints,
           providerData: {
             deployment: deployment.deployment,

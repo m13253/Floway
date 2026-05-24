@@ -9,7 +9,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
     type: 'model',
     display_name: model.display_name ?? model.id,
     limits: { ...model.limits },
-    supports_generation: model.supports_generation,
+    kind: model.kind,
   };
   if (model.owned_by !== undefined) info.owned_by = model.owned_by;
   if (model.created !== undefined) {
