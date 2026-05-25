@@ -4,12 +4,14 @@
 
 import { withResponsesToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withConnectionMismatchRetried } from './retry-connection-mismatch.ts';
+import { withImageGenerationStripped } from './strip-image-generation.ts';
 import { withServiceTierStripped } from './strip-service-tier.ts';
 import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 
 export const responsesCopilotInterceptors = [
   withServiceTierStripped,
+  withImageGenerationStripped,
   withConnectionMismatchRetried,
   withOutputItemIdsSynchronized,
   withResponsesToolArgumentWhitespaceAborted,
