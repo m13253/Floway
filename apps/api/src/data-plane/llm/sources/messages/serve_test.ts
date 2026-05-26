@@ -1468,9 +1468,16 @@ test('/v1/messages falls back to chat completions and translates both directions
       assertEquals(body.stop_reason, 'tool_use');
       assertEquals(body.usage.input_tokens, 35);
       assertEquals(body.usage.cache_read_input_tokens, 5);
+      // Block order: thinking → tool_use → text. The same chunk carried
+      // both `content` and `tool_calls`; aligning with caozhiyuan's
+      // handleContent (isToolBlockOpen || hasToolCallDelta) defers the
+      // text so it lands AFTER the tool_use block rather than around it.
+      // See:
+      // https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240
       assertEquals(body.content[0].type, 'thinking');
-      assertEquals(body.content[1].type, 'text');
-      assertEquals(body.content[2].type, 'tool_use');
+      assertEquals(body.content[1].type, 'tool_use');
+      assertEquals(body.content[2].type, 'text');
+      assertEquals(body.content[2].text, 'Need a tool');
     },
   );
 
