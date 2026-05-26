@@ -5,8 +5,10 @@
 import { withAnthropicBetaHeaderFiltered } from './filter-anthropic-beta-header.ts';
 import { withThinkingDisplayPromoted } from './promote-thinking-display.ts';
 import { rewriteContextWindowError } from './rewrite-context-window-error.ts';
+import { withClaudeAgentHeadersSet } from './set-claude-agent-headers.ts';
 import { withCompactHeadersSet } from './set-compact-headers.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
+import { withInteractionIdHeaderSet } from './set-interaction-id-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import { withCacheControlScopeStripped } from './strip-cache-control-scope.ts';
@@ -18,10 +20,18 @@ import type { MessagesCountTokensInterceptor, MessagesInterceptor } from '../../
 // via the unified source-side optional table (filtered by enabled flags); the
 // Copilot provider opts in by listing `messages-web-search-shim` in its
 // default flag set (see COPILOT_DEFAULT_FLAGS in ../../provider.ts).
+//
+// Order matters: `withCompactHeadersSet` pins the compact/auto-continue
+// intents first; `withClaudeAgentHeadersSet` then overrides those intents
+// (and the user-agent / copilot-integration-id) for Claude Code SDK proxy
+// traffic; `withInteractionIdHeaderSet` finally sets `x-interaction-id`
+// from the same parsed metadata.
 export const messagesCopilotSourceInterceptors = [
   stripBillingAttribution,
   rewriteContextWindowError,
   withCompactHeadersSet,
+  withClaudeAgentHeadersSet,
+  withInteractionIdHeaderSet,
 ] as const satisfies readonly MessagesInterceptor[];
 
 // Order matters: payload-mutating interceptors run first so the header

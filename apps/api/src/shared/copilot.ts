@@ -26,6 +26,11 @@ const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
 const COPILOT_API_VERSION = '2026-01-09';
 const GITHUB_API_VERSION = '2025-04-01';
 
+// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path, used
+// by `withClaudeAgentHeadersSet` when we detect Claude Code traffic. Bump this
+// alongside COPILOT_VERSION when caozhiyuan/copilot-api upgrades it upstream.
+export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
+
 // Stable per-isolate device id, like real VSCode generates once per install.
 // Initialized lazily on first use because Workers forbid crypto.randomUUID()
 // (and other async I/O / random / timers) in module-global scope.

@@ -3586,3 +3586,85 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
     },
   );
 });
+
+// Regression: when the Messages source translates to a non-Messages upstream
+// target (Responses / Chat Completions), the source-side header interceptors
+// (compact / claude-agent / interaction-id) mutate the original Messages
+// invocation's `headers` bag. Each translated emit must share that same bag
+// by reference so the upstream HTTP call observes the mutations.
+test('/v1/messages threads Claude Code messages-proxy headers through translated /chat/completions target', async () => {
+  const { apiKey } = await setupAppTest();
+  let upstreamHeaders: Headers | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat-only', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') {
+        upstreamHeaders = request.headers;
+        return sseResponse([
+          {
+            data: {
+              id: 'chatcmpl_header_thread',
+              object: 'chat.completion.chunk',
+              created: 1,
+              model: 'gpt-chat-only',
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: 'assistant', content: 'ok' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 5, completion_tokens: 1 },
+            },
+          },
+          { data: '[DONE]' },
+        ]);
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-chat-only',
+          max_tokens: 16,
+          stream: false,
+          // The Claude Code SDK metadata fingerprint triggers
+          // `withClaudeAgentHeadersSet` and `withInteractionIdHeaderSet`.
+          metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-r1' }) },
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertExists(upstreamHeaders);
+  // `messages-proxy` intent + interaction-id should reach the translated Chat
+  // Completions upstream call exactly as they would reach a native Messages
+  // call.
+  assertEquals(upstreamHeaders!.get('x-interaction-type'), 'messages-proxy');
+  assertEquals(upstreamHeaders!.get('openai-intent'), 'messages-proxy');
+  // x-interaction-id is the SHA-256 of the raw session id formatted as a
+  // UUIDv4 (matches caozhiyuan's getUUID); 'sess-r1' deterministically maps
+  // to this value.
+  assertEquals(upstreamHeaders!.get('x-interaction-id'), '382a0257-708e-4a7e-8be2-362b27fdbbbb');
+});
