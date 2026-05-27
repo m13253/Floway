@@ -44,13 +44,17 @@ export const bodyAnthropicBetaResponse = (param: string): Response =>
     { status: 400 },
   );
 
-// `headers` is intentionally passed by reference: source-side Copilot
-// interceptors (compact / claude-agent / interaction-id) mutate the original
-// Messages invocation's `headers` bag, and the planner may pick a non-Messages
-// target (Responses or Chat Completions). Each translated emit closure
-// rebuilds an invocation in the target shape — without sharing the same
-// `headers` reference, those source-side mutations would land on the dropped
-// Messages invocation and never reach the upstream HTTP call.
+// `headers` is intentionally passed by reference: target-portable source-side
+// Copilot interceptors (compact / interaction-id) mutate the original Messages
+// invocation's `headers` bag, and the planner may pick a non-Messages target
+// (Responses or Chat Completions). Each translated emit closure rebuilds an
+// invocation in the target shape — without sharing the same `headers`
+// reference, those source-side mutations would land on the dropped Messages
+// invocation and never reach the upstream HTTP call.
+//
+// Native Messages-only identity rewrites, such as Claude Code's messages-proxy
+// header shape, must gate on `targetApi === 'messages'` inside the interceptor
+// before writing into this shared bag.
 //
 // `anthropicBeta` deliberately does NOT cross protocols: it is an inbound
 // Messages concept, and the Responses / Chat Completions target emitters do

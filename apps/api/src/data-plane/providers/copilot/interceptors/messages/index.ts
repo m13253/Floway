@@ -22,11 +22,13 @@ import type { MessagesCountTokensInterceptor, MessagesInterceptor } from '../../
 // Copilot provider opts in by listing `messages-web-search-shim` in its
 // default flag set (see COPILOT_DEFAULT_FLAGS in ../../provider.ts).
 //
-// Order matters: `withCompactHeadersSet` pins the compact/auto-continue
-// intents first; `withClaudeAgentHeadersSet` then overrides those intents
-// (and the user-agent / copilot-integration-id) for Claude Code SDK proxy
-// traffic; `withInteractionIdHeaderSet` finally sets `x-interaction-id`
-// from the same parsed metadata.
+// Order matters on native Messages targets: `withCompactHeadersSet` pins the
+// compact/auto-continue intents first; `withClaudeAgentHeadersSet` then
+// overrides those intents (and the user-agent / copilot-integration-id) for
+// Claude Code SDK proxy traffic; `withInteractionIdHeaderSet` finally sets
+// `x-interaction-id` from the same parsed metadata. Translated non-Messages
+// targets keep the regular Copilot identity while still receiving portable
+// compact / interaction-id headers.
 export const messagesCopilotSourceInterceptors = [
   stripBillingAttribution,
   rewriteContextWindowError,

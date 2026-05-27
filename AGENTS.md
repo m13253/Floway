@@ -384,6 +384,15 @@ endpoint projection, `anthropic-beta` filtering, and Copilot upstream request
 fixes. Generic source/target pipelines execute registered interceptor lists but
 do not choose behavior based on provider kind.
 
+Claude Code `metadata.user_id` is parsed only as Copilot provider metadata. It
+may derive a stable `x-interaction-id` for any Messages-source Copilot binding,
+but the full Claude Code `messages-proxy` identity (`openai-intent` /
+`x-interaction-type`, Claude Code user-agent, and deleted
+`copilot-integration-id`) belongs only on native Messages targets. Translated
+Messages -> Chat Completions / Responses calls must keep the normal Copilot
+target identity so Copilot does not apply Claude Code integrator model policy to
+non-Claude target protocols.
+
 `UpstreamModel.enabledFlags` is the effective flag set for that single model,
 computed by `resolveEffectiveFlags(defaultsForProvider(providerKind),
 [upstream.flagOverrides, deployment.flagOverrides?.enabled ?

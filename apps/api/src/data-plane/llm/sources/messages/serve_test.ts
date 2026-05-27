@@ -3657,12 +3657,11 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
   );
 });
 
-// Regression: when the Messages source translates to a non-Messages upstream
-// target (Responses / Chat Completions), the source-side header interceptors
-// (compact / claude-agent / interaction-id) mutate the original Messages
-// invocation's `headers` bag. Each translated emit must share that same bag
-// by reference so the upstream HTTP call observes the mutations.
-test('/v1/messages threads Claude Code messages-proxy headers through translated /chat/completions target', async () => {
+// Regression: `messages-proxy` is a native Messages-path identity. If it leaks
+// onto a translated Chat Completions call, Copilot applies its claude-code
+// integrator model policy and rejects non-Claude chat models that are otherwise
+// available to the normal vscode-chat integrator.
+test('/v1/messages keeps vscode-chat identity for Claude Code metadata on translated /chat/completions target', async () => {
   const { apiKey } = await setupAppTest();
   let upstreamHeaders: Headers | undefined;
 
@@ -3728,13 +3727,13 @@ test('/v1/messages threads Claude Code messages-proxy headers through translated
   );
 
   assertExists(upstreamHeaders);
-  // `messages-proxy` intent + interaction-id should reach the translated Chat
-  // Completions upstream call exactly as they would reach a native Messages
-  // call.
-  assertEquals(upstreamHeaders!.get('x-interaction-type'), 'messages-proxy');
-  assertEquals(upstreamHeaders!.get('openai-intent'), 'messages-proxy');
+  assertEquals(upstreamHeaders!.get('x-interaction-type'), 'conversation-agent');
+  assertEquals(upstreamHeaders!.get('openai-intent'), 'conversation-agent');
+  assertEquals(upstreamHeaders!.get('copilot-integration-id'), 'vscode-chat');
+  assertEquals(upstreamHeaders!.get('user-agent'), 'GitHubCopilotChat/0.47.1');
   // x-interaction-id is the SHA-256 of the raw session id formatted as a
   // UUIDv4 (matches caozhiyuan's getUUID); 'sess-r1' deterministically maps
-  // to this value.
+  // to this value. It is safe to keep on the translated target because it
+  // carries trace correlation, not an integrator identity.
   assertEquals(upstreamHeaders!.get('x-interaction-id'), '382a0257-708e-4a7e-8be2-362b27fdbbbb');
 });
