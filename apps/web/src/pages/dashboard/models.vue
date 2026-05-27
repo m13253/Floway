@@ -26,7 +26,7 @@ const chatModelId = ref<string>('');
 const chatPanelRef = useTemplateRef<InstanceType<typeof ChatPanel>>('chatPanel');
 
 const filteredChatModels = computed(() => {
-  const list = (models.value ?? []).filter(m => m.kind !== 'embedding');
+  const list = (models.value ?? []).filter(m => m.kind === 'chat');
   const needle = modelsSearch.value.trim().toLowerCase();
   if (!needle) return list;
   return list.filter(m => m.id.toLowerCase().includes(needle) || (m.display_name?.toLowerCase().includes(needle) ?? false));

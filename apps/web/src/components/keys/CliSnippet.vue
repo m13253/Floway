@@ -40,11 +40,11 @@ const sortCodex = (a: string, b: string) => {
   return am !== bm ? am - bm : b.localeCompare(a);
 };
 
-const isGeneration = (m: ControlPlaneModel) => m.kind !== 'embedding';
+const isChat = (m: ControlPlaneModel) => m.kind === 'chat';
 const dedupe = (arr: string[]) => [...new Set(arr)];
 
-const claudeIds = computed(() => dedupe(props.models.filter(m => m.id.startsWith('claude-') && isGeneration(m)).map(m => m.id)));
-const codexIds = computed(() => dedupe(props.models.filter(m => (m.id.startsWith('gpt-') || m.id.startsWith('codex-')) && isGeneration(m)).map(m => m.id)));
+const claudeIds = computed(() => dedupe(props.models.filter(m => m.id.startsWith('claude-') && isChat(m)).map(m => m.id)));
+const codexIds = computed(() => dedupe(props.models.filter(m => (m.id.startsWith('gpt-') || m.id.startsWith('codex-')) && isChat(m)).map(m => m.id)));
 
 const claudeModelsBig = computed(() => [...claudeIds.value].sort(sortClaudeBig));
 const claudeModelsSonnet = computed(() => [...claudeIds.value].sort(sortClaudeSonnet));
@@ -70,7 +70,7 @@ watchEffect(() => {
 const contextById = computed(() => {
   const map = new Map<string, number>();
   for (const m of props.models) {
-    if (!m.id.startsWith('claude-') || !isGeneration(m)) continue;
+    if (!m.id.startsWith('claude-') || !isChat(m)) continue;
     const lim = m.limits;
     const ctx = lim?.max_context_window_tokens ?? ((lim?.max_prompt_tokens ?? 0) + (lim?.max_output_tokens ?? 0));
     map.set(m.id, ctx);

@@ -89,7 +89,7 @@ export interface PublicModel {
   limits?: ModelLimits;
   endpoints?: Record<string, ModelEndpointInfo>;
   cost?: { input: number; output: number; cache_read?: number; cache_write?: number };
-  kind?: 'chat' | 'embedding';
+  kind?: 'chat' | 'embedding' | 'image';
 }
 
 export interface ControlPlaneModel extends PublicModel {
