@@ -50,7 +50,7 @@ export type ResponseInputItem =
   | ResponseToolSearchCallItem
   | ResponseToolSearchOutputItem
   | ResponseCompactionItem
-  | ResponseImageGenerationCallItem
+  | ResponseInputImageGenerationCall
   | ResponseCodeInterpreterCallItem
   | ResponseLocalShellCallItem
   | ResponseLocalShellCallOutputItem
@@ -184,11 +184,6 @@ export interface ResponseToolSearchOutputItem extends ResponsePermissiveItem<'to
 
 export type ResponseCompactionItem = ResponsePermissiveItem<'compaction'>;
 
-export interface ResponseImageGenerationCallItem extends ResponsePermissiveItem<'image_generation_call'> {
-  call_id?: string;
-  result?: unknown;
-}
-
 export interface ResponseCodeInterpreterCallItem extends ResponsePermissiveItem<'code_interpreter_call'> {
   call_id?: string;
   code?: string;
@@ -243,6 +238,14 @@ export interface ResponseMcpApprovalRequestItem extends ResponsePermissiveItem<'
 export interface ResponseMcpApprovalResponseItem extends ResponsePermissiveItem<'mcp_approval_response'> {
   call_id?: string;
   output?: unknown;
+}
+
+export interface ResponseInputImageGenerationCall {
+  type: 'image_generation_call';
+  id?: string;
+  status?: 'completed' | 'in_progress' | 'generating' | 'failed';
+  result?: string;
+  revised_prompt?: string;
 }
 
 export interface ResponseFunctionTool {
@@ -376,7 +379,6 @@ export type ResponseOutputItem =
   | ResponseToolSearchCallItem
   | ResponseToolSearchOutputItem
   | ResponseCompactionItem
-  | ResponseImageGenerationCallItem
   | ResponseCodeInterpreterCallItem
   | ResponseLocalShellCallItem
   | ResponseLocalShellCallOutputItem
@@ -387,7 +389,8 @@ export type ResponseOutputItem =
   | ResponseMcpCallItem
   | ResponseMcpListToolsItem
   | ResponseMcpApprovalRequestItem
-  | ResponseMcpApprovalResponseItem;
+  | ResponseMcpApprovalResponseItem
+  | ResponseOutputImageGenerationCall;
 
 export interface ResponseOutputMessage {
   type: 'message';
@@ -468,6 +471,15 @@ export interface ResponseOutputWebSearchCall {
   // action shape (search vs open_page vs find_in_page) is known.
   action?: ResponseWebSearchAction;
   results?: ResponseWebSearchResult[];
+}
+
+export interface ResponseOutputImageGenerationCall {
+  type: 'image_generation_call';
+  id: string;
+  status: 'in_progress' | 'generating' | 'completed' | 'failed';
+  result?: string;
+  revised_prompt?: string;
+  error?: { message: string; code: string };
 }
 
 // ── Stream event types ──
@@ -575,6 +587,28 @@ export type ResponseStreamEvent =
     item_id: string;
   }
   | {
+    type: 'response.image_generation_call.in_progress';
+    output_index: number;
+    item_id: string;
+  }
+  | {
+    type: 'response.image_generation_call.generating';
+    output_index: number;
+    item_id: string;
+  }
+  | {
+    type: 'response.image_generation_call.partial_image';
+    output_index: number;
+    item_id: string;
+    partial_image_index: number;
+    partial_image_b64: string;
+  }
+  | {
+    type: 'response.image_generation_call.completed';
+    output_index: number;
+    item_id: string;
+  }
+  | {
     type: 'response.function_call_arguments.delta';
     item_id: string;
     output_index: number;
@@ -660,4 +694,5 @@ export const isResponsesTerminalEvent = (event: Pick<ResponseStreamEvent, 'type'
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
 export { responsesResultToEvents } from './from-result.ts';
+export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';

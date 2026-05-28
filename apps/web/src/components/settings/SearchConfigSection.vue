@@ -6,6 +6,8 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { SearchConfig } from '../../api/types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 
+import SecretInput from '../shared/SecretInput.vue';
+
 interface SearchTestResult {
   ok: boolean;
   provider: string;
@@ -167,10 +169,8 @@ const testSearchConfig = async () => {
 
       <div>
         <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">{{ searchCredentialLabel }}</label>
-        <Input
+        <SecretInput
           v-if="draft.provider !== 'disabled'"
-          type="password"
-          autocomplete="off"
           :placeholder="draft.provider === 'tavily' ? 'Tavily API key' : 'Microsoft Grounding API key'"
           :model-value="searchCredentialValue"
           class="w-full"

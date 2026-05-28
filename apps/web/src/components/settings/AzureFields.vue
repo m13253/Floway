@@ -6,6 +6,8 @@ import { computed, onMounted, ref, useTemplateRef, watch } from 'vue';
 
 import type { AzureDeployment, FlagDef } from '../../api/types.ts';
 
+import SecretInput from '../shared/SecretInput.vue';
+
 import AzureDeploymentsEditor from './AzureDeploymentsEditor.vue';
 
 // Deployment-array state lives in the draft so the parent dialog can read it
@@ -122,9 +124,7 @@ onMounted(() => {
         <label class="mb-1.5 block text-xs font-medium text-gray-500">
           {{ apiKeySet ? 'API Key (leave blank to keep)' : 'API Key' }}
         </label>
-        <Input
-          type="password"
-          autocomplete="off"
+        <SecretInput
           :model-value="draft.apiKey"
           :placeholder="apiKeySet ? '••••••••' : 'xxxxx'"
           class="font-mono"

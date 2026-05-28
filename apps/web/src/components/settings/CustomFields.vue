@@ -4,6 +4,8 @@ import { computed, ref } from 'vue';
 
 import type { CustomEndpoint } from '../../api/types.ts';
 
+import SecretInput from '../shared/SecretInput.vue';
+
 import Accordion from './Accordion.vue';
 
 // pathOverrides are keyed by the endpoint family ('chat_completions',
@@ -75,9 +77,7 @@ const bearerPlaceholder = computed(() => {
       </div>
       <div>
         <label class="mb-1.5 block text-xs font-medium text-gray-500">{{ bearerLabel }}</label>
-        <Input
-          type="password"
-          autocomplete="off"
+        <SecretInput
           :model-value="draft.bearerToken"
           :placeholder="bearerPlaceholder"
           class="font-mono"
