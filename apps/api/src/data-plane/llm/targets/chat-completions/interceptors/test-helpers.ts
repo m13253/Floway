@@ -12,7 +12,6 @@ export const chatCompletionsInvocation = (payload: ChatCompletionsPayload, enabl
   upstreamModel: stubUpstreamModel(),
   provider: stubProvider(),
   enabledFlags,
-  responsesNewItems: [],
   payload,
   headers: {},
 });

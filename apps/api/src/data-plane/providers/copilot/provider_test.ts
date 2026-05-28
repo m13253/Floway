@@ -393,7 +393,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       upstreamModel: model,
       provider,
       enabledFlags: model.enabledFlags,
-      responsesNewItems: [],
       payload: { ...body, model: model.id },
       headers: {},
     };

@@ -58,7 +58,6 @@ export const countTokens = async (c: Context) => {
         provider: binding.provider,
         enabledFlags: binding.enabledFlags,
         ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-        responsesNewItems: [],
         payload: attemptPayload,
         headers: {},
         ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),

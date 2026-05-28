@@ -89,13 +89,21 @@ test('memory responses items repo clones item JSON at the repo boundary', async 
   assertEquals((await repo.lookupMany('key_a', [item.id]))[0].payload, { item: { nested: { values: ['original'] } } });
 });
 
-test('memory responses items repo scopes ids by api key and ignores duplicate writes in the same scope', async () => {
+test('memory responses items repo scopes ids by api key and refreshes payload on duplicate scoped writes', async () => {
   const repo = new InMemoryRepo().responsesItems;
   const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
   await repo.insertMany([item]);
-  await repo.insertMany([{ ...item, apiKeyId: 'key_b' }, { ...item, payload: { item: { changed: true } }, createdAt: 2_000 }]);
+  await repo.insertMany([
+    { ...item, apiKeyId: 'key_b' },
+    { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
+  ]);
 
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  // Same scope: the second write updates payload while keeping the original
+  // upstream affinity and created_at — see the inline rationale in d1.ts.
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [
+    { ...item, payload: { item: { changed: true } } },
+  ]);
+  // Different scope: a parallel row is created.
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
 
@@ -118,13 +126,18 @@ test('D1 responses items repo rejects malformed stored payload_json', async () =
   await assertRejects(() => new D1Repo(db).responsesItems.lookupMany('key_a', ['msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA']), Error, 'Malformed responses_items.payload_json JSON');
 });
 
-test('D1 responses items repo scopes ids by api key and ignores duplicate writes in the same scope', async () => {
+test('D1 responses items repo scopes ids by api key and refreshes payload on duplicate scoped writes', async () => {
   const repo = new D1Repo(new FakeResponsesItemsD1Database()).responsesItems;
   const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
   await repo.insertMany([item]);
-  await repo.insertMany([{ ...item, apiKeyId: 'key_b' }, { ...item, payload: { item: { changed: true } }, createdAt: 2_000 }]);
+  await repo.insertMany([
+    { ...item, apiKeyId: 'key_b' },
+    { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
+  ]);
 
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [
+    { ...item, payload: { item: { changed: true } } },
+  ]);
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
 
@@ -260,7 +273,11 @@ class FakeResponsesItemsD1Database implements D1Database {
   insert(binds: unknown[]): void {
     const [id, apiKeyId, upstreamId, upstreamItemId, itemType, payload, createdAt] = binds as [string, string | null, string | null, string | null, string, string | null, number];
     const existing = this.rows.find(row => row.id === id && row.api_key_id === apiKeyId);
-    if (existing) return;
+    if (existing) {
+      // Mirrors d1.ts `ON CONFLICT DO UPDATE SET payload_json = excluded.payload_json`.
+      existing.payload_json = payload;
+      return;
+    }
     this.rows.push({
       id,
       api_key_id: apiKeyId,

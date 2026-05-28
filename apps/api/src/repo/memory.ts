@@ -365,13 +365,18 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const staged = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = responsesItemStoreKey(item.apiKeyId, item.id);
-      if (staged.has(key) || this.store.has(key)) continue;
-      staged.set(key, cloneStoredResponsesItem(item));
+      const existing = this.store.get(key);
+      // Mirrors the D1 upsert: subsequent observations within one stream
+      // refresh the payload but keep the first-seen upstream affinity and
+      // created_at.
+      if (existing === undefined) {
+        this.store.set(key, cloneStoredResponsesItem(item));
+      } else {
+        existing.payload = item.payload === null ? null : structuredClone(item.payload);
+      }
     }
-    for (const [id, item] of staged) this.store.set(id, item);
     return Promise.resolve();
   }
 

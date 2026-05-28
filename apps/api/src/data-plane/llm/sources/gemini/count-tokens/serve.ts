@@ -77,7 +77,6 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
         provider: binding.provider,
         enabledFlags: binding.enabledFlags,
         ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-        responsesNewItems: [],
         payload: attemptPayload,
         headers: {},
       };

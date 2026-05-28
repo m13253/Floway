@@ -353,7 +353,6 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
   upstreamModel: {} as never,
   provider: {} as never,
   enabledFlags: overrides.enabledFlags ?? new Set<string>(),
-  responsesNewItems: [],
   headers: {},
   payload: {
     model: 'claude-x',

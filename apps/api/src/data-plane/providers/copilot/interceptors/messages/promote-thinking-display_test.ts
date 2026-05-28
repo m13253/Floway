@@ -34,7 +34,6 @@ const makeCtx = (
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel({ upstreamEndpoints: ['messages'] }),
   enabledFlags: new Set<string>(),
-  responsesNewItems: [],
   headers: {},
 });
 

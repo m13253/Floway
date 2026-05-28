@@ -14,7 +14,6 @@ const baseInvocation = (): Invocation<{ model: string; stream?: boolean }> => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
-  responsesNewItems: [],
   headers: {},
 });
 

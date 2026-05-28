@@ -2,10 +2,9 @@ import type { Context } from 'hono';
 
 import { chatCompletionsSourceInterceptors } from './interceptors/index.ts';
 import { respondChatCompletions } from './respond.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
-import { type ChatCompletionsInvocation, type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type ChatCompletionsInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
@@ -26,7 +25,6 @@ const chatInvocation = <TPayload extends { model: string }>(
   targetApi: LlmTargetApi,
   model: string,
   payload: TPayload,
-  responsesNewItems: StoredResponsesItem[],
 ) => ({
   sourceApi: 'chat-completions' as const,
   targetApi,
@@ -36,7 +34,6 @@ const chatInvocation = <TPayload extends { model: string }>(
   provider: binding.provider,
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-  responsesNewItems,
   payload,
   headers: {} as Record<string, string>,
 });
@@ -85,24 +82,21 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
       attemptPayload.model = resolvedModelId;
       attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, chatCompletionsViaResponsesItemsView);
 
-      const responsesNewItems: StoredResponsesItem[] = [];
-      const invocation: ChatCompletionsInvocation = chatInvocation(binding, target, resolvedModelId, attemptPayload, responsesNewItems);
+      const invocation: ChatCompletionsInvocation = chatInvocation(binding, target, resolvedModelId, attemptPayload);
 
       const emits: Record<LlmTargetApi, SourceEmit<ChatCompletionsPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>> = {
         'chat-completions': async srcPayload => await emitToChatCompletions({ ...invocation, payload: srcPayload }, request),
         messages: viaTranslation(translateChatCompletionsViaMessages, async (tgtPayload: MessagesPayload) =>
-          await emitToMessages(chatInvocation(binding, 'messages', resolvedModelId, tgtPayload, responsesNewItems), request)),
-        responses: viaTranslation(translateChatCompletionsViaResponses, async (tgtPayload: ResponsesPayload) => {
-          const targetInvocation: ResponsesInvocation = chatInvocation(binding, 'responses', resolvedModelId, tgtPayload, responsesNewItems);
-          const targetResult = await emitToResponses(targetInvocation, request);
-          return targetResult.type === 'events'
-            ? { ...targetResult, events: storeResponsesOutputItems(targetResult.events, targetInvocation, request) }
-            : targetResult;
-        }),
+          await emitToMessages(chatInvocation(binding, 'messages', resolvedModelId, tgtPayload), request)),
+        responses: viaTranslation(translateChatCompletionsViaResponses, async (tgtPayload: ResponsesPayload) =>
+          await emitToResponses(chatInvocation(binding, 'responses', resolvedModelId, tgtPayload), request)),
       };
 
-      result = await runInterceptors(invocation, request, [...chatCompletionsSourceInterceptors, ...(binding.sourceInterceptors?.chatCompletions ?? [])], () =>
+      const rawResult = await runInterceptors(invocation, request, [...chatCompletionsSourceInterceptors, ...(binding.sourceInterceptors?.chatCompletions ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+      result = rawResult.type === 'events'
+        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, chatCompletionsViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request) }
+        : rawResult;
       break;
     }
 

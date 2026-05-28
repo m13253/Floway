@@ -33,7 +33,6 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags,
-  responsesNewItems: [],
   headers: {},
 });
 

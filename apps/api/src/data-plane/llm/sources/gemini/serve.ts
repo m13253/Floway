@@ -2,10 +2,9 @@ import type { Context } from 'hono';
 
 import { geminiSourceInterceptors } from './interceptors/index.ts';
 import { respondGemini } from './respond.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
-import { type GeminiInvocation, type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type GeminiInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
@@ -58,7 +57,6 @@ const geminiInvocation = <TPayload>(
   targetApi: LlmTargetApi,
   model: string,
   payload: TPayload,
-  responsesNewItems: StoredResponsesItem[],
 ) => ({
   sourceApi: 'gemini' as const,
   targetApi,
@@ -68,7 +66,6 @@ const geminiInvocation = <TPayload>(
   provider: binding.provider,
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-  responsesNewItems,
   payload,
   headers: {} as Record<string, string>,
 });
@@ -131,25 +128,22 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
 
       // Gemini source payload has no `model` field on the request body; the
       // invocation carries the resolved id for telemetry/dispatch use.
-      const responsesNewItems: StoredResponsesItem[] = [];
-      const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload, responsesNewItems);
+      const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload);
 
       const emits: Record<LlmTargetApi, SourceEmit<GeminiGenerateContentRequest, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>> = {
         messages: viaTranslation(translateGeminiViaMessages, async (tgtPayload: MessagesPayload) =>
-          await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload, responsesNewItems), request)),
-        responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) => {
-          const targetInvocation: ResponsesInvocation = geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload, responsesNewItems);
-          const targetResult = await emitToResponses(targetInvocation, request);
-          return targetResult.type === 'events'
-            ? { ...targetResult, events: storeResponsesOutputItems(targetResult.events, targetInvocation, request) }
-            : targetResult;
-        }),
+          await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload), request)),
+        responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) =>
+          await emitToResponses(geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload), request)),
         'chat-completions': viaTranslation(translateGeminiViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-          await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload, responsesNewItems), request)),
+          await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload), request)),
       };
 
-      result = await runInterceptors(invocation, request, [...geminiSourceInterceptors, ...(binding.sourceInterceptors?.gemini ?? [])], () =>
+      const rawResult = await runInterceptors(invocation, request, [...geminiSourceInterceptors, ...(binding.sourceInterceptors?.gemini ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+      result = rawResult.type === 'events'
+        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, geminiViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request) }
+        : rawResult;
       break;
     }
 

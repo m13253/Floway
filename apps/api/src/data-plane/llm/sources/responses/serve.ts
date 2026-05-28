@@ -5,7 +5,6 @@ import { StoredResponsesItemsDiagnosticError } from './items/errors.ts';
 import { storeResponsesOutputItems } from './items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './items/request-plan.ts';
 import { respondResponses } from './respond.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
@@ -72,7 +71,6 @@ const responsesInvocation = <TPayload extends { model: string }>(
   targetApi: LlmTargetApi,
   model: string,
   payload: TPayload,
-  responsesNewItems: StoredResponsesItem[],
 ) => ({
   sourceApi: 'responses' as const,
   targetApi,
@@ -82,7 +80,6 @@ const responsesInvocation = <TPayload extends { model: string }>(
   provider: binding.provider,
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-  responsesNewItems,
   payload,
   headers: {} as Record<string, string>,
 });
@@ -129,21 +126,20 @@ export const serveResponses = async (c: Context): Promise<Response> => {
       attemptPayload.model = resolvedModelId;
       attemptPayload.input = await rewriteStoredResponsesItemsForProvider(attemptPayload.input, preparedStoredItems, binding, responsesItemsView);
 
-      const responsesNewItems: StoredResponsesItem[] = [];
-      const invocation: ResponsesInvocation = responsesInvocation(binding, target, resolvedModelId, attemptPayload, responsesNewItems);
+      const invocation: ResponsesInvocation = responsesInvocation(binding, target, resolvedModelId, attemptPayload);
 
       const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
         responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
         messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
-          await emitToMessages(responsesInvocation(binding, 'messages', resolvedModelId, tgtPayload, responsesNewItems), request)),
+          await emitToMessages(responsesInvocation(binding, 'messages', resolvedModelId, tgtPayload), request)),
         'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-          await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload, responsesNewItems), request)),
+          await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload), request)),
       };
 
       const rawResult = await runInterceptors(invocation, request, [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
       result = rawResult.type === 'events'
-        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, invocation, request) }
+        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, responsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: invocation.payload.store }, request) }
         : rawResult;
       break;
     }

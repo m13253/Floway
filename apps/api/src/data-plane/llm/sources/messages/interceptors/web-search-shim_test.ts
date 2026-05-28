@@ -45,7 +45,6 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   upstreamModel: {} as never,
   provider: {} as never,
   enabledFlags: new Set(['messages-web-search-shim']),
-  responsesNewItems: [],
   payload,
   headers: {},
 });

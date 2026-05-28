@@ -1,43 +1,24 @@
 import { test } from 'vitest';
 
 import { isStoredResponsesItemId, parseStoredResponsesItemId } from './format.ts';
-import { storeResponsesOutputItems } from './output.ts';
+import { storeResponsesOutputItems, type StoreResponsesContext } from './output.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../repo/types.ts';
 import { assert, assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts';
-import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
+import type { RequestContext } from '../../../../llm/interceptors.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponseOutputItem, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const apiKeyId = 'key_output';
 
 type IteratorResultPromise = Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
-const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
-  model: 'gpt-test',
-  input: 'hi',
-  stream: true,
-  store: true,
-  ...overrides,
-});
-
-const makeInvocation = (overrides: {
-  targetApi?: ResponsesInvocation['targetApi'];
-  payload?: ResponsesPayload;
-  responsesNewItems?: StoredResponsesItem[];
-} = {}): ResponsesInvocation => ({
-  sourceApi: 'responses',
+const makeContext = (overrides: Partial<StoreResponsesContext> = {}): StoreResponsesContext => ({
   targetApi: overrides.targetApi ?? 'responses',
-  model: 'gpt-test',
-  upstream: 'up_native',
-  upstreamModel: stubUpstreamModel(),
-  provider: stubProvider(),
-  enabledFlags: new Set<string>(),
-  responsesNewItems: overrides.responsesNewItems ?? [],
-  payload: overrides.payload ?? makePayload(),
-  headers: {},
+  upstream: overrides.upstream ?? 'up_native',
+  store: overrides.store,
 });
 
 const makeRequest = (): RequestContext => ({
@@ -66,10 +47,8 @@ const response = (output: ResponseOutputItem[], status: ResponsesResult['status'
   incomplete_details: null,
 });
 
-const frame = (event: ResponsesStreamEvent): ProtocolFrame<ResponsesStreamEvent> => eventFrame(event);
-
 const framesFrom = async function* (events: readonly ResponsesStreamEvent[]) {
-  for (const event of events) yield frame(event);
+  for (const event of events) yield eventFrame(event);
 };
 
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
@@ -92,14 +71,9 @@ const eventAt = <TType extends ResponsesStreamEvent['type']>(
 const promiseStateAfterMicrotasks = async (promise: IteratorResultPromise): Promise<'pending' | 'fulfilled' | 'rejected'> => {
   let state: 'pending' | 'fulfilled' | 'rejected' = 'pending';
   promise.then(
-    () => {
-      state = 'fulfilled';
-    },
-    () => {
-      state = 'rejected';
-    },
+    () => { state = 'fulfilled'; },
+    () => { state = 'rejected'; },
   );
-
   for (let i = 0; i < 10; i += 1) {
     await Promise.resolve();
     if (state !== 'pending') return state;
@@ -137,7 +111,7 @@ class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
   }
 }
 
-test('rewrites output item ids consistently across added, child, done, terminal, and stored row JSON', async () => {
+test('rewrites output item ids consistently across added, child, done, and terminal', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
@@ -147,7 +121,7 @@ test('rewrites output item ids consistently across added, child, done, terminal,
     { type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: original.id!, delta: 'hello' },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
+  ]), responsesItemsView, makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   assert(isStoredResponsesItemId(storedId));
@@ -162,7 +136,7 @@ test('rewrites output item ids consistently across added, child, done, terminal,
   assertEquals(row.payload, { item: { ...original, id: storedId } });
 });
 
-test('inserts rows before yielding a successful terminal event', async () => {
+test('persists each row before yielding the frame that exposes its stored id', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
@@ -172,10 +146,9 @@ test('inserts rows before yielding a successful terminal event', async () => {
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest())[Symbol.asyncIterator]();
+  ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
 
   const firstFrame = iterator.next();
-
   assertEquals(await promiseStateAfterMicrotasks(firstFrame), 'pending');
   assertEquals(controlled.calls.length, 1);
   controlled.resolveInsert?.();
@@ -192,7 +165,7 @@ test('insert failure prevents yielding any rewritten stored item frames', async 
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest())[Symbol.asyncIterator]();
+  ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
 
   const firstFrame = iterator.next();
   assertEquals(await promiseStateAfterMicrotasks(firstFrame), 'pending');
@@ -201,7 +174,7 @@ test('insert failure prevents yielding any rewritten stored item frames', async 
   await assertRejects(() => firstFrame, Error, 'insert failed');
 });
 
-test('does not insert rows for failed streams without completed output items', async () => {
+test('does not insert rows for failed streams without observed items', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
@@ -209,30 +182,26 @@ test('does not insert rows for failed streams without completed output items', a
 
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.failed', response: response([], 'failed') },
-  ]), makeInvocation(), makeRequest()));
+  ]), responsesItemsView, makeContext(), makeRequest()));
 
   assertEquals(events.at(-1)?.type, 'response.failed');
   assertEquals(controlled.calls.length, 0);
 });
 
-test('persists completed output items before yielding them even if the stream later fails', async () => {
+test('items completed before a stream failure remain persisted', async () => {
   const repo = new InMemoryRepo();
-  const controlled = new ControlledResponsesItemsRepo();
-  repo.responsesItems = controlled;
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
-  const iterator = storeResponsesOutputItems(framesFrom([
+
+  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+    { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.failed', response: response([], 'failed') },
-  ]), makeInvocation(), makeRequest())[Symbol.asyncIterator]();
+  ]), responsesItemsView, makeContext(), makeRequest()));
 
-  const firstFrame = iterator.next();
-  assertEquals(await promiseStateAfterMicrotasks(firstFrame), 'pending');
-  assertEquals(controlled.calls.length, 1);
-  controlled.resolveInsert?.();
-
-  assertEquals(((await firstFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
-  assertEquals(((await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.payload, { item: { ...original, id: storedId } });
 });
 
 test('store false creates metadata rows with null payload', async () => {
@@ -243,7 +212,7 @@ test('store false creates metadata rows with null payload', async () => {
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation({ payload: makePayload({ store: false }) }), makeRequest()));
+  ]), responsesItemsView, makeContext({ store: false }), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
@@ -258,7 +227,7 @@ test('terminal output items missing done frames are stored and rewritten', async
 
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
+  ]), responsesItemsView, makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.completed').response.output[0].id!;
   assert(isStoredResponsesItemId(storedId));
@@ -266,17 +235,17 @@ test('terminal output items missing done frames are stored and rewritten', async
   assertEquals(row.payload, { item: { ...original, id: storedId } });
 });
 
-test('items without upstream ids each receive their own stored id', async () => {
+test('two distinct upstream items receive distinct stored ids', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const first = { type: 'message' as const, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'same' }] };
-  const second = { type: 'message' as const, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'same' }] };
+  const first = messageItem('raw_msg_1', 'first');
+  const second = messageItem('raw_msg_2', 'second');
 
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: first },
     { type: 'response.output_item.done', output_index: 1, item: second },
     { type: 'response.completed', response: response([first, second]) },
-  ]), makeInvocation({ targetApi: 'messages' }), makeRequest()));
+  ]), responsesItemsView, makeContext(), makeRequest()));
 
   const done = events.filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done');
   assert(done[0].item.id !== done[1].item.id);
@@ -284,11 +253,28 @@ test('items without upstream ids each receive their own stored id', async () => 
   assert(isStoredResponsesItemId(done[1].item.id!));
   const rows = await repo.responsesItems.lookupMany(apiKeyId, [done[0].item.id!, done[1].item.id!]);
   assertEquals(rows.length, 2);
-  assertEquals(rows[0].upstreamId, null);
-  assertEquals(rows[1].upstreamId, null);
+  assertEquals(rows[0].upstreamItemId, 'raw_msg_1');
+  assertEquals(rows[1].upstreamItemId, 'raw_msg_2');
 });
 
-test('responses via non-responses target output rows do not claim upstream ownership', async () => {
+test('repeated mapper calls for the same upstream id refresh the stored payload', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const partial = { ...messageItem('raw_msg_repeat', ''), status: 'in_progress' as const, content: [] };
+  const final = messageItem('raw_msg_repeat', 'final');
+
+  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+    { type: 'response.output_item.added', output_index: 0, item: partial },
+    { type: 'response.output_item.done', output_index: 0, item: final },
+    { type: 'response.completed', response: response([final]) },
+  ]), responsesItemsView, makeContext(), makeRequest()));
+
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.payload, { item: { ...final, id: storedId } });
+});
+
+test('via-translation synthesized items do not claim upstream ownership', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('msg_0', 'translated');
@@ -296,7 +282,7 @@ test('responses via non-responses target output rows do not claim upstream owner
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation({ targetApi: 'messages' }), makeRequest()));
+  ]), responsesItemsView, makeContext({ targetApi: 'messages' }), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);

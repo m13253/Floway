@@ -20,7 +20,6 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel({ upstreamEndpoints: ['messages'] }),
   enabledFlags: new Set(['disable-reasoning-on-forced-tool-choice']),
-  responsesNewItems: [],
   headers: {},
 });
 
