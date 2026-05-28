@@ -21,7 +21,7 @@ test('mapAsResponsesItems maps Responses input items through the callback', asyn
   const mapped = await responsesItemsSource.mapAsResponsesItems(payload.input, item => {
     if (item.type === 'item_reference') return { type: 'message', role: 'user', content: 'expanded' };
     if (item.type === 'reasoning') return { ...item, id: 'rs_next' };
-    if (item.type === 'function_call') return [];
+    if (item.type === 'function_call') return null;
     return item;
   });
 
@@ -142,10 +142,7 @@ test('mapAsResponsesItems maps Chat reasoning_items and leaves non-carriers unch
 
   const mapped = await chatCompletionsItemsSource.mapAsResponsesItems(payload.messages, item => {
     if (item.type !== 'reasoning') return item;
-    return [
-      { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] },
-      { ...item, id: 'rs_extra', summary: [{ type: 'summary_text', text: 'extra' }] },
-    ] satisfies ResponseInputItem[];
+    return { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] };
   });
 
   assertEquals(mapped, [
@@ -155,7 +152,6 @@ test('mapAsResponsesItems maps Chat reasoning_items and leaves non-carriers unch
       content: null,
       reasoning_items: [
         { type: 'reasoning', id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] },
-        { type: 'reasoning', id: 'rs_extra', summary: [{ type: 'summary_text', text: 'extra' }] },
       ],
       tool_calls: [{ id: 'call_stored', type: 'function', function: { name: 'lookup', arguments: '{}' } }],
     },

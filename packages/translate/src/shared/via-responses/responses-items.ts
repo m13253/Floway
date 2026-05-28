@@ -6,12 +6,7 @@ import type { ResponseInputItem, ResponseInputReasoning } from '@floway-dev/prot
 
 export type ResponsesItemMapper = (
   item: ResponseInputItem,
-) =>
-  | ResponseInputItem
-  | readonly ResponseInputItem[]
-  | null
-  | undefined
-  | Promise<ResponseInputItem | readonly ResponseInputItem[] | null | undefined>;
+) => ResponseInputItem | null | Promise<ResponseInputItem | null>;
 
 export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<void>;
 
@@ -35,7 +30,10 @@ export const responsesItemsSource = {
     if (typeof input === 'string') return input;
 
     const out: ResponseInputItem[] = [];
-    for (const item of input) out.push(...await normalizeMappedItems(item, mapper));
+    for (const item of input) {
+      const mapped = await mapper(item);
+      if (mapped !== null) out.push(mapped);
+    }
     return out;
   },
 } satisfies ResponsesItemsSourceAdapter<string | readonly ResponseInputItem[], string | ResponseInputItem[]>;
@@ -91,8 +89,10 @@ export const messagesItemsSource = {
           id,
           summary: block.thinking ? [{ type: 'summary_text', text: block.thinking }] : [],
         };
-        const mapped = await normalizeMappedItems(reasoning, mapper);
-        content.push(...responsesItemsToMessagesAssistantBlocks(mapped));
+        const mapped = await mapper(reasoning);
+        if (mapped === null) continue;
+        const projected = responsesItemToMessagesAssistantBlock(mapped);
+        if (projected !== null) content.push(projected);
       }
 
       out.push({ role: 'assistant', content });
@@ -132,11 +132,10 @@ export const chatCompletionsItemsSource = {
           reasoningItems.push(structuredClone(item));
           continue;
         }
-        const mapped = await normalizeMappedItems({ type: 'reasoning', id: item.id, summary: item.summary ?? [] }, mapper);
-        for (const responseItem of mapped) {
-          if (responseItem.type !== 'reasoning') throw new Error(`Cannot project Responses ${responseItem.type} item into Chat reasoning_items`);
-          reasoningItems.push({ type: 'reasoning', id: responseItem.id, summary: responseItem.summary });
-        }
+        const mapped = await mapper({ type: 'reasoning', id: item.id, summary: item.summary ?? [] });
+        if (mapped === null) continue;
+        if (mapped.type !== 'reasoning') throw new Error(`Cannot project Responses ${mapped.type} item into Chat reasoning_items`);
+        reasoningItems.push({ type: 'reasoning', id: mapped.id, summary: mapped.summary });
       }
 
       out.push({
@@ -159,38 +158,22 @@ export const geminiItemsSource = {
   ): Promise<GeminiContent[]> => contents.map(content => structuredClone(content)),
 } satisfies ResponsesItemsSourceAdapter<readonly GeminiContent[], GeminiContent[]>;
 
-const normalizeMappedItems = async (item: ResponseInputItem, mapper: ResponsesItemMapper): Promise<ResponseInputItem[]> => {
-  const mapped = await mapper(item);
-  if (mapped === null || mapped === undefined) return [];
-  return Array.isArray(mapped) ? [...mapped] : [mapped as ResponseInputItem];
-};
-
-const responsesItemsToMessagesAssistantBlocks = (items: readonly ResponseInputItem[]): MessagesAssistantContentBlock[] => {
-  const blocks: MessagesAssistantContentBlock[] = [];
-  for (const item of items) {
-    switch (item.type) {
-    case 'reasoning': {
-      const block = responsesReasoningToMessagesBlock(item);
-      if (block) blocks.push(block);
-      break;
-    }
-    case 'message':
-      if (item.role === 'assistant') {
-        const text = responseMessageOutputText(item);
-        if (text) blocks.push({ type: 'text', text });
-      }
-      break;
-    case 'function_call':
-      blocks.push({ type: 'tool_use', id: item.call_id, name: item.name, input: parseToolInput(item.arguments) });
-      break;
-    case 'custom_tool_call':
-      blocks.push({ type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } });
-      break;
-    default:
-      throw new Error(`Cannot project Responses ${item.type} item into a Messages assistant content block`);
-    }
+const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
+  switch (item.type) {
+  case 'reasoning':
+    return responsesReasoningToMessagesBlock(item);
+  case 'message': {
+    if (item.role !== 'assistant') return null;
+    const text = responseMessageOutputText(item);
+    return text ? { type: 'text', text } : null;
   }
-  return blocks;
+  case 'function_call':
+    return { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolInput(item.arguments) };
+  case 'custom_tool_call':
+    return { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } };
+  default:
+    throw new Error(`Cannot project Responses ${item.type} item into a Messages assistant content block`);
+  }
 };
 
 const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'message' }>): string => {
