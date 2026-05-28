@@ -1,7 +1,7 @@
 export interface FileProvider {
   put(key: string, body: Uint8Array): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
-  delete(key: string): Promise<void>;
+  deletePrefix(prefix: string): Promise<void>;
 }
 
 let fileProvider: FileProvider | null = null;
@@ -26,7 +26,9 @@ export class MemoryFileProvider implements FileProvider {
     return this.files.get(key)?.slice() ?? null;
   }
 
-  async delete(key: string): Promise<void> {
-    this.files.delete(key);
+  async deletePrefix(prefix: string): Promise<void> {
+    for (const key of [...this.files.keys()]) {
+      if (key.startsWith(prefix)) this.files.delete(key);
+    }
   }
 }

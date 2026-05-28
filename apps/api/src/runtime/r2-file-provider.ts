@@ -3,8 +3,17 @@ import type { FileProvider } from './file-provider.ts';
 export interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null): Promise<unknown>;
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
-  delete(key: string): Promise<void>;
+  delete(keys: string | string[]): Promise<void>;
+  list(options: { prefix: string; cursor?: string; limit?: number }): Promise<{
+    objects: readonly { key: string }[];
+    truncated: boolean;
+    cursor?: string;
+  }>;
 }
+
+// R2 caps `delete` at 1000 keys per call and `list` at 1000 objects per page,
+// so paginate with the listing cursor and delete each page as we go.
+const R2_BATCH_LIMIT = 1000;
 
 export class R2FileProvider implements FileProvider {
   constructor(private readonly bucket: R2BucketLike) {}
@@ -18,7 +27,12 @@ export class R2FileProvider implements FileProvider {
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
   }
 
-  async delete(key: string): Promise<void> {
-    await this.bucket.delete(key);
+  async deletePrefix(prefix: string): Promise<void> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
+      if (page.objects.length > 0) await this.bucket.delete(page.objects.map(object => object.key));
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
   }
 }

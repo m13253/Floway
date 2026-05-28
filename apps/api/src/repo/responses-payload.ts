@@ -16,7 +16,8 @@ export type StoredResponsesPayloadJson =
   };
 
 const INLINE_PAYLOAD_LIMIT_BYTES = 512 * 1024;
-const PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const RESPONSES_ITEM_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 const encoder = new TextEncoder();
 
@@ -117,14 +118,30 @@ const storedResponsesPayloadFileKey = async (
   apiKeyId: string | null,
   createdAt: number,
 ): Promise<string> => {
-  const expires = new Date(createdAt + PAYLOAD_TTL_MS);
-  const yyyy = String(expires.getUTCFullYear()).padStart(4, '0');
-  const mm = String(expires.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(expires.getUTCDate()).padStart(2, '0');
-  const hh = String(expires.getUTCHours()).padStart(2, '0');
+  const expires = new Date(createdAt + RESPONSES_ITEM_PAYLOAD_TTL_MS);
   const scope = (await sha256Hex(encoder.encode(apiKeyId ?? ''))).slice(0, 16);
-  return `responses-items/v1/expires/${yyyy}/${mm}/${dd}/${hh}/${scope}/${id}.json`;
+  return `${responsesItemsHourPrefix(expires.getTime())}${scope}/${id}.json`;
 };
+
+// Files live under their expiry hour. The cron sweeps one hour bucket per
+// run (the hour that just elapsed), so the bucket whose contents are now
+// fully past their TTL is `startOfUtcHour(now) - 1h`. If cron skips runs,
+// older buckets leak into R2 indefinitely — accepted as a downtime cost.
+export const sweepExpiredResponsesItemPayloadFiles = async (now: number): Promise<void> => {
+  const bucketHour = startOfUtcHour(now) - HOUR_MS;
+  await getFileProvider().deletePrefix(responsesItemsHourPrefix(bucketHour));
+};
+
+const responsesItemsHourPrefix = (hourTimestamp: number): string => {
+  const date = new Date(hourTimestamp);
+  const yyyy = String(date.getUTCFullYear()).padStart(4, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const hh = String(date.getUTCHours()).padStart(2, '0');
+  return `responses-items/v1/expires/${yyyy}/${mm}/${dd}/${hh}/`;
+};
+
+const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
 
 const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   const digestInput = new Uint8Array(bytes).buffer;

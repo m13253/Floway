@@ -24,3 +24,18 @@ test('runtime exposes one initialized FileProvider instance', async () => {
   await getFileProvider().put('k', new Uint8Array([4]));
   assertEquals([...(await provider.get('k'))!], [4]);
 });
+
+test('MemoryFileProvider deletes every key that starts with the given prefix', async () => {
+  const provider = new MemoryFileProvider();
+  await provider.put('keep/a', new Uint8Array([1]));
+  await provider.put('drop/a', new Uint8Array([2]));
+  await provider.put('drop/b', new Uint8Array([3]));
+  await provider.put('drops/c', new Uint8Array([4]));
+
+  await provider.deletePrefix('drop/');
+
+  assertEquals([...(await provider.get('keep/a'))!], [1]);
+  assertEquals(await provider.get('drop/a'), null);
+  assertEquals(await provider.get('drop/b'), null);
+  assertEquals([...(await provider.get('drops/c'))!], [4]);
+});
