@@ -46,6 +46,7 @@ test('createAzureProvider projects configured deployments into upstream models',
 
   assertEquals(instance.upstream, 'up_azure');
   assertEquals(instance.name, 'Azure Resource');
+  assertEquals(instance.supportsResponsesItemReference, true);
   assertEquals(models[0]?.enabledFlags.has('deepseek-reasoning-dialect'), true);
   assertEquals(
     models.map(model => ({ id: model.id, displayName: model.display_name, endpoints: model.upstreamEndpoints, providerData: model.providerData })),

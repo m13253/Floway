@@ -203,6 +203,10 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
         throw new Error('Responses → Chat Completions translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
       }
 
+      if (item.type !== 'message') {
+        throw new Error(`Responses → Chat Completions translator does not accept ${item.type} input items.`);
+      }
+
       if (item.role === 'assistant') {
         assistant = appendAssistantText(assistant, responsesContentToText(item.content));
         continue;

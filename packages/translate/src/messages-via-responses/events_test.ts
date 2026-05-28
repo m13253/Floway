@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents, translateResponsesToMessagesResponse } from './events.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
+import { messagesReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
+import { assertEquals } from '../test-assert.ts';
 
 test('Responses reasoning stream without readable summary emits no Messages block', () => {
   const state = createResponsesToMessagesStreamState();
@@ -22,7 +23,7 @@ test('Responses reasoning stream without readable summary emits no Messages bloc
   assertEquals(events, []);
 });
 
-test('text-only Responses reasoning stream omits signature deltas', () => {
+test('text-only Responses reasoning stream emits a recoverable signature delta', () => {
   const state = createResponsesToMessagesStreamState();
 
   const events = [
@@ -61,8 +62,12 @@ test('text-only Responses reasoning stream omits signature deltas', () => {
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
     },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: messagesReasoningSignature('rs_0') },
+    },
   ]);
-  assertFalse(events.some(event => event.type === 'content_block_delta' && event.delta.type === 'signature_delta'));
 });
 
 test('Responses reasoning stream keeps summary text from deltas when done summary is empty', () => {
@@ -103,6 +108,11 @@ test('Responses reasoning stream keeps summary text from deltas when done summar
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: messagesReasoningSignature('rs_0') },
     },
   ]);
 });
@@ -301,6 +311,11 @@ test('Responses reasoning stream preserves source order when later reasoning fin
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'first' },
     },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: messagesReasoningSignature('rs_0') },
+    },
     { type: 'content_block_stop', index: 0 },
     {
       type: 'content_block_start',
@@ -311,6 +326,11 @@ test('Responses reasoning stream preserves source order when later reasoning fin
       type: 'content_block_delta',
       index: 1,
       delta: { type: 'thinking_delta', thinking: 'second' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'signature_delta', signature: messagesReasoningSignature('rs_1') },
     },
   ]);
 });
@@ -460,7 +480,7 @@ test('reasoning stream with whitespace-only summary emits no block', () => {
   assertEquals(events, []);
 });
 
-test('translateResponsesToMessagesResponse omits signature for text-only reasoning', () => {
+test('translateResponsesToMessagesResponse carries reasoning id in thinking signature', () => {
   const result = translateResponsesToMessagesResponse({
     id: 'resp_123',
     object: 'response',
@@ -484,8 +504,7 @@ test('translateResponsesToMessagesResponse omits signature for text-only reasoni
   });
 
   const block = result.content[0];
-  assertEquals(block, { type: 'thinking', thinking: 'trace' });
-  assertFalse('signature' in block);
+  assertEquals(block, { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_1') });
 });
 
 test('translateResponsesToMessagesResponse drops opaque-only reasoning output', () => {

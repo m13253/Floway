@@ -28,6 +28,8 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
 
+  assertEquals(instance.supportsResponsesItemReference, true);
+
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);

@@ -47,6 +47,7 @@ export interface ProviderModelRecord {
   provider: ModelProvider;
   upstreamModel: UpstreamModel;
   enabledFlags: ReadonlySet<string>;
+  supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
 }
@@ -86,6 +87,7 @@ export interface ModelProviderInstance {
   providerKind: UpstreamProviderKind;
   name: string;
   provider: ModelProvider;
+  supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
   resolveRequestedModelId?(modelId: string): string | undefined;

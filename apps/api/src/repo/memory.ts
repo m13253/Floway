@@ -11,9 +11,11 @@ import type {
   PerformanceRepo,
   PerformanceTelemetryRecord,
   Repo,
+  ResponsesItemsRepo,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  StoredResponsesItem,
   UpstreamRecord,
   UpstreamRepo,
   UsageRecord,
@@ -347,6 +349,70 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
 });
 
+class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
+  private store = new Map<string, StoredResponsesItem>();
+
+  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+    const rows: StoredResponsesItem[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
+      if (row?.apiKeyId === apiKeyId) rows.push(cloneStoredResponsesItem(row));
+    }
+    return Promise.resolve(rows);
+  }
+
+  insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    const staged = new Map<string, StoredResponsesItem>();
+    for (const item of items) {
+      const key = responsesItemStoreKey(item.apiKeyId, item.id);
+      if (staged.has(key) || this.store.has(key)) {
+        console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
+        continue;
+      }
+      staged.set(key, cloneStoredResponsesItem(item));
+    }
+    for (const [id, item] of staged) this.store.set(id, item);
+    return Promise.resolve();
+  }
+
+  clearPayloadOlderThan(createdBefore: number): Promise<number> {
+    let changes = 0;
+    for (const row of this.store.values()) {
+      if (row.createdAt < createdBefore && row.payload !== null) {
+        row.payload = null;
+        changes += 1;
+      }
+    }
+    return Promise.resolve(changes);
+  }
+
+  deleteOlderThan(createdBefore: number): Promise<number> {
+    let changes = 0;
+    for (const [id, row] of this.store) {
+      if (row.createdAt < createdBefore) {
+        this.store.delete(id);
+        changes += 1;
+      }
+    }
+    return Promise.resolve(changes);
+  }
+
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
+  }
+}
+
+const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesItem => ({
+  ...item,
+  payload: item.payload === null ? null : structuredClone(item.payload),
+});
+
+const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `${apiKeyId ?? ''}\0${id}`;
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -355,6 +421,7 @@ export class InMemoryRepo implements Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  responsesItems: ResponsesItemsRepo;
 
   constructor() {
     this.apiKeys = new MemoryApiKeyRepo();
@@ -364,5 +431,6 @@ export class InMemoryRepo implements Repo {
     this.cache = new MemoryCacheRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
+    this.responsesItems = new MemoryResponsesItemsRepo();
   }
 }

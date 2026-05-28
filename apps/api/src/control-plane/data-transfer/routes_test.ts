@@ -6,7 +6,7 @@ import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-
 import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
@@ -136,6 +136,16 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
   action: 'fetch_page',
   hour: '2026-01-01T11',
   requests: 4,
+};
+
+const STORED_RESPONSES_ITEM: StoredResponsesItem = {
+  id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+  apiKeyId: 'key-a',
+  upstreamId: null,
+  upstreamItemId: null,
+  itemType: 'message',
+  payload: { item: { type: 'message', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', role: 'assistant', content: [] } },
+  createdAt: 1_000,
 };
 
 const PERFORMANCE_1: PerformanceTelemetryRecord = {
@@ -290,6 +300,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM]);
   await repo.searchConfig.save({ provider: 'tavily', tavily: { apiKey: 'old' }, microsoftGrounding: { apiKey: '' } });
 
   const result = await doImport(app, 'replace', {
@@ -307,6 +318,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
+  assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id]), []);
   assertEquals(await repo.searchConfig.get(), { provider: 'microsoft-grounding', tavily: { apiKey: '' }, microsoftGrounding: { apiKey: 'ms-new' } });
 });
 

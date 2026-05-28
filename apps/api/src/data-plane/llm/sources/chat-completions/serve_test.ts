@@ -4,6 +4,7 @@ import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertStringIncludes } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../providers/models-store.ts';
+import { createStoredResponsesItemId } from '../responses/items/format.ts';
 
 const getUsageOnlyChatChunks = (events: Array<{ event: string; data: string }>): Array<Record<string, unknown>> =>
   events.flatMap(event => {
@@ -52,6 +53,87 @@ test('/v1/chat/completions malformed JSON returns structured internal debug erro
   assertEquals(body.error.name, 'SyntaxError');
   assertEquals(body.error.source_api, 'chat-completions');
   assertExists(body.error.stack);
+});
+
+test('/v1/chat/completions rewrites stored Responses reasoning_items before the upstream request', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_chat_origin',
+    name: 'Chat Origin',
+    sortOrder: 0,
+    config: {
+      baseUrl: 'https://chat-origin.example.com',
+      bearerToken: 'sk-chat',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
+
+  const storedItem = { type: 'reasoning', id: 'rs_gateway_chat_body', summary: [{ type: 'summary_text', text: 'trace' }] };
+  const id = createStoredResponsesItemId('reasoning', storedItem);
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_chat_origin',
+      upstreamItemId: 'raw_rs_chat',
+      itemType: 'reasoning',
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'chat-origin.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'gpt-stored-chat' }] });
+      }
+      if (url.hostname === 'chat-origin.example.com' && url.pathname === '/v1/chat/completions') {
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseChatCompletionsResponse({
+          id: 'chatcmpl_stored_chat',
+          model: 'gpt-stored-chat',
+          choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-stored-chat',
+          messages: [
+            {
+              role: 'assistant',
+              content: null,
+              reasoning_items: [{ type: 'reasoning', id, summary: [{ type: 'summary_text', text: 'trace' }] }],
+            },
+            { role: 'user', content: 'continue' },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertExists(upstreamBody);
+  const messages = upstreamBody.messages as Array<Record<string, unknown>>;
+  assertEquals(messages[0].reasoning_items, [{ type: 'reasoning', id: 'raw_rs_chat', summary: [{ type: 'summary_text', text: 'trace' }] }]);
 });
 
 test('/v1/chat/completions does not record performance for an unresolved client model string', async () => {

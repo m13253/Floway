@@ -33,10 +33,22 @@ Stack: Hono on Workers Web APIs, D1 for persistence (in-memory repos in
 tests), TypeScript, pnpm, Vitest. The dashboard is a Vue + Vite SPA served
 from the same Worker via Static Assets.
 
+Responses output item ids returned to clients are gateway-owned stored ids.
+The API stores their upstream affinity and optional retained payload so later
+requests can route back to the producing upstream, rewrite portable ids to
+fresh ids, or expand stored `item_reference` inputs. Large retained payloads
+can spill through the runtime-level `FileProvider`; feature and repo code do
+not know the concrete file backend. Retained payload is cleared after 30 days
+and metadata rows after 180 days by the Worker scheduled handler configured in
+`wrangler.example.jsonc`. Provider support for Responses `item_reference` is
+hardcoded: Copilot does not support it, while Custom and Azure do. Copilot
+references are expanded from retained payload when possible and rejected when
+only metadata remains.
+
 The production runtime contract is Workers-compatible (fetch entrypoint,
-Workers bindings, D1). The narrow `apps/api/src/runtime/` layer exists to
-keep future runtime targets possible if they can satisfy the same Web-API +
-D1 semantics.
+Workers bindings, scheduled handler, D1). The narrow `apps/api/src/runtime/`
+layer exists to keep future runtime targets possible if they can satisfy the
+same Web-API + D1 semantics.
 
 ## Workspace Layout
 

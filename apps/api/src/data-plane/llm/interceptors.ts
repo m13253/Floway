@@ -1,3 +1,4 @@
+import type { StoredResponsesItem } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
@@ -78,6 +79,7 @@ export interface Invocation<TPayload> {
   readonly provider: ModelProvider;
   readonly enabledFlags: ReadonlySet<string>;
   readonly targetInterceptors?: ProviderTargetInterceptors;
+  readonly responsesNewItems: StoredResponsesItem[];
   payload: TPayload;
   headers: Record<string, string>;
 }

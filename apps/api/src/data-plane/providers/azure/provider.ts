@@ -96,5 +96,6 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     providerKind: 'azure',
     name: azure.name,
     provider,
+    supportsResponsesItemReference: true,
   };
 };

@@ -43,10 +43,30 @@ export type ResponseInputItem =
   | ResponseCustomToolCallOutputItem
   | ResponseInputReasoning
   | ResponseItemReference
-  | ResponseInputWebSearchCall;
+  | ResponseInputWebSearchCall
+  | ResponseFileSearchCallItem
+  | ResponseComputerCallItem
+  | ResponseComputerCallOutputItem
+  | ResponseToolSearchCallItem
+  | ResponseToolSearchOutputItem
+  | ResponseCompactionItem
+  | ResponseImageGenerationCallItem
+  | ResponseCodeInterpreterCallItem
+  | ResponseLocalShellCallItem
+  | ResponseLocalShellCallOutputItem
+  | ResponseShellCallItem
+  | ResponseShellCallOutputItem
+  | ResponseApplyPatchCallItem
+  | ResponseApplyPatchCallOutputItem
+  | ResponseMcpCallItem
+  | ResponseMcpListToolsItem
+  | ResponseMcpApprovalRequestItem
+  | ResponseMcpApprovalResponseItem;
 
 export interface ResponseInputMessage {
   type: 'message';
+  id?: string;
+  status?: string;
   role: 'user' | 'assistant' | 'system' | 'developer';
   content: string | ResponseInputContent[];
 }
@@ -72,6 +92,7 @@ export interface ResponseInputReasoning {
 
 export interface ResponseFunctionToolCallItem {
   type: 'function_call';
+  id?: string;
   call_id: string;
   name: string;
   arguments: string;
@@ -80,6 +101,7 @@ export interface ResponseFunctionToolCallItem {
 
 export interface ResponseFunctionCallOutputItem {
   type: 'function_call_output';
+  id?: string;
   call_id: string;
   output: string;
   status?: 'completed' | 'incomplete';
@@ -88,20 +110,22 @@ export interface ResponseFunctionCallOutputItem {
 // Freeform custom tool invocation echoed back to the model in conversation
 // history. The model's own emission of a custom tool call is identical in
 // shape (it is also a `custom_tool_call` item).
-interface ResponseCustomToolCallItem {
+export interface ResponseCustomToolCallItem {
   type: 'custom_tool_call';
   call_id: string;
   name: string;
   input: string;
   id?: string;
   namespace?: string;
+  status?: string;
 }
 
-interface ResponseCustomToolCallOutputItem {
+export interface ResponseCustomToolCallOutputItem {
   type: 'custom_tool_call_output';
   call_id: string;
   output: string;
   id?: string;
+  status?: string;
 }
 
 export interface ResponseItemReference {
@@ -118,6 +142,107 @@ export interface ResponseInputWebSearchCall {
   status?: 'completed' | 'in_progress' | 'searching' | 'failed';
   action?: ResponseWebSearchAction;
   results?: ResponseWebSearchResult[];
+}
+
+export interface ResponsePermissiveItem<TType extends string> {
+  type: TType;
+  id?: string;
+  call_id?: string;
+  status?: string;
+  output?: unknown;
+  body?: unknown;
+  [key: string]: unknown;
+}
+
+export interface ResponseFileSearchCallItem extends ResponsePermissiveItem<'file_search_call'> {
+  queries?: string[];
+  results?: unknown[];
+}
+
+export interface ResponseComputerCallItem extends ResponsePermissiveItem<'computer_call'> {
+  call_id: string;
+  action?: unknown;
+  pending_safety_checks?: unknown[];
+}
+
+export interface ResponseComputerCallOutputItem extends ResponsePermissiveItem<'computer_call_output'> {
+  call_id: string;
+  output?: unknown;
+  acknowledged_safety_checks?: unknown[];
+}
+
+export interface ResponseToolSearchCallItem extends ResponsePermissiveItem<'tool_search_call'> {
+  call_id?: string;
+  query?: string;
+  results?: unknown[];
+}
+
+export interface ResponseToolSearchOutputItem extends ResponsePermissiveItem<'tool_search_output'> {
+  call_id?: string;
+  output?: unknown;
+}
+
+export type ResponseCompactionItem = ResponsePermissiveItem<'compaction'>;
+
+export interface ResponseImageGenerationCallItem extends ResponsePermissiveItem<'image_generation_call'> {
+  call_id?: string;
+  result?: unknown;
+}
+
+export interface ResponseCodeInterpreterCallItem extends ResponsePermissiveItem<'code_interpreter_call'> {
+  call_id?: string;
+  code?: string;
+  results?: unknown[];
+}
+
+export interface ResponseLocalShellCallItem extends ResponsePermissiveItem<'local_shell_call'> {
+  call_id: string;
+  command?: string;
+}
+
+export interface ResponseLocalShellCallOutputItem extends ResponsePermissiveItem<'local_shell_call_output'> {
+  call_id: string;
+  output?: unknown;
+}
+
+export interface ResponseShellCallItem extends ResponsePermissiveItem<'shell_call'> {
+  call_id: string;
+  command?: string;
+}
+
+export interface ResponseShellCallOutputItem extends ResponsePermissiveItem<'shell_call_output'> {
+  call_id: string;
+  output?: unknown;
+}
+
+export interface ResponseApplyPatchCallItem extends ResponsePermissiveItem<'apply_patch_call'> {
+  call_id: string;
+  patch?: string;
+}
+
+export interface ResponseApplyPatchCallOutputItem extends ResponsePermissiveItem<'apply_patch_call_output'> {
+  call_id: string;
+  output?: unknown;
+}
+
+export interface ResponseMcpCallItem extends ResponsePermissiveItem<'mcp_call'> {
+  call_id: string;
+  name?: string;
+  arguments?: unknown;
+  output?: unknown;
+}
+
+export interface ResponseMcpListToolsItem extends ResponsePermissiveItem<'mcp_list_tools'> {
+  tools?: unknown[];
+}
+
+export interface ResponseMcpApprovalRequestItem extends ResponsePermissiveItem<'mcp_approval_request'> {
+  call_id?: string;
+}
+
+export interface ResponseMcpApprovalResponseItem extends ResponsePermissiveItem<'mcp_approval_response'> {
+  call_id?: string;
+  output?: unknown;
 }
 
 export interface ResponseFunctionTool {
@@ -240,12 +365,34 @@ export interface ResponsesResult {
 export type ResponseOutputItem =
   | ResponseOutputMessage
   | ResponseOutputFunctionCall
+  | ResponseFunctionCallOutputItem
   | ResponseOutputCustomToolCall
+  | ResponseCustomToolCallOutputItem
   | ResponseOutputReasoning
-  | ResponseOutputWebSearchCall;
+  | ResponseOutputWebSearchCall
+  | ResponseFileSearchCallItem
+  | ResponseComputerCallItem
+  | ResponseComputerCallOutputItem
+  | ResponseToolSearchCallItem
+  | ResponseToolSearchOutputItem
+  | ResponseCompactionItem
+  | ResponseImageGenerationCallItem
+  | ResponseCodeInterpreterCallItem
+  | ResponseLocalShellCallItem
+  | ResponseLocalShellCallOutputItem
+  | ResponseShellCallItem
+  | ResponseShellCallOutputItem
+  | ResponseApplyPatchCallItem
+  | ResponseApplyPatchCallOutputItem
+  | ResponseMcpCallItem
+  | ResponseMcpListToolsItem
+  | ResponseMcpApprovalRequestItem
+  | ResponseMcpApprovalResponseItem;
 
 export interface ResponseOutputMessage {
   type: 'message';
+  id?: string;
+  status?: string;
   role: 'assistant';
   content: ResponseOutputContentBlock[];
 }
@@ -264,6 +411,7 @@ interface ResponseOutputRefusal {
 
 export interface ResponseOutputFunctionCall {
   type: 'function_call';
+  id?: string;
   call_id: string;
   name: string;
   arguments: string;
@@ -277,6 +425,7 @@ export interface ResponseOutputCustomToolCall {
   input: string;
   id?: string;
   namespace?: string;
+  status?: string;
 }
 
 export interface ResponseOutputReasoning {

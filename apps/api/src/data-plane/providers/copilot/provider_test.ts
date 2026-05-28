@@ -15,6 +15,8 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
+  assertEquals(instance.supportsResponsesItemReference, false);
+
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
@@ -391,6 +393,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       upstreamModel: model,
       provider,
       enabledFlags: model.enabledFlags,
+      responsesNewItems: [],
       payload: { ...body, model: model.id },
       headers: {},
     };

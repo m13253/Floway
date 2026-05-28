@@ -246,8 +246,10 @@ Request mapping:
 - assistant text becomes `message` items with `output_text` content.
 - assistant `tool_use` blocks become `function_call` items.
 - assistant `thinking` blocks with readable text become `reasoning` input
-  items. `thinking.signature` and `redacted_thinking` data are ignored because
-  translated Responses requests do not bridge opaque encrypted reasoning.
+  items. Gateway-owned Responses reasoning ids embedded in `thinking.signature`
+  are recovered; other opaque signatures and `redacted_thinking` data are
+  ignored because translated Responses requests do not bridge provider-encrypted
+  reasoning payloads.
 - `max_tokens`, `temperature`, `top_p`, `metadata`, and `stream` pass through
   when present.
 - `output_config.effort` maps directly to `reasoning.effort`; disabled thinking
@@ -294,8 +296,9 @@ Request mapping:
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
   tool result as an error.
-- `reasoning` with readable summary becomes `thinking`; opaque-only reasoning is
-  omitted.
+- `reasoning` with readable summary becomes `thinking`; the Responses reasoning
+  item id is carried in the Messages thinking signature so later Messages →
+  Responses requests can recover it. Opaque-only reasoning is omitted.
 - `max_output_tokens`, `temperature`, `top_p`, and `stream` pass through when
   present.
 - `reasoning.effort: "none"` maps to disabled thinking; any other explicit
@@ -311,7 +314,8 @@ Response mapping:
 
 - Responses output items are converted in output order.
 - `reasoning` maps to `thinking` only when it carries readable summary text;
-  opaque-only reasoning is omitted.
+  the Responses reasoning item id is carried in the thinking signature.
+  Opaque-only reasoning is omitted.
 - `message` content maps to text. `refusal` content is kept visible as text
   because Messages has no local refusal block.
 - `function_call` maps to `tool_use`.
@@ -324,8 +328,9 @@ Known losses:
 
 - generic Responses `metadata` is omitted; it is not coerced into
   `metadata.user_id`.
-- `previous_response_id` and other Responses-native state are not emulated on
-  translated Messages paths.
+- `previous_response_id` and response-level Responses state are not emulated on
+  translated Messages paths. Responses item ids are handled by the API data
+  plane's stored-item layer, not by the pure translation package alone.
 - Freeform `custom` tool `format.definition` is preserved as a
   `Lark grammar: ${definition}` description on the wrapped `input` parameter;
   other `format` fields are not preserved.
@@ -490,8 +495,10 @@ Known losses:
 
 - Responses request-level `reasoning` has no Chat request counterpart except
   explicit effort.
-- `previous_response_id` and other Responses-native state are not emulated on
-  translated Chat paths.
+- `previous_response_id` and response-level Responses state are not emulated on
+  translated Chat paths. Responses item ids are handled by the API data plane's
+  stored-item layer, with readable reasoning ids carried through
+  `reasoning_items[]`.
 - Freeform `custom` tool `format.definition` is preserved as a
   `Lark grammar: ${definition}` description on the wrapped `input` parameter;
   other `format` fields are not preserved.

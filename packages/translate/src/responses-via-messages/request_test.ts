@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { translateResponsesToMessages } from './request.ts';
+import { messagesReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assert, assertEquals, assertFalse, assertRejects } from '../test-assert.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
@@ -89,7 +90,7 @@ test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway
   assertEquals(result.target.max_tokens, 4096);
 });
 
-test('translateResponsesToMessages preserves reasoning summaries without Anthropic signatures', async () => {
+test('translateResponsesToMessages carries reasoning ids in thinking signatures', async () => {
   const result = await translateResponsesToMessages({
     model: 'claude-test',
     input: [
@@ -119,6 +120,7 @@ test('translateResponsesToMessages preserves reasoning summaries without Anthrop
   assertEquals(assistant.content[0], {
     type: 'thinking',
     thinking: 'trace',
+    signature: messagesReasoningSignature('rs_42'),
   });
 });
 

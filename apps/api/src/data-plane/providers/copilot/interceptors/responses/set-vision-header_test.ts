@@ -26,6 +26,7 @@ const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  responsesNewItems: [],
   headers: {},
 });
 

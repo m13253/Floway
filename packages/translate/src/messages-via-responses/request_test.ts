@@ -4,7 +4,7 @@ import { translateMessagesToResponses } from './request.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
 import type { ResponseFunctionTool, ResponseInputReasoning } from '@floway-dev/protocols/responses';
 
-test('translateMessagesToResponses ignores thinking signatures and preserves readable thinking text', () => {
+test('translateMessagesToResponses ignores non-gateway thinking signatures and preserves readable thinking text', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -25,7 +25,7 @@ test('translateMessagesToResponses ignores thinking signatures and preserves rea
   });
 });
 
-test('translateMessagesToResponses does not recover Responses ids from thinking signatures', () => {
+test('translateMessagesToResponses recovers Responses ids from gateway thinking signatures', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -36,7 +36,7 @@ test('translateMessagesToResponses does not recover Responses ids from thinking 
           {
             type: 'thinking',
             thinking: 'trace',
-            signature: 'enc_abc@rs_42',
+            signature: 'floway:responses-reasoning:v1:cnNfNDI',
           },
         ],
       },
@@ -47,7 +47,7 @@ test('translateMessagesToResponses does not recover Responses ids from thinking 
   const reasoning = result.input[0] as ResponseInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
-    id: 'rs_0',
+    id: 'rs_42',
     summary: [{ type: 'summary_text', text: 'trace' }],
   });
 });

@@ -1,5 +1,5 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
+import { messagesReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponseEvent, responsePartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -119,6 +119,7 @@ interface ResponsesToMessagesStreamState {
   blockIndexByKey: Map<string, number>;
   openBlocks: Set<number>;
   emittedReasoningSummaryKeys: Set<string>;
+  emittedReasoningSignatureOutputIndexes: Set<number>;
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
   outputOrder: ResponsesOutputOrderState;
@@ -260,7 +261,33 @@ const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>,
     state.emittedReasoningSummaryKeys.add(key);
   }
 
+  if (!state.emittedReasoningSignatureOutputIndexes.has(event.output_index)) {
+    events.push({
+      type: 'content_block_delta',
+      index: blockIndex,
+      delta: { type: 'signature_delta', signature: messagesReasoningSignature(event.item.id) },
+    });
+    state.emittedReasoningSignatureOutputIndexes.add(event.output_index);
+  }
+
   return events;
+};
+
+const appendReasoningSignatureDelta = (
+  events: MessagesStreamEventData[],
+  blockIndex: number,
+  state: ResponsesToMessagesStreamState,
+  outputIndex: number,
+  itemId: string,
+): void => {
+  if (state.emittedReasoningSignatureOutputIndexes.has(outputIndex)) return;
+
+  events.push({
+    type: 'content_block_delta',
+    index: blockIndex,
+    delta: { type: 'signature_delta', signature: messagesReasoningSignature(itemId) },
+  });
+  state.emittedReasoningSignatureOutputIndexes.add(outputIndex);
 };
 
 const handleThinkingDelta = (event: ResponseEvent<'response.reasoning_summary_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
@@ -271,6 +298,7 @@ const handleThinkingDelta = (event: ResponseEvent<'response.reasoning_summary_te
     index: blockIndex,
     delta: { type: 'thinking_delta', thinking: event.delta },
   });
+  appendReasoningSignatureDelta(events, blockIndex, state, event.output_index, event.item_id);
   state.emittedReasoningSummaryKeys.add(responsePartKey(event.output_index, event.summary_index));
   return events;
 };
@@ -286,6 +314,7 @@ const handleThinkingDone = (event: ResponseEvent<'response.reasoning_summary_tex
       index: blockIndex,
       delta: { type: 'thinking_delta', thinking: event.text },
     });
+    appendReasoningSignatureDelta(events, blockIndex, state, event.output_index, event.item_id);
     state.emittedReasoningSummaryKeys.add(key);
   }
 
@@ -424,6 +453,7 @@ export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStrea
   blockIndexByKey: new Map(),
   openBlocks: new Set(),
   emittedReasoningSummaryKeys: new Set(),
+  emittedReasoningSignatureOutputIndexes: new Set(),
   emittedTextContentKeys: new Set(),
   emittedFunctionArgumentOutputIndexes: new Set(),
   outputOrder: createResponsesOutputOrderState(),

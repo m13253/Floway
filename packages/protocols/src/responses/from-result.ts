@@ -240,6 +240,19 @@ const responseWebSearchCallEvents = (item: ResponseOutputWebSearchCall, outputIn
   return [...startFrames, ...endFrames];
 };
 
+const responseGenericOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => [
+  {
+    type: 'response.output_item.added',
+    output_index: outputIndex,
+    item,
+  },
+  {
+    type: 'response.output_item.done',
+    output_index: outputIndex,
+    item,
+  },
+];
+
 const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => {
   switch (item.type) {
   case 'message': return responseMessageEvents(item, outputIndex);
@@ -247,6 +260,7 @@ const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number)
   case 'function_call': return responseFunctionCallEvents(item, outputIndex);
   case 'custom_tool_call': return responseCustomToolCallEvents(item, outputIndex);
   case 'web_search_call': return responseWebSearchCallEvents(item, outputIndex);
+  default: return responseGenericOutputItemEvents(item, outputIndex);
   }
 };
 

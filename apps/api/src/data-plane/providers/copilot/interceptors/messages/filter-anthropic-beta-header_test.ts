@@ -26,6 +26,7 @@ const invocation = (payload: MessagesPayload, anthropicBeta?: readonly string[])
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  responsesNewItems: [],
   headers: {},
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });

@@ -2,19 +2,22 @@ import type { Context } from 'hono';
 
 import { messagesSourceInterceptors } from './interceptors/index.ts';
 import { respondMessages } from './respond.ts';
-import { resolveModelForRequest } from '../../../providers/registry.ts';
+import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
+import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
+import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
+import { messagesItemsSource } from '@floway-dev/translate/via-responses/responses-items';
 
 export const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
@@ -66,6 +69,7 @@ const messagesInvocation = <TPayload extends { model: string }>(
   payload: TPayload,
   anthropicBeta: readonly string[] | undefined,
   headers: Record<string, string>,
+  responsesNewItems: StoredResponsesItem[],
 ) => ({
   sourceApi: 'messages' as const,
   targetApi,
@@ -75,6 +79,7 @@ const messagesInvocation = <TPayload extends { model: string }>(
   provider: binding.provider,
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
+  responsesNewItems,
   payload,
   headers,
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
@@ -100,37 +105,48 @@ export const serveMessages = async (c: Context): Promise<Response> => {
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesItemsSource);
+    const preparedDiagnostic = preparedStoredItems.diagnostics[0];
+    if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
-    const { id: model, model: resolved } = await resolveModelForRequest(payload.model, request.apiKeyUpstreamIds);
     let result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>> | undefined;
+    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
+    let resolvedModelId = payload.model;
+    let sawModel = false;
+    if (providerPlan.type === 'error') {
+      result = jsonUpstreamErrorResult(providerPlan.diagnostic.status, providerPlan.diagnostic.body);
+    } else for (const provider of providerPlan.providers) {
+      const resolved = await resolveModelForProvider(provider, payload.model);
+      if (!resolved) continue;
 
-    if (!resolved) {
-      result = openAiMissingModelResult(model);
-    } else {
-      for (const binding of resolved.providers) {
-        const attemptPayload = structuredClone(payload);
-        attemptPayload.model = model;
-        const target = pickTarget(binding.upstreamModel.upstreamEndpoints);
-        if (!target) continue;
+      sawModel = true;
+      resolvedModelId = resolved.id;
+      const binding = resolved.binding;
+      const target = pickTarget(binding.upstreamModel.upstreamEndpoints);
+      if (!target) continue;
 
-        const sharedHeaders: Record<string, string> = {};
-        const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
+      const attemptPayload = structuredClone(payload);
+      attemptPayload.model = resolvedModelId;
+      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesItemsSource);
 
-        const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
-          messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
-          responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
-            await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload, undefined, sharedHeaders), request)),
-          'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-            await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload, undefined, sharedHeaders), request)),
-        };
+      const sharedHeaders: Record<string, string> = {};
+      const responsesNewItems: StoredResponsesItem[] = [];
+      const invocation: MessagesInvocation = messagesInvocation(binding, target, resolvedModelId, attemptPayload, anthropicBeta, sharedHeaders, responsesNewItems);
 
-        result = await runInterceptors(invocation, request, [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])], () =>
-          emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-        break;
-      }
+      const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
+        messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
+        responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
+          await emitToResponses(messagesInvocation(binding, 'responses', resolvedModelId, tgtPayload, undefined, sharedHeaders, responsesNewItems), request)),
+        'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
+          await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload, undefined, sharedHeaders, responsesNewItems), request)),
+      };
 
-      result ??= openAiUnsupportedEndpointResult(model, '/messages');
+      result = await runInterceptors(invocation, request, [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])], () =>
+        emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+      break;
     }
+
+    result ??= sawModel ? openAiUnsupportedEndpointResult(resolvedModelId, '/messages') : openAiMissingModelResult(resolvedModelId);
 
     return await respondMessages(c, result, wantsStream, request, downstreamAbortController);
   } catch (error) {

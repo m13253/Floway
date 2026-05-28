@@ -161,5 +161,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     providerKind: 'custom',
     name: record.name,
     provider,
+    supportsResponsesItemReference: true,
   };
 };

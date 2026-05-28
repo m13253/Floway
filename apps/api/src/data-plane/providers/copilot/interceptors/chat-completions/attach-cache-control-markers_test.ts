@@ -26,6 +26,7 @@ const invocation = (messages: Message[]): ChatCompletionsInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  responsesNewItems: [],
   headers: {},
 });
 

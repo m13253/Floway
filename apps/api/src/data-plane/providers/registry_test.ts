@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { compareModelIds, getInternalModels, listModelProviders, resolveModelForRequest } from './registry.ts';
+import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { createCopilotProvider } from './copilot/provider.ts';
@@ -241,6 +241,48 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
       );
     },
   );
+});
+
+test('resolveModelForProvider only loads the selected provider catalog', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_first',
+    name: 'First',
+    sortOrder: 0,
+    config: { baseUrl: 'https://first.example.com', bearerToken: 'sk-first', supportedEndpoints: ['/responses'] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_second',
+    name: 'Second',
+    sortOrder: 100,
+    config: { baseUrl: 'https://second.example.com', bearerToken: 'sk-second', supportedEndpoints: ['/responses'] },
+  }));
+
+  const providers = await listModelProviders();
+  let secondModelsFetches = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'first.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'target-model' }] });
+      }
+      if (url.hostname === 'second.example.com' && url.pathname === '/v1/models') {
+        secondModelsFetches++;
+        return jsonResponse({ data: [{ id: 'target-model' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await resolveModelForProvider(providers[0], 'target-model');
+
+      assertEquals(resolved?.model.id, 'target-model');
+      assertEquals(resolved?.binding.upstream, 'up_first');
+    },
+  );
+
+  assertEquals(secondModelsFetches, 0);
 });
 
 test('listModelProviders without a filter returns global sort_order', async () => {

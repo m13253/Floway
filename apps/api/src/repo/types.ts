@@ -159,6 +159,29 @@ export interface UpstreamRepo {
   deleteAll(): Promise<void>;
 }
 
+export interface StoredResponsesItem {
+  id: string;
+  apiKeyId: string | null;
+  upstreamId: string | null;
+  upstreamItemId: string | null;
+  itemType: string;
+  payload: StoredResponsesItemPayload | null;
+  createdAt: number;
+}
+
+export interface StoredResponsesItemPayload {
+  item: unknown;
+  private?: unknown;
+}
+
+export interface ResponsesItemsRepo {
+  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
+  clearPayloadOlderThan(createdBefore: number): Promise<number>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
+  deleteAll(): Promise<void>;
+}
+
 export interface Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -167,4 +190,5 @@ export interface Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  responsesItems: ResponsesItemsRepo;
 }

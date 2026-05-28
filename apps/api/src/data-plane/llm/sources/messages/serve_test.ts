@@ -5,6 +5,7 @@ import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '.
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../providers/models-store.ts';
 import type { SearchConfig } from '../../../tools/web-search/types.ts';
+import { createStoredResponsesItemId } from '../responses/items/format.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 const ENABLED_SEARCH_CONFIG: SearchConfig = {
@@ -12,6 +13,8 @@ const ENABLED_SEARCH_CONFIG: SearchConfig = {
   tavily: { apiKey: 'tvly-test' },
   microsoftGrounding: { apiKey: '' },
 };
+
+const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
 
 const encodeShimPayloadForTest = (payload: unknown): string => {
   const json = JSON.stringify(payload);
@@ -318,6 +321,92 @@ test('/v1/messages rejects body anthropic_beta', async () => {
   const body = await response.json();
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'anthropic_beta');
+});
+
+test('/v1/messages rewrites stored Responses reasoning signatures before the upstream request', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_messages_origin',
+    name: 'Messages Origin',
+    sortOrder: 0,
+    config: {
+      baseUrl: 'https://messages-origin.example.com',
+      bearerToken: 'sk-messages',
+      supportedEndpoints: ['/v1/messages'],
+    },
+  }));
+
+  const storedItem = { type: 'reasoning', id: 'rs_gateway_body', summary: [{ type: 'summary_text', text: 'trace' }] };
+  const id = createStoredResponsesItemId('reasoning', storedItem);
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_messages_origin',
+      upstreamItemId: 'raw_rs_messages',
+      itemType: 'reasoning',
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'messages-origin.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'claude-stored-messages' }] });
+      }
+      if (url.hostname === 'messages-origin.example.com' && url.pathname === '/v1/messages') {
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseMessagesResponse({
+          id: 'msg_stored_messages',
+          model: 'claude-stored-messages',
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input_tokens: 2, output_tokens: 1 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'claude-stored-messages',
+          max_tokens: 64,
+          messages: [
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+                { type: 'text', text: 'visible' },
+              ],
+            },
+            { role: 'user', content: 'continue' },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertExists(upstreamBody);
+  const messages = upstreamBody.messages as Array<Record<string, unknown>>;
+  const assistantContent = messages[0].content as Array<Record<string, unknown>>;
+  assertEquals(assistantContent[0].signature, messagesReasoningSignature('raw_rs_messages'));
+  assertEquals(assistantContent[1], { type: 'text', text: 'visible' });
 });
 
 test('/v1/messages does not record performance for an unresolved bracket-suffixed client model string', async () => {
@@ -1655,7 +1744,7 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       assertEquals(body.usage.input_tokens, 25);
       assertEquals(body.usage.cache_read_input_tokens, 5);
       assertEquals(body.content[0].type, 'thinking');
-      assertFalse('signature' in body.content[0]);
+      assertEquals(body.content[0].signature, messagesReasoningSignature('rs_1'));
       assertEquals(body.content[1].text, 'Answer text');
     },
   );

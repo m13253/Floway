@@ -4,6 +4,9 @@ import { clearCopilotTokenCache } from '../../../../../shared/copilot.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../../providers/models-store.ts';
+import { createStoredResponsesItemId } from '../../responses/items/format.ts';
+
+const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
 
 function copilotTokenResponse() {
   return jsonResponse({
@@ -194,6 +197,92 @@ test('/v1/messages/count_tokens proxies to Azure Foundry Anthropic endpoint', as
   assertEquals(capturedPath, '/anthropic/v1/messages/count_tokens');
   assertEquals(capturedApiKey, 'az-key');
   assertEquals(capturedBody?.model, 'claude-prod');
+});
+
+test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures before upstream request', async () => {
+  const { repo, apiKey, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save({
+    id: 'up_count_origin',
+    provider: 'azure',
+    name: 'Count Origin',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-05-22T00:00:00.000Z',
+    flagOverrides: {},
+    config: {
+      endpoint: 'https://count.services.ai.azure.com/anthropic',
+      apiKey: 'az-count',
+      deployments: [
+        {
+          deployment: 'claude-count-prod',
+          publicModelId: 'claude-count-stored',
+          supportedEndpoints: ['/v1/messages'],
+        },
+      ],
+    },
+  });
+
+  const storedItem = { type: 'reasoning', id: 'rs_count_body', summary: [{ type: 'summary_text', text: 'trace' }] };
+  const id = createStoredResponsesItemId('reasoning', storedItem);
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_count_origin',
+      upstreamItemId: 'raw_rs_count',
+      itemType: 'reasoning',
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let capturedBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'count.services.ai.azure.com' && url.pathname === '/anthropic/v1/messages/count_tokens') {
+        capturedBody = await request.json() as Record<string, unknown>;
+        return jsonResponse({ input_tokens: 88 });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages/count_tokens', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'claude-count-stored',
+          messages: [
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+                { type: 'text', text: 'visible' },
+              ],
+            },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { input_tokens: 88 });
+    },
+  );
+
+  const messages = capturedBody?.messages as Array<Record<string, unknown>>;
+  assertEquals(capturedBody?.model, 'claude-count-prod');
+  const assistantContent = messages[0].content as Array<Record<string, unknown>>;
+  assertEquals(assistantContent[0].signature, messagesReasoningSignature('raw_rs_count'));
+  assertEquals(assistantContent[1], { type: 'text', text: 'visible' });
 });
 
 test('/v1/messages/count_tokens resolves Claude compatibility models before proxying', async () => {

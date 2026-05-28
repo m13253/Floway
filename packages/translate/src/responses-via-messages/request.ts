@@ -115,7 +115,7 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
   messages.push({ role: 'user', content: [block] });
 };
 
-const unexpectedResponsesInputItem = (value: never): never => {
+const unexpectedResponsesInputItem = (value: ResponseInputItem): never => {
   throw new Error(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
 };
 

@@ -26,6 +26,7 @@ const invocation = (payload: ResponsesPayload, sourceApi: LlmSourceApi = 'respon
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  responsesNewItems: [],
   headers: {},
 });
 

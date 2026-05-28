@@ -1,0 +1,188 @@
+import { test } from 'vitest';
+
+import { chatCompletionsItemsSource, geminiItemsSource, messagesItemsSource, responsesItemsSource } from './responses-items.ts';
+import { assertEquals } from '../../test-assert.ts';
+import { messagesReasoningSignature } from '../messages-and-responses/reasoning.ts';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ResponseInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+
+test('mapAsResponsesItems maps Responses input items through the callback', async () => {
+  const payload: ResponsesPayload = {
+    model: 'gpt-test',
+    input: [
+      { type: 'item_reference', id: 'msg_stored' },
+      { type: 'reasoning', id: 'rs_stored', summary: [{ type: 'summary_text', text: 'trace' }] },
+      { type: 'function_call', call_id: 'call_stored', name: 'lookup', arguments: '{}', status: 'completed' },
+    ],
+  };
+
+  const mapped = await responsesItemsSource.mapAsResponsesItems(payload.input, item => {
+    if (item.type === 'item_reference') return { type: 'message', role: 'user', content: 'expanded' };
+    if (item.type === 'reasoning') return { ...item, id: 'rs_next' };
+    if (item.type === 'function_call') return [];
+    return item;
+  });
+
+  assertEquals(mapped, [
+    { type: 'message', role: 'user', content: 'expanded' },
+    { type: 'reasoning', id: 'rs_next', summary: [{ type: 'summary_text', text: 'trace' }] },
+  ]);
+  assertEquals(payload.input[0], { type: 'item_reference', id: 'msg_stored' });
+});
+
+test('mapAsResponsesItems maps only Messages thinking blocks with gateway reasoning signatures', async () => {
+  const payload: MessagesPayload = {
+    model: 'claude-test',
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+          { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
+          { type: 'text', text: 'visible' },
+        ],
+      },
+    ],
+  };
+
+  const mapped = await messagesItemsSource.mapAsResponsesItems(payload.messages, item => {
+    if (item.type !== 'reasoning') return item;
+    return { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'rewritten' }] };
+  });
+
+  assertEquals(mapped, [
+    {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'rewritten', signature: messagesReasoningSignature('rs_next') },
+        { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
+        { type: 'text', text: 'visible' },
+      ],
+    },
+  ]);
+  assertEquals(payload.messages[0], {
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+      { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
+      { type: 'text', text: 'visible' },
+    ],
+  });
+});
+
+test('visitAsResponsesItems scans Messages carriers without rebuilding source messages', async () => {
+  const messages: MessagesPayload['messages'] = [
+    {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+        { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
+        { type: 'text', text: 'visible' },
+      ],
+    },
+  ];
+  const visited: ResponseInputItem[] = [];
+
+  const result = await messagesItemsSource.visitAsResponsesItems(messages, item => {
+    visited.push(item);
+  });
+
+  assertEquals(result, undefined);
+  assertEquals(visited, [
+    { type: 'reasoning', id: 'rs_stored', summary: [{ type: 'summary_text', text: 'trace' }] },
+  ]);
+  assertEquals(messages[0], {
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+      { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
+      { type: 'text', text: 'visible' },
+    ],
+  });
+});
+
+test('mapAsResponsesItems can drop carried Messages reasoning without touching other content', async () => {
+  const messages: MessagesPayload['messages'] = [
+    {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+        { type: 'text', text: 'visible' },
+      ],
+    },
+  ];
+
+  const mapped = await messagesItemsSource.mapAsResponsesItems(messages, item => (item.type === 'reasoning' ? null : item));
+
+  assertEquals(mapped, [
+    {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'visible' }],
+    },
+  ]);
+});
+
+test('mapAsResponsesItems maps Chat reasoning_items and leaves non-carriers unchanged', async () => {
+  const payload: ChatCompletionsPayload = {
+    model: 'gpt-test',
+    messages: [
+      { role: 'system', content: 'keep system' },
+      {
+        role: 'assistant',
+        content: null,
+        reasoning_items: [{ type: 'reasoning', id: 'rs_stored', summary: [{ type: 'summary_text', text: 'trace' }] }],
+        tool_calls: [{ id: 'call_stored', type: 'function', function: { name: 'lookup', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_stored', content: '42' },
+    ],
+  };
+
+  const mapped = await chatCompletionsItemsSource.mapAsResponsesItems(payload.messages, item => {
+    if (item.type !== 'reasoning') return item;
+    return [
+      { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] },
+      { ...item, id: 'rs_extra', summary: [{ type: 'summary_text', text: 'extra' }] },
+    ] satisfies ResponseInputItem[];
+  });
+
+  assertEquals(mapped, [
+    { role: 'system', content: 'keep system' },
+    {
+      role: 'assistant',
+      content: null,
+      reasoning_items: [
+        { type: 'reasoning', id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] },
+        { type: 'reasoning', id: 'rs_extra', summary: [{ type: 'summary_text', text: 'extra' }] },
+      ],
+      tool_calls: [{ id: 'call_stored', type: 'function', function: { name: 'lookup', arguments: '{}' } }],
+    },
+    { role: 'tool', tool_call_id: 'call_stored', content: '42' },
+  ]);
+});
+
+test('mapAsResponsesItems does not treat Gemini thought signatures as Responses carriers', async () => {
+  const payload: GeminiGenerateContentRequest = {
+    contents: [
+      {
+        role: 'model',
+        parts: [
+          { text: 'trace', thought: true, thoughtSignature: messagesReasoningSignature('rs_not_supported') },
+          { functionCall: { id: 'call_stored', name: 'lookup', args: { q: 'x' } } },
+        ],
+      },
+    ],
+  };
+
+  let calls = 0;
+  const mapped = await geminiItemsSource.mapAsResponsesItems(payload.contents!, item => {
+    calls += 1;
+    return item;
+  });
+
+  assertEquals(calls, 0);
+  assertEquals(mapped, payload.contents);
+  assertEquals(mapped === payload.contents, false);
+});

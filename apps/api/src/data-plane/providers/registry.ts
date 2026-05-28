@@ -76,6 +76,7 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
           provider: instance.provider,
           upstreamModel,
           enabledFlags: upstreamModel.enabledFlags,
+          supportsResponsesItemReference: instance.supportsResponsesItemReference,
           sourceInterceptors: instance.sourceInterceptors,
           targetInterceptors: instance.targetInterceptors,
         };
@@ -176,6 +177,12 @@ export interface ModelResolution {
   model?: ResolvedModel;
 }
 
+export interface ProviderModelResolution {
+  id: string;
+  model: UpstreamModel;
+  binding: ProviderModelRecord;
+}
+
 const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId: ReadonlyMap<string, ResolvedModel>, modelId: string): ResolvedModel | undefined => {
   let resolved: ResolvedModel | undefined;
   const providersForAlias = new Set<ModelProviderInstance>();
@@ -217,4 +224,31 @@ export const resolveModelForRequest = async (modelId: string, upstreamFilter?: r
   if (lastError) throw lastError;
 
   return { id: modelId };
+};
+
+const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
+  upstream: instance.upstream,
+  upstreamName: instance.name,
+  providerKind: instance.providerKind,
+  provider: instance.provider,
+  upstreamModel,
+  enabledFlags: upstreamModel.enabledFlags,
+  supportsResponsesItemReference: instance.supportsResponsesItemReference,
+  sourceInterceptors: instance.sourceInterceptors,
+  targetInterceptors: instance.targetInterceptors,
+});
+
+export const resolveModelForProvider = async (
+  instance: ModelProviderInstance,
+  modelId: string,
+): Promise<ProviderModelResolution | undefined> => {
+  const providedModels = await instance.provider.getProvidedModels();
+  const exact = providedModels.find(model => model.id === modelId);
+  if (exact) return { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) };
+
+  const aliasTarget = instance.resolveRequestedModelId?.(modelId);
+  if (!aliasTarget || aliasTarget === modelId) return undefined;
+
+  const alias = providedModels.find(model => model.id === aliasTarget);
+  return alias ? { id: alias.id, model: alias, binding: providerModelRecord(instance, alias) } : undefined;
 };

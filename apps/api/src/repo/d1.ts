@@ -1,4 +1,5 @@
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -10,9 +11,11 @@ import type {
   PerformanceRepo,
   PerformanceTelemetryRecord,
   Repo,
+  ResponsesItemsRepo,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  StoredResponsesItem,
   UpstreamProviderKind,
   UpstreamRecord,
   UpstreamRepo,
@@ -627,6 +630,109 @@ class D1CacheRepo implements CacheRepo {
   }
 }
 
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, created_at';
+
+class D1ResponsesItemsRepo implements ResponsesItemsRepo {
+  constructor(private db: D1Database) {}
+
+  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length === 0) return [];
+
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const { results } = await this.db
+      .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND id IN (${placeholders})`)
+      .bind(apiKeyId, ...uniqueIds)
+      .all<ResponsesItemRow>();
+    const order = new Map(uniqueIds.map((id, index) => [id, index]));
+    const rows = await Promise.all(results.map(toStoredResponsesItem));
+    return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
+
+  async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    await warnDuplicateStoredResponsesItems(this, items);
+    const statements = await Promise.all(items.map(async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+      return this.db
+        .prepare(
+          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
+        )
+        .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, payload, item.createdAt);
+    }));
+    await this.runStatements(statements);
+  }
+
+  async clearPayloadOlderThan(createdBefore: number): Promise<number> {
+    const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < ?').bind(createdBefore).run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteOlderThan(createdBefore: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM responses_items WHERE created_at < ?').bind(createdBefore).run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM responses_items').run();
+  }
+
+  private async runStatements(statements: D1PreparedStatement[]): Promise<void> {
+    if (statements.length === 0) return;
+    if (this.db.batch) {
+      await this.db.batch(statements);
+      return;
+    }
+    for (const statement of statements) await statement.run();
+  }
+}
+
+const warnDuplicateStoredResponsesItems = async (
+  repo: D1ResponsesItemsRepo,
+  items: readonly StoredResponsesItem[],
+): Promise<void> => {
+  const idsByScope = new Map<string, { apiKeyId: string | null; ids: string[]; seen: Set<string> }>();
+  for (const item of items) {
+    const scope = item.apiKeyId ?? '';
+    let entry = idsByScope.get(scope);
+    if (!entry) {
+      entry = { apiKeyId: item.apiKeyId, ids: [], seen: new Set() };
+      idsByScope.set(scope, entry);
+    }
+    if (entry.seen.has(item.id)) {
+      console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
+      continue;
+    }
+    entry.seen.add(item.id);
+    entry.ids.push(item.id);
+  }
+
+  for (const entry of idsByScope.values()) {
+    const existing = await repo.lookupMany(entry.apiKeyId, entry.ids);
+    for (const item of existing) console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
+  }
+};
+
+interface ResponsesItemRow {
+  id: string;
+  api_key_id: string | null;
+  upstream_id: string | null;
+  upstream_item_id: string | null;
+  item_type: string;
+  payload_json: string | null;
+  created_at: number;
+}
+
+const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
+  id: row.id,
+  apiKeyId: row.api_key_id,
+  upstreamId: row.upstream_id,
+  upstreamItemId: row.upstream_item_id,
+  itemType: row.item_type,
+  payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+  createdAt: row.created_at,
+});
+
 class D1SearchConfigRepo implements SearchConfigRepo {
   constructor(private db: D1Database) {}
 
@@ -785,6 +891,7 @@ export class D1Repo implements Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  responsesItems: ResponsesItemsRepo;
 
   constructor(db: D1Database) {
     this.apiKeys = new D1ApiKeyRepo(db);
@@ -794,5 +901,6 @@ export class D1Repo implements Repo {
     this.cache = new D1CacheRepo(db);
     this.searchConfig = new D1SearchConfigRepo(db);
     this.upstreams = new D1UpstreamRepo(db);
+    this.responsesItems = new D1ResponsesItemsRepo(db);
   }
 }

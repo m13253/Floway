@@ -311,6 +311,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     providerKind: 'copilot',
     name: copilot.name,
     provider,
+    supportsResponsesItemReference: false,
     sourceInterceptors: {
       messages: messagesCopilotSourceInterceptors,
     },
