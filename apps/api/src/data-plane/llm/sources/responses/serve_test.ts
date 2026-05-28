@@ -130,7 +130,7 @@ test('/v1/responses expands stored synthetic item_reference before the upstream 
     role: 'assistant',
     content: [{ type: 'output_text', text: 'expanded synthetic context' }],
   };
-  const id = createStoredResponsesItemId('message', storedItem);
+  const id = createStoredResponsesItemId('message');
   await repo.responsesItems.insertMany([
     {
       id,
@@ -214,7 +214,7 @@ test('/v1/responses expands same-origin item_reference for Copilot because Copil
     role: 'assistant',
     content: [{ type: 'output_text', text: 'expanded Copilot context' }],
   };
-  const id = createStoredResponsesItemId('message', storedItem);
+  const id = createStoredResponsesItemId('message');
   await repo.responsesItems.insertMany([
     {
       id,
@@ -295,13 +295,7 @@ test('/v1/responses expands same-origin item_reference for Copilot because Copil
 
 test('/v1/responses rejects metadata-only item_reference for Copilot before upstream generation', async () => {
   const { apiKey, repo, copilotUpstream } = await setupAppTest();
-  const storedItem = {
-    type: 'message',
-    id: 'raw_msg_copilot_metadata',
-    role: 'assistant',
-    content: [{ type: 'output_text', text: 'metadata only' }],
-  };
-  const id = createStoredResponsesItemId('message', storedItem);
+  const id = createStoredResponsesItemId('message');
   await repo.responsesItems.insertMany([
     {
       id,
@@ -389,8 +383,8 @@ test('/v1/responses prefers latest portable stored-item origin and rewrites only
 
   const firstItem = { type: 'reasoning', id: 'rs_first_body', summary: [{ type: 'summary_text', text: 'first' }] };
   const secondItem = { type: 'reasoning', id: 'rs_second_body', summary: [{ type: 'summary_text', text: 'second' }] };
-  const firstId = createStoredResponsesItemId('reasoning', firstItem);
-  const secondId = createStoredResponsesItemId('reasoning', secondItem);
+  const firstId = createStoredResponsesItemId('reasoning');
+  const secondId = createStoredResponsesItemId('reasoning');
   await repo.responsesItems.insertMany([
     {
       id: firstId,
@@ -488,8 +482,8 @@ test('/v1/responses falls back with portable non-origin message items using temp
 
   const firstItem = { type: 'message', id: 'msg_first_body', role: 'assistant', content: [{ type: 'output_text', text: 'first' }] };
   const secondItem = { type: 'message', id: 'msg_second_body', role: 'assistant', content: [{ type: 'output_text', text: 'second' }] };
-  const firstId = createStoredResponsesItemId('message', firstItem);
-  const secondId = createStoredResponsesItemId('message', secondItem);
+  const firstId = createStoredResponsesItemId('message');
+  const secondId = createStoredResponsesItemId('message');
   await repo.responsesItems.insertMany([
     {
       id: firstId,
@@ -572,8 +566,8 @@ test('/v1/responses rejects multiple forcing stored-item origins before generati
   const { apiKey, repo } = await setupAppTest();
   const firstItem = { type: 'compaction', id: 'cmp_first' };
   const secondItem = { type: 'compaction', id: 'cmp_second' };
-  const firstId = createStoredResponsesItemId('compaction', firstItem);
-  const secondId = createStoredResponsesItemId('compaction', secondItem);
+  const firstId = createStoredResponsesItemId('compaction');
+  const secondId = createStoredResponsesItemId('compaction');
   await repo.responsesItems.insertMany([
     {
       id: firstId,

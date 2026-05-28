@@ -95,23 +95,11 @@ const storedRow = (
   };
 };
 
-const storedMessageId = (label: string): string => createStoredResponsesItemId('message', {
-  type: 'message',
-  id: `msg_${label}`,
-  role: 'assistant',
-  content: [{ type: 'output_text', text: label }],
-});
+const storedMessageId = (_label: string): string => createStoredResponsesItemId('message');
 
-const storedReasoningId = (label: string): string => createStoredResponsesItemId('reasoning', {
-  type: 'reasoning',
-  id: `rs_${label}`,
-  summary: [{ type: 'summary_text', text: label }],
-});
+const storedReasoningId = (_label: string): string => createStoredResponsesItemId('reasoning');
 
-const storedCompactionId = (label: string): string => createStoredResponsesItemId('compaction', {
-  type: 'compaction',
-  id: `cmp_${label}`,
-});
+const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
 
 test('missing stored item_reference returns a source-renderable not found diagnostic', async () => {
   await insertRows([]);

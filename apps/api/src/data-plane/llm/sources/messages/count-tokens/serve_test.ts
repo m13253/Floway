@@ -227,7 +227,7 @@ test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures b
   });
 
   const storedItem = { type: 'reasoning', id: 'rs_count_body', summary: [{ type: 'summary_text', text: 'trace' }] };
-  const id = createStoredResponsesItemId('reasoning', storedItem);
+  const id = createStoredResponsesItemId('reasoning');
   await repo.responsesItems.insertMany([
     {
       id,

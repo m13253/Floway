@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, createTemporaryResponsesItemId, isKnownResponsesItemType, isStoredResponsesItemId } from './format.ts';
+import { createStoredResponsesItemId, isKnownResponsesItemType, isStoredResponsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
@@ -13,10 +13,6 @@ interface QueuedFrame {
   dependencies: readonly number[];
   rewrite: () => ProtocolFrame<ResponsesStreamEvent>;
 }
-
-const gatewaySyntheticItemIdPattern = /^[a-z]+_(?:gw|tmp)_/u;
-const translatorSyntheticItemIdPattern = /^[a-z]+_\d+$/u;
-const copilotSyntheticItemIdPattern = /^oi_\d+_[A-Za-z0-9_-]{16}$/u;
 
 export const storeResponsesOutputItems = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
@@ -59,11 +55,10 @@ export const storeResponsesOutputItems = async function* (
     const state = stateFor(outputIndex);
     if (state.storedId !== undefined) return state.storedId;
 
-    const hashItem = itemId(item) === null ? rewriteItemId(item, createTemporaryResponsesItemId(item.type)) : item;
-    const storedId = createStoredResponsesItemId(hashItem.type, hashItem);
+    const storedId = createStoredResponsesItemId(item.type);
     state.storedId = storedId;
     if (!queuedRowIds.has(storedId)) {
-      invocation.responsesNewItems.push(createStoredItemRow(storedId, hashItem, invocation, request));
+      invocation.responsesNewItems.push(createStoredItemRow(storedId, item, invocation, request));
       queuedRowIds.add(storedId);
     }
     return storedId;
@@ -195,7 +190,7 @@ const upstreamOwnedItemId = (invocation: ResponsesInvocation, item: ResponseOutp
   if (invocation.targetApi !== 'responses') return null;
   const id = itemId(item);
   if (id === null) return null;
-  if (isStoredResponsesItemId(id) || gatewaySyntheticItemIdPattern.test(id) || translatorSyntheticItemIdPattern.test(id) || copilotSyntheticItemIdPattern.test(id)) return null;
+  if (isStoredResponsesItemId(id)) return null;
   return id;
 };
 

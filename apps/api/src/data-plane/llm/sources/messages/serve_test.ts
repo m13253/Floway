@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
-import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
+import { assert, assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../providers/models-store.ts';
 import type { SearchConfig } from '../../../tools/web-search/types.ts';
-import { createStoredResponsesItemId } from '../responses/items/format.ts';
+import { createStoredResponsesItemId, isStoredResponsesItemId } from '../responses/items/format.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 const ENABLED_SEARCH_CONFIG: SearchConfig = {
@@ -340,7 +340,7 @@ test('/v1/messages rewrites stored Responses reasoning signatures before the ups
   }));
 
   const storedItem = { type: 'reasoning', id: 'rs_gateway_body', summary: [{ type: 'summary_text', text: 'trace' }] };
-  const id = createStoredResponsesItemId('reasoning', storedItem);
+  const id = createStoredResponsesItemId('reasoning');
   await repo.responsesItems.insertMany([
     {
       id,
@@ -1744,12 +1744,12 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       assertEquals(body.usage.input_tokens, 25);
       assertEquals(body.usage.cache_read_input_tokens, 5);
       assertEquals(body.content[0].type, 'thinking');
-      const expectedStoredId = createStoredResponsesItemId('reasoning', {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [{ type: 'summary_text', text: 'brief reasoning' }],
-      });
-      assertEquals(body.content[0].signature, messagesReasoningSignature(expectedStoredId));
+      const signature = body.content[0].signature as string;
+      assert(signature.startsWith('floway:responses-reasoning:v1:'), signature);
+      const encoded = signature.slice('floway:responses-reasoning:v1:'.length);
+      const padded = `${encoded.replaceAll('-', '+').replaceAll('_', '/')}${'='.repeat((4 - (encoded.length % 4)) % 4)}`;
+      const decodedId = atob(padded);
+      assert(isStoredResponsesItemId(decodedId), `expected stored id, got ${decodedId}`);
       assertEquals(body.content[1].text, 'Answer text');
     },
   );

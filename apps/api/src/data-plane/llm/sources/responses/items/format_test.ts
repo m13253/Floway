@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import {
   createStoredResponsesItemId,
-  createSyntheticStoredResponsesItemId,
   createTemporaryResponsesItemId,
   isStoredResponsesItemId,
   parseStoredResponsesItemId,
@@ -65,7 +64,7 @@ test('rejects malformed public ids before D1 lookup', () => {
 
 test('generates a valid stored id for every explicit supported item type', () => {
   for (const [itemType, prefix] of explicitPrefixes) {
-    const id = createStoredResponsesItemId(itemType, { type: itemType, id: `${prefix}_source` });
+    const id = createStoredResponsesItemId(itemType);
     const parsed = parseStoredResponsesItemId(id);
     assert(parsed, `expected ${id} to parse`);
     assertEquals(parsed.prefix, prefix);
@@ -75,58 +74,18 @@ test('generates a valid stored id for every explicit supported item type', () =>
 });
 
 test('throws for unknown item types instead of using a generic fallback prefix', () => {
-  assertThrows(() => createStoredResponsesItemId('unknown_item', { type: 'unknown_item' }), TypeError, 'Unknown Responses item type');
-  assertThrows(() => createSyntheticStoredResponsesItemId('unknown_item', { type: 'unknown_item' }), TypeError, 'Unknown Responses item type');
+  assertThrows(() => createStoredResponsesItemId('unknown_item'), TypeError, 'Unknown Responses item type');
   assertThrows(() => createTemporaryResponsesItemId('unknown_item'), TypeError, 'Unknown Responses item type');
 });
 
-test('stored ids use stable sorted-key object hashing including the item id', () => {
-  const first = createStoredResponsesItemId('web_search_call', {
-    type: 'web_search_call',
-    id: 'ws_original',
-    status: 'completed',
-    action: {
-      query: 'weather',
-      filters: { b: 2, a: 1 },
-    },
-  });
-  const same = createStoredResponsesItemId('web_search_call', {
-    action: {
-      filters: { a: 1, b: 2 },
-      query: 'weather',
-    },
-    id: 'ws_original',
-    status: 'completed',
-    type: 'web_search_call',
-  });
-  const differentContent = createStoredResponsesItemId('web_search_call', {
-    type: 'web_search_call',
-    id: 'ws_original',
-    status: 'completed',
-    action: {
-      query: 'news',
-      filters: { a: 1, b: 2 },
-    },
-  });
-  const differentId = createStoredResponsesItemId('web_search_call', {
-    type: 'web_search_call',
-    id: 'ws_other',
-    status: 'completed',
-    action: {
-      query: 'weather',
-      filters: { a: 1, b: 2 },
-    },
-  });
-
-  assertEquals(first, same);
-  assert(first !== differentContent);
-  assert(first !== differentId);
-  assertEquals(parseStoredResponsesItemId(first)?.prefix, 'ws');
-});
-
-test('synthetic helper is the same object-hash id function', () => {
-  const item = { type: 'message', id: 'msg_synthetic', role: 'assistant', content: [] };
-  assertEquals(createSyntheticStoredResponsesItemId('message', item), createStoredResponsesItemId('message', item));
+test('successive stored ids for the same item type collide-free under random body', () => {
+  const seen = new Set<string>();
+  for (let i = 0; i < 1024; i += 1) {
+    const id = createStoredResponsesItemId('message');
+    assertFalse(seen.has(id), `random body collided after ${i} draws`);
+    seen.add(id);
+    assert(isStoredResponsesItemId(id));
+  }
 });
 
 test('temporary ids use the item prefix without becoming stored ids', () => {

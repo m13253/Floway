@@ -72,7 +72,7 @@ test('/v1/chat/completions rewrites stored Responses reasoning_items before the 
   }));
 
   const storedItem = { type: 'reasoning', id: 'rs_gateway_chat_body', summary: [{ type: 'summary_text', text: 'trace' }] };
-  const id = createStoredResponsesItemId('reasoning', storedItem);
+  const id = createStoredResponsesItemId('reasoning');
   await repo.responsesItems.insertMany([
     {
       id,

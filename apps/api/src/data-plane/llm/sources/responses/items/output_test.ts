@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, isStoredResponsesItemId } from './format.ts';
+import { isStoredResponsesItemId, parseStoredResponsesItemId } from './format.ts';
 import { storeResponsesOutputItems } from './output.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
@@ -141,26 +141,25 @@ test('rewrites output item ids consistently across added, child, done, terminal,
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
-  const invocation = makeInvocation();
 
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: original.id!, delta: 'hello' },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), invocation, makeRequest()));
+  ]), makeInvocation(), makeRequest()));
 
-  const expectedId = createStoredResponsesItemId('message', original);
-  assert(isStoredResponsesItemId(expectedId));
-  assertEquals(eventAt(events, 'response.output_item.added').item.id, expectedId);
-  assertEquals(eventAt(events, 'response.output_text.delta').item_id, expectedId);
-  assertEquals(eventAt(events, 'response.output_item.done').item.id, expectedId);
-  assertEquals(eventAt(events, 'response.completed').response.output[0].id, expectedId);
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  assert(isStoredResponsesItemId(storedId));
+  assertEquals(parseStoredResponsesItemId(storedId)?.prefix, 'msg');
+  assertEquals(eventAt(events, 'response.output_item.added').item.id, storedId);
+  assertEquals(eventAt(events, 'response.output_text.delta').item_id, storedId);
+  assertEquals(eventAt(events, 'response.completed').response.output[0].id, storedId);
 
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, 'up_native');
   assertEquals(row.upstreamItemId, original.id);
-  assertEquals(row.payload, { item: { ...original, id: expectedId } });
+  assertEquals(row.payload, { item: { ...original, id: storedId } });
 });
 
 test('inserts rows before yielding a successful terminal event', async () => {
@@ -240,14 +239,14 @@ test('store false creates metadata rows with null payload', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
-  const expectedId = createStoredResponsesItemId('message', original);
 
-  await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
   ]), makeInvocation({ payload: makePayload({ store: false }) }), makeRequest()));
 
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.payload, null);
   assertEquals(row.upstreamItemId, original.id);
 });
@@ -256,18 +255,18 @@ test('terminal output items missing done frames are stored and rewritten', async
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_terminal_only', 'late');
-  const expectedId = createStoredResponsesItemId('message', original);
 
   const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.completed', response: response([original]) },
   ]), makeInvocation(), makeRequest()));
 
-  assertEquals(eventAt(events, 'response.completed').response.output[0].id, expectedId);
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
-  assertEquals(row.payload, { item: { ...original, id: expectedId } });
+  const storedId = eventAt(events, 'response.completed').response.output[0].id!;
+  assert(isStoredResponsesItemId(storedId));
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.payload, { item: { ...original, id: storedId } });
 });
 
-test('items without upstream ids receive occurrence ids before hashing so repeated content does not collide', async () => {
+test('items without upstream ids each receive their own stored id', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const first = { type: 'message' as const, role: 'assistant' as const, content: [{ type: 'output_text' as const, text: 'same' }] };
@@ -289,76 +288,18 @@ test('items without upstream ids receive occurrence ids before hashing so repeat
   assertEquals(rows[1].upstreamId, null);
 });
 
-test('repeated identical upstream-owned ids are idempotent within the same scope', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const original = messageItem('raw_repeated', 'same');
-  const expectedId = createStoredResponsesItemId('message', original);
-
-  await collectEvents(storeResponsesOutputItems(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
-  await collectEvents(storeResponsesOutputItems(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
-
-  const rows = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].upstreamItemId, 'raw_repeated');
-});
-
 test('responses via non-responses target output rows do not claim upstream ownership', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('msg_0', 'translated');
-  const expectedId = createStoredResponsesItemId('message', original);
 
-  await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
   ]), makeInvocation({ targetApi: 'messages' }), makeRequest()));
 
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
-  assertEquals(row.upstreamId, null);
-  assertEquals(row.upstreamItemId, null);
-});
-
-test('gateway tool output rows do not claim upstream ownership', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const original: ResponseOutputItem = {
-    type: 'web_search_call',
-    id: 'ws_gw_123456789012345678901234',
-    status: 'completed',
-    action: { type: 'search', queries: ['weather'] },
-    results: [],
-  };
-  const expectedId = createStoredResponsesItemId('web_search_call', original);
-
-  await collectEvents(storeResponsesOutputItems(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
-
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
-  assertEquals(row.upstreamId, null);
-  assertEquals(row.upstreamItemId, null);
-});
-
-test('Copilot-synchronized oi ids do not claim upstream ownership', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const original = messageItem('oi_3_abcdefghijklmnop', 'copilot synthetic');
-  const expectedId = createStoredResponsesItemId('message', original);
-
-  await collectEvents(storeResponsesOutputItems(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: response([original]) },
-  ]), makeInvocation(), makeRequest()));
-
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [expectedId]);
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, null);
   assertEquals(row.upstreamItemId, null);
 });
