@@ -3,23 +3,27 @@ import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
-import type { ResponsesItemMapper, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import type {
+  ResponsesItemFinalizedHandler,
+  ResponsesItemIdMapper,
+  ResponsesItemsView,
+} from '@floway-dev/translate/via-responses/responses-items';
 
-// Source-stream middleware that gives every via-responses-carrying item in
-// the outgoing source stream a gateway-owned stored id and persists the
-// matching row before the carrier frame reaches the client.
+// Source-stream middleware that mints a gateway-owned stored id for every
+// Responses item carrier in the outgoing source stream and persists the
+// matching row before the carrier's finalizing frame reaches the client.
 //
-// Operates at the source-serve layer (after all source interceptors), so
-// items synthesized inside source interceptors (e.g. the Responses web
-// search shim's `web_search_call` items) are captured, and items dropped
-// by interceptors before reaching this point are not persisted.
+// Runs at the source-serve layer after all source interceptors, so items
+// dropped or synthesized by interceptors are correctly reflected in
+// persistence. The view's `streamMapIdAsResponsesItems` separates two
+// concerns: per-frame id rewriting (sync via `idMapper`, real-time SSE
+// preserved) and per-item persistence (async via `onItemFinalized`, awaited
+// before the view yields the finalizing frame).
 //
-// Per-row persistence is awaited inside the mapper: by the time the view
-// yields a frame carrying the rewritten storedId, the row is in D1. Later
-// mapper invocations for the same upstream id (Responses `output_item.done`,
-// Chat's repeated chunks per reasoning id) re-issue an INSERT whose
-// `ON CONFLICT DO UPDATE` keeps the latest payload while leaving the first
-// observation's upstream affinity pinned.
+// One INSERT per stored id. The row carries the upstream's original item
+// untouched in `payload.item`; the id field there is the upstream's id, not
+// the stored id. `request-plan.ts` rewrites the id at expansion time based
+// on routing.
 export interface StoreResponsesContext {
   readonly targetApi: LlmTargetApi;
   readonly upstream: string;
@@ -34,41 +38,47 @@ export const storeResponsesOutputItems = <TFrame>(
 ): AsyncIterable<TFrame> => {
   const upstreamToStored = new Map<string, string>();
 
-  const mapper: ResponsesItemMapper = async (item: ResponseInputItem) => {
-    const upstreamId = (item as { id?: unknown }).id;
-    if (typeof upstreamId !== 'string' || upstreamId.length === 0) return item;
-
+  const idMapper: ResponsesItemIdMapper = (upstreamId, itemType) => {
+    if (isStoredResponsesItemId(upstreamId)) {
+      // Internal code carries upstream-original ids end-to-end; storedIds
+      // only appear at this boundary on the way out. Seeing one as input
+      // means a layer below us mistakenly emitted a gateway id — fail
+      // loud rather than misroute future requests.
+      throw new Error(`Upstream returned an id that parses as a gateway stored id; internal pipeline must not surface stored ids: ${upstreamId}`);
+    }
     let storedId = upstreamToStored.get(upstreamId);
     if (storedId === undefined) {
-      storedId = createStoredResponsesItemId(item.type);
+      storedId = createStoredResponsesItemId(itemType);
       upstreamToStored.set(upstreamId, storedId);
     }
-    const itemWithStoredId = { ...item, id: storedId } as ResponseInputItem;
-    await getRepo().responsesItems.insertMany([
-      buildStoredItemRow(storedId, upstreamId, item.type, itemWithStoredId, context, request),
-    ]);
-    return itemWithStoredId;
+    return storedId;
   };
 
-  return view.mapStreamAsResponsesItems(frames, mapper);
+  const onItemFinalized: ResponsesItemFinalizedHandler = async (originalItem, newId) => {
+    await getRepo().responsesItems.insertMany([buildRow(newId, originalItem, context, request)]);
+  };
+
+  return view.streamMapIdAsResponsesItems(frames, idMapper, onItemFinalized);
 };
 
-const buildStoredItemRow = (
-  storedId: string,
-  upstreamId: string,
-  itemType: string,
-  itemWithStoredId: ResponseInputItem,
+const buildRow = (
+  newId: string,
+  originalItem: ResponseInputItem,
   context: StoreResponsesContext,
   request: RequestContext,
 ): StoredResponsesItem => {
-  const upstreamOwned = context.targetApi === 'responses' && !isStoredResponsesItemId(upstreamId);
+  const upstreamId = (originalItem as { id?: unknown }).id;
+  if (typeof upstreamId !== 'string' || upstreamId.length === 0) {
+    throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
+  }
+  const upstreamOwned = context.targetApi === 'responses';
   return {
-    id: storedId,
+    id: newId,
     apiKeyId: request.apiKeyId ?? null,
     upstreamId: upstreamOwned ? context.upstream : null,
     upstreamItemId: upstreamOwned ? upstreamId : null,
-    itemType,
-    payload: context.store === false ? null : { item: structuredClone(itemWithStoredId) },
+    itemType: originalItem.type,
+    payload: context.store === false ? null : { item: originalItem },
     createdAt: Date.now(),
   };
 };

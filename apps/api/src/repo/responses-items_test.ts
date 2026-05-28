@@ -89,7 +89,7 @@ test('memory responses items repo clones item JSON at the repo boundary', async 
   assertEquals((await repo.lookupMany('key_a', [item.id]))[0].payload, { item: { nested: { values: ['original'] } } });
 });
 
-test('memory responses items repo scopes ids by api key and refreshes payload on duplicate scoped writes', async () => {
+test('memory responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {
   const repo = new InMemoryRepo().responsesItems;
   const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
   await repo.insertMany([item]);
@@ -98,11 +98,10 @@ test('memory responses items repo scopes ids by api key and refreshes payload on
     { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
   ]);
 
-  // Same scope: the second write updates payload while keeping the original
-  // upstream affinity and created_at — see the inline rationale in d1.ts.
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [
-    { ...item, payload: { item: { changed: true } } },
-  ]);
+  // Same scope: the duplicate insert is a no-op; row reflects the first
+  // write. Stored ids use random bodies, so colliding writes only happen
+  // within one stream's mapper retries, which the wrap dedupes upstream.
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
   // Different scope: a parallel row is created.
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
@@ -126,7 +125,7 @@ test('D1 responses items repo rejects malformed stored payload_json', async () =
   await assertRejects(() => new D1Repo(db).responsesItems.lookupMany('key_a', ['msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA']), Error, 'Malformed responses_items.payload_json JSON');
 });
 
-test('D1 responses items repo scopes ids by api key and refreshes payload on duplicate scoped writes', async () => {
+test('D1 responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {
   const repo = new D1Repo(new FakeResponsesItemsD1Database()).responsesItems;
   const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
   await repo.insertMany([item]);
@@ -135,9 +134,7 @@ test('D1 responses items repo scopes ids by api key and refreshes payload on dup
     { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
   ]);
 
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [
-    { ...item, payload: { item: { changed: true } } },
-  ]);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
 
@@ -273,11 +270,7 @@ class FakeResponsesItemsD1Database implements D1Database {
   insert(binds: unknown[]): void {
     const [id, apiKeyId, upstreamId, upstreamItemId, itemType, payload, createdAt] = binds as [string, string | null, string | null, string | null, string, string | null, number];
     const existing = this.rows.find(row => row.id === id && row.api_key_id === apiKeyId);
-    if (existing) {
-      // Mirrors d1.ts `ON CONFLICT DO UPDATE SET payload_json = excluded.payload_json`.
-      existing.payload_json = payload;
-      return;
-    }
+    if (existing) return;  // mirrors d1.ts `ON CONFLICT DO NOTHING`
     this.rows.push({
       id,
       api_key_id: apiKeyId,

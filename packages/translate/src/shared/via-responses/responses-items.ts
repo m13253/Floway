@@ -3,7 +3,7 @@ import type { ChatCompletionChunk, ChatReasoningItem, Message as ChatMessage } f
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesAssistantContentBlock, MessagesMessage, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponseInputItem, ResponseInputReasoning, ResponseOutputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponseInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export type ResponsesItemMapper = (
   item: ResponseInputItem,
@@ -11,40 +11,38 @@ export type ResponsesItemMapper = (
 
 export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<void>;
 
+// Stream side splits id-rewrite from persistence. The id rewrite is a sync,
+// per-frame transform — every appearance of a Responses item carrier in the
+// source stream is fed through `idMapper` and the rewritten id flows out
+// without delaying SSE. Persistence sits behind `onItemFinalized`, which is
+// awaited only once per upstream id at the protocol-specific "final content"
+// frame; by the time the view yields that frame, the row is in the database.
+export type ResponsesItemIdMapper = (upstreamId: string, itemType: string) => string;
+
+export type ResponsesItemFinalizedHandler = (
+  originalItem: ResponseInputItem,
+  newId: string,
+) => void | Promise<void>;
+
 // A view onto a source protocol that projects Responses items in and out
-// of the source's payload (request) and stream (response). Both directions
-// support 1-to-1 rewrites and 1-to-null drops; arrays / 0-to-N are not
-// supported — see ResponsesItemMapper.
+// of the source's payload (request) and stream (response).
+//
+// Payload side: visit (read-only iteration) and map (1-to-1 rewrite or
+// 1-to-null drop). The mapper is asymmetric with the stream side because
+// payload-side rewrites consume the whole structure at once.
+//
+// Stream side: id-only rewrite is per-frame and synchronous; the row write
+// is per-item and async, fired through `onItemFinalized` at the carrier's
+// terminal frame.
 export interface ResponsesItemsView<TSourceItems, TMappedSourceItems = TSourceItems, TStreamFrame = unknown> {
   visitAsResponsesItems(sourceItems: TSourceItems, visitor: ResponsesItemVisitor): Promise<void>;
   mapAsResponsesItems(sourceItems: TSourceItems, mapper: ResponsesItemMapper): Promise<TMappedSourceItems>;
-  mapStreamAsResponsesItems(frames: AsyncIterable<TStreamFrame>, mapper: ResponsesItemMapper): AsyncGenerator<TStreamFrame>;
+  streamMapIdAsResponsesItems(
+    frames: AsyncIterable<TStreamFrame>,
+    idMapper: ResponsesItemIdMapper,
+    onItemFinalized?: ResponsesItemFinalizedHandler,
+  ): AsyncGenerator<TStreamFrame>;
 }
-
-type ResponsesItemRewrite = { dropped: false; mappedId: string } | { dropped: true };
-
-const trackRewrite = async (
-  item: ResponseInputItem,
-  mapper: ResponsesItemMapper,
-  rewrites: Map<string, ResponsesItemRewrite>,
-): Promise<ResponseInputItem | null> => {
-  const upstreamId = (item as { id?: unknown }).id;
-  if (typeof upstreamId !== 'string' || upstreamId.length === 0) return await mapper(item);
-
-  const existing = rewrites.get(upstreamId);
-  if (existing?.dropped) return null;
-
-  const mapped = await mapper(item);
-  if (mapped === null) {
-    rewrites.set(upstreamId, { dropped: true });
-    return null;
-  }
-  const mappedId = (mapped as { id?: unknown }).id;
-  if (typeof mappedId === 'string' && mappedId.length > 0) {
-    rewrites.set(upstreamId, { dropped: false, mappedId });
-  }
-  return mapped;
-};
 
 export const responsesItemsView = {
   visitAsResponsesItems: async (
@@ -67,11 +65,20 @@ export const responsesItemsView = {
     }
     return out;
   },
-  async *mapStreamAsResponsesItems(
+  async *streamMapIdAsResponsesItems(
     frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-    mapper: ResponsesItemMapper,
+    idMapper: ResponsesItemIdMapper,
+    onItemFinalized?: ResponsesItemFinalizedHandler,
   ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-    const rewrites = new Map<string, ResponsesItemRewrite>();
+    // `seenItemTypes` records the item type for every upstream id we have
+    // mapped via an item-bearing frame. Delta events only carry `item_id`
+    // and no type, so we look the type up here before re-invoking idMapper
+    // (idMapper requires a known item type to allocate fresh ids; for
+    // cache hits the type is unused but the signature still demands it).
+    // A delta referencing an unknown id is upstream protocol corruption
+    // and passes through unchanged rather than allocating a phantom row.
+    const seenItemTypes = new Map<string, string>();
+    const finalized = new Set<string>();
 
     for await (const frame of frames) {
       if (frame.type !== 'event') {
@@ -80,22 +87,53 @@ export const responsesItemsView = {
       }
       const event = frame.event;
 
-      if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
-        const mapped = await trackRewrite(event.item as ResponseInputItem, mapper, rewrites);
-        if (mapped === null) continue;
-        yield eventFrame({ ...event, item: mapped as ResponseOutputItem });
+      if (event.type === 'response.output_item.added') {
+        const upstreamId = itemId(event.item);
+        if (upstreamId === null) {
+          yield frame;
+          continue;
+        }
+        seenItemTypes.set(upstreamId, event.item.type);
+        const newId = idMapper(upstreamId, event.item.type);
+        yield eventFrame({ ...event, item: { ...event.item, id: newId } });
+        continue;
+      }
+
+      if (event.type === 'response.output_item.done') {
+        const upstreamId = itemId(event.item);
+        if (upstreamId === null) {
+          yield frame;
+          continue;
+        }
+        seenItemTypes.set(upstreamId, event.item.type);
+        const newId = idMapper(upstreamId, event.item.type);
+        if (onItemFinalized && !finalized.has(upstreamId)) {
+          finalized.add(upstreamId);
+          await onItemFinalized(event.item as unknown as ResponseInputItem, newId);
+        }
+        yield eventFrame({ ...event, item: { ...event.item, id: newId } });
         continue;
       }
 
       if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-        const output: ResponseOutputItem[] = [];
+        const output: ResponseInputItem[] = [];
         for (const item of event.response.output) {
-          const mapped = await trackRewrite(item as ResponseInputItem, mapper, rewrites);
-          if (mapped !== null) output.push(mapped as ResponseOutputItem);
+          const upstreamId = itemId(item);
+          if (upstreamId === null) {
+            output.push(item as unknown as ResponseInputItem);
+            continue;
+          }
+          seenItemTypes.set(upstreamId, item.type);
+          const newId = idMapper(upstreamId, item.type);
+          if (onItemFinalized && !finalized.has(upstreamId)) {
+            finalized.add(upstreamId);
+            await onItemFinalized(item as unknown as ResponseInputItem, newId);
+          }
+          output.push({ ...(item as unknown as ResponseInputItem), id: newId });
         }
         yield eventFrame({
           ...event,
-          response: { ...event.response, output },
+          response: { ...event.response, output: output as typeof event.response.output },
         });
         return;
       }
@@ -105,14 +143,16 @@ export const responsesItemsView = {
         return;
       }
 
-      const itemId = (event as { item_id?: unknown }).item_id;
-      if (typeof itemId === 'string') {
-        const rewrite = rewrites.get(itemId);
-        if (rewrite?.dropped) continue;
-        if (rewrite !== undefined) {
-          yield eventFrame({ ...event, item_id: rewrite.mappedId } as ResponsesStreamEvent);
+      const refId = (event as { item_id?: unknown }).item_id;
+      if (typeof refId === 'string') {
+        const knownType = seenItemTypes.get(refId);
+        if (knownType === undefined) {
+          yield frame;
           continue;
         }
+        const newId = idMapper(refId, knownType);
+        yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
+        continue;
       }
       yield frame;
     }
@@ -165,12 +205,11 @@ export const messagesViaResponsesItemsView = {
           continue;
         }
 
-        const reasoning: ResponseInputReasoning = {
+        const mapped = await mapper({
           type: 'reasoning',
           id,
           summary: block.thinking ? [{ type: 'summary_text', text: block.thinking }] : [],
-        };
-        const mapped = await mapper(reasoning);
+        });
         if (mapped === null) continue;
         const projected = responsesItemToMessagesAssistantBlock(mapped);
         if (projected !== null) content.push(projected);
@@ -181,25 +220,30 @@ export const messagesViaResponsesItemsView = {
     return out;
   },
   // Messages thinking blocks carry the gateway-encoded Responses reasoning
-  // id via signature_delta, which arrives separately from the block start
-  // and the thinking text deltas. We buffer the signature until content_block_stop
-  // so the mapper sees the final accumulated thinking summary; mid-block
-  // frames stream straight through.
+  // id via signature_delta, which arrives separately from content_block_start
+  // and the thinking text deltas. The signature is buffered until
+  // content_block_stop so the mapper sees the final accumulated thinking text
+  // when reconstructing the virtual reasoning item; mid-block frames stream
+  // straight through.
   //
-  // 1-to-null degrades to "strip the signature carrier": the visible thinking
-  // text has already been yielded and cannot be retroactively suppressed
-  // without buffering the whole block. Callers that need full suppression
-  // must drop the item before viaTranslation back-translates it into a
-  // Messages thinking block.
-  async *mapStreamAsResponsesItems(
+  // Per Anthropic's streaming spec, signature_delta must arrive before
+  // content_block_stop for the same block index — see
+  // https://platform.claude.com/docs/en/docs/build-with-claude/streaming
+  // and the SDKs at anthropics/anthropic-sdk-python and
+  // anthropics/anthropic-sdk-typescript. We attack any violation: a stray
+  // signature_delta after stop, or a thinking_delta after stop, is treated
+  // as upstream protocol corruption and surfaced as a 5xx via plain throw.
+  async *streamMapIdAsResponsesItems(
     frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
-    mapper: ResponsesItemMapper,
+    idMapper: ResponsesItemIdMapper,
+    onItemFinalized?: ResponsesItemFinalizedHandler,
   ): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
     interface BlockState {
       thinking: string;
       signature?: string;
     }
     const blocks = new Map<number, BlockState>();
+    const finalized = new Set<string>();
 
     for await (const frame of frames) {
       if (frame.type !== 'event') {
@@ -216,18 +260,24 @@ export const messagesViaResponsesItemsView = {
 
       if (event.type === 'content_block_delta' && event.delta.type === 'thinking_delta') {
         const state = blocks.get(event.index);
-        if (state !== undefined) state.thinking += event.delta.thinking;
+        if (state === undefined) {
+          throw new Error(`Messages stream invariant violated: thinking_delta for index ${event.index} arrived without an open thinking block`);
+        }
+        state.thinking += event.delta.thinking;
         yield frame;
         continue;
       }
 
       if (event.type === 'content_block_delta' && event.delta.type === 'signature_delta') {
         const state = blocks.get(event.index);
-        if (state !== undefined) {
-          state.signature = event.delta.signature;
+        if (state === undefined) {
+          // Either the block isn't a thinking block (no state opened) or
+          // it was closed already. Pass through unrewritten; only thinking
+          // blocks carry gateway-encoded reasoning ids.
+          yield frame;
           continue;
         }
-        yield frame;
+        state.signature = event.delta.signature;
         continue;
       }
 
@@ -237,27 +287,29 @@ export const messagesViaResponsesItemsView = {
         if (state?.signature !== undefined) {
           const upstreamId = messagesReasoningIdFromSignature(state.signature);
           if (upstreamId === null) {
+            // Opaque upstream signature (e.g. Anthropic's native encrypted
+            // reasoning) — preserve verbatim so the client can replay it.
             yield eventFrame({
               type: 'content_block_delta',
               index: event.index,
               delta: { type: 'signature_delta', signature: state.signature },
             });
           } else {
-            const mapped = await mapper({
+            const newId = idMapper(upstreamId, 'reasoning');
+            const originalItem: ResponseInputItem = {
               type: 'reasoning',
               id: upstreamId,
               summary: state.thinking ? [{ type: 'summary_text', text: state.thinking }] : [],
-            });
-            if (mapped !== null) {
-              if (mapped.type !== 'reasoning') {
-                throw new Error(`Cannot project Responses ${mapped.type} item into a Messages thinking signature`);
-              }
-              yield eventFrame({
-                type: 'content_block_delta',
-                index: event.index,
-                delta: { type: 'signature_delta', signature: messagesReasoningSignature(mapped.id) },
-              });
+            };
+            if (onItemFinalized && !finalized.has(upstreamId)) {
+              finalized.add(upstreamId);
+              await onItemFinalized(originalItem, newId);
             }
+            yield eventFrame({
+              type: 'content_block_delta',
+              index: event.index,
+              delta: { type: 'signature_delta', signature: messagesReasoningSignature(newId) },
+            });
           }
         }
         yield frame;
@@ -313,17 +365,18 @@ export const chatCompletionsViaResponsesItemsView = {
     }
     return out;
   },
-  // Chat reasoning items appear inside `choices[].delta.reasoning_items`,
-  // possibly across multiple chunks for the same upstream id with growing
-  // summary text. We call the mapper for every appearance so the wrap's
-  // mapper can upsert candidate rows with the latest summary content;
-  // returning null in any chunk marks the upstream id as dropped and
-  // subsequent appearances are filtered out.
-  async *mapStreamAsResponsesItems(
+  // Native Chat upstreams emit `reasoning_items` exactly once per item, in
+  // the chunk carrying the output_item.done analogue, with the full summary
+  // text. We treat each appearance as the finalizing one and dedupe via the
+  // `finalized` set, so a misbehaving upstream that streams the same id
+  // across chunks still produces a single row (first chunk's content wins —
+  // accepted limitation; native upstreams don't hit this path).
+  async *streamMapIdAsResponsesItems(
     frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>,
-    mapper: ResponsesItemMapper,
+    idMapper: ResponsesItemIdMapper,
+    onItemFinalized?: ResponsesItemFinalizedHandler,
   ): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> {
-    const rewrites = new Map<string, ResponsesItemRewrite>();
+    const finalized = new Set<string>();
 
     for await (const frame of frames) {
       if (frame.type !== 'event') {
@@ -342,18 +395,16 @@ export const chatCompletionsViaResponsesItemsView = {
             out.push(item);
             continue;
           }
-          const mapped = await trackRewrite(
-            { type: 'reasoning', id: item.id, summary: item.summary ?? [] },
-            mapper,
-            rewrites,
-          );
-          if (mapped === null) {
-            mutated = true;
-            continue;
+          const newId = idMapper(item.id, 'reasoning');
+          if (onItemFinalized && !finalized.has(item.id)) {
+            finalized.add(item.id);
+            await onItemFinalized(
+              { type: 'reasoning', id: item.id, summary: item.summary ?? [] },
+              newId,
+            );
           }
-          if (mapped.type !== 'reasoning') throw new Error(`Cannot project Responses ${mapped.type} item into Chat reasoning_items`);
-          if (mapped.id !== item.id || mapped.summary !== item.summary) mutated = true;
-          out.push({ type: 'reasoning', id: mapped.id, summary: mapped.summary });
+          mutated = true;
+          out.push({ type: 'reasoning', id: newId, summary: item.summary });
         }
 
         if (!mutated) return choice;
@@ -372,6 +423,11 @@ export const chatCompletionsViaResponsesItemsView = {
   },
 } satisfies ResponsesItemsView<readonly ChatMessage[], ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
 
+// Placeholder view. Gemini does not yet have a reasoning-id / signature
+// carrier in its protocol, so there is nothing to project. The empty
+// implementations let `gemini/serve.ts` go through the uniform stored-items
+// ceremony without branching on protocol; when Gemini gains signature
+// support, fill these in and the rest of the pipeline keeps working.
 export const geminiViaResponsesItemsView = {
   visitAsResponsesItems: async (
     _contents: readonly GeminiContent[],
@@ -381,9 +437,10 @@ export const geminiViaResponsesItemsView = {
     contents: readonly GeminiContent[],
     _mapper: ResponsesItemMapper,
   ): Promise<GeminiContent[]> => contents.map(content => structuredClone(content)),
-  async *mapStreamAsResponsesItems(
+  async *streamMapIdAsResponsesItems(
     frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
-    _mapper: ResponsesItemMapper,
+    _idMapper: ResponsesItemIdMapper,
+    _onItemFinalized?: ResponsesItemFinalizedHandler,
   ): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
     for await (const frame of frames) yield frame;
   },
@@ -422,4 +479,9 @@ const parseToolInput = (argumentsJson: string): Record<string, unknown> => {
   } catch {
     return {};
   }
+};
+
+const itemId = (item: { id?: unknown }): string | null => {
+  const id = item.id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 };

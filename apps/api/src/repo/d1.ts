@@ -652,16 +652,16 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      // We re-insert the same stored id within one stream as later mapper
-      // calls (output_item.done, repeated Chat chunks) carry more content
-      // than the first observation. ON CONFLICT DO UPDATE keeps the latest
-      // payload while leaving upstream affinity and created_at pinned to
-      // the first observation. Cross-session collisions on a random body
-      // are effectively impossible (~2^-128) so the overwrite is harmless.
+      // One INSERT per `(id, api_key_id)`. Stream pipelines call insertMany
+      // exactly once per stored id at the carrier's finalizing frame; the
+      // wrap's idMapper memoizes so reattempts within one stream are
+      // impossible. Cross-session collisions of the random body are
+      // effectively impossible (~2^-128) and treated as no-op if they ever
+      // happen.
       return this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (id, COALESCE(api_key_id, '')) DO UPDATE SET payload_json = excluded.payload_json`,
+           ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
         )
         .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, payload, item.createdAt);
     }));

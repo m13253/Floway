@@ -31,7 +31,10 @@ export const serializeStoredResponsesPayload = async (
   const inlineJson = JSON.stringify({ version: 1, storage: 'inline', payload } satisfies StoredResponsesPayloadJson);
   if (encoder.encode(inlineJson).byteLength <= INLINE_PAYLOAD_LIMIT_BYTES) return inlineJson;
 
-  const fileBody = encoder.encode(JSON.stringify({ version: 1, ...payload }));
+  // File body holds the raw payload only. The descriptor in D1's
+  // `payload_json` column carries version, storage discriminator, key,
+  // sha256, and byteLength; the body itself does not repeat them.
+  const fileBody = encoder.encode(JSON.stringify(payload));
   const key = await storedResponsesPayloadFileKey(id, apiKeyId, createdAt);
   const sha256 = await sha256Hex(fileBody);
   await getFileProvider().put(key, fileBody);

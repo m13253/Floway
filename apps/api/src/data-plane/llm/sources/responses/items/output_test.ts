@@ -133,10 +133,10 @@ test('rewrites output item ids consistently across added, child, done, and termi
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, 'up_native');
   assertEquals(row.upstreamItemId, original.id);
-  assertEquals(row.payload, { item: { ...original, id: storedId } });
+  assertEquals(row.payload, { item: original });
 });
 
-test('persists each row before yielding the frame that exposes its stored id', async () => {
+test('persists each row before yielding the item-done frame', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
@@ -148,14 +148,21 @@ test('persists each row before yielding the frame that exposes its stored id', a
     { type: 'response.completed', response: response([original]) },
   ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
 
-  const firstFrame = iterator.next();
-  assertEquals(await promiseStateAfterMicrotasks(firstFrame), 'pending');
+  // added flows real-time without persist; mid-stream replay race is
+  // accepted per design.
+  const addedFrame = await iterator.next();
+  assertEquals((addedFrame.value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  assertEquals(controlled.calls.length, 0);
+
+  // done is held until the row insert resolves.
+  const doneFrame = iterator.next();
+  assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
   assertEquals(controlled.calls.length, 1);
   controlled.resolveInsert?.();
-  assertEquals(((await firstFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 });
 
-test('insert failure prevents yielding any rewritten stored item frames', async () => {
+test('insert failure prevents yielding the item-done frame', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
@@ -167,11 +174,14 @@ test('insert failure prevents yielding any rewritten stored item frames', async 
     { type: 'response.completed', response: response([original]) },
   ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
 
-  const firstFrame = iterator.next();
-  assertEquals(await promiseStateAfterMicrotasks(firstFrame), 'pending');
+  // added passes first.
+  await iterator.next();
+
+  const doneFrame = iterator.next();
+  assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
   controlled.rejectInsert?.(new Error('insert failed'));
 
-  await assertRejects(() => firstFrame, Error, 'insert failed');
+  await assertRejects(() => doneFrame, Error, 'insert failed');
 });
 
 test('does not insert rows for failed streams without observed items', async () => {
@@ -201,7 +211,7 @@ test('items completed before a stream failure remain persisted', async () => {
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, { item: { ...original, id: storedId } });
+  assertEquals(row.payload, { item: original });
 });
 
 test('store false creates metadata rows with null payload', async () => {
@@ -232,7 +242,7 @@ test('terminal output items missing done frames are stored and rewritten', async
   const storedId = eventAt(events, 'response.completed').response.output[0].id!;
   assert(isStoredResponsesItemId(storedId));
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, { item: { ...original, id: storedId } });
+  assertEquals(row.payload, { item: original });
 });
 
 test('two distinct upstream items receive distinct stored ids', async () => {
@@ -271,7 +281,7 @@ test('repeated mapper calls for the same upstream id refresh the stored payload'
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, { item: { ...final, id: storedId } });
+  assertEquals(row.payload, { item: final });
 });
 
 test('via-translation synthesized items do not claim upstream ownership', async () => {
