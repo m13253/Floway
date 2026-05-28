@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { chatCompletionsItemsSource, geminiItemsSource, messagesItemsSource, responsesItemsSource } from './responses-items.ts';
+import { chatCompletionsViaResponsesItemsView, geminiViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from './responses-items.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { messagesReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -18,7 +18,7 @@ test('mapAsResponsesItems maps Responses input items through the callback', asyn
     ],
   };
 
-  const mapped = await responsesItemsSource.mapAsResponsesItems(payload.input, item => {
+  const mapped = await responsesItemsView.mapAsResponsesItems(payload.input, item => {
     if (item.type === 'item_reference') return { type: 'message', role: 'user', content: 'expanded' };
     if (item.type === 'reasoning') return { ...item, id: 'rs_next' };
     if (item.type === 'function_call') return null;
@@ -48,7 +48,7 @@ test('mapAsResponsesItems maps only Messages thinking blocks with gateway reason
     ],
   };
 
-  const mapped = await messagesItemsSource.mapAsResponsesItems(payload.messages, item => {
+  const mapped = await messagesViaResponsesItemsView.mapAsResponsesItems(payload.messages, item => {
     if (item.type !== 'reasoning') return item;
     return { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'rewritten' }] };
   });
@@ -86,7 +86,7 @@ test('visitAsResponsesItems scans Messages carriers without rebuilding source me
   ];
   const visited: ResponseInputItem[] = [];
 
-  const result = await messagesItemsSource.visitAsResponsesItems(messages, item => {
+  const result = await messagesViaResponsesItemsView.visitAsResponsesItems(messages, item => {
     visited.push(item);
   });
 
@@ -115,7 +115,7 @@ test('mapAsResponsesItems can drop carried Messages reasoning without touching o
     },
   ];
 
-  const mapped = await messagesItemsSource.mapAsResponsesItems(messages, item => (item.type === 'reasoning' ? null : item));
+  const mapped = await messagesViaResponsesItemsView.mapAsResponsesItems(messages, item => (item.type === 'reasoning' ? null : item));
 
   assertEquals(mapped, [
     {
@@ -140,7 +140,7 @@ test('mapAsResponsesItems maps Chat reasoning_items and leaves non-carriers unch
     ],
   };
 
-  const mapped = await chatCompletionsItemsSource.mapAsResponsesItems(payload.messages, item => {
+  const mapped = await chatCompletionsViaResponsesItemsView.mapAsResponsesItems(payload.messages, item => {
     if (item.type !== 'reasoning') return item;
     return { ...item, id: 'rs_next', summary: [{ type: 'summary_text', text: 'next' }] };
   });
@@ -173,7 +173,7 @@ test('mapAsResponsesItems does not treat Gemini thought signatures as Responses 
   };
 
   let calls = 0;
-  const mapped = await geminiItemsSource.mapAsResponsesItems(payload.contents!, item => {
+  const mapped = await geminiViaResponsesItemsView.mapAsResponsesItems(payload.contents!, item => {
     calls += 1;
     return item;
   });

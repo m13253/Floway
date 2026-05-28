@@ -20,7 +20,7 @@ import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-de
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
-import { geminiItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const missingGeminiModelResult = (model: string) =>
   jsonUpstreamErrorResult(404, {
@@ -88,7 +88,7 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
 
   try {
     const payload = await c.req.json<GeminiGenerateContentRequest>();
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.contents ?? [], request.apiKeyId ?? null, geminiItemsSource);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.contents ?? [], request.apiKeyId ?? null, geminiViaResponsesItemsView);
     const preparedDiagnostic = preparedStoredItems.diagnostics[0];
     if (preparedDiagnostic) {
       return Response.json(
@@ -126,7 +126,7 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
       if (!target) continue;
 
       const attemptPayload = structuredClone(payload);
-      const rewrittenContents = await rewriteStoredResponsesItemsForProvider(attemptPayload.contents ?? [], preparedStoredItems, binding, geminiItemsSource);
+      const rewrittenContents = await rewriteStoredResponsesItemsForProvider(attemptPayload.contents ?? [], preparedStoredItems, binding, geminiViaResponsesItemsView);
       if (attemptPayload.contents !== undefined) attemptPayload.contents = rewrittenContents;
 
       // Gemini source payload has no `model` field on the request body; the

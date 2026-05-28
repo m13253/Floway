@@ -19,7 +19,7 @@ import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common'
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@floway-dev/translate';
-import { chatCompletionsItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const chatInvocation = <TPayload extends { model: string }>(
   binding: ProviderModelRecord,
@@ -61,7 +61,7 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
     const wantsStream = payload.stream === true;
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, chatCompletionsItemsSource);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, chatCompletionsViaResponsesItemsView);
     const preparedDiagnostic = preparedStoredItems.diagnostics[0];
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
@@ -83,7 +83,7 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
-      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, chatCompletionsItemsSource);
+      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, chatCompletionsViaResponsesItemsView);
 
       const responsesNewItems: StoredResponsesItem[] = [];
       const invocation: ChatCompletionsInvocation = chatInvocation(binding, target, resolvedModelId, attemptPayload, responsesNewItems);

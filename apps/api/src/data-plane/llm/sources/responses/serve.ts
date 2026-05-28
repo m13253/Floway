@@ -19,7 +19,7 @@ import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common'
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
-import { responsesItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const CODEX_AUTO_REVIEW_ALIAS = 'codex-auto-review';
 const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
@@ -105,7 +105,7 @@ export const serveResponses = async (c: Context): Promise<Response> => {
     const wantsStream = payload.stream === true;
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.input, request.apiKeyId ?? null, responsesItemsSource);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.input, request.apiKeyId ?? null, responsesItemsView);
     const preparedDiagnostic = preparedStoredItems.diagnostics[0];
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
@@ -127,7 +127,7 @@ export const serveResponses = async (c: Context): Promise<Response> => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
-      attemptPayload.input = await rewriteStoredResponsesItemsForProvider(attemptPayload.input, preparedStoredItems, binding, responsesItemsSource);
+      attemptPayload.input = await rewriteStoredResponsesItemsForProvider(attemptPayload.input, preparedStoredItems, binding, responsesItemsView);
 
       const responsesNewItems: StoredResponsesItem[] = [];
       const invocation: ResponsesInvocation = responsesInvocation(binding, target, resolvedModelId, attemptPayload, responsesNewItems);

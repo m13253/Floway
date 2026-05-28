@@ -19,7 +19,7 @@ import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common'
 import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
-import { messagesItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
@@ -107,7 +107,7 @@ export const serveMessages = async (c: Context): Promise<Response> => {
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesItemsSource);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesViaResponsesItemsView);
     const preparedDiagnostic = preparedStoredItems.diagnostics[0];
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
@@ -129,7 +129,7 @@ export const serveMessages = async (c: Context): Promise<Response> => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
-      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesItemsSource);
+      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesViaResponsesItemsView);
 
       const sharedHeaders: Record<string, string> = {};
       const responsesNewItems: StoredResponsesItem[] = [];

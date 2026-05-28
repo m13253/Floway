@@ -10,12 +10,12 @@ export type ResponsesItemMapper = (
 
 export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<void>;
 
-export interface ResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems = TSourceItems> {
+export interface ResponsesItemsView<TSourceItems, TMappedSourceItems = TSourceItems> {
   visitAsResponsesItems(sourceItems: TSourceItems, visitor: ResponsesItemVisitor): Promise<void>;
   mapAsResponsesItems(sourceItems: TSourceItems, mapper: ResponsesItemMapper): Promise<TMappedSourceItems>;
 }
 
-export const responsesItemsSource = {
+export const responsesItemsView = {
   visitAsResponsesItems: async (
     input: string | readonly ResponseInputItem[],
     visitor: ResponsesItemVisitor,
@@ -36,9 +36,9 @@ export const responsesItemsSource = {
     }
     return out;
   },
-} satisfies ResponsesItemsSourceAdapter<string | readonly ResponseInputItem[], string | ResponseInputItem[]>;
+} satisfies ResponsesItemsView<string | readonly ResponseInputItem[], string | ResponseInputItem[]>;
 
-export const messagesItemsSource = {
+export const messagesViaResponsesItemsView = {
   visitAsResponsesItems: async (
     messages: readonly MessagesMessage[],
     visitor: ResponsesItemVisitor,
@@ -99,9 +99,9 @@ export const messagesItemsSource = {
     }
     return out;
   },
-} satisfies ResponsesItemsSourceAdapter<readonly MessagesMessage[], MessagesMessage[]>;
+} satisfies ResponsesItemsView<readonly MessagesMessage[], MessagesMessage[]>;
 
-export const chatCompletionsItemsSource = {
+export const chatCompletionsViaResponsesItemsView = {
   visitAsResponsesItems: async (
     messages: readonly ChatMessage[],
     visitor: ResponsesItemVisitor,
@@ -145,9 +145,9 @@ export const chatCompletionsItemsSource = {
     }
     return out;
   },
-} satisfies ResponsesItemsSourceAdapter<readonly ChatMessage[], ChatMessage[]>;
+} satisfies ResponsesItemsView<readonly ChatMessage[], ChatMessage[]>;
 
-export const geminiItemsSource = {
+export const geminiViaResponsesItemsView = {
   visitAsResponsesItems: async (
     _contents: readonly GeminiContent[],
     _visitor: ResponsesItemVisitor,
@@ -156,7 +156,7 @@ export const geminiItemsSource = {
     contents: readonly GeminiContent[],
     _mapper: ResponsesItemMapper,
   ): Promise<GeminiContent[]> => contents.map(content => structuredClone(content)),
-} satisfies ResponsesItemsSourceAdapter<readonly GeminiContent[], GeminiContent[]>;
+} satisfies ResponsesItemsView<readonly GeminiContent[], GeminiContent[]>;
 
 const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
   switch (item.type) {

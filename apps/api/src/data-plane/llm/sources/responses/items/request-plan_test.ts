@@ -16,7 +16,7 @@ import type { ModelProviderInstance, ProviderModelRecord } from '../../../../pro
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
-import { chatCompletionsItemsSource, messagesItemsSource, responsesItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { chatCompletionsViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
 
@@ -46,36 +46,36 @@ const insertRows = async (rows: readonly StoredResponsesItem[]) => {
 };
 
 const prepareResponsesItems = async (sourceItems: string | readonly ResponseInputItem[]) =>
-  await prepareStoredResponsesItemsForSource(sourceItems, API_KEY_ID, responsesItemsSource);
+  await prepareStoredResponsesItemsForSource(sourceItems, API_KEY_ID, responsesItemsView);
 
 const rewriteResponsesItems = async (
   sourceItems: string | readonly ResponseInputItem[],
   prepared: Awaited<ReturnType<typeof prepareResponsesItems>>,
   binding: ProviderModelRecord,
-) => await rewriteStoredResponsesItemsForProvider(sourceItems, prepared, binding, responsesItemsSource);
+) => await rewriteStoredResponsesItemsForProvider(sourceItems, prepared, binding, responsesItemsView);
 
 const expandResponsesItems = async (
   sourceItems: string | readonly ResponseInputItem[],
   prepared: Awaited<ReturnType<typeof prepareResponsesItems>>,
-) => await applyPreRoutingExpansions(sourceItems, prepared, responsesItemsSource);
+) => await applyPreRoutingExpansions(sourceItems, prepared, responsesItemsView);
 
 const prepareChatItems = async (messages: ChatCompletionsPayload['messages']) =>
-  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, chatCompletionsItemsSource);
+  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, chatCompletionsViaResponsesItemsView);
 
 const rewriteChatItems = async (
   messages: ChatCompletionsPayload['messages'],
   prepared: Awaited<ReturnType<typeof prepareChatItems>>,
   binding: ProviderModelRecord,
-) => await rewriteStoredResponsesItemsForProvider(messages, prepared, binding, chatCompletionsItemsSource);
+) => await rewriteStoredResponsesItemsForProvider(messages, prepared, binding, chatCompletionsViaResponsesItemsView);
 
 const prepareMessagesItems = async (messages: MessagesPayload['messages']) =>
-  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, messagesItemsSource);
+  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, messagesViaResponsesItemsView);
 
 const rewriteMessagesItems = async (
   messages: MessagesPayload['messages'],
   prepared: Awaited<ReturnType<typeof prepareMessagesItems>>,
   binding: ProviderModelRecord,
-) => await rewriteStoredResponsesItemsForProvider(messages, prepared, binding, messagesItemsSource);
+) => await rewriteStoredResponsesItemsForProvider(messages, prepared, binding, messagesViaResponsesItemsView);
 
 const storedRow = (
   overrides: Omit<Partial<StoredResponsesItem>, 'payload'> & Pick<StoredResponsesItem, 'id' | 'itemType'> & { payload?: unknown | null },

@@ -8,7 +8,7 @@ import { createRequestContext } from '../../execute.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
 import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../serve.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import { messagesItemsSource } from '@floway-dev/translate/via-responses/responses-items';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export const countTokens = async (c: Context) => {
   try {
@@ -18,7 +18,7 @@ export const countTokens = async (c: Context) => {
 
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
     const request = createRequestContext(c, undefined, false);
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesItemsSource);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesViaResponsesItemsView);
     const preparedDiagnostic = preparedStoredItems.diagnostics[0];
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
     let resp: Response | undefined;
@@ -42,7 +42,7 @@ export const countTokens = async (c: Context) => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
-      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesItemsSource);
+      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesViaResponsesItemsView);
       // Build a MessagesInvocation matching the chat-planning shape so
       // provider-registered count_tokens interceptors (Copilot's vision,
       // initiator, anthropic-beta header workarounds) run against the same
