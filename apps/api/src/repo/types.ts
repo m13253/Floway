@@ -171,6 +171,10 @@ export interface StoredResponsesItem {
 
 export interface StoredResponsesItemPayload {
   item: unknown;
+  // TODO: drop or wire up. Reserved as a place to stash provider-specific
+  // ancillary state (e.g. opaque cache hints) alongside the public item
+  // body, but no read or write path uses it today. Decide before the next
+  // public release.
   private?: unknown;
 }
 

@@ -33,6 +33,11 @@ export const messagesReasoningIdFromSignature = (signature: string | undefined):
 export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReasoningBlock, index: number): ResponseInputReasoning | null => {
   if (block.type === 'redacted_thinking') return null;
 
+  // `rs_${index}` is a synthetic id forwarded TO the upstream when a
+  // thinking block arrives without our signature envelope (so we cannot
+  // recover the original reasoning id). The Responses storage layer never
+  // sees it — the request side does not parse it as a gateway stored id
+  // and the upstream will allocate its own reasoning id in the response.
   return {
     type: 'reasoning',
     id: messagesReasoningIdFromSignature(block.signature) ?? `rs_${index}`,
