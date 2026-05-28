@@ -5,12 +5,14 @@ import { respondMessages } from './respond.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
-import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type LlmTargetApi, type MessagesInvocation, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
+import { StoredResponsesItemsDiagnosticError } from '../responses/items/errors.ts';
+import { storeResponsesOutputItems } from '../responses/items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -135,8 +137,13 @@ export const serveMessages = async (c: Context): Promise<Response> => {
 
       const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
         messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
-        responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
-          await emitToResponses(messagesInvocation(binding, 'responses', resolvedModelId, tgtPayload, undefined, sharedHeaders, responsesNewItems), request)),
+        responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) => {
+          const targetInvocation: ResponsesInvocation = messagesInvocation(binding, 'responses', resolvedModelId, tgtPayload, undefined, sharedHeaders, responsesNewItems);
+          const targetResult = await emitToResponses(targetInvocation, request);
+          return targetResult.type === 'events'
+            ? { ...targetResult, events: storeResponsesOutputItems(targetResult.events, targetInvocation, request) }
+            : targetResult;
+        }),
         'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
           await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload, undefined, sharedHeaders, responsesNewItems), request)),
       };
@@ -150,6 +157,9 @@ export const serveMessages = async (c: Context): Promise<Response> => {
 
     return await respondMessages(c, result, wantsStream, request, downstreamAbortController);
   } catch (error) {
+    if (error instanceof StoredResponsesItemsDiagnosticError) {
+      return Response.json(error.diagnostic.body, { status: error.diagnostic.status });
+    }
     return await respondMessages(
       c,
       sourceErrorResult(error, {

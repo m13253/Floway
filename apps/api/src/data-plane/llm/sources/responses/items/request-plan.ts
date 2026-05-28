@@ -1,13 +1,10 @@
 import {
-  createStoredResponsesAffinityConflictDiagnostic,
   createStoredResponsesItemNotFoundDiagnostic,
-  createUnsupportedStoredResponsesItemReferenceDiagnostic,
-  createUnsupportedStoredResponsesItemTypeDiagnostic,
-  createUnsatisfiedStoredResponsesForcingAffinityDiagnostic,
+  createStoredResponsesRoutingUnavailableDiagnostic,
   throwStoredResponsesItemsDiagnostic,
   type StoredResponsesItemsDiagnostic,
 } from './errors.ts';
-import { createTemporaryResponsesItemId, parseStoredResponsesItemId } from './format.ts';
+import { createTemporaryResponsesItemId, isKnownResponsesItemType, parseStoredResponsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
@@ -43,34 +40,6 @@ export type StoredResponsesProviderPlan =
   | { type: 'providers'; providers: readonly ModelProviderInstance[] }
   | { type: 'error'; diagnostic: StoredResponsesItemsDiagnostic };
 
-const knownStoredItemTypes = new Set([
-  'message',
-  'reasoning',
-  'web_search_call',
-  'function_call',
-  'function_call_output',
-  'custom_tool_call',
-  'custom_tool_call_output',
-  'file_search_call',
-  'computer_call',
-  'computer_call_output',
-  'tool_search_call',
-  'tool_search_output',
-  'compaction',
-  'image_generation_call',
-  'code_interpreter_call',
-  'local_shell_call',
-  'local_shell_call_output',
-  'shell_call',
-  'shell_call_output',
-  'apply_patch_call',
-  'apply_patch_call_output',
-  'mcp_call',
-  'mcp_list_tools',
-  'mcp_approval_request',
-  'mcp_approval_response',
-]);
-
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
   apiKeyId: string | null,
@@ -95,9 +64,8 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     }
 
     site.row = row;
-    if (!knownStoredItemTypes.has(row.itemType)) {
-      diagnostics.push(createUnsupportedStoredResponsesItemTypeDiagnostic(row.itemType, row.id));
-      continue;
+    if (!isKnownResponsesItemType(row.itemType)) {
+      throw new Error(`Stored Responses item '${row.id}' has unknown item type '${row.itemType}'.`);
     }
 
     if (site.item.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
@@ -106,7 +74,9 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     }
 
     if (site.item.type !== 'item_reference' && site.sourceItemType !== row.itemType) {
-      diagnostics.push(createUnsupportedStoredResponsesItemTypeDiagnostic(row.itemType, row.id));
+      diagnostics.push(createStoredResponsesRoutingUnavailableDiagnostic(
+        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${site.sourceItemType}'.`,
+      ));
       continue;
     }
 
@@ -139,19 +109,30 @@ export const planResponsesItemProviders = (
 
   const forcingUpstreamIds = [...prepared.forcingUpstreamIds];
   if (forcingUpstreamIds.length > 1) {
-    return { type: 'error', diagnostic: createStoredResponsesAffinityConflictDiagnostic(forcingUpstreamIds) };
+    return {
+      type: 'error',
+      diagnostic: createStoredResponsesRoutingUnavailableDiagnostic(
+        `Stored Responses items in this request require multiple incompatible upstreams: ${forcingUpstreamIds.map(id => `'${id}'`).join(', ')}.`,
+      ),
+    };
   }
 
   if (forcingUpstreamIds.length === 1) {
     const [upstreamId] = forcingUpstreamIds;
     const matching = providers.filter(provider => provider.upstream === upstreamId);
     if (matching.length === 0) {
-      return { type: 'error', diagnostic: createUnsatisfiedStoredResponsesForcingAffinityDiagnostic(upstreamId) };
+      return {
+        type: 'error',
+        diagnostic: createStoredResponsesRoutingUnavailableDiagnostic(
+          `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
+        ),
+      };
     }
-    if (hasUnexpandedItemReferenceForcing(prepared, upstreamId)) {
+    const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(prepared, upstreamId);
+    if (unexpandedReferenceId !== null) {
       const itemReferenceCapable = matching.filter(provider => provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
-        return { type: 'error', diagnostic: createUnsupportedStoredResponsesItemReferenceDiagnostic(upstreamId) };
+        return { type: 'error', diagnostic: createStoredResponsesItemNotFoundDiagnostic(unexpandedReferenceId) };
       }
       return { type: 'providers', providers: itemReferenceCapable };
     }
@@ -284,15 +265,15 @@ const preferredUpstreamsByReverseLastOccurrence = (
   prepared: PreparedStoredResponsesItems,
 ): readonly string[] => [...prepared.preferredUpstreamIds].reverse();
 
-const hasUnexpandedItemReferenceForcing = (
+const findUnexpandedItemReferenceForcingId = (
   prepared: PreparedStoredResponsesItems,
   upstreamId: string,
-): boolean =>
-  prepared.useSites.some(site =>
+): string | null =>
+  prepared.useSites.find(site =>
     site.affinity === 'forcing'
     && site.item.type === 'item_reference'
     && site.row?.upstreamId === upstreamId
-    && site.row.payload === null);
+    && site.row.payload === null)?.id ?? null;
 
 const classifyStoredResponsesUseSite = (
   item: ResponseInputItem,
@@ -314,15 +295,21 @@ const rewriteStoredResponsesItemForProvider = (
   if (id === null || !parseStoredResponsesItemId(id)) return item;
 
   const row = prepared.rows.get(id) ?? throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(id));
-  if (!knownStoredItemTypes.has(row.itemType)) throwStoredResponsesItemsDiagnostic(createUnsupportedStoredResponsesItemTypeDiagnostic(row.itemType, row.id));
-  if (item.type !== 'item_reference' && item.type !== row.itemType) throwStoredResponsesItemsDiagnostic(createUnsupportedStoredResponsesItemTypeDiagnostic(row.itemType, row.id));
+  if (!isKnownResponsesItemType(row.itemType)) throw new Error(`Stored Responses item '${row.id}' has unknown item type '${row.itemType}'.`);
+  if (item.type !== 'item_reference' && item.type !== row.itemType) {
+    throwStoredResponsesItemsDiagnostic(createStoredResponsesRoutingUnavailableDiagnostic(
+      `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${item.type}'.`,
+    ));
+  }
 
   const affinity = classifyStoredResponsesUseSite(item, row);
   if (affinity === 'forcing' && row.upstreamId !== provider.upstream) {
-    throwStoredResponsesItemsDiagnostic(createUnsatisfiedStoredResponsesForcingAffinityDiagnostic(row.upstreamId ?? provider.upstream));
+    throwStoredResponsesItemsDiagnostic(createStoredResponsesRoutingUnavailableDiagnostic(
+      `Stored Responses item '${row.id}' requires upstream '${row.upstreamId ?? provider.upstream}', which is not the selected upstream.`,
+    ));
   }
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
-    throwStoredResponsesItemsDiagnostic(createUnsupportedStoredResponsesItemReferenceDiagnostic(row.upstreamId ?? provider.upstream));
+    throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(row.id));
   }
 
   if (row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
@@ -340,7 +327,7 @@ const storedItemReplacementBase = (
 ): ResponseInputItem => {
   if (row.payload === null) return structuredClone(item);
   const replacement = structuredClone(row.payload.item) as ResponseInputItem;
-  if (!knownStoredItemTypes.has(replacement.type)) throwStoredResponsesItemsDiagnostic(createUnsupportedStoredResponsesItemTypeDiagnostic(replacement.type, row.id));
+  if (!isKnownResponsesItemType(replacement.type)) throw new Error(`Stored Responses item '${row.id}' payload has unknown item type '${replacement.type}'.`);
   return replacement;
 };
 

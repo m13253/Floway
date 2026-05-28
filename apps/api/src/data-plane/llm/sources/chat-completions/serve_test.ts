@@ -434,6 +434,13 @@ test("/v1/chat/completions uses Copilot's provider-projected Responses endpoint 
       }
       if (url.pathname === '/responses') {
         upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        const messageItem = {
+          type: 'message' as const,
+          id: 'msg_0',
+          role: 'assistant' as const,
+          status: 'completed' as const,
+          content: [{ type: 'output_text' as const, text: 'ok' }],
+        };
         return sseResponse([
           {
             event: 'response.created',
@@ -450,6 +457,14 @@ test("/v1/chat/completions uses Copilot's provider-projected Responses endpoint 
             },
           },
           {
+            event: 'response.output_item.added',
+            data: {
+              type: 'response.output_item.added',
+              output_index: 0,
+              item: { ...messageItem, status: 'in_progress', content: [] },
+            },
+          },
+          {
             event: 'response.output_text.delta',
             data: {
               type: 'response.output_text.delta',
@@ -457,6 +472,14 @@ test("/v1/chat/completions uses Copilot's provider-projected Responses endpoint 
               output_index: 0,
               content_index: 0,
               delta: 'ok',
+            },
+          },
+          {
+            event: 'response.output_item.done',
+            data: {
+              type: 'response.output_item.done',
+              output_index: 0,
+              item: messageItem,
             },
           },
           {
@@ -468,7 +491,7 @@ test("/v1/chat/completions uses Copilot's provider-projected Responses endpoint 
                 object: 'response',
                 model: 'gpt-dual-chat',
                 status: 'completed',
-                output: [],
+                output: [messageItem],
                 output_text: 'ok',
                 usage: {
                   input_tokens: 1,

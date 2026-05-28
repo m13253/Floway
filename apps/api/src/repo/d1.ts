@@ -650,7 +650,6 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    await warnDuplicateStoredResponsesItems(this, items);
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
       return this.db
@@ -686,32 +685,6 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     for (const statement of statements) await statement.run();
   }
 }
-
-const warnDuplicateStoredResponsesItems = async (
-  repo: D1ResponsesItemsRepo,
-  items: readonly StoredResponsesItem[],
-): Promise<void> => {
-  const idsByScope = new Map<string, { apiKeyId: string | null; ids: string[]; seen: Set<string> }>();
-  for (const item of items) {
-    const scope = item.apiKeyId ?? '';
-    let entry = idsByScope.get(scope);
-    if (!entry) {
-      entry = { apiKeyId: item.apiKeyId, ids: [], seen: new Set() };
-      idsByScope.set(scope, entry);
-    }
-    if (entry.seen.has(item.id)) {
-      console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
-      continue;
-    }
-    entry.seen.add(item.id);
-    entry.ids.push(item.id);
-  }
-
-  for (const entry of idsByScope.values()) {
-    const existing = await repo.lookupMany(entry.apiKeyId, entry.ids);
-    for (const item of existing) console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
-  }
-};
 
 interface ResponsesItemRow {
   id: string;

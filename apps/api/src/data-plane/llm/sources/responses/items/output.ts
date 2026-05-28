@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, createTemporaryResponsesItemId, isStoredResponsesItemId } from './format.ts';
+import { createStoredResponsesItemId, createTemporaryResponsesItemId, isKnownResponsesItemType, isStoredResponsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
@@ -164,8 +164,12 @@ const rewriteSuccessfulTerminal = (
   },
 });
 
-const rewriteItemId = (item: ResponseOutputItem, storedId: string): ResponseOutputItem =>
-  ({ ...item, id: storedId } as ResponseOutputItem);
+const rewriteItemId = (item: ResponseOutputItem, storedId: string): ResponseOutputItem => {
+  if (!isKnownResponsesItemType(item.type)) {
+    throw new TypeError(`Cannot rewrite id on unknown Responses item type '${item.type}'`);
+  }
+  return { ...item, id: storedId } as ResponseOutputItem;
+};
 
 const createStoredItemRow = (
   storedId: string,

@@ -5,12 +5,14 @@ import { respondGemini } from './respond.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
-import { type GeminiInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
+import { type GeminiInvocation, type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
+import { StoredResponsesItemsDiagnosticError } from '../responses/items/errors.ts';
+import { storeResponsesOutputItems } from '../responses/items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -135,8 +137,13 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
       const emits: Record<LlmTargetApi, SourceEmit<GeminiGenerateContentRequest, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>> = {
         messages: viaTranslation(translateGeminiViaMessages, async (tgtPayload: MessagesPayload) =>
           await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload, responsesNewItems), request)),
-        responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) =>
-          await emitToResponses(geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload, responsesNewItems), request)),
+        responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) => {
+          const targetInvocation: ResponsesInvocation = geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload, responsesNewItems);
+          const targetResult = await emitToResponses(targetInvocation, request);
+          return targetResult.type === 'events'
+            ? { ...targetResult, events: storeResponsesOutputItems(targetResult.events, targetInvocation, request) }
+            : targetResult;
+        }),
         'chat-completions': viaTranslation(translateGeminiViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
           await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload, responsesNewItems), request)),
       };
@@ -150,6 +157,18 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
 
     return await respondGemini(c, result, wantsStream, request, downstreamAbortController);
   } catch (error) {
+    if (error instanceof StoredResponsesItemsDiagnosticError) {
+      return Response.json(
+        {
+          error: {
+            code: error.diagnostic.status,
+            message: error.diagnostic.message,
+            status: googleRpcStatusForHttpStatus(error.diagnostic.status),
+          },
+        },
+        { status: error.diagnostic.status },
+      );
+    }
     return await respondGemini(
       c,
       sourceErrorResult(error, {

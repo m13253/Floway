@@ -1,96 +1,88 @@
-export type StoredResponsesItemsDiagnosticKind =
-  | 'not_found'
-  | 'affinity_conflict'
-  | 'unsupported_stored_item_type'
-  | 'unsatisfied_forcing_affinity'
-  | 'unsupported_item_reference';
+// Diagnostic errors describe two well-defined user-input failures of stored
+// Responses item routing.
+//
+// `not_found` covers both "the id was never stored" and "the gateway holds
+// metadata but cannot satisfy the requested `item_reference`". Pre-feature
+// clients identify a missing reference by the exact message text below; we
+// keep that wording verbatim so the contract is unchanged.
+//
+// `routing_unavailable` covers requests where stored items name upstreams that
+// cannot be reached for the current model (forcing-affinity conflict, or the
+// single forcing upstream isn't configured). A single error code is used for
+// every variant and the diagnosis goes into `message`.
+//
+// Data corruption (a stored row whose `item_type` we no longer recognize) is
+// NOT a diagnostic: it is an internal invariant break and propagates as a
+// plain `Error` to the top-level catch, surfaced as a 5xx upstream error.
+
+export type StoredResponsesItemsDiagnosticKind = 'not_found' | 'routing_unavailable';
 
 export interface StoredResponsesItemsDiagnostic {
   kind: StoredResponsesItemsDiagnosticKind;
   status: number;
   message: string;
-  type: 'invalid_request_error' | 'internal_error';
-  param: string | null;
-  code: string | null;
-  itemIds?: readonly string[];
-  upstreamIds?: readonly string[];
   body: {
     error: {
       message: string;
-      type: 'invalid_request_error' | 'internal_error';
+      type: 'invalid_request_error';
       param: string | null;
       code: string | null;
     };
   };
 }
 
+export class StoredResponsesItemsDiagnosticError extends Error {
+  readonly diagnostic: StoredResponsesItemsDiagnostic;
+
+  constructor(diagnostic: StoredResponsesItemsDiagnostic) {
+    super(diagnostic.message);
+    this.name = 'StoredResponsesItemsDiagnosticError';
+    this.diagnostic = diagnostic;
+  }
+}
+
 export const throwStoredResponsesItemsDiagnostic = (diagnostic: StoredResponsesItemsDiagnostic): never => {
-  throw new Error(diagnostic.message);
+  throw new StoredResponsesItemsDiagnosticError(diagnostic);
 };
 
+// Pre-feature clients recognize this exact message text — do not change it.
+// Origin: apps/api/src/data-plane/llm/sources/responses/serve_test.ts
+// "/v1/responses rejects item_reference at the entrypoint" pinned the wire
+// shape before stored items existed.
 export const createStoredResponsesItemNotFoundDiagnostic = (itemId: string): StoredResponsesItemsDiagnostic =>
   diagnostic({
     kind: 'not_found',
     status: 404,
     message: `Item with id '${itemId}' not found.`,
-    type: 'invalid_request_error',
     param: 'input',
     code: null,
-    itemIds: [itemId],
   });
 
-export const createStoredResponsesAffinityConflictDiagnostic = (upstreamIds: readonly string[]): StoredResponsesItemsDiagnostic =>
+export const createStoredResponsesRoutingUnavailableDiagnostic = (message: string): StoredResponsesItemsDiagnostic =>
   diagnostic({
-    kind: 'affinity_conflict',
+    kind: 'routing_unavailable',
     status: 400,
-    message: 'Stored Responses items in this request refer to incompatible upstreams.',
-    type: 'invalid_request_error',
+    message,
     param: 'input',
-    code: 'responses_item_affinity_conflict',
-    upstreamIds,
-  });
-
-export const createUnsupportedStoredResponsesItemTypeDiagnostic = (itemType: string, itemId: string): StoredResponsesItemsDiagnostic =>
-  diagnostic({
-    kind: 'unsupported_stored_item_type',
-    status: 500,
-    message: `Stored Responses item '${itemId}' has unsupported item type '${itemType}'.`,
-    type: 'internal_error',
-    param: null,
-    code: 'unsupported_stored_responses_item_type',
-    itemIds: [itemId],
-  });
-
-export const createUnsatisfiedStoredResponsesForcingAffinityDiagnostic = (upstreamId: string): StoredResponsesItemsDiagnostic =>
-  diagnostic({
-    kind: 'unsatisfied_forcing_affinity',
-    status: 400,
-    message: 'Stored Responses items in this request require an upstream that is not available for the selected model.',
-    type: 'invalid_request_error',
-    param: 'input',
-    code: 'responses_item_forcing_affinity_unavailable',
-    upstreamIds: [upstreamId],
-  });
-
-export const createUnsupportedStoredResponsesItemReferenceDiagnostic = (upstreamId: string): StoredResponsesItemsDiagnostic =>
-  diagnostic({
-    kind: 'unsupported_item_reference',
-    status: 400,
-    message: 'Stored Responses item_reference requires an upstream that supports Responses item references.',
-    type: 'invalid_request_error',
-    param: 'input',
-    code: 'responses_item_reference_unsupported',
-    upstreamIds: [upstreamId],
+    code: 'responses_item_routing_unavailable',
   });
 
 const diagnostic = (
-  input: Omit<StoredResponsesItemsDiagnostic, 'body'>,
+  input: {
+    kind: StoredResponsesItemsDiagnosticKind;
+    status: number;
+    message: string;
+    param: string | null;
+    code: string | null;
+  },
 ): StoredResponsesItemsDiagnostic => ({
-  ...input,
+  kind: input.kind,
+  status: input.status,
+  message: input.message,
   body: {
     error: {
       message: input.message,
-      type: input.type,
+      type: 'invalid_request_error',
       param: input.param,
       code: input.code,
     },

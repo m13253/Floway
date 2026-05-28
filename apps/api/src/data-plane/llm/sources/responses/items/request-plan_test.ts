@@ -124,7 +124,7 @@ test('missing stored item_reference returns a source-renderable not found diagno
   if (plan.type === 'error') {
     assertEquals(plan.diagnostic.kind, 'not_found');
     assertEquals(plan.diagnostic.status, 404);
-    assertEquals(plan.diagnostic.param, 'input');
+    assertEquals(plan.diagnostic.body.error.param, 'input');
   }
 });
 
@@ -229,8 +229,8 @@ test('conflicting compaction forcing upstreams reject the request', async () => 
 
   assertEquals(plan.type, 'error');
   if (plan.type === 'error') {
-    assertEquals(plan.diagnostic.kind, 'affinity_conflict');
-    assertEquals(plan.diagnostic.body.error.message, 'Stored Responses items in this request refer to incompatible upstreams.');
+    assertEquals(plan.diagnostic.kind, 'routing_unavailable');
+    assertEquals(plan.diagnostic.body.error.code, 'responses_item_routing_unavailable');
   }
 });
 
@@ -276,7 +276,7 @@ test('row item type must match source item type before downgrade or rewrite', as
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
   assertEquals(plan.type, 'error');
-  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'unsupported_stored_item_type');
+  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'routing_unavailable');
 });
 
 test('matching upstream rewrites Chat reasoning_items to upstream reasoning id', async () => {
@@ -488,8 +488,9 @@ test('metadata-only item_reference rejects when the origin upstream does not sup
 
   assertEquals(plan.type, 'error');
   if (plan.type === 'error') {
-    assertEquals(plan.diagnostic.kind, 'unsupported_item_reference');
-    assertEquals(plan.diagnostic.status, 400);
+    assertEquals(plan.diagnostic.kind, 'not_found');
+    assertEquals(plan.diagnostic.status, 404);
+    assertEquals(plan.diagnostic.body.error.message, `Item with id '${id}' not found.`);
   }
 });
 
@@ -507,6 +508,6 @@ test('pre-routing expansion rejects corrupt falsy stored item JSON values', asyn
   await assertRejects(
     () => expandResponsesItems([{ type: 'message', id, role: 'assistant', content: 'stale' }], prepared),
     Error,
-    'unsupported item type',
+    'unknown item type',
   );
 });

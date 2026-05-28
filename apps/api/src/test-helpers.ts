@@ -6,6 +6,7 @@ import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey, TelemetryModelIdentity, UpstreamRecord } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
+import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
 import { clearCopilotTokenCache } from './shared/copilot.ts';
 import type { Upstream } from './shared/upstream/types.ts';
 
@@ -95,6 +96,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  initFileProvider(new MemoryFileProvider());
 
   const adminKey = options.adminKey ?? 'admin-test-key';
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));

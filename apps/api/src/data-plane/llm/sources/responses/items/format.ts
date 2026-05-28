@@ -30,6 +30,9 @@ const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));
 const bodyPattern = /^[A-Za-z0-9_-]{22}$/;
 const checksumPattern = /^[A-Za-z0-9_-]{6}$/;
 
+export const isKnownResponsesItemType = (itemType: string): boolean =>
+  Object.hasOwn(itemTypePrefixes, itemType);
+
 export const createStoredResponsesItemId = (itemType: string, item: unknown): string => {
   const canonical = canonicalJson(item);
   return createChecksummedId(prefixForItemType(itemType), base64UrlEncode(sha256(new TextEncoder().encode(canonical)).slice(0, 16)));

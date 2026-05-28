@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 
 import { responsesSourceInterceptors } from './interceptors/index.ts';
+import { StoredResponsesItemsDiagnosticError } from './items/errors.ts';
 import { storeResponsesOutputItems } from './items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './items/request-plan.ts';
 import { respondResponses } from './respond.ts';
@@ -151,6 +152,9 @@ export const serveResponses = async (c: Context): Promise<Response> => {
 
     return await respondResponses(c, result, wantsStream, request, downstreamAbortController);
   } catch (error) {
+    if (error instanceof StoredResponsesItemsDiagnosticError) {
+      return Response.json(error.diagnostic.body, { status: error.diagnostic.status });
+    }
     return await respondResponses(
       c,
       sourceErrorResult(error, {

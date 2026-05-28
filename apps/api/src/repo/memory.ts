@@ -368,10 +368,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     const staged = new Map<string, StoredResponsesItem>();
     for (const item of items) {
       const key = responsesItemStoreKey(item.apiKeyId, item.id);
-      if (staged.has(key) || this.store.has(key)) {
-        console.warn(`Duplicate stored Responses item ignored: ${item.id}`);
-        continue;
-      }
+      if (staged.has(key) || this.store.has(key)) continue;
       staged.set(key, cloneStoredResponsesItem(item));
     }
     for (const [id, item] of staged) this.store.set(id, item);

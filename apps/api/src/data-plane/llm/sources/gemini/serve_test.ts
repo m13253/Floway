@@ -249,7 +249,23 @@ test('/v1beta/models/:model:generateContent routes Gemini through responses when
       upstreamPath = url.pathname;
 
       if (url.pathname === '/responses') {
+        const messageItem = {
+          type: 'message' as const,
+          id: 'msg_1',
+          role: 'assistant' as const,
+          status: 'completed' as const,
+          content: [{ type: 'output_text' as const, text: 'responses ok' }],
+        };
         return sseResponse([
+          {
+            event: 'response.output_item.added',
+            data: {
+              type: 'response.output_item.added',
+              sequence_number: 0,
+              output_index: 0,
+              item: { ...messageItem, status: 'in_progress', content: [] },
+            },
+          },
           {
             event: 'response.output_text.delta',
             data: {
@@ -262,17 +278,26 @@ test('/v1beta/models/:model:generateContent routes Gemini through responses when
             },
           },
           {
+            event: 'response.output_item.done',
+            data: {
+              type: 'response.output_item.done',
+              sequence_number: 2,
+              output_index: 0,
+              item: messageItem,
+            },
+          },
+          {
             event: 'response.completed',
             data: {
               type: 'response.completed',
-              sequence_number: 2,
+              sequence_number: 3,
               response: {
                 id: 'resp_1',
                 object: 'response',
                 created_at: 1,
                 model: 'gpt-responses-only',
                 status: 'completed',
-                output: [],
+                output: [messageItem],
                 usage: {
                   input_tokens: 6,
                   output_tokens: 2,

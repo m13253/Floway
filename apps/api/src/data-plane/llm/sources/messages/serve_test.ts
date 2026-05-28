@@ -1744,7 +1744,12 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       assertEquals(body.usage.input_tokens, 25);
       assertEquals(body.usage.cache_read_input_tokens, 5);
       assertEquals(body.content[0].type, 'thinking');
-      assertEquals(body.content[0].signature, messagesReasoningSignature('rs_1'));
+      const expectedStoredId = createStoredResponsesItemId('reasoning', {
+        type: 'reasoning',
+        id: 'rs_1',
+        summary: [{ type: 'summary_text', text: 'brief reasoning' }],
+      });
+      assertEquals(body.content[0].signature, messagesReasoningSignature(expectedStoredId));
       assertEquals(body.content[1].text, 'Answer text');
     },
   );

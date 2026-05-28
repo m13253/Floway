@@ -356,9 +356,12 @@ test('/v1/responses rejects metadata-only item_reference for Copilot before upst
         }),
       });
 
-      assertEquals(response.status, 400);
+      assertEquals(response.status, 404);
       const body = await response.json();
-      assertEquals(body.error.code, 'responses_item_reference_unsupported');
+      assertEquals(body.error.message, `Item with id '${id}' not found.`);
+      assertEquals(body.error.type, 'invalid_request_error');
+      assertEquals(body.error.param, 'input');
+      assertEquals(body.error.code, null);
     },
   );
 
@@ -635,7 +638,7 @@ test('/v1/responses rejects multiple forcing stored-item origins before generati
 
       assertEquals(response.status, 400);
       const body = await response.json();
-      assertEquals(body.error.code, 'responses_item_affinity_conflict');
+      assertEquals(body.error.code, 'responses_item_routing_unavailable');
     },
   );
 
