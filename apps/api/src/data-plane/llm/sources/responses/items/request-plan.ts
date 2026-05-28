@@ -4,7 +4,7 @@ import {
   throwStoredResponsesItemsDiagnostic,
   type StoredResponsesItemsDiagnostic,
 } from './errors.ts';
-import { createTemporaryResponsesItemId, isKnownResponsesItemType, parseStoredResponsesItemId } from './format.ts';
+import { createTemporaryResponsesItemId, parseStoredResponsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
@@ -15,12 +15,10 @@ export type StoredResponsesUseSiteAffinity = 'forcing' | 'portable' | 'downgrada
 
 export interface StoredResponsesUseSite {
   id: string;
-  item: ResponseInputItem;
-  sourceItemType: string;
+  type: string;
   lookup: boolean;
   row?: StoredResponsesItem;
   affinity?: StoredResponsesUseSiteAffinity;
-  order: number;
 }
 
 export interface PreparedStoredResponsesItems {
@@ -38,9 +36,9 @@ export type StoredResponsesProviderPlan =
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
   apiKeyId: string | null,
-  sourceAdapter: ResponsesItemsView<TSourceItems>,
+  view: ResponsesItemsView<TSourceItems>,
 ): Promise<PreparedStoredResponsesItems> => {
-  const useSites = await collectStoredResponsesUseSites(sourceItems, sourceAdapter);
+  const useSites = await collectStoredResponsesUseSites(sourceItems, view);
   const ids = useSites.filter(site => site.lookup).map(site => site.id);
   const rowsById = new Map((await getRepo().responsesItems.lookupMany(apiKeyId, ids)).map(row => [row.id, row]));
   const rows = new Map<string, StoredResponsesItem>();
@@ -59,23 +57,19 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     }
 
     site.row = row;
-    if (!isKnownResponsesItemType(row.itemType)) {
-      throw new Error(`Stored Responses item '${row.id}' has unknown item type '${row.itemType}'.`);
-    }
-
-    if (site.item.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
+    if (site.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
       diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
       continue;
     }
 
-    if (site.item.type !== 'item_reference' && site.sourceItemType !== row.itemType) {
+    if (site.type !== 'item_reference' && site.type !== row.itemType) {
       diagnostics.push(createStoredResponsesRoutingUnavailableDiagnostic(
-        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${site.sourceItemType}'.`,
+        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${site.type}'.`,
       ));
       continue;
     }
 
-    site.affinity = classifyStoredResponsesUseSite(site.item, row);
+    site.affinity = classifyStoredResponsesUseSite(site.type, row);
     if (site.affinity === 'forcing' && !row.upstreamId) {
       diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
       continue;
@@ -141,7 +135,7 @@ export const orderProvidersByStoredResponsesAffinity = (
   providers: readonly ModelProviderInstance[],
   prepared: PreparedStoredResponsesItems,
 ): readonly ModelProviderInstance[] => {
-  const preferred = [...preferredUpstreamsByReverseLastOccurrence(prepared)];
+  const preferred = [...prepared.preferredUpstreamIds].reverse();
   if (preferred.length === 0) return providers;
 
   const order = new Map(preferred.map((upstreamId, index) => [upstreamId, index]));
@@ -152,74 +146,38 @@ export const orderProvidersByStoredResponsesAffinity = (
   return [...preferredProviders, ...remainingProviders];
 };
 
-export async function applyPreRoutingExpansions<TSourceItems, TMappedSourceItems>(
-  sourceItems: TSourceItems,
-  prepared: PreparedStoredResponsesItems,
-  sourceAdapter: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
-): Promise<TMappedSourceItems>;
-export async function applyPreRoutingExpansions<TSourceItems, TMappedSourceItems>(
-  sourceItems: TSourceItems,
-  prepared: PreparedStoredResponsesItems,
-  sourceAdapter: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
-): Promise<TMappedSourceItems> {
-  throwForPreparedDiagnostics(prepared);
-  return await sourceAdapter.mapAsResponsesItems(sourceItems, item => {
-    const id = responsesItemId(item);
-    if (id === null || !parseStoredResponsesItemId(id)) return item;
-    const row = prepared.rows.get(id);
-    if (row?.payload === null || row === undefined) return item;
-    return storedItemReplacementBase(item, row);
-  });
-}
-
-export async function rewriteStoredResponsesItemsForProvider<TSourceItems, TMappedSourceItems>(
+export const rewriteStoredResponsesItemsForProvider = async <TSourceItems, TMappedSourceItems>(
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
   provider: ProviderModelRecord,
-  sourceAdapter: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
-): Promise<TMappedSourceItems>;
-export async function rewriteStoredResponsesItemsForProvider<TSourceItems, TMappedSourceItems>(
-  sourceItems: TSourceItems,
-  prepared: PreparedStoredResponsesItems,
-  provider: ProviderModelRecord,
-  sourceAdapter: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
-): Promise<TMappedSourceItems> {
+  view: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
+): Promise<TMappedSourceItems> => {
   throwForPreparedDiagnostics(prepared);
-  return await sourceAdapter.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, prepared, provider));
-}
+  return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, prepared, provider));
+};
 
+// Non-item_reference items that arrive with an unparseable id are passed
+// through as-is, never looked up. This is intentional: clients legitimately
+// re-send items that were never stored (pre-feature ids, ids from a
+// different gateway, opaque upstream ids). Only `item_reference` declares
+// "this is a stored row" — everything else carries its own inline content.
 const collectStoredResponsesUseSites = async <TSourceItems>(
   sourceItems: TSourceItems,
-  sourceAdapter: ResponsesItemsView<TSourceItems>,
+  view: ResponsesItemsView<TSourceItems>,
 ): Promise<StoredResponsesUseSite[]> => {
   const useSites: StoredResponsesUseSite[] = [];
-  let order = 0;
 
-  await sourceAdapter.visitAsResponsesItems(sourceItems, item => {
+  await view.visitAsResponsesItems(sourceItems, item => {
     const id = responsesItemId(item);
     if (id === null) return;
 
     if (parseStoredResponsesItemId(id)) {
-      useSites.push({
-        id,
-        item: structuredClone(item),
-        sourceItemType: item.type,
-        lookup: true,
-        order,
-      });
-      order += 1;
+      useSites.push({ id, type: item.type, lookup: true });
       return;
     }
 
     if (item.type === 'item_reference') {
-      useSites.push({
-        id,
-        item: structuredClone(item),
-        sourceItemType: item.type,
-        lookup: false,
-        order,
-      });
-      order += 1;
+      useSites.push({ id, type: item.type, lookup: false });
     }
   });
 
@@ -256,25 +214,21 @@ const collectPreferredUpstreams = (
   return preferred;
 };
 
-const preferredUpstreamsByReverseLastOccurrence = (
-  prepared: PreparedStoredResponsesItems,
-): readonly string[] => [...prepared.preferredUpstreamIds].reverse();
-
 const findUnexpandedItemReferenceForcingId = (
   prepared: PreparedStoredResponsesItems,
   upstreamId: string,
 ): string | null =>
   prepared.useSites.find(site =>
     site.affinity === 'forcing'
-    && site.item.type === 'item_reference'
+    && site.type === 'item_reference'
     && site.row?.upstreamId === upstreamId
     && site.row.payload === null)?.id ?? null;
 
 const classifyStoredResponsesUseSite = (
-  item: ResponseInputItem,
+  itemType: string,
   row: StoredResponsesItem,
 ): StoredResponsesUseSiteAffinity => {
-  if (item.type === 'item_reference' && row.payload === null) return 'forcing';
+  if (itemType === 'item_reference' && row.payload === null) return 'forcing';
   if (!row.upstreamId) return 'non_affinity';
   if (row.itemType === 'compaction') return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
@@ -290,19 +244,6 @@ const rewriteStoredResponsesItemForProvider = (
   if (id === null || !parseStoredResponsesItemId(id)) return item;
 
   const row = prepared.rows.get(id) ?? throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(id));
-  if (!isKnownResponsesItemType(row.itemType)) throw new Error(`Stored Responses item '${row.id}' has unknown item type '${row.itemType}'.`);
-  if (item.type !== 'item_reference' && item.type !== row.itemType) {
-    throwStoredResponsesItemsDiagnostic(createStoredResponsesRoutingUnavailableDiagnostic(
-      `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${item.type}'.`,
-    ));
-  }
-
-  const affinity = classifyStoredResponsesUseSite(item, row);
-  if (affinity === 'forcing' && row.upstreamId !== provider.upstream) {
-    throwStoredResponsesItemsDiagnostic(createStoredResponsesRoutingUnavailableDiagnostic(
-      `Stored Responses item '${row.id}' requires upstream '${row.upstreamId ?? provider.upstream}', which is not the selected upstream.`,
-    ));
-  }
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
     throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(row.id));
   }
@@ -321,9 +262,7 @@ const storedItemReplacementBase = (
   row: StoredResponsesItem,
 ): ResponseInputItem => {
   if (row.payload === null) return structuredClone(item);
-  const replacement = structuredClone(row.payload.item) as ResponseInputItem;
-  if (!isKnownResponsesItemType(replacement.type)) throw new Error(`Stored Responses item '${row.id}' payload has unknown item type '${replacement.type}'.`);
-  return replacement;
+  return structuredClone(row.payload.item) as ResponseInputItem;
 };
 
 const responsesItemId = (item: ResponseInputItem): string | null => {

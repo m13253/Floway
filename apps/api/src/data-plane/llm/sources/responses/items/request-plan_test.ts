@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { createStoredResponsesItemId, isStoredResponsesItemId } from './format.ts';
 import {
-  applyPreRoutingExpansions,
   planResponsesItemProviders,
   prepareStoredResponsesItemsForSource,
   rewriteStoredResponsesItemsForProvider,
@@ -10,7 +9,7 @@ import {
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
-import { assert, assertEquals, assertFalse, assertRejects } from '../../../../../test-assert.ts';
+import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -53,11 +52,6 @@ const rewriteResponsesItems = async (
   prepared: Awaited<ReturnType<typeof prepareResponsesItems>>,
   binding: ProviderModelRecord,
 ) => await rewriteStoredResponsesItemsForProvider(sourceItems, prepared, binding, responsesItemsView);
-
-const expandResponsesItems = async (
-  sourceItems: string | readonly ResponseInputItem[],
-  prepared: Awaited<ReturnType<typeof prepareResponsesItems>>,
-) => await applyPreRoutingExpansions(sourceItems, prepared, responsesItemsView);
 
 const prepareChatItems = async (messages: ChatCompletionsPayload['messages']) =>
   await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, chatCompletionsViaResponsesItemsView);
@@ -383,35 +377,6 @@ test('stored payload replaces stale caller content before provider id rewrite', 
   }]);
 });
 
-test('pre-routing expansion replaces stored item_reference content before provider selection', async () => {
-  const id = storedMessageId('reference');
-  await insertRows([
-    storedRow({
-      id,
-      itemType: 'message',
-      upstreamId: 'up_a',
-      upstreamItemId: 'raw_msg_a',
-      payload: {
-        type: 'message',
-        id,
-        role: 'assistant',
-        content: [{ type: 'output_text', text: 'expanded reference' }],
-      },
-    }),
-  ]);
-
-  const sourceItems: ResponseInputItem[] = [{ type: 'item_reference', id }];
-  const prepared = await prepareResponsesItems(sourceItems);
-  const expanded = await expandResponsesItems(sourceItems, prepared);
-
-  assertEquals(expanded, [{
-    type: 'message',
-    id,
-    role: 'assistant',
-    content: [{ type: 'output_text', text: 'expanded reference' }],
-  }]);
-});
-
 test('matching upstream keeps item_reference shape and rewrites to upstream item id', async () => {
   const id = storedMessageId('origin-reference');
   await insertRows([
@@ -480,22 +445,4 @@ test('metadata-only item_reference rejects when the origin upstream does not sup
     assertEquals(plan.diagnostic.status, 404);
     assertEquals(plan.diagnostic.body.error.message, `Item with id '${id}' not found.`);
   }
-});
-
-test('pre-routing expansion rejects corrupt falsy stored item JSON values', async () => {
-  const id = storedMessageId('bad-json-value');
-  await insertRows([
-    storedRow({
-      id,
-      itemType: 'message',
-      payload: false,
-    }),
-  ]);
-
-  const prepared = await prepareResponsesItems([{ type: 'message', id, role: 'assistant', content: 'stale' }]);
-  await assertRejects(
-    () => expandResponsesItems([{ type: 'message', id, role: 'assistant', content: 'stale' }], prepared),
-    Error,
-    'unknown item type',
-  );
 });

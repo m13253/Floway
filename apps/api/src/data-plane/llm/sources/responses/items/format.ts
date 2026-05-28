@@ -30,9 +30,6 @@ const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));
 const bodyPattern = /^[A-Za-z0-9_-]{22}$/;
 const checksumPattern = /^[A-Za-z0-9_-]{6}$/;
 
-export const isKnownResponsesItemType = (itemType: string): boolean =>
-  Object.hasOwn(itemTypePrefixes, itemType);
-
 // Stored ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
 // bytes encoded as base64url (22 chars). The body is content-free on purpose:
 // uniqueness comes from `crypto.getRandomValues`, and the crc32 prefix lets
