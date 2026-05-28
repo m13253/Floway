@@ -48,10 +48,11 @@ export const storeResponsesOutputItems = async function* (
   };
 
   const persistNewRows = async (): Promise<void> => {
-    const rows = invocation.responsesNewItems.slice(persistedRowCount);
-    if (rows.length === 0) return;
-    await getRepo().responsesItems.insertMany(rows);
-    persistedRowCount = invocation.responsesNewItems.length;
+    const start = persistedRowCount;
+    const end = invocation.responsesNewItems.length;
+    if (start === end) return;
+    persistedRowCount = end;
+    await getRepo().responsesItems.insertMany(invocation.responsesNewItems.slice(start, end));
   };
 
   const completeOutputItem = (outputIndex: number, item: ResponseOutputItem): string => {

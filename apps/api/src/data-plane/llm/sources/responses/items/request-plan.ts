@@ -9,12 +9,7 @@ import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
-import type { ResponsesItemMapper, ResponsesItemVisitor } from '@floway-dev/translate/via-responses/responses-items';
-
-export interface StoredResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems = TSourceItems> {
-  visitAsResponsesItems(sourceItems: TSourceItems, visitor: ResponsesItemVisitor): Promise<void>;
-  mapAsResponsesItems(sourceItems: TSourceItems, mapper: ResponsesItemMapper): Promise<TMappedSourceItems>;
-}
+import type { ResponsesItemsSourceAdapter } from '@floway-dev/translate/via-responses/responses-items';
 
 export type StoredResponsesUseSiteAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
@@ -43,7 +38,7 @@ export type StoredResponsesProviderPlan =
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
   apiKeyId: string | null,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems>,
 ): Promise<PreparedStoredResponsesItems> => {
   const useSites = await collectStoredResponsesUseSites(sourceItems, sourceAdapter);
   const ids = useSites.filter(site => site.lookup).map(site => site.id);
@@ -160,12 +155,12 @@ export const orderProvidersByStoredResponsesAffinity = (
 export async function applyPreRoutingExpansions<TSourceItems, TMappedSourceItems>(
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
 ): Promise<TMappedSourceItems>;
 export async function applyPreRoutingExpansions<TSourceItems, TMappedSourceItems>(
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
 ): Promise<TMappedSourceItems> {
   throwForPreparedDiagnostics(prepared);
   return await sourceAdapter.mapAsResponsesItems(sourceItems, item => {
@@ -181,13 +176,13 @@ export async function rewriteStoredResponsesItemsForProvider<TSourceItems, TMapp
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
   provider: ProviderModelRecord,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
 ): Promise<TMappedSourceItems>;
 export async function rewriteStoredResponsesItemsForProvider<TSourceItems, TMappedSourceItems>(
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
   provider: ProviderModelRecord,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems, TMappedSourceItems>,
 ): Promise<TMappedSourceItems> {
   throwForPreparedDiagnostics(prepared);
   return await sourceAdapter.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, prepared, provider));
@@ -195,7 +190,7 @@ export async function rewriteStoredResponsesItemsForProvider<TSourceItems, TMapp
 
 const collectStoredResponsesUseSites = async <TSourceItems>(
   sourceItems: TSourceItems,
-  sourceAdapter: StoredResponsesItemsSourceAdapter<TSourceItems>,
+  sourceAdapter: ResponsesItemsSourceAdapter<TSourceItems>,
 ): Promise<StoredResponsesUseSite[]> => {
   const useSites: StoredResponsesUseSite[] = [];
   let order = 0;
