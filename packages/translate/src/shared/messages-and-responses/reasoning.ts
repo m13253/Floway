@@ -8,16 +8,16 @@ export type MessagesReasoningBlock = MessagesThinkingBlock | MessagesRedactedThi
  * Anthropic `thinking.signature` / `redacted_thinking.data` string using
  * `${encrypted_content}@${id}`.
  *
- * Why: Copilot's Responses upstream signs `encrypted_content` against
+ * Why: an OpenAI Responses upstream signs `encrypted_content` against
  * `(account, item_id)` and rejects a next-turn submission whose `id` does not
  * match the id baked into the blob with `400 invalid_request_body: "Encrypted
  * content item_id did not match the target item id."`. Anthropic `thinking` /
  * `redacted_thinking` blocks have no id slot, so when we project a Responses
  * reasoning item into a Messages carrier for a downstream Messages CLIENT we
  * must smuggle the original Responses id alongside the blob, then recover it
- * when that client echoes the carrier back. We adopt caozhiyuan/copilot-api's
- * `${encrypted_content}@${id}` layout verbatim so signatures stay
- * interchangeable if a user switches gateways mid-session.
+ * when that client echoes the carrier back. We adopt the `${encrypted_content}@${id}`
+ * layout used by the gateway implementations referenced below, so signatures
+ * stay interchangeable if a user switches gateways mid-session.
  *
  * `encryptedContent` may be empty: a Responses-origin reasoning item can have
  * an id but no opaque content (we never auto-request
