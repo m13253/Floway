@@ -59,7 +59,7 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
   // Target interceptors may force upstream usage for gateway accounting, but
   // Chat SSE exposes usage only when the caller requested `include_usage`.
   let includeUsageChunk = false;
-  const descriptor: StoredItemsServeDescriptor<readonly ChatMessage[], ChatCompletionChunk> = {
+  const descriptor: StoredItemsServeDescriptor<readonly ChatMessage[], ChatMessage[], ChatCompletionChunk> = {
     request: createRequestContext(c, undefined, false),
     renderFailure: renderChatCompletionsFailure,
     respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
@@ -82,7 +82,7 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
         attempt: async ({ binding, target, model, rewriteItems }) => {
           const attemptPayload = structuredClone(payload);
           attemptPayload.model = model;
-          attemptPayload.messages = (await rewriteItems(attemptPayload.messages)) as ChatMessage[];
+          attemptPayload.messages = await rewriteItems(attemptPayload.messages);
           const invocation: ChatCompletionsInvocation = chatInvocation(binding, target, model, attemptPayload);
           const emits: Record<LlmTargetApi, SourceEmit<ChatCompletionsPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>> = {
             'chat-completions': async srcPayload => await emitToChatCompletions({ ...invocation, payload: srcPayload }, request),

@@ -35,10 +35,10 @@ export type StoredItemsFailure =
   | { kind: 'model-unsupported'; model: string }
   | { kind: 'source-error'; error: unknown };
 
-export interface StoredItemsServePlan<TItems, TEvent> {
+export interface StoredItemsServePlan<TItems, TMappedItems, TEvent> {
   readonly request: RequestContext;
   readonly items: TItems;
-  readonly view: ResponsesItemsView<TItems, unknown, Frame<TEvent>>;
+  readonly view: ResponsesItemsView<TItems, TMappedItems, Frame<TEvent>>;
   readonly wantsStream: boolean;
   // `store: false` requests persist null payloads; sources that have no
   // `store` concept (Messages, Gemini) pass `undefined`.
@@ -57,11 +57,11 @@ export interface StoredItemsServePlan<TItems, TEvent> {
     binding: ProviderModelRecord;
     target: LlmTargetApi;
     model: string;
-    rewriteItems: (items: TItems) => Promise<unknown>;
+    rewriteItems: (items: TItems) => Promise<TMappedItems>;
   }): Promise<Result<TEvent>>;
 }
 
-export interface StoredItemsServeDescriptor<TItems, TEvent> {
+export interface StoredItemsServeDescriptor<TItems, TMappedItems, TEvent> {
   // The provisional request context, built before `setup()` so a parse/setup
   // throw can still be rendered with telemetry; replaced by `plan.request` on
   // success.
@@ -76,11 +76,11 @@ export interface StoredItemsServeDescriptor<TItems, TEvent> {
     commit?: ResponsesItemsCommit;
     downstreamAbortController: AbortController | undefined;
   }): Promise<Response>;
-  setup(): Promise<StoredItemsServePlan<TItems, TEvent> | Response>;
+  setup(): Promise<StoredItemsServePlan<TItems, TMappedItems, TEvent> | Response>;
 }
 
-export const serveStoredResponsesItems = async <TItems, TEvent>(
-  d: StoredItemsServeDescriptor<TItems, TEvent>,
+export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(
+  d: StoredItemsServeDescriptor<TItems, TMappedItems, TEvent>,
 ): Promise<Response> => {
   let request = d.request;
   try {

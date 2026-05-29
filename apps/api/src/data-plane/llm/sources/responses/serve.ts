@@ -102,7 +102,7 @@ const renderResponsesFailure = (failure: StoredItemsFailure): ExecuteResult<Prot
 };
 
 export const serveResponses = async (c: Context): Promise<Response> => {
-  const descriptor: StoredItemsServeDescriptor<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
+  const descriptor: StoredItemsServeDescriptor<string | readonly ResponseInputItem[], string | ResponseInputItem[], ResponsesStreamEvent> = {
     request: createRequestContext(c, undefined, false),
     renderFailure: renderResponsesFailure,
     respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
@@ -126,7 +126,7 @@ export const serveResponses = async (c: Context): Promise<Response> => {
         attempt: async ({ binding, target, model, rewriteItems }) => {
           const attemptPayload = structuredClone(payload);
           attemptPayload.model = model;
-          attemptPayload.input = (await rewriteItems(attemptPayload.input)) as string | ResponseInputItem[];
+          attemptPayload.input = await rewriteItems(attemptPayload.input);
           const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
           const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
             responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),

@@ -79,7 +79,7 @@ const renderGeminiFailure = (failure: StoredItemsFailure): ExecuteResult<Protoco
 export const serveGemini = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
   const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-  const descriptor: StoredItemsServeDescriptor<readonly GeminiContent[], GeminiStreamEvent> = {
+  const descriptor: StoredItemsServeDescriptor<readonly GeminiContent[], GeminiContent[], GeminiStreamEvent> = {
     request,
     renderFailure: renderGeminiFailure,
     respond: async ({ result, request: reqCtx, wantsStream: stream, commit, downstreamAbortController: abort }) =>
@@ -97,7 +97,7 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
         pickTarget,
         attempt: async ({ binding, target, model: resolvedModelId, rewriteItems }) => {
           const attemptPayload = structuredClone(payload);
-          if (attemptPayload.contents !== undefined) attemptPayload.contents = (await rewriteItems(attemptPayload.contents)) as GeminiContent[];
+          if (attemptPayload.contents !== undefined) attemptPayload.contents = await rewriteItems(attemptPayload.contents);
           // Gemini source payload has no `model` field on the request body; the
           // invocation carries the resolved id for telemetry/dispatch use.
           const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload);

@@ -102,7 +102,7 @@ const renderMessagesFailure = (failure: StoredItemsFailure): ExecuteResult<Proto
 };
 
 export const serveMessages = async (c: Context): Promise<Response> => {
-  const descriptor: StoredItemsServeDescriptor<readonly MessagesMessage[], MessagesStreamEventData> = {
+  const descriptor: StoredItemsServeDescriptor<readonly MessagesMessage[], MessagesMessage[], MessagesStreamEventData> = {
     request: createRequestContext(c, undefined, false),
     renderFailure: renderMessagesFailure,
     respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
@@ -127,7 +127,7 @@ export const serveMessages = async (c: Context): Promise<Response> => {
         attempt: async ({ binding, target, model, rewriteItems }) => {
           const attemptPayload = structuredClone(payload);
           attemptPayload.model = model;
-          attemptPayload.messages = (await rewriteItems(attemptPayload.messages)) as MessagesMessage[];
+          attemptPayload.messages = await rewriteItems(attemptPayload.messages);
           const sharedHeaders: Record<string, string> = {};
           const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
           const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
