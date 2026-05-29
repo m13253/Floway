@@ -276,10 +276,9 @@ test('buildGenerationsBody adds stream and partial_images when streaming', () =>
 
 // ── imageTerminal ──
 
-test('imageTerminal on success builds a completed item closed by a single completed event', () => {
-  const config: ImageGenerationConfig = { model: 'gpt-image-2', size: '1024x1024', quality: 'high', output_format: 'png', action: 'generate' };
-  const outcome: ImageOutcome = { ok: true, b64: PNG_B64 };
-  const { item, endEvents } = imageTerminal('a red dot', 'generate', config, outcome);
+test('imageTerminal on success echoes the backend-resolved fields and closes with a single completed event', () => {
+  const outcome: ImageOutcome = { ok: true, b64: PNG_B64, echo: { size: '1024x1024', quality: 'high', output_format: 'png', background: 'opaque' } };
+  const { item, endEvents } = imageTerminal('a red dot', 'generate', outcome);
   assertEquals((item as { status?: string }).status, 'completed');
   assertEquals((item as { result?: string }).result, PNG_B64);
   assertEquals((item as { revised_prompt?: string }).revised_prompt, 'a red dot');
@@ -287,14 +286,14 @@ test('imageTerminal on success builds a completed item closed by a single comple
   assertEquals((item as { quality?: string }).quality, 'high');
   assertEquals((item as { size?: string }).size, '1024x1024');
   assertEquals((item as { output_format?: string }).output_format, 'png');
+  assertEquals((item as { background?: string }).background, 'opaque');
   assertEquals(endEvents.length, 1);
   assertEquals(endEvents[0].type, 'response.image_generation_call.completed');
 });
 
 test('imageTerminal on failure emits a failed item and no closing events', () => {
-  const config: ImageGenerationConfig = { model: 'gpt-image-2', action: 'generate' };
   const outcome: ImageOutcome = { ok: false, error: { type: 'image_generation_user_error', message: 'overloaded', code: 'EngineOverloaded', retryable: true } };
-  const { item, endEvents } = imageTerminal('a red dot', 'generate', config, outcome);
+  const { item, endEvents } = imageTerminal('a red dot', 'generate', outcome);
   assertEquals((item as { status?: string }).status, 'failed');
   assertEquals((item as { error?: { code: string } }).error?.code, 'EngineOverloaded');
   assertEquals((item as { error?: { type?: string } }).error?.type, 'image_generation_user_error');
@@ -304,18 +303,21 @@ test('imageTerminal on failure emits a failed item and no closing events', () =>
 
 // ── parseImageStreamEvent ──
 
-test('parseImageStreamEvent maps generations and edits partial/completed/error', () => {
-  const genPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: PNG_B64 }));
+test('parseImageStreamEvent maps generations and edits partial/completed/error with backend echo', () => {
+  const genPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: PNG_B64, background: 'opaque', output_format: 'png', quality: 'low', size: '1024x1024' }));
   assert(genPartial?.kind === 'partial');
   assertEquals(genPartial.index, 1);
   assertEquals(genPartial.b64, PNG_B64);
+  assertEquals(genPartial.echo, { background: 'opaque', output_format: 'png', quality: 'low', size: '1024x1024' });
 
   const editPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_edit.partial_image', partial_image_index: 0, b64_json: PNG_B64 }));
   assert(editPartial?.kind === 'partial');
+  assertEquals(editPartial.echo, {});
 
-  const completed = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.completed', b64_json: PNG_B64, usage: { total_tokens: 1 } }));
+  const completed = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.completed', b64_json: PNG_B64, usage: { total_tokens: 1 }, quality: 'high' }));
   assert(completed?.kind === 'completed');
   assertEquals(completed.b64, PNG_B64);
+  assertEquals(completed.echo.quality, 'high');
 
   const err = parseImageStreamEvent(JSON.stringify({ type: 'error', error: { type: 'image_generation_server_error', code: 'image_generation_failed', message: 'boom' } }));
   assert(err?.kind === 'error');
@@ -373,10 +375,12 @@ test('transformInputItemsForImageGeneration preserves error type and retryabilit
   assertEquals(parsed.error.retryable, false);
 });
 
-test('imageTerminal omits size when the config requested auto', () => {
-  const config: ImageGenerationConfig = { model: 'gpt-image-2', size: 'auto', action: 'generate' };
-  const { item } = imageTerminal('p', 'generate', config, { ok: true, b64: PNG_B64 });
+test('imageTerminal omits fields the backend did not echo', () => {
+  const { item } = imageTerminal('p', 'generate', { ok: true, b64: PNG_B64, echo: { output_format: 'png' } });
   assertFalse('size' in item);
+  assertFalse('quality' in item);
+  assertFalse('background' in item);
+  assertEquals((item as { output_format?: string }).output_format, 'png');
 });
 
 // ── synthesizeImageGenerationCallId ──

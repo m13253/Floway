@@ -333,11 +333,37 @@ export const collectImageSources = (input: ResponsesInvocation['payload']['input
 // the orchestrator can distinguish transient overload from a terminal
 // content-policy block.
 type ImageError = { type: string; code: string; message: string; retryable: boolean };
+
+// Server-resolved tool config echoed by the backend on both the partial_image
+// frames and the final result (`background:"auto"` becomes the concrete value
+// the server picked, etc.). Read straight off the backend rather than inferred
+// from the request, so what we surface matches what was actually rendered.
+interface EchoFields {
+  output_format?: 'png' | 'jpeg';
+  quality?: 'low' | 'medium' | 'high';
+  background?: 'transparent' | 'opaque';
+  size?: string;
+}
+
 type ImageOutcome =
-  | { ok: true; b64: string }
+  | { ok: true; b64: string; echo: EchoFields }
   | { ok: false; error: ImageError };
 
-export type { ImageError, ImageOutcome };
+export type { EchoFields, ImageError, ImageOutcome };
+
+// Project the server-resolved echo fields out of a backend payload (a response
+// JSON body or an SSE event). Each field is validated against the public enum
+// so a surprising backend value is dropped rather than echoed verbatim.
+const extractEcho = (source: unknown): EchoFields => {
+  if (source === null || typeof source !== 'object') return {};
+  const s = source as Record<string, unknown>;
+  const echo: EchoFields = {};
+  if (s.output_format === 'png' || s.output_format === 'jpeg') echo.output_format = s.output_format;
+  if (s.quality === 'low' || s.quality === 'medium' || s.quality === 'high') echo.quality = s.quality;
+  if (s.background === 'transparent' || s.background === 'opaque') echo.background = s.background;
+  if (typeof s.size === 'string') echo.size = s.size;
+  return echo;
+};
 
 const RETRYABLE_IMAGE_ERROR_CODES = new Set([
   'EngineOverloaded', 'server_error', 'image_generation_server_error', 'image_generation_failed',
@@ -518,35 +544,8 @@ const consumeImageResponse = async (
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }
   recordImageUsage(state, binding, modelKey, parsed);
-  return { ok: true, b64 };
+  return { ok: true, b64, echo: extractEcho(parsed) };
 };
-
-const resolvedBackground = (config: ImageGenerationConfig): 'transparent' | 'opaque' | undefined => {
-  if (config.background === 'transparent') return 'transparent';
-  if (config.background === 'opaque') return 'opaque';
-  // `auto` is resolved server-side; leave it unset rather than asserting a
-  // value the backend chooses.
-  return undefined;
-};
-
-const resolvedQuality = (config: ImageGenerationConfig): 'low' | 'medium' | 'high' | undefined =>
-  config.quality === 'low' || config.quality === 'medium' || config.quality === 'high' ? config.quality : undefined;
-
-// The resolved config fields echoed on both the partial_image event and the
-// completed item, matching Azure's native wire shape. `size` is omitted when
-// `auto` (server resolves it); `background`/`quality` are omitted unless a
-// concrete value was requested.
-const resolvedEchoFields = (config: ImageGenerationConfig): {
-  output_format: 'png' | 'jpeg';
-  quality?: 'low' | 'medium' | 'high';
-  background?: 'transparent' | 'opaque';
-  size?: string;
-} => ({
-  output_format: config.output_format ?? 'png',
-  ...(resolvedQuality(config) !== undefined ? { quality: resolvedQuality(config) } : {}),
-  ...(resolvedBackground(config) !== undefined ? { background: resolvedBackground(config) } : {}),
-  ...(config.size !== undefined && config.size !== 'auto' ? { size: config.size } : {}),
-});
 
 // Build the completed/failed `image_generation_call` output item plus its
 // closing events. On success the final bytes ride `output_item.done.item.result`
@@ -562,7 +561,6 @@ const resolvedEchoFields = (config: ImageGenerationConfig): {
 export const imageTerminal = (
   prompt: string,
   action: 'generate' | 'edit',
-  config: ImageGenerationConfig,
   outcome: ImageOutcome,
 ): ServerToolTerminal => {
   if (!outcome.ok) {
@@ -581,26 +579,26 @@ export const imageTerminal = (
     action,
     result: outcome.b64,
     revised_prompt: prompt,
-    ...resolvedEchoFields(config),
+    ...outcome.echo,
   };
   return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
 };
 
-// A native progressive-preview frame. The resolved config fields ride along,
-// matching Azure's native partial_image payload.
-const partialImageFrame = (index: number, b64: string, config: ImageGenerationConfig): ServerToolLifecycleEvent => ({
+// A native progressive-preview frame carrying the backend's server-resolved
+// echo fields, matching Azure's native partial_image payload.
+const partialImageFrame = (index: number, b64: string, echo: EchoFields): ServerToolLifecycleEvent => ({
   type: 'response.image_generation_call.partial_image',
   partial_image_index: index,
   partial_image_b64: b64,
-  ...resolvedEchoFields(config),
+  ...echo,
 });
 
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
 // The generations and edits endpoints use distinct event prefixes
 // (`image_generation.*` vs `image_edit.*`); only the suffix is matched here.
 type ImageStreamSignal =
-  | { kind: 'partial'; index: number; b64: string }
-  | { kind: 'completed'; b64: string | undefined; usage: unknown }
+  | { kind: 'partial'; index: number; b64: string; echo: EchoFields }
+  | { kind: 'completed'; b64: string | undefined; usage: unknown; echo: EchoFields }
   | { kind: 'error'; error: ImageError }
   | null;
 
@@ -617,10 +615,11 @@ export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
       kind: 'partial',
       index: typeof evt.partial_image_index === 'number' ? evt.partial_image_index : 0,
       b64: typeof evt.b64_json === 'string' ? evt.b64_json : '',
+      echo: extractEcho(evt),
     };
   }
   if (type.endsWith('.completed')) {
-    return { kind: 'completed', b64: typeof evt.b64_json === 'string' ? evt.b64_json : undefined, usage: evt.usage };
+    return { kind: 'completed', b64: typeof evt.b64_json === 'string' ? evt.b64_json : undefined, usage: evt.usage, echo: extractEcho(evt) };
   }
   if (type === 'error') {
     const err = evt.error as { message?: unknown; code?: unknown; type?: unknown } | undefined;
@@ -646,7 +645,7 @@ const streamImageGeneration = (
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageBinding(isEdit, state);
-  if (!resolved.ok) return imageTerminal(prompt, action, config, { ok: false, error: resolved.error });
+  if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { binding } = resolved;
   const wantsPartials = (config.partial_images ?? 0) > 0;
 
@@ -655,40 +654,42 @@ const streamImageGeneration = (
   try {
     ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, state, wantsPartials));
   } catch (e) {
-    return imageTerminal(prompt, action, config, { ok: false, error: serverError(e) });
+    return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }
 
   if (!wantsPartials) {
-    return imageTerminal(prompt, action, config, await consumeImageResponse(binding, modelKey, response, state));
+    return imageTerminal(prompt, action, await consumeImageResponse(binding, modelKey, response, state));
   }
 
   if (!response.ok) {
     const { type, code, message } = errorFromBody(await response.text(), response.status);
-    return imageTerminal(prompt, action, config, { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
+    return imageTerminal(prompt, action, { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
   }
   if (response.body === null) {
-    return imageTerminal(prompt, action, config, { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
+    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
   }
 
   let finalB64: string | undefined;
+  let finalEcho: EchoFields = {};
   let usage: unknown;
   for await (const frame of parseSSEStream(response.body, { signal: state.downstreamAbortSignal })) {
     const signal = parseImageStreamEvent(frame.data);
     if (signal === null) continue;
     if (signal.kind === 'partial') {
-      yield partialImageFrame(signal.index, signal.b64, config);
+      yield partialImageFrame(signal.index, signal.b64, signal.echo);
     } else if (signal.kind === 'completed') {
       finalB64 = signal.b64;
+      finalEcho = signal.echo;
       usage = signal.usage;
     } else {
-      return imageTerminal(prompt, action, config, { ok: false, error: signal.error });
+      return imageTerminal(prompt, action, { ok: false, error: signal.error });
     }
   }
   if (finalB64 === undefined) {
-    return imageTerminal(prompt, action, config, { ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
+    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
   recordImageUsage(state, binding, modelKey, { usage });
-  return imageTerminal(prompt, action, config, { ok: true, b64: finalB64 });
+  return imageTerminal(prompt, action, { ok: true, b64: finalB64, echo: finalEcho });
 };
 
 // Output-as-input round-trip: the multi-turn loop feeds accumulated
@@ -854,7 +855,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
             id,
             startItem: { type: 'image_generation_call', status: 'in_progress' },
             startEvents: [{ type: 'response.image_generation_call.in_progress' }, { type: 'response.image_generation_call.generating' }],
-            result: Promise.resolve(imageTerminal(promptArg, action, config, {
+            result: Promise.resolve(imageTerminal(promptArg, action, {
               ok: false,
               error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
             })),
