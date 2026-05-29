@@ -57,18 +57,17 @@ export type ResponsesItemsCommit = () => Promise<void>;
 // after the body is known good (so truncated/failed drains persist nothing)
 // and after usage is recorded; a failed write is logged and swallowed rather
 // than surfaced to the client, matching how telemetry side-effects are handled.
-export const commitStoredItemsBestEffort = async (commit: ResponsesItemsCommit): Promise<void> => {
+// Results that never wrapped a stored-items stream (upstream/internal errors)
+// pass no commit, so the respond layer can call this unconditionally on the
+// success path without branching on result shape.
+export const commitStoredItemsBestEffort = async (commit: ResponsesItemsCommit | undefined): Promise<void> => {
+  if (!commit) return;
   try {
     await commit();
   } catch (error) {
     console.error('Failed to persist stored Responses items:', error);
   }
 };
-
-// Stand-in commit for results that never wrapped a stored-items stream
-// (upstream/internal errors), so the respond layer can call commit
-// unconditionally on the success path without branching on result shape.
-export const noopResponsesItemsCommit: ResponsesItemsCommit = () => Promise.resolve();
 
 export interface StoredResponsesItemsStream<TFrame> {
   readonly events: AsyncIterable<TFrame>;
@@ -77,7 +76,7 @@ export interface StoredResponsesItemsStream<TFrame> {
 
 export const storeResponsesOutputItems = <TFrame>(
   frames: AsyncIterable<TFrame>,
-  view: ResponsesItemsView<unknown, unknown, TFrame>,
+  view: Pick<ResponsesItemsView<never, never, TFrame>, 'streamMapIdAsResponsesItems'>,
   context: StoreResponsesContext,
   request: RequestContext,
   wantsStream: boolean,

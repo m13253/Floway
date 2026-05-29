@@ -105,7 +105,7 @@ export const respondMessages = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
-  commitStoredItems: ResponsesItemsCommit,
+  commitStoredItems: ResponsesItemsCommit | undefined,
 ): Promise<Response> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);

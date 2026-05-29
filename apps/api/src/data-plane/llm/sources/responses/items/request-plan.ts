@@ -43,7 +43,7 @@ const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem &
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
   apiKeyId: string | null,
-  view: ResponsesItemsView<TSourceItems>,
+  view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>,
 ): Promise<PreparedStoredResponsesItems> => {
   const useSites = await collectStoredResponsesUseSites(sourceItems, view);
   const ids = useSites.filter(site => site.lookup).map(site => site.id);
@@ -170,7 +170,7 @@ export const rewriteStoredResponsesItemsForProvider = async <TSourceItems, TMapp
 // "this is a stored row" — everything else carries its own inline content.
 const collectStoredResponsesUseSites = async <TSourceItems>(
   sourceItems: TSourceItems,
-  view: ResponsesItemsView<TSourceItems>,
+  view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>,
 ): Promise<StoredResponsesUseSite[]> => {
   const useSites: StoredResponsesUseSite[] = [];
 

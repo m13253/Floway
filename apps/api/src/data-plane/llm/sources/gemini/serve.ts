@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 
 import { geminiSourceInterceptors } from './interceptors/index.ts';
 import { respondGemini } from './respond.ts';
-import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type GeminiInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
@@ -10,34 +9,15 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
-import { StoredResponsesItemsDiagnosticError } from '../responses/items/errors.ts';
-import { noopResponsesItemsCommit, type ResponsesItemsCommit, storeResponsesOutputItems } from '../responses/items/output.ts';
-import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
+import type { StoredResponsesItemsDiagnostic } from '../responses/items/errors.ts';
+import { serveStoredResponsesItems, type SourceServeTrait } from '../stored-responses-items-serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
 import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
-
-const missingGeminiModelResult = (model: string) =>
-  jsonUpstreamErrorResult(404, {
-    error: {
-      code: 404,
-      message: `Model ${model} is not available on any configured upstream.`,
-      status: 'NOT_FOUND',
-    },
-  });
-
-const unsupportedGeminiModelResult = (model: string) =>
-  jsonUpstreamErrorResult(400, {
-    error: {
-      code: 400,
-      message: `Model ${model} does not support the Gemini generateContent endpoint.`,
-      status: 'INVALID_ARGUMENT',
-    },
-  });
 
 const googleRpcStatusForHttpStatus = (status: number): string => {
   switch (status) {
@@ -51,6 +31,17 @@ const googleRpcStatusForHttpStatus = (status: number): string => {
     return status >= 500 ? 'INTERNAL' : 'INVALID_ARGUMENT';
   }
 };
+
+const geminiErrorResponse = (status: number, message: string): Response =>
+  Response.json(
+    { error: { code: status, message, status: googleRpcStatusForHttpStatus(status) } },
+    { status },
+  );
+
+const geminiErrorResult = (status: number, message: string) =>
+  jsonUpstreamErrorResult(status, {
+    error: { code: status, message, status: googleRpcStatusForHttpStatus(status) },
+  });
 
 const geminiInvocation = <TPayload>(
   binding: ProviderModelRecord,
@@ -70,113 +61,56 @@ const geminiInvocation = <TPayload>(
   headers: {} as Record<string, string>,
 });
 
+// Gemini has no native upstream target in the provider API; prefer Chat
+// Completions, then Messages, then Responses.
+const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
+  if (endpoints.includes('chat_completions')) return 'chat-completions';
+  if (endpoints.includes('messages')) return 'messages';
+  if (endpoints.includes('responses')) return 'responses';
+  return null;
+};
+
 export const serveGemini = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-  const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-
-  // Gemini has no native upstream target in the provider API; prefer Chat
-  // Completions, then Messages, then Responses.
-  const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-    if (endpoints.includes('chat_completions')) return 'chat-completions';
-    if (endpoints.includes('messages')) return 'messages';
-    if (endpoints.includes('responses')) return 'responses';
-    return null;
-  };
-
-  try {
-    const payload = await c.req.json<GeminiGenerateContentRequest>();
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.contents ?? [], request.apiKeyId ?? null, geminiViaResponsesItemsView);
-    const preparedDiagnostic = preparedStoredItems.diagnostics[0];
-    if (preparedDiagnostic) {
-      return Response.json(
-        {
-          error: {
-            code: preparedDiagnostic.status,
-            message: preparedDiagnostic.message,
-            status: googleRpcStatusForHttpStatus(preparedDiagnostic.status),
-          },
-        },
-        { status: preparedDiagnostic.status },
-      );
-    }
-
-    let result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | undefined;
-    let commitStoredItems: ResponsesItemsCommit = noopResponsesItemsCommit;
-    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
-    let resolvedModelId = model;
-    let sawModel = false;
-    if (providerPlan.type === 'error') {
-      result = jsonUpstreamErrorResult(providerPlan.diagnostic.status, {
-        error: {
-          code: providerPlan.diagnostic.status,
-          message: providerPlan.diagnostic.message,
-          status: googleRpcStatusForHttpStatus(providerPlan.diagnostic.status),
-        },
-      });
-    } else for (const provider of providerPlan.providers) {
-      const resolved = await resolveModelForProvider(provider, model);
-      if (!resolved) continue;
-
-      sawModel = true;
-      resolvedModelId = resolved.id;
-      const binding = resolved.binding;
-      const target = pickTarget(binding.upstreamModel.upstreamEndpoints);
-      if (!target) continue;
-
-      const attemptPayload = structuredClone(payload);
-      const rewrittenContents = await rewriteStoredResponsesItemsForProvider(attemptPayload.contents ?? [], preparedStoredItems, binding, geminiViaResponsesItemsView);
-      if (attemptPayload.contents !== undefined) attemptPayload.contents = rewrittenContents;
-
+  const diagnosticResponse = (diagnostic: StoredResponsesItemsDiagnostic): Response => geminiErrorResponse(diagnostic.status, diagnostic.message);
+  const trait: SourceServeTrait<readonly GeminiContent[], GeminiContent[], GeminiStreamEvent> = {
+    request: createRequestContext(c, downstreamAbortController?.signal, wantsStream),
+    parse: async () => {
+      const payload = await c.req.json<GeminiGenerateContentRequest>();
+      return { payload, items: payload.contents ?? [], wantsStream, model, view: geminiViaResponsesItemsView, downstreamAbortController };
+    },
+    pickTarget,
+    buildAttempt: ({ binding, target, model: resolvedModelId, payload, rewrittenItems }) => {
+      const attemptPayload = structuredClone(payload as GeminiGenerateContentRequest);
+      if (attemptPayload.contents !== undefined) attemptPayload.contents = rewrittenItems;
       // Gemini source payload has no `model` field on the request body; the
       // invocation carries the resolved id for telemetry/dispatch use.
       const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload);
-
       const emits: Record<LlmTargetApi, SourceEmit<GeminiGenerateContentRequest, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>> = {
         messages: viaTranslation(translateGeminiViaMessages, async (tgtPayload: MessagesPayload) =>
-          await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload), request)),
+          await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload), trait.request)),
         responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) =>
-          await emitToResponses(geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload), request)),
+          await emitToResponses(geminiInvocation(binding, 'responses', resolvedModelId, tgtPayload), trait.request)),
         'chat-completions': viaTranslation(translateGeminiViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-          await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload), request)),
+          await emitToChatCompletions(geminiInvocation(binding, 'chat-completions', resolvedModelId, tgtPayload), trait.request)),
       };
+      const interceptors = [...geminiSourceInterceptors, ...(binding.sourceInterceptors?.gemini ?? [])];
+      return {
+        targetApi: invocation.targetApi,
+        upstream: invocation.upstream,
+        store: undefined,
+        run: async () => await runInterceptors(invocation, trait.request, interceptors, () =>
+          emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens })),
+      };
+    },
+    diagnosticResponse,
+    planErrorResult: diagnostic => geminiErrorResult(diagnostic.status, diagnostic.message),
+    missingModelResult: model => geminiErrorResult(404, `Model ${model} is not available on any configured upstream.`),
+    unsupportedModelResult: model => geminiErrorResult(400, `Model ${model} does not support the Gemini generateContent endpoint.`),
+    sourceErrorResult: error => sourceErrorResult<GeminiStreamEvent>(error, { sourceApi: 'gemini', internalStatus: 500 }),
+    respond: async ({ result, wantsStream, commit, downstreamAbortController }) =>
+      await respondGemini(c, result, wantsStream, trait.request, downstreamAbortController, commit),
+  };
 
-      const rawResult = await runInterceptors(invocation, request, [...geminiSourceInterceptors, ...(binding.sourceInterceptors?.gemini ?? [])], () =>
-        emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-      if (rawResult.type === 'events') {
-        const stored = storeResponsesOutputItems(rawResult.events, geminiViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request, wantsStream);
-        result = { ...rawResult, events: stored.events };
-        commitStoredItems = stored.commit;
-      } else {
-        result = rawResult;
-      }
-      break;
-    }
-
-    result ??= sawModel ? unsupportedGeminiModelResult(resolvedModelId) : missingGeminiModelResult(resolvedModelId);
-
-    return await respondGemini(c, result, wantsStream, request, downstreamAbortController, commitStoredItems);
-  } catch (error) {
-    if (error instanceof StoredResponsesItemsDiagnosticError) {
-      return Response.json(
-        {
-          error: {
-            code: error.diagnostic.status,
-            message: error.diagnostic.message,
-            status: googleRpcStatusForHttpStatus(error.diagnostic.status),
-          },
-        },
-        { status: error.diagnostic.status },
-      );
-    }
-    return await respondGemini(
-      c,
-      sourceErrorResult(error, {
-        sourceApi: 'gemini',
-        internalStatus: 500,
-      }),
-      false,
-      request, downstreamAbortController,
-      noopResponsesItemsCommit,
-    );
-  }
+  return await serveStoredResponsesItems(trait);
 };
