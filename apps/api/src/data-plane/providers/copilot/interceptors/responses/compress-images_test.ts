@@ -82,3 +82,26 @@ test('leaves remote https image references untouched', async () => {
 
   assertEquals(firstImageUrl(ctx.payload), 'https://example.com/cat.png');
 });
+
+test('compresses base64 images inside function_call_output tool outputs', async () => {
+  initImageProcessor(fixedProcessor);
+
+  const ctx = invocation({
+    model: 'gpt-test',
+    input: [
+      {
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'screenshot' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' },
+        ],
+      },
+    ],
+  });
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  const output = (ctx.payload.input as Array<{ type: string; output?: Array<{ type: string; image_url?: string }> }>)[0].output;
+  assertEquals(output?.find(part => part.type === 'input_image')?.image_url, 'data:image/webp;base64,AQID');
+});
