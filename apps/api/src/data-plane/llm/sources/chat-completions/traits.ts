@@ -60,7 +60,7 @@ const renderChatCompletionsFailure = (failure: LlmSourceFailure): ExecuteResult<
 // state.
 const INCLUDE_USAGE_CHUNK_KEY = 'chatCompletionsIncludeUsageChunk';
 
-export const chatCompletionsTraits: LlmSourceTraits<readonly ChatMessage[], ChatMessage[], ChatCompletionChunk> = {
+export const chatCompletionsTraits: LlmSourceTraits<readonly ChatMessage[], ChatCompletionChunk> = {
   renderFailure: renderChatCompletionsFailure,
   respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
     await respondChatCompletions(c, result, wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, request, downstreamAbortController, commit),

@@ -80,7 +80,7 @@ const renderGeminiFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolF
 // that here so the modelAction route maps straight onto `serveLlm(geminiTraits)`:
 // `generateContent`/`streamGenerateContent` flow into the shared serve, while
 // `countTokens` and unknown actions return their own Responses early.
-export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiContent[], GeminiStreamEvent> = {
+export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStreamEvent> = {
   renderFailure: renderGeminiFailure,
   respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
     await respondGemini(c, result, wantsStream, request, downstreamAbortController, commit),

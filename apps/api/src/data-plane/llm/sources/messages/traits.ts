@@ -99,7 +99,7 @@ const renderMessagesFailure = (failure: LlmSourceFailure): ExecuteResult<Protoco
   }
 };
 
-export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesMessage[], MessagesStreamEventData> = {
+export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEventData> = {
   renderFailure: renderMessagesFailure,
   respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
     await respondMessages(c, result, wantsStream, request, downstreamAbortController, commit),

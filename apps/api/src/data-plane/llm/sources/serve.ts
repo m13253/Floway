@@ -9,7 +9,7 @@ import type { ProviderModelRecord } from '../../providers/types.ts';
 import { type LlmTargetApi, type RequestContext } from '../interceptors.ts';
 import type { ExecuteResult } from '../shared/errors/result.ts';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;
 type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
@@ -38,10 +38,10 @@ export type LlmSourceFailure =
   | { kind: 'model-unsupported'; model: string }
   | { kind: 'source-error'; error: unknown };
 
-export interface LlmSourcePlan<TItems, TMappedItems, TEvent> {
+export interface LlmSourcePlan<TItems, TEvent> {
   readonly request: RequestContext;
   readonly items: TItems;
-  readonly view: ResponsesItemsView<TItems, TMappedItems, Frame<TEvent>>;
+  readonly view: ResponsesItemsView<TItems, Frame<TEvent>>;
   readonly wantsStream: boolean;
   // `store: false` requests persist null payloads; sources that have no
   // `store` concept (Messages, Gemini) pass `undefined`.
@@ -60,11 +60,11 @@ export interface LlmSourcePlan<TItems, TMappedItems, TEvent> {
     binding: ProviderModelRecord;
     target: LlmTargetApi;
     model: string;
-    rewriteItems: (items: TItems) => Promise<TMappedItems>;
+    rewriteItems: (items: TItems) => Promise<Mutable<TItems>>;
   }): Promise<Result<TEvent>>;
 }
 
-export interface LlmSourceTraits<TItems, TMappedItems, TEvent> {
+export interface LlmSourceTraits<TItems, TEvent> {
   // Static — usable even before/if `setup()` runs. Maps a failure to this API's
   // error envelope and shapes the final Response from a result.
   renderFailure(failure: LlmSourceFailure): Result<TEvent>;
@@ -76,11 +76,11 @@ export interface LlmSourceTraits<TItems, TMappedItems, TEvent> {
     commit?: ResponsesItemsCommit;
     downstreamAbortController: AbortController | undefined;
   }): Promise<Response>;
-  setup(c: Context): Promise<LlmSourcePlan<TItems, TMappedItems, TEvent> | Response>;
+  setup(c: Context): Promise<LlmSourcePlan<TItems, TEvent> | Response>;
 }
 
-export const serveLlm = <TItems, TMappedItems, TEvent>(
-  traits: LlmSourceTraits<TItems, TMappedItems, TEvent>,
+export const serveLlm = <TItems, TEvent>(
+  traits: LlmSourceTraits<TItems, TEvent>,
 ) => async (c: Context): Promise<Response> => {
   // Provisional request context, built before `setup()` so a parse/setup throw
   // can still be rendered with telemetry; replaced by `plan.request` on success.

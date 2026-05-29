@@ -41,9 +41,17 @@ export type ResponsesItemFinalizedHandler = (
 // Stream side: id-only rewrite is per-frame and synchronous; the row write
 // is per-item and async, fired through `onItemFinalized` at the carrier's
 // terminal frame.
-export interface ResponsesItemsView<TSourceItems, TMappedSourceItems = TSourceItems, TStreamFrame = unknown> {
+// The mapped form of a source-items type is always its source minus the
+// top-level `readonly`: the view owns the per-attempt payload clone, so it
+// hands back a freely-mutable container. The mapped type is therefore derived
+// rather than carried as a second generic. Distributing over unions keeps
+// `Mutable<string | readonly ResponseInputItem[]>` equal to
+// `string | ResponseInputItem[]`.
+export type Mutable<T> = T extends readonly (infer E)[] ? E[] : T;
+
+export interface ResponsesItemsView<TSourceItems, TStreamFrame = unknown> {
   visitAsResponsesItems(sourceItems: TSourceItems, visitor: ResponsesItemVisitor): Promise<void>;
-  mapAsResponsesItems(sourceItems: TSourceItems, mapper: ResponsesItemMapper): Promise<TMappedSourceItems>;
+  mapAsResponsesItems(sourceItems: TSourceItems, mapper: ResponsesItemMapper): Promise<Mutable<TSourceItems>>;
   streamMapIdAsResponsesItems(
     frames: AsyncIterable<TStreamFrame>,
     idMapper: ResponsesItemIdMapper,
@@ -164,7 +172,7 @@ export const responsesItemsView = {
       yield frame;
     }
   },
-} satisfies ResponsesItemsView<string | readonly ResponseInputItem[], string | ResponseInputItem[], ProtocolFrame<ResponsesStreamEvent>>;
+} satisfies ResponsesItemsView<string | readonly ResponseInputItem[], ProtocolFrame<ResponsesStreamEvent>>;
 
 // A reasoning block echoed back by a Messages client carries the packed
 // `${encrypted_content}@${id}` value in `thinking.signature` or
@@ -367,7 +375,7 @@ export const messagesViaResponsesItemsView = {
       yield frame;
     }
   },
-} satisfies ResponsesItemsView<readonly MessagesMessage[], MessagesMessage[], ProtocolFrame<MessagesStreamEventData>>;
+} satisfies ResponsesItemsView<readonly MessagesMessage[], ProtocolFrame<MessagesStreamEventData>>;
 
 export const chatCompletionsViaResponsesItemsView = {
   visitAsResponsesItems: async (
@@ -469,7 +477,7 @@ export const chatCompletionsViaResponsesItemsView = {
       yield eventFrame({ ...chunk, choices });
     }
   },
-} satisfies ResponsesItemsView<readonly ChatMessage[], ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
+} satisfies ResponsesItemsView<readonly ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
 
 // Placeholder view. Gemini does not yet have a reasoning-id / signature
 // carrier in its protocol, so there is nothing to project. The empty
@@ -492,7 +500,7 @@ export const geminiViaResponsesItemsView = {
   ): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
     for await (const frame of frames) yield frame;
   },
-} satisfies ResponsesItemsView<readonly GeminiContent[], GeminiContent[], ProtocolFrame<GeminiStreamEvent>>;
+} satisfies ResponsesItemsView<readonly GeminiContent[], ProtocolFrame<GeminiStreamEvent>>;
 
 const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
   switch (item.type) {

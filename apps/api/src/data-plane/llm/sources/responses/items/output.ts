@@ -76,7 +76,7 @@ export interface StoredResponsesItemsStream<TFrame> {
 
 export const storeResponsesOutputItems = <TFrame>(
   frames: AsyncIterable<TFrame>,
-  view: Pick<ResponsesItemsView<never, never, TFrame>, 'streamMapIdAsResponsesItems'>,
+  view: Pick<ResponsesItemsView<never, TFrame>, 'streamMapIdAsResponsesItems'>,
   context: StoreResponsesContext,
   request: RequestContext,
   wantsStream: boolean,

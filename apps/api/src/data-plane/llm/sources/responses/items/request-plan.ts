@@ -9,7 +9,7 @@ import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
-import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type StoredResponsesUseSiteAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
@@ -153,12 +153,12 @@ export const orderProvidersByStoredResponsesAffinity = (
   return [...preferredProviders, ...remainingProviders];
 };
 
-export const rewriteStoredResponsesItemsForProvider = async <TSourceItems, TMappedSourceItems>(
+export const rewriteStoredResponsesItemsForProvider = async <TSourceItems>(
   sourceItems: TSourceItems,
   prepared: PreparedStoredResponsesItems,
   provider: ProviderModelRecord,
-  view: ResponsesItemsView<TSourceItems, TMappedSourceItems>,
-): Promise<TMappedSourceItems> => {
+  view: ResponsesItemsView<TSourceItems>,
+): Promise<Mutable<TSourceItems>> => {
   throwForPreparedDiagnostics(prepared);
   return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, prepared, provider));
 };
