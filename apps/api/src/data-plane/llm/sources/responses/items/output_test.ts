@@ -1,11 +1,11 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { isStoredResponsesItemId, parseStoredResponsesItemId } from './format.ts';
 import { storeResponsesOutputItems, type StoreResponsesContext } from './output.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../repo/types.ts';
-import { assert, assertEquals, assertRejects } from '../../../../../test-assert.ts';
+import { assert, assertEquals } from '../../../../../test-assert.ts';
 import type { RequestContext } from '../../../../llm/interceptors.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
@@ -166,7 +166,8 @@ test('persists each row before yielding the item-done frame', async () => {
   assertEquals((addedFrame.value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
   assertEquals(controlled.calls.length, 0);
 
-  // done is held until the row insert resolves.
+  // done is held until the row insert resolves, so a client that has seen
+  // `done` can reference the row on its next turn.
   const doneFrame = iterator.next();
   assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
   assertEquals(controlled.calls.length, 1);
@@ -174,26 +175,36 @@ test('persists each row before yielding the item-done frame', async () => {
   assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 });
 
-test('insert failure prevents yielding the item-done frame', async () => {
+test('insert failure does not sink the stream', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
   initRepo(repo);
-  const original = messageItem('raw_msg_native', 'hello');
-  const iterator = storeStreaming(framesFrom([
-    { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: response([original]) },
-  ]), makeContext(), makeRequest())[Symbol.asyncIterator]();
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const original = messageItem('raw_msg_native', 'hello');
+    const iterator = storeStreaming(framesFrom([
+      { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
+      { type: 'response.output_item.done', output_index: 0, item: original },
+      { type: 'response.completed', response: response([original]) },
+    ]), makeContext(), makeRequest())[Symbol.asyncIterator]();
 
-  // added passes first.
-  await iterator.next();
+    assertEquals(((await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 
-  const doneFrame = iterator.next();
-  assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
-  controlled.rejectInsert?.(new Error('insert failed'));
+    // done is held until the insert settles; a failing insert is swallowed and
+    // the frame still flows, so storage can never sink the stream.
+    const doneFrame = iterator.next();
+    assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
+    controlled.rejectInsert?.(new Error('insert failed'));
+    assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 
-  await assertRejects(() => doneFrame, Error, 'insert failed');
+    const completed = (await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>;
+    assert(completed.type === 'event' && completed.event.type === 'response.completed');
+    assert((await iterator.next()).done);
+    assert(errorSpy.mock.calls.length > 0);
+  } finally {
+    errorSpy.mockRestore();
+  }
 });
 
 test('does not insert rows for failed streams without observed items', async () => {

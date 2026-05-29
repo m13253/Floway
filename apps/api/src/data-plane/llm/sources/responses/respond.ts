@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './errors.ts';
 import { collectResponsesProtocolEventsToResult } from './events/reassemble.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { type ResponsesItemsCommit, commitStoredItemsBestEffort } from './items/output.ts';
+import type { ResponsesItemsCommit } from './items/output.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
@@ -115,11 +115,10 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
       recordSourcePerformance(request, metadata.performance, state.failed || response.status === 'failed');
-      // The body is assembled and usage is recorded, so the items the client
-      // will see are settled — commit now (truncated/failed drains throw above
-      // and never reach here, so they persist nothing). Persistence is
-      // best-effort and never gates this already-billable response.
-      await commitStoredItemsBestEffort(commitStoredItems);
+      // Persist the settled items (failed drains threw above, so they persist
+      // nothing); awaited for read-after-write, swallowed so it can't sink this
+      // billable response.
+      await commitStoredItems?.();
       return Response.json(response);
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);

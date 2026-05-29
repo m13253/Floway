@@ -10,7 +10,7 @@ import type { ExecuteResult, UpstreamErrorResult } from '../../shared/errors/res
 import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import { type ResponsesItemsCommit, commitStoredItemsBestEffort } from '../responses/items/output.ts';
+import type { ResponsesItemsCommit } from '../responses/items/output.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
@@ -214,7 +214,10 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
       recordSourcePerformance(request, metadata.performance, state.failed);
-      await commitStoredItemsBestEffort(commitStoredItems);
+      // Persist the settled items (failed drains threw above, so they persist
+      // nothing); awaited for read-after-write, swallowed so it can't sink this
+      // billable response.
+      await commitStoredItems?.();
       return Response.json(response);
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);
