@@ -440,11 +440,11 @@ export const chatCompletionsViaResponsesItemsView = {
         continue;
       }
       const chunk = frame.event;
-      let mutated = false;
-      const choices = await Promise.all(chunk.choices.map(async choice => {
+      const rewritten = await Promise.all(chunk.choices.map(async choice => {
         const reasoningItems = choice.delta.reasoning_items;
-        if (!reasoningItems?.length) return choice;
+        if (!reasoningItems?.length) return { choice, mutated: false };
 
+        let mutated = false;
         const out: ChatReasoningItem[] = [];
         for (const item of reasoningItems) {
           if (!item.id) {
@@ -463,18 +463,18 @@ export const chatCompletionsViaResponsesItemsView = {
           out.push({ type: 'reasoning', id: newId, summary: item.summary });
         }
 
-        if (!mutated) return choice;
+        if (!mutated) return { choice, mutated: false };
         return {
-          ...choice,
-          delta: { ...choice.delta, reasoning_items: out.length > 0 ? out : null },
+          choice: { ...choice, delta: { ...choice.delta, reasoning_items: out.length > 0 ? out : null } },
+          mutated: true,
         };
       }));
 
-      if (!mutated) {
+      if (!rewritten.some(entry => entry.mutated)) {
         yield frame;
         continue;
       }
-      yield eventFrame({ ...chunk, choices });
+      yield eventFrame({ ...chunk, choices: rewritten.map(entry => entry.choice) });
     }
   },
 } satisfies ResponsesItemsView<readonly ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
