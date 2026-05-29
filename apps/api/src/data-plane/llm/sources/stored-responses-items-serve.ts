@@ -17,102 +17,113 @@ type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
 // wrapping the events branch so output items are persisted with the right
 // commit timing. Only the protocol-shaped pieces — payload parsing, item
 // carrier location, target preference, the interceptor-wrapped emit, response
-// shaping — differ per API and are injected through `SourceServeTrait`.
+// shaping — differ per API and are injected through the descriptor.
 //
-// The trait is split into an async `parse` (returns the parsed payload or an
-// early Response for input-level rejections) and a `buildAttempt` factory
-// invoked once the planner picks a binding. `buildAttempt` owns the fully
-// protocol-typed invocation, emit table, and interceptor chain behind a single
-// `run()` thunk, so the orchestrator stays agnostic of the payload type while
-// still driving persistence from the returned `targetApi`/`upstream`/`store`.
-export interface PreparedSourceServe<TItems, TMappedItems, TEvent> {
-  // The parsed request body. The orchestrator never reads it; it is threaded
-  // back to `buildAttempt` where the source casts it to its own payload shape
-  // to clone and rewrite.
-  readonly payload: unknown;
-  readonly items: TItems;
-  readonly wantsStream: boolean;
-  // The model id the planner resolves against. Most sources read it off the
-  // parsed payload; Gemini carries it on the request path instead of the body.
-  readonly model: string;
-  readonly view: ResponsesItemsView<TItems, TMappedItems, Frame<TEvent>>;
-  readonly downstreamAbortController: AbortController | undefined;
-}
+// payload and request never reach this orchestrator: they live in the per-API
+// closures. `setup()` parses the body, runs input-level pre-checks (returning
+// an early `Response`), and yields a plan whose `attempt` closure captures the
+// payload to clone, rewrite, and run. The orchestrator only drives the planner
+// and persistence, then hands every result — success or failure — to `respond`.
 
-export interface SourceServeAttempt<TEvent> {
-  readonly targetApi: LlmTargetApi;
-  readonly upstream: string;
+// The four ways stored-items serving can fail before a usable upstream result.
+// `diagnostic` covers both prepare-time input diagnostics and the planner's
+// routing diagnostic; `model-missing`/`model-unsupported` describe the planner
+// walk finding no usable binding; `source-error` is the top-level catch.
+export type StoredItemsFailure =
+  | { kind: 'diagnostic'; diagnostic: StoredResponsesItemsDiagnostic }
+  | { kind: 'model-missing'; model: string }
+  | { kind: 'model-unsupported'; model: string }
+  | { kind: 'source-error'; error: unknown };
+
+export interface StoredItemsServePlan<TItems, TEvent> {
+  readonly request: RequestContext;
+  readonly items: TItems;
+  readonly view: ResponsesItemsView<TItems, unknown, Frame<TEvent>>;
+  readonly wantsStream: boolean;
   // `store: false` requests persist null payloads; sources that have no
   // `store` concept (Messages, Gemini) pass `undefined`.
   readonly store: boolean | null | undefined;
-  run(): Promise<Result<TEvent>>;
-}
-
-export interface SourceServeTrait<TItems, TMappedItems, TEvent> {
-  request: RequestContext;
-  // Resolves the parsed payload and any input-level early Response. Runs inside
-  // the orchestrator's try so parse and pre-check failures fall to the shared
-  // diagnostic / source-error catch.
-  parse(): Promise<PreparedSourceServe<TItems, TMappedItems, TEvent> | Response>;
+  // The model id the planner resolves against. Most sources read it off the
+  // parsed payload; Gemini carries it on the request path instead of the body.
+  readonly model: string;
+  readonly downstreamAbortController: AbortController | undefined;
   pickTarget(endpoints: readonly ModelEndpoint[]): LlmTargetApi | null;
-  // `buildAttempt` clones the payload once and rewrites that clone's items in
-  // place via `rewriteItems`. The single per-attempt clone is the sole source
-  // of mutation isolation, so the rewrite must run on owned items — never on
+  // Clones the captured payload once, rewrites that clone's items in place via
+  // `rewriteItems`, builds the fully protocol-typed invocation / emit table /
+  // interceptor chain, and runs. The single per-attempt clone is the sole
+  // source of mutation isolation, so the rewrite runs on owned items — never on
   // the original parsed items the orchestrator still iterates read-only.
-  buildAttempt(input: {
+  attempt(input: {
     binding: ProviderModelRecord;
     target: LlmTargetApi;
     model: string;
-    payload: unknown;
-    rewriteItems: (items: TItems) => Promise<TMappedItems>;
-  }): Promise<SourceServeAttempt<TEvent>>;
-  // Maps a stored-items input diagnostic to this API's error envelope; used for
-  // both the prepare-time diagnostic and the thrown-diagnostic catch.
-  diagnosticResponse(diagnostic: StoredResponsesItemsDiagnostic): Response;
-  planErrorResult(diagnostic: StoredResponsesItemsDiagnostic): Result<TEvent>;
-  missingModelResult(model: string): Result<TEvent>;
-  unsupportedModelResult(model: string): Result<TEvent>;
-  sourceErrorResult(error: unknown): Result<TEvent>;
-  respond(input: { result: Result<TEvent>; wantsStream: boolean; commit?: ResponsesItemsCommit; downstreamAbortController: AbortController | undefined }): Promise<Response>;
+    rewriteItems: (items: TItems) => Promise<unknown>;
+  }): Promise<Result<TEvent>>;
 }
 
-export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(trait: SourceServeTrait<TItems, TMappedItems, TEvent>): Promise<Response> => {
-  let downstreamAbortController: AbortController | undefined;
+export interface StoredItemsServeDescriptor<TItems, TEvent> {
+  // The provisional request context, built before `setup()` so a parse/setup
+  // throw can still be rendered with telemetry; replaced by `plan.request` on
+  // success.
+  readonly request: RequestContext;
+  // Static — usable even before/if `setup()` runs. Maps a failure to this API's
+  // error envelope and shapes the final Response from a result.
+  renderFailure(failure: StoredItemsFailure): Result<TEvent>;
+  respond(input: {
+    result: Result<TEvent>;
+    request: RequestContext;
+    wantsStream: boolean;
+    commit?: ResponsesItemsCommit;
+    downstreamAbortController: AbortController | undefined;
+  }): Promise<Response>;
+  setup(): Promise<StoredItemsServePlan<TItems, TEvent> | Response>;
+}
+
+export const serveStoredResponsesItems = async <TItems, TEvent>(
+  d: StoredItemsServeDescriptor<TItems, TEvent>,
+): Promise<Response> => {
+  let request = d.request;
   try {
-    const prepared = await trait.parse();
-    if (prepared instanceof Response) return prepared;
-    downstreamAbortController = prepared.downstreamAbortController;
-    const { payload, items, wantsStream, model, view } = prepared;
-    const { request } = trait;
+    const plan = await d.setup();
+    if (plan instanceof Response) return plan;
+    request = plan.request;
 
-    const preparedStoredItems = await prepareStoredResponsesItemsForSource(items, request.apiKeyId ?? null, view);
-    const preparedDiagnostic = preparedStoredItems.diagnostics[0];
-    if (preparedDiagnostic) return trait.diagnosticResponse(preparedDiagnostic);
+    const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.view);
+    const preparedDiagnostic = prepared.diagnostics[0];
+    if (preparedDiagnostic) {
+      return await d.respond({
+        result: d.renderFailure({ kind: 'diagnostic', diagnostic: preparedDiagnostic }),
+        request,
+        wantsStream: plan.wantsStream,
+        downstreamAbortController: plan.downstreamAbortController,
+      });
+    }
 
+    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), prepared);
     let result: Result<TEvent> | undefined;
     let commit: ResponsesItemsCommit | undefined;
-    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
-    let resolvedModelId = model;
     let sawModel = false;
+    let resolvedModelId = plan.model;
     if (providerPlan.type === 'error') {
-      result = trait.planErrorResult(providerPlan.diagnostic);
+      result = d.renderFailure({ kind: 'diagnostic', diagnostic: providerPlan.diagnostic });
     } else for (const provider of providerPlan.providers) {
-      const resolved = await resolveModelForProvider(provider, model);
+      const resolved = await resolveModelForProvider(provider, plan.model);
       if (!resolved) continue;
 
       sawModel = true;
       resolvedModelId = resolved.id;
       const binding = resolved.binding;
-      const target = trait.pickTarget(binding.upstreamModel.upstreamEndpoints);
+      const target = plan.pickTarget(binding.upstreamModel.upstreamEndpoints);
       if (!target) continue;
 
-      const rewriteItems = (clonedItems: TItems): Promise<TMappedItems> =>
-        rewriteStoredResponsesItemsForProvider(clonedItems, preparedStoredItems, binding, view);
-      const attempt = await trait.buildAttempt({ binding, target, model: resolvedModelId, payload, rewriteItems });
-
-      const rawResult = await attempt.run();
+      const rawResult = await plan.attempt({
+        binding,
+        target,
+        model: resolvedModelId,
+        rewriteItems: items => rewriteStoredResponsesItemsForProvider(items, prepared, binding, plan.view),
+      });
       if (rawResult.type === 'events') {
-        const stored = storeResponsesOutputItems(rawResult.events, view, { targetApi: attempt.targetApi, upstream: attempt.upstream, store: attempt.store }, request, wantsStream);
+        const stored = storeResponsesOutputItems(rawResult.events, plan.view, { targetApi: target, upstream: binding.upstream, store: plan.store }, request, plan.wantsStream);
         result = { ...rawResult, events: stored.events };
         commit = stored.commit;
       } else {
@@ -121,13 +132,13 @@ export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(tr
       break;
     }
 
-    result ??= sawModel ? trait.unsupportedModelResult(resolvedModelId) : trait.missingModelResult(resolvedModelId);
+    result ??= d.renderFailure(sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId });
 
-    return await trait.respond({ result, wantsStream, commit, downstreamAbortController });
+    return await d.respond({ result, request, wantsStream: plan.wantsStream, commit, downstreamAbortController: plan.downstreamAbortController });
   } catch (error) {
-    if (error instanceof StoredResponsesItemsDiagnosticError) {
-      return trait.diagnosticResponse(error.diagnostic);
-    }
-    return await trait.respond({ result: trait.sourceErrorResult(error), wantsStream: false, downstreamAbortController });
+    const failure: StoredItemsFailure = error instanceof StoredResponsesItemsDiagnosticError
+      ? { kind: 'diagnostic', diagnostic: error.diagnostic }
+      : { kind: 'source-error', error };
+    return await d.respond({ result: d.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
   }
 };

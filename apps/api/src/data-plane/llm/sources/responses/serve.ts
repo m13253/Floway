@@ -9,7 +9,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { serveStoredResponsesItems, type SourceServeTrait } from '../stored-responses-items-serve.ts';
+import { serveStoredResponsesItems, type StoredItemsFailure, type StoredItemsServeDescriptor } from '../stored-responses-items-serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -88,48 +88,60 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
+const renderResponsesFailure = (failure: StoredItemsFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+  switch (failure.kind) {
+  case 'diagnostic':
+    return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
+  case 'model-missing':
+    return openAiMissingModelResult(failure.model);
+  case 'model-unsupported':
+    return openAiUnsupportedEndpointResult(failure.model, '/responses');
+  case 'source-error':
+    return sourceErrorResult<ResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
+  }
+};
+
 export const serveResponses = async (c: Context): Promise<Response> => {
-  const trait: SourceServeTrait<string | readonly ResponseInputItem[], string | ResponseInputItem[], ResponsesStreamEvent> = {
+  const descriptor: StoredItemsServeDescriptor<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
     request: createRequestContext(c, undefined, false),
-    parse: async () => {
+    renderFailure: renderResponsesFailure,
+    respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
+      await respondResponses(c, result, wantsStream, request, downstreamAbortController, commit),
+    setup: async () => {
       const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
       const notFound = previousResponseNotFoundResponse(payload);
       if (notFound) return notFound;
       const wantsStream = payload.stream === true;
       const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-      trait.request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-      return { payload, items: payload.input, wantsStream, model: payload.model, view: responsesItemsView, downstreamAbortController };
-    },
-    pickTarget,
-    buildAttempt: async ({ binding, target, model, payload, rewriteItems }) => {
-      const attemptPayload = structuredClone(payload as ResponsesPayload);
-      attemptPayload.model = model;
-      attemptPayload.input = await rewriteItems(attemptPayload.input);
-      const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
-      const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
-        responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, trait.request),
-        messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
-          await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), trait.request)),
-        'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-          await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', model, tgtPayload), trait.request)),
-      };
-      const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
+      const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
       return {
-        targetApi: invocation.targetApi,
-        upstream: invocation.upstream,
-        store: attemptPayload.store,
-        run: async () => await runInterceptors(invocation, trait.request, interceptors, () =>
-          emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens })),
+        request,
+        items: payload.input,
+        view: responsesItemsView,
+        wantsStream,
+        store: payload.store,
+        model: payload.model,
+        downstreamAbortController,
+        pickTarget,
+        attempt: async ({ binding, target, model, rewriteItems }) => {
+          const attemptPayload = structuredClone(payload);
+          attemptPayload.model = model;
+          attemptPayload.input = (await rewriteItems(attemptPayload.input)) as string | ResponseInputItem[];
+          const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
+          const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
+            responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
+            messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
+              await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), request)),
+            'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
+              await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', model, tgtPayload), request)),
+          };
+          const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
+          return await runInterceptors(invocation, request, interceptors, () =>
+            emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+        },
       };
     },
-    diagnosticResponse: diagnostic => Response.json(diagnostic.body, { status: diagnostic.status }),
-    planErrorResult: diagnostic => jsonUpstreamErrorResult(diagnostic.status, diagnostic.body),
-    missingModelResult: model => openAiMissingModelResult(model),
-    unsupportedModelResult: model => openAiUnsupportedEndpointResult(model, '/responses'),
-    sourceErrorResult: error => sourceErrorResult<ResponsesStreamEvent>(error, { sourceApi: 'responses', internalStatus: 502 }),
-    respond: async ({ result, wantsStream, commit, downstreamAbortController }) =>
-      await respondResponses(c, result, wantsStream, trait.request, downstreamAbortController, commit),
   };
 
-  return await serveStoredResponsesItems(trait);
+  return await serveStoredResponsesItems(descriptor);
 };

@@ -9,7 +9,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { serveStoredResponsesItems, type SourceServeTrait } from '../stored-responses-items-serve.ts';
+import { serveStoredResponsesItems, type StoredItemsFailure, type StoredItemsServeDescriptor } from '../stored-responses-items-serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
@@ -88,51 +88,62 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
+const renderMessagesFailure = (failure: StoredItemsFailure): ExecuteResult<ProtocolFrame<MessagesStreamEventData>> => {
+  switch (failure.kind) {
+  case 'diagnostic':
+    return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
+  case 'model-missing':
+    return openAiMissingModelResult(failure.model);
+  case 'model-unsupported':
+    return openAiUnsupportedEndpointResult(failure.model, '/messages');
+  case 'source-error':
+    return sourceErrorResult<MessagesStreamEventData>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
+  }
+};
+
 export const serveMessages = async (c: Context): Promise<Response> => {
-  let anthropicBeta: readonly string[] | undefined;
-  const trait: SourceServeTrait<readonly MessagesMessage[], MessagesMessage[], MessagesStreamEventData> = {
+  const descriptor: StoredItemsServeDescriptor<readonly MessagesMessage[], MessagesStreamEventData> = {
     request: createRequestContext(c, undefined, false),
-    parse: async () => {
+    renderFailure: renderMessagesFailure,
+    respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
+      await respondMessages(c, result, wantsStream, request, downstreamAbortController, commit),
+    setup: async () => {
       const payload = await c.req.json<MessagesPayload>();
       const rejectedBetaParam = bodyBetaParam(payload);
       if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
       const wantsStream = payload.stream === true;
       const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-      trait.request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-      anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-      return { payload, items: payload.messages, wantsStream, model: payload.model, view: messagesViaResponsesItemsView, downstreamAbortController };
-    },
-    pickTarget,
-    buildAttempt: async ({ binding, target, model, payload, rewriteItems }) => {
-      const attemptPayload = structuredClone(payload as MessagesPayload);
-      attemptPayload.model = model;
-      attemptPayload.messages = await rewriteItems(attemptPayload.messages);
-      const sharedHeaders: Record<string, string> = {};
-      const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
-      const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
-        messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, trait.request),
-        responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
-          await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload, undefined, sharedHeaders), trait.request)),
-        'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-          await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload, undefined, sharedHeaders), trait.request)),
-      };
-      const interceptors = [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])];
+      const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+      const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
       return {
-        targetApi: invocation.targetApi,
-        upstream: invocation.upstream,
+        request,
+        items: payload.messages,
+        view: messagesViaResponsesItemsView,
+        wantsStream,
         store: undefined,
-        run: async () => await runInterceptors(invocation, trait.request, interceptors, () =>
-          emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens })),
+        model: payload.model,
+        downstreamAbortController,
+        pickTarget,
+        attempt: async ({ binding, target, model, rewriteItems }) => {
+          const attemptPayload = structuredClone(payload);
+          attemptPayload.model = model;
+          attemptPayload.messages = (await rewriteItems(attemptPayload.messages)) as MessagesMessage[];
+          const sharedHeaders: Record<string, string> = {};
+          const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
+          const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
+            messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
+            responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
+              await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload, undefined, sharedHeaders), request)),
+            'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
+              await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload, undefined, sharedHeaders), request)),
+          };
+          const interceptors = [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])];
+          return await runInterceptors(invocation, request, interceptors, () =>
+            emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+        },
       };
     },
-    diagnosticResponse: diagnostic => Response.json(diagnostic.body, { status: diagnostic.status }),
-    planErrorResult: diagnostic => jsonUpstreamErrorResult(diagnostic.status, diagnostic.body),
-    missingModelResult: model => openAiMissingModelResult(model),
-    unsupportedModelResult: model => openAiUnsupportedEndpointResult(model, '/messages'),
-    sourceErrorResult: error => sourceErrorResult<MessagesStreamEventData>(error, { sourceApi: 'messages', internalStatus: 502 }),
-    respond: async ({ result, wantsStream, commit, downstreamAbortController }) =>
-      await respondMessages(c, result, wantsStream, trait.request, downstreamAbortController, commit),
   };
 
-  return await serveStoredResponsesItems(trait);
+  return await serveStoredResponsesItems(descriptor);
 };
