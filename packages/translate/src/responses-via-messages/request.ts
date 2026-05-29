@@ -1,6 +1,7 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
@@ -8,6 +9,7 @@ import {
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
+  type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -267,21 +269,44 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   const system = [payload.instructions, ...systemParts].filter((part): part is string => Boolean(part)).join('\n\n');
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
+  const systemBlocks: MessagesTextBlock[] | undefined = system
+    ? [{ type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL }]
+    : undefined;
+  applyLastToolCacheBreakpoint(tools);
+  applyLastMessageCacheBreakpoint(messages);
 
-  // Responses `metadata` is intentionally omitted on the Messages
-  // path; not coerced into Anthropic metadata.user_id, prompt-cache,
-  // or safety semantics.
+  // Merge reasoning effort + structured-output format into a single
+  // `output_config`. `effort === 'none'` still maps to `thinking: {type:
+  // 'disabled'}` (Anthropic's native disable shape), but `format` should
+  // still ride along when present.
+  //
+  // Responses keeps json_schema details flat (`text.format = { type, schema }`);
+  // a `text` format or absent config has no Messages equivalent and drops.
+  const responsesFormat = payload.text?.format;
+  const formatSchema =
+    responsesFormat?.type === 'json_schema' && responsesFormat.schema && typeof responsesFormat.schema === 'object' && !Array.isArray(responsesFormat.schema)
+      ? (responsesFormat.schema as Record<string, unknown>)
+      : undefined;
+  const outputConfig: NonNullable<MessagesPayload['output_config']> = {};
+  if (effort && effort !== 'none') outputConfig.effort = effort;
+  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
+  const hasOutputConfig = Object.keys(outputConfig).length > 0;
+
+  // Responses `metadata` is intentionally omitted on the Messages path;
+  // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
+  // semantics.
   const target: MessagesPayload = {
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(system ? { system } : {}),
+    ...(systemBlocks ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
     tools,
     tool_choice: translateToolChoice(payload.tool_choice),
-    ...(effort === 'none' ? { thinking: { type: 'disabled' as const } } : effort ? { output_config: { effort } } : {}),
+    ...(effort === 'none' ? { thinking: { type: 'disabled' as const } } : {}),
+    ...(hasOutputConfig ? { output_config: outputConfig } : {}),
   };
 
   return { target, customToolNames };
