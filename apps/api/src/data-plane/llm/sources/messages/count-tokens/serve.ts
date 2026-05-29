@@ -6,7 +6,7 @@ import { type MessagesInvocation, runInterceptors } from '../../../interceptors.
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
 import { createRequestContext } from '../../execute.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
-import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../serve.ts';
+import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../traits.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

@@ -1,5 +1,3 @@
-import type { Context } from 'hono';
-
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { respondResponses } from './respond.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
@@ -9,7 +7,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { serveStoredResponsesItems, type StoredItemsFailure, type StoredItemsServeDescriptor } from '../stored-responses-items-serve.ts';
+import { type LlmSourceFailure, type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -88,7 +86,7 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderResponsesFailure = (failure: StoredItemsFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+const renderResponsesFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
   switch (failure.kind) {
   case 'diagnostic':
     return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
@@ -101,47 +99,42 @@ const renderResponsesFailure = (failure: StoredItemsFailure): ExecuteResult<Prot
   }
 };
 
-export const serveResponses = async (c: Context): Promise<Response> => {
-  const descriptor: StoredItemsServeDescriptor<string | readonly ResponseInputItem[], string | ResponseInputItem[], ResponsesStreamEvent> = {
-    request: createRequestContext(c, undefined, false),
-    renderFailure: renderResponsesFailure,
-    respond: async ({ result, request, wantsStream, commit, downstreamAbortController }) =>
-      await respondResponses(c, result, wantsStream, request, downstreamAbortController, commit),
-    setup: async () => {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
-      const notFound = previousResponseNotFoundResponse(payload);
-      if (notFound) return notFound;
-      const wantsStream = payload.stream === true;
-      const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-      const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-      return {
-        request,
-        items: payload.input,
-        view: responsesItemsView,
-        wantsStream,
-        store: payload.store,
-        model: payload.model,
-        downstreamAbortController,
-        pickTarget,
-        attempt: async ({ binding, target, model, rewriteItems }) => {
-          const attemptPayload = structuredClone(payload);
-          attemptPayload.model = model;
-          attemptPayload.input = await rewriteItems(attemptPayload.input);
-          const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
-          const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
-            responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
-            messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
-              await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), request)),
-            'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-              await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', model, tgtPayload), request)),
-          };
-          const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
-          return await runInterceptors(invocation, request, interceptors, () =>
-            emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-        },
-      };
-    },
-  };
-
-  return await serveStoredResponsesItems(descriptor);
+export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputItem[], string | ResponseInputItem[], ResponsesStreamEvent> = {
+  renderFailure: renderResponsesFailure,
+  respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
+    await respondResponses(c, result, wantsStream, request, downstreamAbortController, commit),
+  setup: async c => {
+    const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
+    const notFound = previousResponseNotFoundResponse(payload);
+    if (notFound) return notFound;
+    const wantsStream = payload.stream === true;
+    const downstreamAbortController = wantsStream ? new AbortController() : undefined;
+    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    return {
+      request,
+      items: payload.input,
+      view: responsesItemsView,
+      wantsStream,
+      store: payload.store,
+      model: payload.model,
+      downstreamAbortController,
+      pickTarget,
+      attempt: async ({ binding, target, model, rewriteItems }) => {
+        const attemptPayload = structuredClone(payload);
+        attemptPayload.model = model;
+        attemptPayload.input = await rewriteItems(attemptPayload.input);
+        const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
+        const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
+          responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
+          messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
+            await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), request)),
+          'chat-completions': viaTranslation(translateResponsesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
+            await emitToChatCompletions(responsesInvocation(binding, 'chat-completions', model, tgtPayload), request)),
+        };
+        const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
+        return await runInterceptors(invocation, request, interceptors, () =>
+          emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
+      },
+    };
+  },
 };

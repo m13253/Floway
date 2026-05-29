@@ -1,41 +1,44 @@
+import type { Context } from 'hono';
+
+import { createRequestContext } from './execute.ts';
+import { type StoredResponsesItemsDiagnostic, StoredResponsesItemsDiagnosticError } from './responses/items/errors.ts';
+import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
+import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './responses/items/request-plan.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../providers/types.ts';
 import { type LlmTargetApi, type RequestContext } from '../interceptors.ts';
 import type { ExecuteResult } from '../shared/errors/result.ts';
-import { type StoredResponsesItemsDiagnostic, StoredResponsesItemsDiagnosticError } from './responses/items/errors.ts';
-import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
-import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './responses/items/request-plan.ts';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;
 type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
 
-// The control flow every stored-Responses-items source serve shares: look up
-// referenced stored items, plan a provider order from their routing affinity,
-// then walk that order resolving the model, running source interceptors, and
-// wrapping the events branch so output items are persisted with the right
-// commit timing. Only the protocol-shaped pieces — payload parsing, item
-// carrier location, target preference, the interceptor-wrapped emit, response
-// shaping — differ per API and are injected through the descriptor.
+// The control flow every LLM source serve shares: look up referenced stored
+// items, plan a provider order from their routing affinity, then walk that
+// order resolving the model, running source interceptors, and wrapping the
+// events branch so output items are persisted with the right commit timing.
+// Only the protocol-shaped pieces — payload parsing, item carrier location,
+// target preference, the interceptor-wrapped emit, response shaping — differ
+// per API and are injected through the per-source traits.
 //
 // payload and request never reach this orchestrator: they live in the per-API
-// closures. `setup()` parses the body, runs input-level pre-checks (returning
+// closures. `setup(c)` parses the body, runs input-level pre-checks (returning
 // an early `Response`), and yields a plan whose `attempt` closure captures the
 // payload to clone, rewrite, and run. The orchestrator only drives the planner
 // and persistence, then hands every result — success or failure — to `respond`.
 
-// The four ways stored-items serving can fail before a usable upstream result.
+// The four ways LLM serving can fail before a usable upstream result.
 // `diagnostic` covers both prepare-time input diagnostics and the planner's
 // routing diagnostic; `model-missing`/`model-unsupported` describe the planner
 // walk finding no usable binding; `source-error` is the top-level catch.
-export type StoredItemsFailure =
+export type LlmSourceFailure =
   | { kind: 'diagnostic'; diagnostic: StoredResponsesItemsDiagnostic }
   | { kind: 'model-missing'; model: string }
   | { kind: 'model-unsupported'; model: string }
   | { kind: 'source-error'; error: unknown };
 
-export interface StoredItemsServePlan<TItems, TMappedItems, TEvent> {
+export interface LlmSourcePlan<TItems, TMappedItems, TEvent> {
   readonly request: RequestContext;
   readonly items: TItems;
   readonly view: ResponsesItemsView<TItems, TMappedItems, Frame<TEvent>>;
@@ -61,38 +64,38 @@ export interface StoredItemsServePlan<TItems, TMappedItems, TEvent> {
   }): Promise<Result<TEvent>>;
 }
 
-export interface StoredItemsServeDescriptor<TItems, TMappedItems, TEvent> {
-  // The provisional request context, built before `setup()` so a parse/setup
-  // throw can still be rendered with telemetry; replaced by `plan.request` on
-  // success.
-  readonly request: RequestContext;
+export interface LlmSourceTraits<TItems, TMappedItems, TEvent> {
   // Static — usable even before/if `setup()` runs. Maps a failure to this API's
   // error envelope and shapes the final Response from a result.
-  renderFailure(failure: StoredItemsFailure): Result<TEvent>;
+  renderFailure(failure: LlmSourceFailure): Result<TEvent>;
   respond(input: {
+    c: Context;
     result: Result<TEvent>;
     request: RequestContext;
     wantsStream: boolean;
     commit?: ResponsesItemsCommit;
     downstreamAbortController: AbortController | undefined;
   }): Promise<Response>;
-  setup(): Promise<StoredItemsServePlan<TItems, TMappedItems, TEvent> | Response>;
+  setup(c: Context): Promise<LlmSourcePlan<TItems, TMappedItems, TEvent> | Response>;
 }
 
-export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(
-  d: StoredItemsServeDescriptor<TItems, TMappedItems, TEvent>,
-): Promise<Response> => {
-  let request = d.request;
+export const serveLlm = <TItems, TMappedItems, TEvent>(
+  traits: LlmSourceTraits<TItems, TMappedItems, TEvent>,
+) => async (c: Context): Promise<Response> => {
+  // Provisional request context, built before `setup()` so a parse/setup throw
+  // can still be rendered with telemetry; replaced by `plan.request` on success.
+  let request = createRequestContext(c, undefined, false);
   try {
-    const plan = await d.setup();
+    const plan = await traits.setup(c);
     if (plan instanceof Response) return plan;
     request = plan.request;
 
     const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.view);
     const preparedDiagnostic = prepared.diagnostics[0];
     if (preparedDiagnostic) {
-      return await d.respond({
-        result: d.renderFailure({ kind: 'diagnostic', diagnostic: preparedDiagnostic }),
+      return await traits.respond({
+        c,
+        result: traits.renderFailure({ kind: 'diagnostic', diagnostic: preparedDiagnostic }),
         request,
         wantsStream: plan.wantsStream,
         downstreamAbortController: plan.downstreamAbortController,
@@ -105,7 +108,7 @@ export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(
     let sawModel = false;
     let resolvedModelId = plan.model;
     if (providerPlan.type === 'error') {
-      result = d.renderFailure({ kind: 'diagnostic', diagnostic: providerPlan.diagnostic });
+      result = traits.renderFailure({ kind: 'diagnostic', diagnostic: providerPlan.diagnostic });
     } else for (const provider of providerPlan.providers) {
       const resolved = await resolveModelForProvider(provider, plan.model);
       if (!resolved) continue;
@@ -132,13 +135,13 @@ export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(
       break;
     }
 
-    result ??= d.renderFailure(sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId });
+    result ??= traits.renderFailure(sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId });
 
-    return await d.respond({ result, request, wantsStream: plan.wantsStream, commit, downstreamAbortController: plan.downstreamAbortController });
+    return await traits.respond({ c, result, request, wantsStream: plan.wantsStream, commit, downstreamAbortController: plan.downstreamAbortController });
   } catch (error) {
-    const failure: StoredItemsFailure = error instanceof StoredResponsesItemsDiagnosticError
+    const failure: LlmSourceFailure = error instanceof StoredResponsesItemsDiagnosticError
       ? { kind: 'diagnostic', diagnostic: error.diagnostic }
       : { kind: 'source-error', error };
-    return await d.respond({ result: d.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
+    return await traits.respond({ c, result: traits.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
   }
 };
