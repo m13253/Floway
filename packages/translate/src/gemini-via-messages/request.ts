@@ -11,12 +11,14 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
   type MessagesImageBlock,
   type MessagesPayload,
+  type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -162,7 +164,10 @@ const applyThinkingConfig = (request: MessagesPayload, thinkingConfig?: GeminiTh
   }
 
   const effort = geminiThinkingLevelEffort(thinkingConfig);
-  if (effort !== undefined) request.output_config = { effort };
+  // Spread to merge with any output_config fields a sibling helper has
+  // already written (e.g. structured-output `format` from
+  // applyGenerationConfig).
+  if (effort !== undefined) request.output_config = { ...request.output_config, effort };
 };
 
 const applyGenerationConfig = (request: MessagesPayload, generationConfig: GeminiGenerationConfig | undefined, fallbackMaxOutputTokens: number): void => {
@@ -181,6 +186,16 @@ const applyGenerationConfig = (request: MessagesPayload, generationConfig: Gemin
   }
   if (generationConfig.stopSequences !== undefined) {
     request.stop_sequences = generationConfig.stopSequences;
+  }
+  // Gemini's `responseSchema` is the bare JSON Schema; Anthropic carries it
+  // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
+  // application/json` without a schema has no Anthropic equivalent and is
+  // dropped — the routing fallback degrades gracefully rather than fails.
+  if (generationConfig.responseSchema !== undefined) {
+    request.output_config = {
+      ...request.output_config,
+      format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> },
+    };
   }
 
   applyThinkingConfig(request, generationConfig.thinkingConfig);
@@ -224,7 +239,10 @@ export const buildTargetRequest = (
   const unmatchedToolCallIds: GeminiToolCallIds = {};
 
   const system = geminiText(payload.systemInstruction);
-  if (system !== null) request.system = system;
+  if (system !== null) {
+    const systemBlock: MessagesTextBlock = { type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL };
+    request.system = [systemBlock];
+  }
 
   payload.contents?.forEach((content, turnIndex) => {
     const message = content.role === 'model' ? buildAssistantMessage(content, turnIndex, unmatchedToolCallIds) : buildUserMessage(content, turnIndex, unmatchedToolCallIds);
@@ -235,6 +253,8 @@ export const buildTargetRequest = (
 
   const tools = buildTools(payload);
   if (tools) request.tools = tools;
+  applyLastToolCacheBreakpoint(request.tools);
+  applyLastMessageCacheBreakpoint(request.messages);
 
   const intent = geminiFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {

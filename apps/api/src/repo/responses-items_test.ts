@@ -185,11 +185,11 @@ test('D1 responses items deleteAll removes spilled payload files alongside the r
   assertEquals(await files.get(descriptor.key), null);
 });
 
-test('migration 0018 creates the responses_items table and cleanup indexes', async () => {
+test('migration 0022 creates the responses_items table and cleanup indexes', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
-    applySqlJsFile(db, '0018_responses_items.sql');
+    applySqlJsFile(db, '0022_responses_items.sql');
 
     const table = sqlJsRows<{ sql: string }>(db, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'responses_items'")[0];
     assert(table);

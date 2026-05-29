@@ -5,9 +5,15 @@
 - Do not open a Pull Request without explicit human approval. The human must
   understand the goal and risk, read the AI-generated code and PR text, and
   believe code, docs, and tests are internally consistent.
-- Do not create commits unless the human explicitly asks for a commit.
+- Do not create commits on the main branch unless the human explicitly asks
+  for a commit. Inside a git worktree (any non-main branch), commit every
+  change immediately and autonomously — do not ask first, and do not leave
+  in-flight work uncommitted.
 - Before claiming work is complete, run the relevant verification command and
-  read the result.
+  read the result. Worktree commits are the exception: commit them directly
+  without running any test, lint, or typecheck first. Verification belongs to
+  the completion and merge-to-main gate, not to each in-flight worktree
+  commit.
 - This file describes only the current system. Removed concepts must not
   appear anywhere in the repo — code, comments, tests, docs, this file
   included. Migrations are the only place an old name is allowed to survive.

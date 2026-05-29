@@ -5,6 +5,8 @@ import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../ap
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
 
+type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
+
 interface LoaderUsageResponse {
   records: Array<{
     keyId: string;
@@ -13,10 +15,7 @@ interface LoaderUsageResponse {
     model: string;
     hour: string;
     requests: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreationTokens: number;
+    tokens: Partial<Record<BillingDimension, number>>;
     cost: number;
   }>;
   keys: Array<{ id: string; name: string; createdAt: string }>;
@@ -64,10 +63,7 @@ interface DisplayUsageRecord {
   model: string;
   hour: string;
   requests: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
+  tokens: Partial<Record<BillingDimension, number>>;
   cost: number;
 }
 interface UsageResponse {
@@ -90,6 +86,8 @@ type Metric =
   | 'cacheCreation' | 'cacheHitRate';
 type Range = DashboardRange;
 
+const dim = (r: DisplayUsageRecord, k: BillingDimension): number => r.tokens[k] ?? 0;
+
 const api = useApi();
 const initialUsageData = useUsagePageData();
 const modelsStore = useModelsStore();
@@ -103,6 +101,20 @@ const searchData = ref<SearchUsageResponse | null>(initialUsageData.data.value.s
 const tokenLoading = ref(false);
 const searchUsageLoading = ref(false);
 let usageRequestId = 0;
+
+// The three usage views interlock through a shared notion of "hidden" keys and
+// models. Toggling a key in the By-Key (or Search) legend cross-filters the
+// By-Model chart and the summary stats by that key; toggling a model in the
+// By-Model legend cross-filters the By-Key chart and the stats. Each set drives
+// both the chart it belongs to (own datasets struck out) and the value
+// aggregation of the other dimension.
+const hiddenKeys = ref(new Set<string>());
+const hiddenModels = ref(new Set<string>());
+
+const toggleHidden = (set: Set<string>, id: string) => {
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+};
 
 const load = async () => {
   const requestId = ++usageRequestId;
@@ -136,20 +148,29 @@ const switchTokenChartMetric = (m: string) => { tokenChartMetric.value = m as Me
 watch(tokenRange, load);
 
 const tokenSummary = computed(() => {
-  const records = data.value?.records ?? [];
-  let requests = 0, cost = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0;
+  const records = (data.value?.records ?? []).filter(r => !hiddenKeys.value.has(r.keyId) && !hiddenModels.value.has(r.model));
+  let requests = 0, cost = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, inputImage = 0, outputImage = 0;
   for (const r of records) {
     requests += r.requests;
     cost += r.cost;
-    input += r.inputTokens;
-    output += r.outputTokens;
-    cacheRead += r.cacheReadTokens;
-    cacheCreation += r.cacheCreationTokens;
+    input += dim(r, 'input');
+    output += dim(r, 'output');
+    cacheRead += dim(r, 'input_cache_read');
+    cacheCreation += dim(r, 'input_cache_write');
+    inputImage += dim(r, 'input_image');
+    outputImage += dim(r, 'output_image');
   }
   return {
-    requests, cost, input, output, cacheRead, cacheCreation,
-    total: input + output,
-    prefill: input - cacheRead,
+    requests, cost, cacheRead, cacheCreation,
+    // Input and Output mix text and image token counts into one figure. The
+    // per-modality split only affects pricing (applied per dimension already),
+    // so we avoid extra image-only columns. Input is the inclusive prompt total
+    // (text + image, uncached + cache read + cache write); prefill is that total
+    // minus cache reads; output is text + image output.
+    input: input + cacheRead + cacheCreation + inputImage,
+    output: output + outputImage,
+    total: input + output + cacheRead + cacheCreation + inputImage + outputImage,
+    prefill: input + cacheCreation + inputImage,
   };
 });
 
@@ -185,12 +206,12 @@ const metricValue = (r: DisplayUsageRecord, metric: Metric): number => {
   switch (metric) {
   case 'requests': return r.requests;
   case 'cost': return r.cost;
-  case 'total': return r.inputTokens + r.outputTokens;
-  case 'input': return r.inputTokens;
-  case 'output': return r.outputTokens;
-  case 'prefill': return r.inputTokens - r.cacheReadTokens;
-  case 'cached': return r.cacheReadTokens;
-  case 'cacheCreation': return r.cacheCreationTokens;
+  case 'total': return dim(r, 'input') + dim(r, 'output') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_image') + dim(r, 'output_image');
+  case 'input': return dim(r, 'input') + dim(r, 'input_cache_read') + dim(r, 'input_cache_write') + dim(r, 'input_image');
+  case 'output': return dim(r, 'output') + dim(r, 'output_image');
+  case 'prefill': return dim(r, 'input') + dim(r, 'input_cache_write') + dim(r, 'input_image');
+  case 'cached': return dim(r, 'input_cache_read');
+  case 'cacheCreation': return dim(r, 'input_cache_write');
   case 'cachedRate':
   case 'cacheHitRate':
     return 0;
@@ -210,6 +231,8 @@ interface TokenDetail {
   output: number;
   cacheRead: number;
   cacheCreation: number;
+  inputImage: number;
+  outputImage: number;
   cost: number;
 }
 
@@ -282,17 +305,19 @@ const tokenDetailMetricValue = (detail: TokenDetail, metric: Metric): number | n
     const total = detail.cacheRead + detail.cacheCreation;
     return total > 0 ? (detail.cacheRead / total) * 100 : null;
   }
-  if (metric === 'cachedRate') return detail.input > 0 ? (detail.cacheRead / detail.input) * 100 : null;
+  if (metric === 'cachedRate') {
+    const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
+    return prompt > 0 ? (detail.cacheRead / prompt) * 100 : null;
+  }
   return null;
 };
 
-const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cost: 0 });
+const emptyDetail = (): TokenDetail => ({ requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, inputImage: 0, outputImage: 0, cost: 0 });
 
 const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey: 'keyId' | 'model', metric: Metric) => {
   const { keys: bucketKeys, labels } = buckets.value;
   const values = new Map<string, Map<string, number | null>>();
   const details = new Map<string, Map<string, TokenDetail>>();
-  const presentGroups = new Set<string>();
   for (const key of bucketKeys) {
     values.set(key, new Map());
     details.set(key, new Map());
@@ -301,14 +326,15 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
     const bucket = bucketKeyForUtcHour(loadedTokenRange.value, r.hour);
     if (!values.has(bucket)) continue;
     const group = r[groupKey];
-    presentGroups.add(group);
     const bucketDetails = details.get(bucket)!;
     const detail = bucketDetails.get(group) ?? emptyDetail();
     detail.requests += r.requests;
-    detail.input += r.inputTokens;
-    detail.output += r.outputTokens;
-    detail.cacheRead += r.cacheReadTokens;
-    detail.cacheCreation += r.cacheCreationTokens;
+    detail.input += dim(r, 'input');
+    detail.output += dim(r, 'output');
+    detail.cacheRead += dim(r, 'input_cache_read');
+    detail.cacheCreation += dim(r, 'input_cache_write');
+    detail.inputImage += dim(r, 'input_image');
+    detail.outputImage += dim(r, 'output_image');
     detail.cost += r.cost;
     bucketDetails.set(group, detail);
     if (!isPercentMetric(metric)) {
@@ -322,7 +348,7 @@ const aggregateTokenRecords = (records: readonly DisplayUsageRecord[], groupKey:
       for (const [group, detail] of bucketDetails) bucketValues.set(group, tokenDetailMetricValue(detail, metric));
     }
   }
-  return { bucketKeys, labels, values, details, presentGroups };
+  return { bucketKeys, labels, values, details };
 };
 
 const formatTokenCount = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n));
@@ -340,8 +366,13 @@ const tooltipHeader = (labelWidth: number) =>
 
 const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const cached = detail.cacheRead;
-  const prefill = detail.input - cached;
-  return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${formatCost(detail.cost).padStart(9)}  ${formatTokenCount(detail.input + detail.output).padStart(7)}  ${formatTokenCount(cached).padStart(7)}  ${formatInputRate(cached, detail.input).padStart(8)}  ${formatTokenCount(prefill).padStart(7)}  ${formatTokenCount(detail.output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
+  // Input/output columns mix text and image token counts; pricing already
+  // differs per dimension, so the display does not split them out.
+  const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
+  const output = detail.output + detail.outputImage;
+  const total = prompt + output;
+  const prefill = detail.input + detail.cacheCreation + detail.inputImage;
+  return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${formatCost(detail.cost).padStart(9)}  ${formatTokenCount(total).padStart(7)}  ${formatTokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${formatTokenCount(prefill).padStart(7)}  ${formatTokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
 };
 
 const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], metadata: readonly { id: string; name: string; createdAt: string }[]) => {
@@ -355,23 +386,40 @@ const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], meta
 };
 
 const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'line'> => {
-  const records = data.value?.records ?? [];
+  const allRecords = data.value?.records ?? [];
   const metric = tokenChartMetric.value;
   const isPercent = isPercentMetric(metric);
-  const { bucketKeys, labels, values, details, presentGroups } = aggregateTokenRecords(records, groupKey, metric);
+  // Own legend toggles this dimension; the other dimension's hidden set
+  // cross-filters which records contribute to this chart's values.
+  const ownHidden = groupKey === 'keyId' ? hiddenKeys : hiddenModels;
+  const otherDimension: 'keyId' | 'model' = groupKey === 'keyId' ? 'model' : 'keyId';
+  const otherHidden = groupKey === 'keyId' ? hiddenModels : hiddenKeys;
+  const valueRecords = allRecords.filter(r => !otherHidden.value.has(r[otherDimension]));
+  const { bucketKeys, labels, values, details } = aggregateTokenRecords(valueRecords, groupKey, metric);
+  // Color slots are assigned from the full dataset so each group keeps a stable
+  // color no matter how cross-filtering changes which groups remain.
+  const presentGroups = new Set(allRecords.map(r => r[groupKey]));
   const entries = groupKey === 'keyId'
-    ? keyChartEntries([...presentGroups], keyMetadataForTokenRecords(records, data.value?.keys ?? []), data.value?.keys.map(k => k.id) ?? [...presentGroups], data.value?.keyColorOrder ?? [])
+    ? keyChartEntries([...presentGroups], keyMetadataForTokenRecords(allRecords, data.value?.keys ?? []), data.value?.keys.map(k => k.id) ?? [...presentGroups], data.value?.keyColorOrder ?? [])
     : modelChartEntries([...presentGroups]);
-  const labelWidth = entries.reduce((max, entry) => Math.max(max, entry.label.length), 0);
+  // Cross-filtering can leave a group with all-zero (or, for percent metrics,
+  // all-null) values. Drop those datasets outright — legend entry and line both
+  // gone — instead of rendering an inert flat line. The own-dimension hidden set
+  // is a separate, restorable user toggle and keeps its struck-through entry.
+  const datasetEntries = entries
+    .map(entry => ({ entry, data: bucketKeys.map(k => values.get(k)?.get(entry.id) ?? (isPercent ? null : 0)) }))
+    .filter(({ data }) => isPercent ? data.some(v => v !== null) : data.some(v => v !== 0));
+  const labelWidth = datasetEntries.reduce((max, { entry }) => Math.max(max, entry.label.length), 0);
   return {
     type: 'line',
     data: {
       labels,
-      datasets: entries.map(entry => {
+      datasets: datasetEntries.map(({ entry, data: datasetData }) => {
         const color = chartColor(entry.colorSlot);
         return {
           label: entry.label,
-          data: bucketKeys.map(k => values.get(k)?.get(entry.id) ?? (isPercent ? null : 0)),
+          data: datasetData,
+          hidden: ownHidden.value.has(entry.id),
           borderColor: color,
           backgroundColor: `${color}40`,
           borderWidth: 2,
@@ -392,6 +440,10 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
+          onClick: (_event, legendItem) => {
+            const entry = datasetEntries[legendItem.datasetIndex ?? -1]?.entry;
+            if (entry) toggleHidden(ownHidden.value, entry.id);
+          },
         },
         tooltip: {
           backgroundColor: 'rgba(12,16,21,0.95)',
@@ -407,7 +459,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
             beforeBody: items => items.length ? tooltipHeader(labelWidth) : [],
             label: (ctx: TooltipItem<'line'>) => {
               const bucket = bucketKeys[ctx.dataIndex];
-              const entry = entries[ctx.datasetIndex];
+              const entry = datasetEntries[ctx.datasetIndex]?.entry;
               const detail = bucket && entry ? details.get(bucket)?.get(entry.id) : undefined;
               if (!entry || !detail) return `${ctx.dataset.label}: ${formatTokenChartAxisValue(Number(ctx.parsed.y ?? 0), metric)}`;
               return tooltipRow(String(ctx.dataset.label ?? ''), labelWidth, detail);
@@ -470,6 +522,7 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
         return {
           label: entry.label,
           data: bucketKeys.map(k => groups.get(entry.id)?.get(k) ?? 0),
+          hidden: hiddenKeys.value.has(entry.id),
           borderColor: color,
           backgroundColor: `${color}40`,
           borderWidth: 2,
@@ -487,7 +540,14 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
       animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' } },
+        legend: {
+          position: 'bottom',
+          labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
+          onClick: (_event, legendItem) => {
+            const entry = entries[legendItem.datasetIndex ?? -1];
+            if (entry) toggleHidden(hiddenKeys.value, entry.id);
+          },
+        },
         tooltip: {
           backgroundColor: 'rgba(12,16,21,0.95)',
           borderColor: 'rgba(255,255,255,0.1)',

@@ -226,7 +226,7 @@ test('Custom provider projects display_name / created / limits / cost from a flo
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        cost: { input: 3, output: 15, cache_read: 0.3 },
+        cost: { input: 3, output: 15, input_cache_read: 0.3 },
       }],
     }),
     async () => {
@@ -239,7 +239,7 @@ test('Custom provider projects display_name / created / limits / cost from a flo
       assertEquals(model.limits.max_context_window_tokens, 200000);
       assertEquals(model.cost?.input, 3);
       assertEquals(model.cost?.output, 15);
-      assertEquals(model.cost?.cache_read, 0.3);
+      assertEquals(model.cost?.input_cache_read, 0.3);
 
       const pricing = instance.provider.getPricingForModelKey('m-rich');
       assertEquals(pricing?.input, 3);
@@ -350,4 +350,133 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('model'), 'gpt-image-2');
   assertEquals(forwarded.form.get('prompt'), 'add a kite');
   assertEquals(forwarded.form.get('image') instanceof File, true);
+});
+
+test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
+  await setupAppTest();
+  clearModelsStore();
+
+  await withMockedFetch(
+    () => { throw new Error('upstream /models must not be fetched when modelsFetch is disabled'); },
+    async () => {
+      const provider = createCustomProvider(baseRecord({
+        id: 'up_custom_manual_only',
+        config: {
+          baseUrl: 'https://custom.example.com',
+          bearerToken: 'sk-test',
+          supportedEndpoints: ['/chat/completions'],
+          modelsFetch: { enabled: false },
+          models: [
+            {
+              upstreamModelId: 'pinned-chat',
+              publicModelId: 'pinned',
+              supportedEndpoints: ['/chat/completions'],
+              display_name: 'Pinned Chat',
+              limits: { max_output_tokens: 4096 },
+              cost: { input: 1, output: 2 },
+            },
+          ],
+        },
+      })).provider;
+
+      const models = await provider.getProvidedModels();
+      assertEquals(models.length, 1);
+      assertEquals(models[0].id, 'pinned');
+      assertEquals(models[0].kind, 'chat');
+      assertEquals([...models[0].upstreamEndpoints], ['chat_completions']);
+      assertEquals(models[0].display_name, 'Pinned Chat');
+      assertEquals(models[0].limits.max_output_tokens, 4096);
+      assertEquals(models[0].cost?.input, 1);
+
+      const pricing = provider.getPricingForModelKey('pinned-chat');
+      assertEquals(pricing?.input, 1);
+      assertEquals(pricing?.output, 2);
+    },
+  );
+});
+
+test('Custom provider with a manual override sharing an upstream id wins over the auto copy', async () => {
+  await setupAppTest();
+  clearModelsStore();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({
+          object: 'list',
+          data: [
+            { id: 'shared', cost: { input: 9, output: 9 } },
+            { id: 'auto-only' },
+          ],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(baseRecord({
+        id: 'up_custom_override',
+        config: {
+          baseUrl: 'https://custom.example.com',
+          bearerToken: 'sk-test',
+          supportedEndpoints: ['/chat/completions'],
+          modelsFetch: { enabled: true },
+          models: [
+            {
+              upstreamModelId: 'shared',
+              supportedEndpoints: ['/chat/completions'],
+              display_name: 'Manual Shared',
+              cost: { input: 1, output: 2 },
+            },
+          ],
+        },
+      })).provider;
+
+      const models = await provider.getProvidedModels();
+      // [manual, ...autoFiltered] — the upstream 'shared' copy is dropped.
+      assertEquals(models.map(m => m.id), ['shared', 'auto-only']);
+      const shared = models.find(m => m.id === 'shared');
+      assertExists(shared);
+      assertEquals(shared.display_name, 'Manual Shared');
+
+      // Pricing resolves from the manual config first, not the cached upstream cost.
+      const sharedPricing = provider.getPricingForModelKey('shared');
+      assertEquals(sharedPricing?.input, 1);
+      assertEquals(sharedPricing?.output, 2);
+
+      // Auto models still resolve pricing from the cached upstream map.
+      const autoOnly = provider.getPricingForModelKey('auto-only');
+      assertEquals(autoOnly, null);
+    },
+  );
+});
+
+test('Custom provider forwards the source-derived anthropicBeta slice as the anthropic-beta header', async () => {
+  const instance = createCustomProvider(baseRecord());
+  const provider = instance.provider;
+  const seen: Array<string | null> = [];
+
+  await withMockedFetch(
+    request => {
+      const path = new URL(request.url).pathname;
+      if (path === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'echo', object: 'model' }] });
+      seen.push(request.headers.get('anthropic-beta'));
+      if (path === '/v1/messages') return jsonResponse({ id: 'm', type: 'message', role: 'assistant', content: [], model: 'echo', stop_reason: 'end_turn', stop_sequence: null, usage: {} });
+      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels();
+      // The data plane hands the parsed beta slice as the 5th argument; custom
+      // upstreams register no filter interceptor, so the provider merges it.
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14']);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20']);
+      // No beta slice → no header on the wire (the regression guard for the
+      // pre-86ef9aa drop).
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, []);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
+    },
+  );
+
+  assertEquals(seen, ['oauth-2025-04-20,interleaved-thinking-2025-05-14', 'oauth-2025-04-20', null, null]);
 });

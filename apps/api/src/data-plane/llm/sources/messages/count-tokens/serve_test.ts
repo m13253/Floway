@@ -153,9 +153,9 @@ test('/v1/messages/count_tokens proxies to Azure Foundry Anthropic endpoint', as
     config: {
       endpoint: 'https://example.services.ai.azure.com/anthropic',
       apiKey: 'az-key',
-      deployments: [
+      models: [
         {
-          deployment: 'claude-prod',
+          upstreamModelId: 'claude-prod',
           publicModelId: 'claude-azure',
           supportedEndpoints: ['/v1/messages'],
         },
@@ -216,9 +216,9 @@ test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures b
     config: {
       endpoint: 'https://count.services.ai.azure.com/anthropic',
       apiKey: 'az-count',
-      deployments: [
+      models: [
         {
-          deployment: 'claude-count-prod',
+          upstreamModelId: 'claude-count-prod',
           publicModelId: 'claude-count-stored',
           supportedEndpoints: ['/v1/messages'],
         },
