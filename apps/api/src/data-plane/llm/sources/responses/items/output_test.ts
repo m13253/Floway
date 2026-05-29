@@ -8,7 +8,9 @@ import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../rep
 import { assert, assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import type { RequestContext } from '../../../../llm/interceptors.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { translateResponsesViaMessages } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const apiKeyId = 'key_output';
@@ -50,6 +52,16 @@ const response = (output: ResponseOutputItem[], status: ResponsesResult['status'
 const framesFrom = async function* (events: readonly ResponsesStreamEvent[]) {
   for (const event of events) yield eventFrame(event);
 };
+
+// All assertions below that expect rows present immediately after draining
+// the stream exercise the streaming path, where finalized items write through
+// at once. `.events` drops the commit handle, which is a no-op there.
+const storeStreaming = (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  context: StoreResponsesContext,
+  request: RequestContext,
+): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> =>
+  storeResponsesOutputItems(frames, responsesItemsView, context, request, true).events;
 
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   const collected: ResponsesStreamEvent[] = [];
@@ -116,12 +128,12 @@ test('rewrites output item ids consistently across added, child, done, and termi
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_text.delta', output_index: 0, content_index: 0, item_id: original.id!, delta: 'hello' },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   assert(isStoredResponsesItemId(storedId));
@@ -142,11 +154,11 @@ test('persists each row before yielding the item-done frame', async () => {
   repo.responsesItems = controlled;
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
-  const iterator = storeResponsesOutputItems(framesFrom([
+  const iterator = storeStreaming(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
+  ]), makeContext(), makeRequest())[Symbol.asyncIterator]();
 
   // added flows real-time without persist; mid-stream replay race is
   // accepted per design.
@@ -168,11 +180,11 @@ test('insert failure prevents yielding the item-done frame', async () => {
   repo.responsesItems = controlled;
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
-  const iterator = storeResponsesOutputItems(framesFrom([
+  const iterator = storeStreaming(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext(), makeRequest())[Symbol.asyncIterator]();
+  ]), makeContext(), makeRequest())[Symbol.asyncIterator]();
 
   // added passes first.
   await iterator.next();
@@ -190,9 +202,9 @@ test('does not insert rows for failed streams without observed items', async () 
   repo.responsesItems = controlled;
   initRepo(repo);
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.failed', response: response([], 'failed') },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   assertEquals(events.at(-1)?.type, 'response.failed');
   assertEquals(controlled.calls.length, 0);
@@ -203,11 +215,11 @@ test('items completed before a stream failure remain persisted', async () => {
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.failed', response: response([], 'failed') },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
@@ -219,10 +231,10 @@ test('store false creates metadata rows with null payload', async () => {
   initRepo(repo);
   const original = messageItem('raw_msg_native', 'hello');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext({ store: false }), makeRequest()));
+  ]), makeContext({ store: false }), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
@@ -235,9 +247,9 @@ test('terminal output items missing done frames are stored and rewritten', async
   initRepo(repo);
   const original = messageItem('raw_terminal_only', 'late');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.completed').response.output[0].id!;
   assert(isStoredResponsesItemId(storedId));
@@ -251,11 +263,11 @@ test('two distinct upstream items receive distinct stored ids', async () => {
   const first = messageItem('raw_msg_1', 'first');
   const second = messageItem('raw_msg_2', 'second');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: first },
     { type: 'response.output_item.done', output_index: 1, item: second },
     { type: 'response.completed', response: response([first, second]) },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   const done = events.filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done');
   assert(done[0].item.id !== done[1].item.id);
@@ -273,11 +285,11 @@ test('repeated mapper calls for the same upstream id refresh the stored payload'
   const partial = { ...messageItem('raw_msg_repeat', ''), status: 'in_progress' as const, content: [] };
   const final = messageItem('raw_msg_repeat', 'final');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.added', output_index: 0, item: partial },
     { type: 'response.output_item.done', output_index: 0, item: final },
     { type: 'response.completed', response: response([final]) },
-  ]), responsesItemsView, makeContext(), makeRequest()));
+  ]), makeContext(), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
@@ -289,13 +301,136 @@ test('via-translation synthesized items do not claim upstream ownership', async 
   initRepo(repo);
   const original = messageItem('msg_0', 'translated');
 
-  const events = await collectEvents(storeResponsesOutputItems(framesFrom([
+  const events = await collectEvents(storeStreaming(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: response([original]) },
-  ]), responsesItemsView, makeContext({ targetApi: 'messages' }), makeRequest()));
+  ]), makeContext({ targetApi: 'messages' }), makeRequest()));
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, null);
   assertEquals(row.upstreamItemId, null);
+});
+
+test('non-streaming buffers item rows and persists nothing until commit', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const original = messageItem('raw_msg_native', 'hello');
+
+  const stored = storeResponsesOutputItems(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'response.completed', response: response([original]) },
+  ]), responsesItemsView, makeContext(), makeRequest(), false);
+
+  // Draining the stream finalizes the item but, in deferred mode, must not
+  // touch the repo — the buffered row only lands on commit.
+  const events = await collectEvents(stored.events);
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  assertEquals((await repo.responsesItems.lookupMany(apiKeyId, [storedId])).length, 0);
+
+  await stored.commit();
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.payload, { item: original });
+});
+
+test('non-streaming item-done then stream error persists nothing when commit is skipped', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const original = messageItem('raw_msg_native', 'hello');
+
+  // The respond layer drains the stream to assemble the JSON body; a stream
+  // error after an item-done makes the reassembler throw, so the success
+  // branch (and its commit) is never reached and the buffer is discarded.
+  const stored = storeResponsesOutputItems(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'error', message: 'upstream exploded', code: 'server_error' },
+  ]), responsesItemsView, makeContext(), makeRequest(), false);
+
+  const events = await collectEvents(stored.events);
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  // commit() is deliberately not called, mirroring the 502 path.
+  assertEquals((await repo.responsesItems.lookupMany(apiKeyId, [storedId])).length, 0);
+});
+
+// End-to-end proof for the responses-via-other direction: a Responses client
+// routed to a Messages upstream. The translator synthesizes Responses output
+// items from the Messages stream, every synthesized item now carries an id,
+// and `storeResponsesOutputItems` (targetApi: 'messages') records each as a
+// synthetic row (upstreamId null, payload present) that later requests can
+// inline-expand via item_reference.
+const messagesFramesFrom = async function* (events: readonly MessagesStreamEventData[]) {
+  for (const event of events) yield eventFrame(event);
+};
+
+const translateMessagesUpstreamToResponses = async (
+  events: readonly MessagesStreamEventData[],
+): Promise<AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const trip = await translateResponsesViaMessages(
+    { model: 'claude-test', input: [], stream: true } as never,
+    { model: 'claude-test' },
+  );
+  return trip.events(messagesFramesFrom(events));
+};
+
+test('responses-via-messages synthesized message and function_call items persist as synthetic rows', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+
+  const upstreamFrames = await translateMessagesUpstreamToResponses([
+    { type: 'message_start', message: { id: 'msg_up', type: 'message', role: 'assistant', content: [], model: 'claude-test', stop_reason: null, stop_sequence: null, usage: { input_tokens: 3, output_tokens: 0 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } },
+    { type: 'content_block_stop', index: 1 },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
+    { type: 'message_stop' },
+  ] as MessagesStreamEventData[]);
+
+  const events = await collectEvents(
+    storeStreaming(upstreamFrames, makeContext({ targetApi: 'messages', upstream: 'up_anthropic' }), makeRequest()),
+  );
+
+  const doneEvents = events.filter(
+    (event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done',
+  );
+  const messageDone = doneEvents.find(event => event.item.type === 'message');
+  const functionDone = doneEvents.find(event => event.item.type === 'function_call');
+  assert(messageDone, 'expected a message output_item.done');
+  assert(functionDone, 'expected a function_call output_item.done');
+
+  // The client sees gateway stored ids on the wire — the synthesized index ids
+  // are mapped through the storage layer just like native upstream ids.
+  const messageStoredId = messageDone.item.id!;
+  const functionStoredId = functionDone.item.id!;
+  assert(isStoredResponsesItemId(messageStoredId));
+  assert(isStoredResponsesItemId(functionStoredId));
+  assertEquals(parseStoredResponsesItemId(messageStoredId)?.prefix, 'msg');
+  assertEquals(parseStoredResponsesItemId(functionStoredId)?.prefix, 'fc');
+
+  const rows = await repo.responsesItems.lookupMany(apiKeyId, [messageStoredId, functionStoredId]);
+  const rowById = new Map(rows.map(row => [row.id, row]));
+  const messageRow = rowById.get(messageStoredId)!;
+  const functionRow = rowById.get(functionStoredId)!;
+
+  // Synthetic: no upstream ownership, full payload retained for inline replay.
+  assertEquals(messageRow.upstreamId, null);
+  assertEquals(messageRow.upstreamItemId, null);
+  assertEquals(messageRow.payload?.item, {
+    type: 'message',
+    id: 'msg_0',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'answer' }],
+  });
+  assertEquals(functionRow.upstreamId, null);
+  assertEquals(functionRow.upstreamItemId, null);
+  assertEquals(functionRow.payload?.item, {
+    type: 'function_call',
+    id: 'fc_1',
+    call_id: 'toolu_1',
+    name: 'lookup',
+    arguments: '{"q":"x"}',
+    status: 'completed',
+  });
 });

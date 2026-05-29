@@ -6,6 +6,7 @@ import { assertEquals, assertExists } from '../../../../test-assert.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import type { InternalDebugError } from '../../shared/errors/internal-debug-error.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
+import { noopResponsesItemsCommit } from '../responses/items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';
@@ -26,7 +27,7 @@ const request = (): RequestContext => ({
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();
-  app.get('/', c => respondGemini(c, result, false, request(), undefined));
+  app.get('/', c => respondGemini(c, result, false, request(), undefined, noopResponsesItemsCommit));
   return await app.request('/');
 };
 

@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './errors.ts';
 import { collectResponsesProtocolEventsToResult } from './events/reassemble.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
+import { type ResponsesItemsCommit, commitStoredItemsBestEffort } from './items/output.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
@@ -93,6 +94,7 @@ export const respondResponses = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
+  commitStoredItems: ResponsesItemsCommit,
 ): Promise<Response> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);
@@ -113,6 +115,11 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
       recordSourcePerformance(request, metadata.performance, state.failed || response.status === 'failed');
+      // The body is assembled and usage is recorded, so the items the client
+      // will see are settled — commit now (truncated/failed drains throw above
+      // and never reach here, so they persist nothing). Persistence is
+      // best-effort and never gates this already-billable response.
+      await commitStoredItemsBestEffort(commitStoredItems);
       return Response.json(response);
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);

@@ -15,8 +15,10 @@ export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<v
 // per-frame transform — every appearance of a Responses item carrier in the
 // source stream is fed through `idMapper` and the rewritten id flows out
 // without delaying SSE. Persistence sits behind `onItemFinalized`, which is
-// awaited only once per upstream id at the protocol-specific "final content"
-// frame; by the time the view yields that frame, the row is in the database.
+// awaited once per upstream id at the protocol-specific terminal frame, before
+// the view yields that frame. Whether the handler writes the row immediately
+// or buffers it for a later commit is the caller's concern; the view only
+// guarantees the callback resolves before the frame flows on.
 export type ResponsesItemIdMapper = (upstreamId: string, itemType: string) => string;
 
 export type ResponsesItemFinalizedHandler = (

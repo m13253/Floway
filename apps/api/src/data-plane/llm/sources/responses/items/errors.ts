@@ -45,10 +45,8 @@ export const throwStoredResponsesItemsDiagnostic = (diagnostic: StoredResponsesI
   throw new StoredResponsesItemsDiagnosticError(diagnostic);
 };
 
-// Pre-feature clients recognize this exact message text — do not change it.
-// Origin: apps/api/src/data-plane/llm/sources/responses/serve_test.ts
-// "/v1/responses rejects item_reference at the entrypoint" pinned the wire
-// shape before stored items existed.
+// Clients match this "not found" text verbatim against stock OpenAI Responses
+// errors, so the message shape must stay byte-stable — do not reword it.
 export const createStoredResponsesItemNotFoundDiagnostic = (itemId: string): StoredResponsesItemsDiagnostic =>
   diagnostic({
     kind: 'not_found',

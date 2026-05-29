@@ -11,7 +11,7 @@ import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
 import { StoredResponsesItemsDiagnosticError } from '../responses/items/errors.ts';
-import { storeResponsesOutputItems } from '../responses/items/output.ts';
+import { noopResponsesItemsCommit, type ResponsesItemsCommit, storeResponsesOutputItems } from '../responses/items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -109,6 +109,7 @@ export const serveMessages = async (c: Context): Promise<Response> => {
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
     let result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>> | undefined;
+    let commitStoredItems: ResponsesItemsCommit = noopResponsesItemsCommit;
     const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
     let resolvedModelId = payload.model;
     let sawModel = false;
@@ -141,15 +142,19 @@ export const serveMessages = async (c: Context): Promise<Response> => {
 
       const rawResult = await runInterceptors(invocation, request, [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-      result = rawResult.type === 'events'
-        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, messagesViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request) }
-        : rawResult;
+      if (rawResult.type === 'events') {
+        const stored = storeResponsesOutputItems(rawResult.events, messagesViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request, wantsStream);
+        result = { ...rawResult, events: stored.events };
+        commitStoredItems = stored.commit;
+      } else {
+        result = rawResult;
+      }
       break;
     }
 
     result ??= sawModel ? openAiUnsupportedEndpointResult(resolvedModelId, '/messages') : openAiMissingModelResult(resolvedModelId);
 
-    return await respondMessages(c, result, wantsStream, request, downstreamAbortController);
+    return await respondMessages(c, result, wantsStream, request, downstreamAbortController, commitStoredItems);
   } catch (error) {
     if (error instanceof StoredResponsesItemsDiagnosticError) {
       return Response.json(error.diagnostic.body, { status: error.diagnostic.status });
@@ -162,6 +167,7 @@ export const serveMessages = async (c: Context): Promise<Response> => {
       }),
       false,
       request, downstreamAbortController,
+      noopResponsesItemsCommit,
     );
   }
 };

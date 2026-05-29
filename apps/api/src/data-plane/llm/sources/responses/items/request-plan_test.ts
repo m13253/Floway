@@ -246,6 +246,34 @@ test('non-matching reasoning is stripped from Chat reasoning_items', async () =>
   assertEquals(rewritten, [{ role: 'assistant', content: null, reasoning_items: null }]);
 });
 
+test('synthetic reasoning without an upstream owner is inline-expanded to any provider', async () => {
+  const id = storedReasoningId('synthetic');
+  await insertRows([
+    // No upstream owner (translated from a non-Responses upstream): the row
+    // carries its full payload and stays portable to any upstream, unlike an
+    // upstream-owned reasoning row which is dropped when routed elsewhere.
+    storedRow({
+      id,
+      itemType: 'reasoning',
+      upstreamId: null,
+      upstreamItemId: null,
+      payload: { type: 'reasoning', id: 'rs_synthetic_origin', summary: [{ type: 'summary_text', text: 'trace' }] },
+    }),
+  ]);
+
+  const messages: ChatCompletionsPayload['messages'] = [{
+    role: 'assistant',
+    content: null,
+    reasoning_items: [{ type: 'reasoning', id, summary: [{ type: 'summary_text', text: 'trace' }] }],
+  }];
+  const prepared = await prepareChatItems(messages);
+  const rewritten = await rewriteChatItems(messages, prepared, provider('up_b'));
+
+  const items = (rewritten[0] as { reasoning_items?: { summary?: { text: string }[] }[] | null }).reasoning_items;
+  assert(items?.length === 1, 'synthetic reasoning must survive routing to a non-owning provider');
+  assertEquals(items[0].summary?.[0]?.text, 'trace');
+});
+
 test('row item type must match source item type before downgrade or rewrite', async () => {
   const reasoningId = storedReasoningId('wrong-type');
   await insertRows([

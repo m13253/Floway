@@ -11,7 +11,7 @@ import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
 import { StoredResponsesItemsDiagnosticError } from '../responses/items/errors.ts';
-import { storeResponsesOutputItems } from '../responses/items/output.ts';
+import { noopResponsesItemsCommit, type ResponsesItemsCommit, storeResponsesOutputItems } from '../responses/items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../responses/items/request-plan.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -101,6 +101,7 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
     }
 
     let result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | undefined;
+    let commitStoredItems: ResponsesItemsCommit = noopResponsesItemsCommit;
     const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
     let resolvedModelId = model;
     let sawModel = false;
@@ -141,15 +142,19 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
 
       const rawResult = await runInterceptors(invocation, request, [...geminiSourceInterceptors, ...(binding.sourceInterceptors?.gemini ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-      result = rawResult.type === 'events'
-        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, geminiViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request) }
-        : rawResult;
+      if (rawResult.type === 'events') {
+        const stored = storeResponsesOutputItems(rawResult.events, geminiViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request, wantsStream);
+        result = { ...rawResult, events: stored.events };
+        commitStoredItems = stored.commit;
+      } else {
+        result = rawResult;
+      }
       break;
     }
 
     result ??= sawModel ? unsupportedGeminiModelResult(resolvedModelId) : missingGeminiModelResult(resolvedModelId);
 
-    return await respondGemini(c, result, wantsStream, request, downstreamAbortController);
+    return await respondGemini(c, result, wantsStream, request, downstreamAbortController, commitStoredItems);
   } catch (error) {
     if (error instanceof StoredResponsesItemsDiagnosticError) {
       return Response.json(
@@ -171,6 +176,7 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
       }),
       false,
       request, downstreamAbortController,
+      noopResponsesItemsCommit,
     );
   }
 };

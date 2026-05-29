@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { StoredResponsesItemsDiagnosticError } from './items/errors.ts';
-import { storeResponsesOutputItems } from './items/output.ts';
+import { noopResponsesItemsCommit, type ResponsesItemsCommit, storeResponsesOutputItems } from './items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './items/request-plan.ts';
 import { respondResponses } from './respond.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../providers/registry.ts';
@@ -107,6 +107,7 @@ export const serveResponses = async (c: Context): Promise<Response> => {
     if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
 
     let result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | undefined;
+    let commitStoredItems: ResponsesItemsCommit = noopResponsesItemsCommit;
     const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
     let resolvedModelId = payload.model;
     let sawModel = false;
@@ -138,15 +139,19 @@ export const serveResponses = async (c: Context): Promise<Response> => {
 
       const rawResult = await runInterceptors(invocation, request, [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-      result = rawResult.type === 'events'
-        ? { ...rawResult, events: storeResponsesOutputItems(rawResult.events, responsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: invocation.payload.store }, request) }
-        : rawResult;
+      if (rawResult.type === 'events') {
+        const stored = storeResponsesOutputItems(rawResult.events, responsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: invocation.payload.store }, request, wantsStream);
+        result = { ...rawResult, events: stored.events };
+        commitStoredItems = stored.commit;
+      } else {
+        result = rawResult;
+      }
       break;
     }
 
     result ??= sawModel ? openAiUnsupportedEndpointResult(resolvedModelId, '/responses') : openAiMissingModelResult(resolvedModelId);
 
-    return await respondResponses(c, result, wantsStream, request, downstreamAbortController);
+    return await respondResponses(c, result, wantsStream, request, downstreamAbortController, commitStoredItems);
   } catch (error) {
     if (error instanceof StoredResponsesItemsDiagnosticError) {
       return Response.json(error.diagnostic.body, { status: error.diagnostic.status });
@@ -159,6 +164,7 @@ export const serveResponses = async (c: Context): Promise<Response> => {
       }),
       false,
       request, downstreamAbortController,
+      noopResponsesItemsCommit,
     );
   }
 };

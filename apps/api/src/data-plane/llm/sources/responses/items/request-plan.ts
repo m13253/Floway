@@ -33,6 +33,13 @@ export type StoredResponsesProviderPlan =
   | { type: 'providers'; providers: readonly ModelProviderInstance[] }
   | { type: 'error'; diagnostic: StoredResponsesItemsDiagnostic };
 
+// A stored row either belongs to the upstream that produced it — native
+// Responses upstreams hand back their own item ids — or is gateway-synthesized
+// from a non-Responses upstream, in which case it has no upstream identity.
+// Owned rows carry routing affinity tied to their origin; synthetic rows are
+// freely portable and inline-expanded to whichever upstream serves the request.
+const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem & { upstreamId: string } => row.upstreamId !== null;
+
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
   apiKeyId: string | null,
@@ -70,7 +77,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     }
 
     site.affinity = classifyStoredResponsesUseSite(site.type, row);
-    if (site.affinity === 'forcing' && !row.upstreamId) {
+    if (site.affinity === 'forcing' && !isUpstreamOwned(row)) {
       diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
       continue;
     }
@@ -206,7 +213,7 @@ const collectPreferredUpstreams = (
     .map(site => site.id));
 
   for (const [id, row] of rows) {
-    if (!preferredIds.has(id) || !row.upstreamId) continue;
+    if (!preferredIds.has(id) || !isUpstreamOwned(row)) continue;
     preferred.delete(row.upstreamId);
     preferred.add(row.upstreamId);
   }
@@ -229,7 +236,7 @@ const classifyStoredResponsesUseSite = (
   row: StoredResponsesItem,
 ): StoredResponsesUseSiteAffinity => {
   if (itemType === 'item_reference' && row.payload === null) return 'forcing';
-  if (!row.upstreamId) return 'non_affinity';
+  if (!isUpstreamOwned(row)) return 'non_affinity';
   if (row.itemType === 'compaction') return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
   return 'portable';
@@ -248,7 +255,11 @@ const rewriteStoredResponsesItemForProvider = (
     throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(row.id));
   }
 
-  if (row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
+  // Only upstream-owned reasoning is bound to the upstream that produced it and
+  // must be dropped when routing elsewhere. Synthetic rows have no owner, carry
+  // their full payload, and stay portable to any upstream regardless of type —
+  // they fall through to inline expansion below.
+  if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
   if (item.type === 'item_reference' && row.upstreamId === provider.upstream && row.upstreamItemId && provider.supportsResponsesItemReference) return itemWithId(item, row.upstreamItemId);
 
   const replacement = storedItemReplacementBase(item, row);

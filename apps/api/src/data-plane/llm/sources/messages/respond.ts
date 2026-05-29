@@ -10,6 +10,7 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
+import { type ResponsesItemsCommit, commitStoredItemsBestEffort } from '../responses/items/output.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
 
@@ -104,6 +105,7 @@ export const respondMessages = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
+  commitStoredItems: ResponsesItemsCommit,
 ): Promise<Response> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);
@@ -125,6 +127,11 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
       recordSourcePerformance(request, metadata.performance, state.failed);
+      // The body is assembled and usage is recorded, so the items the client
+      // will see are settled — commit now (truncated/failed drains throw above
+      // and never reach here, so they persist nothing). Persistence is
+      // best-effort and never gates this already-billable response.
+      await commitStoredItemsBestEffort(commitStoredItems);
       return Response.json(response);
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);
