@@ -617,15 +617,22 @@ const actionSearchQueries = (action: Extract<ResponseWebSearchAction, { type: 's
  * Replay today is reconstructed solely from the public wire item, so a
  * client that drops `results` from the echoed `web_search_call` (e.g.
  * codex CLI strips it before persisting to its rollout) forces the
- * `resultsStripped` degradation. A separate effort persists synthetic
- * Responses items server-side together with a private payload (the
- * `responses_items` store; `StoredResponsesItemPayload.private`,
- * reached via `getRepo().responsesItems`). Once the shim populates that
- * private payload at synthesis time and the replay seam
- * (`transformInputItemsForWebSearch`) gains access to a lookup, this
- * function should first restore the real results from the persisted
- * private payload keyed by the item's `id`, and fall back to the public
- * item (and `resultsStripped`) only when no persisted payload exists.
+ * `resultsStripped` degradation. Two distinct gaps motivate persisting
+ * synthesized Responses items server-side (the `responses_items` store,
+ * reached via `getRepo().responsesItems`):
+ *   - `results` HAS a public home on the wire item; clients merely strip it
+ *     in transit, so a server-side copy of the public shape keyed by `id`
+ *     suffices to restore it.
+ *   - The error CONTENT has NO public home: the wire item exposes `status`
+ *     (so error-ness survives the round trip) but no structured `error`
+ *     field, so today a failure is smuggled into a `status:"completed"`
+ *     item's `results[]`. Faithfully telling a real failure apart from an
+ *     empty result is the part that genuinely needs the out-of-band
+ *     `StoredResponsesItemPayload.private` blob.
+ * Once the shim populates that store at synthesis time and the replay seam
+ * (`transformInputItemsForWebSearch`) gains a lookup, this function should
+ * first restore the persisted item keyed by `id`, falling back to the
+ * public wire item (and `resultsStripped`) only when none exists.
  */
 export const inputItemToIr = (item: ResponseInputWebSearchCall): WebSearchCallIR | null => {
   if (item.action === undefined) return null;

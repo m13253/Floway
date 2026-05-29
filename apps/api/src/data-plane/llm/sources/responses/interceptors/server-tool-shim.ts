@@ -84,7 +84,11 @@ export interface ServerToolHostedDispatch {
 
 export type ServerToolPrepareResult =
   | { type: 'inactive' }
-  | { type: 'invalid-request'; message: string; param: string }
+  // `code` overrides the envelope's `error.code` for tools that emulate a
+  // specific upstream's rejection vocabulary (e.g. `unknown_parameter` /
+  // `invalid_value` for the public Responses surface). Omitted falls back
+  // to the generic `invalid_request_error`.
+  | { type: 'invalid-request'; message: string; param: string; code?: string }
   | {
     type: 'active';
     baseToolName: string;
@@ -713,13 +717,14 @@ export const buildErrorFromResult = (
 export const invalidRequestEnvelope = (
   message: string,
   param: string,
+  code = 'invalid_request_error',
 ): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
   const body = JSON.stringify({
     error: {
       message,
       type: 'invalid_request_error',
       param,
-      code: 'invalid_request_error',
+      code,
     },
   });
   return {
@@ -902,7 +907,7 @@ export const withResponsesServerToolShim = (
   for (const prepareServerTool of registrations) {
     const prepared = await prepareServerTool(ctx, request);
     if (prepared.type === 'inactive') continue;
-    if (prepared.type === 'invalid-request') return invalidRequestEnvelope(prepared.message, prepared.param);
+    if (prepared.type === 'invalid-request') return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code);
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const hasHostedTool = prepared.hosted !== undefined && currentTools.some(prepared.hosted.isHostedTool);
