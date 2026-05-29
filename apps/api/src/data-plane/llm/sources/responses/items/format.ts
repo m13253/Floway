@@ -1,3 +1,5 @@
+import { buf as crc32 } from 'crc-32';
+
 const itemTypePrefixes = {
   message: 'msg',
   reasoning: 'rs',
@@ -79,20 +81,7 @@ const base64UrlEncode = (bytes: Uint8Array): string => {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
 };
 
-const crcTable = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i += 1) {
-    let value = i;
-    for (let bit = 0; bit < 8; bit += 1) value = (value & 1) !== 0 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    table[i] = value >>> 0;
-  }
-  return table;
-})();
-
 const crc32Checksum = (input: string): string => {
-  const bytes = new TextEncoder().encode(input);
-  let crc = 0xffffffff;
-  for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  crc = (crc ^ 0xffffffff) >>> 0;
+  const crc = crc32(new TextEncoder().encode(input)) >>> 0;
   return base64UrlEncode(new Uint8Array([(crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff]));
 };
