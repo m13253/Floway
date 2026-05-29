@@ -62,12 +62,13 @@ export const messagesCopilotInterceptors = [
 // at the Copilot count_tokens target boundary so behavior matches pre-Path A
 // for count_tokens.
 //
-// withInlineImagesCompressed runs first so the token count reflects the
-// resized image we will actually send on the chat path. withThinkingDisplayPromoted /
-// withCacheControlScopeStripped / withEagerInputStreamingStripped are
-// intentionally absent: pre-Path A they also never ran on count_tokens (they
-// lived in the messages target interceptor list, not in the shared call()
-// helper).
+// withInlineImagesCompressed runs first so count_tokens sizes the same
+// WebP-recompressed payload the chat path sends — and reuses its cached
+// transform — keeping the estimate consistent with the real request.
+// withThinkingDisplayPromoted / withCacheControlScopeStripped /
+// withEagerInputStreamingStripped are intentionally absent: pre-Path A they
+// also never ran on count_tokens (they lived in the messages target
+// interceptor list, not in the shared call() helper).
 export const messagesCountTokensCopilotInterceptors = [
   withInlineImagesCompressed,
   withVisionHeaderSet,

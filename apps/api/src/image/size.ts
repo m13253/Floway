@@ -1,23 +1,23 @@
-import type { ImageDimensions, ImageSizeCalculator } from './types.ts';
+import type { ImageDimensions } from './types.ts';
 
-// Upper bound on an outbound image's longest edge. The default is deliberately
-// conservative: it sits at the smallest of the major providers' server-side
-// resize thresholds (Anthropic shrinks anything past ~1568px on its long
-// edge), so our single recompression pass never enlarges past what the
-// upstream would itself downscale, and never hands the model a larger image
-// than it can use. Per-model tile budgets — to be derived from live probing —
-// will replace this through imageSizeCalculatorForModel below.
-// Reference: https://platform.claude.com/docs/en/build-with-claude/vision
-const DEFAULT_MAX_LONG_EDGE = 1568;
+export interface SizeCaps {
+  maxLongEdge?: number;
+  maxShortEdge?: number;
+  maxArea?: number;
+}
 
-export const defaultImageSizeCalculator: ImageSizeCalculator = ({ width, height }: ImageDimensions): ImageDimensions => {
+// Scales `source` DOWN (never up) to satisfy every present cap while preserving
+// aspect ratio. This mirrors the server-side downscale each provider applies to
+// images, so we never ship pixels the model would discard. With no caps the
+// source passes through unchanged.
+export const fitWithin = ({ width, height }: ImageDimensions, caps: SizeCaps): ImageDimensions => {
   const longEdge = Math.max(width, height);
-  if (longEdge <= DEFAULT_MAX_LONG_EDGE) return { width, height };
-  const scale = DEFAULT_MAX_LONG_EDGE / longEdge;
+  const shortEdge = Math.min(width, height);
+  const factors = [1];
+  if (caps.maxLongEdge !== undefined) factors.push(caps.maxLongEdge / longEdge);
+  if (caps.maxShortEdge !== undefined) factors.push(caps.maxShortEdge / shortEdge);
+  if (caps.maxArea !== undefined) factors.push(Math.sqrt(caps.maxArea / (width * height)));
+  const scale = Math.min(...factors);
+  if (scale >= 1) return { width, height };
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
 };
-
-// Resolves the size calculator for a given upstream model. Every model shares
-// the conservative default today; this is the single seam where probed,
-// per-model tile-budget calculators will be wired in once measured.
-export const imageSizeCalculatorForModel = (_upstreamModelId: string): ImageSizeCalculator => defaultImageSizeCalculator;

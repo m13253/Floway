@@ -1,6 +1,6 @@
 import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '../../../../../image/inline.ts';
-import { imageSizeCalculatorForModel } from '../../../../../image/size.ts';
 import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
+import { targetSizeForResponsesChat } from '../image-size.ts';
 
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an
 // `image_url` part) in the outgoing Chat Completions payload to WebP before
@@ -15,7 +15,7 @@ export const withInlineImagesCompressed: ChatCompletionsInterceptor = async (ctx
   }
 
   if (targets.length > 0) {
-    const targetSize = imageSizeCalculatorForModel(ctx.upstreamModel.id);
+    const targetSize = targetSizeForResponsesChat(ctx.upstreamModel.id);
     await Promise.all(
       targets.map(async target => {
         target.url = await compressImageDataUrlToWebp(target.url, targetSize);

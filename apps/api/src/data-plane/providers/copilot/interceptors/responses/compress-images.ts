@@ -1,6 +1,6 @@
 import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '../../../../../image/inline.ts';
-import { imageSizeCalculatorForModel } from '../../../../../image/size.ts';
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
+import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponseInputImage } from '@floway-dev/protocols/responses';
 
 // Recompresses every inline base64 image in the outgoing Responses payload to
@@ -21,7 +21,7 @@ export const withInlineImagesCompressed: ResponsesInterceptor = async (ctx, _req
   }
 
   if (targets.length > 0) {
-    const targetSize = imageSizeCalculatorForModel(ctx.upstreamModel.id);
+    const targetSize = targetSizeForResponsesChat(ctx.upstreamModel.id);
     await Promise.all(
       targets.map(async target => {
         target.image_url = await compressImageDataUrlToWebp(target.image_url, targetSize);
