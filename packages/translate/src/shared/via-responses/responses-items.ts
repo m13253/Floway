@@ -210,6 +210,13 @@ export const messagesViaResponsesItemsView = {
 
       const content: MessagesAssistantContentBlock[] = [];
       for (const block of message.content) {
+        // A `${enc}@${id}` carrier never originates from a native Anthropic
+        // Messages model — Anthropic only emits opaque signatures with no `@`.
+        // It exists only because our own messages-via-responses translation
+        // packed a Responses reasoning id into the signature, or the session
+        // previously passed through another gateway using the same interop
+        // layout. A foreign gateway's id is not one of our stored ids, so it
+        // does not resolve here and the block is forwarded untouched.
         const carrier = reasoningCarrier(block);
         if (carrier === null) {
           content.push(structuredClone(block));
