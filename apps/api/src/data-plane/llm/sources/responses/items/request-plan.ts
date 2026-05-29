@@ -272,7 +272,11 @@ const storedItemReplacementBase = (
   item: ResponseInputItem,
   row: StoredResponsesItem,
 ): ResponseInputItem => {
-  if (row.payload === null) return structuredClone(item);
+  // The caller hands us items it already owns (the per-attempt payload clone),
+  // so the no-stored-payload branch may reuse `item` directly. The stored row,
+  // by contrast, lives in the shared lookup cache and is cloned so downstream
+  // interceptor mutation cannot corrupt it across the request.
+  if (row.payload === null) return item;
   return structuredClone(row.payload.item) as ResponseInputItem;
 };
 

@@ -80,9 +80,9 @@ export const serveGemini = async (c: Context, model: string, wantsStream: boolea
       return { payload, items: payload.contents ?? [], wantsStream, model, view: geminiViaResponsesItemsView, downstreamAbortController };
     },
     pickTarget,
-    buildAttempt: ({ binding, target, model: resolvedModelId, payload, rewrittenItems }) => {
+    buildAttempt: async ({ binding, target, model: resolvedModelId, payload, rewriteItems }) => {
       const attemptPayload = structuredClone(payload as GeminiGenerateContentRequest);
-      if (attemptPayload.contents !== undefined) attemptPayload.contents = rewrittenItems;
+      if (attemptPayload.contents !== undefined) attemptPayload.contents = await rewriteItems(attemptPayload.contents);
       // Gemini source payload has no `model` field on the request body; the
       // invocation carries the resolved id for telemetry/dispatch use.
       const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload);

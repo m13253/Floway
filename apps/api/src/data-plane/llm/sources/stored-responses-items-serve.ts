@@ -55,13 +55,17 @@ export interface SourceServeTrait<TItems, TMappedItems, TEvent> {
   // diagnostic / source-error catch.
   parse(): Promise<PreparedSourceServe<TItems, TMappedItems, TEvent> | Response>;
   pickTarget(endpoints: readonly ModelEndpoint[]): LlmTargetApi | null;
+  // `buildAttempt` clones the payload once and rewrites that clone's items in
+  // place via `rewriteItems`. The single per-attempt clone is the sole source
+  // of mutation isolation, so the rewrite must run on owned items — never on
+  // the original parsed items the orchestrator still iterates read-only.
   buildAttempt(input: {
     binding: ProviderModelRecord;
     target: LlmTargetApi;
     model: string;
     payload: unknown;
-    rewrittenItems: TMappedItems;
-  }): SourceServeAttempt<TEvent>;
+    rewriteItems: (items: TItems) => Promise<TMappedItems>;
+  }): Promise<SourceServeAttempt<TEvent>>;
   // Maps a stored-items input diagnostic to this API's error envelope; used for
   // both the prepare-time diagnostic and the thrown-diagnostic catch.
   diagnosticResponse(diagnostic: StoredResponsesItemsDiagnostic): Response;
@@ -102,8 +106,9 @@ export const serveStoredResponsesItems = async <TItems, TMappedItems, TEvent>(tr
       const target = trait.pickTarget(binding.upstreamModel.upstreamEndpoints);
       if (!target) continue;
 
-      const rewrittenItems = await rewriteStoredResponsesItemsForProvider(items, preparedStoredItems, binding, view);
-      const attempt = trait.buildAttempt({ binding, target, model: resolvedModelId, payload, rewrittenItems });
+      const rewriteItems = (clonedItems: TItems): Promise<TMappedItems> =>
+        rewriteStoredResponsesItemsForProvider(clonedItems, preparedStoredItems, binding, view);
+      const attempt = await trait.buildAttempt({ binding, target, model: resolvedModelId, payload, rewriteItems });
 
       const rawResult = await attempt.run();
       if (rawResult.type === 'events') {

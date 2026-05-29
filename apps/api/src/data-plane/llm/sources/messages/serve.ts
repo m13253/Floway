@@ -103,10 +103,10 @@ export const serveMessages = async (c: Context): Promise<Response> => {
       return { payload, items: payload.messages, wantsStream, model: payload.model, view: messagesViaResponsesItemsView, downstreamAbortController };
     },
     pickTarget,
-    buildAttempt: ({ binding, target, model, payload, rewrittenItems }) => {
+    buildAttempt: async ({ binding, target, model, payload, rewriteItems }) => {
       const attemptPayload = structuredClone(payload as MessagesPayload);
       attemptPayload.model = model;
-      attemptPayload.messages = rewrittenItems;
+      attemptPayload.messages = await rewriteItems(attemptPayload.messages);
       const sharedHeaders: Record<string, string> = {};
       const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
       const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {

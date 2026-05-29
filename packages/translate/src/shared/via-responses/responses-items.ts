@@ -33,6 +33,11 @@ export type ResponsesItemFinalizedHandler = (
 // 1-to-null drop). The mapper is asymmetric with the stream side because
 // payload-side rewrites consume the whole structure at once.
 //
+// `mapAsResponsesItems` ownership invariant: callers pass items they own —
+// the per-attempt `structuredClone` of the payload is the sole isolation —
+// so the mapper builds fresh container arrays/objects but reuses input
+// elements directly and must not defensively deep-clone them.
+//
 // Stream side: id-only rewrite is per-frame and synchronous; the row write
 // is per-item and async, fired through `onItemFinalized` at the carrier's
 // terminal frame.
@@ -204,7 +209,7 @@ export const messagesViaResponsesItemsView = {
     const out: MessagesMessage[] = [];
     for (const message of messages) {
       if (message.role !== 'assistant' || !Array.isArray(message.content)) {
-        out.push(structuredClone(message));
+        out.push(message);
         continue;
       }
 
@@ -219,7 +224,7 @@ export const messagesViaResponsesItemsView = {
         // does not resolve here and the block is forwarded untouched.
         const carrier = reasoningCarrier(block);
         if (carrier === null) {
-          content.push(structuredClone(block));
+          content.push(block);
           continue;
         }
 
@@ -385,14 +390,14 @@ export const chatCompletionsViaResponsesItemsView = {
     const out: ChatMessage[] = [];
     for (const message of messages) {
       if (message.role !== 'assistant' || !message.reasoning_items?.length) {
-        out.push(structuredClone(message));
+        out.push(message);
         continue;
       }
 
       const reasoningItems: ChatReasoningItem[] = [];
       for (const item of message.reasoning_items) {
         if (!item.id) {
-          reasoningItems.push(structuredClone(item));
+          reasoningItems.push(item);
           continue;
         }
         const mapped = await mapper({ type: 'reasoning', id: item.id, summary: item.summary ?? [] });
@@ -402,7 +407,7 @@ export const chatCompletionsViaResponsesItemsView = {
       }
 
       out.push({
-        ...structuredClone(message),
+        ...message,
         reasoning_items: reasoningItems.length > 0 ? reasoningItems : null,
       });
     }
@@ -479,7 +484,7 @@ export const geminiViaResponsesItemsView = {
   mapAsResponsesItems: async (
     contents: readonly GeminiContent[],
     _mapper: ResponsesItemMapper,
-  ): Promise<GeminiContent[]> => contents.map(content => structuredClone(content)),
+  ): Promise<GeminiContent[]> => [...contents],
   async *streamMapIdAsResponsesItems(
     frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>,
     _idMapper: ResponsesItemIdMapper,

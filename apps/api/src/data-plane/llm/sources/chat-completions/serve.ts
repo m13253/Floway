@@ -57,10 +57,10 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
       return { payload, items: payload.messages, wantsStream, model: payload.model, view: chatCompletionsViaResponsesItemsView, downstreamAbortController };
     },
     pickTarget,
-    buildAttempt: ({ binding, target, model, payload, rewrittenItems }) => {
+    buildAttempt: async ({ binding, target, model, payload, rewriteItems }) => {
       const attemptPayload = structuredClone(payload as ChatCompletionsPayload);
       attemptPayload.model = model;
-      attemptPayload.messages = rewrittenItems;
+      attemptPayload.messages = await rewriteItems(attemptPayload.messages);
       const invocation: ChatCompletionsInvocation = chatInvocation(binding, target, model, attemptPayload);
       const emits: Record<LlmTargetApi, SourceEmit<ChatCompletionsPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>> = {
         'chat-completions': async srcPayload => await emitToChatCompletions({ ...invocation, payload: srcPayload }, trait.request),
