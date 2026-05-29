@@ -8,6 +8,8 @@ import { initEnv } from './src/runtime/env.ts';
 import { initFileProvider } from './src/runtime/file-provider.ts';
 import { R2FileProvider, type R2BucketLike } from './src/runtime/r2-file-provider.ts';
 
+// Read only by the scheduled cleanup below (deleteOlderThan). Lookups never
+// filter by it — a row stays referenceable until cleanup removes it.
 const RESPONSES_ITEM_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 

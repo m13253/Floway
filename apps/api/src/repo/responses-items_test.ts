@@ -16,6 +16,7 @@ const storedItem = (overrides: Partial<StoredResponsesItem> & Pick<StoredRespons
 });
 
 const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
+  initFileProvider(new MemoryFileProvider());
   const first = storedItem({
     id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
     apiKeyId: 'key_a',
@@ -160,6 +161,28 @@ test('D1 responses items repo spills large payloads through the runtime file pro
   assertEquals((descriptor.key as string).startsWith('responses-items/v1/expires/2026/06/27/12/'), true);
   assert((await files.get(descriptor.key as string)) !== null);
   assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+});
+
+test('D1 responses items deleteAll removes spilled payload files alongside the rows', async () => {
+  const db = new FakeResponsesItemsD1Database();
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new D1Repo(db).responsesItems;
+  const item = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    payload: { item: { type: 'message', id: 'msg_large', content: 'x'.repeat(600 * 1024) } },
+    createdAt: Date.UTC(2026, 4, 28, 12),
+  });
+
+  await repo.insertMany([item]);
+  const descriptor = JSON.parse(db.rows[0].payload_json!) as { key: string };
+  assert((await files.get(descriptor.key)) !== null);
+
+  await repo.deleteAll();
+
+  assertEquals(db.rows.length, 0);
+  assertEquals(await files.get(descriptor.key), null);
 });
 
 test('migration 0018 creates the responses_items table and cleanup indexes', async () => {

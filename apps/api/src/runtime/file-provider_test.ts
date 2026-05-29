@@ -39,3 +39,13 @@ test('MemoryFileProvider deletes every key that starts with the given prefix', a
   assertEquals(await provider.get('drop/b'), null);
   assertEquals([...(await provider.get('drops/c'))!], [4]);
 });
+
+test('MemoryFileProvider lists every key that starts with the given prefix', async () => {
+  const provider = new MemoryFileProvider();
+  await provider.put('a/1', new Uint8Array([1]));
+  await provider.put('a/2', new Uint8Array([2]));
+  await provider.put('b/1', new Uint8Array([3]));
+
+  assertEquals((await provider.listKeys('a/')).toSorted(), ['a/1', 'a/2']);
+  assertEquals(await provider.listKeys('c/'), []);
+});

@@ -35,4 +35,15 @@ export class R2FileProvider implements FileProvider {
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
   }
+
+  async listKeys(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.bucket.list({ prefix, cursor, limit: R2_BATCH_LIMIT });
+      for (const object of page.objects) keys.push(object.key);
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    return keys;
+  }
 }

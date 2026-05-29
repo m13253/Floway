@@ -70,3 +70,14 @@ test('R2FileProvider deletePrefix is a no-op when nothing matches the prefix', a
 
   assertEquals(bucket.deleteCalls, []);
 });
+
+test('R2FileProvider listKeys paginates the listing and returns every matching key', async () => {
+  const bucket = new FakeR2Bucket();
+  for (let i = 0; i < 5; i += 1) await bucket.put(`scan/${i}.json`, new Uint8Array([i]));
+  await bucket.put('other/a', new Uint8Array([9]));
+
+  const provider = new R2FileProvider(bucket);
+
+  assertEquals((await provider.listKeys('scan/')).toSorted(), ['scan/0.json', 'scan/1.json', 'scan/2.json', 'scan/3.json', 'scan/4.json']);
+  assertEquals(bucket.listCalls, 3);
+});

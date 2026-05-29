@@ -1,5 +1,5 @@
 import { normalizeFlagOverrides } from './flag-overrides.ts';
-import { parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -680,6 +680,7 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
 
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM responses_items').run();
+    await deleteAllResponsesItemPayloadFiles();
   }
 
   private async runStatements(statements: D1PreparedStatement[]): Promise<void> {
