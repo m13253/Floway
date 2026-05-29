@@ -2,6 +2,7 @@
 // to its provider metadata, so generic source/target assembly does not need to
 // know which provider kind is running.
 
+import { withInlineImagesCompressed } from './compress-images.ts';
 import { withAnthropicBetaHeaderFiltered } from './filter-anthropic-beta-header.ts';
 import { withThinkingDisplayPromoted } from './promote-thinking-display.ts';
 import { rewriteContextWindowError } from './rewrite-context-window-error.ts';
@@ -41,6 +42,7 @@ export const messagesCopilotSourceInterceptors = [
 // interceptors see the final outgoing payload, then header interceptors
 // populate `invocation.headers` for the upstream call.
 export const messagesCopilotInterceptors = [
+  withInlineImagesCompressed,
   withThinkingDisplayPromoted,
   withCacheControlScopeStripped,
   withEagerInputStreamingStripped,
@@ -60,11 +62,14 @@ export const messagesCopilotInterceptors = [
 // at the Copilot count_tokens target boundary so behavior matches pre-Path A
 // for count_tokens.
 //
-// withThinkingDisplayPromoted / withCacheControlScopeStripped /
-// withEagerInputStreamingStripped are intentionally absent: pre-Path A they
-// also never ran on count_tokens (they lived in the messages target
-// interceptor list, not in the shared call() helper).
+// withInlineImagesCompressed runs first so the token count reflects the
+// resized image we will actually send on the chat path. withThinkingDisplayPromoted /
+// withCacheControlScopeStripped / withEagerInputStreamingStripped are
+// intentionally absent: pre-Path A they also never ran on count_tokens (they
+// lived in the messages target interceptor list, not in the shared call()
+// helper).
 export const messagesCountTokensCopilotInterceptors = [
+  withInlineImagesCompressed,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaHeaderFiltered,
