@@ -7,6 +7,7 @@ import {
   DEFAULT_IMAGE_MODEL,
   type ImageGenerationConfig,
   type ImageOutcome,
+  imageGenerationServerTool,
   imageTerminal,
   isHostedImageGenerationTool,
   parseImageStreamEvent,
@@ -16,9 +17,30 @@ import {
   transformInputItemsForImageGeneration,
 } from './image-generation.ts';
 import { assert, assertEquals, assertFalse, assertStringIncludes } from '../../../../../../test-assert.ts';
-import type { ResponseInputItem, ResponseTool } from '@floway-dev/protocols/responses';
+import type { RequestContext, ResponsesInvocation } from '../../../../interceptors.ts';
+import type { ResponseInputItem, ResponsesPayload, ResponseTool } from '@floway-dev/protocols/responses';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
+
+// Minimal invocation/request for driving the registration directly. The
+// registration only reads targetApi / enabledFlags / payload off the
+// invocation, so the rest is stubbed.
+const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
+  sourceApi: 'responses',
+  targetApi: 'responses',
+  model: 'm',
+  upstream: 'u',
+  upstreamModel: {} as never,
+  provider: {} as never,
+  enabledFlags: new Set<string>(['responses-image-generation-shim']),
+  headers: {},
+  payload: { model: 'm', input: [], ...payload } as ResponsesPayload,
+});
+const REQ = { requestStartedAt: 0, runtimeLocation: 'test', clientStream: true } as RequestContext;
+
+const imageMessage = (mime: string): ResponseInputItem => ({
+  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
+});
 
 // ── isHostedImageGenerationTool ──
 
@@ -145,10 +167,12 @@ test('prepareImageGenerationConfig validates input_fidelity and partial_images',
   assertEquals(badPartial.error.param, 'tools[0].partial_images');
 });
 
-test('prepareImageGenerationConfig accepts an inline mask but rejects a file_id mask', () => {
+test('prepareImageGenerationConfig decodes an inline mask once but rejects a file_id mask', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponseTool]);
   assert(ok.ok);
-  assertEquals(ok.config.mask, `data:image/png;base64,${PNG_B64}`);
+  assert(ok.config.mask !== undefined);
+  assertEquals(ok.config.mask.mimeType, 'image/png');
+  assertEquals(ok.config.mask.bytes.byteLength, 5); // "hello"
 
   const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponseTool]);
   assert(!fileId.ok);
@@ -389,4 +413,59 @@ test('synthesizeImageGenerationCallId produces an ig_gw_-prefixed id', () => {
   const id = synthesizeImageGenerationCallId();
   assert(id.startsWith('ig_gw_'));
   assert(id.length > 'ig_gw_'.length);
+});
+
+// ── imageGenerationServerTool: unsupported input format (C) ──
+
+test('imageGenerationServerTool rejects an unsupported edit input format up front', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation' }], input: [imageMessage('image/gif')] }),
+    REQ,
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.code, 'unsupported_file_mimetype');
+  assertEquals(result.param, 'input');
+  assertStringIncludes(result.message, 'image/gif');
+});
+
+test('imageGenerationServerTool accepts webp input for editing', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation' }], input: [imageMessage('image/webp')] }),
+    REQ,
+  );
+  assert(result.type === 'active');
+});
+
+test('imageGenerationServerTool ignores input format when action is generate', async () => {
+  // A gif is fine as pure vision context; action:"generate" never forwards it
+  // to the edit backend, so the format is not validated.
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [imageMessage('image/gif')] }),
+    REQ,
+  );
+  assert(result.type === 'active');
+});
+
+// ── imageGenerationServerTool: per-response dispatch budget (B) ──
+
+test('image dispatch budget caps real backend calls per response, not ReAct turns', async () => {
+  const result = await imageGenerationServerTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), REQ);
+  assert(result.type === 'active' && result.hosted !== undefined);
+  const dispatch = result.hosted.dispatcher;
+  const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
+  const loopState = { iterationCount: 1, remainingToolCalls: undefined };
+
+  // The first 10 dispatches return a streaming slot (its generator is not run
+  // here, so no backend is hit); the 11th is over budget.
+  for (let i = 0; i < 10; i++) {
+    const slots = dispatch({ intercepted, loopState });
+    assertEquals(slots.length, 1);
+  }
+  const overBudget = dispatch({ intercepted, loopState });
+  const lifecycle = overBudget[0].run();
+  let step = await lifecycle.next();
+  while (!step.done) step = await lifecycle.next();
+  const item = step.value.item as { status?: string; error?: { code?: string } };
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error?.code, 'tool_call_budget_exhausted');
 });

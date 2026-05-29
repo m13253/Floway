@@ -23,10 +23,12 @@ export const SHIM_TOOL_NAME = 'image_generation';
 // to; operators provision it under this public id (or alias it).
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 
-// Safety valve on the multi-turn ReAct loop: cap how many turns may dispatch
-// an image backend call within a single response. Past the cap the dispatcher
-// replays an exhausted-budget tool output instead of hitting the backend, so a
-// model that keeps retrying after failures cannot drive unbounded image cost.
+// Safety valve on the multi-turn ReAct loop: cap how many real image backend
+// calls one response may dispatch (counted on `ShimState.imageDispatchCount`,
+// not the shared ReAct turn count, so unrelated turns do not consume the
+// budget). Past the cap the dispatcher replays an exhausted-budget tool output
+// instead of hitting the backend, so a model that keeps retrying after failures
+// cannot drive unbounded image cost.
 const IMAGE_ITERATION_CAP = 10;
 
 // Public Responses `image_generation` tool config enums (Azure-strict
@@ -40,6 +42,33 @@ const ALLOWED_OUTPUT_FORMATS = new Set(['png', 'jpeg']);
 const ALLOWED_MODERATIONS = new Set(['auto', 'low']);
 const ALLOWED_ACTIONS = new Set(['generate', 'edit', 'auto']);
 const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
+
+// gpt-image-* `/images/edits` accepts only these input image mimetypes; probing
+// Azure confirmed png/jpeg/webp succeed while gif/bmp/tiff are rejected with
+// `unsupported_file_mimetype`. The backend gates on the multipart content-type
+// before it decodes the bytes, so the mime we forward must already be one of
+// these. Common aliases are folded onto the canonical form the backend expects.
+const EDIT_MIME_ALIASES: Record<string, string> = {
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'image/x-png': 'image/png',
+};
+const EDIT_SUPPORTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+// The canonical edit-supported mimetype for a source, or null when gpt-image
+// edit cannot accept the format. TODO(transcode): native Responses runs the
+// input through its multimodal pipeline and re-encodes it, so it edits e.g. a
+// gif input that this endpoint would reject; we forward bytes verbatim and have
+// no image codec in the Workers runtime (only a D1 binding, no Cloudflare Images
+// binding), so an unsupported format is rejected up front instead. If an Images
+// binding is later added, transcode to a supported format here to match native.
+const editSupportedMime = (mime: string): string | null => {
+  const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
+  return EDIT_SUPPORTED_MIMES.has(canonical) ? canonical : null;
+};
+
+const editFileExt = (mime: string): string =>
+  mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
 
 // The public `image_generation` tool-config surface. Azure rejects any other
 // field with `unknown_parameter`, so the shim mirrors that strictness rather
@@ -72,10 +101,10 @@ export interface ImageGenerationConfig {
   // is called non-streaming and no preview frames are produced.
   partial_images?: number;
   input_fidelity?: 'high' | 'low';
-  // Inpainting mask as an inline image_url (data URL / base64), forwarded to
-  // /images/edits as the standalone `mask` part. `file_id` masks are not
-  // supported (rejected at validation) — resolving them needs the files API.
-  mask?: string;
+  // Inpainting mask decoded once at validation, forwarded to /images/edits as
+  // the standalone `mask` part. `file_id` masks are not supported (rejected at
+  // validation) — resolving them needs the files API.
+  mask?: ImageSource;
   action: 'generate' | 'edit' | 'auto';
 }
 
@@ -171,7 +200,7 @@ const validateHostedImageGenerationEntry = (
   // malformed or unsupported mask rather than silently dropping the mask the
   // client expected to apply.
   const maskField = tool.input_image_mask;
-  let mask: string | undefined;
+  let mask: ImageSource | undefined;
   if (maskField !== undefined && maskField !== null) {
     if (typeof maskField !== 'object' || Array.isArray(maskField)) {
       return { ok: false, error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']) };
@@ -183,13 +212,14 @@ const validateHostedImageGenerationEntry = (
         error: { message: 'image_generation input_image_mask requires an inline `image_url`; `file_id` masks are not supported by this gateway.', param: path('input_image_mask'), code: 'invalid_value' },
       };
     }
-    if (decodeInlineImage(maskUrl) === null) {
+    const decodedMask = decodeInlineImage(maskUrl);
+    if (decodedMask === null) {
       return {
         ok: false,
         error: { message: 'image_generation input_image_mask.image_url must be an inline base64 data URL; remote URLs and malformed base64 are not supported.', param: path('input_image_mask'), code: 'invalid_value' },
       };
     }
-    mask = maskUrl;
+    mask = decodedMask;
   }
 
   return {
@@ -390,15 +420,19 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 };
 
 // Per-request inputs the dispatcher's backend call needs. Captured in the
-// registration closure from `ctx`/`request` so the (synchronous) dispatcher
-// and its async result promise stay free of the interceptor signature.
+// registration closure from `ctx`/`request` so the dispatcher stays free of the
+// interceptor signature. Edit sources are NOT captured here — they are
+// re-collected from the live `ctx.payload.input` at dispatch time so an image
+// generated in an earlier turn (fed back as an `input_image`) becomes editable
+// in a later turn. `imageDispatchCount` bounds how many real backend image
+// calls one response may issue.
 interface ShimState {
   config: ImageGenerationConfig;
-  imageSources: ImageSource[];
   apiKeyId: string | undefined;
   apiKeyUpstreamIds: readonly string[] | null | undefined;
   scheduleBackground: RequestContext['scheduleBackground'];
   downstreamAbortSignal: AbortSignal | undefined;
+  imageDispatchCount: number;
 }
 
 const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelKey: string, responseBody: unknown): void => {
@@ -451,15 +485,18 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     form.append('partial_images', String(config.partial_images));
   }
   for (const [i, source] of sources.entries()) {
-    const ext = source.mimeType === 'image/jpeg' ? 'jpg' : source.mimeType === 'image/webp' ? 'webp' : 'png';
+    // Forward the canonical supported mime; an unsupported source is rejected
+    // before dispatch, so the fallback only ever carries an already-supported
+    // generated image. Sending the raw mime (rather than relabeling as png)
+    // keeps a stray unsupported byte stream failing loud at the backend.
+    const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
     // `image[]` repeated parts: gpt-image accepts multiple, picking the
     // edit target by prompt semantics. Attach order is not significant.
-    form.append('image[]', new Blob([source.bytes], { type: source.mimeType }), `image_${i}.${ext}`);
+    form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
   }
-  const maskSource = config.mask !== undefined ? decodeInlineImage(config.mask) : null;
-  if (maskSource !== null) {
-    const ext = maskSource.mimeType === 'image/jpeg' ? 'jpg' : maskSource.mimeType === 'image/webp' ? 'webp' : 'png';
-    form.append('mask', new Blob([maskSource.bytes], { type: maskSource.mimeType }), `mask.${ext}`);
+  if (config.mask !== undefined) {
+    const mime = editSupportedMime(config.mask.mimeType) ?? config.mask.mimeType;
+    form.append('mask', new Blob([config.mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
   }
   return form;
 };
@@ -512,11 +549,12 @@ const issueImageCall = (
   binding: ProviderModelRecord,
   prompt: string,
   isEdit: boolean,
+  sources: readonly ImageSource[],
   state: ShimState,
   stream: boolean,
 ): Promise<{ response: Response; modelKey: string }> =>
   isEdit
-    ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, state.imageSources, stream), state.downstreamAbortSignal)
+    ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal)
     : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal);
 
 // Consume a non-streaming backend response (partial_images = 0) into an
@@ -641,18 +679,18 @@ const streamImageGeneration = (
   prompt: string,
   action: 'generate' | 'edit',
   isEdit: boolean,
-  config: ImageGenerationConfig,
+  sources: readonly ImageSource[],
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageBinding(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { binding } = resolved;
-  const wantsPartials = (config.partial_images ?? 0) > 0;
+  const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, wantsPartials));
   } catch (e) {
     return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }
@@ -796,12 +834,12 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
-  const imageSources = collectImageSources(ctx.payload.input);
+  const originalImageSources = collectImageSources(ctx.payload.input);
 
   // `action:"edit"` with no bindable image is a client request-shape error,
   // surfaced before the model loop because it is not a runtime backend
   // failure.
-  if (config.action === 'edit' && imageSources.length === 0) {
+  if (config.action === 'edit' && originalImageSources.length === 0) {
     return {
       type: 'invalid-request',
       message: 'image_generation action "edit" requires at least one input image, but none was found in the request input.',
@@ -810,16 +848,32 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
     };
   }
 
-  const isEdit = config.action === 'edit' || (config.action === 'auto' && imageSources.length > 0);
-  const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
+  // gpt-image edit only accepts png/jpeg/webp inputs; reject an unsupported
+  // format up front (Azure-strict `unsupported_file_mimetype`) when the request
+  // could edit. action:"generate" never forwards input images to the backend,
+  // so their format is irrelevant there. Generated images fed back in later
+  // turns are always png/jpeg, so validating the original request input here
+  // covers every client-supplied source. See `editSupportedMime` for why an
+  // unsupported format is rejected rather than transcoded.
+  if (config.action !== 'generate') {
+    for (const source of originalImageSources) {
+      if (editSupportedMime(source.mimeType) === null) {
+        return {
+          type: 'invalid-request',
+          message: `image_generation input image format '${source.mimeType}' is not supported for editing. Supported formats are 'image/png', 'image/jpeg', and 'image/webp'. Set the tool's action to "generate" if the image is only context.`,
+          param: 'input',
+          code: 'unsupported_file_mimetype',
+        };
+      }
+    }
+  }
 
-  // A mask only applies to an edit; if the request resolves to a generate
-  // (no input image, or action:"generate"), the mask could never be used —
-  // reject rather than silently dropping it.
-  if (config.mask !== undefined && !isEdit) {
+  // A mask only applies to an edit; with action:"generate" it could never be
+  // used, so reject rather than silently dropping it.
+  if (config.mask !== undefined && config.action === 'generate') {
     return {
       type: 'invalid-request',
-      message: 'image_generation input_image_mask is only valid for an edit; provide an input image (and do not force action "generate").',
+      message: 'image_generation input_image_mask is only valid for an edit; do not force action "generate" when supplying a mask.',
       param: 'tools',
       code: 'invalid_value',
     };
@@ -827,11 +881,11 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
 
   const state: ShimState = {
     config,
-    imageSources,
     apiKeyId: request.apiKeyId,
     apiKeyUpstreamIds: request.apiKeyUpstreamIds,
     scheduleBackground: request.scheduleBackground,
     downstreamAbortSignal: request.downstreamAbortSignal,
+    imageDispatchCount: 0,
   };
 
   return {
@@ -841,26 +895,37 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
     hosted: {
       isHostedTool: isHostedImageGenerationTool,
       buildFunctionTool: toolName => buildImageGenerationFunctionTool(toolName),
-      dispatcher: ({ intercepted, loopState }) => {
+      dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'
           ? intercepted.arguments.prompt
           : '';
         const id = synthesizeImageGenerationCallId();
         // Safety valve against an unbounded backend-call loop (the model
-        // retrying after repeated {ok:false} outcomes): once the turn count
-        // passes the cap, stop hitting the backend and replay an exhausted
-        // tool output so the model steers toward a terminal answer.
-        if (loopState.iterationCount > IMAGE_ITERATION_CAP) {
+        // retrying after repeated {ok:false} outcomes): once this response has
+        // issued IMAGE_ITERATION_CAP real backend image calls, stop hitting the
+        // backend and replay an exhausted tool output so the model steers toward
+        // a terminal answer. The exhausted item is a failure, so its `action`
+        // field is unused.
+        if (state.imageDispatchCount >= IMAGE_ITERATION_CAP) {
           return [serverToolResultSlot({
             id,
             startItem: { type: 'image_generation_call', status: 'in_progress' },
             startEvents: [{ type: 'response.image_generation_call.in_progress' }, { type: 'response.image_generation_call.generating' }],
-            result: Promise.resolve(imageTerminal(promptArg, action, {
+            result: Promise.resolve(imageTerminal(promptArg, 'generate', {
               ok: false,
               error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
             })),
           })];
         }
+        state.imageDispatchCount += 1;
+
+        // Re-collect edit sources from the live input so an image generated in
+        // an earlier turn (fed back as an `input_image`) is editable now, and
+        // resolve edit-vs-generate against the current sources for action:auto.
+        const sources = collectImageSources(ctx.payload.input);
+        const isEdit = config.action === 'edit' || (config.action === 'auto' && sources.length > 0);
+        const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
+
         return [serverToolStreamingResultSlot({
           id,
           startItem: { type: 'image_generation_call', status: 'in_progress' },
@@ -868,7 +933,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
             { type: 'response.image_generation_call.in_progress' },
             { type: 'response.image_generation_call.generating' },
           ],
-          stream: streamImageGeneration(promptArg, action, isEdit, config, state),
+          stream: streamImageGeneration(promptArg, action, isEdit, sources, state),
         })];
       },
     },
