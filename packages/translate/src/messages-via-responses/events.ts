@@ -1,5 +1,5 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { messagesReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
+import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponseEvent, responsePartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -26,11 +26,9 @@ const mapOutputToMessagesContent = (output: ResponseOutputItem[]): MessagesAssis
 
   for (const item of output) {
     switch (item.type) {
-    case 'reasoning': {
-      const block = responsesReasoningToMessagesBlock(item);
-      if (block) content.push(block);
+    case 'reasoning':
+      content.push(responsesReasoningToMessagesBlock(item));
       break;
-    }
     case 'function_call':
       if (item.name && item.call_id) {
         content.push({
@@ -133,7 +131,7 @@ interface ResponsesToMessagesStreamState {
   >;
 }
 
-type ContentBlockInit = { type: 'text'; text: '' } | { type: 'thinking'; thinking: '' };
+type ContentBlockInit = { type: 'text'; text: '' } | { type: 'thinking'; thinking: '' } | { type: 'redacted_thinking'; data: string };
 
 const openBlock = (state: ResponsesToMessagesStreamState, key: string, contentBlock: ContentBlockInit, events: MessagesStreamEventData[]): number => {
   let blockIndex = state.blockIndexByKey.get(key);
@@ -161,6 +159,9 @@ const openTextBlock = (state: ResponsesToMessagesStreamState, outputIndex: numbe
 
 const openThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, events: MessagesStreamEventData[]): number =>
   openBlock(state, `${outputIndex}:0`, { type: 'thinking', thinking: '' }, events);
+
+const openRedactedThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, data: string, events: MessagesStreamEventData[]): number =>
+  openBlock(state, `${outputIndex}:0`, { type: 'redacted_thinking', data }, events);
 
 const closeOpenBlocks = (state: ResponsesToMessagesStreamState, events: MessagesStreamEventData[]): void => {
   for (const blockIndex of state.openBlocks) {
@@ -241,9 +242,17 @@ const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>,
     .map(part => part.text)
     .join('')
     .trim();
+  const packed = packReasoningSignature(event.item.id, event.item.encrypted_content ?? '');
 
+  // No readable text on either the streamed summary or the final item: emit a
+  // `redacted_thinking` carrier so the reasoning id (and any opaque content)
+  // still round-trips to a downstream Messages client. Copilot rejects a
+  // `thinking` block with empty text, hence the redacted shape here.
   if (!hasEmittedSummary && trimmedSummary === '') {
-    return [];
+    const events: MessagesStreamEventData[] = [];
+    openRedactedThinkingBlock(state, event.output_index, packed, events);
+    state.emittedReasoningSignatureOutputIndexes.add(event.output_index);
+    return events;
   }
 
   const events: MessagesStreamEventData[] = [];
@@ -261,33 +270,21 @@ const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>,
     state.emittedReasoningSummaryKeys.add(key);
   }
 
+  // The signature carrier packs the reasoning id together with the opaque
+  // `encrypted_content`, both of which are only known here at `output_item.done`
+  // — summary-text deltas carry neither. Emit it once per reasoning item before
+  // the thinking block closes so a downstream Messages client can echo the
+  // packed value back and we recover the id (and clean blob) next turn.
   if (!state.emittedReasoningSignatureOutputIndexes.has(event.output_index)) {
     events.push({
       type: 'content_block_delta',
       index: blockIndex,
-      delta: { type: 'signature_delta', signature: messagesReasoningSignature(event.item.id) },
+      delta: { type: 'signature_delta', signature: packed },
     });
     state.emittedReasoningSignatureOutputIndexes.add(event.output_index);
   }
 
   return events;
-};
-
-const appendReasoningSignatureDelta = (
-  events: MessagesStreamEventData[],
-  blockIndex: number,
-  state: ResponsesToMessagesStreamState,
-  outputIndex: number,
-  itemId: string,
-): void => {
-  if (state.emittedReasoningSignatureOutputIndexes.has(outputIndex)) return;
-
-  events.push({
-    type: 'content_block_delta',
-    index: blockIndex,
-    delta: { type: 'signature_delta', signature: messagesReasoningSignature(itemId) },
-  });
-  state.emittedReasoningSignatureOutputIndexes.add(outputIndex);
 };
 
 const handleThinkingDelta = (event: ResponseEvent<'response.reasoning_summary_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
@@ -298,7 +295,6 @@ const handleThinkingDelta = (event: ResponseEvent<'response.reasoning_summary_te
     index: blockIndex,
     delta: { type: 'thinking_delta', thinking: event.delta },
   });
-  appendReasoningSignatureDelta(events, blockIndex, state, event.output_index, event.item_id);
   state.emittedReasoningSummaryKeys.add(responsePartKey(event.output_index, event.summary_index));
   return events;
 };
@@ -314,7 +310,6 @@ const handleThinkingDone = (event: ResponseEvent<'response.reasoning_summary_tex
       index: blockIndex,
       delta: { type: 'thinking_delta', thinking: event.text },
     });
-    appendReasoningSignatureDelta(events, blockIndex, state, event.output_index, event.item_id);
     state.emittedReasoningSummaryKeys.add(key);
   }
 

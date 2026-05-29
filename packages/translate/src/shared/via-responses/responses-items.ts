@@ -1,4 +1,4 @@
-import { messagesReasoningIdFromSignature, messagesReasoningSignature, responsesReasoningToMessagesBlock } from '../messages-and-responses/reasoning.ts';
+import { packReasoningSignature, responsesReasoningToMessagesBlock, unpackReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionChunk, ChatReasoningItem, Message as ChatMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -161,6 +161,21 @@ export const responsesItemsView = {
   },
 } satisfies ResponsesItemsView<string | readonly ResponseInputItem[], string | ResponseInputItem[], ProtocolFrame<ResponsesStreamEvent>>;
 
+// A reasoning block echoed back by a Messages client carries the packed
+// `${encrypted_content}@${id}` value in `thinking.signature` or
+// `redacted_thinking.data`. Returns the unpacked id only when the carrier was
+// issued by this gateway; a native upstream signature (no `@`) has no
+// stored id to rewrite and is left untouched.
+const reasoningCarrier = (block: MessagesAssistantContentBlock): { id: string; encryptedContent: string; thinking: string } | null => {
+  const carrier = block.type === 'thinking' ? block.signature : block.type === 'redacted_thinking' ? block.data : undefined;
+  if (carrier === undefined) return null;
+
+  const { id, encryptedContent } = unpackReasoningSignature(carrier);
+  if (id === null) return null;
+
+  return { id, encryptedContent, thinking: block.type === 'thinking' ? block.thinking : '' };
+};
+
 export const messagesViaResponsesItemsView = {
   visitAsResponsesItems: async (
     messages: readonly MessagesMessage[],
@@ -170,15 +185,14 @@ export const messagesViaResponsesItemsView = {
       if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
 
       for (const block of message.content) {
-        if (block.type !== 'thinking') continue;
-
-        const id = messagesReasoningIdFromSignature(block.signature);
-        if (id === null) continue;
+        const carrier = reasoningCarrier(block);
+        if (carrier === null) continue;
 
         await visitor({
           type: 'reasoning',
-          id,
-          summary: block.thinking ? [{ type: 'summary_text', text: block.thinking }] : [],
+          id: carrier.id,
+          summary: carrier.thinking ? [{ type: 'summary_text', text: carrier.thinking }] : [],
+          ...(carrier.encryptedContent ? { encrypted_content: carrier.encryptedContent } : {}),
         });
       }
     }
@@ -196,21 +210,17 @@ export const messagesViaResponsesItemsView = {
 
       const content: MessagesAssistantContentBlock[] = [];
       for (const block of message.content) {
-        if (block.type !== 'thinking') {
-          content.push(structuredClone(block));
-          continue;
-        }
-
-        const id = messagesReasoningIdFromSignature(block.signature);
-        if (id === null) {
+        const carrier = reasoningCarrier(block);
+        if (carrier === null) {
           content.push(structuredClone(block));
           continue;
         }
 
         const mapped = await mapper({
           type: 'reasoning',
-          id,
-          summary: block.thinking ? [{ type: 'summary_text', text: block.thinking }] : [],
+          id: carrier.id,
+          summary: carrier.thinking ? [{ type: 'summary_text', text: carrier.thinking }] : [],
+          ...(carrier.encryptedContent ? { encrypted_content: carrier.encryptedContent } : {}),
         });
         if (mapped === null) continue;
         const projected = responsesItemToMessagesAssistantBlock(mapped);
@@ -260,6 +270,27 @@ export const messagesViaResponsesItemsView = {
         continue;
       }
 
+      // A redacted_thinking block carries the packed `${enc}@${id}` value in
+      // `data` with no deltas — rewrite the stored id inline and finalize the
+      // reasoning row here. A native opaque blob (no `@`) is passed through.
+      if (event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking') {
+        const { id: upstreamId, encryptedContent } = unpackReasoningSignature(event.content_block.data);
+        if (upstreamId === null) {
+          yield frame;
+          continue;
+        }
+        const newId = idMapper(upstreamId, 'reasoning');
+        if (onItemFinalized && !finalized.has(upstreamId)) {
+          finalized.add(upstreamId);
+          await onItemFinalized(
+            { type: 'reasoning', id: upstreamId, summary: [], ...(encryptedContent ? { encrypted_content: encryptedContent } : {}) },
+            newId,
+          );
+        }
+        yield eventFrame({ ...event, content_block: { type: 'redacted_thinking', data: packReasoningSignature(newId, encryptedContent) } });
+        continue;
+      }
+
       if (event.type === 'content_block_delta' && event.delta.type === 'thinking_delta') {
         const state = blocks.get(event.index);
         if (state === undefined) {
@@ -287,7 +318,7 @@ export const messagesViaResponsesItemsView = {
         const state = blocks.get(event.index);
         blocks.delete(event.index);
         if (state?.signature !== undefined) {
-          const upstreamId = messagesReasoningIdFromSignature(state.signature);
+          const { id: upstreamId, encryptedContent } = unpackReasoningSignature(state.signature);
           if (upstreamId === null) {
             // Opaque upstream signature (e.g. Anthropic's native encrypted
             // reasoning) — preserve verbatim so the client can replay it.
@@ -302,15 +333,18 @@ export const messagesViaResponsesItemsView = {
               type: 'reasoning',
               id: upstreamId,
               summary: state.thinking ? [{ type: 'summary_text', text: state.thinking }] : [],
+              ...(encryptedContent ? { encrypted_content: encryptedContent } : {}),
             };
             if (onItemFinalized && !finalized.has(upstreamId)) {
               finalized.add(upstreamId);
               await onItemFinalized(originalItem, newId);
             }
+            // Re-pack against the stored id the client should echo next turn,
+            // preserving the opaque content untouched.
             yield eventFrame({
               type: 'content_block_delta',
               index: event.index,
-              delta: { type: 'signature_delta', signature: messagesReasoningSignature(newId) },
+              delta: { type: 'signature_delta', signature: packReasoningSignature(newId, encryptedContent) },
             });
           }
         }

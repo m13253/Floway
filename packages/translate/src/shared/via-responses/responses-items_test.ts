@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { chatCompletionsViaResponsesItemsView, geminiViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView, type ResponsesItemFinalizedHandler, type ResponsesItemIdMapper } from './responses-items.ts';
 import { assertEquals } from '../../test-assert.ts';
-import { messagesReasoningSignature } from '../messages-and-responses/reasoning.ts';
+import { packReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
@@ -41,7 +41,7 @@ test('mapAsResponsesItems maps only Messages thinking blocks with gateway reason
       {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+          { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_stored', '') },
           { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
           { type: 'text', text: 'visible' },
         ],
@@ -58,7 +58,7 @@ test('mapAsResponsesItems maps only Messages thinking blocks with gateway reason
     {
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: 'rewritten', signature: messagesReasoningSignature('rs_next') },
+        { type: 'thinking', thinking: 'rewritten', signature: packReasoningSignature('rs_next', '') },
         { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
         { type: 'text', text: 'visible' },
       ],
@@ -67,7 +67,7 @@ test('mapAsResponsesItems maps only Messages thinking blocks with gateway reason
   assertEquals(payload.messages[0], {
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+      { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_stored', '') },
       { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
       { type: 'text', text: 'visible' },
     ],
@@ -79,7 +79,7 @@ test('visitAsResponsesItems scans Messages carriers without rebuilding source me
     {
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+        { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_stored', '') },
         { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
         { type: 'text', text: 'visible' },
       ],
@@ -98,7 +98,7 @@ test('visitAsResponsesItems scans Messages carriers without rebuilding source me
   assertEquals(messages[0], {
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+      { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_stored', '') },
       { type: 'thinking', thinking: 'ordinary', signature: 'provider-signature' },
       { type: 'text', text: 'visible' },
     ],
@@ -110,7 +110,7 @@ test('mapAsResponsesItems can drop carried Messages reasoning without touching o
     {
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('rs_stored') },
+        { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_stored', '') },
         { type: 'text', text: 'visible' },
       ],
     },
@@ -166,7 +166,7 @@ test('mapAsResponsesItems does not treat Gemini thought signatures as Responses 
       {
         role: 'model',
         parts: [
-          { text: 'trace', thought: true, thoughtSignature: messagesReasoningSignature('rs_not_supported') },
+          { text: 'trace', thought: true, thoughtSignature: packReasoningSignature('rs_not_supported', '') },
           { functionCall: { id: 'call_stored', name: 'lookup', args: { q: 'x' } } },
         ],
       },
@@ -262,12 +262,40 @@ test('responses stream view rewrites added/delta/done/completed and finalizes on
   assertEquals(completed!.response.output.map(item => item.id), ['stored_rs_alpha', 'stored_rs_beta']);
 });
 
+test('messages stream view rewrites a redacted_thinking carrier and finalizes once', async () => {
+  const sourceFrames = [
+    eventFrame({ type: 'content_block_start' as const, index: 0, content_block: { type: 'redacted_thinking' as const, data: packReasoningSignature('rs_upstream', 'opaque') } }),
+    eventFrame({ type: 'content_block_stop' as const, index: 0 }),
+  ];
+
+  async function* sourceIter() {
+    for (const frame of sourceFrames) yield frame;
+  }
+
+  const idCalls: Array<[string, string]> = [];
+  const finalCalls: Array<{ id: string; type: string; newId: string }> = [];
+  const out = await collectEventFrames(messagesViaResponsesItemsView.streamMapIdAsResponsesItems(
+    sourceIter(),
+    recordingIdMapper(idCalls),
+    recordingOnFinalized(finalCalls),
+  ));
+
+  assertEquals(idCalls, [['rs_upstream', 'reasoning']]);
+  assertEquals(finalCalls, [{ id: 'rs_upstream', type: 'reasoning', newId: 'stored_rs_upstream' }]);
+
+  const start = out[0].event;
+  assertEquals(start.type, 'content_block_start');
+  if (start.type === 'content_block_start' && start.content_block.type === 'redacted_thinking') {
+    assertEquals(start.content_block.data, packReasoningSignature('stored_rs_upstream', 'opaque'));
+  }
+});
+
 test('messages stream view buffers signature_delta until stop and finalizes once', async () => {
   const sourceFrames = [
     eventFrame({ type: 'content_block_start' as const, index: 0, content_block: { type: 'thinking' as const, thinking: '' } }),
     eventFrame({ type: 'content_block_delta' as const, index: 0, delta: { type: 'thinking_delta' as const, thinking: 'partial' } }),
     eventFrame({ type: 'content_block_delta' as const, index: 0, delta: { type: 'thinking_delta' as const, thinking: ' done' } }),
-    eventFrame({ type: 'content_block_delta' as const, index: 0, delta: { type: 'signature_delta' as const, signature: messagesReasoningSignature('rs_upstream') } }),
+    eventFrame({ type: 'content_block_delta' as const, index: 0, delta: { type: 'signature_delta' as const, signature: packReasoningSignature('rs_upstream', '') } }),
     eventFrame({ type: 'content_block_stop' as const, index: 0 }),
   ];
 
@@ -294,7 +322,7 @@ test('messages stream view buffers signature_delta until stop and finalizes once
   const lastTwo = events.slice(-2);
   assertEquals(lastTwo[0].type, 'content_block_delta');
   if (lastTwo[0].type === 'content_block_delta' && lastTwo[0].delta.type === 'signature_delta') {
-    assertEquals(lastTwo[0].delta.signature, messagesReasoningSignature('stored_rs_upstream'));
+    assertEquals(lastTwo[0].delta.signature, packReasoningSignature('stored_rs_upstream', ''));
   }
   assertEquals(lastTwo[1].type, 'content_block_stop');
 });

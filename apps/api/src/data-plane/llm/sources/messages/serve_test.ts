@@ -14,7 +14,7 @@ const ENABLED_SEARCH_CONFIG: SearchConfig = {
   microsoftGrounding: { apiKey: '' },
 };
 
-const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
+const packReasoningSignature = (id: string): string => `@${id}`;
 
 const encodeShimPayloadForTest = (payload: unknown): string => {
   const json = JSON.stringify(payload);
@@ -388,7 +388,7 @@ test('/v1/messages rewrites stored Responses reasoning signatures before the ups
             {
               role: 'assistant',
               content: [
-                { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+                { type: 'thinking', thinking: 'trace', signature: packReasoningSignature(id) },
                 { type: 'text', text: 'visible' },
               ],
             },
@@ -405,7 +405,7 @@ test('/v1/messages rewrites stored Responses reasoning signatures before the ups
   assertExists(upstreamBody);
   const messages = upstreamBody.messages as Array<Record<string, unknown>>;
   const assistantContent = messages[0].content as Array<Record<string, unknown>>;
-  assertEquals(assistantContent[0].signature, messagesReasoningSignature('raw_rs_messages'));
+  assertEquals(assistantContent[0].signature, packReasoningSignature('raw_rs_messages'));
   assertEquals(assistantContent[1], { type: 'text', text: 'visible' });
 });
 
@@ -1746,10 +1746,7 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       assertEquals(body.usage.cache_read_input_tokens, 5);
       assertEquals(body.content[0].type, 'thinking');
       const signature = body.content[0].signature as string;
-      assert(signature.startsWith('floway:responses-reasoning:v1:'), signature);
-      const encoded = signature.slice('floway:responses-reasoning:v1:'.length);
-      const padded = `${encoded.replaceAll('-', '+').replaceAll('_', '/')}${'='.repeat((4 - (encoded.length % 4)) % 4)}`;
-      const decodedId = atob(padded);
+      const decodedId = signature.slice(signature.lastIndexOf('@') + 1);
       assert(isStoredResponsesItemId(decodedId), `expected stored id, got ${decodedId}`);
       assertEquals(body.content[1].text, 'Answer text');
     },

@@ -88,6 +88,12 @@ export interface ResponseInputReasoning {
   type: 'reasoning';
   id: string;
   summary: { type: 'summary_text'; text: string }[];
+  // Opaque reasoning blob the upstream signs against `(account, id)`. Never
+  // auto-requested via `include: ['reasoning.encrypted_content']` (forcing it
+  // breaks non-OpenAI reasoning models); present only when the upstream
+  // volunteers it, and round-tripped verbatim so the next-turn signature
+  // check passes.
+  encrypted_content?: string;
 }
 
 export interface ResponseFunctionToolCallItem {
@@ -435,6 +441,8 @@ export interface ResponseOutputReasoning {
   type: 'reasoning';
   id: string;
   summary: { type: 'summary_text'; text: string }[];
+  // See `ResponseInputReasoning.encrypted_content`.
+  encrypted_content?: string;
 }
 
 // Web-search call types. `results` is opt-in on the wire (native gates

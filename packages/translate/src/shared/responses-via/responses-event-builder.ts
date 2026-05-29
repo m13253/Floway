@@ -127,10 +127,11 @@ export const messageItem = (id: string, text: string): ResponseOutputMessage => 
   content: [textPart(text)],
 });
 
-export const reasoningItem = (id: string, summaryText: string): ResponseOutputReasoning => ({
+export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponseOutputReasoning => ({
   type: 'reasoning',
   id,
   summary: summaryText ? [summaryPart(summaryText)] : [],
+  ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
 });
 
 export const functionCallItem = (id: string, callId: string, name: string, args: string, status: ResponseOutputFunctionCall['status']): ResponseOutputFunctionCall => ({

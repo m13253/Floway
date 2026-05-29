@@ -6,7 +6,7 @@ import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, set
 import { clearModelsStore } from '../../../../providers/models-store.ts';
 import { createStoredResponsesItemId } from '../../responses/items/format.ts';
 
-const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
+const packReasoningSignature = (id: string): string => `@${id}`;
 
 function copilotTokenResponse() {
   return jsonResponse({
@@ -265,7 +265,7 @@ test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures b
             {
               role: 'assistant',
               content: [
-                { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+                { type: 'thinking', thinking: 'trace', signature: packReasoningSignature(id) },
                 { type: 'text', text: 'visible' },
               ],
             },
@@ -281,7 +281,7 @@ test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures b
   const messages = capturedBody?.messages as Array<Record<string, unknown>>;
   assertEquals(capturedBody?.model, 'claude-count-prod');
   const assistantContent = messages[0].content as Array<Record<string, unknown>>;
-  assertEquals(assistantContent[0].signature, messagesReasoningSignature('raw_rs_count'));
+  assertEquals(assistantContent[0].signature, packReasoningSignature('raw_rs_count'));
   assertEquals(assistantContent[1], { type: 'text', text: 'visible' });
 });
 

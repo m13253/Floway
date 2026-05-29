@@ -115,7 +115,7 @@ test('handles no cache fields (backward compat)', () => {
   assertEquals(result.usage!.input_tokens_details, undefined);
 });
 
-test('redacted_thinking stream block is dropped for Responses output', () => {
+test('redacted_thinking stream block round-trips its opaque data as encrypted_content', () => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   translateMessagesEventToResponsesEvents(
@@ -129,27 +129,17 @@ test('redacted_thinking stream block is dropped for Responses output', () => {
 
   translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
 
-  assertEquals(state.completedItems, []);
-});
-
-test('packed redacted_thinking stream block is dropped for Responses output', () => {
-  const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
-
-  translateMessagesEventToResponsesEvents(
+  assertEquals(state.completedItems, [
     {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: 'opaque_sig@rs_88' },
-    } as MessagesStreamEventData,
-    state,
-  );
-
-  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
-
-  assertEquals(state.completedItems, []);
+      type: 'reasoning',
+      id: 'rs_0',
+      summary: [],
+      encrypted_content: 'opaque_sig',
+    },
+  ]);
 });
 
-test('thinking stream block ignores signature_delta and keeps readable text', () => {
+test('thinking stream block carries the upstream signature verbatim as encrypted_content', () => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   translateMessagesEventToResponsesEvents(
@@ -172,7 +162,7 @@ test('thinking stream block ignores signature_delta and keeps readable text', ()
     {
       type: 'content_block_delta',
       index: 0,
-      delta: { type: 'signature_delta', signature: 'enc_xyz@rs_33' },
+      delta: { type: 'signature_delta', signature: 'upstream-opaque-signature' },
     } as MessagesStreamEventData,
     state,
   );
@@ -183,6 +173,7 @@ test('thinking stream block ignores signature_delta and keeps readable text', ()
       type: 'reasoning',
       id: 'rs_0',
       summary: [{ type: 'summary_text', text: 'trace' }],
+      encrypted_content: 'upstream-opaque-signature',
     },
   ]);
 });

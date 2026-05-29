@@ -17,7 +17,7 @@ import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
 import { chatCompletionsViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-const messagesReasoningSignature = (id: string): string => `floway:responses-reasoning:v1:${btoa(id).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}`;
+const packReasoningSignature = (id: string): string => `@${id}`;
 
 const API_KEY_ID = 'key_test';
 
@@ -319,7 +319,7 @@ test('matching upstream rewrites Messages thinking signature to upstream reasoni
   const messages: MessagesPayload['messages'] = [{
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+      { type: 'thinking', thinking: 'trace', signature: packReasoningSignature(id) },
       { type: 'text', text: 'visible' },
     ],
   }];
@@ -329,7 +329,7 @@ test('matching upstream rewrites Messages thinking signature to upstream reasoni
   assertEquals(rewritten, [{
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature('raw_rs_a') },
+      { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('raw_rs_a') },
       { type: 'text', text: 'visible' },
     ],
   }]);
@@ -344,7 +344,7 @@ test('non-matching reasoning is stripped from Messages thinking signature carrie
   const messages: MessagesPayload['messages'] = [{
     role: 'assistant',
     content: [
-      { type: 'thinking', thinking: 'trace', signature: messagesReasoningSignature(id) },
+      { type: 'thinking', thinking: 'trace', signature: packReasoningSignature(id) },
       { type: 'text', text: 'visible' },
     ],
   }];
