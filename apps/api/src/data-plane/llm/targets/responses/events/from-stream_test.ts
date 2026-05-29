@@ -20,6 +20,7 @@ const makeResponse = (status: ResponsesResult['status'], overrides: Partial<Resp
   output: [
     {
       type: 'message',
+      id: 'msg_fast',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'hello' }],
     },
@@ -287,6 +288,7 @@ test('responsesStreamFramesToEvents fast-paths response.failed terminal with par
     output: [
       {
         type: 'message',
+        id: 'msg_partial',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'partial' }],
       },

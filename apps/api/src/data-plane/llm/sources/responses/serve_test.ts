@@ -1066,6 +1066,7 @@ test('/v1/responses direct mode expands upstream fast-path (wrapper-only SSE) in
           output: [
             {
               type: 'message',
+              id: 'msg_fastpath',
               role: 'assistant',
               content: [{ type: 'output_text', text: 'Hello' }],
             },
@@ -1186,6 +1187,7 @@ test('/v1/responses resolves Claude reasoning variants before planning', async (
           output: [
             {
               type: 'message',
+              id: 'msg_reasoning',
               role: 'assistant',
               content: [{ type: 'output_text', text: 'ok' }],
             },
@@ -1271,6 +1273,7 @@ test('/v1/responses direct mode retries connection-bound input item IDs once wit
               output: [
                 {
                   type: 'message',
+                  id: 'msg_retry',
                   role: 'assistant',
                   content: [{ type: 'output_text', text: 'ok' }],
                 },

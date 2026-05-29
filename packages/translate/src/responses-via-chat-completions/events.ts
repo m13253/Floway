@@ -156,7 +156,7 @@ const closeText = (state: ChatCompletionsToResponsesStreamState): ResponseStream
   const textItem = state.openText;
   state.openText = undefined;
 
-  const item = responses.messageItem(textItem.text);
+  const item = responses.messageItem(textItem.itemId, textItem.text);
 
   state.completedItems[textItem.outputIndex] = item;
 
@@ -173,14 +173,14 @@ const closeFunctionCalls = (state: ChatCompletionsToResponsesStreamState): Respo
 
     if (kind === 'custom') {
       const input = unwrapCustomToolInput(functionCall.arguments);
-      const item = responses.customToolCallItem(functionCall.callId, functionCall.name, input);
+      const item = responses.customToolCallItem(itemId, functionCall.callId, functionCall.name, input);
 
       state.completedItems[outputIndex] = item;
       events.push(...responses.customToolCallDone(state, outputIndex, itemId, input, item));
       continue;
     }
 
-    const item = responses.functionCallItem(functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
+    const item = responses.functionCallItem(itemId, functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
 
     state.completedItems[outputIndex] = item;
     events.push(...responses.functionCallDone(state, outputIndex, itemId, functionCall.arguments, item));
@@ -228,10 +228,10 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: ChatCompleti
   if (isCustom) {
     // Wrapped custom tool calls buffer arguments fully; we cannot emit input
     // deltas until we can parse the JSON wrap and extract the freeform value.
-    return responses.itemAdded(state, outputIndex, responses.customToolCallItem(current.callId, current.name, ''));
+    return responses.itemAdded(state, outputIndex, responses.customToolCallItem(streamItem.itemId, current.callId, current.name, ''));
   }
 
-  const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(current.callId, current.name, '', 'in_progress'));
+  const events = responses.itemAdded(state, outputIndex, responses.functionCallItem(streamItem.itemId, current.callId, current.name, '', 'in_progress'));
 
   if (current.arguments) {
     events.push(...responses.argumentsDelta(state, outputIndex, streamItem.itemId, current.arguments));

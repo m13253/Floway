@@ -1670,6 +1670,7 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       },
       {
         type: 'message',
+        id: 'msg_reasoning_fallback',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'Answer text' }],
       },
@@ -1812,6 +1813,7 @@ test('/v1/messages routes Azure Responses-only deployments through OpenAI v1 Res
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_azure',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'ok' }],
                   },
@@ -1894,6 +1896,7 @@ test('/v1/messages preserves output_config.effort max when translating to respon
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_max_effort',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'ok' }],
                   },
@@ -1980,6 +1983,7 @@ test('/v1/messages prefers responses on dual-endpoint models when native message
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_plain',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'plain' }],
                   },

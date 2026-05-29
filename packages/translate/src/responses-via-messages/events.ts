@@ -149,7 +149,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
         wrappedArguments: '',
       });
 
-      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(event.content_block.id, event.content_block.name, ''));
+      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
     }
 
     const itemId = `fc_${outputIndex}`;
@@ -163,7 +163,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
+    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
   }
   default:
     return [];
@@ -276,7 +276,7 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   }
 
   if (info.type === 'text') {
-    const item = responses.messageItem(info.blockText);
+    const item = responses.messageItem(info.itemId, info.blockText);
 
     state.completedItems.push(item);
 
@@ -285,14 +285,14 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
 
   if (info.type === 'custom_tool_use') {
     const input = unwrapCustomToolInput(info.wrappedArguments);
-    const item = responses.customToolCallItem(info.toolCallId, info.toolName, input);
+    const item = responses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
 
     state.completedItems.push(item);
 
     return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.toolCallId, info.toolName, info.toolArguments, 'completed');
+  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
 
