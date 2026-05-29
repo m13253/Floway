@@ -1422,3 +1422,36 @@ test('translateResponsesToChatCompletions throws on a stray web_search_call inpu
     'Responses → Chat Completions translator does not accept web_search_call input items',
   );
 });
+
+test('translateResponsesToChatCompletions maps multimodal function_call_output into a tool message with image content', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [
+      { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
+      {
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'captured' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: 'high' },
+        ],
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: false,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  const toolMessage = result.target.messages.find(message => message.role === 'tool');
+  assertEquals(toolMessage?.content, [
+    { type: 'text', text: 'captured' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
+  ]);
+});

@@ -165,7 +165,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
         messages.push({
           role: 'tool',
           tool_call_id: item.call_id,
-          content: item.output,
+          content: responsesContentToChatContent(item.output),
         });
         continue;
       }

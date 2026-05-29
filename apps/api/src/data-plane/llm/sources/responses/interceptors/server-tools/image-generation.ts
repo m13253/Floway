@@ -10,6 +10,7 @@ import type {
   ResponseFunctionTool,
   ResponseFunctionToolCallItem,
   ResponseHostedTool,
+  ResponseInputContent,
   ResponseInputImageGenerationCall,
   ResponseInputItem,
   ResponseOutputImageGenerationCall,
@@ -326,22 +327,37 @@ const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageS
   }
 };
 
-// Collect all inline image sources from the original request input, in
-// declaration order: `input_image` content blocks in messages, then
-// full-echo `image_generation_call` items carrying `result` bytes. gpt-image
-// selects the edit target by prompt semantics, so order is not significant
-// and the shim attaches every source it finds (matching Azure).
+// Collect all inline image sources from the request input in forward
+// declaration order: `input_image` blocks in messages, `input_image` blocks in
+// `function_call_output` (tool-result) content, and full-echo
+// `image_generation_call` items carrying `result` bytes, each in the order they
+// appear. Order is load-bearing: probing both the standalone /images/edits
+// endpoint and native Responses showed gpt-image numbers the attached images
+// positionally — a prompt that says "the first/second/last image" resolves
+// against the order received — and native flattens every image across messages
+// and tool results into this same forward order. Preserving declaration order
+// therefore makes "the Nth image" mean the same thing here as it does natively.
 export const collectImageSources = (input: ResponsesInvocation['payload']['input']): ImageSource[] => {
   if (!Array.isArray(input)) return [];
   const sources: ImageSource[] = [];
-  for (const item of input) {
-    if (item.type === 'message' && Array.isArray(item.content)) {
-      for (const block of item.content) {
-        if (block.type === 'input_image' && typeof block.image_url === 'string') {
-          const decoded = decodeInlineImage(block.image_url);
-          if (decoded !== null) sources.push(decoded);
-        }
+  const collectFromContent = (content: string | ResponseInputContent[]): void => {
+    if (!Array.isArray(content)) return;
+    for (const block of content) {
+      if (block.type === 'input_image' && typeof block.image_url === 'string') {
+        const decoded = decodeInlineImage(block.image_url);
+        if (decoded !== null) sources.push(decoded);
       }
+    }
+  };
+  for (const item of input) {
+    if (item.type === 'message') {
+      collectFromContent(item.content);
+      continue;
+    }
+    // A tool result may carry images as structured `input_image` content; read
+    // them so a tool-returned image is editable, matching native's flattening.
+    if (item.type === 'function_call_output') {
+      collectFromContent(item.output);
       continue;
     }
     if (item.type === 'image_generation_call' && typeof item.result === 'string' && item.result.length > 0) {

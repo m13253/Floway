@@ -224,6 +224,19 @@ test('collectImageSources returns empty for a plain string input', () => {
   assertEquals(collectImageSources('just text').length, 0);
 });
 
+test('collectImageSources reads tool-result images and preserves forward order', () => {
+  const input: ResponseInputItem[] = [
+    // A function_call_output carrying structured input_image content (tool result).
+    { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
+    { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
+  ];
+  const sources = collectImageSources(input);
+  assertEquals(sources.length, 2);
+  // Declaration order: the tool-result image comes first, then the message's.
+  assertEquals(sources[0].mimeType, 'image/png');
+  assertEquals(sources[1].mimeType, 'image/webp');
+});
+
 // ── transformInputItemsForImageGeneration ──
 
 test('transformInputItemsForImageGeneration rewrites a completed call into a function_call + output pair and feeds the image back', () => {
@@ -238,6 +251,7 @@ test('transformInputItemsForImageGeneration rewrites a completed call into a fun
   assertStringIncludes(out[0].arguments, 'a red dot');
   assert(out[1].type === 'function_call_output');
   assertEquals(out[1].call_id, 'cc_from_ig_1');
+  assert(typeof out[1].output === 'string');
   assertStringIncludes(out[1].output, '"ok":true');
   // The generated image is fed back so the orchestrator can see it.
   assert(out[2].type === 'message');
@@ -262,6 +276,7 @@ test('transformInputItemsForImageGeneration encodes a failed call as ok:false wi
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');
+  assert(typeof out[1].output === 'string');
   const parsed = JSON.parse(out[1].output) as { ok: boolean; error: { code: string; message: string; retryable: boolean } };
   assertEquals(parsed.ok, false);
   assertEquals(parsed.error.code, 'EngineOverloaded');
@@ -393,6 +408,7 @@ test('transformInputItemsForImageGeneration preserves error type and retryabilit
     'image_generation',
   );
   assert(out[1].type === 'function_call_output');
+  assert(typeof out[1].output === 'string');
   const parsed = JSON.parse(out[1].output) as { error: { type: string; code: string; retryable: boolean } };
   assertEquals(parsed.error.type, 'image_generation_user_error');
   assertEquals(parsed.error.code, 'content_filter');
