@@ -339,9 +339,6 @@ export interface ResponseOutputImageGenerationCall {
   status: 'in_progress' | 'generating' | 'completed' | 'failed';
   result?: string;
   revised_prompt?: string;
-  // Resolved tool config echoed on the completed item, mirroring Azure's
-  // native `image_generation` wire shape. Typed SDKs that don't model these
-  // drop them; clients that do (vercel/ai, Codex) read the richer info.
   action?: 'generate' | 'edit';
   background?: 'transparent' | 'opaque';
   output_format?: 'png' | 'jpeg';
@@ -470,9 +467,6 @@ export type ResponseStreamEvent =
     item_id: string;
     partial_image_index: number;
     partial_image_b64: string;
-    // Resolved tool config echoed alongside the preview bytes, mirroring
-    // Azure's native partial_image payload. Optional so non-echoing
-    // producers stay valid.
     background?: 'transparent' | 'opaque';
     output_format?: 'png' | 'jpeg';
     quality?: 'low' | 'medium' | 'high';

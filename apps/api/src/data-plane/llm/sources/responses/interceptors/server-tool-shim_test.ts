@@ -6,6 +6,8 @@ import {
   createMergeState,
   materializeAccumulatedOutput,
   parseServerToolArguments,
+  serverToolResultSlot,
+  serverToolStreamingResultSlot,
   sumUsage,
   type InterceptedFunctionCall,
   type ServerToolResultSlot,
@@ -5802,10 +5804,12 @@ test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot
       id: `synthetic-${order}`,
       startItem: { type: 'web_search_call', id: `synthetic-${order}`, status: 'in_progress' },
       startEvents: [{ type: 'response.web_search_call.in_progress' } as never],
-      result: Promise.resolve({
-        item: { type: 'web_search_call', id: `synthetic-${order}`, status: 'completed', action: { type: 'search', query: 'q', queries: ['q'] }, results: [] } as never,
-        endEvents: [{ type: 'response.web_search_call.completed' } as never],
-      }),
+      async *run() {
+        return {
+          item: { type: 'web_search_call', id: `synthetic-${order}`, status: 'completed', action: { type: 'search', query: 'q', queries: ['q'] }, results: [] } as never,
+          endEvents: [{ type: 'response.web_search_call.completed' } as never],
+        };
+      },
     } satisfies ServerToolResultSlot];
   };
 
@@ -5841,7 +5845,7 @@ test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot
 test('umbrella output_index is reserved at output_item.added so interleaved items get later indices', async () => {
   // Reserving at `.added` (rather than `.done`) keeps a non-umbrella
   // item arriving between added and done from stealing the umbrella's
-  // would-be downstream index. See spec § Output-index allocation.
+  // would-be downstream index.
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
@@ -6027,4 +6031,50 @@ test('sumUsage with one-sided details preserves the field (treats missing side a
     total_tokens: 12,
     input_tokens_details: { cached_tokens: 4 },
   });
+});
+
+// ── Slot run() contract ────────────────────────────────────────────────
+
+test('serverToolStreamingResultSlot run() yields mid events in order then returns the terminal', async () => {
+  const slot = serverToolStreamingResultSlot({
+    id: 'ig_1',
+    startItem: { type: 'image_generation_call', status: 'in_progress' },
+    startEvents: [{ type: 'response.image_generation_call.in_progress' }],
+    async *stream() {
+      yield { type: 'response.image_generation_call.partial_image', partial_image_index: 0 };
+      yield { type: 'response.image_generation_call.partial_image', partial_image_index: 1 };
+      return {
+        item: { type: 'image_generation_call', status: 'completed' },
+        endEvents: [{ type: 'response.image_generation_call.completed' }],
+      };
+    },
+  });
+
+  const mid: unknown[] = [];
+  const gen = slot.run();
+  let step = await gen.next();
+  while (!step.done) {
+    mid.push(step.value.partial_image_index);
+    step = await gen.next();
+  }
+  assertEquals(mid, [0, 1]);
+  assertEquals(step.value.item.status, 'completed');
+  assertEquals(step.value.endEvents.map(e => e.type), ['response.image_generation_call.completed']);
+});
+
+test('serverToolResultSlot run() yields nothing and returns the awaited terminal', async () => {
+  const slot = serverToolResultSlot({
+    id: 'ws_1',
+    startItem: { type: 'web_search_call', status: 'in_progress' },
+    startEvents: [],
+    result: Promise.resolve({
+      item: { type: 'web_search_call', status: 'completed' },
+      endEvents: [{ type: 'response.web_search_call.completed' }],
+    }),
+  });
+
+  const gen = slot.run();
+  const first = await gen.next();
+  assert(first.done === true);
+  assertEquals(first.value.item.status, 'completed');
 });

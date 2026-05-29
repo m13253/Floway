@@ -40,14 +40,22 @@ export interface InterceptedFunctionCall {
   arguments: Record<string, unknown> | null;
 }
 
+export interface ServerToolTerminal {
+  item: ServerToolOutputItem;
+  endEvents: ServerToolLifecycleEvent[];
+}
+
 export interface ServerToolResultSlot {
   id: string;
   startItem: ServerToolOutputItem;
   startEvents: ServerToolLifecycleEvent[];
-  result: Promise<{
-    item: ServerToolOutputItem;
-    endEvents: ServerToolLifecycleEvent[];
-  }>;
+  // The deferred portion of a slot's lifecycle, driven at materialization
+  // time. It yields any intermediate lifecycle events as they arrive — e.g.
+  // progressively-rendered `image_generation_call.partial_image` frames a
+  // streamed backend delivers over the course of the call — and returns the
+  // terminal item plus its closing events. A tool with no progressive output
+  // simply yields nothing and returns immediately.
+  run: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
 }
 
 export type ServerToolOutputItem = { type: string; id?: string; [key: string]: unknown };
@@ -357,22 +365,36 @@ const stampServerToolEvent = (
     sequence_number: merge.sequenceNumber++,
   } as ResponsesStreamEvent);
 
+// A slot whose terminal item is produced by a single deferred computation
+// with no intermediate frames (e.g. web search: one backend round-trip, then
+// the finished `web_search_call`). The promise is awaited at materialization.
 export const serverToolResultSlot = (args: {
   id: string;
   startItem: ServerToolOutputItem;
   startEvents: readonly ServerToolLifecycleEvent[];
-  result: Promise<{
-    item: ServerToolOutputItem;
-    endEvents: readonly ServerToolLifecycleEvent[];
-  }>;
+  result: Promise<ServerToolTerminal>;
 }): ServerToolResultSlot => ({
   id: args.id,
   startItem: args.startItem,
   startEvents: [...args.startEvents],
-  result: args.result.then(result => ({
-    item: result.item,
-    endEvents: [...result.endEvents],
-  })),
+  async *run() {
+    return await args.result;
+  },
+});
+
+// A slot whose terminal item is preceded by intermediate lifecycle frames
+// streamed over time (e.g. image generation: progressive partial_image
+// previews). `stream` is the generator factory invoked at materialization.
+export const serverToolStreamingResultSlot = (args: {
+  id: string;
+  startItem: ServerToolOutputItem;
+  startEvents: readonly ServerToolLifecycleEvent[];
+  stream: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
+}): ServerToolResultSlot => ({
+  id: args.id,
+  startItem: args.startItem,
+  startEvents: [...args.startEvents],
+  run: args.stream,
 });
 
 const serverToolStartFrames = (
@@ -393,7 +415,7 @@ const serverToolEndFrames = (
   merge: MergeState,
   outputIndex: number,
   slot: ServerToolResultSlot,
-  result: Awaited<ServerToolResultSlot['result']>,
+  result: ServerToolTerminal,
 ): ProtocolFrame<ResponsesStreamEvent>[] => {
   const frames = [
     ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
@@ -794,8 +816,13 @@ async function* materializeServerToolItems(
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
-      const result = await slot.result;
-      yield* serverToolEndFrames(merge, outputIndex, slot, result);
+      const lifecycle = slot.run();
+      let step = await lifecycle.next();
+      while (!step.done) {
+        yield stampServerToolEvent(merge, outputIndex, slot.id, step.value);
+        step = await lifecycle.next();
+      }
+      yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }
 }

@@ -3,12 +3,13 @@ import { test } from 'vitest';
 import {
   buildGenerationsBody,
   buildImageGenerationFunctionTool,
-  buildResultFrames,
   collectImageSources,
   DEFAULT_IMAGE_MODEL,
   type ImageGenerationConfig,
   type ImageOutcome,
+  imageTerminal,
   isHostedImageGenerationTool,
+  parseImageStreamEvent,
   prepareImageGenerationConfig,
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
@@ -255,47 +256,76 @@ test('transformInputItemsForImageGeneration passes non-image items through untou
 
 test('buildGenerationsBody always sends n:1 and maps config, omitting undefined', () => {
   const config: ImageGenerationConfig = { model: 'gpt-image-2', size: '1024x1024', quality: 'low', action: 'generate' };
-  const body = buildGenerationsBody('a cat', config);
+  const body = buildGenerationsBody('a cat', config, false);
   assertEquals(body.prompt, 'a cat');
   assertEquals(body.n, 1);
   assertEquals(body.size, '1024x1024');
   assertEquals(body.quality, 'low');
   assertFalse('background' in body);
   assertFalse('output_format' in body);
+  assertFalse('stream' in body);
+  assertFalse('partial_images' in body);
 });
 
-// ── buildResultFrames ──
+test('buildGenerationsBody adds stream and partial_images when streaming', () => {
+  const config: ImageGenerationConfig = { model: 'gpt-image-2', partial_images: 2, action: 'generate' };
+  const body = buildGenerationsBody('a cat', config, true);
+  assertEquals(body.stream, true);
+  assertEquals(body.partial_images, 2);
+});
 
-test('buildResultFrames on success emits a partial_image then completed and a completed item', () => {
+// ── imageTerminal ──
+
+test('imageTerminal on success builds a completed item closed by a single completed event', () => {
   const config: ImageGenerationConfig = { model: 'gpt-image-2', size: '1024x1024', quality: 'high', output_format: 'png', action: 'generate' };
   const outcome: ImageOutcome = { ok: true, b64: PNG_B64 };
-  const { item, endEvents } = buildResultFrames('ig_x', 'a red dot', 'generate', config, outcome);
+  const { item, endEvents } = imageTerminal('a red dot', 'generate', config, outcome);
   assertEquals((item as { status?: string }).status, 'completed');
   assertEquals((item as { result?: string }).result, PNG_B64);
   assertEquals((item as { revised_prompt?: string }).revised_prompt, 'a red dot');
   assertEquals((item as { action?: string }).action, 'generate');
   assertEquals((item as { quality?: string }).quality, 'high');
   assertEquals((item as { size?: string }).size, '1024x1024');
-  assertEquals(endEvents.length, 2);
-  assertEquals(endEvents[0].type, 'response.image_generation_call.partial_image');
-  assertEquals((endEvents[0] as { partial_image_index?: number }).partial_image_index, 0);
-  assertEquals((endEvents[0] as { partial_image_b64?: string }).partial_image_b64, PNG_B64);
-  // Resolved config echoed on the preview event, mirroring Azure.
-  assertEquals((endEvents[0] as { output_format?: string }).output_format, 'png');
-  assertEquals((endEvents[0] as { quality?: string }).quality, 'high');
-  assertEquals((endEvents[0] as { size?: string }).size, '1024x1024');
-  assertEquals(endEvents[1].type, 'response.image_generation_call.completed');
+  assertEquals((item as { output_format?: string }).output_format, 'png');
+  assertEquals(endEvents.length, 1);
+  assertEquals(endEvents[0].type, 'response.image_generation_call.completed');
 });
 
-test('buildResultFrames on failure emits a failed item and no lifecycle end events', () => {
+test('imageTerminal on failure emits a failed item and no closing events', () => {
   const config: ImageGenerationConfig = { model: 'gpt-image-2', action: 'generate' };
   const outcome: ImageOutcome = { ok: false, error: { type: 'image_generation_user_error', message: 'overloaded', code: 'EngineOverloaded', retryable: true } };
-  const { item, endEvents } = buildResultFrames('ig_y', 'a red dot', 'generate', config, outcome);
+  const { item, endEvents } = imageTerminal('a red dot', 'generate', config, outcome);
   assertEquals((item as { status?: string }).status, 'failed');
   assertEquals((item as { error?: { code: string } }).error?.code, 'EngineOverloaded');
   assertEquals((item as { error?: { type?: string } }).error?.type, 'image_generation_user_error');
   assertFalse('result' in item);
   assertEquals(endEvents.length, 0);
+});
+
+// ── parseImageStreamEvent ──
+
+test('parseImageStreamEvent maps generations and edits partial/completed/error', () => {
+  const genPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.partial_image', partial_image_index: 1, b64_json: PNG_B64 }));
+  assert(genPartial?.kind === 'partial');
+  assertEquals(genPartial.index, 1);
+  assertEquals(genPartial.b64, PNG_B64);
+
+  const editPartial = parseImageStreamEvent(JSON.stringify({ type: 'image_edit.partial_image', partial_image_index: 0, b64_json: PNG_B64 }));
+  assert(editPartial?.kind === 'partial');
+
+  const completed = parseImageStreamEvent(JSON.stringify({ type: 'image_generation.completed', b64_json: PNG_B64, usage: { total_tokens: 1 } }));
+  assert(completed?.kind === 'completed');
+  assertEquals(completed.b64, PNG_B64);
+
+  const err = parseImageStreamEvent(JSON.stringify({ type: 'error', error: { type: 'image_generation_server_error', code: 'image_generation_failed', message: 'boom' } }));
+  assert(err?.kind === 'error');
+  assertEquals(err.error.code, 'image_generation_failed');
+  assertEquals(err.error.retryable, true);
+});
+
+test('parseImageStreamEvent returns null for non-JSON or unrelated events', () => {
+  assertEquals(parseImageStreamEvent('[DONE]'), null);
+  assertEquals(parseImageStreamEvent(JSON.stringify({ type: 'image_generation.queued' })), null);
 });
 
 test('prepareImageGenerationConfig rejects a present-but-invalid model', () => {
@@ -343,9 +373,9 @@ test('transformInputItemsForImageGeneration preserves error type and retryabilit
   assertEquals(parsed.error.retryable, false);
 });
 
-test('buildResultFrames omits size when the config requested auto', () => {
+test('imageTerminal omits size when the config requested auto', () => {
   const config: ImageGenerationConfig = { model: 'gpt-image-2', size: 'auto', action: 'generate' };
-  const { item } = buildResultFrames('ig_z', 'p', 'generate', config, { ok: true, b64: PNG_B64 });
+  const { item } = imageTerminal('p', 'generate', config, { ok: true, b64: PNG_B64 });
   assertFalse('size' in item);
 });
 
