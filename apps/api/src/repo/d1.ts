@@ -653,7 +653,7 @@ class D1CacheRepo implements CacheRepo {
   }
 }
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, created_at';
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, encrypted_content_hash, created_at';
 
 class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: D1Database) {}
@@ -672,6 +672,18 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
+  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+    const uniqueHashes = [...new Set(hashes)];
+    if (uniqueHashes.length === 0) return [];
+
+    const placeholders = uniqueHashes.map(() => '?').join(', ');
+    const { results } = await this.db
+      .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND encrypted_content_hash IN (${placeholders})`)
+      .bind(apiKeyId, ...uniqueHashes)
+      .all<ResponsesItemRow>();
+    return await Promise.all(results.map(toStoredResponsesItem));
+  }
+
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
@@ -683,10 +695,10 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
       // happen.
       return this.db
         .prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
         )
-        .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, payload, item.createdAt);
+        .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, payload, item.encryptedContentHash, item.createdAt);
     }));
     await this.runStatements(statements);
   }
@@ -723,6 +735,7 @@ interface ResponsesItemRow {
   upstream_item_id: string | null;
   item_type: string;
   payload_json: string | null;
+  encrypted_content_hash: string | null;
   created_at: number;
 }
 
@@ -733,6 +746,7 @@ const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredRespo
   upstreamItemId: row.upstream_item_id,
   itemType: row.item_type,
   payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+  encryptedContentHash: row.encrypted_content_hash,
   createdAt: row.created_at,
 });
 

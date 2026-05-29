@@ -4,26 +4,33 @@ import {
   throwStoredResponsesItemsDiagnostic,
   type StoredResponsesItemsDiagnostic,
 } from './errors.ts';
-import { createTemporaryResponsesItemId, parseStoredResponsesItemId } from './format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, parseStoredResponsesItemId, responsesItemEncryptedContent } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export type StoredResponsesUseSiteAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
+export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
-export interface StoredResponsesUseSite {
-  id: string;
+// A request item that points at a stored row. `id` and `encryptedContent` are
+// equivalent lookup keys: a gateway id when the client echoed one, the opaque
+// reasoning/compaction blob when it did not (Codex strips ids on the wire).
+export interface StoredResponsesItemRef {
   type: string;
-  lookup: boolean;
+  id?: string;
+  encryptedContent?: string;
+}
+
+// A reference resolved during preparation: the stored row it points at (absent
+// for a benign miss) and the routing affinity it imposes.
+export interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
   row?: StoredResponsesItem;
-  affinity?: StoredResponsesUseSiteAffinity;
+  affinity?: StoredResponsesAffinity;
 }
 
 export interface PreparedStoredResponsesItems {
-  rows: Map<string, StoredResponsesItem>;
-  useSites: StoredResponsesUseSite[];
+  references: ResolvedStoredResponsesItemRef[];
   diagnostics: StoredResponsesItemsDiagnostic[];
   forcingUpstreamIds: ReadonlySet<string>;
   preferredUpstreamIds: ReadonlySet<string>;
@@ -45,55 +52,60 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   apiKeyId: string | null,
   view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>,
 ): Promise<PreparedStoredResponsesItems> => {
-  const useSites = await collectStoredResponsesUseSites(sourceItems, view);
-  const ids = useSites.filter(site => site.lookup).map(site => site.id);
-  const rowsById = new Map((await getRepo().responsesItems.lookupMany(apiKeyId, ids)).map(row => [row.id, row]));
-  const rows = new Map<string, StoredResponsesItem>();
+  const references = await collectStoredResponsesItemRefs(sourceItems, view);
+
+  // id and encrypted_content are equivalent lookup keys, so resolve both at
+  // once and merge. `parseStoredResponsesItemId` decides which ids are even
+  // queryable here, exactly once; afterwards a reference is identified only by
+  // the row it resolved to, never by who found it.
+  const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && parseStoredResponsesItemId(ref.id) ? [ref.id] : []));
+  const hashByContent = new Map(await Promise.all(
+    [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
+      .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),
+  ));
+  const [byId, byHash] = await Promise.all([
+    getRepo().responsesItems.lookupMany(apiKeyId, [...queryableIds]),
+    getRepo().responsesItems.lookupManyByEncryptedContentHash(apiKeyId, [...new Set(hashByContent.values())]),
+  ]);
+  const rowById = new Map(byId.map(row => [row.id, row]));
+  const rowByHash = new Map(byHash.flatMap(row => row.encryptedContentHash !== null ? [[row.encryptedContentHash, row] as const] : []));
+
   const diagnostics: StoredResponsesItemsDiagnostic[] = [];
-
-  for (const site of useSites) {
-    if (!site.lookup) {
-      diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(site.id));
+  for (const ref of references) {
+    const row = (ref.id !== undefined ? rowById.get(ref.id) : undefined)
+      ?? (ref.encryptedContent !== undefined ? rowByHash.get(hashByContent.get(ref.encryptedContent)!) : undefined);
+    if (row === undefined) {
+      // `item_reference` asserts a stored row, and a parseable gateway id names
+      // one too, so either resolving to nothing is a hard not-found. An id-less
+      // blob that matches nothing is benign — a fresh or foreign reasoning.
+      if (ref.type === 'item_reference' || (ref.id !== undefined && queryableIds.has(ref.id))) {
+        diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(ref.id ?? ''));
+      }
       continue;
     }
 
-    const row = rowsById.get(site.id);
-    if (!row) {
-      diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(site.id));
-      continue;
-    }
-
-    site.row = row;
-    if (site.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
+    ref.row = row;
+    if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
       diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
       continue;
     }
-
-    if (site.type !== 'item_reference' && site.type !== row.itemType) {
+    if (ref.type !== 'item_reference' && ref.type !== row.itemType) {
       diagnostics.push(createStoredResponsesRoutingUnavailableDiagnostic(
-        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${site.type}'.`,
+        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${ref.type}'.`,
       ));
       continue;
     }
-
-    site.affinity = classifyStoredResponsesUseSite(site.type, row);
-    if (site.affinity === 'forcing' && !isUpstreamOwned(row)) {
+    ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
+    if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
       diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
-      continue;
     }
-    rows.delete(row.id);
-    rows.set(row.id, row);
   }
 
-  const forcingUpstreamIds = collectUpstreamsForAffinities(useSites, new Set(['forcing']));
-  const preferredUpstreamIds = collectPreferredUpstreams(rows, useSites);
-
   return {
-    rows,
-    useSites,
+    references,
     diagnostics,
-    forcingUpstreamIds,
-    preferredUpstreamIds,
+    forcingUpstreamIds: collectUpstreamsForAffinities(references, new Set(['forcing'])),
+    preferredUpstreamIds: collectPreferredUpstreams(references),
   };
 };
 
@@ -160,64 +172,58 @@ export const rewriteStoredResponsesItemsForProvider = async <TSourceItems>(
   view: ResponsesItemsView<TSourceItems>,
 ): Promise<Mutable<TSourceItems>> => {
   throwForPreparedDiagnostics(prepared);
-  return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, prepared, provider));
+  const rowById = new Map(prepared.references.flatMap(ref => ref.id !== undefined && ref.row ? [[ref.id, ref.row] as const] : []));
+  const rowByEncryptedContent = new Map(prepared.references.flatMap(ref => ref.encryptedContent !== undefined && ref.row ? [[ref.encryptedContent, ref.row] as const] : []));
+  return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, rowById, rowByEncryptedContent, provider));
 };
 
-// Non-item_reference items that arrive with an unparseable id are passed
-// through as-is, never looked up. This is intentional: clients legitimately
-// re-send items that were never stored (pre-feature ids, ids from a
-// different gateway, opaque upstream ids). Only `item_reference` declares
-// "this is a stored row" — everything else carries its own inline content.
-const collectStoredResponsesUseSites = async <TSourceItems>(
+// Each request item resolves to its stored row by the same keys preparation
+// used — gateway id or `encrypted_content` blob, matched verbatim, no re-hash.
+const collectStoredResponsesItemRefs = async <TSourceItems>(
   sourceItems: TSourceItems,
   view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>,
-): Promise<StoredResponsesUseSite[]> => {
-  const useSites: StoredResponsesUseSite[] = [];
+): Promise<ResolvedStoredResponsesItemRef[]> => {
+  const references: ResolvedStoredResponsesItemRef[] = [];
 
   await view.visitAsResponsesItems(sourceItems, item => {
     const id = responsesItemId(item);
-    if (id === null) return;
-
-    if (parseStoredResponsesItemId(id)) {
-      useSites.push({ id, type: item.type, lookup: true });
-      return;
-    }
-
-    if (item.type === 'item_reference') {
-      useSites.push({ id, type: item.type, lookup: false });
-    }
+    const encryptedContent = responsesItemEncryptedContent(item);
+    // A reference is anything that could name a stored row — an id (a gateway
+    // id, or an `item_reference` asserting one) or an `encrypted_content` blob.
+    // Items that carry their own inline content with neither pass through.
+    if (id === null && encryptedContent === null) return;
+    references.push({
+      type: item.type,
+      ...(id !== null ? { id } : {}),
+      ...(encryptedContent !== null ? { encryptedContent } : {}),
+    });
   });
 
-  return useSites;
+  return references;
 };
 
 const collectUpstreamsForAffinities = (
-  useSites: readonly StoredResponsesUseSite[],
-  affinities: ReadonlySet<StoredResponsesUseSiteAffinity>,
+  references: readonly ResolvedStoredResponsesItemRef[],
+  affinities: ReadonlySet<StoredResponsesAffinity>,
 ): ReadonlySet<string> => {
   const upstreams = new Set<string>();
-  for (const site of useSites) {
-    if (!site.row?.upstreamId || !site.affinity || !affinities.has(site.affinity)) continue;
-    upstreams.add(site.row.upstreamId);
+  for (const ref of references) {
+    if (!ref.row?.upstreamId || !ref.affinity || !affinities.has(ref.affinity)) continue;
+    upstreams.add(ref.row.upstreamId);
   }
   return upstreams;
 };
 
 const collectPreferredUpstreams = (
-  rows: ReadonlyMap<string, StoredResponsesItem>,
-  useSites: readonly StoredResponsesUseSite[],
+  references: readonly ResolvedStoredResponsesItemRef[],
 ): ReadonlySet<string> => {
   const preferred = new Set<string>();
-  const preferredIds = new Set(useSites
-    .filter(site => site.affinity === 'portable' || site.affinity === 'downgradable')
-    .map(site => site.id));
-
-  for (const [id, row] of rows) {
-    if (!preferredIds.has(id) || !isUpstreamOwned(row)) continue;
-    preferred.delete(row.upstreamId);
-    preferred.add(row.upstreamId);
+  for (const ref of references) {
+    if (ref.affinity !== 'portable' && ref.affinity !== 'downgradable') continue;
+    if (!ref.row || !isUpstreamOwned(ref.row)) continue;
+    preferred.delete(ref.row.upstreamId);
+    preferred.add(ref.row.upstreamId);
   }
-
   return preferred;
 };
 
@@ -225,16 +231,16 @@ const findUnexpandedItemReferenceForcingId = (
   prepared: PreparedStoredResponsesItems,
   upstreamId: string,
 ): string | null =>
-  prepared.useSites.find(site =>
-    site.affinity === 'forcing'
-    && site.type === 'item_reference'
-    && site.row?.upstreamId === upstreamId
-    && site.row.payload === null)?.id ?? null;
+  prepared.references.find(ref =>
+    ref.affinity === 'forcing'
+    && ref.type === 'item_reference'
+    && ref.row?.upstreamId === upstreamId
+    && ref.row.payload === null)?.id ?? null;
 
-const classifyStoredResponsesUseSite = (
+const classifyStoredResponsesAffinity = (
   itemType: string,
   row: StoredResponsesItem,
-): StoredResponsesUseSiteAffinity => {
+): StoredResponsesAffinity => {
   if (itemType === 'item_reference' && row.payload === null) return 'forcing';
   if (!isUpstreamOwned(row)) return 'non_affinity';
   if (row.itemType === 'compaction') return 'forcing';
@@ -244,13 +250,16 @@ const classifyStoredResponsesUseSite = (
 
 const rewriteStoredResponsesItemForProvider = (
   item: ResponseInputItem,
-  prepared: PreparedStoredResponsesItems,
+  rowById: ReadonlyMap<string, StoredResponsesItem>,
+  rowByEncryptedContent: ReadonlyMap<string, StoredResponsesItem>,
   provider: ProviderModelRecord,
 ): ResponseInputItem | null => {
   const id = responsesItemId(item);
-  if (id === null || !parseStoredResponsesItemId(id)) return item;
+  const encryptedContent = responsesItemEncryptedContent(item);
+  const row = (id !== null ? rowById.get(id) : undefined)
+    ?? (encryptedContent !== null ? rowByEncryptedContent.get(encryptedContent) : undefined);
+  if (row === undefined) return item;
 
-  const row = prepared.rows.get(id) ?? throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(id));
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
     throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(row.id));
   }

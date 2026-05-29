@@ -102,6 +102,10 @@ class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve([]);
   }
 
+  lookupManyByEncryptedContentHash(): Promise<StoredResponsesItem[]> {
+    return Promise.resolve([]);
+  }
+
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     this.calls.push(items.map(item => structuredClone(item)));
     return new Promise((resolve, reject) => {

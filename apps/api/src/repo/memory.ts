@@ -414,6 +414,18 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(rows);
   }
 
+  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+    const wanted = new Set(hashes);
+    if (wanted.size === 0) return Promise.resolve([]);
+    const rows: StoredResponsesItem[] = [];
+    for (const row of this.store.values()) {
+      if (row.apiKeyId === apiKeyId && row.encryptedContentHash !== null && wanted.has(row.encryptedContentHash)) {
+        rows.push(cloneStoredResponsesItem(row));
+      }
+    }
+    return Promise.resolve(rows);
+  }
+
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     for (const item of items) {
       const key = responsesItemStoreKey(item.apiKeyId, item.id);

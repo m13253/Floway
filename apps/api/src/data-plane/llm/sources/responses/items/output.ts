@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId } from './format.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, responsesItemEncryptedContent } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
@@ -97,7 +97,7 @@ export const storeResponsesOutputItems = <TFrame>(
 
   const buffer: StoredResponsesItem[] = [];
   const onItemFinalized: ResponsesItemFinalizedHandler = async (originalItem, newId) => {
-    const row = buildRow(newId, originalItem, context, request);
+    const row = await buildRow(newId, originalItem, context, request);
     if (wantsStream) await insertStoredItems([row]);
     else buffer.push(row);
   };
@@ -107,17 +107,18 @@ export const storeResponsesOutputItems = <TFrame>(
   return { events: view.streamMapIdAsResponsesItems(frames, idMapper, onItemFinalized), commit };
 };
 
-const buildRow = (
+const buildRow = async (
   newId: string,
   originalItem: ResponseInputItem,
   context: StoreResponsesContext,
   request: RequestContext,
-): StoredResponsesItem => {
+): Promise<StoredResponsesItem> => {
   const upstreamId = (originalItem as { id?: unknown }).id;
   if (typeof upstreamId !== 'string' || upstreamId.length === 0) {
     throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
   }
   const upstreamOwned = context.targetApi === 'responses';
+  const encryptedContent = responsesItemEncryptedContent(originalItem);
   return {
     id: newId,
     apiKeyId: request.apiKeyId ?? null,
@@ -125,6 +126,7 @@ const buildRow = (
     upstreamItemId: upstreamOwned ? upstreamId : null,
     itemType: originalItem.type,
     payload: context.store === false ? null : { item: originalItem },
+    encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
     createdAt: Date.now(),
   };
 };

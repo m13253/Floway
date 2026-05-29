@@ -1,5 +1,7 @@
 import { buf as crc32 } from 'crc-32';
 
+import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+
 const itemTypePrefixes = {
   message: 'msg',
   reasoning: 'rs',
@@ -58,6 +60,21 @@ export const parseStoredResponsesItemId = (value: string): { prefix: string; che
 };
 
 export const isStoredResponsesItemId = (value: string): boolean => parseStoredResponsesItemId(value) !== null;
+
+// Codex and other stateless Responses clients echo reasoning and compaction
+// items back with their `encrypted_content` blob but no gateway id (the id is
+// stripped client-side). The blob is signed against the producing upstream
+// account, so we key such items by its hash to recover the owning upstream for
+// affinity routing.
+export const responsesItemEncryptedContent = (item: ResponseInputItem): string | null => {
+  const value = (item as { encrypted_content?: unknown }).encrypted_content;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+};
+
+export const hashResponsesItemEncryptedContent = async (encryptedContent: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptedContent));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+};
 
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
 

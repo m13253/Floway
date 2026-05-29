@@ -11,6 +11,7 @@ const storedItem = (overrides: Partial<StoredResponsesItem> & Pick<StoredRespons
   upstreamId: null,
   upstreamItemId: null,
   itemType: 'message',
+  encryptedContentHash: null,
   payload: { item: { id: overrides.id, type: 'message', content: [{ type: 'output_text', text: overrides.id }] } },
   ...overrides,
 });
@@ -120,6 +121,7 @@ test('D1 responses items repo rejects malformed stored payload_json', async () =
     upstream_item_id: null,
     item_type: 'message',
     payload_json: '{bad json',
+    encrypted_content_hash: null,
     created_at: 1_000,
   });
 
@@ -202,6 +204,7 @@ test('migration 0022 creates the responses_items table and cleanup indexes', asy
   upstream_item_id TEXT,
   item_type TEXT NOT NULL,
   payload_json TEXT,
+  encrypted_content_hash TEXT,
   created_at INTEGER NOT NULL,
   CHECK (length(id) > 0),
   CHECK (length(item_type) > 0),
@@ -211,7 +214,7 @@ test('migration 0022 creates the responses_items table and cleanup indexes', asy
 
     assertEquals(
       sqlJsRows<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'responses_items' ORDER BY name").map(row => row.name),
-      ['idx_responses_items_api_key_id', 'idx_responses_items_created_at', 'idx_responses_items_id_scope'],
+      ['idx_responses_items_api_key_id', 'idx_responses_items_created_at', 'idx_responses_items_enc_hash', 'idx_responses_items_id_scope'],
     );
   } finally {
     db.close();
@@ -225,6 +228,7 @@ type FakeResponsesItemRow = {
   upstream_item_id: string | null;
   item_type: string;
   payload_json: string | null;
+  encrypted_content_hash: string | null;
   created_at: number;
 };
 
@@ -291,7 +295,7 @@ class FakeResponsesItemsD1Database implements D1Database {
   }
 
   insert(binds: unknown[]): void {
-    const [id, apiKeyId, upstreamId, upstreamItemId, itemType, payload, createdAt] = binds as [string, string | null, string | null, string | null, string, string | null, number];
+    const [id, apiKeyId, upstreamId, upstreamItemId, itemType, payload, encryptedContentHash, createdAt] = binds as [string, string | null, string | null, string | null, string, string | null, string | null, number];
     const existing = this.rows.find(row => row.id === id && row.api_key_id === apiKeyId);
     if (existing) return;  // mirrors d1.ts `ON CONFLICT DO NOTHING`
     this.rows.push({
@@ -301,15 +305,21 @@ class FakeResponsesItemsD1Database implements D1Database {
       upstream_item_id: upstreamItemId,
       item_type: itemType,
       payload_json: payload,
+      encrypted_content_hash: encryptedContentHash,
       created_at: createdAt,
     });
   }
 
-  lookup(_query: string, binds: unknown[]): FakeResponsesItemRow[] {
-    const [apiKeyId, ...ids] = binds as [string | null, ...string[]];
-    const idSet = new Set(ids);
-    const matches = this.rows.filter(row => idSet.has(row.id) && row.api_key_id === apiKeyId);
-    const order = new Map(ids.map((id, index) => [id, index]));
+  lookup(query: string, binds: unknown[]): FakeResponsesItemRow[] {
+    const [apiKeyId, ...keys] = binds as [string | null, ...string[]];
+    const wanted = new Set(keys);
+    if (query.includes('encrypted_content_hash IN')) {
+      return this.rows
+        .filter(row => row.api_key_id === apiKeyId && row.encrypted_content_hash !== null && wanted.has(row.encrypted_content_hash))
+        .map(row => ({ ...row }));
+    }
+    const matches = this.rows.filter(row => wanted.has(row.id) && row.api_key_id === apiKeyId);
+    const order = new Map(keys.map((id, index) => [id, index]));
     return matches.map(row => ({ ...row })).toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 

@@ -162,6 +162,10 @@ export interface StoredResponsesItem {
   upstreamItemId: string | null;
   itemType: string;
   payload: StoredResponsesItemPayload | null;
+  // sha256 of the item's `encrypted_content`, when it carries one (reasoning /
+  // compaction). Lets a later turn that echoes the blob without a gateway id
+  // recover this row's owning upstream for affinity routing.
+  encryptedContentHash: string | null;
   createdAt: number;
 }
 
@@ -176,6 +180,7 @@ export interface StoredResponsesItemPayload {
 
 export interface ResponsesItemsRepo {
   lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
   clearPayloadOlderThan(createdBefore: number): Promise<number>;
   deleteOlderThan(createdBefore: number): Promise<number>;

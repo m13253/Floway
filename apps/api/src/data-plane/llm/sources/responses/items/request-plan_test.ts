@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, isStoredResponsesItemId } from './format.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
 import {
   planResponsesItemProviders,
   prepareStoredResponsesItemsForSource,
@@ -79,6 +79,7 @@ const storedRow = (
     apiKeyId: API_KEY_ID,
     upstreamId: null,
     upstreamItemId: null,
+    encryptedContentHash: null,
     payload: payload === undefined || payload === null
       ? null
       : typeof payload === 'object' && Object.hasOwn(payload, 'item')
@@ -154,13 +155,12 @@ test('ordinary non-carrier strings are ignored', async () => {
   const prepared = await prepareResponsesItems(storedMessageId('ordinary-string'));
   const plan = planResponsesItemProviders([provider('up_a'), provider('up_b')], prepared);
 
-  assertEquals(prepared.useSites, []);
-  assertEquals([...prepared.rows.keys()], []);
+  assertEquals(prepared.references, []);
   assertEquals(plan.type, 'providers');
   if (plan.type === 'providers') assertEquals(plan.providers.map(item => item.upstream), ['up_a', 'up_b']);
 });
 
-test('duplicate stored ids use last occurrence order in the row map', async () => {
+test('duplicate stored ids dedupe preferred upstreams by last occurrence', async () => {
   const first = storedReasoningId('first');
   const second = storedReasoningId('second');
   await insertRows([
@@ -174,7 +174,7 @@ test('duplicate stored ids use last occurrence order in the row map', async () =
     { type: 'reasoning', id: first, summary: [{ type: 'summary_text', text: 'first-new' }] },
   ]);
 
-  assertEquals([...prepared.rows.keys()], [second, first]);
+  assertEquals([...prepared.preferredUpstreamIds], ['up_b', 'up_a']);
 });
 
 test('mixed portable upstreams are ordered by reverse last occurrence before remaining providers', async () => {
@@ -473,4 +473,63 @@ test('metadata-only item_reference rejects when the origin upstream does not sup
     assertEquals(plan.diagnostic.status, 404);
     assertEquals(plan.diagnostic.body.error.message, `Item with id '${id}' not found.`);
   }
+});
+
+test('id-less reasoning is matched by encrypted_content hash and prefers its owning upstream', async () => {
+  const enc = 'enc-reasoning-blob';
+  const hash = await hashResponsesItemEncryptedContent(enc);
+  await insertRows([
+    storedRow({ id: storedReasoningId('owned'), itemType: 'reasoning', upstreamId: 'up_a', upstreamItemId: 'raw_rs_a', encryptedContentHash: hash, payload: null }),
+  ]);
+
+  const items = [{ type: 'reasoning', summary: [], encrypted_content: enc }] as unknown as ResponseInputItem[];
+  const prepared = await prepareResponsesItems(items);
+  const plan = planResponsesItemProviders([provider('up_b'), provider('up_a')], prepared);
+
+  assertEquals(plan.type, 'providers');
+  if (plan.type === 'providers') assertEquals(plan.providers.map(item => item.upstream), ['up_a', 'up_b']);
+
+  // Routed to the owner: resolved to its stored row and stamped with the
+  // upstream's own item id, the same as an id-bearing reference.
+  assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), [{ type: 'reasoning', summary: [], encrypted_content: enc, id: 'raw_rs_a' }]);
+  // Routed elsewhere (owner unavailable): the blob would not verify, so the
+  // reasoning item is dropped rather than carried.
+  assertEquals(await rewriteResponsesItems(items, prepared, provider('up_b')), []);
+});
+
+test('id-less compaction is matched by encrypted_content hash and forces its owning upstream', async () => {
+  const enc = 'enc-compaction-blob';
+  const hash = await hashResponsesItemEncryptedContent(enc);
+  await insertRows([
+    storedRow({ id: storedCompactionId('owned'), itemType: 'compaction', upstreamId: 'up_a', upstreamItemId: 'raw_cmp_a', encryptedContentHash: hash, payload: null }),
+  ]);
+
+  const items = [{ type: 'compaction', encrypted_content: enc }] as unknown as ResponseInputItem[];
+  const prepared = await prepareResponsesItems(items);
+
+  const plan = planResponsesItemProviders([provider('up_b'), provider('up_a')], prepared);
+  assertEquals(plan.type, 'providers');
+  if (plan.type === 'providers') assertEquals(plan.providers.map(item => item.upstream), ['up_a']);
+
+  const gone = planResponsesItemProviders([provider('up_b')], prepared);
+  assertEquals(gone.type, 'error');
+  if (gone.type === 'error') assertEquals(gone.diagnostic.kind, 'routing_unavailable');
+
+  // At the forced owner the compaction is stamped with the upstream's item id.
+  assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), [{ type: 'compaction', encrypted_content: enc, id: 'raw_cmp_a' }]);
+});
+
+test('id-less encrypted_content with no stored match is a benign passthrough', async () => {
+  await insertRows([]);
+  const items = [{ type: 'reasoning', summary: [], encrypted_content: 'never-stored' }] as unknown as ResponseInputItem[];
+  const prepared = await prepareResponsesItems(items);
+
+  assertEquals(prepared.diagnostics, []);
+  assertEquals(prepared.references, [{ type: 'reasoning', encryptedContent: 'never-stored' }]);
+
+  const plan = planResponsesItemProviders([provider('up_a'), provider('up_b')], prepared);
+  assertEquals(plan.type, 'providers');
+  if (plan.type === 'providers') assertEquals(plan.providers.map(item => item.upstream), ['up_a', 'up_b']);
+
+  assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), items);
 });
