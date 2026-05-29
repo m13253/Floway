@@ -96,7 +96,7 @@ export const serveChatCompletions = async (c: Context): Promise<Response> => {
       const rawResult = await runInterceptors(invocation, request, [...chatCompletionsSourceInterceptors, ...(binding.sourceInterceptors?.chatCompletions ?? [])], () =>
         emits[target](invocation.payload, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
       if (rawResult.type === 'events') {
-        const stored = storeResponsesOutputItems(rawResult.events, chatCompletionsViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: undefined }, request, wantsStream);
+        const stored = storeResponsesOutputItems(rawResult.events, chatCompletionsViaResponsesItemsView, { targetApi: invocation.targetApi, upstream: invocation.upstream, store: invocation.payload.store }, request, wantsStream);
         result = { ...rawResult, events: stored.events };
         commitStoredItems = stored.commit;
       } else {
