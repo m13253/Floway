@@ -12,10 +12,12 @@ import {
   type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
+  type MessagesToolResultContentBlock,
   type MessagesUserContentBlock,
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
 import type {
+  ResponseInputContent,
   ResponseInputImage,
   ResponseInputItem,
   ResponseInputMessage,
@@ -77,6 +79,25 @@ const translateUserMessage = async (message: ResponseInputMessage, loadRemoteIma
   }
 
   return { role: 'user', content: content.length > 0 ? content : '' };
+};
+
+// Multimodal `function_call_output` outputs carry the same content parts as a
+// user message; map them to Messages tool_result blocks (which natively carry
+// image blocks) rather than flattening images away.
+const translateToolOutput = async (output: string | ResponseInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | MessagesToolResultContentBlock[]> => {
+  if (typeof output === 'string') return output;
+
+  const blocks: MessagesToolResultContentBlock[] = [];
+  for (const part of output) {
+    if (part.type === 'input_image') {
+      const image = await resolveImageUrlToMessagesImage(part.image_url, loadRemoteImage);
+      if (image) blocks.push(image);
+    } else {
+      blocks.push({ type: 'text', text: part.text });
+    }
+  }
+
+  return blocks.length > 0 ? blocks : '';
 };
 
 const translateAssistantMessage = (message: ResponseInputMessage): MessagesAssistantMessage => {
@@ -155,7 +176,7 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
-        content: item.output,
+        content: await translateToolOutput(item.output, loadRemoteImage),
         is_error: item.status === 'incomplete' ? true : undefined,
       });
       break;

@@ -42,5 +42,22 @@
       "database_id": "<YOUR_D1_DATABASE_ID>",
       "migrations_dir": "apps/api/migrations"
     }
+  ],
+  // Cloudflare Images binding. Inline base64 images on the Copilot egress are
+  // recompressed to WebP through this binding before the upstream call. No
+  // account-specific id is required; the binding name is all the Worker needs.
+  "images": {
+    "binding": "IMAGES"
+  },
+  // KV namespace caching the compressed WebP results. The Images binding bills
+  // every transformation and does not deduplicate, so this cache turns a
+  // repeated inline image (e.g. resent across conversation turns) into a single
+  // KV read. Run `pnpm wrangler kv namespace create <name>` and paste the
+  // returned id below.
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "<YOUR_KV_NAMESPACE_ID>"
+    }
   ]
 }
