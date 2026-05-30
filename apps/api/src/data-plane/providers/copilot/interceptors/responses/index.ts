@@ -3,6 +3,7 @@
 // need to know which provider kind is running.
 
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
+import { withStoreForcedFalse } from './force-store-false.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withImageGenerationStripped } from './strip-image-generation.ts';
@@ -20,6 +21,7 @@ export const responsesCopilotInterceptors = [
   withSafetyIdentifierStripped,
   withServiceTierStripped,
   withImageGenerationStripped,
+  withStoreForcedFalse,
   withOutputItemIdsSynchronized,
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,
