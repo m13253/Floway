@@ -1,8 +1,30 @@
 import { test } from 'vitest';
 
-import { sweepExpiredResponsesItemPayloadFiles } from './responses-payload.ts';
+import { parseStoredResponsesPayload, serializeStoredResponsesPayload, sweepExpiredResponsesItemPayloadFiles } from './responses-payload.ts';
 import { initFileProvider, MemoryFileProvider } from '../runtime/file-provider.ts';
 import { assertEquals } from '../test-assert.ts';
+
+test('the reserved private payload field round-trips through both inline and file storage', async () => {
+  initFileProvider(new MemoryFileProvider());
+
+  const inline = await serializeStoredResponsesPayload('msg_inline', null, 0, {
+    item: { type: 'web_search_call', id: 'ws_x' },
+    private: { results: [{ url: 'https://example.test', title: 'kept' }] },
+  });
+  assertEquals(await parseStoredResponsesPayload('msg_inline', inline), {
+    item: { type: 'web_search_call', id: 'ws_x' },
+    private: { results: [{ url: 'https://example.test', title: 'kept' }] },
+  });
+
+  // A payload past the inline limit spills its body to the file provider; the
+  // private slot must survive that path too.
+  const spilled = await serializeStoredResponsesPayload('msg_spilled', null, 0, {
+    item: { type: 'message', id: 'msg_big', content: 'x'.repeat(600 * 1024) },
+    private: { results: 'preserved' },
+  });
+  const parsed = await parseStoredResponsesPayload('msg_spilled', spilled);
+  assertEquals(parsed?.private, { results: 'preserved' });
+});
 
 test('sweepExpiredResponsesItemPayloadFiles deletes every elapsed hour bucket and leaves the current and future buckets intact', async () => {
   const files = new MemoryFileProvider();

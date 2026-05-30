@@ -176,10 +176,11 @@ export interface StoredResponsesItem {
 
 export interface StoredResponsesItemPayload {
   item: unknown;
-  // TODO: drop or wire up. Reserved as a place to stash provider-specific
-  // ancillary state (e.g. opaque cache hints) alongside the public item
-  // body, but no read or write path uses it today. Decide before the next
-  // public release.
+  // Ancillary state stashed alongside the public `item` body but never sent on
+  // the wire: a server-only slot to preserve data a stateless client strips
+  // from the echoed item (e.g. the real `web_search_call` results) so a later
+  // turn can restore it on replay. Persisted and round-tripped verbatim; not
+  // yet populated by any producer.
   private?: unknown;
 }
 
