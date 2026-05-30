@@ -80,17 +80,7 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
       for (const upstreamModel of providedModels) {
         if (!upstreamModel.id) continue;
         if (disabled.has(upstreamModel.id)) continue;
-        const record: ProviderModelRecord = {
-          upstream: instance.upstream,
-          upstreamName: instance.name,
-          providerKind: instance.providerKind,
-          provider: instance.provider,
-          upstreamModel,
-          enabledFlags: upstreamModel.enabledFlags,
-          supportsResponsesItemReference: instance.supportsResponsesItemReference,
-          sourceInterceptors: instance.sourceInterceptors,
-          targetInterceptors: instance.targetInterceptors,
-        };
+        const record = providerModelRecord(instance, upstreamModel);
         const existing = byId.get(upstreamModel.id);
         if (!existing) {
           byId.set(upstreamModel.id, resolvedFromUpstreamModel(upstreamModel, record));

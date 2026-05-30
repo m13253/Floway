@@ -1,3 +1,4 @@
+import { parseToolArgumentsObject } from '../messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock, unpackReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionChunk, ChatReasoningItem, Message as ChatMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -512,7 +513,7 @@ const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): Message
     return text ? { type: 'text', text } : null;
   }
   case 'function_call':
-    return { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolInput(item.arguments) };
+    return { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArgumentsObject(item.arguments) };
   case 'custom_tool_call':
     return { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } };
   default:
@@ -526,15 +527,6 @@ const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'mes
     .filter((part): part is Extract<typeof part, { text: string }> => 'text' in part)
     .map(part => part.text)
     .join('');
-};
-
-const parseToolInput = (argumentsJson: string): Record<string, unknown> => {
-  try {
-    const parsed = JSON.parse(argumentsJson) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
 };
 
 const itemId = (item: { id?: unknown }): string | null => {
