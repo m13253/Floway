@@ -1,3 +1,4 @@
+import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
@@ -8,6 +9,8 @@ import type { ResponsesInterceptor } from '../../../interceptors.ts';
 // binding; each interceptor's body decides whether to act (flag-gated entries
 // early-return on `ctx.enabledFlags.has(flagId)`).
 //
+//   - withReasoningEncryptedContentCanonicalized: registered first so it pins
+//     the final (post-retry) event stream's encrypted_content.
 //   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`. Emits the gateway's canonical
@@ -18,6 +21,7 @@ import type { ResponsesInterceptor } from '../../../interceptors.ts';
 //     mutually exclusive in practice, but the interceptors are independent
 //     and run in declared order if more than one is somehow enabled.
 export const responsesBaseInterceptors: readonly ResponsesInterceptor[] = [
+  withReasoningEncryptedContentCanonicalized,
   withCyberPolicyRetried,
   withReasoningDisabledOnForcedToolChoice,
   withVendorDeepseekResponsesNormalize,
