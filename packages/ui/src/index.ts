@@ -12,6 +12,7 @@ export { default as Select } from './Select.vue';
 export { default as Sortable } from './Sortable.vue';
 export { default as Spinner } from './Spinner.vue';
 export { default as Switch } from './Switch.vue';
+export { default as TagCombobox } from './TagCombobox.vue';
 export { default as Tabs } from './Tabs.vue';
 export { default as Textarea } from './Textarea.vue';
 export { default as Tooltip } from './Tooltip.vue';

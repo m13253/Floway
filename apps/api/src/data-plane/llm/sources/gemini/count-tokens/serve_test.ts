@@ -164,6 +164,7 @@ test('/v1beta/models/:model:countTokens rejects custom-upstream-only models', as
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
@@ -218,6 +219,7 @@ test('/v1beta/models/:model:countTokens preserves custom upstream /models HTTP e
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

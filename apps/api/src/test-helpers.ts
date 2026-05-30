@@ -2,6 +2,8 @@ import { app } from './app.ts';
 import { clearModelsStore } from './data-plane/providers/models-store.ts';
 import type { ModelProvider, UpstreamModel } from './data-plane/providers/types.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
+import { initImageProcessor } from './image/index.ts';
+import { createInMemoryImageProcessor } from './image/memory.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey, TelemetryModelIdentity, UpstreamRecord } from './repo/types.ts';
@@ -66,6 +68,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     createdAt: TEST_UPSTREAM_TIMESTAMP,
     updatedAt: TEST_UPSTREAM_TIMESTAMP,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -88,6 +91,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     createdAt: TEST_UPSTREAM_TIMESTAMP,
     updatedAt: TEST_UPSTREAM_TIMESTAMP,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -97,6 +101,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   const repo = new InMemoryRepo();
   initRepo(repo);
   initFileProvider(new MemoryFileProvider());
+  initImageProcessor(createInMemoryImageProcessor());
 
   const adminKey = options.adminKey ?? 'admin-test-key';
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));

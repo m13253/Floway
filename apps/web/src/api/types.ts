@@ -81,6 +81,10 @@ export interface UpstreamRecord {
   created_at: string;
   updated_at: string;
   flag_overrides: Record<string, boolean>;
+  // Public model ids switched off for this upstream. Hidden from the catalog and
+  // unroutable, but their per-model metadata stays editable. May include ids no
+  // longer present in the live model list.
+  disabled_public_model_ids: string[];
   config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig;
 }
 

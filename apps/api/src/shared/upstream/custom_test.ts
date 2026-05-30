@@ -19,6 +19,7 @@ const baseRecord: UpstreamRecord = {
     supportedEndpoints: ['/chat/completions'],
   },
   flagOverrides: {},
+  disabledPublicModelIds: [],
 };
 
 test('createCustomUpstream uses default /v1/* paths', async () => {

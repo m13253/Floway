@@ -34,6 +34,7 @@ const provider = (upstream: string, supportsResponsesItemReference = true): Mode
     provider: modelProvider,
     upstreamModel,
     enabledFlags: upstreamModel.enabledFlags,
+    disabledPublicModelIds: [],
     supportsResponsesItemReference,
   };
 };

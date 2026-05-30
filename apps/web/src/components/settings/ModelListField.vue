@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Card, cn, Input, OverlayScrollbars, Select, Switch } from '@floway-dev/ui';
+import { Button, Card, cn, Input, OverlayScrollbars, Select, Switch, TagCombobox } from '@floway-dev/ui';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-json.js';
 import { computed, reactive, ref, useTemplateRef, watch } from 'vue';
@@ -12,6 +12,12 @@ import FlagOverridesEditor from './FlagOverridesEditor.vue';
 // live from a fresh /models result and never serialized. A manual entry whose
 // upstreamModelId matches an auto entry overrides (hides) that auto twin.
 const models = defineModel<UpstreamModelConfig[]>({ required: true });
+
+// Public model ids switched off for this upstream, shared with the per-row
+// disable toggles and the combobox below. Lives at the upstream level (passed
+// through from the dialog) because the disable is orthogonal to the manual
+// model list this field otherwise edits.
+const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 
 const props = withDefaults(defineProps<{
   allManual: boolean;
@@ -227,6 +233,42 @@ const titleFor = (row: Row): string => {
 const configOf = (row: Row): UpstreamModelConfig => row.kind === 'manual' ? row.config : row.auto;
 const isEditable = (row: Row): row is Extract<Row, { kind: 'manual' }> => row.kind === 'manual';
 
+// The public catalog id a row is exposed (and disabled) under: an explicit
+// publicModelId override when set, otherwise the upstream id. Mirrors the
+// backend publicModelId() so the toggle and the combobox key on the same id the
+// data plane filters by.
+const publicIdOf = (row: Row): string => {
+  const c = configOf(row);
+  const configured = c.publicModelId?.trim();
+  return configured && configured.length > 0 ? configured : c.upstreamModelId;
+};
+
+const isDisabled = (id: string): boolean => disabledIds.value.includes(id);
+const setDisabled = (id: string, disabled: boolean) => {
+  if (id === '') return;
+  if (disabled) {
+    if (!disabledIds.value.includes(id)) disabledIds.value = [...disabledIds.value, id];
+  } else {
+    disabledIds.value = disabledIds.value.filter(existing => existing !== id);
+  }
+};
+
+// Autocomplete suggestions for the disabled-models combobox: the public id of
+// every model currently in the list. This field shows and matches public ids
+// only; it additionally accepts arbitrary ids, which is how orphaned disabled
+// entries (no longer in the list) are managed.
+const disabledComboboxItems = computed(() => {
+  const seen = new Set<string>();
+  const items: { value: string; label: string }[] = [];
+  for (const row of rows.value) {
+    const id = publicIdOf(row);
+    if (id === '' || seen.has(id)) continue;
+    seen.add(id);
+    items.push({ value: id, label: id });
+  }
+  return items;
+});
+
 // A row's upstreamModelId becomes readonly once it was seeded from an auto twin:
 // it must keep matching the upstream id so the data-plane filter that hides the
 // auto duplicate keeps working. Pure hand-added rows have no such constraint.
@@ -363,6 +405,14 @@ const syncJsonScroll = (event: Event) => {
       <div class="space-y-2 pr-1">
       <Card v-for="row in rows" :key="row.uiId" :padded="false" class="overflow-hidden" :class="row.kind === 'auto' && 'bg-surface-800/30'">
         <header class="flex items-center justify-between gap-2 px-3 py-2">
+          <Switch
+            :model-value="!isDisabled(publicIdOf(row))"
+            :disabled="publicIdOf(row) === ''"
+            size="sm"
+            class="shrink-0"
+            :aria-label="`Enable ${titleFor(row)}`"
+            @update:model-value="on => setDisabled(publicIdOf(row), !on)"
+          />
           <button
             type="button"
             class="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
@@ -525,6 +575,17 @@ const syncJsonScroll = (event: Event) => {
       </div>
       <p v-if="jsonError" class="border-t border-accent-rose/20 px-3 py-2 text-xs text-accent-rose">{{ jsonError }}</p>
       <p class="border-t border-white/[0.06] px-3 py-2 text-xs text-gray-500">Manual (overridden) models only. Auto models are resolved live and never serialized.</p>
+    </div>
+
+    <div class="mt-3 space-y-1.5">
+      <p class="text-xs font-medium text-gray-500">Disabled models</p>
+      <TagCombobox
+        v-model="disabledIds"
+        :items="disabledComboboxItems"
+        placeholder="Search models, or type an id to disable"
+        empty-text="Type a model id and press Enter to disable it"
+      />
+      <p class="text-[11px] text-gray-600">Disabled models are hidden from the catalog and cannot be routed to. Toggle a row above, or remove an entry here.</p>
     </div>
   </div>
 </template>

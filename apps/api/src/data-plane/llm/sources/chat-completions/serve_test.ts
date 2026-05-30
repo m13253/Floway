@@ -540,6 +540,7 @@ test('/v1/chat/completions plans per provider without letting a later native pro
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://chat.example.com',
       bearerToken: 'sk-chat',
@@ -1953,6 +1954,7 @@ test('/v1/chat/completions preserves custom upstream /models HTTP errors', async
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

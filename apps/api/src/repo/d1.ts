@@ -1,3 +1,4 @@
+import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
 import type {
@@ -789,14 +790,14 @@ class D1UpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -807,7 +808,7 @@ class D1UpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -815,7 +816,8 @@ class D1UpstreamRepo implements UpstreamRepo {
            sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
            config_json = excluded.config_json,
-           flag_overrides = excluded.flag_overrides`,
+           flag_overrides = excluded.flag_overrides,
+           disabled_public_model_ids = excluded.disabled_public_model_ids`,
       )
       .bind(
         upstream.id,
@@ -827,6 +829,7 @@ class D1UpstreamRepo implements UpstreamRepo {
         upstream.updatedAt,
         serializeStoredConfig(upstream.config),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
       )
       .run();
   }
@@ -851,6 +854,7 @@ interface UpstreamRow {
   updated_at: string;
   config_json: string;
   flag_overrides: string;
+  disabled_public_model_ids: string;
 }
 
 function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
@@ -871,6 +875,7 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     updatedAt: row.updated_at,
     config,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
+    disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
   };
 }
 
@@ -898,6 +903,24 @@ const parseFlagOverrides = (id: string, json: string): Record<string, boolean> =
     out[k] = v;
   }
   return normalizeFlagOverrides(out);
+};
+
+const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (cause) {
+    throw new Error(`Malformed upstream disabled_public_model_ids JSON for ${id}`, { cause });
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Upstream ${id} disabled_public_model_ids must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
+  }
+  for (const entry of parsed) {
+    if (typeof entry !== 'string') {
+      throw new Error(`Upstream ${id} disabled_public_model_ids entries must be strings, got ${typeof entry}`);
+    }
+  }
+  return normalizeDisabledPublicModelIds(parsed as string[]);
 };
 
 export class D1Repo implements Repo {

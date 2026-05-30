@@ -19,6 +19,7 @@
 import { z } from 'zod';
 
 import { OPTIONAL_FLAGS, parseFlagOverridesWire } from '../data-plane/providers/flags.ts';
+import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 
 // --- shared atoms ---
 
@@ -41,6 +42,12 @@ const flagOverrideValuesSchema = z.record(z.string(), z.boolean()).refine(
   overrides => Object.keys(overrides).every(id => knownFlagIds.has(id)),
   'Unknown flag id in model flag overrides',
 );
+
+// Like flag_overrides, the disabled-models field normalizes at the API edge so a
+// create/update response echoes exactly what gets persisted (trimmed, de-duped).
+// There is no id allowlist to enforce — any string is a legal public model id —
+// so this only trims and de-dupes rather than rejecting unknown ids.
+const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisabledPublicModelIds);
 
 // Mirrors the runtime UpstreamModelConfig in shared/upstream/model-config.ts.
 // Azure and custom upstreams share this per-model entry; the canonical
@@ -139,6 +146,7 @@ const upstreamBaseFields = {
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
+  disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
 };
 
 // Create accepts a discriminated union on `provider` so frontends get
@@ -167,6 +175,7 @@ export const updateUpstreamBody = z.object({
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
+  disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   config: z.unknown().optional(),
 });
 

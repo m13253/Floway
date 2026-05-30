@@ -19,6 +19,7 @@ import ModelListField from './ModelListField.vue';
 type PathKey = 'chat_completions' | 'responses' | 'messages' | 'embeddings' | 'images_generations' | 'images_edits';
 
 const draft = defineModel<CustomDraft>({ required: true });
+const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 
 const props = defineProps<{
   bearerTokenSet: boolean;
@@ -281,6 +282,7 @@ onMounted(() => {
 
     <ModelListField
       v-model="draft.models"
+      v-model:disabled-ids="disabledIds"
       :all-manual="false"
       upstream-id-label="Upstream Model ID"
       flag-provider-kind="custom"

@@ -113,6 +113,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
       ],
     },
     flagOverrides: {},
+    disabledPublicModelIds: [],
   });
   await repo.upstreams.save(buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
@@ -306,6 +307,63 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
   // Subset, reverse order, with the planner's fallback head explicitly chosen.
   const providers = await listModelProviders(['up_c', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_c', 'up_a']);
+});
+
+test('disabledPublicModelIds hides models from the catalog and routing, per upstream', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const azureUpstream = (over: { id: string; sortOrder: number; models: { upstreamModelId: string; publicModelId?: string }[]; disabledPublicModelIds: string[] }) => ({
+    id: over.id,
+    provider: 'azure' as const,
+    name: over.id,
+    enabled: true,
+    sortOrder: over.sortOrder,
+    createdAt: '2026-05-21T00:00:00.000Z',
+    updatedAt: '2026-05-21T00:00:00.000Z',
+    config: {
+      endpoint: 'https://example.openai.azure.com',
+      apiKey: 'az-key',
+      models: over.models.map(m => ({ ...m, supportedEndpoints: ['/chat/completions'] })),
+    },
+    flagOverrides: {},
+    disabledPublicModelIds: over.disabledPublicModelIds,
+  });
+
+  // up_a disables a solo model and a shared one (by public id, including a
+  // publicModelId override); up_b still serves the shared id, enabled.
+  await repo.upstreams.save(azureUpstream({
+    id: 'up_a',
+    sortOrder: 1,
+    models: [
+      { upstreamModelId: 'gpt-keep' },
+      { upstreamModelId: 'gpt-solo' },
+      { upstreamModelId: 'gpt-shared' },
+      { upstreamModelId: 'dep-x', publicModelId: 'gpt-override' },
+    ],
+    disabledPublicModelIds: ['gpt-solo', 'gpt-shared', 'gpt-override'],
+  }));
+  await repo.upstreams.save(azureUpstream({
+    id: 'up_b',
+    sortOrder: 2,
+    models: [{ upstreamModelId: 'gpt-shared' }],
+    disabledPublicModelIds: [],
+  }));
+
+  const catalog = await getInternalModels();
+  assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
+
+  // The solo and override ids resolve to nothing (hidden + unroutable).
+  assertEquals((await resolveModelForRequest('gpt-solo')).model, undefined);
+  assertEquals((await resolveModelForRequest('gpt-override')).model, undefined);
+
+  // The shared id survives because up_b allows it; only up_b binds it.
+  const shared = await resolveModelForRequest('gpt-shared');
+  assertEquals(shared.model?.providers.map(({ upstream }) => upstream), ['up_b']);
+
+  // The untouched model still routes from up_a.
+  const keep = await resolveModelForRequest('gpt-keep');
+  assertEquals(keep.model?.providers.map(({ upstream }) => upstream), ['up_a']);
 });
 
 test('listModelProviders drops stale ids (deleted or disabled upstreams) from a whitelist', async () => {

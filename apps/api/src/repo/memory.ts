@@ -1,5 +1,6 @@
 // In-memory repository implementation for testing
 
+import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import type {
   ApiKey,
@@ -397,6 +398,7 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   ...upstream,
   config: structuredClone(upstream.config),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
+  disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
 });
 
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {

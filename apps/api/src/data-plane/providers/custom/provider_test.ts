@@ -15,6 +15,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   flagOverrides: {},
+  disabledPublicModelIds: [],
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',

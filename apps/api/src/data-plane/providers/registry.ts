@@ -72,8 +72,14 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
     try {
       const providedModels = await instance.provider.getProvidedModels();
       sawSuccess = true;
+      // Operator-disabled public model ids vanish entirely for this upstream:
+      // dropped before they reach the catalog map, so they appear in no /models
+      // listing and resolve to nothing for routing. The disable is per-upstream,
+      // so the same id can still surface from another upstream that allows it.
+      const disabled = new Set(instance.disabledPublicModelIds);
       for (const upstreamModel of providedModels) {
         if (!upstreamModel.id) continue;
+        if (disabled.has(upstreamModel.id)) continue;
         const record: ProviderModelRecord = {
           upstream: instance.upstream,
           upstreamName: instance.name,

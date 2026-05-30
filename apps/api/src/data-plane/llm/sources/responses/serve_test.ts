@@ -1773,6 +1773,7 @@ test('/v1/responses preserves custom upstream /models HTTP errors', async () => 
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

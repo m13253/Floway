@@ -1776,6 +1776,7 @@ test('/v1/messages routes Azure Responses-only models through OpenAI v1 Response
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-key',
@@ -2362,6 +2363,7 @@ test('/v1/messages preserves cache_control.scope for custom Messages providers',
     name: 'Messages Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages.example.com',
       bearerToken: 'sk-messages',
@@ -2461,6 +2463,7 @@ test('/v1/messages forwards native web search unchanged to custom Messages provi
     name: 'Messages Native Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages-native-search.example.com',
       bearerToken: 'sk-messages',
@@ -2541,6 +2544,7 @@ test('/v1/messages applies native web search shim to custom Messages providers w
     name: 'Messages Shimmed Search Provider',
     sortOrder: 100,
     flagOverrides: { 'messages-web-search-shim': true },
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages-shimmed-search.example.com',
       bearerToken: 'sk-messages',
@@ -2630,6 +2634,7 @@ test('/v1/messages applies native web search shim to custom Responses targets', 
     name: 'Responses Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://responses-search.example.com',
       bearerToken: 'sk-responses',
@@ -2740,6 +2745,7 @@ test('/v1/messages applies native web search shim to custom Chat Completions tar
     name: 'Chat Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://chat-search.example.com',
       bearerToken: 'sk-chat',
@@ -3663,6 +3669,7 @@ test('/v1/messages rejects embedding-only custom upstream model instead of legac
     name: 'Embedding Only',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
@@ -3716,6 +3723,7 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
     name: 'Custom Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

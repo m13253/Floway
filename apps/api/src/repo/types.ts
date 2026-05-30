@@ -145,6 +145,11 @@ export interface UpstreamRecord {
   updatedAt: string;
   config: unknown;
   flagOverrides: Record<string, boolean>;
+  // Public model ids the operator switched off for this upstream. Orthogonal to
+  // every per-model metadata field and uniform across provider kinds: a disabled
+  // id is hidden from the catalog and unroutable, but its row metadata stays
+  // editable. Entries may reference ids no longer present in the live model list.
+  disabledPublicModelIds: string[];
 }
 
 export interface UpstreamRepo {

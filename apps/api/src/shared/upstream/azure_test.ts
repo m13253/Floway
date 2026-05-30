@@ -24,6 +24,7 @@ const baseRecord: UpstreamRecord = {
     ],
   },
   flagOverrides: {},
+  disabledPublicModelIds: [],
 };
 
 test('createAzureUpstream uses Azure OpenAI v1 paths with api-key auth', async () => {

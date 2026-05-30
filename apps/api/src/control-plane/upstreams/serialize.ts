@@ -9,6 +9,7 @@ export interface SerializedUpstreamRecord {
   created_at: string;
   updated_at: string;
   flag_overrides: Record<string, boolean>;
+  disabled_public_model_ids: string[];
   config: unknown;
 }
 
@@ -60,6 +61,7 @@ const serializeBase = (upstream: UpstreamRecord, config: unknown): SerializedUps
   created_at: upstream.createdAt,
   updated_at: upstream.updatedAt,
   flag_overrides: { ...upstream.flagOverrides },
+  disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   config,
 });
 

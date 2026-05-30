@@ -162,10 +162,13 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
 
       if (item.type === 'function_call_output') {
         flushAssistant();
+        // FIXME: a multimodal function_call_output becomes a tool-role message
+        // with image_url content parts. Verify GitHub Copilot's chat upstream
+        // accepts image content on tool messages before relying on this path.
         messages.push({
           role: 'tool',
           tool_call_id: item.call_id,
-          content: item.output,
+          content: responsesContentToChatContent(item.output),
         });
         continue;
       }

@@ -15,6 +15,7 @@ const custom: UpstreamRecord = {
   createdAt: timestamp,
   updatedAt: timestamp,
   flagOverrides: { 'vendor-deepseek': true },
+  disabledPublicModelIds: [],
   config: {
     baseUrl: 'https://api.example.com',
     bearerToken: 'sk-secret-token-12345',

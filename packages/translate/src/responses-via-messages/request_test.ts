@@ -389,6 +389,43 @@ test('translateResponsesToMessages keeps plain-text function_call_output as stri
   assertEquals(toolResult.content, 'plain text body');
 });
 
+test('translateResponsesToMessages maps multimodal function_call_output into tool_result image and text blocks', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [
+      { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
+      {
+        type: 'function_call_output',
+        call_id: 'call_1',
+        output: [
+          { type: 'input_text', text: 'captured' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: 'high' },
+        ],
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  const userMessage = result.target.messages[1];
+  assert(userMessage.role === 'user');
+  assert(Array.isArray(userMessage.content));
+  const toolResult = userMessage.content[0];
+  assert(toolResult.type === 'tool_result');
+  assertEquals(toolResult.content, [
+    { type: 'text', text: 'captured' },
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AQID' } },
+  ]);
+});
+
 test('translateResponsesToMessages throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
   // The Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this

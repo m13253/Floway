@@ -1,6 +1,8 @@
 import type { ExecutionContext } from 'hono';
 
 import { app } from './src/app.ts';
+import { createCloudflareImageProcessor, type ImagesBinding } from './src/image/cloudflare.ts';
+import { initImageProcessor } from './src/image/index.ts';
 import { type D1Database, D1Repo } from './src/repo/d1.ts';
 import { getRepo, initRepo } from './src/repo/index.ts';
 import { RESPONSES_ITEM_PAYLOAD_TTL_MS, sweepExpiredResponsesItemPayloadFiles } from './src/repo/responses-payload.ts';
@@ -15,9 +17,18 @@ const HOUR_MS = 60 * 60 * 1000;
 
 const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
 
+// Raw Cloudflare KV binding shape (its `put` takes an options object). We adapt
+// it to the image cache's contract, which requires an explicit positional TTL.
+interface KvNamespace {
+  get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>;
+  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: { expirationTtl?: number }): Promise<void>;
+}
+
 interface Env {
   DB: D1Database;
   FILES: R2BucketLike;
+  IMAGES: ImagesBinding;
+  KV: KvNamespace;
   [key: string]: unknown;
 }
 
@@ -25,6 +36,12 @@ const initRuntime = (env: Env): void => {
   initEnv(n => (env[n] as string) ?? '');
   initRepo(new D1Repo(env.DB));
   initFileProvider(new R2FileProvider(env.FILES));
+  initImageProcessor(
+    createCloudflareImageProcessor(env.IMAGES, {
+      get: (key, type) => env.KV.get(key, type),
+      put: (key, value, expirationTtl) => env.KV.put(key, value, { expirationTtl }),
+    }),
+  );
 };
 
 export default {

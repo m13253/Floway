@@ -86,6 +86,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     upstream: azure.id,
     providerKind: 'azure',
     name: azure.name,
+    disabledPublicModelIds: azure.disabledPublicModelIds,
     provider,
     supportsResponsesItemReference: true,
   };

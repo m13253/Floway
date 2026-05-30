@@ -166,6 +166,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -311,6 +312,7 @@ test('POST /api/upstreams/fetch-models substitutes the stored secret when the to
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: { ...customConfig, bearerToken: 'sk-stored-secret' },
   });
 

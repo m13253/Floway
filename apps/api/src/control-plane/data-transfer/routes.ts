@@ -7,6 +7,7 @@ import { invalidateModelsStore } from '../../data-plane/providers/models-store.t
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
+import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, PerformanceApiName, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UpstreamProviderKind, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { isCopilotAccountType } from '../../shared/copilot.ts';
@@ -116,6 +117,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         createdAt: nonEmptyString(item.created_at, 'created_at'),
         updatedAt: nonEmptyString(item.updated_at, 'updated_at'),
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
+        disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         config: item.config,
       };
       records.push({ ...record, config: normalizeUpstreamConfig(record) });

@@ -150,6 +150,7 @@ test('/v1/messages/count_tokens proxies to Azure Foundry Anthropic endpoint', as
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.services.ai.azure.com/anthropic',
       apiKey: 'az-key',
@@ -213,6 +214,7 @@ test('/v1/messages/count_tokens rewrites stored Responses reasoning signatures b
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://count.services.ai.azure.com/anthropic',
       apiKey: 'az-count',
@@ -353,6 +355,7 @@ test('/v1/messages/count_tokens rejects custom-upstream-only models', async () =
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
@@ -408,6 +411,7 @@ test('/v1/messages/count_tokens preserves custom upstream /models HTTP errors', 
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

@@ -63,6 +63,7 @@ const enabled = ref(true);
 // form anymore.
 const sortOrder = ref<number>(0);
 const flagOverrides = ref<Record<string, boolean>>({});
+const disabledPublicModelIds = ref<string[]>([]);
 const flagsOpen = ref(false);
 const custom = ref<CustomDraft>({ baseUrl: '', authStyle: 'bearer', supportedEndpoints: ['/chat/completions'], bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] });
 const azure = ref<AzureDraft>({ endpoint: '', apiKey: '', models: [blankAzureModel()] });
@@ -109,6 +110,7 @@ const reset = () => {
     enabled.value = r.enabled;
     sortOrder.value = r.sort_order;
     flagOverrides.value = { ...r.flag_overrides };
+    disabledPublicModelIds.value = [...r.disabled_public_model_ids];
 
     if (r.provider === 'custom') {
       const cfg = r.config as CustomUpstreamConfig;
@@ -142,6 +144,7 @@ const reset = () => {
     enabled.value = true;
     sortOrder.value = props.nextSortOrder;
     flagOverrides.value = {};
+    disabledPublicModelIds.value = [];
     custom.value = { baseUrl: '', authStyle: 'bearer', supportedEndpoints: ['/chat/completions'], bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] };
     azure.value = { endpoint: '', apiKey: '', models: [blankAzureModel()] };
   }
@@ -204,6 +207,7 @@ const buildCreateBody = (): { ok: true; value: CreateBody } | { ok: false; error
     enabled: enabled.value,
     sort_order: sortOrder.value,
     flag_overrides: flagOverrides.value,
+    disabled_public_model_ids: disabledPublicModelIds.value,
   };
   if (activeProvider.value === 'custom') {
     return { ok: true, value: { provider: 'custom', ...base, config: buildCustomConfig() } };
@@ -224,6 +228,7 @@ const buildPatchBody = (): { ok: true; value: PatchBody } | { ok: false; error: 
     enabled: enabled.value,
     sort_order: sortOrder.value,
     flag_overrides: flagOverrides.value,
+    disabled_public_model_ids: disabledPublicModelIds.value,
   };
   if (activeProvider.value === 'custom') patch.config = buildCustomConfig();
   else if (activeProvider.value === 'azure') patch.config = buildAzureConfig();
@@ -345,6 +350,7 @@ const showSaveButton = computed(() =>
           <template v-if="activeProvider === 'custom'">
             <CustomFields
               v-model="custom"
+              v-model:disabled-ids="disabledPublicModelIds"
               :bearer-token-set="customSecretSet"
               :edit-mode="mode === 'edit'"
               :edit-id="record?.id"
@@ -356,6 +362,7 @@ const showSaveButton = computed(() =>
           <template v-else-if="activeProvider === 'azure'">
             <AzureFields
               v-model="azure"
+              v-model:disabled-ids="disabledPublicModelIds"
               :api-key-set="azureSecretSet"
               :flags="flags"
               :upstream-flag-overrides="flagOverrides"
@@ -368,6 +375,7 @@ const showSaveButton = computed(() =>
             <ModelListField
               v-if="record"
               v-model="copilotManual"
+              v-model:disabled-ids="disabledPublicModelIds"
               :all-manual="false"
               :read-only="true"
               upstream-id-label="Model"

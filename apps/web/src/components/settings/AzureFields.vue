@@ -16,6 +16,7 @@ interface AzureDraft {
 }
 
 const draft = defineModel<AzureDraft>({ required: true });
+const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 
 defineProps<{
   apiKeySet: boolean;
@@ -51,6 +52,7 @@ defineProps<{
 
     <ModelListField
       v-model="draft.models"
+      v-model:disabled-ids="disabledIds"
       :all-manual="true"
       upstream-id-label="Deployment"
       flag-provider-kind="azure"

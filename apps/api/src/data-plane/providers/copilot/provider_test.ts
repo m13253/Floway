@@ -232,6 +232,7 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
   const instance = await createCopilotProvider({
     ...copilotUpstream,
     flagOverrides: { 'messages-web-search-shim': true },
+    disabledPublicModelIds: [],
   });
 
   assertEquals(instance.upstream, 'up_copilot');

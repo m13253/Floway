@@ -214,6 +214,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     createdAt: now,
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
+    disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     config: body.config,
   };
 
@@ -244,6 +245,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
   if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
+  if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -381,6 +383,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     createdAt: now,
     updatedAt: now,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: { ...config, bearerToken },
   };
 
@@ -498,6 +501,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           createdAt: now,
           updatedAt: now,
           flagOverrides: {},
+          disabledPublicModelIds: [],
           config,
         };
 

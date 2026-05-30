@@ -35,6 +35,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -267,6 +268,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
   const instance = createAzureProvider(
     azureRecord({
       flagOverrides: { 'vendor-deepseek': true },
+      disabledPublicModelIds: [],
       config: {
         endpoint: 'https://example.openai.azure.com/openai/v1',
         apiKey: 'az-key',
@@ -296,6 +298,7 @@ test('createAzureProvider skips the per-model layer when flagOverrides.enabled i
   const instance = createAzureProvider(
     azureRecord({
       flagOverrides: { 'vendor-deepseek': true },
+      disabledPublicModelIds: [],
       config: {
         endpoint: 'https://example.openai.azure.com/openai/v1',
         apiKey: 'az-key',
@@ -375,6 +378,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
     createdAt: '2026-05-25T00:00:00Z',
     updatedAt: '2026-05-25T00:00:00Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
@@ -418,6 +422,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     createdAt: '2026-05-25T00:00:00Z',
     updatedAt: '2026-05-25T00:00:00Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',

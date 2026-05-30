@@ -12,6 +12,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   updatedAt: overrides.createdAt,
   config: { nested: { value: overrides.id }, endpoints: ['chat_completions'] },
   flagOverrides: {},
+  disabledPublicModelIds: [],
   ...overrides,
 });
 
@@ -64,6 +65,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     updatedAt: '2026-05-21T10:00:04.000Z',
     config: { nested: { value: 'updated' }, supportedEndpoints: ['responses'] },
     flagOverrides: { 'retry-tool-use': true },
+    disabledPublicModelIds: [],
   });
   await repo.save(updatedCustom);
 
@@ -101,6 +103,7 @@ test('memory upstream repo deeply clones configs and flag overrides at the repo 
       },
     },
     flagOverrides: { 'z-fix': true, 'a-fix': true },
+    disabledPublicModelIds: [],
   });
 
   await repo.save(original);
@@ -139,6 +142,7 @@ test('memory upstream repo sorts flag overrides by key when saving rows', async 
       sortOrder: 0,
       createdAt: '2026-05-21T10:00:00.000Z',
       flagOverrides: { 'z-fix': true, 'a-fix': false, 'm-fix': true },
+      disabledPublicModelIds: [],
     }),
   );
 
@@ -155,6 +159,7 @@ const exerciseD1UpstreamRepo = async (repo: UpstreamRepo) => {
     updatedAt: '2026-05-21T10:00:02.000Z',
     config: { baseUrl: 'https://custom.example/v1', bearerToken: 'sk-custom', supportedEndpoints: ['chat_completions'] },
     flagOverrides: { 'z-fix': true, 'a-fix': true },
+    disabledPublicModelIds: [],
   });
   const copilot = upstream({
     id: 'up_copilot_d1',
@@ -195,6 +200,7 @@ const exerciseD1UpstreamRepo = async (repo: UpstreamRepo) => {
     updatedAt: '2026-05-21T10:00:04.000Z',
     config: { baseUrl: 'https://updated.example/v1', bearerToken: 'sk-updated', supportedEndpoints: ['responses'] },
     flagOverrides: { 'm-fix': true, 'a-fix': true },
+    disabledPublicModelIds: [],
   });
   assertEquals(
     (await repo.list()).map(row => [row.id, row.name, row.enabled]),
@@ -233,6 +239,7 @@ test('D1 upstream repo rejects malformed stored upstream JSON', async () => {
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{bad json',
     flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
   });
 
   await assertRejects(() => new D1Repo(db).upstreams.list(), Error, 'Malformed upstream config JSON for up_bad_config');
@@ -250,6 +257,7 @@ test('D1 upstream repo rejects malformed stored flag overrides JSON', async () =
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     flag_overrides: '{bad json',
+    disabled_public_model_ids: '[]',
   });
 
   await assertRejects(() => new D1Repo(db).upstreams.getById('up_bad_fixes'), Error, 'Malformed upstream flag_overrides JSON for up_bad_fixes');
@@ -267,6 +275,7 @@ test('D1 upstream repo rejects array-shaped flag_overrides with helpful message'
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     flag_overrides: '[]',
+    disabled_public_model_ids: '[]',
   });
 
   await assertRejects(
@@ -288,6 +297,7 @@ test('D1 upstream repo rejects non-boolean value in flag_overrides with helpful 
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
     flag_overrides: '{"x": 1}',
+    disabled_public_model_ids: '[]',
   });
 
   await assertRejects(
@@ -408,6 +418,7 @@ type FakeUpstreamRow = {
   updated_at: string;
   config_json: string;
   flag_overrides: string;
+  disabled_public_model_ids: string;
 };
 
 class FakeUpstreamsD1PreparedStatement {
@@ -475,7 +486,7 @@ class FakeUpstreamsD1Database implements D1Database {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, flagOverrides] = binds as [string, string, string, number, number, string, string, string, string];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, flagOverrides, disabledPublicModelIds] = binds as [string, string, string, number, number, string, string, string, string, string];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
     const row = {
@@ -488,6 +499,7 @@ class FakeUpstreamsD1Database implements D1Database {
       updated_at: updatedAt,
       config_json: configJson,
       flag_overrides: flagOverrides,
+      disabled_public_model_ids: disabledPublicModelIds,
     };
     if (existingIndex >= 0) {
       this.rows[existingIndex] = row;
