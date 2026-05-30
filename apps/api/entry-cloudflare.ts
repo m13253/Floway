@@ -5,7 +5,7 @@ import { createCloudflareImageProcessor, type ImagesBinding } from './src/image/
 import { initImageProcessor } from './src/image/index.ts';
 import { type D1Database, D1Repo } from './src/repo/d1.ts';
 import { getRepo, initRepo } from './src/repo/index.ts';
-import { RESPONSES_ITEM_PAYLOAD_TTL_MS, sweepExpiredResponsesItemPayloadFiles } from './src/repo/responses-payload.ts';
+import { RESPONSES_ITEM_PAYLOAD_TTL_MS, startOfUtcHour, sweepExpiredResponsesItemPayloadFiles } from './src/repo/responses-payload.ts';
 import { initEnv } from './src/runtime/env.ts';
 import { initFileProvider } from './src/runtime/file-provider.ts';
 import { R2FileProvider, type R2BucketLike } from './src/runtime/r2-file-provider.ts';
@@ -13,9 +13,6 @@ import { R2FileProvider, type R2BucketLike } from './src/runtime/r2-file-provide
 // Read only by the scheduled cleanup below (deleteOlderThan). Lookups never
 // filter by it — a row stays referenceable until cleanup removes it.
 const RESPONSES_ITEM_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
-
-const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
 
 // Raw Cloudflare KV binding shape (its `put` takes an options object). We adapt
 // it to the image cache's contract, which requires an explicit positional TTL.

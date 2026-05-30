@@ -39,11 +39,9 @@ import type {
 //   the batch — awaited by the respond layer on the success branch, after the
 //   body is known good, so the returned ids are immediately referenceable.
 //
-// One INSERT per stored id. The row carries the upstream's original item
-// untouched in `payload.item` (or null payload when the request opted out of
-// storage via `store: false`); the id field there is the upstream's id, not
-// the stored id. `request-plan.ts` rewrites the id at expansion time based
-// on routing.
+// The stored row carries the upstream's original item in `payload.item`, so the
+// id there is the upstream's id, not the stored id; `request-plan.ts` rewrites
+// it at expansion time based on routing.
 export interface StoreResponsesContext {
   readonly targetApi: LlmTargetApi;
   readonly upstream: string;
@@ -68,12 +66,11 @@ export const storeResponsesOutputItems = <TFrame>(
 ): StoredResponsesItemsStream<TFrame> => {
   const upstreamToStored = new Map<string, string>();
 
-  // Every upstream id maps to a fresh gateway stored id, memoized so repeated
-  // frames for the same item resolve to one id. An upstream id that happens to
-  // parse as a gateway stored id is not special-cased: `request-plan.ts`
-  // rewrites our stored ids away before the upstream call, so any stored-shaped
-  // id echoed back is foreign (another gateway, or a checksum coincidence) and
-  // gets its own fresh id like any other.
+  // An upstream id that happens to parse as a gateway stored id is not
+  // special-cased: `request-plan.ts` rewrites our stored ids away before the
+  // upstream call, so any stored-shaped id echoed back is foreign (another
+  // gateway, or a checksum coincidence) and gets its own fresh id like any
+  // other.
   const idMapper: ResponsesItemIdMapper = (upstreamId, itemType) => {
     let storedId = upstreamToStored.get(upstreamId);
     if (storedId === undefined) {

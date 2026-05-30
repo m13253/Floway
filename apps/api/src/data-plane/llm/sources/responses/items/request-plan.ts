@@ -56,8 +56,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
 
   // id and encrypted_content are equivalent lookup keys, so resolve both at
   // once and merge. `parseStoredResponsesItemId` decides which ids are even
-  // queryable here, exactly once; afterwards a reference is identified only by
-  // the row it resolved to, never by who found it.
+  // queryable here, exactly once.
   const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && parseStoredResponsesItemId(ref.id) ? [ref.id] : []));
   const hashByContent = new Map(await Promise.all(
     [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
@@ -291,7 +290,7 @@ const storedItemReplacementBase = (
 
 const responsesItemId = (item: ResponseInputItem): string | null => {
   const id = (item as { id?: unknown }).id;
-  return typeof id === 'string' ? id : null;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
 const hasResponsesItemId = (item: ResponseInputItem): boolean => responsesItemId(item) !== null;

@@ -172,7 +172,7 @@ const hourPrefixOfKey = (key: string): string | null => {
   return `${RESPONSES_ITEMS_FILE_ROOT}${rest.slice(0, 4).join('/')}/`;
 };
 
-const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
+export const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
 
 const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   const digestInput = new Uint8Array(bytes).buffer;
