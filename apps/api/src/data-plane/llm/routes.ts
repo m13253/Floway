@@ -11,6 +11,7 @@ export const mountLlmRoutes = (app: Hono) => {
   const serveChatCompletions = serveLlm(chatCompletionsTraits);
   const serveResponses = serveLlm(responsesTraits);
   const serveMessages = serveLlm(messagesTraits);
+  const serveGemini = serveLlm(geminiTraits);
 
   app.post('/v1/chat/completions', serveChatCompletions);
   app.post('/chat/completions', serveChatCompletions);
@@ -20,5 +21,5 @@ export const mountLlmRoutes = (app: Hono) => {
   app.post('/messages', serveMessages);
   app.post('/v1/messages/count_tokens', countTokens);
   app.post('/messages/count_tokens', countTokens);
-  app.post('/v1beta/models/:modelAction{.+}', serveLlm(geminiTraits));
+  app.post('/v1beta/models/:modelAction{.+}', serveGemini);
 };
