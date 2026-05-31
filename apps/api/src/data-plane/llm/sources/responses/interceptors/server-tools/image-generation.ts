@@ -757,17 +757,16 @@ const streamImageGeneration = (
 // iteratively edit what it just produced. The same bytes also reached the
 // downstream client on the synthesized `image_generation_call` item.
 //
-// Fidelity vs persistence: within one response this is lossless (we just
-// synthesized the item, so `result`/`revised_prompt`/`status`/`error` are all
-// present, and `call_id` is derived from `id`). Across requests it depends on
-// what the client echoes back — a Mode-B reference that carries only `id`
-// (bytes dropped) can be neither fed back nor bound for an edit until a
-// stateful response store lets us look the item up by `id`. Crucially the
-// `image_generation_call` shape is self-sufficient: every field needed to
-// rebuild the pair, INCLUDING the error (`status` + `error{message,code}`),
-// has a public home, so that store only needs to persist the public item —
-// there is no out-of-band payload to keep. When it lands, this seam should
-// restore the persisted item by `id` first, falling back to the wire item.
+// Fidelity across requests: a client may echo a prior call back as a bare id
+// with the bytes dropped. Such a reference is restored before this seam runs —
+// the stored-items layer persists every synthesized output item as a portable
+// row and inline-expands a by-id reference back to the full `payload.item`
+// (result bytes included) ahead of the source interceptors — so this seam, and
+// `collectImageSources`, already receive the complete item. The
+// `image_generation_call` shape needs no out-of-band payload for this to be
+// lossless: every field required to rebuild the pair, INCLUDING the error
+// (`status` + `error{message,code,type}`), has a public home on the item, so
+// persisting the public item alone suffices.
 export const transformInputItemsForImageGeneration = (
   input: ResponseInputItem[],
   toolName: string,
