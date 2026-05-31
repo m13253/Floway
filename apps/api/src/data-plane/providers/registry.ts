@@ -87,11 +87,11 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
           continue;
         }
 
-        // Known limitation for this refactor: when multiple providers expose
-        // the same public model id, the first provider's metadata remains the
-        // public /models metadata. Runtime execution still uses the selected
-        // provider's own UpstreamModel, so capability-sensitive calls do not
-        // depend on this merged view being perfectly representative.
+        // When multiple providers expose the same public model id, the first
+        // provider's metadata remains the public /models metadata. Runtime
+        // execution still uses the selected provider's own UpstreamModel, so
+        // capability-sensitive calls do not depend on this merged view being
+        // perfectly representative.
         const upstreamEndpoints = unionEndpoints(existing.upstreamEndpoints, upstreamModel.upstreamEndpoints);
         byId.set(upstreamModel.id, {
           ...existing,
