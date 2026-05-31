@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { ProviderModelsUnavailableError } from '../../../../providers/models-store.ts';
 import { listModelProviders, resolveModelForProvider } from '../../../../providers/registry.ts';
 import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
-import { createRequestContext } from '../../execute.ts';
+import { createRequestContext } from '../../request-context.ts';
 import { stripUnsupportedPartFieldsFromPayload } from '../interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from '../interceptors/strip-unsupported-tools.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse } from '../respond.ts';

@@ -4,7 +4,7 @@ import { httpResponseToResponse, ProviderModelsUnavailableError } from '../../..
 import { listModelProviders, resolveModelForProvider } from '../../../../providers/registry.ts';
 import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
-import { createRequestContext } from '../../execute.ts';
+import { createRequestContext } from '../../request-context.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
 import { bodyAnthropicBetaResponse, bodyBetaParam, messagesFailureEnvelope, parseAnthropicBeta } from '../traits.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';

@@ -1,32 +1,12 @@
-import type { Context } from 'hono';
-
 import type { PerformanceApiName } from '../../../repo/types.ts';
-import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
-import { type PerformanceTelemetryContext, runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
-import type { RequestContext } from '../interceptors.ts';
+import type { PerformanceTelemetryContext } from '../../shared/telemetry/performance.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 type PerformanceLlmSourceApi = Exclude<PerformanceApiName, NonLlmServeApiName>;
-
-export const createRequestContext = (c: Context, downstreamAbortSignal: AbortSignal | undefined, clientStream: boolean): RequestContext => {
-  const apiKeyId = c.get('apiKeyId') as string | undefined;
-  const apiKeyUpstreamIds = c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined;
-  const scheduleBackground = backgroundSchedulerFromContext(c);
-
-  return {
-    requestStartedAt: performance.now(),
-    apiKeyId,
-    apiKeyUpstreamIds: apiKeyUpstreamIds ?? null,
-    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    scheduleBackground,
-    clientStream,
-    ...(downstreamAbortSignal !== undefined ? { downstreamAbortSignal } : {}),
-  };
-};
 
 export const jsonUpstreamErrorResult = (status: number, body: unknown, performance?: PerformanceTelemetryContext): UpstreamErrorResult => ({
   type: 'upstream-error',
