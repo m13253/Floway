@@ -113,7 +113,7 @@ const internalChatErrorResponse = (status: number, error: InternalDebugError): R
 
 const isChatFailureFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.type === 'event' && chatCompletionsErrorPayloadMessage(frame.event) !== null;
 
-const chatTerminalFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.type === 'done' || isChatFailureFrame(frame);
+const isChatTerminalFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.type === 'done' || isChatFailureFrame(frame);
 
 const observeChatFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>, state: SourceStreamState, observeUsage: boolean) {
   const tokenUsageFromChatFrame = (f: ProtocolFrame<CC>) =>
@@ -124,9 +124,9 @@ const observeChatFrames = async function* (frames: AsyncIterable<ProtocolFrame<C
     if (observeUsage) {
       state.rememberUsage(tokenUsageFromChatFrame(frame));
     }
-    if (chatTerminalFrame(frame) && !failed) state.completed = true;
+    if (isChatTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
-    if (chatTerminalFrame(frame)) return;
+    if (isChatTerminalFrame(frame)) return;
   }
   throw new Error(CHAT_COMPLETIONS_MISSING_DONE_MESSAGE);
 };

@@ -672,7 +672,8 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   // D1 caps bound parameters at 100 per query. A single Responses request can
   // echo back more stored items than that — long agentic sessions resubmit
   // every prior reasoning/compaction item each turn — so chunk the IN-list
-  // (leaving room for the `api_key_id` bind) and union the results.
+  // well under the cap (the `api_key_id` bind shares the budget) and union
+  // the results.
   private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];

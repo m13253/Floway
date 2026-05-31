@@ -1,7 +1,7 @@
-import { toResponseReasoningItem } from '../shared/chat-and-responses/reasoning.ts';
+import { hasReadableSummary, toResponseReasoningItem } from '../shared/chat-and-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponseOutputItem, ResponseOutputReasoning, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -194,8 +194,6 @@ const openScalarReasoning = (state: ChatCompletionsToResponsesStreamState): Pend
   (state.pendingScalarReasoning ??= {
     text: '',
   });
-
-const hasReadableSummary = (item: ChatReasoningItem): boolean => item.summary?.some(part => part.text) === true;
 
 const openText = (state: ChatCompletionsToResponsesStreamState): { item: PendingTextItem; events: ResponseStreamEvent[] } => {
   if (state.openText) return { item: state.openText, events: [] };

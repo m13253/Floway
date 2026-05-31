@@ -65,6 +65,11 @@ export const isStoredResponsesItemId = (value: string): boolean => {
 // stripped client-side). The blob is signed against the producing upstream
 // account, so we key such items by its hash to recover the owning upstream for
 // affinity routing.
+export const responsesItemId = (item: { id?: unknown }): string | null => {
+  const id = item.id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+};
+
 export const responsesItemEncryptedContent = (item: ResponseInputItem): string | null => {
   const value = (item as { encrypted_content?: unknown }).encrypted_content;
   return typeof value === 'string' && value.length > 0 ? value : null;

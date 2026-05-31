@@ -1,4 +1,4 @@
-import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent } from './format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
@@ -104,7 +104,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   return {
     references,
     failures,
-    forcingUpstreamIds: collectUpstreamsForAffinities(references, new Set(['forcing'])),
+    forcingUpstreamIds: collectForcingUpstreams(references),
     preferredUpstreamIds: collectPreferredUpstreams(references),
   };
 };
@@ -205,13 +205,12 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
   return references;
 };
 
-const collectUpstreamsForAffinities = (
+const collectForcingUpstreams = (
   references: readonly ResolvedStoredResponsesItemRef[],
-  affinities: ReadonlySet<StoredResponsesAffinity>,
 ): ReadonlySet<string> => {
   const upstreams = new Set<string>();
   for (const ref of references) {
-    if (!ref.row?.upstreamId || !ref.affinity || !affinities.has(ref.affinity)) continue;
+    if (ref.affinity !== 'forcing' || !ref.row?.upstreamId) continue;
     upstreams.add(ref.row.upstreamId);
   }
   return upstreams;
@@ -293,11 +292,6 @@ const storedItemReplacementBase = (
   // interceptor mutation cannot corrupt it across the request.
   if (row.payload === null) return item;
   return structuredClone(row.payload.item) as ResponseInputItem;
-};
-
-const responsesItemId = (item: ResponseInputItem): string | null => {
-  const id = (item as { id?: unknown }).id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
 const itemWithId = (item: ResponseInputItem, id: string): ResponseInputItem => ({

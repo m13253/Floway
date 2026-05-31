@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, responsesItemEncryptedContent } from './format.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
@@ -115,8 +115,8 @@ const buildRow = async (
   context: StoreResponsesContext,
   request: RequestContext,
 ): Promise<StoredResponsesItem> => {
-  const upstreamId = (originalItem as { id?: unknown }).id;
-  if (typeof upstreamId !== 'string' || upstreamId.length === 0) {
+  const upstreamId = responsesItemId(originalItem);
+  if (upstreamId === null) {
     throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
   }
   const upstreamOwned = context.targetApi === 'responses';
