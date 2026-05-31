@@ -17,82 +17,11 @@ import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEve
 type RE = ResponseStreamEvent;
 type RR = ResponsesResult;
 
-// OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input.
-export const tokenUsageFromResponsesResult = (r: RR) => {
-  const u = r.usage;
-  if (!u) return null;
-  const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
-  return tokenUsage({
-    input: u.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: u.output_tokens,
-  });
-};
-
-export const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
-
-const internalResponsesErrorPayload = (error: InternalDebugError) => ({
-  error: {
-    type: error.type,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    source_api: error.source_api,
-    target_api: error.target_api,
-  },
-});
-
-const internalResponsesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalResponsesErrorPayload(error), { status });
-
-const internalResponsesStreamErrorFrame = (error: unknown) => {
-  const debug = toInternalDebugError(error, 'responses');
-  return sseFrame(
-    JSON.stringify({
-      type: 'error',
-      message: debug.message,
-      code: debug.type,
-      name: debug.name,
-      stack: debug.stack,
-      cause: debug.cause,
-      source_api: debug.source_api,
-      target_api: debug.target_api,
-    }),
-    'error',
-  );
-};
-
-const isResponsesFailureFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
-
-const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
-
-const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>, observeUsage: boolean) {
-  for await (const frame of frames) {
-    const failed = isResponsesFailureFrame(frame);
-    if (failed) state.failed = true;
-    if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromResponsesFrame(frame));
-    }
-    if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isResponsesTerminalFrame(frame)) return;
-  }
-  throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
-};
-
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>) {
-  try {
-    for await (const frame of frames) {
-      const sse = responsesProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
-    }
-  } catch (error) {
-    state.failed = true;
-    yield internalResponsesStreamErrorFrame(error);
-  }
-};
-
+// Renders an upstream Responses result into the client HTTP/SSE response. An
+// error-typed result is a pre-stream failure and always answers as HTTP; an
+// events result drains to one JSON body (non-streaming) or is proxied frame by
+// frame (streaming). `success` reports whether a non-streaming body was
+// produced, so the orchestrator knows whether to flush stored items.
 export const respondResponses = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>,
@@ -144,4 +73,86 @@ export const respondResponses = async (
   });
 
   return { success: true, response };
+};
+
+// --- token usage ---
+
+// OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
+// the cached split to recover the disjoint bare input.
+export const tokenUsageFromResponsesResult = (r: RR) => {
+  const u = r.usage;
+  if (!u) return null;
+  const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
+  return tokenUsage({
+    input: u.input_tokens - cacheRead,
+    input_cache_read: cacheRead,
+    output: u.output_tokens,
+  });
+};
+
+export const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
+
+// --- error rendering ---
+
+const internalResponsesErrorPayload = (error: InternalDebugError) => ({
+  error: {
+    type: error.type,
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    cause: error.cause,
+    source_api: error.source_api,
+    target_api: error.target_api,
+  },
+});
+
+const internalResponsesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalResponsesErrorPayload(error), { status });
+
+const internalResponsesStreamErrorFrame = (error: unknown) => {
+  const debug = toInternalDebugError(error, 'responses');
+  return sseFrame(
+    JSON.stringify({
+      type: 'error',
+      message: debug.message,
+      code: debug.type,
+      name: debug.name,
+      stack: debug.stack,
+      cause: debug.cause,
+      source_api: debug.source_api,
+      target_api: debug.target_api,
+    }),
+    'error',
+  );
+};
+
+// --- frame observation ---
+
+const isResponsesFailureFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
+
+const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
+
+const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>, observeUsage: boolean) {
+  for await (const frame of frames) {
+    const failed = isResponsesFailureFrame(frame);
+    if (failed) state.failed = true;
+    if (observeUsage) {
+      rememberSourceFrameUsage(state, tokenUsageFromResponsesFrame(frame));
+    }
+    if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
+    yield frame;
+    if (isResponsesTerminalFrame(frame)) return;
+  }
+  throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
+};
+
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>) {
+  try {
+    for await (const frame of frames) {
+      const sse = responsesProtocolFrameToSSEFrame(frame);
+      if (sse) yield sse;
+    }
+  } catch (error) {
+    state.failed = true;
+    yield internalResponsesStreamErrorFrame(error);
+  }
 };

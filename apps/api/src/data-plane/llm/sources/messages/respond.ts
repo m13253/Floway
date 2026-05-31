@@ -15,97 +15,11 @@ import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage 
 
 type MU = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 
-// Anthropic already reports disjoint token counts: input_tokens excludes the
-// cache figures. Map them straight onto the billing dimensions without summing.
-export const tokenUsageFromMessagesUsage = (u: MU) =>
-  tokenUsage({
-    input: u.input_tokens ?? 0,
-    input_cache_read: u.cache_read_input_tokens ?? 0,
-    input_cache_write: u.cache_creation_input_tokens ?? 0,
-    output: u.output_tokens,
-  });
-
-export const createMessagesStreamUsageState = () => ({
-  current: tokenUsage({}),
-  gotInputFromStart: false,
-});
-
-type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
-const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MU) => (state.current = tokenUsageFromMessagesUsage(u));
-
-export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEventData>, state: MessagesStreamUsageState) => {
-  if (frame.type !== 'event') return null;
-  const { event } = frame;
-  if (event.type === 'message_start') {
-    const usage = mergeMessagesUsage(state, event.message.usage);
-    // A fully cache-hit prompt reports message_start with input=0 but non-zero
-    // cache reads; the input accounting still arrived, so the flag must reflect
-    // every input-side dimension, not bare input alone — otherwise a later
-    // delta carrying input_tokens re-merges and drops the cache counts.
-    state.gotInputFromStart ||= (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) > 0;
-  }
-  if (event.type === 'message_delta' && event.usage) {
-    if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
-      mergeMessagesUsage(state, event.usage);
-    } else state.current.output = event.usage.output_tokens;
-  }
-  return event.type === 'message_stop' ? state.current : null;
-};
-
-const internalMessagesErrorPayload = (error: InternalDebugError) => ({
-  type: 'error',
-  error: {
-    type: error.type,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    source_api: error.source_api,
-    target_api: error.target_api,
-  },
-});
-
-const downstreamMessagesPingKeepAliveFrame = sseFrame(JSON.stringify({ type: 'ping' }), 'ping');
-
-const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });
-
-const internalMessagesStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
-
-const isMessagesFailureFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && frame.event.type === 'error';
-
-const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
-
-const observeMessagesFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
-  state: ReturnType<typeof createSourceStreamState>,
-  usageState: ReturnType<typeof createMessagesStreamUsageState>,
-  observeUsage: boolean,
-) {
-  for await (const frame of frames) {
-    const failed = isMessagesFailureFrame(frame);
-    if (failed) state.failed = true;
-    if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromMessagesFrame(frame, usageState));
-    }
-    if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isMessagesTerminalFrame(frame)) return;
-  }
-  throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
-};
-
-const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: ReturnType<typeof createSourceStreamState>) {
-  try {
-    for await (const frame of frames) {
-      const sse = messagesProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
-    }
-  } catch (error) {
-    state.failed = true;
-    yield internalMessagesStreamErrorFrame(error);
-  }
-};
-
+// Renders an upstream Messages result into the client HTTP/SSE response. An
+// error-typed result is a pre-stream failure and always answers as HTTP; an
+// events result drains to one JSON body (non-streaming) or is proxied frame by
+// frame (streaming). `success` reports whether a non-streaming body was
+// produced, so the orchestrator knows whether to flush stored items.
 export const respondMessages = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>>,
@@ -144,7 +58,7 @@ export const respondMessages = async (
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
-        keepAlive: { frame: downstreamMessagesPingKeepAliveFrame },
+        keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
         downstreamAbortController,
       });
     } finally {
@@ -158,4 +72,99 @@ export const respondMessages = async (
   });
 
   return { success: true, response };
+};
+
+// --- token usage ---
+
+// Anthropic already reports disjoint token counts: input_tokens excludes the
+// cache figures. Map them straight onto the billing dimensions without summing.
+export const tokenUsageFromMessagesUsage = (u: MU) =>
+  tokenUsage({
+    input: u.input_tokens ?? 0,
+    input_cache_read: u.cache_read_input_tokens ?? 0,
+    input_cache_write: u.cache_creation_input_tokens ?? 0,
+    output: u.output_tokens,
+  });
+
+export const createMessagesStreamUsageState = () => ({
+  current: tokenUsage({}),
+  gotInputFromStart: false,
+});
+
+type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
+const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MU) => (state.current = tokenUsageFromMessagesUsage(u));
+
+export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEventData>, state: MessagesStreamUsageState) => {
+  if (frame.type !== 'event') return null;
+  const { event } = frame;
+  if (event.type === 'message_start') {
+    const usage = mergeMessagesUsage(state, event.message.usage);
+    // A fully cache-hit prompt reports message_start with input=0 but non-zero
+    // cache reads; the input accounting still arrived, so the flag must reflect
+    // every input-side dimension, not bare input alone — otherwise a later
+    // delta carrying input_tokens re-merges and drops the cache counts.
+    state.gotInputFromStart ||= (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) > 0;
+  }
+  if (event.type === 'message_delta' && event.usage) {
+    if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
+      mergeMessagesUsage(state, event.usage);
+    } else state.current.output = event.usage.output_tokens;
+  }
+  return event.type === 'message_stop' ? state.current : null;
+};
+
+// --- error rendering ---
+
+const internalMessagesErrorPayload = (error: InternalDebugError) => ({
+  type: 'error',
+  error: {
+    type: error.type,
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+    cause: error.cause,
+    source_api: error.source_api,
+    target_api: error.target_api,
+  },
+});
+
+const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });
+
+const internalMessagesStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
+
+// --- frame observation ---
+
+const isMessagesFailureFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && frame.event.type === 'error';
+
+const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
+
+const observeMessagesFrames = async function* (
+  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
+  state: ReturnType<typeof createSourceStreamState>,
+  usageState: ReturnType<typeof createMessagesStreamUsageState>,
+  observeUsage: boolean,
+) {
+  for await (const frame of frames) {
+    const failed = isMessagesFailureFrame(frame);
+    if (failed) state.failed = true;
+    if (observeUsage) {
+      rememberSourceFrameUsage(state, tokenUsageFromMessagesFrame(frame, usageState));
+    }
+    if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
+    yield frame;
+    if (isMessagesTerminalFrame(frame)) return;
+  }
+  throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
+};
+
+const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: ReturnType<typeof createSourceStreamState>) {
+  try {
+    for await (const frame of frames) {
+      const sse = messagesProtocolFrameToSSEFrame(frame);
+      if (sse) yield sse;
+    }
+  } catch (error) {
+    state.failed = true;
+    yield internalMessagesStreamErrorFrame(error);
+  }
 };
