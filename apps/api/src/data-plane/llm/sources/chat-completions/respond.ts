@@ -93,9 +93,6 @@ const tokenUsageFromChatUsage = (u: CU) => {
   });
 };
 
-const tokenUsageFromChatFrame = (f: ProtocolFrame<CC>) =>
-  f.type === 'event' && Array.isArray(f.event.choices) && f.event.choices.length === 0 && f.event.usage ? tokenUsageFromChatUsage(f.event.usage) : null;
-
 // --- error rendering ---
 
 const internalChatErrorPayload = (error: InternalDebugError) => ({
@@ -121,6 +118,8 @@ const isChatFailureFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.
 const chatTerminalFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.type === 'done' || isChatFailureFrame(frame);
 
 const observeChatFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>, state: SourceStreamState, observeUsage: boolean) {
+  const tokenUsageFromChatFrame = (f: ProtocolFrame<CC>) =>
+    f.type === 'event' && Array.isArray(f.event.choices) && f.event.choices.length === 0 && f.event.usage ? tokenUsageFromChatUsage(f.event.usage) : null;
   for await (const frame of frames) {
     const failed = isChatFailureFrame(frame);
     if (failed) state.failed = true;

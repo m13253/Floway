@@ -91,8 +91,6 @@ const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
 
 const tokenUsageFromGeminiResponse = (r: GR) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
 
-const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
-
 // --- error rendering: Google-RPC envelope ---
 
 type GeminiErrorDebugFields = Partial<Pick<InternalDebugError, 'type' | 'name' | 'stack' | 'cause'>> & { source_api?: string; target_api?: string };
@@ -238,6 +236,7 @@ const isGeminiFailureEvent = (event: GeminiStreamEvent): boolean => isGeminiErro
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
+  const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
   for await (const frame of frames) {
     const failed = frame.type === 'event' && isGeminiFailureEvent(frame.event);
     if (failed) state.failed = true;
