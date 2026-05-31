@@ -6,7 +6,7 @@ import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-
 import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
@@ -39,11 +39,12 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   flagOverrides: { 'messages-web-search-shim': true },
+  disabledPublicModelIds: [],
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-custom',
     supportedEndpoints: ['/chat/completions', '/responses'],
-    pathOverrides: { models: '/models' },
+    modelsFetch: { enabled: true, endpoint: '/models' },
   },
 };
 
@@ -56,6 +57,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   flagOverrides: {},
+  disabledPublicModelIds: [],
   config: {
     githubToken: 'ghu-alice',
     accountType: 'individual',
@@ -77,17 +79,20 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   flagOverrides: {},
+  disabledPublicModelIds: ['gpt-public'],
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    deployments: [
+    models: [
       {
-        deployment: 'gpt-prod',
+        upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-public',
+        kind: 'chat',
         supportedEndpoints: ['/chat/completions', '/responses', '/embeddings'],
       },
       {
-        deployment: 'deepseek-prod',
+        upstreamModelId: 'deepseek-prod',
+        kind: 'chat',
         supportedEndpoints: ['/chat/completions'],
       },
     ],
@@ -101,10 +106,7 @@ const USAGE_1: UsageRecord = {
   modelKey: 'claude-opus-4.7',
   hour: '2026-01-01T10',
   requests: 5,
-  inputTokens: 1000,
-  outputTokens: 500,
-  cacheReadTokens: 120,
-  cacheCreationTokens: 80,
+  tokens: { input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 },
   cost: null,
 };
 
@@ -115,10 +117,7 @@ const USAGE_2: UsageRecord = {
   modelKey: 'gpt-prod',
   hour: '2026-01-01T11',
   requests: 3,
-  inputTokens: 2000,
-  outputTokens: 800,
-  cacheReadTokens: 200,
-  cacheCreationTokens: 50,
+  tokens: { input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 },
   cost: null,
 };
 
@@ -136,6 +135,17 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
   action: 'fetch_page',
   hour: '2026-01-01T11',
   requests: 4,
+};
+
+const STORED_RESPONSES_ITEM: StoredResponsesItem = {
+  id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+  apiKeyId: 'key-a',
+  upstreamId: null,
+  upstreamItemId: null,
+  itemType: 'message',
+  encryptedContentHash: null,
+  payload: { item: { type: 'message', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', role: 'assistant', content: [] } },
+  createdAt: 1_000,
 };
 
 const PERFORMANCE_1: PerformanceTelemetryRecord = {
@@ -187,7 +197,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 2) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 3) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -211,7 +221,7 @@ test('export emits latest v2 structure with upstreams only', async () => {
 
   const result = await doExport(app);
 
-  assertEquals(result.version, 2);
+  assertEquals(result.version, 3);
   assertEquals(typeof result.exportedAt, 'string');
   assertEquals(result.data.apiKeys, []);
   assertEquals(result.data.upstreams, []);
@@ -277,9 +287,9 @@ test('import rejects missing or mismatched version before deleting data', async 
   const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
   assertEquals(oldVersion.status, 400);
-  assertEquals(oldVersion.body.error, 'version must be 2');
+  assertEquals(oldVersion.body.error, 'version must be 3');
   assertEquals(missingVersion.status, 400);
-  assertEquals(missingVersion.body.error, 'version must be 2');
+  assertEquals(missingVersion.body.error, 'version must be 3');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.upstreams.list()).map(upstream => upstream.id), ['up_custom_a']);
 });
@@ -290,6 +300,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.responsesItems.insertMany([STORED_RESPONSES_ITEM]);
   await repo.searchConfig.save({ provider: 'tavily', tavily: { apiKey: 'old' }, microsoftGrounding: { apiKey: '' } });
 
   const result = await doImport(app, 'replace', {
@@ -307,6 +318,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.searchUsage.listAll(), [SEARCH_USAGE_2]);
+  assertEquals(await repo.responsesItems.lookupMany('key-a', [STORED_RESPONSES_ITEM.id]), []);
   assertEquals(await repo.searchConfig.get(), { provider: 'microsoft-grounding', tavily: { apiKey: '' }, microsoftGrounding: { apiKey: 'ms-new' } });
 });
 
@@ -538,14 +550,14 @@ test('import rejects missing latest-v2 arrays before clearing existing data', as
 test('import validates mode and data before mutating', async () => {
   const { app } = setup();
 
-  const invalidMode = await doImport(app, 'invalid', {}, 2);
+  const invalidMode = await doImport(app, 'invalid', {}, 3);
   const missingData = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 2 }),
+    body: JSON.stringify({ mode: 'replace', version: 3 }),
   });
-  const missingUpstreams = await doImport(app, 'merge', {}, 2);
-  const emptyMerge = await doImport(app, 'merge', latestImportData(), 2);
+  const missingUpstreams = await doImport(app, 'merge', {}, 3);
+  const emptyMerge = await doImport(app, 'merge', latestImportData(), 3);
 
   assertEquals(invalidMode.status, 400);
   assertEquals(invalidMode.body.error, "mode must be 'merge' or 'replace'");

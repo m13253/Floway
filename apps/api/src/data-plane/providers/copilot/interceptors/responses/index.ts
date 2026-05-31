@@ -3,7 +3,8 @@
 // need to know which provider kind is running.
 
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
-import { withConnectionMismatchRetried } from './retry-connection-mismatch.ts';
+import { withInlineImagesCompressed } from './compress-images.ts';
+import { withStoreForcedFalse } from './force-store-false.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withImageGenerationStripped } from './strip-image-generation.ts';
@@ -18,10 +19,11 @@ import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 // safety_identifier strip is grouped with the other payload mutators because
 // it removes a field, not a header.
 export const responsesCopilotInterceptors = [
+  withInlineImagesCompressed,
   withSafetyIdentifierStripped,
   withServiceTierStripped,
   withImageGenerationStripped,
-  withConnectionMismatchRetried,
+  withStoreForcedFalse,
   withOutputItemIdsSynchronized,
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,

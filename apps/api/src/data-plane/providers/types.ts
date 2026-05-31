@@ -47,6 +47,7 @@ export interface ProviderModelRecord {
   provider: ModelProvider;
   upstreamModel: UpstreamModel;
   enabledFlags: ReadonlySet<string>;
+  supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
 }
@@ -85,7 +86,12 @@ export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
   name: string;
+  // Public model ids the operator switched off for this upstream. The registry
+  // drops these from the collected catalog (hidden + unroutable); the per-upstream
+  // dashboard view bypasses the registry and still sees them so they can be toggled.
+  disabledPublicModelIds: readonly string[];
   provider: ModelProvider;
+  supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
   resolveRequestedModelId?(modelId: string): string | undefined;

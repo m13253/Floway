@@ -22,9 +22,7 @@ export const addResponseReasoningToChatProjection = (projection: ChatReasoningPr
   projection.items.push(toChatReasoningItem(item));
 
   const text = item.summary.map(part => part.text).join('');
-  if (projection.text === undefined && text) {
-    if (text) projection.text = text;
-  }
+  if (projection.text === undefined && text) projection.text = text;
 };
 
 export const chatReasoningProjectionFields = (projection: ChatReasoningProjection) => ({
@@ -49,7 +47,7 @@ export const scalarToResponseReasoningItem = <T extends ResponsesReasoningItem>(
   } as T;
 };
 
-const hasReadableSummary = (item: ChatReasoningItem): boolean => item.summary?.some(part => part.text) === true;
+export const hasReadableSummary = (item: ChatReasoningItem): boolean => item.summary?.some(part => part.text) === true;
 
 export const translateChatReasoningItems = <T extends ResponsesReasoningItem>(reasoningItems: ChatReasoningItem[] | null | undefined, nextIdIndex: () => number): T[] | null => {
   if (!reasoningItems?.length) return null;

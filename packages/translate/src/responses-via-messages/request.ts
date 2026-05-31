@@ -1,5 +1,5 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
+import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
@@ -138,7 +138,7 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
   messages.push({ role: 'user', content: [block] });
 };
 
-const unexpectedResponsesInputItem = (value: never): never => {
+const unexpectedResponsesInputItem = (value: ResponseInputItem): never => {
   throw new Error(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
 };
 
@@ -198,7 +198,7 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
       });
       break;
     case 'reasoning': {
-      const block = responsesReasoningToMessagesBlock(item);
+      const block = responsesReasoningToMessagesUpstreamBlock(item);
       if (block) appendAssistantBlock(messages, block);
       break;
     }

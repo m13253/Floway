@@ -29,14 +29,28 @@ const responseStartSnapshot = (response: ResponsesResult): ResponsesResult => {
   };
 };
 
+// Per-item child events (`response.content_part.*`, `response.output_text.*`,
+// `response.function_call_arguments.*`, etc.) carry an `item_id` that real
+// upstream streams set to the owning item's real id — the same id that the
+// item exposes on `response.output_item.added`/`.done`. The JSON fast path is
+// expanded from a terminal upstream result, so its output items already carry
+// that id; faithfully reusing it keeps the synthesized stream byte-identical to
+// a native one. A carrier that emits child frames therefore has nothing to fall
+// back to if its id is missing, so we surface that rather than invent one.
+const requireItemId = (item: { type: string; id?: string }): string => {
+  if (item.id === undefined) throw new Error(`Responses ${item.type} output item is missing its id`);
+  return item.id;
+};
+
 const responseMessageEvents = (item: ResponseOutputMessage, outputIndex: number): ResponseStreamEvent[] => {
-  const itemId = `msg_${outputIndex}`;
+  const itemId = requireItemId(item);
   const events: ResponseStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
       item: {
         type: 'message',
+        id: itemId,
         role: 'assistant',
         content: item.content.map(part => (part.type === 'output_text' ? { type: 'output_text', text: '' } : part)),
       },
@@ -163,13 +177,14 @@ const responseReasoningEvents = (item: ResponseOutputReasoning, outputIndex: num
 };
 
 const responseFunctionCallEvents = (item: ResponseOutputFunctionCall, outputIndex: number): ResponseStreamEvent[] => {
-  const itemId = `fc_${outputIndex}`;
+  const itemId = requireItemId(item);
   const events: ResponseStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
       item: {
         type: 'function_call',
+        id: itemId,
         call_id: item.call_id,
         name: item.name,
         arguments: '',
@@ -203,12 +218,12 @@ const responseFunctionCallEvents = (item: ResponseOutputFunctionCall, outputInde
 };
 
 const responseCustomToolCallEvents = (item: ResponseOutputCustomToolCall, outputIndex: number): ResponseStreamEvent[] => {
-  const itemId = item.id ?? `ctc_${outputIndex}`;
+  const itemId = requireItemId(item);
   const events: ResponseStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
-      item: { ...item, input: '' },
+      item: { ...item, id: itemId, input: '' },
     },
   ];
 
@@ -246,6 +261,19 @@ const responseImageGenerationCallEvents = (item: ResponseOutputImageGenerationCa
   return [...startFrames, ...endFrames];
 };
 
+const responseGenericOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => [
+  {
+    type: 'response.output_item.added',
+    output_index: outputIndex,
+    item,
+  },
+  {
+    type: 'response.output_item.done',
+    output_index: outputIndex,
+    item,
+  },
+];
+
 const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => {
   switch (item.type) {
   case 'message': return responseMessageEvents(item, outputIndex);
@@ -254,6 +282,7 @@ const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number)
   case 'custom_tool_call': return responseCustomToolCallEvents(item, outputIndex);
   case 'web_search_call': return responseWebSearchCallEvents(item, outputIndex);
   case 'image_generation_call': return responseImageGenerationCallEvents(item, outputIndex);
+  default: return responseGenericOutputItemEvents(item, outputIndex);
   }
 };
 

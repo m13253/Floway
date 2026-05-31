@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { collectResponsesProtocolEventsToResult } from './reassemble.ts';
+import { collectResponsesProtocolEventsToResult } from './to-response.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -15,6 +15,7 @@ test('collectResponsesProtocolEventsToResult reassembles synthetic Responses eve
     output: [
       {
         type: 'message',
+        id: 'msg_1',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'Hello' }],
       },

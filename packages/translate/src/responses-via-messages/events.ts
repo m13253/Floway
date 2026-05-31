@@ -33,6 +33,10 @@ type OutputBlockInfo =
     outputIndex: number;
     itemId: string;
     thinkingText: string;
+    // Genuine upstream reasoning signature, captured from `signature_delta`.
+    // Carried verbatim as the Responses item's `encrypted_content` so it
+    // round-trips back to the Messages upstream's next-turn validation.
+    encryptedContent?: string;
   }
   | {
     type: 'text';
@@ -121,8 +125,22 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
 
     return responses.reasoningStart(state, outputIndex, itemId);
   }
-  case 'redacted_thinking':
-    return [];
+  case 'redacted_thinking': {
+    // A redacted upstream reasoning block carries an opaque signature in
+    // `data` and no readable text. Surface it as a Responses reasoning item
+    // whose `encrypted_content` round-trips that opaque blob.
+    const outputIndex = state.outputIndex++;
+    const itemId = `rs_${outputIndex}`;
+    state.blockMap.set(event.index, {
+      type: 'thinking',
+      outputIndex,
+      itemId,
+      thinkingText: '',
+      encryptedContent: event.content_block.data,
+    });
+
+    return responses.reasoningStart(state, outputIndex, itemId);
+  }
   case 'text': {
     const outputIndex = state.outputIndex++;
     const itemId = `msg_${outputIndex}`;
@@ -149,7 +167,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
         wrappedArguments: '',
       });
 
-      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(event.content_block.id, event.content_block.name, ''));
+      return responses.itemAdded(state, outputIndex, responses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
     }
 
     const itemId = `fc_${outputIndex}`;
@@ -163,7 +181,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
     };
     state.blockMap.set(event.index, info);
 
-    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
+    return responses.itemAdded(state, outputIndex, responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'in_progress'));
   }
   default:
     return [];
@@ -236,6 +254,12 @@ const handleContentBlockDelta = (event: MessagesContentBlockDeltaEvent, state: M
       info.thinkingText += event.delta.thinking;
       return responses.reasoningDelta(state, info.outputIndex, info.itemId, event.delta.thinking);
     }
+    if (event.delta.type === 'signature_delta') {
+      // The upstream owns this signature; carry it verbatim as the Responses
+      // item's `encrypted_content` (no gateway envelope) so the next turn's
+      // upstream validation still passes.
+      info.encryptedContent = event.delta.signature;
+    }
     return [];
   case 'text':
     if (event.delta.type === 'citations_delta') {
@@ -268,7 +292,7 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   if (info.type === 'thinking') {
     const summaryText = info.thinkingText;
     const itemId = info.itemId;
-    const item = responses.reasoningItem(itemId, summaryText);
+    const item = responses.reasoningItem(itemId, summaryText, info.encryptedContent);
 
     state.completedItems.push(item);
 
@@ -276,7 +300,7 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
   }
 
   if (info.type === 'text') {
-    const item = responses.messageItem(info.blockText);
+    const item = responses.messageItem(info.itemId, info.blockText);
 
     state.completedItems.push(item);
 
@@ -285,14 +309,14 @@ const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: Mes
 
   if (info.type === 'custom_tool_use') {
     const input = unwrapCustomToolInput(info.wrappedArguments);
-    const item = responses.customToolCallItem(info.toolCallId, info.toolName, input);
+    const item = responses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
 
     state.completedItems.push(item);
 
     return responses.customToolCallDone(state, info.outputIndex, info.itemId, input, item);
   }
 
-  const item = responses.functionCallItem(info.toolCallId, info.toolName, info.toolArguments, 'completed');
+  const item = responses.functionCallItem(info.itemId, info.toolCallId, info.toolName, info.toolArguments, 'completed');
 
   state.completedItems.push(item);
 

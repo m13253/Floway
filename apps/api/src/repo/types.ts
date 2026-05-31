@@ -1,6 +1,6 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 
 export interface ApiKey {
   id: string;
@@ -19,13 +19,12 @@ export interface UsageRecord {
   modelKey: string;
   hour: string;
   requests: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
+  // Disjoint per-dimension token counts for this bucket (see TokenUsage).
+  tokens: TokenUsage;
   // Pricing snapshot taken at write time. null means the provider did not
   // resolve pricing for this model (Custom upstreams, unknown Copilot
-  // public id, etc.). Aggregation treats null as cost 0.
+  // public id, etc.). The repo derives per-dimension unit prices from it via
+  // unitPriceForDimension; aggregation treats a null snapshot as cost 0.
   cost: ModelPricing | null;
 }
 
@@ -39,12 +38,9 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-}
+// Disjoint per-dimension token counts. Absent keys mean zero for that
+// dimension. No key's count overlaps another's.
+export type TokenUsage = Partial<Record<BillingDimension, number>>;
 
 export type SearchUsageAction = 'search' | 'fetch_page';
 
@@ -149,6 +145,11 @@ export interface UpstreamRecord {
   updatedAt: string;
   config: unknown;
   flagOverrides: Record<string, boolean>;
+  // Public model ids the operator switched off for this upstream. Orthogonal to
+  // every per-model metadata field and uniform across provider kinds: a disabled
+  // id is hidden from the catalog and unroutable, but its row metadata stays
+  // editable. Entries may reference ids no longer present in the live model list.
+  disabledPublicModelIds: string[];
 }
 
 export interface UpstreamRepo {
@@ -156,6 +157,39 @@ export interface UpstreamRepo {
   getById(id: string): Promise<UpstreamRecord | null>;
   save(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
+export interface StoredResponsesItem {
+  id: string;
+  apiKeyId: string | null;
+  upstreamId: string | null;
+  upstreamItemId: string | null;
+  itemType: string;
+  payload: StoredResponsesItemPayload | null;
+  // sha256 of the item's `encrypted_content`, when it carries one (reasoning /
+  // compaction). Lets a later turn that echoes the blob without a gateway id
+  // recover this row's owning upstream for affinity routing.
+  encryptedContentHash: string | null;
+  createdAt: number;
+}
+
+export interface StoredResponsesItemPayload {
+  item: unknown;
+  // Ancillary state stashed alongside the public `item` body but never sent on
+  // the wire: a server-only slot to preserve data a stateless client strips
+  // from the echoed item (e.g. the real `web_search_call` results) so a later
+  // turn can restore it on replay. Persisted and round-tripped verbatim; not
+  // yet populated by any producer.
+  private?: unknown;
+}
+
+export interface ResponsesItemsRepo {
+  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
+  insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
+  clearPayloadOlderThan(createdBefore: number): Promise<number>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -167,4 +201,5 @@ export interface Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  responsesItems: ResponsesItemsRepo;
 }

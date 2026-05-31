@@ -15,6 +15,8 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
+  assertEquals(instance.supportsResponsesItemReference, false);
+
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
@@ -230,6 +232,7 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
   const instance = await createCopilotProvider({
     ...copilotUpstream,
     flagOverrides: { 'messages-web-search-shim': true },
+    disabledPublicModelIds: [],
   });
 
   assertEquals(instance.upstream, 'up_copilot');
@@ -366,7 +369,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
 
   const stubRequest: RequestContext = {
     requestStartedAt: 0,
-    runtimeLocation: 'test',
+    responsesSyntheticItemIds: new Set(),    runtimeLocation: 'test',
     clientStream: false,
   };
 

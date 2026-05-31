@@ -25,7 +25,7 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 };
 

@@ -1,10 +1,9 @@
 import type { Context } from 'hono';
 
-import { apiKeyUpstreamIdsFromContext } from '../../../../../middleware/auth.ts';
 import { ProviderModelsUnavailableError } from '../../../../providers/models-store.ts';
-import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { listModelProviders, resolveModelForProvider } from '../../../../providers/registry.ts';
 import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
-import { createRequestContext } from '../../execute.ts';
+import { createRequestContext } from '../../request-context.ts';
 import { stripUnsupportedPartFieldsFromPayload } from '../interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from '../interceptors/strip-unsupported-tools.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse } from '../respond.ts';
@@ -15,8 +14,6 @@ interface GeminiCountTokensRequest {
   contents?: GeminiContent[];
   generateContentRequest?: GeminiGenerateContentRequest;
 }
-
-const countTokensRequestToGenerateContentRequest = (request: GeminiCountTokensRequest): GeminiGenerateContentRequest => request.generateContentRequest ?? { contents: request.contents };
 
 // count_tokens reuses Gemini source request normalization, but cannot run the
 // full streaming source-interceptor pipeline. Apply the same payload mutations
@@ -38,19 +35,21 @@ const totalTokensFromUpstream = (value: unknown): number | null => {
 export const countGeminiTokens = async (c: Context, model: string): Promise<Response> => {
   try {
     const request = await c.req.json<GeminiCountTokensRequest>();
-    const generateContentRequest = countTokensRequestToGenerateContentRequest(request);
+    const generateContentRequest = request.generateContentRequest ?? { contents: request.contents };
     normalizeCountTokensRequest(generateContentRequest);
-
-    const { id: modelId, model: resolvedModel } = await resolveModelForRequest(model, apiKeyUpstreamIdsFromContext(c));
-
-    if (!resolvedModel) {
-      return geminiRpcErrorResponse(404, `Model ${modelId} is not available on any configured upstream.`);
-    }
 
     const requestContext = createRequestContext(c, undefined, false);
 
     let response: Response | undefined;
-    for (const binding of resolvedModel.providers) {
+    let resolvedModelId = model;
+    let sawModel = false;
+    for (const provider of await listModelProviders(requestContext.apiKeyUpstreamIds)) {
+      const resolved = await resolveModelForProvider(provider, model);
+      if (!resolved) continue;
+
+      sawModel = true;
+      resolvedModelId = resolved.id;
+      const binding = resolved.binding;
       if (!binding.upstreamModel.upstreamEndpoints.includes('messages_count_tokens')) continue;
 
       // count_tokens only needs the translated Messages payload; the events
@@ -59,7 +58,7 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
       // trip so the request-shape stays in lockstep with `generateContent`.
       // The trip always emits `stream: true` (translation assumes streaming
       // upstream); count_tokens is non-streaming, so strip it before sending.
-      const { target } = await translateGeminiViaMessages(generateContentRequest, { model: modelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens });
+      const { target } = await translateGeminiViaMessages(generateContentRequest, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens });
       const { stream: _stream, ...attemptPayload } = target;
 
       // Wrap the call in the same MessagesInvocation shape the Messages
@@ -70,7 +69,7 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
       const invocation: MessagesInvocation = {
         sourceApi: 'gemini',
         targetApi: 'messages',
-        model: modelId,
+        model: resolvedModelId,
         upstream: binding.upstream,
         upstreamModel: binding.upstreamModel,
         provider: binding.provider,
@@ -89,7 +88,9 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
     }
 
     if (!response) {
-      return geminiRpcErrorResponse(400, `Model ${modelId} does not support countTokens.`);
+      return sawModel
+        ? geminiRpcErrorResponse(400, `Model ${resolvedModelId} does not support countTokens.`)
+        : geminiRpcErrorResponse(404, `Model ${resolvedModelId} is not available on any configured upstream.`);
     }
 
     if (!response.ok) {

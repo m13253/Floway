@@ -15,11 +15,13 @@ const custom: UpstreamRecord = {
   createdAt: timestamp,
   updatedAt: timestamp,
   flagOverrides: { 'vendor-deepseek': true },
+  disabledPublicModelIds: [],
   config: {
     baseUrl: 'https://api.example.com',
     bearerToken: 'sk-secret-token-12345',
     supportedEndpoints: ['/chat/completions', '/responses'],
-    pathOverrides: { models: '/models' },
+    modelsFetch: { enabled: true, endpoint: '/models' },
+    models: [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }],
   },
 };
 
@@ -37,7 +39,8 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(config.bearerToken, undefined);
   assertEquals(config.bearerTokenSet, true);
   assertEquals(config.supportedEndpoints, ['/chat/completions', '/responses']);
-  assertEquals(config.pathOverrides, { models: '/models' });
+  assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }]);
 });
 
 test('upstreamRecordToJson redacts Azure API keys inside config', () => {
@@ -48,7 +51,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-secret',
-      deployments: [{ deployment: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }],
+      models: [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }],
     },
   });
   const config = result.config as Record<string, unknown>;
@@ -57,7 +60,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   assertEquals(config.endpoint, 'https://example.openai.azure.com');
   assertEquals(config.apiKey, undefined);
   assertEquals(config.apiKeySet, true);
-  assertEquals(config.deployments, [{ deployment: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }]);
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/chat/completions'] }]);
 });
 
 test('upstreamRecordToJson redacts Copilot GitHub token inside config', () => {

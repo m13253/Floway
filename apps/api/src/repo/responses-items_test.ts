@@ -1,0 +1,376 @@
+import initSqlJs from 'sql.js';
+import { test } from 'vitest';
+
+import { assert, assertEquals, assertRejects } from '../test-assert.ts';
+import { type D1Database, D1Repo } from './d1.ts';
+import { InMemoryRepo } from './memory.ts';
+import type { ResponsesItemsRepo, StoredResponsesItem } from './types.ts';
+import { initFileProvider, MemoryFileProvider } from '../runtime/file-provider.ts';
+
+const storedItem = (overrides: Partial<StoredResponsesItem> & Pick<StoredResponsesItem, 'id' | 'apiKeyId' | 'createdAt'>): StoredResponsesItem => ({
+  upstreamId: null,
+  upstreamItemId: null,
+  itemType: 'message',
+  encryptedContentHash: null,
+  payload: { item: { id: overrides.id, type: 'message', content: [{ type: 'output_text', text: overrides.id }] } },
+  ...overrides,
+});
+
+const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
+  initFileProvider(new MemoryFileProvider());
+  const first = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    upstreamId: 'up_azure',
+    upstreamItemId: 'upstream_msg_a',
+    itemType: 'message',
+    createdAt: 1_000,
+  });
+  const second = storedItem({
+    id: 'rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w',
+    apiKeyId: 'key_a',
+    upstreamId: 'up_copilot',
+    upstreamItemId: 'opaque_reasoning_id',
+    itemType: 'reasoning',
+    payload: { item: { id: 'rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w', type: 'reasoning', summary: [] } },
+    createdAt: 2_000,
+  });
+  const adminScoped = storedItem({
+    id: 'ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA',
+    apiKeyId: null,
+    itemType: 'web_search_call',
+    payload: { item: { id: 'ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA', type: 'web_search_call', status: 'completed' } },
+    createdAt: 3_000,
+  });
+
+  await repo.insertMany([first, second, adminScoped]);
+
+  assertEquals(await repo.lookupMany('key_a', [second.id, adminScoped.id, first.id, 'missing']), [second, first]);
+  assertEquals(await repo.lookupMany(null, [first.id, adminScoped.id]), [adminScoped]);
+  assertEquals(await repo.lookupMany('key_b', [first.id, second.id, adminScoped.id]), []);
+  assertEquals(await repo.lookupMany('key_a', []), []);
+
+  assertEquals(await repo.clearPayloadOlderThan(2_500), 2);
+  assertEquals(
+    await repo.lookupMany('key_a', [first.id, second.id]),
+    [
+      { ...first, payload: null },
+      { ...second, payload: null },
+    ],
+  );
+  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [adminScoped]);
+
+  assertEquals(await repo.deleteOlderThan(3_000), 2);
+  assertEquals(await repo.lookupMany('key_a', [first.id, second.id]), []);
+  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [adminScoped]);
+
+  await repo.deleteAll();
+  assertEquals(await repo.lookupMany(null, [adminScoped.id]), []);
+};
+
+test('memory responses items repo inserts, looks up by scope, cleans payloads, deletes rows, and clears', async () => {
+  await exerciseResponsesItemsRepo(new InMemoryRepo().responsesItems);
+});
+
+test('memory responses items repo clones item JSON at the repo boundary', async () => {
+  const repo = new InMemoryRepo().responsesItems;
+  const item = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    payload: { item: { nested: { values: ['original'] } } },
+    createdAt: 1_000,
+  });
+
+  await repo.insertMany([item]);
+  (item.payload!.item as { nested: { values: string[] } }).nested.values.push('mutated-after-write');
+
+  const [read] = await repo.lookupMany('key_a', [item.id]);
+  assertEquals(read.payload, { item: { nested: { values: ['original'] } } });
+  (read.payload!.item as { nested: { values: string[] } }).nested.values.push('mutated-after-read');
+
+  assertEquals((await repo.lookupMany('key_a', [item.id]))[0].payload, { item: { nested: { values: ['original'] } } });
+});
+
+test('memory responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {
+  const repo = new InMemoryRepo().responsesItems;
+  const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
+  await repo.insertMany([item]);
+  await repo.insertMany([
+    { ...item, apiKeyId: 'key_b' },
+    { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
+  ]);
+
+  // Same scope: the duplicate insert is a no-op; row reflects the first
+  // write. Stored ids use random bodies, so colliding writes only happen
+  // within one stream's mapper retries, which the wrap dedupes upstream.
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  // Different scope: a parallel row is created.
+  assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
+});
+
+test('D1 responses items repo inserts, looks up by scope, cleans payloads, deletes rows, and clears', async () => {
+  await exerciseResponsesItemsRepo(new D1Repo(new FakeResponsesItemsD1Database()).responsesItems);
+});
+
+test('D1 responses items repo rejects malformed stored payload_json', async () => {
+  const db = new FakeResponsesItemsD1Database();
+  db.rows.push({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    api_key_id: 'key_a',
+    upstream_id: null,
+    upstream_item_id: null,
+    item_type: 'message',
+    payload_json: '{bad json',
+    encrypted_content_hash: null,
+    created_at: 1_000,
+  });
+
+  await assertRejects(() => new D1Repo(db).responsesItems.lookupMany('key_a', ['msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA']), Error, 'Malformed responses_items.payload_json JSON');
+});
+
+test('D1 responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {
+  const repo = new D1Repo(new FakeResponsesItemsD1Database()).responsesItems;
+  const item = storedItem({ id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', apiKeyId: 'key_a', createdAt: 1_000 });
+  await repo.insertMany([item]);
+  await repo.insertMany([
+    { ...item, apiKeyId: 'key_b' },
+    { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
+  ]);
+
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
+});
+
+test('D1 responses items repo chunks lookups exceeding D1 100-parameter limit and unions the results', async () => {
+  const repo = new D1Repo(new FakeResponsesItemsD1Database()).responsesItems;
+  const items = Array.from({ length: 200 }, (_, i) =>
+    storedItem({ id: `msg_chunk_${i.toString().padStart(4, '0')}`, apiKeyId: 'key_a', encryptedContentHash: `enc_${i}`, createdAt: 1_000 + i }));
+  await repo.insertMany(items);
+
+  const byId = await repo.lookupMany('key_a', items.map(item => item.id));
+  assertEquals(byId.map(row => row.id), items.map(item => item.id));
+
+  const byHash = await repo.lookupManyByEncryptedContentHash('key_a', items.map(item => item.encryptedContentHash!));
+  assertEquals(new Set(byHash.map(row => row.id)).size, 200);
+});
+
+test('D1 responses items repo spills large payloads through the runtime file provider without storing backend identity', async () => {
+  const db = new FakeResponsesItemsD1Database();
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new D1Repo(db).responsesItems;
+  const payload = { item: { type: 'message', id: 'msg_large', content: 'x'.repeat(600 * 1024) } };
+  const item = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    payload,
+    createdAt: Date.UTC(2026, 4, 28, 12),
+  });
+
+  await repo.insertMany([item]);
+
+  const descriptor = JSON.parse(db.rows[0].payload_json!) as Record<string, unknown>;
+  assertEquals(descriptor.storage, 'file');
+  assertEquals('provider' in descriptor, false);
+  assertEquals(typeof descriptor.key, 'string');
+  assertEquals((descriptor.key as string).startsWith('responses-items/v1/expires/2026/06/27/12/'), true);
+  assert((await files.get(descriptor.key as string)) !== null);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+});
+
+test('D1 responses items deleteAll removes spilled payload files alongside the rows', async () => {
+  const db = new FakeResponsesItemsD1Database();
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new D1Repo(db).responsesItems;
+  const item = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    payload: { item: { type: 'message', id: 'msg_large', content: 'x'.repeat(600 * 1024) } },
+    createdAt: Date.UTC(2026, 4, 28, 12),
+  });
+
+  await repo.insertMany([item]);
+  const descriptor = JSON.parse(db.rows[0].payload_json!) as { key: string };
+  assert((await files.get(descriptor.key)) !== null);
+
+  await repo.deleteAll();
+
+  assertEquals(db.rows.length, 0);
+  assertEquals(await files.get(descriptor.key), null);
+});
+
+test('migration 0023 creates the responses_items table and cleanup indexes', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    applySqlJsFile(db, '0023_responses_items.sql');
+
+    const table = sqlJsRows<{ sql: string }>(db, "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'responses_items'")[0];
+    assert(table);
+    assertEquals(
+      table.sql,
+      `CREATE TABLE responses_items (
+  id TEXT NOT NULL,
+  api_key_id TEXT,
+  upstream_id TEXT,
+  upstream_item_id TEXT,
+  item_type TEXT NOT NULL,
+  payload_json TEXT,
+  encrypted_content_hash TEXT,
+  created_at INTEGER NOT NULL,
+  CHECK (length(id) > 0),
+  CHECK (length(item_type) > 0),
+  CHECK (upstream_id IS NOT NULL OR upstream_item_id IS NULL)
+)`,
+    );
+
+    assertEquals(
+      sqlJsRows<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'responses_items' ORDER BY name").map(row => row.name),
+      ['idx_responses_items_api_key_id', 'idx_responses_items_created_at', 'idx_responses_items_enc_hash', 'idx_responses_items_id_scope'],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+type FakeResponsesItemRow = {
+  id: string;
+  api_key_id: string | null;
+  upstream_id: string | null;
+  upstream_item_id: string | null;
+  item_type: string;
+  payload_json: string | null;
+  encrypted_content_hash: string | null;
+  created_at: number;
+};
+
+class FakeResponsesItemsD1PreparedStatement {
+  private binds: unknown[] = [];
+
+  constructor(private db: FakeResponsesItemsD1Database, private query: string) {}
+
+  bind(...values: unknown[]): FakeResponsesItemsD1PreparedStatement {
+    this.binds = values;
+    return this;
+  }
+
+  first(): Promise<null> {
+    throw new Error(`Unsupported D1 first() query in responses items test: ${this.query}`);
+  }
+
+  all<T>(): Promise<{ results: T[]; success: true; meta: Record<string, unknown> }> {
+    if (this.query.includes('FROM responses_items')) {
+      return Promise.resolve({
+        results: this.db.lookup(this.query, this.binds) as T[],
+        success: true,
+        meta: {},
+      });
+    }
+
+    throw new Error(`Unsupported D1 all() query in responses items test: ${this.query}`);
+  }
+
+  run(): Promise<{ results: never[]; success: true; meta: Record<string, unknown> }> {
+    if (this.query.startsWith('INSERT INTO responses_items')) {
+      this.db.insert(this.binds);
+      return Promise.resolve({ results: [], success: true, meta: { changes: 1 } });
+    }
+    if (this.query.startsWith('UPDATE responses_items SET payload_json = NULL')) {
+      const changes = this.db.clearPayloadOlderThan(this.binds[0] as number);
+      return Promise.resolve({ results: [], success: true, meta: { changes } });
+    }
+    if (this.query.startsWith('DELETE FROM responses_items WHERE created_at < ?')) {
+      const changes = this.db.deleteOlderThan(this.binds[0] as number);
+      return Promise.resolve({ results: [], success: true, meta: { changes } });
+    }
+    if (this.query === 'DELETE FROM responses_items') {
+      const changes = this.db.rows.length;
+      this.db.rows = [];
+      return Promise.resolve({ results: [], success: true, meta: { changes } });
+    }
+
+    throw new Error(`Unsupported D1 run() query in responses items test: ${this.query}`);
+  }
+}
+
+class FakeResponsesItemsD1Database implements D1Database {
+  rows: FakeResponsesItemRow[] = [];
+
+  prepare(query: string): FakeResponsesItemsD1PreparedStatement {
+    return new FakeResponsesItemsD1PreparedStatement(this, query);
+  }
+
+  async batch(statements: FakeResponsesItemsD1PreparedStatement[]): Promise<Array<{ results: never[]; success: true; meta: Record<string, unknown> }>> {
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  }
+
+  insert(binds: unknown[]): void {
+    const [id, apiKeyId, upstreamId, upstreamItemId, itemType, payload, encryptedContentHash, createdAt] = binds as [string, string | null, string | null, string | null, string, string | null, string | null, number];
+    const existing = this.rows.find(row => row.id === id && row.api_key_id === apiKeyId);
+    if (existing) return;  // mirrors d1.ts `ON CONFLICT DO NOTHING`
+    this.rows.push({
+      id,
+      api_key_id: apiKeyId,
+      upstream_id: upstreamId,
+      upstream_item_id: upstreamItemId,
+      item_type: itemType,
+      payload_json: payload,
+      encrypted_content_hash: encryptedContentHash,
+      created_at: createdAt,
+    });
+  }
+
+  lookup(query: string, binds: unknown[]): FakeResponsesItemRow[] {
+    const [apiKeyId, ...keys] = binds as [string | null, ...string[]];
+    const wanted = new Set(keys);
+    if (query.includes('encrypted_content_hash IN')) {
+      return this.rows
+        .filter(row => row.api_key_id === apiKeyId && row.encrypted_content_hash !== null && wanted.has(row.encrypted_content_hash))
+        .map(row => ({ ...row }));
+    }
+    const matches = this.rows.filter(row => wanted.has(row.id) && row.api_key_id === apiKeyId);
+    const order = new Map(keys.map((id, index) => [id, index]));
+    return matches.map(row => ({ ...row })).toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
+
+  clearPayloadOlderThan(createdBefore: number): number {
+    let changes = 0;
+    for (const row of this.rows) {
+      if (row.created_at < createdBefore && row.payload_json !== null) {
+        row.payload_json = null;
+        changes += 1;
+      }
+    }
+    return changes;
+  }
+
+  deleteOlderThan(createdBefore: number): number {
+    const previousLength = this.rows.length;
+    this.rows = this.rows.filter(row => row.created_at >= createdBefore);
+    return previousLength - this.rows.length;
+  }
+}
+
+type SqlJsDatabase = {
+  run(sql: string): void;
+  exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>;
+  close(): void;
+};
+
+const migrationSqlByPath = import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+const migrationSqlByFilename = new Map(Object.entries(migrationSqlByPath).map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql]));
+
+const applySqlJsFile = (db: SqlJsDatabase, filename: string): void => {
+  const sql = migrationSqlByFilename.get(filename);
+  if (!sql) throw new Error(`Missing migration SQL fixture: ${filename}`);
+  db.run(sql);
+};
+
+const sqlJsRows = <T>(db: SqlJsDatabase, sql: string): T[] => {
+  const [result] = db.exec(sql);
+  if (!result) return [];
+  return result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index] ?? null])) as T);
+};

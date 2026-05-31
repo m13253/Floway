@@ -9,6 +9,7 @@ export interface SerializedUpstreamRecord {
   created_at: string;
   updated_at: string;
   flag_overrides: Record<string, boolean>;
+  disabled_public_model_ids: string[];
   config: unknown;
 }
 
@@ -28,12 +29,14 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
       ...(config.authStyle !== undefined ? { authStyle: clone(config.authStyle) } : {}),
       ...(config.supportedEndpoints !== undefined ? { supportedEndpoints: clone(config.supportedEndpoints) } : {}),
       ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
+      ...(config.modelsFetch !== undefined ? { modelsFetch: clone(config.modelsFetch) } : {}),
+      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
       bearerTokenSet: hasSecret(config.bearerToken),
     };
   case 'azure':
     return {
       ...(config.endpoint !== undefined ? { endpoint: clone(config.endpoint) } : {}),
-      ...(config.deployments !== undefined ? { deployments: clone(config.deployments) } : {}),
+      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
       apiKeySet: hasSecret(config.apiKey),
     };
   case 'copilot':
@@ -58,6 +61,7 @@ const serializeBase = (upstream: UpstreamRecord, config: unknown): SerializedUps
   created_at: upstream.createdAt,
   updated_at: upstream.updatedAt,
   flag_overrides: { ...upstream.flagOverrides },
+  disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   config,
 });
 

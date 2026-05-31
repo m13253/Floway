@@ -107,7 +107,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
   enabledFlags: new Set<string>(['responses-image-generation-shim']), headers: {},
   payload: { model: 'orchestrator', input, tools: [{ type: 'image_generation', action, ...extraTool }] } as never,
 });
-const REQ = { requestStartedAt: 0, runtimeLocation: 'test', clientStream: true } as RequestContext;
+const REQ = { requestStartedAt: 0, runtimeLocation: 'test', clientStream: true, responsesSyntheticItemIds: new Set<string>() } as RequestContext;
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);

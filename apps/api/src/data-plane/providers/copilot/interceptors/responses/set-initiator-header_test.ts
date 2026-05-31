@@ -10,7 +10,7 @@ import type { ResponseInputItem, ResponsesPayload, ResponsesStreamEvent } from '
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 };
 

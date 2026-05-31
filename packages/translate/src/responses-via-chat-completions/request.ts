@@ -162,6 +162,9 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
 
       if (item.type === 'function_call_output') {
         flushAssistant();
+        // FIXME: a multimodal function_call_output becomes a tool-role message
+        // with image_url content parts. Verify GitHub Copilot's chat upstream
+        // accepts image content on tool messages before relying on this path.
         messages.push({
           role: 'tool',
           tool_call_id: item.call_id,
@@ -203,8 +206,8 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
         throw new Error('Responses → Chat Completions translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
       }
 
-      if (item.type === 'image_generation_call') {
-        throw new Error('Responses → Chat Completions translator does not accept image_generation_call input items until item-by-id image storage is available.');
+      if (item.type !== 'message') {
+        throw new Error(`Responses → Chat Completions translator does not accept ${item.type} input items.`);
       }
 
       if (item.role === 'assistant') {

@@ -13,12 +13,13 @@ const azureUpstream = (): UpstreamRecord => ({
   createdAt: '2026-05-21T00:00:00.000Z',
   updatedAt: '2026-05-21T00:00:00.000Z',
   flagOverrides: {},
+  disabledPublicModelIds: [],
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    deployments: [
+    models: [
       {
-        deployment: 'azure-deployment',
+        upstreamModelId: 'azure-model',
         publicModelId: 'azure-public',
         supportedEndpoints: ['/responses'],
       },

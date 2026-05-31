@@ -28,6 +28,7 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   output: [
     {
       type: 'message',
+      id: 'msg_base',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'hello' }],
     },
@@ -168,6 +169,7 @@ test('translateToSourceEvents preserves refusal text from JSON fallback', async 
       output: [
         {
           type: 'message',
+          id: 'msg_refusal',
           role: 'assistant',
           content: [{ type: 'refusal', refusal: 'No.' }],
         },

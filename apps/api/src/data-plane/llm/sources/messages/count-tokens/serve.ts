@@ -1,13 +1,14 @@
 import type { Context } from 'hono';
 
-import { apiKeyUpstreamIdsFromContext } from '../../../../../middleware/auth.ts';
 import { httpResponseToResponse, ProviderModelsUnavailableError } from '../../../../providers/models-store.ts';
-import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { listModelProviders, resolveModelForProvider } from '../../../../providers/registry.ts';
 import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
-import { createRequestContext } from '../../execute.ts';
-import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../serve.ts';
+import { createRequestContext } from '../../request-context.ts';
+import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
+import { bodyAnthropicBetaResponse, bodyBetaParam, messagesFailureEnvelope, parseAnthropicBeta } from '../traits.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export const countTokens = async (c: Context) => {
   try {
@@ -16,34 +17,38 @@ export const countTokens = async (c: Context) => {
     if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
 
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-    const { id: modelId, model } = await resolveModelForRequest(payload.model, apiKeyUpstreamIdsFromContext(c));
-
-    if (!model) {
-      return c.json(
-        {
-          error: {
-            type: 'invalid_request_error',
-            message: `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
-          },
-        },
-        404,
-      );
+    const request = createRequestContext(c, undefined, false);
+    const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesViaResponsesItemsView);
+    const preparedFailure = preparedStoredItems.failures[0];
+    if (preparedFailure) {
+      const { status, body } = messagesFailureEnvelope(preparedFailure, '/messages/count_tokens');
+      return Response.json(body, { status });
     }
+    let resp: Response | undefined;
+    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
+    if (providerPlan.type === 'failure') {
+      const { status, body } = messagesFailureEnvelope(providerPlan.failure, '/messages/count_tokens');
+      return Response.json(body, { status });
+    }
+    let resolvedModelId = payload.model;
+    let sawModel = false;
 
     // count_tokens is non-streaming, so there is no downstream abort signal
     // and `clientStream` is false. The request context is still threaded
     // through `runInterceptors` so any future RequestContext-aware
     // count_tokens interceptor sees the same shape it would on the chat path.
-    const request = createRequestContext(c, undefined, false);
+    for (const provider of providerPlan.providers) {
+      const resolved = await resolveModelForProvider(provider, payload.model);
+      if (!resolved) continue;
 
-    let resp: Response | undefined;
-    for (const binding of model.providers) {
-      if (!binding.upstreamModel.upstreamEndpoints.includes('messages_count_tokens')) {
-        continue;
-      }
+      sawModel = true;
+      resolvedModelId = resolved.id;
+      const binding = resolved.binding;
+      if (!binding.upstreamModel.upstreamEndpoints.includes('messages_count_tokens')) continue;
 
       const attemptPayload = structuredClone(payload);
-      attemptPayload.model = modelId;
+      attemptPayload.model = resolvedModelId;
+      attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesViaResponsesItemsView);
       // Build a MessagesInvocation matching the chat-planning shape so
       // provider-registered count_tokens interceptors (Copilot's vision,
       // initiator, anthropic-beta header workarounds) run against the same
@@ -53,7 +58,7 @@ export const countTokens = async (c: Context) => {
       const invocation: MessagesInvocation = {
         sourceApi: 'messages',
         targetApi: 'messages',
-        model: modelId,
+        model: resolvedModelId,
         upstream: binding.upstream,
         upstreamModel: binding.upstreamModel,
         provider: binding.provider,
@@ -73,15 +78,11 @@ export const countTokens = async (c: Context) => {
     }
 
     if (!resp) {
-      return c.json(
-        {
-          error: {
-            type: 'invalid_request_error',
-            message: `Model ${modelId} does not support the /messages/count_tokens endpoint.`,
-          },
-        },
-        400,
+      const { status, body } = messagesFailureEnvelope(
+        sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId },
+        '/messages/count_tokens',
       );
+      return Response.json(body, { status });
     }
 
     return new Response(resp.body, {

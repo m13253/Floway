@@ -115,7 +115,7 @@ test('handles no cache fields (backward compat)', () => {
   assertEquals(result.usage!.input_tokens_details, undefined);
 });
 
-test('redacted_thinking stream block is dropped for Responses output', () => {
+test('redacted_thinking stream block round-trips its opaque data as encrypted_content', () => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   translateMessagesEventToResponsesEvents(
@@ -129,27 +129,17 @@ test('redacted_thinking stream block is dropped for Responses output', () => {
 
   translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
 
-  assertEquals(state.completedItems, []);
-});
-
-test('packed redacted_thinking stream block is dropped for Responses output', () => {
-  const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
-
-  translateMessagesEventToResponsesEvents(
+  assertEquals(state.completedItems, [
     {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'redacted_thinking', data: 'opaque_sig@rs_88' },
-    } as MessagesStreamEventData,
-    state,
-  );
-
-  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
-
-  assertEquals(state.completedItems, []);
+      type: 'reasoning',
+      id: 'rs_0',
+      summary: [],
+      encrypted_content: 'opaque_sig',
+    },
+  ]);
 });
 
-test('thinking stream block ignores signature_delta and keeps readable text', () => {
+test('thinking stream block carries the upstream signature verbatim as encrypted_content', () => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   translateMessagesEventToResponsesEvents(
@@ -172,7 +162,7 @@ test('thinking stream block ignores signature_delta and keeps readable text', ()
     {
       type: 'content_block_delta',
       index: 0,
-      delta: { type: 'signature_delta', signature: 'enc_xyz@rs_33' },
+      delta: { type: 'signature_delta', signature: 'upstream-opaque-signature' },
     } as MessagesStreamEventData,
     state,
   );
@@ -183,6 +173,7 @@ test('thinking stream block ignores signature_delta and keeps readable text', ()
       type: 'reasoning',
       id: 'rs_0',
       summary: [{ type: 'summary_text', text: 'trace' }],
+      encrypted_content: 'upstream-opaque-signature',
     },
   ]);
 });
@@ -689,4 +680,76 @@ test('text_delta events on a text block with citations still emit text deltas un
   const moreTextDeltas = more.filter(e => e.type === 'response.output_text.delta');
   assertEquals(moreTextDeltas.length, 1);
   assertEquals(state.accumulatedText, 'Hello world. More.');
+});
+
+// ── Synthesized output items carry stable, child-consistent ids ──
+//
+// When a Responses client is routed to a Messages upstream, every synthesized
+// output item must expose an id so the source-serve persistence layer can mint
+// a stored id and record the item. The id on `output_item.added`/`.done` must
+// match the `item_id` on every child frame, and stay stable within the
+// response (index-derived, not a fresh gateway stored id).
+
+const itemIdOf = (events: ResponseStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
+  const event = events.find(candidate => candidate.type === type) as (ResponseOutputItemAddedEvent | ResponseOutputItemDoneEvent) | undefined;
+  if (!event) throw new Error(`expected ${type}`);
+  const id = (event.item as { id?: string }).id;
+  if (id === undefined) throw new Error(`expected ${type} item to carry an id`);
+  return id;
+};
+
+const childItemIds = (events: ResponseStreamEvent[]): string[] =>
+  events
+    .filter(event => event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done')
+    .map(event => (event as { item_id?: string }).item_id)
+    .filter((id): id is string => id !== undefined);
+
+test('synthesized message item carries a stable id consistent across added, child, and done frames', () => {
+  const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
+
+  const startEvents = translateMessagesEventToResponsesEvents(
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as MessagesStreamEventData,
+    state,
+  );
+  const deltaEvents = translateMessagesEventToResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } } as MessagesStreamEventData,
+    state,
+  );
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+
+  const addedId = itemIdOf(startEvents, 'response.output_item.added');
+  const doneId = itemIdOf(stopEvents, 'response.output_item.done');
+  const allChildIds = [...childItemIds(startEvents), ...childItemIds(deltaEvents), ...childItemIds(stopEvents)];
+
+  assertEquals(addedId, 'msg_0');
+  assertEquals(doneId, 'msg_0');
+  assertEquals(new Set(allChildIds), new Set(['msg_0']));
+  assertEquals(state.completedItems, [
+    { type: 'message', id: 'msg_0', role: 'assistant', content: [{ type: 'output_text', text: 'hi' }] },
+  ]);
+});
+
+test('synthesized function_call item carries a stable id consistent across added, child, and done frames', () => {
+  const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
+
+  const startEvents = translateMessagesEventToResponsesEvents(
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } } as MessagesStreamEventData,
+    state,
+  );
+  const deltaEvents = translateMessagesEventToResponsesEvents(
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } } as MessagesStreamEventData,
+    state,
+  );
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+
+  const addedId = itemIdOf(startEvents, 'response.output_item.added');
+  const doneId = itemIdOf(stopEvents, 'response.output_item.done');
+  const allChildIds = [...childItemIds(startEvents), ...childItemIds(deltaEvents), ...childItemIds(stopEvents)];
+
+  assertEquals(addedId, 'fc_0');
+  assertEquals(doneId, 'fc_0');
+  assertEquals(new Set(allChildIds), new Set(['fc_0']));
+  assertEquals(state.completedItems, [
+    { type: 'function_call', id: 'fc_0', call_id: 'toolu_1', name: 'lookup', arguments: '{"q":"x"}', status: 'completed' },
+  ]);
 });

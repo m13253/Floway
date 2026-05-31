@@ -19,7 +19,7 @@ const baseInvocation = (): Invocation<{ model: string; stream?: boolean }> => ({
 
 const baseRequest = (): RequestContext => ({
   requestStartedAt: 0,
-  apiKeyId: 'key_a',
+  responsesSyntheticItemIds: new Set(),  apiKeyId: 'key_a',
   clientStream: true,
   runtimeLocation: 'SJC',
 });

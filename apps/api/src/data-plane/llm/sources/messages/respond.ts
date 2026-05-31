@@ -9,40 +9,111 @@ import { type InternalDebugError, toInternalDebugError } from '../../shared/erro
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
 
 type MU = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 
-export const tokenUsageFromMessagesUsage = (u: MU) => {
-  const read = u.cache_read_input_tokens ?? 0;
-  const created = u.cache_creation_input_tokens ?? 0;
-  return tokenUsage((u.input_tokens ?? 0) + read + created, u.output_tokens, read, created);
+// Renders an upstream Messages result into the client HTTP/SSE response. An
+// error-typed result is a pre-stream failure and always answers as HTTP; an
+// events result drains to one JSON body (non-streaming) or is proxied frame by
+// frame (streaming). `success` reports whether a non-streaming body was
+// produced, so the orchestrator knows whether to flush stored items.
+export const respondMessages = async (
+  c: Context,
+  result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>>,
+  wantsStream: boolean,
+  request: RequestContext,
+  downstreamAbortController: AbortController | undefined,
+): Promise<{ success: boolean; response: Response }> => {
+  if (result.type === 'upstream-error') {
+    recordSourcePerformance(request, result.performance, true);
+    return { success: false, response: upstreamErrorToResponse(result) };
+  }
+
+  if (result.type === 'internal-error') {
+    recordSourcePerformance(request, result.performance, true);
+    return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
+  }
+
+  const state = new SourceStreamState();
+  const usageState = createMessagesStreamUsageState();
+  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
+
+  if (!wantsStream) {
+    try {
+      const response = await collectMessagesProtocolEventsToResponse(frames);
+      const metadata = await eventResultMetadata(result);
+      await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
+      recordSourcePerformance(request, metadata.performance, state.failed);
+      return { success: true, response: Response.json(response) };
+    } catch (error) {
+      recordSourcePerformance(request, result.performance, true);
+      return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
+    }
+  }
+
+  const response = streamSSE(c, async stream => {
+    let completion: StreamCompletion = 'error';
+    try {
+      completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
+        keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
+        downstreamAbortController,
+      });
+    } finally {
+      const metadata = await eventResultMetadata(result);
+      try {
+        await recordSourceUsage(request, metadata.modelIdentity, state.usage);
+      } finally {
+        recordSourcePerformance(request, metadata.performance, state.failedAfter(completion));
+      }
+    }
+  });
+
+  return { success: true, response };
 };
 
+// --- token usage ---
+
+// Anthropic already reports disjoint token counts: input_tokens excludes the
+// cache figures. Map them straight onto the billing dimensions without summing.
+const tokenUsageFromMessagesUsage = (u: MU) =>
+  tokenUsage({
+    input: u.input_tokens ?? 0,
+    input_cache_read: u.cache_read_input_tokens ?? 0,
+    input_cache_write: u.cache_creation_input_tokens ?? 0,
+    output: u.output_tokens,
+  });
+
 export const createMessagesStreamUsageState = () => ({
-  current: tokenUsage(),
+  current: tokenUsage({}),
   gotInputFromStart: false,
 });
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
-const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MU) => Object.assign(state.current, tokenUsageFromMessagesUsage(u));
+const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MU) => (state.current = tokenUsageFromMessagesUsage(u));
 
 export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEventData>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
     const usage = mergeMessagesUsage(state, event.message.usage);
-    state.gotInputFromStart ||= usage.inputTokens > 0;
+    // A fully cache-hit prompt reports message_start with input=0 but non-zero
+    // cache reads; the input accounting still arrived, so the flag must reflect
+    // every input-side dimension, not bare input alone — otherwise a later
+    // delta carrying input_tokens re-merges and drops the cache counts.
+    state.gotInputFromStart ||= (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) > 0;
   }
   if (event.type === 'message_delta' && event.usage) {
     if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
       mergeMessagesUsage(state, event.usage);
-    } else state.current.outputTokens = event.usage.output_tokens;
+    } else state.current.output = event.usage.output_tokens;
   }
   return event.type === 'message_stop' ? state.current : null;
 };
+
+// --- error rendering ---
 
 const internalMessagesErrorPayload = (error: InternalDebugError) => ({
   type: 'error',
@@ -57,27 +128,23 @@ const internalMessagesErrorPayload = (error: InternalDebugError) => ({
   },
 });
 
-const downstreamMessagesPingKeepAliveFrame = sseFrame(JSON.stringify({ type: 'ping' }), 'ping');
-
 const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });
 
-const internalMessagesStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
-
-const isMessagesFailureFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && frame.event.type === 'error';
+// --- frame observation ---
 
 const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 const observeMessagesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
-  state: ReturnType<typeof createSourceStreamState>,
+  state: SourceStreamState,
   usageState: ReturnType<typeof createMessagesStreamUsageState>,
   observeUsage: boolean,
 ) {
   for await (const frame of frames) {
-    const failed = isMessagesFailureFrame(frame);
+    const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
     if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromMessagesFrame(frame, usageState));
+      state.rememberUsage(tokenUsageFromMessagesFrame(frame, usageState));
     }
     if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
@@ -86,7 +153,7 @@ const observeMessagesFrames = async function* (
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
 };
 
-const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: ReturnType<typeof createSourceStreamState>) {
+const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = messagesProtocolFrameToSSEFrame(frame);
@@ -94,58 +161,6 @@ const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<M
     }
   } catch (error) {
     state.failed = true;
-    yield internalMessagesStreamErrorFrame(error);
+    yield sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
   }
-};
-
-export const respondMessages = async (
-  c: Context,
-  result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>>,
-  wantsStream: boolean,
-  request: RequestContext,
-  downstreamAbortController: AbortController | undefined,
-): Promise<Response> => {
-  if (result.type === 'upstream-error') {
-    recordSourcePerformance(request, result.performance, true);
-    return upstreamErrorToResponse(result);
-  }
-
-  if (result.type === 'internal-error') {
-    recordSourcePerformance(request, result.performance, true);
-    return internalMessagesErrorResponse(result.status, result.error);
-  }
-
-  const state = createSourceStreamState();
-  const usageState = createMessagesStreamUsageState();
-  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
-
-  if (!wantsStream) {
-    try {
-      const response = await collectMessagesProtocolEventsToResponse(frames);
-      const metadata = await eventResultMetadata(result);
-      await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
-      recordSourcePerformance(request, metadata.performance, state.failed);
-      return Response.json(response);
-    } catch (error) {
-      recordSourcePerformance(request, result.performance, true);
-      return internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages'));
-    }
-  }
-
-  return streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    try {
-      completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
-        keepAlive: { frame: downstreamMessagesPingKeepAliveFrame },
-        downstreamAbortController,
-      });
-    } finally {
-      const metadata = await eventResultMetadata(result);
-      try {
-        await recordSourceUsage(request, metadata.modelIdentity, state.usage);
-      } finally {
-        recordSourcePerformance(request, metadata.performance, sourceStreamFailed(completion, state));
-      }
-    }
-  });
 };

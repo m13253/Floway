@@ -113,28 +113,39 @@ export const result = (input: {
   ...(input.usage !== undefined ? { usage: input.usage } : {}),
 });
 
-export const messageItem = (text: string): ResponseOutputMessage => ({
+// Every output item carries its own `id` so that, when a Responses client is
+// routed to a non-Responses upstream, the synthesized stream looks like a
+// native Responses one: the id on `output_item.added`/`.done` matches the
+// `item_id` of every child frame, and the source-serve persistence layer can
+// mint a stored id and record the item. Ids are derived from the item's
+// output index (see the `msg_`/`fc_`/`ctc_`/`rs_` callers), so they are stable
+// within a response and do not parse as gateway stored ids.
+export const messageItem = (id: string, text: string): ResponseOutputMessage => ({
   type: 'message',
+  id,
   role: 'assistant',
   content: [textPart(text)],
 });
 
-export const reasoningItem = (id: string, summaryText: string): ResponseOutputReasoning => ({
+export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponseOutputReasoning => ({
   type: 'reasoning',
   id,
   summary: summaryText ? [summaryPart(summaryText)] : [],
+  ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
 });
 
-export const functionCallItem = (callId: string, name: string, args: string, status: ResponseOutputFunctionCall['status']): ResponseOutputFunctionCall => ({
+export const functionCallItem = (id: string, callId: string, name: string, args: string, status: ResponseOutputFunctionCall['status']): ResponseOutputFunctionCall => ({
   type: 'function_call',
+  id,
   call_id: callId,
   name,
   arguments: args,
   status,
 });
 
-export const customToolCallItem = (callId: string, name: string, input: string): ResponseOutputCustomToolCall => ({
+export const customToolCallItem = (id: string, callId: string, name: string, input: string): ResponseOutputCustomToolCall => ({
   type: 'custom_tool_call',
+  id,
   call_id: callId,
   name,
   input,
@@ -166,7 +177,7 @@ export const itemAdded = (state: ResponsesSequenceState, outputIndex: number, it
 
 export const textStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
   seq(state, [
-    outputItemEvent('added', outputIndex, messageItem('')),
+    outputItemEvent('added', outputIndex, messageItem(itemId, '')),
     {
       type: 'response.content_part.added',
       item_id: itemId,

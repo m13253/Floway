@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { createStoredResponsesItemId, isStoredResponsesItemId } from './items/format.ts';
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseResponse, sseResponsesResponse, withMockedFetch } from '../../../../test-helpers.ts';
@@ -64,14 +65,33 @@ test('/v1/responses rejects previous_response_id at the entrypoint', async () =>
   assertEquals(fetchCalls, 0);
 });
 
-test('/v1/responses rejects item_reference at the entrypoint', async () => {
+test('/v1/responses returns planner not_found for non-stored item_reference without generation', async () => {
   const { apiKey } = await setupAppTest();
-  let fetchCalls = 0;
+  let generationFetchCalls = 0;
 
   await withMockedFetch(
-    () => {
-      fetchCalls++;
-      throw new Error('unexpected upstream fetch');
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        generationFetchCalls++;
+        throw new Error('unexpected upstream generation fetch');
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
       const response = await requestApp('/v1/responses', {
@@ -99,7 +119,533 @@ test('/v1/responses rejects item_reference at the entrypoint', async () => {
     },
   );
 
-  assertEquals(fetchCalls, 0);
+  assertEquals(generationFetchCalls, 0);
+});
+
+test('/v1/responses expands stored synthetic item_reference before the upstream request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const storedItem = {
+    type: 'message',
+    id: 'msg_synthetic_body',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'expanded synthetic context' }],
+  };
+  const id = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: null,
+      upstreamItemId: null,
+      itemType: 'message',
+      encryptedContentHash: null,
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseResponsesResponse({
+          id: 'resp_stored_reference',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          output_text: 'ok',
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [
+            { type: 'item_reference', id },
+            { type: 'message', role: 'user', content: 'Continue' },
+          ],
+          stream: false,
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertExists(upstreamBody);
+  const input = upstreamBody.input as Array<Record<string, unknown>>;
+  assertEquals(input[0].type, 'message');
+  assertStringIncludes(input[0].id as string, 'msg_tmp_');
+  assertEquals(input[0].content, [{ type: 'output_text', text: 'expanded synthetic context' }]);
+});
+
+test('/v1/responses expands same-origin item_reference for Copilot because Copilot does not support references', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  const storedItem = {
+    type: 'message',
+    id: 'raw_msg_copilot_body',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'expanded Copilot context' }],
+  };
+  const id = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: copilotUpstream.id,
+      upstreamItemId: 'raw_msg_copilot',
+      itemType: 'message',
+      encryptedContentHash: null,
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseResponsesResponse({
+          id: 'resp_stored_reference',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          output_text: 'ok',
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [
+            { type: 'item_reference', id },
+            { type: 'message', role: 'user', content: 'Continue' },
+          ],
+          stream: false,
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertExists(upstreamBody);
+  const input = upstreamBody.input as Array<Record<string, unknown>>;
+  assertEquals(input[0], {
+    type: 'message',
+    id: 'raw_msg_copilot',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'expanded Copilot context' }],
+  });
+});
+
+test('/v1/responses rejects metadata-only item_reference for Copilot before upstream generation', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  const id = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: copilotUpstream.id,
+      upstreamItemId: 'raw_msg_copilot_metadata',
+      itemType: 'message',
+      encryptedContentHash: null,
+      payload: null,
+      createdAt: Date.now(),
+    },
+  ]);
+  let generationFetchCalls = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        generationFetchCalls++;
+        throw new Error('unexpected upstream generation fetch');
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [
+            { type: 'item_reference', id },
+            { type: 'message', role: 'user', content: 'Continue' },
+          ],
+          stream: false,
+        }),
+      });
+
+      assertEquals(response.status, 404);
+      const body = await response.json();
+      assertEquals(body.error.message, `Item with id '${id}' not found.`);
+      assertEquals(body.error.type, 'invalid_request_error');
+      assertEquals(body.error.param, 'input');
+      assertEquals(body.error.code, null);
+    },
+  );
+
+  assertEquals(generationFetchCalls, 0);
+});
+
+test('/v1/responses prefers latest portable stored-item origin and rewrites only that origin id', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_a',
+    name: 'Origin A',
+    sortOrder: 0,
+    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', supportedEndpoints: ['/responses'] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_b',
+    name: 'Origin B',
+    sortOrder: 100,
+    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', supportedEndpoints: ['/responses'] },
+  }));
+
+  const firstItem = { type: 'reasoning', id: 'rs_first_body', summary: [{ type: 'summary_text', text: 'first' }] };
+  const secondItem = { type: 'reasoning', id: 'rs_second_body', summary: [{ type: 'summary_text', text: 'second' }] };
+  const firstId = createStoredResponsesItemId('reasoning');
+  const secondId = createStoredResponsesItemId('reasoning');
+  await repo.responsesItems.insertMany([
+    {
+      id: firstId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_a',
+      upstreamItemId: 'raw_rs_a',
+      itemType: 'reasoning',
+      encryptedContentHash: null,
+      payload: { item: { ...firstItem, id: firstId } },
+      createdAt: Date.now(),
+    },
+    {
+      id: secondId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_b',
+      upstreamItemId: 'raw_rs_b',
+      itemType: 'reasoning',
+      encryptedContentHash: null,
+      payload: { item: { ...secondItem, id: secondId } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamHost = '';
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if ((url.hostname === 'origin-a.example.com' || url.hostname === 'origin-b.example.com') && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'stored-model' }] });
+      }
+      if (url.pathname === '/v1/responses') {
+        upstreamHost = url.hostname;
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseResponsesResponse({
+          id: 'resp_stored_reasoning',
+          object: 'response',
+          model: 'stored-model',
+          status: 'completed',
+          output: [],
+          output_text: 'ok',
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'stored-model',
+          input: [
+            { type: 'reasoning', id: firstId, summary: [{ type: 'summary_text', text: 'first' }] },
+            { type: 'reasoning', id: secondId, summary: [{ type: 'summary_text', text: 'second' }] },
+            { type: 'message', role: 'user', content: 'Continue' },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertEquals(upstreamHost, 'origin-b.example.com');
+  assertExists(upstreamBody);
+  assertEquals(upstreamBody.input, [
+    { type: 'reasoning', id: 'raw_rs_b', summary: [{ type: 'summary_text', text: 'second' }] },
+    { type: 'message', role: 'user', content: 'Continue' },
+  ]);
+});
+
+test('/v1/responses falls back with portable non-origin message items using temporary ids', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_a',
+    name: 'Origin A',
+    sortOrder: 0,
+    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', supportedEndpoints: ['/responses'] },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_b',
+    name: 'Origin B',
+    sortOrder: 100,
+    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', supportedEndpoints: ['/responses'] },
+  }));
+
+  const firstItem = { type: 'message', id: 'msg_first_body', role: 'assistant', content: [{ type: 'output_text', text: 'first' }] };
+  const secondItem = { type: 'message', id: 'msg_second_body', role: 'assistant', content: [{ type: 'output_text', text: 'second' }] };
+  const firstId = createStoredResponsesItemId('message');
+  const secondId = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([
+    {
+      id: firstId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_a',
+      upstreamItemId: 'raw_msg_a',
+      itemType: 'message',
+      encryptedContentHash: null,
+      payload: { item: { ...firstItem, id: firstId } },
+      createdAt: Date.now(),
+    },
+    {
+      id: secondId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_b',
+      upstreamItemId: 'raw_msg_b',
+      itemType: 'message',
+      encryptedContentHash: null,
+      payload: { item: { ...secondItem, id: secondId } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamHost = '';
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if ((url.hostname === 'origin-a.example.com' || url.hostname === 'origin-b.example.com') && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'stored-model' }] });
+      }
+      if (url.pathname === '/v1/responses') {
+        upstreamHost = url.hostname;
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseResponsesResponse({
+          id: 'resp_stored_messages',
+          object: 'response',
+          model: 'stored-model',
+          status: 'completed',
+          output: [],
+          output_text: 'ok',
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'stored-model',
+          input: [
+            { type: 'message', id: firstId, role: 'assistant', content: [{ type: 'output_text', text: 'stale first' }] },
+            { type: 'message', id: secondId, role: 'assistant', content: [{ type: 'output_text', text: 'stale second' }] },
+            { type: 'message', role: 'user', content: 'Continue' },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertEquals(upstreamHost, 'origin-b.example.com');
+  assertExists(upstreamBody);
+  const input = upstreamBody.input as Array<Record<string, unknown>>;
+  assertEquals((input[0].id as string).startsWith('msg_tmp_'), true);
+  assertEquals(input[0].content, [{ type: 'output_text', text: 'first' }]);
+  assertEquals(input[1].id, 'raw_msg_b');
+  assertEquals(input[1].content, [{ type: 'output_text', text: 'second' }]);
+  assertEquals(input[2], { type: 'message', role: 'user', content: 'Continue' });
+});
+
+test('/v1/responses rejects multiple forcing stored-item origins before generation', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const firstItem = { type: 'compaction', id: 'cmp_first' };
+  const secondItem = { type: 'compaction', id: 'cmp_second' };
+  const firstId = createStoredResponsesItemId('compaction');
+  const secondId = createStoredResponsesItemId('compaction');
+  await repo.responsesItems.insertMany([
+    {
+      id: firstId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_a',
+      upstreamItemId: 'raw_cmp_a',
+      itemType: 'compaction',
+      encryptedContentHash: null,
+      payload: { item: { ...firstItem, id: firstId } },
+      createdAt: Date.now(),
+    },
+    {
+      id: secondId,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_b',
+      upstreamItemId: 'raw_cmp_b',
+      itemType: 'compaction',
+      encryptedContentHash: null,
+      payload: { item: { ...secondItem, id: secondId } },
+      createdAt: Date.now(),
+    },
+  ]);
+  let generationFetchCalls = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        generationFetchCalls++;
+        throw new Error('unexpected upstream generation fetch');
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [
+            { type: 'compaction', id: firstId },
+            { type: 'compaction', id: secondId },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 400);
+      const body = await response.json();
+      assertEquals(body.error.code, 'responses_item_routing_unavailable');
+    },
+  );
+
+  assertEquals(generationFetchCalls, 0);
 });
 
 test('/v1/responses rewrites codex-auto-review to gpt-5.4 low reasoning at the entrypoint', async () => {
@@ -182,8 +728,8 @@ test('/v1/responses rewrites codex-auto-review to gpt-5.4 low reasoning at the e
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].model, 'gpt-5.4');
-  assertEquals(usage[0].inputTokens, 3);
-  assertEquals(usage[0].outputTokens, 5);
+  assertEquals(usage[0].tokens.input, 3);
+  assertEquals(usage[0].tokens.output, 5);
 });
 
 test('/v1/responses direct mode preserves custom apply_patch and fixes mismatched stream item IDs', async () => {
@@ -292,7 +838,12 @@ test('/v1/responses direct mode preserves custom apply_patch and fixes mismatche
       const text = await response.text();
       const events = parseSSEText(text);
       assertEquals(events.length, 3);
-      assertStringIncludes(events[1].data, '"id":"item_orig"');
+      const added = JSON.parse(events[0].data as string) as { item: { id: string } };
+      const done = JSON.parse(events[1].data as string) as { item: { id: string } };
+      assertEquals(isStoredResponsesItemId(added.item.id), true);
+      assertEquals(done.item.id, added.item.id);
+      assertFalse(text.includes('"id":"item_orig"'));
+      assertFalse(text.includes('"id":"item_wrong"'));
     },
   );
 
@@ -524,6 +1075,7 @@ test('/v1/responses direct mode expands upstream fast-path (wrapper-only SSE) in
           output: [
             {
               type: 'message',
+              id: 'msg_fastpath',
               role: 'assistant',
               content: [{ type: 'output_text', text: 'Hello' }],
             },
@@ -644,6 +1196,7 @@ test('/v1/responses resolves Claude reasoning variants before planning', async (
           output: [
             {
               type: 'message',
+              id: 'msg_reasoning',
               role: 'assistant',
               content: [{ type: 'output_text', text: 'ok' }],
             },
@@ -676,111 +1229,6 @@ test('/v1/responses resolves Claude reasoning variants before planning', async (
   );
 
   assertEquals(upstreamBody?.model, 'claude-opus-4.7-xhigh');
-});
-
-test('/v1/responses direct mode retries connection-bound input item IDs once with a rewritten ID', async () => {
-  const { apiKey } = await setupAppTest();
-
-  const requests: Record<string, unknown>[] = [];
-  const originalId = btoa('0123456789abcdefghij');
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-        });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(
-          copilotModels([
-            {
-              id: 'gpt-direct-responses-retry',
-              supported_endpoints: ['/responses'],
-            },
-          ]),
-        );
-      }
-      if (url.pathname === '/responses') {
-        requests.push(JSON.parse(await request.text()));
-
-        return requests.length === 1
-          ? jsonResponse(
-              {
-                error: {
-                  message: 'input item ID does not belong to this connection',
-                },
-              },
-              400,
-            )
-          : sseResponsesResponse({
-              id: 'resp_retry',
-              object: 'response',
-              model: 'gpt-direct-responses-retry',
-              status: 'completed',
-              output_text: 'ok',
-              output: [
-                {
-                  type: 'message',
-                  role: 'assistant',
-                  content: [{ type: 'output_text', text: 'ok' }],
-                },
-              ],
-              usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-            });
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/responses', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey.key,
-        },
-        body: JSON.stringify({
-          model: 'gpt-direct-responses-retry',
-          input: [
-            {
-              type: 'message',
-              id: originalId,
-              role: 'user',
-              content: 'Hi',
-            },
-          ],
-          instructions: null,
-          temperature: 1,
-          top_p: null,
-          max_output_tokens: 32,
-          tools: null,
-          tool_choice: 'auto',
-          metadata: null,
-          stream: false,
-          store: false,
-          parallel_tool_calls: true,
-        }),
-      });
-
-      assertEquals(response.status, 200);
-      assertEquals((await response.json()).id, 'resp_retry');
-    },
-  );
-
-  assertEquals(requests.length, 2);
-
-  const firstInput = requests[0].input as Array<Record<string, unknown>>;
-  const secondInput = requests[1].input as Array<Record<string, unknown>>;
-
-  assertEquals(firstInput[0].id, originalId);
-  assertStringIncludes(secondInput[0].id as string, 'msg_');
 });
 
 test('/v1/responses malformed JSON returns structured internal debug error', async () => {
@@ -1325,6 +1773,7 @@ test('/v1/responses preserves custom upstream /models HTTP errors', async () => 
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

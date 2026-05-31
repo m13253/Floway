@@ -122,7 +122,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].model, 'text-embedding-real');
-  assertEquals(usage[0].inputTokens, 1);
+  assertEquals(usage[0].tokens.input, 1);
 
   const performanceRows = await repo.performance.listAll();
   const requestTotal = performanceRows.find(row => row.metricScope === 'request_total');
@@ -219,6 +219,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
@@ -291,6 +292,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://chat.example.com',
       bearerToken: 'sk-chat',
@@ -344,6 +346,7 @@ test('/v1/embeddings preserves custom upstream /models HTTP errors', async () =>
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
@@ -394,6 +397,7 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
     sortOrder: 100,
     createdAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',

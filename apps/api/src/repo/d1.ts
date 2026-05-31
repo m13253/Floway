@@ -1,4 +1,6 @@
+import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -10,9 +12,11 @@ import type {
   PerformanceRepo,
   PerformanceTelemetryRecord,
   Repo,
+  ResponsesItemsRepo,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  StoredResponsesItem,
   UpstreamProviderKind,
   UpstreamRecord,
   UpstreamRepo,
@@ -21,7 +25,7 @@ import type {
 } from './types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 
 // Minimal D1 type definitions (subset of @cloudflare/workers-types)
 interface D1Result<T = Record<string, unknown>> {
@@ -121,138 +125,161 @@ function toApiKey(row: ApiKeyRow): ApiKey {
   };
 }
 
-const USAGE_COLUMNS = 'key_id, model, upstream, model_key, hour, requests, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_json';
+const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
 
-const usageCostJson = (cost: UsageRecord['cost']): string | null => (cost ? JSON.stringify(cost) : null);
+const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] =>
+  BILLING_DIMENSIONS.flatMap(dimension => {
+    const tokens = record.tokens[dimension] ?? 0;
+    return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(record.cost, dimension) }] : [];
+  });
 
 class D1UsageRepo implements UsageRepo {
   constructor(private db: D1Database) {}
 
   async record(record: UsageRecord): Promise<void> {
-    const normalized = normalizeUsageRecord(record);
-    await this.db
-      .prepare(
-        `INSERT INTO usage (${USAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = requests + excluded.requests,
-           input_tokens = input_tokens + excluded.input_tokens,
-           output_tokens = output_tokens + excluded.output_tokens,
-           cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
-           cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
-           cost_json = COALESCE(cost_json, excluded.cost_json)`,
-      )
-      .bind(
-        normalized.keyId,
-        normalized.model,
-        normalized.upstream,
-        normalized.modelKey,
-        normalized.hour,
-        normalized.requests,
-        normalized.inputTokens,
-        normalized.outputTokens,
-        normalized.cacheReadTokens ?? 0,
-        normalized.cacheCreationTokens ?? 0,
-        usageCostJson(normalized.cost),
-      )
-      .run();
+    const upstream = record.upstream ?? null;
+    const statements: D1PreparedStatement[] = dimensionRows(record).map(row =>
+      this.db
+        .prepare(
+          `INSERT INTO usage (key_id, model, upstream, model_key, hour, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET
+             tokens = tokens + excluded.tokens,
+             unit_price = COALESCE(unit_price, excluded.unit_price)`,
+        )
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, row.dimension, row.tokens, row.unitPrice));
+    statements.push(
+      this.db
+        .prepare(
+          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, requests) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
+        )
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.requests),
+    );
+    await this.runStatements(statements);
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
-    const sql = opts.keyId
-      ? `SELECT ${USAGE_COLUMNS} FROM usage WHERE key_id = ? AND hour >= ? AND hour < ? ORDER BY hour`
-      : `SELECT ${USAGE_COLUMNS} FROM usage WHERE hour >= ? AND hour < ? ORDER BY hour`;
+    const dimensionWhere = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
     const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
-    const { results } = await this.db
-      .prepare(sql)
-      .bind(...binds)
-      .all<UsageRow>();
-    return results.map(toUsageRecord);
+    const [{ results: dimensions }, { results: requests }] = await Promise.all([
+      this.db
+        .prepare(`SELECT key_id, model, upstream, model_key, hour, dimension, tokens, unit_price FROM usage WHERE ${dimensionWhere}`)
+        .bind(...binds)
+        .all<UsageDimensionRow>(),
+      this.db
+        .prepare(`SELECT key_id, model, upstream, model_key, hour, requests FROM usage_requests WHERE ${dimensionWhere}`)
+        .bind(...binds)
+        .all<UsageRequestRow>(),
+    ]);
+    return assembleUsageRecords(dimensions, requests);
   }
 
   async listAll(): Promise<UsageRecord[]> {
-    const { results } = await this.db.prepare(`SELECT ${USAGE_COLUMNS} FROM usage ORDER BY hour`).all<UsageRow>();
-    return results.map(toUsageRecord);
+    const [{ results: dimensions }, { results: requests }] = await Promise.all([
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, dimension, tokens, unit_price FROM usage').all<UsageDimensionRow>(),
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, requests FROM usage_requests').all<UsageRequestRow>(),
+    ]);
+    return assembleUsageRecords(dimensions, requests);
   }
 
   async set(record: UsageRecord): Promise<void> {
-    const normalized = normalizeUsageRecord(record);
-    await this.db
-      .prepare(
-        `INSERT INTO usage (${USAGE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = excluded.requests,
-           input_tokens = excluded.input_tokens,
-           output_tokens = excluded.output_tokens,
-           cache_read_tokens = excluded.cache_read_tokens,
-           cache_creation_tokens = excluded.cache_creation_tokens,
-           cost_json = excluded.cost_json`,
-      )
-      .bind(
-        normalized.keyId,
-        normalized.model,
-        normalized.upstream,
-        normalized.modelKey,
-        normalized.hour,
-        normalized.requests,
-        normalized.inputTokens,
-        normalized.outputTokens,
-        normalized.cacheReadTokens ?? 0,
-        normalized.cacheCreationTokens ?? 0,
-        usageCostJson(normalized.cost),
-      )
-      .run();
+    const upstream = record.upstream ?? null;
+    // Replacement upsert: clear the bucket's existing dimension rows first so
+    // dimensions absent from the new record do not linger.
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ?")
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour),
+      ...dimensionRows(record).map(row =>
+        this.db
+          .prepare('INSERT INTO usage (key_id, model, upstream, model_key, hour, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, row.dimension, row.tokens, row.unitPrice)),
+    ];
+    statements.push(
+      this.db
+        .prepare(
+          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, requests) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+        )
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.requests),
+    );
+    await this.runStatements(statements);
   }
 
   async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM usage').run();
+    await this.runStatements([this.db.prepare('DELETE FROM usage'), this.db.prepare('DELETE FROM usage_requests')]);
+  }
+
+  private async runStatements(statements: D1PreparedStatement[]): Promise<void> {
+    if (statements.length === 0) return;
+    if (this.db.batch) {
+      await this.db.batch(statements);
+      return;
+    }
+    for (const statement of statements) await statement.run();
   }
 }
 
-type UsageRow = {
+interface UsageDimensionRow {
+  key_id: string;
+  model: string;
+  upstream: string | null;
+  model_key: string;
+  hour: string;
+  dimension: string;
+  tokens: number;
+  unit_price: number | null;
+}
+
+interface UsageRequestRow {
   key_id: string;
   model: string;
   upstream: string | null;
   model_key: string;
   hour: string;
   requests: number;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
-  cost_json: string | null;
-};
+}
 
-const normalizeUsageRecord = (record: UsageRecord): UsageRecord => ({
-  ...record,
-  upstream: record.upstream ?? null,
-  cacheReadTokens: record.cacheReadTokens ?? 0,
-  cacheCreationTokens: record.cacheCreationTokens ?? 0,
-});
+const usageBucketKey = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string }): string =>
+  [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour].join('\0');
 
-const parseUsageCost = (raw: string | null): UsageRecord['cost'] => {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<ModelPricing>;
-    if (typeof parsed.input !== 'number' || typeof parsed.output !== 'number') return null;
-    return parsed as ModelPricing;
-  } catch {
-    return null;
+// Reassemble per-bucket UsageRecords from the two narrow tables. The dimension
+// rows carry the disjoint counts and the per-dimension unit_price snapshot,
+// which we fold back into a ModelPricing snapshot; usage_requests carries the
+// request count. A bucket may appear in either table independently.
+const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
+  const byBucket = new Map<string, UsageRecord>();
+
+  const ensureRecord = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string }): UsageRecord => {
+    const key = usageBucketKey(row);
+    let record = byBucket.get(key);
+    if (!record) {
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream ?? null, modelKey: row.model_key, hour: row.hour, requests: 0, tokens: {}, cost: null };
+      byBucket.set(key, record);
+    }
+    return record;
+  };
+
+  const pricingByBucket = new Map<string, ModelPricing>();
+  for (const row of dimensions) {
+    const record = ensureRecord(row);
+    record.tokens[row.dimension as BillingDimension] = row.tokens;
+    if (row.unit_price !== null) {
+      const key = usageBucketKey(row);
+      const pricing = pricingByBucket.get(key) ?? {};
+      pricing[row.dimension as BillingDimension] = row.unit_price;
+      pricingByBucket.set(key, pricing);
+    }
   }
-};
+  for (const [key, pricing] of pricingByBucket) {
+    const record = byBucket.get(key);
+    if (record) record.cost = pricing;
+  }
 
-const toUsageRecord = (row: UsageRow): UsageRecord => ({
-  keyId: row.key_id,
-  model: row.model,
-  upstream: row.upstream ?? null,
-  modelKey: row.model_key,
-  hour: row.hour,
-  requests: row.requests,
-  inputTokens: row.input_tokens,
-  outputTokens: row.output_tokens,
-  cacheReadTokens: row.cache_read_tokens ?? 0,
-  cacheCreationTokens: row.cache_creation_tokens ?? 0,
-  cost: parseUsageCost(row.cost_json),
-});
+  for (const row of requests) ensureRecord(row).requests = row.requests;
+
+  return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));
+};
 
 class D1SearchUsageRepo implements SearchUsageRepo {
   constructor(private db: D1Database) {}
@@ -627,6 +654,111 @@ class D1CacheRepo implements CacheRepo {
   }
 }
 
+const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, encrypted_content_hash, created_at';
+
+class D1ResponsesItemsRepo implements ResponsesItemsRepo {
+  constructor(private db: D1Database) {}
+
+  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+    const rows = await this.lookupByColumn(apiKeyId, 'id', ids);
+    const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
+    return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
+  }
+
+  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+    return await this.lookupByColumn(apiKeyId, 'encrypted_content_hash', hashes);
+  }
+
+  // D1 caps bound parameters at 100 per query. A single Responses request can
+  // echo back more stored items than that — long agentic sessions resubmit
+  // every prior reasoning/compaction item each turn — so chunk the IN-list
+  // well under the cap (the `api_key_id` bind shares the budget) and union
+  // the results.
+  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+    const unique = [...new Set(values)];
+    if (unique.length === 0) return [];
+
+    const CHUNK = 90;
+    const chunks: string[][] = [];
+    for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK));
+
+    const perChunk = await Promise.all(chunks.map(async chunk => {
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { results } = await this.db
+        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND ${column} IN (${placeholders})`)
+        .bind(apiKeyId, ...chunk)
+        .all<ResponsesItemRow>();
+      return await Promise.all(results.map(toStoredResponsesItem));
+    }));
+    return perChunk.flat();
+  }
+
+  async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
+    const statements = await Promise.all(items.map(async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+      // One INSERT per `(id, api_key_id)`. Stream pipelines call insertMany
+      // exactly once per stored id at the carrier's finalizing frame; the
+      // wrap's idMapper memoizes so reattempts within one stream are
+      // impossible. Cross-session collisions of the random body are
+      // effectively impossible (~2^-128) and treated as no-op if they ever
+      // happen.
+      return this.db
+        .prepare(
+          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
+        )
+        .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, payload, item.encryptedContentHash, item.createdAt);
+    }));
+    await this.runStatements(statements);
+  }
+
+  async clearPayloadOlderThan(createdBefore: number): Promise<number> {
+    const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < ?').bind(createdBefore).run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteOlderThan(createdBefore: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM responses_items WHERE created_at < ?').bind(createdBefore).run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM responses_items').run();
+    await deleteAllResponsesItemPayloadFiles();
+  }
+
+  private async runStatements(statements: D1PreparedStatement[]): Promise<void> {
+    if (statements.length === 0) return;
+    if (this.db.batch) {
+      await this.db.batch(statements);
+      return;
+    }
+    for (const statement of statements) await statement.run();
+  }
+}
+
+interface ResponsesItemRow {
+  id: string;
+  api_key_id: string | null;
+  upstream_id: string | null;
+  upstream_item_id: string | null;
+  item_type: string;
+  payload_json: string | null;
+  encrypted_content_hash: string | null;
+  created_at: number;
+}
+
+const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
+  id: row.id,
+  apiKeyId: row.api_key_id,
+  upstreamId: row.upstream_id,
+  upstreamItemId: row.upstream_item_id,
+  itemType: row.item_type,
+  payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+  encryptedContentHash: row.encrypted_content_hash,
+  createdAt: row.created_at,
+});
+
 class D1SearchConfigRepo implements SearchConfigRepo {
   constructor(private db: D1Database) {}
 
@@ -666,14 +798,14 @@ class D1UpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -684,7 +816,7 @@ class D1UpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -692,7 +824,8 @@ class D1UpstreamRepo implements UpstreamRepo {
            sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
            config_json = excluded.config_json,
-           flag_overrides = excluded.flag_overrides`,
+           flag_overrides = excluded.flag_overrides,
+           disabled_public_model_ids = excluded.disabled_public_model_ids`,
       )
       .bind(
         upstream.id,
@@ -704,6 +837,7 @@ class D1UpstreamRepo implements UpstreamRepo {
         upstream.updatedAt,
         serializeStoredConfig(upstream.config),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
+        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
       )
       .run();
   }
@@ -728,6 +862,7 @@ interface UpstreamRow {
   updated_at: string;
   config_json: string;
   flag_overrides: string;
+  disabled_public_model_ids: string;
 }
 
 function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
@@ -748,6 +883,7 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     updatedAt: row.updated_at,
     config,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
+    disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
   };
 }
 
@@ -777,6 +913,24 @@ const parseFlagOverrides = (id: string, json: string): Record<string, boolean> =
   return normalizeFlagOverrides(out);
 };
 
+const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (cause) {
+    throw new Error(`Malformed upstream disabled_public_model_ids JSON for ${id}`, { cause });
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Upstream ${id} disabled_public_model_ids must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
+  }
+  for (const entry of parsed) {
+    if (typeof entry !== 'string') {
+      throw new Error(`Upstream ${id} disabled_public_model_ids entries must be strings, got ${typeof entry}`);
+    }
+  }
+  return normalizeDisabledPublicModelIds(parsed as string[]);
+};
+
 export class D1Repo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -785,6 +939,7 @@ export class D1Repo implements Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  responsesItems: ResponsesItemsRepo;
 
   constructor(db: D1Database) {
     this.apiKeys = new D1ApiKeyRepo(db);
@@ -794,5 +949,6 @@ export class D1Repo implements Repo {
     this.cache = new D1CacheRepo(db);
     this.searchConfig = new D1SearchConfigRepo(db);
     this.upstreams = new D1UpstreamRepo(db);
+    this.responsesItems = new D1ResponsesItemsRepo(db);
   }
 }

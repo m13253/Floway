@@ -89,7 +89,42 @@ test('translateResponsesToMessages uses fallbackMaxOutputTokens over the gateway
   assertEquals(result.target.max_tokens, 4096);
 });
 
-test('translateResponsesToMessages preserves reasoning summaries without Anthropic signatures', async () => {
+test('translateResponsesToMessages sends the genuine encrypted_content as the upstream signature, with no gateway envelope', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [
+      {
+        type: 'reasoning',
+        id: 'rs_42',
+        summary: [{ type: 'summary_text', text: 'trace' }],
+        encrypted_content: 'opaque-upstream-blob',
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  const assistant = result.target.messages[0];
+  if (assistant.role !== 'assistant' || !Array.isArray(assistant.content)) {
+    throw new Error('expected assistant message with content blocks');
+  }
+
+  assertEquals(assistant.content[0], {
+    type: 'thinking',
+    thinking: 'trace',
+    signature: 'opaque-upstream-blob',
+  });
+});
+
+test('translateResponsesToMessages omits the signature for a reasoning with no encrypted_content', async () => {
   const result = await translateResponsesToMessages({
     model: 'claude-test',
     input: [
@@ -116,10 +151,7 @@ test('translateResponsesToMessages preserves reasoning summaries without Anthrop
     throw new Error('expected assistant message with content blocks');
   }
 
-  assertEquals(assistant.content[0], {
-    type: 'thinking',
-    thinking: 'trace',
-  });
+  assertEquals(assistant.content[0], { type: 'thinking', thinking: 'trace' });
 });
 
 test('translateResponsesToMessages omits generic metadata instead of coercing it to metadata.user_id', async () => {

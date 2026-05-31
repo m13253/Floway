@@ -13,6 +13,7 @@ const completedResponse: ResponsesResult = {
   output: [
     {
       type: 'message',
+      id: 'msg_completed',
       role: 'assistant',
       content: [{ type: 'output_text', text: 'Hello' }],
     },
@@ -133,6 +134,87 @@ test('responsesResultToEvents keeps failure details only on the terminal event',
   assertEquals(created.response.error, null);
   assertEquals(terminal.type, 'response.failed');
   assertEquals(terminal.response.error?.message, 'upstream failed');
+});
+
+test('responsesResultToEvents propagates the real message item id to the added item and every child frame', () => {
+  const frames = Array.from(
+    responsesResultToEvents({
+      ...completedResponse,
+      output: [
+        {
+          type: 'message',
+          id: 'msg_real',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Hello' }],
+        },
+      ],
+    }),
+  );
+
+  const added = frames.find(frame => frame.event.type === 'response.output_item.added')?.event as {
+    item: { id?: string };
+  };
+  assertEquals(added.item.id, 'msg_real');
+
+  const childItemIds = frames
+    .map(frame => frame.event)
+    .filter((event): event is typeof event & { item_id: string } => 'item_id' in event)
+    .map(event => event.item_id);
+  assertEquals(childItemIds.length, 4);
+  for (const itemId of childItemIds) assertEquals(itemId, 'msg_real');
+});
+
+test('responsesResultToEvents propagates the real function_call item id to the added item and child frames', () => {
+  const frames = Array.from(
+    responsesResultToEvents({
+      ...completedResponse,
+      output: [
+        {
+          type: 'function_call',
+          id: 'fc_real',
+          call_id: 'call_1',
+          name: 'do_thing',
+          arguments: '{"x":1}',
+          status: 'completed',
+        },
+      ],
+    }),
+  );
+
+  const added = frames.find(frame => frame.event.type === 'response.output_item.added')?.event as {
+    item: { id?: string };
+  };
+  assertEquals(added.item.id, 'fc_real');
+
+  const childItemIds = frames
+    .map(frame => frame.event)
+    .filter((event): event is typeof event & { item_id: string } => 'item_id' in event)
+    .map(event => event.item_id);
+  assertEquals(childItemIds.length, 2);
+  for (const itemId of childItemIds) assertEquals(itemId, 'fc_real');
+});
+
+test('responsesResultToEvents surfaces a missing function_call item id instead of inventing one', () => {
+  let threw = false;
+  try {
+    Array.from(
+      responsesResultToEvents({
+        ...completedResponse,
+        output: [
+          {
+            type: 'function_call',
+            call_id: 'call_1',
+            name: 'do_thing',
+            arguments: '{}',
+            status: 'completed',
+          },
+        ],
+      }),
+    );
+  } catch {
+    threw = true;
+  }
+  assertEquals(threw, true);
 });
 
 test('responsesResultToEvents expands a web_search_call with the full 5-event lifecycle', () => {

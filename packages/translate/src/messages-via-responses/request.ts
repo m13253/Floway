@@ -122,8 +122,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): ResponseI
 
     if (block.type === 'thinking' || block.type === 'redacted_thinking') {
       flushPendingContent(pendingContent, input, 'assistant');
-      const reasoning = messagesReasoningBlockToResponsesReasoning(block, input.length);
-      if (reasoning) input.push(reasoning);
+      input.push(messagesReasoningBlockToResponsesReasoning(block, input.length));
       continue;
     }
 

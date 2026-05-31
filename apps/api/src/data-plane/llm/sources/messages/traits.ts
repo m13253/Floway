@@ -1,20 +1,19 @@
-import type { Context } from 'hono';
-
 import { messagesSourceInterceptors } from './interceptors/index.ts';
 import { respondMessages } from './respond.ts';
-import { resolveModelForRequest } from '../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
+import { createRequestContext } from '../request-context.ts';
+import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesMessage, MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
@@ -80,42 +79,65 @@ const messagesInvocation = <TPayload extends { model: string }>(
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });
 
-export const serveMessages = async (c: Context): Promise<Response> => {
-  let request = createRequestContext(c, undefined, false);
-  let downstreamAbortController: AbortController | undefined;
+const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
+  if (endpoints.includes('messages')) return 'messages';
+  if (endpoints.includes('responses')) return 'responses';
+  if (endpoints.includes('chat_completions')) return 'chat-completions';
+  return null;
+};
 
-  const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-    if (endpoints.includes('messages')) return 'messages';
-    if (endpoints.includes('responses')) return 'responses';
-    if (endpoints.includes('chat_completions')) return 'chat-completions';
-    return null;
-  };
+// Maps a serve failure to the Messages (Anthropic) error envelope, shared with
+// the count_tokens path which answers in the same shape under a different
+// endpoint label. `internal` is excluded — it is rendered with a stack trace by
+// the caller, not as a flat envelope.
+export const messagesFailureEnvelope = (
+  failure: Exclude<LlmServeFailure, { kind: 'internal' }>,
+  endpoint: string,
+): { status: number; body: { type: 'error'; error: { type: string; message: string } } } => {
+  const [status, type, message]: [number, string, string] = (() => {
+    switch (failure.kind) {
+    case 'item-not-found': return [400, 'invalid_request_error', `Item with id '${failure.itemId}' not found.`];
+    case 'routing-unavailable': return [400, 'invalid_request_error', failure.message];
+    case 'model-missing': return [404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`];
+    case 'model-unsupported': return [400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpoint} endpoint.`];
+    }
+  })();
+  return { status, body: { type: 'error', error: { type, message } } };
+};
 
-  try {
+const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<MessagesStreamEventData>> => {
+  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEventData>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
+  const { status, body } = messagesFailureEnvelope(failure, '/messages');
+  return jsonUpstreamErrorResult(status, body);
+};
+
+export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEventData> = {
+  renderFailure: renderMessagesFailure,
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondMessages(c, result, wantsStream, request, downstreamAbortController),
+  setup: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);
     if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
-
     const wantsStream = payload.stream === true;
-    downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    const downstreamAbortController = wantsStream ? new AbortController() : undefined;
+    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-
-    const { id: model, model: resolved } = await resolveModelForRequest(payload.model, request.apiKeyUpstreamIds);
-    let result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>> | undefined;
-
-    if (!resolved) {
-      result = openAiMissingModelResult(model);
-    } else {
-      for (const binding of resolved.providers) {
+    return {
+      request,
+      items: payload.messages,
+      responsesItemsView: messagesViaResponsesItemsView,
+      wantsStream,
+      store: undefined,
+      model: payload.model,
+      downstreamAbortController,
+      pickTarget,
+      attempt: async ({ binding, target, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;
-        const target = pickTarget(binding.upstreamModel.upstreamEndpoints);
-        if (!target) continue;
-
+        attemptPayload.messages = await rewriteItems(attemptPayload.messages);
         const sharedHeaders: Record<string, string> = {};
         const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
-
         const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
           messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
           responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
@@ -123,25 +145,10 @@ export const serveMessages = async (c: Context): Promise<Response> => {
           'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
             await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload, undefined, sharedHeaders), request)),
         };
-
-        result = await runInterceptors(invocation, request, [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])], () =>
+        const interceptors = [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])];
+        return await runInterceptors(invocation, request, interceptors, () =>
           emits[target](invocation.payload, { model, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens }));
-        break;
-      }
-
-      result ??= openAiUnsupportedEndpointResult(model, '/messages');
-    }
-
-    return await respondMessages(c, result, wantsStream, request, downstreamAbortController);
-  } catch (error) {
-    return await respondMessages(
-      c,
-      sourceErrorResult(error, {
-        sourceApi: 'messages',
-        internalStatus: 502,
-      }),
-      false,
-      request, downstreamAbortController,
-    );
-  }
+      },
+    };
+  },
 };

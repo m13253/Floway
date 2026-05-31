@@ -21,6 +21,11 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   azure: createAzureProvider,
 };
 
+// Build a single provider instance for one upstream record, regardless of kind.
+// Used by the control plane to list a saved upstream's resolved catalog.
+export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
+  providerFactories[record.provider](record);
+
 // Ids not in the catalog are silently dropped; undefined/null preserves global sort order.
 export const listModelProviders = async (upstreamFilter?: readonly string[] | null): Promise<ModelProviderInstance[]> => {
   const upstreams = await getRepo().upstreams.list();
@@ -67,29 +72,26 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
     try {
       const providedModels = await instance.provider.getProvidedModels();
       sawSuccess = true;
+      // Operator-disabled public model ids vanish entirely for this upstream:
+      // dropped before they reach the catalog map, so they appear in no /models
+      // listing and resolve to nothing for routing. The disable is per-upstream,
+      // so the same id can still surface from another upstream that allows it.
+      const disabled = new Set(instance.disabledPublicModelIds);
       for (const upstreamModel of providedModels) {
         if (!upstreamModel.id) continue;
-        const record: ProviderModelRecord = {
-          upstream: instance.upstream,
-          upstreamName: instance.name,
-          providerKind: instance.providerKind,
-          provider: instance.provider,
-          upstreamModel,
-          enabledFlags: upstreamModel.enabledFlags,
-          sourceInterceptors: instance.sourceInterceptors,
-          targetInterceptors: instance.targetInterceptors,
-        };
+        if (disabled.has(upstreamModel.id)) continue;
+        const record = providerModelRecord(instance, upstreamModel);
         const existing = byId.get(upstreamModel.id);
         if (!existing) {
           byId.set(upstreamModel.id, resolvedFromUpstreamModel(upstreamModel, record));
           continue;
         }
 
-        // Known limitation for this refactor: when multiple providers expose
-        // the same public model id, the first provider's metadata remains the
-        // public /models metadata. Runtime execution still uses the selected
-        // provider's own UpstreamModel, so capability-sensitive calls do not
-        // depend on this merged view being perfectly representative.
+        // When multiple providers expose the same public model id, the first
+        // provider's metadata remains the public /models metadata. Runtime
+        // execution still uses the selected provider's own UpstreamModel, so
+        // capability-sensitive calls do not depend on this merged view being
+        // perfectly representative.
         const upstreamEndpoints = unionEndpoints(existing.upstreamEndpoints, upstreamModel.upstreamEndpoints);
         byId.set(upstreamModel.id, {
           ...existing,
@@ -176,6 +178,12 @@ export interface ModelResolution {
   model?: ResolvedModel;
 }
 
+export interface ProviderModelResolution {
+  id: string;
+  model: UpstreamModel;
+  binding: ProviderModelRecord;
+}
+
 const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId: ReadonlyMap<string, ResolvedModel>, modelId: string): ResolvedModel | undefined => {
   let resolved: ResolvedModel | undefined;
   const providersForAlias = new Set<ModelProviderInstance>();
@@ -217,4 +225,31 @@ export const resolveModelForRequest = async (modelId: string, upstreamFilter?: r
   if (lastError) throw lastError;
 
   return { id: modelId };
+};
+
+const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
+  upstream: instance.upstream,
+  upstreamName: instance.name,
+  providerKind: instance.providerKind,
+  provider: instance.provider,
+  upstreamModel,
+  enabledFlags: upstreamModel.enabledFlags,
+  supportsResponsesItemReference: instance.supportsResponsesItemReference,
+  sourceInterceptors: instance.sourceInterceptors,
+  targetInterceptors: instance.targetInterceptors,
+});
+
+export const resolveModelForProvider = async (
+  instance: ModelProviderInstance,
+  modelId: string,
+): Promise<ProviderModelResolution | undefined> => {
+  const providedModels = await instance.provider.getProvidedModels();
+  const exact = providedModels.find(model => model.id === modelId);
+  if (exact) return { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) };
+
+  const aliasTarget = instance.resolveRequestedModelId?.(modelId);
+  if (!aliasTarget || aliasTarget === modelId) return undefined;
+
+  const alias = providedModels.find(model => model.id === aliasTarget);
+  return alias ? { id: alias.id, model: alias, binding: providerModelRecord(instance, alias) } : undefined;
 };

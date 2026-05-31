@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
-import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
+import { assert, assertEquals, assertExists, assertFalse, assertStringIncludes } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../providers/models-store.ts';
 import type { SearchConfig } from '../../../tools/web-search/types.ts';
+import { createStoredResponsesItemId, isStoredResponsesItemId } from '../responses/items/format.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 const ENABLED_SEARCH_CONFIG: SearchConfig = {
@@ -12,6 +13,8 @@ const ENABLED_SEARCH_CONFIG: SearchConfig = {
   tavily: { apiKey: 'tvly-test' },
   microsoftGrounding: { apiKey: '' },
 };
+
+const packReasoningSignature = (id: string): string => `@${id}`;
 
 const encodeShimPayloadForTest = (payload: unknown): string => {
   const json = JSON.stringify(payload);
@@ -318,6 +321,93 @@ test('/v1/messages rejects body anthropic_beta', async () => {
   const body = await response.json();
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'anthropic_beta');
+});
+
+test('/v1/messages rewrites stored Responses reasoning signatures before the upstream request', async () => {
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.upstreams.delete(copilotUpstream.id);
+  clearModelsStore();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_messages_origin',
+    name: 'Messages Origin',
+    sortOrder: 0,
+    config: {
+      baseUrl: 'https://messages-origin.example.com',
+      bearerToken: 'sk-messages',
+      supportedEndpoints: ['/v1/messages'],
+    },
+  }));
+
+  const storedItem = { type: 'reasoning', id: 'rs_gateway_body', summary: [{ type: 'summary_text', text: 'trace' }] };
+  const id = createStoredResponsesItemId('reasoning');
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: 'up_messages_origin',
+      upstreamItemId: 'raw_rs_messages',
+      itemType: 'reasoning',
+      encryptedContentHash: null,
+      payload: { item: { ...storedItem, id } },
+      createdAt: Date.now(),
+    },
+  ]);
+
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'messages-origin.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'claude-stored-messages' }] });
+      }
+      if (url.hostname === 'messages-origin.example.com' && url.pathname === '/v1/messages') {
+        upstreamBody = JSON.parse(await request.text()) as Record<string, unknown>;
+        return sseMessagesResponse({
+          id: 'msg_stored_messages',
+          model: 'claude-stored-messages',
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { input_tokens: 2, output_tokens: 1 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'claude-stored-messages',
+          max_tokens: 64,
+          messages: [
+            {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'trace', signature: packReasoningSignature(id) },
+                { type: 'text', text: 'visible' },
+              ],
+            },
+            { role: 'user', content: 'continue' },
+          ],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  assertExists(upstreamBody);
+  const messages = upstreamBody.messages as Array<Record<string, unknown>>;
+  const assistantContent = messages[0].content as Array<Record<string, unknown>>;
+  assertEquals(assistantContent[0].signature, packReasoningSignature('raw_rs_messages'));
+  assertEquals(assistantContent[1], { type: 'text', text: 'visible' });
 });
 
 test('/v1/messages does not record performance for an unresolved bracket-suffixed client model string', async () => {
@@ -1581,6 +1671,7 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       },
       {
         type: 'message',
+        id: 'msg_reasoning_fallback',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'Answer text' }],
       },
@@ -1655,7 +1746,9 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
       assertEquals(body.usage.input_tokens, 25);
       assertEquals(body.usage.cache_read_input_tokens, 5);
       assertEquals(body.content[0].type, 'thinking');
-      assertFalse('signature' in body.content[0]);
+      const signature = body.content[0].signature as string;
+      const decodedId = signature.slice(signature.lastIndexOf('@') + 1);
+      assert(isStoredResponsesItemId(decodedId), `expected stored id, got ${decodedId}`);
       assertEquals(body.content[1].text, 'Answer text');
     },
   );
@@ -1671,7 +1764,7 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
   assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, true);
 });
 
-test('/v1/messages routes Azure Responses-only deployments through OpenAI v1 Responses', async () => {
+test('/v1/messages routes Azure Responses-only models through OpenAI v1 Responses', async () => {
   const { repo, apiKey, copilotUpstream } = await setupAppTest();
   await repo.upstreams.delete(copilotUpstream.id);
   await repo.upstreams.save({
@@ -1683,12 +1776,13 @@ test('/v1/messages routes Azure Responses-only deployments through OpenAI v1 Res
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-key',
-      deployments: [
+      models: [
         {
-          deployment: 'gpt-5.4-pro',
+          upstreamModelId: 'gpt-5.4-pro',
           supportedEndpoints: ['/responses'],
         },
       ],
@@ -1718,6 +1812,7 @@ test('/v1/messages routes Azure Responses-only deployments through OpenAI v1 Res
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_azure',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'ok' }],
                   },
@@ -1800,6 +1895,7 @@ test('/v1/messages preserves output_config.effort max when translating to respon
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_max_effort',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'ok' }],
                   },
@@ -1886,6 +1982,7 @@ test('/v1/messages prefers responses on dual-endpoint models when native message
                 output: [
                   {
                     type: 'message',
+                    id: 'msg_plain',
                     role: 'assistant',
                     content: [{ type: 'output_text', text: 'plain' }],
                   },
@@ -2266,6 +2363,7 @@ test('/v1/messages preserves cache_control.scope for custom Messages providers',
     name: 'Messages Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages.example.com',
       bearerToken: 'sk-messages',
@@ -2365,6 +2463,7 @@ test('/v1/messages forwards native web search unchanged to custom Messages provi
     name: 'Messages Native Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages-native-search.example.com',
       bearerToken: 'sk-messages',
@@ -2445,6 +2544,7 @@ test('/v1/messages applies native web search shim to custom Messages providers w
     name: 'Messages Shimmed Search Provider',
     sortOrder: 100,
     flagOverrides: { 'messages-web-search-shim': true },
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://messages-shimmed-search.example.com',
       bearerToken: 'sk-messages',
@@ -2534,6 +2634,7 @@ test('/v1/messages applies native web search shim to custom Responses targets', 
     name: 'Responses Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://responses-search.example.com',
       bearerToken: 'sk-responses',
@@ -2644,6 +2745,7 @@ test('/v1/messages applies native web search shim to custom Chat Completions tar
     name: 'Chat Search Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://chat-search.example.com',
       bearerToken: 'sk-chat',
@@ -3567,6 +3669,7 @@ test('/v1/messages rejects embedding-only custom upstream model instead of legac
     name: 'Embedding Only',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
@@ -3620,6 +3723,7 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
     name: 'Custom Provider',
     sortOrder: 100,
     flagOverrides: {},
+    disabledPublicModelIds: [],
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',

@@ -20,13 +20,13 @@ const testTelemetryModelIdentity = {
 };
 const request = (): RequestContext => ({
   requestStartedAt: performance.now(),
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 });
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();
-  app.get('/', c => respondGemini(c, result, false, request(), undefined));
+  app.get('/', async c => (await respondGemini(c, result, false, request(), undefined)).response);
   return await app.request('/');
 };
 

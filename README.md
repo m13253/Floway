@@ -84,10 +84,11 @@ pnpm run dev           # parallel wrangler dev (8788) + Vite SPA dev server (517
 The repo is a pnpm workspace. `packages/protocols` and `packages/translate` are
 pure libraries; `apps/api` is the Worker; `apps/web` is a Vue/Vite SPA served by
 Vite in dev and by Workers Static Assets from `apps/web/dist` after build.
-`wrangler.example.jsonc` keeps API/data-plane routes Worker-first and lets other
-direct browser routes fall through to the SPA's `index.html`. Cross-package
-imports go through each package's `exports` map; deep imports are blocked by
-ESLint.
+`wrangler.example.jsonc` keeps API/data-plane routes Worker-first and lets
+other direct browser routes fall through to the SPA's `index.html`. It also
+includes an hourly cron trigger used by the Worker to age out retained Responses
+payloads and metadata. Cross-package imports go through each package's
+`exports` map; deep imports are blocked by ESLint.
 
 See [AGENTS.md](./AGENTS.md) for architecture, provider routing, deployment,
 and development conventions.

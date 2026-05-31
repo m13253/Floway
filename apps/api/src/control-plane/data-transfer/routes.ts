@@ -1,12 +1,15 @@
-// Data transfer routes — export/import all database data as JSON.
+// Data transfer routes — export/import operator-managed database data as JSON.
+// Ephemeral stored Responses items are omitted from exports and cleared on
+// replace imports; clients can regenerate them through normal Responses use.
 
 import { parseFlagOverridesWire } from '../../data-plane/providers/flags.ts';
 import { invalidateModelsStore } from '../../data-plane/providers/models-store.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
+import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, PerformanceApiName, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamProviderKind, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceApiName, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UpstreamProviderKind, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { isCopilotAccountType } from '../../shared/copilot.ts';
 import { assertAzureUpstreamRecord } from '../../shared/upstream/azure.ts';
 import { assertCustomUpstreamRecord } from '../../shared/upstream/custom.ts';
@@ -14,9 +17,10 @@ import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import type { exportQuery, importBody } from '../schemas.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
+import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 
 interface ExportPayload {
-  version: 2;
+  version: 3;
   exportedAt: string;
   data: {
     apiKeys: ApiKey[];
@@ -29,7 +33,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 2;
+const EXPORT_VERSION = 3;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
@@ -113,6 +117,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         createdAt: nonEmptyString(item.created_at, 'created_at'),
         updatedAt: nonEmptyString(item.updated_at, 'updated_at'),
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
+        disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         config: item.config,
       };
       records.push({ ...record, config: normalizeUpstreamConfig(record) });
@@ -180,18 +185,32 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
+const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
+
 const parseImportedCost = (value: unknown): UsageRecord['cost'] => {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'object' || Array.isArray(value)) return null;
   const obj = value as Record<string, unknown>;
-  if (typeof obj.input !== 'number' || typeof obj.output !== 'number') return null;
-  const cost: { input: number; output: number; cache_read?: number; cache_write?: number } = {
-    input: obj.input,
-    output: obj.output,
-  };
-  if (typeof obj.cache_read === 'number') cost.cache_read = obj.cache_read;
-  if (typeof obj.cache_write === 'number') cost.cache_write = obj.cache_write;
-  return cost;
+  const cost: ModelPricing = {};
+  for (const dimension of BILLING_DIMENSIONS) {
+    const rate = obj[dimension];
+    if (typeof rate === 'number') cost[dimension] = rate;
+  }
+  return Object.keys(cost).length > 0 ? cost : null;
+};
+
+const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
+  if (value === undefined || value === null) return { type: 'ok', tokens: {} };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+  const obj = value as Record<string, unknown>;
+  const tokens: TokenUsage = {};
+  for (const dimension of BILLING_DIMENSIONS) {
+    const count = obj[dimension];
+    if (count === undefined) continue;
+    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid' };
+    if (count > 0) tokens[dimension] = count;
+  }
+  return { type: 'ok', tokens };
 };
 
 const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[] } | { type: 'invalid'; index: number; error: string } => {
@@ -211,17 +230,15 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       record.modelKey.length === 0 ||
       typeof record.hour !== 'string' ||
       !SEARCH_USAGE_HOUR_PATTERN.test(record.hour) ||
-      !isNonNegativeSafeInteger(record.requests) ||
-      !isNonNegativeSafeInteger(record.inputTokens) ||
-      !isNonNegativeSafeInteger(record.outputTokens) ||
-      (record.cacheReadTokens !== undefined && !isNonNegativeSafeInteger(record.cacheReadTokens)) ||
-      (record.cacheCreationTokens !== undefined && !isNonNegativeSafeInteger(record.cacheCreationTokens))
+      !isNonNegativeSafeInteger(record.requests)
     ) {
       return { type: 'invalid', index: i, error: 'record has invalid usage fields' };
     }
     if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
+    const tokensResult = parseImportedTokens(record.tokens);
+    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -229,10 +246,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       modelKey: record.modelKey,
       hour: record.hour,
       requests: record.requests,
-      inputTokens: record.inputTokens,
-      outputTokens: record.outputTokens,
-      ...(record.cacheReadTokens !== undefined ? { cacheReadTokens: record.cacheReadTokens } : {}),
-      ...(record.cacheCreationTokens !== undefined ? { cacheCreationTokens: record.cacheCreationTokens } : {}),
+      tokens: tokensResult.tokens,
       // Imported payloads may omit cost (older exports) — null is the
       // canonical "no pricing recorded" value; aggregation treats it as 0.
       cost: parseImportedCost(record.cost),
@@ -453,7 +467,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     const existingUpstreams = await repo.upstreams.list();
-    const deletes = [repo.apiKeys.deleteAll(), repo.usage.deleteAll(), repo.searchUsage.deleteAll(), repo.upstreams.deleteAll()];
+    const deletes = [repo.apiKeys.deleteAll(), repo.usage.deleteAll(), repo.searchUsage.deleteAll(), repo.upstreams.deleteAll(), repo.responsesItems.deleteAll()];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
