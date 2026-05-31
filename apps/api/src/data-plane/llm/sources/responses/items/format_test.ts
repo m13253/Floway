@@ -4,9 +4,8 @@ import {
   createStoredResponsesItemId,
   createTemporaryResponsesItemId,
   isStoredResponsesItemId,
-  parseStoredResponsesItemId,
 } from './format.ts';
-import { assert, assertEquals, assertFalse, assertThrows } from '../../../../../test-assert.ts';
+import { assert, assertFalse, assertThrows } from '../../../../../test-assert.ts';
 
 const explicitPrefixes = [
   ['message', 'msg'],
@@ -36,40 +35,24 @@ const explicitPrefixes = [
   ['mcp_approval_response', 'mcpa'],
 ] as const;
 
-test('parses the design-spec examples with CRC32 over only the body segment', () => {
-  assertEquals(parseStoredResponsesItemId('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'), {
-    prefix: 'msg',
-    checksum: 'z1mVjw',
-    body: '0xVvS8c_KjD1sBkZk5qbdA',
-  });
-  assertEquals(parseStoredResponsesItemId('rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w'), {
-    prefix: 'rs',
-    checksum: 'mFBDiA',
-    body: 'Lh1uXb7nD_bQb4I1CUYH2w',
-  });
-  assertEquals(parseStoredResponsesItemId('ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA'), {
-    prefix: 'ws',
-    checksum: 'WGRXTA',
-    body: 'sVlhxg6BAV0BUzj0KkWSqA',
-  });
+test('accepts the design-spec examples (CRC32 over only the body segment)', () => {
+  assert(isStoredResponsesItemId('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
+  assert(isStoredResponsesItemId('rs_mFBDiA_Lh1uXb7nD_bQb4I1CUYH2w'));
+  assert(isStoredResponsesItemId('ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA'));
 });
 
 test('rejects malformed public ids before D1 lookup', () => {
   assertFalse(isStoredResponsesItemId('msg_AAAAAA_0xVvS8c_KjD1sBkZk5qbdA'));
-  assertEquals(parseStoredResponsesItemId('msg_AAAAAA_0xVvS8c_KjD1sBkZk5qbdA'), null);
-  assertEquals(parseStoredResponsesItemId('itm_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'), null);
-  assertEquals(parseStoredResponsesItemId('msg_z1mVjw_short'), null);
-  assertEquals(parseStoredResponsesItemId('msg_z1mVjw_0xVvS8c.KjD1sBkZk5qbdA'), null);
+  assertFalse(isStoredResponsesItemId('itm_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA'));
+  assertFalse(isStoredResponsesItemId('msg_z1mVjw_short'));
+  assertFalse(isStoredResponsesItemId('msg_z1mVjw_0xVvS8c.KjD1sBkZk5qbdA'));
 });
 
 test('generates a valid stored id for every explicit supported item type', () => {
   for (const [itemType, prefix] of explicitPrefixes) {
     const id = createStoredResponsesItemId(itemType);
-    const parsed = parseStoredResponsesItemId(id);
-    assert(parsed, `expected ${id} to parse`);
-    assertEquals(parsed.prefix, prefix);
-    assertEquals(parsed.body.length, 22);
-    assertEquals(parsed.checksum.length, 6);
+    assert(isStoredResponsesItemId(id), `expected ${id} to be a valid stored id`);
+    assert(id.startsWith(`${prefix}_`), `expected ${id} to use prefix ${prefix}`);
   }
 });
 

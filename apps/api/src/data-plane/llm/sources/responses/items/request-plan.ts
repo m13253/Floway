@@ -1,4 +1,4 @@
-import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, parseStoredResponsesItemId, responsesItemEncryptedContent } from './format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
@@ -55,9 +55,9 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   const references = await collectStoredResponsesItemRefs(sourceItems, view);
 
   // id and encrypted_content are equivalent lookup keys, so resolve both at
-  // once and merge. `parseStoredResponsesItemId` decides which ids are even
+  // once and merge. `isStoredResponsesItemId` decides which ids are even
   // queryable here, exactly once.
-  const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && parseStoredResponsesItemId(ref.id) ? [ref.id] : []));
+  const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && isStoredResponsesItemId(ref.id) ? [ref.id] : []));
   const hashByContent = new Map(await Promise.all(
     [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
       .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),

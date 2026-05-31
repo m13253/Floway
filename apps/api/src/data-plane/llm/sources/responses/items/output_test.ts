@@ -1,6 +1,6 @@
 import { test, vi } from 'vitest';
 
-import { isStoredResponsesItemId, parseStoredResponsesItemId } from './format.ts';
+import { isStoredResponsesItemId } from './format.ts';
 import { storeResponsesOutputItems, type StoreResponsesContext } from './output.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
@@ -141,7 +141,7 @@ test('rewrites output item ids consistently across added, child, done, and termi
 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   assert(isStoredResponsesItemId(storedId));
-  assertEquals(parseStoredResponsesItemId(storedId)?.prefix, 'msg');
+  assert(storedId.startsWith('msg_'));
   assertEquals(eventAt(events, 'response.output_item.added').item.id, storedId);
   assertEquals(eventAt(events, 'response.output_text.delta').item_id, storedId);
   assertEquals(eventAt(events, 'response.completed').response.output[0].id, storedId);
@@ -421,8 +421,8 @@ test('responses-via-messages synthesized message and function_call items persist
   const functionStoredId = functionDone.item.id!;
   assert(isStoredResponsesItemId(messageStoredId));
   assert(isStoredResponsesItemId(functionStoredId));
-  assertEquals(parseStoredResponsesItemId(messageStoredId)?.prefix, 'msg');
-  assertEquals(parseStoredResponsesItemId(functionStoredId)?.prefix, 'fc');
+  assert(messageStoredId.startsWith('msg_'));
+  assert(functionStoredId.startsWith('fc_'));
 
   const rows = await repo.responsesItems.lookupMany(apiKeyId, [messageStoredId, functionStoredId]);
   const rowById = new Map(rows.map(row => [row.id, row]));

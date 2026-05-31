@@ -37,29 +37,26 @@ const checksumPattern = /^[A-Za-z0-9_-]{6}$/;
 // Stored ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
 // bytes encoded as base64url (22 chars). The body is content-free on purpose:
 // uniqueness comes from `crypto.getRandomValues`, and the crc32 prefix lets
-// `parseStoredResponsesItemId` reject typos and accidental upstream collisions
+// `isStoredResponsesItemId` reject typos and accidental upstream collisions
 // without re-hashing the original item.
 export const createStoredResponsesItemId = (itemType: string): string =>
   createChecksummedId(prefixForItemType(itemType), randomBody());
 
-export const parseStoredResponsesItemId = (value: string): { prefix: string; checksum: string; body: string } | null => {
+export const isStoredResponsesItemId = (value: string): boolean => {
   const firstSeparator = value.indexOf('_');
-  if (firstSeparator <= 0) return null;
+  if (firstSeparator <= 0) return false;
   const checksumStart = firstSeparator + 1;
   const checksumEnd = checksumStart + 6;
-  if (value[checksumEnd] !== '_') return null;
+  if (value[checksumEnd] !== '_') return false;
 
   const prefix = value.slice(0, firstSeparator);
   const checksum = value.slice(checksumStart, checksumEnd);
   const body = value.slice(checksumEnd + 1);
 
-  if (!knownPrefixes.has(prefix)) return null;
-  if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return null;
-  if (crc32Checksum(body) !== checksum) return null;
-  return { prefix, checksum, body };
+  if (!knownPrefixes.has(prefix)) return false;
+  if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return false;
+  return crc32Checksum(body) === checksum;
 };
-
-export const isStoredResponsesItemId = (value: string): boolean => parseStoredResponsesItemId(value) !== null;
 
 // Codex and other stateless Responses clients echo reasoning and compaction
 // items back with their `encrypted_content` blob but no gateway id (the id is
