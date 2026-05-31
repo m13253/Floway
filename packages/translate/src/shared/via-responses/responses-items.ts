@@ -92,11 +92,10 @@ export const responsesItemsView = {
   ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
     // `seenItemTypes` records the item type for every upstream id we have
     // mapped via an item-bearing frame. Delta events only carry `item_id`
-    // and no type, so we look the type up here before re-invoking idMapper
-    // (idMapper requires a known item type to allocate fresh ids; for
-    // cache hits the type is unused but the signature still demands it).
-    // A delta referencing an unknown id is upstream protocol corruption
-    // and passes through unchanged rather than allocating a phantom row.
+    // and no type, so we look the type up here before re-invoking idMapper,
+    // which requires a known item type to allocate fresh ids. A delta
+    // referencing an unknown id is upstream protocol corruption and passes
+    // through unchanged rather than allocating a phantom row.
     const seenItemTypes = new Map<string, string>();
     const finalized = new Set<string>();
 

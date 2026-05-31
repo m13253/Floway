@@ -49,6 +49,10 @@ export const packReasoningSignature = (id: string, encryptedContent: string): st
  *   base64 blob that contains no `@`). It is preserved verbatim and the caller
  *   synthesizes an `rs_${index}` id; we NEVER fabricate or overwrite it.
  * - `enc@` (trailing `@`, empty id) → treated as a native signature.
+ *
+ * Splitting on the LAST `@` is safe because genuine upstream signatures are
+ * base64/base64url (Anthropic, OpenAI), whose alphabet excludes `@`; only our
+ * packing injects one, so the final `@` is always our delimiter.
  */
 export const unpackReasoningSignature = (signature: string): { id: string | null; encryptedContent: string } => {
   const splitIndex = signature.lastIndexOf('@');

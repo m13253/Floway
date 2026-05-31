@@ -31,11 +31,10 @@ export class SourceStreamState {
 // The events result's metadata, resolved once: prefer the upstream's finalized
 // metadata, else fall back to the identity/performance carried on the result.
 export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>): Promise<EventResultMetadata> =>
-  await (result.finalMetadata ??
-    Promise.resolve({
-      modelIdentity: result.modelIdentity,
-      ...(result.performance ? { performance: result.performance } : {}),
-    }));
+  await (result.finalMetadata ?? {
+    modelIdentity: result.modelIdentity,
+    ...(result.performance ? { performance: result.performance } : {}),
+  });
 
 export const recordSourceUsage = async (request: RequestContext, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
   if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(request.apiKeyId, modelIdentity, usage);

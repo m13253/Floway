@@ -121,7 +121,7 @@ const observeChatFrames = async function* (frames: AsyncIterable<ProtocolFrame<C
   for await (const frame of frames) {
     const failed = isChatFailureFrame(frame);
     if (failed) state.failed = true;
-    if (frame.type === 'done' || observeUsage) {
+    if (observeUsage) {
       state.rememberUsage(tokenUsageFromChatFrame(frame));
     }
     if (chatTerminalFrame(frame) && !failed) state.completed = true;

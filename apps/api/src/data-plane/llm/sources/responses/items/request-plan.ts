@@ -224,6 +224,9 @@ const collectPreferredUpstreams = (
   for (const ref of references) {
     if (ref.affinity !== 'portable' && ref.affinity !== 'downgradable') continue;
     if (!ref.row || !isUpstreamOwned(ref.row)) continue;
+    // Re-insert so the most-recently-referenced upstream lands last in
+    // insertion order; orderProvidersByStoredResponsesAffinity reverses this
+    // set, sorting that upstream first.
     preferred.delete(ref.row.upstreamId);
     preferred.add(ref.row.upstreamId);
   }

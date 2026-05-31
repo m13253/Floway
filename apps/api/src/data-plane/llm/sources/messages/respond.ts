@@ -78,7 +78,7 @@ export const respondMessages = async (
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the
 // cache figures. Map them straight onto the billing dimensions without summing.
-export const tokenUsageFromMessagesUsage = (u: MU) =>
+const tokenUsageFromMessagesUsage = (u: MU) =>
   tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
