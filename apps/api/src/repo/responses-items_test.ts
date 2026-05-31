@@ -141,6 +141,19 @@ test('D1 responses items repo scopes ids by api key and treats duplicate scoped 
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
 
+test('D1 responses items repo chunks lookups exceeding D1 100-parameter limit and unions the results', async () => {
+  const repo = new D1Repo(new FakeResponsesItemsD1Database()).responsesItems;
+  const items = Array.from({ length: 200 }, (_, i) =>
+    storedItem({ id: `msg_chunk_${i.toString().padStart(4, '0')}`, apiKeyId: 'key_a', encryptedContentHash: `enc_${i}`, createdAt: 1_000 + i }));
+  await repo.insertMany(items);
+
+  const byId = await repo.lookupMany('key_a', items.map(item => item.id));
+  assertEquals(byId.map(row => row.id), items.map(item => item.id));
+
+  const byHash = await repo.lookupManyByEncryptedContentHash('key_a', items.map(item => item.encryptedContentHash!));
+  assertEquals(new Set(byHash.map(row => row.id)).size, 200);
+});
+
 test('D1 responses items repo spills large payloads through the runtime file provider without storing backend identity', async () => {
   const db = new FakeResponsesItemsD1Database();
   const files = new MemoryFileProvider();

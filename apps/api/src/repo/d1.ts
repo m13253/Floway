@@ -660,29 +660,36 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: D1Database) {}
 
   async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
-    const uniqueIds = [...new Set(ids)];
-    if (uniqueIds.length === 0) return [];
-
-    const placeholders = uniqueIds.map(() => '?').join(', ');
-    const { results } = await this.db
-      .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND id IN (${placeholders})`)
-      .bind(apiKeyId, ...uniqueIds)
-      .all<ResponsesItemRow>();
-    const order = new Map(uniqueIds.map((id, index) => [id, index]));
-    const rows = await Promise.all(results.map(toStoredResponsesItem));
+    const rows = await this.lookupByColumn(apiKeyId, 'id', ids);
+    const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
   async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
-    const uniqueHashes = [...new Set(hashes)];
-    if (uniqueHashes.length === 0) return [];
+    return await this.lookupByColumn(apiKeyId, 'encrypted_content_hash', hashes);
+  }
 
-    const placeholders = uniqueHashes.map(() => '?').join(', ');
-    const { results } = await this.db
-      .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND encrypted_content_hash IN (${placeholders})`)
-      .bind(apiKeyId, ...uniqueHashes)
-      .all<ResponsesItemRow>();
-    return await Promise.all(results.map(toStoredResponsesItem));
+  // D1 caps bound parameters at 100 per query. A single Responses request can
+  // echo back more stored items than that — long agentic sessions resubmit
+  // every prior reasoning/compaction item each turn — so chunk the IN-list
+  // (leaving room for the `api_key_id` bind) and union the results.
+  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+    const unique = [...new Set(values)];
+    if (unique.length === 0) return [];
+
+    const CHUNK = 90;
+    const chunks: string[][] = [];
+    for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK));
+
+    const perChunk = await Promise.all(chunks.map(async chunk => {
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { results } = await this.db
+        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND ${column} IN (${placeholders})`)
+        .bind(apiKeyId, ...chunk)
+        .all<ResponsesItemRow>();
+      return await Promise.all(results.map(toStoredResponsesItem));
+    }));
+    return perChunk.flat();
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
