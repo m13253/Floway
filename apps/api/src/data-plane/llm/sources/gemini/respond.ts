@@ -9,7 +9,7 @@ import { type InternalDebugError, toInternalDebugError } from '../../shared/erro
 import type { ExecuteResult, UpstreamErrorResult } from '../../shared/errors/result.ts';
 import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
@@ -39,7 +39,7 @@ export const respondGemini = async (
     return { success: false, response: internalGeminiErrorResponse(result.status, result.error) };
   }
 
-  const state = createSourceStreamState();
+  const state = new SourceStreamState();
   const frames = observeGeminiFrames(result.events, state, wantsStream);
 
   if (!wantsStream) {
@@ -67,7 +67,7 @@ export const respondGemini = async (
       try {
         await recordSourceUsage(request, metadata.modelIdentity, state.usage);
       } finally {
-        recordSourcePerformance(request, metadata.performance, sourceStreamFailed(completion, state));
+        recordSourcePerformance(request, metadata.performance, state.failedAfter(completion));
       }
     }
   });
@@ -80,7 +80,7 @@ export const respondGemini = async (
 // Gemini reports promptTokenCount inclusive of cachedContentTokenCount
 // (verified against the Google GenAI SDK docs); subtract it for disjoint input.
 // Reasoning (thoughts) tokens are billed as output.
-export const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
+const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
   const cacheRead = m.cachedContentTokenCount ?? 0;
   return tokenUsage({
     input: (m.promptTokenCount ?? 0) - cacheRead,
@@ -89,9 +89,9 @@ export const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
   });
 };
 
-export const tokenUsageFromGeminiResponse = (r: GR) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
+const tokenUsageFromGeminiResponse = (r: GR) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
 
-export const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
+const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
 
 // --- error rendering: Google-RPC envelope ---
 
@@ -237,12 +237,12 @@ const isGeminiFailureEvent = (event: GeminiStreamEvent): boolean => isGeminiErro
 
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
-const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: ReturnType<typeof createSourceStreamState>, observeUsage: boolean) {
+const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
   for await (const frame of frames) {
     const failed = frame.type === 'event' && isGeminiFailureEvent(frame.event);
     if (failed) state.failed = true;
     if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromGeminiFrame(frame));
+      state.rememberUsage(tokenUsageFromGeminiFrame(frame));
     }
     if (isGeminiTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
@@ -251,7 +251,7 @@ const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };
 
-const geminiSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: ReturnType<typeof createSourceStreamState>) {
+const geminiSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = geminiProtocolFrameToSSEFrame(frame);

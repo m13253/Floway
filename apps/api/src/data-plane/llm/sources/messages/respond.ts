@@ -9,7 +9,7 @@ import { type InternalDebugError, toInternalDebugError } from '../../shared/erro
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
 
@@ -37,7 +37,7 @@ export const respondMessages = async (
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
-  const state = createSourceStreamState();
+  const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
   const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
 
@@ -66,7 +66,7 @@ export const respondMessages = async (
       try {
         await recordSourceUsage(request, metadata.modelIdentity, state.usage);
       } finally {
-        recordSourcePerformance(request, metadata.performance, sourceStreamFailed(completion, state));
+        recordSourcePerformance(request, metadata.performance, state.failedAfter(completion));
       }
     }
   });
@@ -140,7 +140,7 @@ const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) 
 
 const observeMessagesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
-  state: ReturnType<typeof createSourceStreamState>,
+  state: SourceStreamState,
   usageState: ReturnType<typeof createMessagesStreamUsageState>,
   observeUsage: boolean,
 ) {
@@ -148,7 +148,7 @@ const observeMessagesFrames = async function* (
     const failed = isMessagesFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromMessagesFrame(frame, usageState));
+      state.rememberUsage(tokenUsageFromMessagesFrame(frame, usageState));
     }
     if (isMessagesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
@@ -157,7 +157,7 @@ const observeMessagesFrames = async function* (
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
 };
 
-const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: ReturnType<typeof createSourceStreamState>) {
+const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = messagesProtocolFrameToSSEFrame(frame);

@@ -10,7 +10,7 @@ import { type InternalDebugError, toInternalDebugError } from '../../shared/erro
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -39,7 +39,7 @@ export const respondResponses = async (
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 
-  const state = createSourceStreamState();
+  const state = new SourceStreamState();
   const frames = observeResponsesFrames(result.events, state, wantsStream);
 
   if (!wantsStream) {
@@ -67,7 +67,7 @@ export const respondResponses = async (
       try {
         await recordSourceUsage(request, metadata.modelIdentity, state.usage);
       } finally {
-        recordSourcePerformance(request, metadata.performance, sourceStreamFailed(completion, state));
+        recordSourcePerformance(request, metadata.performance, state.failedAfter(completion));
       }
     }
   });
@@ -79,7 +79,7 @@ export const respondResponses = async (
 
 // OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
 // the cached split to recover the disjoint bare input.
-export const tokenUsageFromResponsesResult = (r: RR) => {
+const tokenUsageFromResponsesResult = (r: RR) => {
   const u = r.usage;
   if (!u) return null;
   const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
@@ -90,7 +90,7 @@ export const tokenUsageFromResponsesResult = (r: RR) => {
   });
 };
 
-export const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
+const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
 
 // --- error rendering ---
 
@@ -131,12 +131,12 @@ const isResponsesFailureFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => 
 
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
-const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>, observeUsage: boolean) {
+const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
   for await (const frame of frames) {
     const failed = isResponsesFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {
-      rememberSourceFrameUsage(state, tokenUsageFromResponsesFrame(frame));
+      state.rememberUsage(tokenUsageFromResponsesFrame(frame));
     }
     if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
@@ -145,7 +145,7 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: ReturnType<typeof createSourceStreamState>) {
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = responsesProtocolFrameToSSEFrame(frame);
