@@ -134,8 +134,6 @@ const internalMessagesStreamErrorFrame = (error: unknown) => sseFrame(JSON.strin
 
 // --- frame observation ---
 
-const isMessagesFailureFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && frame.event.type === 'error';
-
 const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 const observeMessagesFrames = async function* (
@@ -145,7 +143,7 @@ const observeMessagesFrames = async function* (
   observeUsage: boolean,
 ) {
   for await (const frame of frames) {
-    const failed = isMessagesFailureFrame(frame);
+    const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
     if (observeUsage) {
       state.rememberUsage(tokenUsageFromMessagesFrame(frame, usageState));

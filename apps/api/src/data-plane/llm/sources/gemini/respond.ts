@@ -231,14 +231,12 @@ const geminiStreamErrorFrame = (error: unknown) => geminiErrorEventFrame(caughtG
 
 // --- frame observation ---
 
-const isGeminiFailureEvent = (event: GeminiStreamEvent): boolean => isGeminiErrorEvent(event);
-
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
   const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
   for await (const frame of frames) {
-    const failed = frame.type === 'event' && isGeminiFailureEvent(frame.event);
+    const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
     if (failed) state.failed = true;
     if (observeUsage) {
       state.rememberUsage(tokenUsageFromGeminiFrame(frame));

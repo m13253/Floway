@@ -125,14 +125,12 @@ const internalResponsesStreamErrorFrame = (error: unknown) => {
 
 // --- frame observation ---
 
-const isResponsesFailureFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
-
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
 const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
   const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
   for await (const frame of frames) {
-    const failed = isResponsesFailureFrame(frame);
+    const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
     if (observeUsage) {
       state.rememberUsage(tokenUsageFromResponsesFrame(frame));
