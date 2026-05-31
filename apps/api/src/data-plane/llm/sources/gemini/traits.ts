@@ -1,6 +1,6 @@
 import { countGeminiTokens } from './count-tokens/serve.ts';
 import { geminiSourceInterceptors } from './interceptors/index.ts';
-import { respondGemini, geminiRpcErrorResponse } from './respond.ts';
+import { respondGemini, geminiRpcErrorPayload, geminiRpcErrorResponse } from './respond.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type GeminiInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
@@ -18,23 +18,8 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
 import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-const googleRpcStatusForHttpStatus = (status: number): string => {
-  switch (status) {
-  case 400:
-    return 'INVALID_ARGUMENT';
-  case 404:
-    return 'NOT_FOUND';
-  case 500:
-    return 'INTERNAL';
-  default:
-    return status >= 500 ? 'INTERNAL' : 'INVALID_ARGUMENT';
-  }
-};
-
 const geminiErrorResult = (status: number, message: string) =>
-  jsonUpstreamErrorResult(status, {
-    error: { code: status, message, status: googleRpcStatusForHttpStatus(status) },
-  });
+  jsonUpstreamErrorResult(status, geminiRpcErrorPayload(status, message));
 
 const geminiInvocation = <TPayload>(
   binding: ProviderModelRecord,

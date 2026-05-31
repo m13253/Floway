@@ -1,6 +1,5 @@
 import type { PerformanceApiName } from '../../../repo/types.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
-import type { PerformanceTelemetryContext } from '../../shared/telemetry/performance.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
@@ -8,12 +7,11 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 type PerformanceLlmSourceApi = Exclude<PerformanceApiName, NonLlmServeApiName>;
 
-export const jsonUpstreamErrorResult = (status: number, body: unknown, performance?: PerformanceTelemetryContext): UpstreamErrorResult => ({
+export const jsonUpstreamErrorResult = (status: number, body: unknown): UpstreamErrorResult => ({
   type: 'upstream-error',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify(body)),
-  ...(performance ? { performance } : {}),
 });
 
 export const sourceErrorResult = <TEvent>(

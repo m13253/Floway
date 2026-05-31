@@ -39,8 +39,10 @@ const checksumPattern = /^[A-Za-z0-9_-]{6}$/;
 // uniqueness comes from `crypto.getRandomValues`, and the crc32 prefix lets
 // `isStoredResponsesItemId` reject typos and accidental upstream collisions
 // without re-hashing the original item.
-export const createStoredResponsesItemId = (itemType: string): string =>
-  createChecksummedId(prefixForItemType(itemType), randomBody());
+export const createStoredResponsesItemId = (itemType: string): string => {
+  const body = randomBody();
+  return `${prefixForItemType(itemType)}_${crc32Checksum(body)}_${body}`;
+};
 
 export const isStoredResponsesItemId = (value: string): boolean => {
   const firstSeparator = value.indexOf('_');
@@ -80,8 +82,6 @@ const prefixForItemType = (itemType: string): string => {
   if (!prefix) throw new TypeError(`Unknown Responses item type: ${itemType}`);
   return prefix;
 };
-
-const createChecksummedId = (prefix: string, body: string): string => `${prefix}_${crc32Checksum(body)}_${body}`;
 
 const randomBody = (): string => {
   const bytes = new Uint8Array(16);

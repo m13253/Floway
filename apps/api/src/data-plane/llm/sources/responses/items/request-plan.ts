@@ -173,7 +173,8 @@ export const rewriteStoredResponsesItemsForProvider = async <TSourceItems>(
   provider: ProviderModelRecord,
   view: ResponsesItemsView<TSourceItems>,
 ): Promise<Mutable<TSourceItems>> => {
-  throwForPreparedFailures(prepared);
+  const [failure] = prepared.failures;
+  if (failure) throwLlmServeFailure(failure);
   const rowById = new Map(prepared.references.flatMap(ref => ref.id !== undefined && ref.row ? [[ref.id, ref.row] as const] : []));
   const rowByEncryptedContent = new Map(prepared.references.flatMap(ref => ref.encryptedContent !== undefined && ref.row ? [[ref.encryptedContent, ref.row] as const] : []));
   return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, rowById, rowByEncryptedContent, provider));
@@ -275,7 +276,7 @@ const rewriteStoredResponsesItemForProvider = (
 
   const replacement = storedItemReplacementBase(item, row);
   if (row.upstreamId === provider.upstream && row.upstreamItemId) return itemWithId(replacement, row.upstreamItemId);
-  if (hasResponsesItemId(replacement)) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
+  if (responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
   return replacement;
 };
 
@@ -296,16 +297,7 @@ const responsesItemId = (item: ResponseInputItem): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-const hasResponsesItemId = (item: ResponseInputItem): boolean => responsesItemId(item) !== null;
-
 const itemWithId = (item: ResponseInputItem, id: string): ResponseInputItem => ({
   ...item,
   id,
 } as ResponseInputItem);
-
-const throwForPreparedFailures = (prepared: PreparedStoredResponsesItems): void => {
-  const [failure] = prepared.failures;
-  if (!failure) return;
-
-  throwLlmServeFailure(failure);
-};

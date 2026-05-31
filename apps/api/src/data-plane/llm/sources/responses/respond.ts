@@ -92,19 +92,18 @@ const tokenUsageFromResponsesResult = (r: RR) => {
 
 // --- error rendering ---
 
-const internalResponsesErrorPayload = (error: InternalDebugError) => ({
-  error: {
-    type: error.type,
-    name: error.name,
-    message: error.message,
-    stack: error.stack,
-    cause: error.cause,
-    source_api: error.source_api,
-    target_api: error.target_api,
-  },
-});
-
-const internalResponsesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalResponsesErrorPayload(error), { status });
+const internalResponsesErrorResponse = (status: number, error: InternalDebugError): Response =>
+  Response.json({
+    error: {
+      type: error.type,
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      cause: error.cause,
+      source_api: error.source_api,
+      target_api: error.target_api,
+    },
+  }, { status });
 
 const internalResponsesStreamErrorFrame = (error: unknown) => {
   const debug = toInternalDebugError(error, 'responses');

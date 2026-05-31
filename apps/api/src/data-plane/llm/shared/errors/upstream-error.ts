@@ -2,33 +2,15 @@ import type { UpstreamErrorResult } from './result.ts';
 import { ProviderModelsUnavailableError } from '../../../providers/models-store.ts';
 import type { PerformanceTelemetryContext } from '../../../shared/telemetry/performance.ts';
 
-interface ThrownUpstreamError {
-  status: number;
-  headers: Headers;
-  body: string;
-}
-
-export const thrownUpstreamError = (error: unknown): ThrownUpstreamError | null => {
-  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
-    return {
-      status: error.httpResponse.status,
-      headers: new Headers(error.httpResponse.headers),
-      body: error.httpResponse.body,
-    };
-  }
-
-  return null;
-};
-
 export const thrownUpstreamErrorResult = (error: unknown, performance?: PerformanceTelemetryContext): UpstreamErrorResult | null => {
-  const upstreamError = thrownUpstreamError(error);
-  if (!upstreamError) return null;
+  if (!(error instanceof ProviderModelsUnavailableError) || !error.httpResponse) return null;
 
+  const { status, headers, body } = error.httpResponse;
   return {
     type: 'upstream-error',
-    status: upstreamError.status,
-    headers: upstreamError.headers,
-    body: new TextEncoder().encode(upstreamError.body),
+    status,
+    headers: new Headers(headers),
+    body: new TextEncoder().encode(body),
     ...(performance ? { performance } : {}),
   };
 };

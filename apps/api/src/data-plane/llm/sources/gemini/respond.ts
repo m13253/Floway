@@ -36,7 +36,7 @@ export const respondGemini = async (
 
   if (result.type === 'internal-error') {
     recordSourcePerformance(request, result.performance, true);
-    return { success: false, response: internalGeminiErrorResponse(result.status, result.error) };
+    return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
 
   const state = new SourceStreamState();
@@ -125,21 +125,12 @@ const geminiStatusForHttpStatus = (status: number): string => {
   }
 };
 
-const isSaneErrorHttpStatus = (status: number): boolean => Number.isInteger(status) && status >= 400 && status <= 599;
-
 const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status);
 
-const googleRpcHttpStatusCode = (status: number): number => (isSaneErrorHttpStatus(status) ? status : 500);
+const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
-const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
+export const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
   const code = googleRpcHttpStatusCode(status);
-  return {
-    error: { code, message, status: geminiStatusForHttpStatus(code), ...debug },
-  };
-};
-
-const geminiErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
-  const code = synthesizedGeminiHttpStatusCode(status);
   return {
     error: { code, message, status: geminiStatusForHttpStatus(code), ...debug },
   };
@@ -171,19 +162,15 @@ export const geminiInternalRpcErrorResponse = (status: number, error: unknown): 
 };
 
 const geminiErrorResponse = (status: number, message: string, debug: GeminiErrorDebugFields = {}): Response => {
-  const payload = geminiErrorPayload(status, message, debug);
-  return Response.json(payload, { status: payload.error.code });
+  const code = synthesizedGeminiHttpStatusCode(status);
+  return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
-
-const geminiErrorEventResponse = (event: GeminiErrorResponse): Response => Response.json(event, { status: googleRpcHttpStatusCode(event.error.code) });
-
-const internalGeminiErrorResponse = (status: number, error: InternalDebugError): Response => geminiErrorResponse(status, error.message, internalDebugFields(error));
 
 const geminiUpstreamErrorResponse = (error: UpstreamErrorResult): Response => upstreamGoogleRpcErrorResponse(error) ?? geminiErrorResponse(error.status, upstreamErrorMessage(error));
 
 const geminiCollectErrorResponse = (error: unknown): Response => {
   const geminiError = caughtGeminiErrorEvent(error);
-  return geminiError ? geminiErrorEventResponse(geminiError) : geminiInternalRpcErrorResponse(502, error);
+  return geminiError ? Response.json(geminiError, { status: googleRpcHttpStatusCode(geminiError.error.code) }) : geminiInternalRpcErrorResponse(502, error);
 };
 
 // Recognizing / extracting an upstream-shaped Gemini error from a raw body or a
@@ -225,9 +212,7 @@ const caughtGeminiErrorEvent = (error: unknown): GeminiErrorResponse | null => {
   return isGeminiErrorResponse(error.cause) ? error.cause : null;
 };
 
-const geminiErrorEventFrame = (event: GeminiErrorStatusPayload) => sseFrame(JSON.stringify(event));
-
-const geminiStreamErrorFrame = (error: unknown) => geminiErrorEventFrame(caughtGeminiErrorEvent(error) ?? geminiInternalRpcErrorPayload(500, error));
+const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caughtGeminiErrorEvent(error) ?? geminiInternalRpcErrorPayload(500, error)));
 
 // --- frame observation ---
 

@@ -130,8 +130,6 @@ const internalMessagesErrorPayload = (error: InternalDebugError) => ({
 
 const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });
 
-const internalMessagesStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
-
 // --- frame observation ---
 
 const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
@@ -163,6 +161,6 @@ const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<M
     }
   } catch (error) {
     state.failed = true;
-    yield internalMessagesStreamErrorFrame(error);
+    yield sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
   }
 };

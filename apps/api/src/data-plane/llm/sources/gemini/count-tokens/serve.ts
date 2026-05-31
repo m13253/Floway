@@ -15,8 +15,6 @@ interface GeminiCountTokensRequest {
   generateContentRequest?: GeminiGenerateContentRequest;
 }
 
-const countTokensRequestToGenerateContentRequest = (request: GeminiCountTokensRequest): GeminiGenerateContentRequest => request.generateContentRequest ?? { contents: request.contents };
-
 // count_tokens reuses Gemini source request normalization, but cannot run the
 // full streaming source-interceptor pipeline. Apply the same payload mutations
 // directly so its translated request shape matches `generateContent`.
@@ -37,7 +35,7 @@ const totalTokensFromUpstream = (value: unknown): number | null => {
 export const countGeminiTokens = async (c: Context, model: string): Promise<Response> => {
   try {
     const request = await c.req.json<GeminiCountTokensRequest>();
-    const generateContentRequest = countTokensRequestToGenerateContentRequest(request);
+    const generateContentRequest = request.generateContentRequest ?? { contents: request.contents };
     normalizeCountTokensRequest(generateContentRequest);
 
     const requestContext = createRequestContext(c, undefined, false);

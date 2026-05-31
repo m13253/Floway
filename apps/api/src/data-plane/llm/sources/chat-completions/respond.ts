@@ -109,8 +109,6 @@ const internalChatErrorPayload = (error: InternalDebugError) => ({
 
 const internalChatErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalChatErrorPayload(error), { status });
 
-const internalChatStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(internalChatErrorPayload(toInternalDebugError(error, 'chat-completions'))), 'error');
-
 // --- frame observation ---
 
 const isChatFailureFrame = (frame: ProtocolFrame<ChatCompletionChunk>) => frame.type === 'event' && chatCompletionsErrorPayloadMessage(frame.event) !== null;
@@ -141,6 +139,6 @@ const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatC
     }
   } catch (error) {
     state.failed = true;
-    yield internalChatStreamErrorFrame(error);
+    yield sseFrame(JSON.stringify(internalChatErrorPayload(toInternalDebugError(error, 'chat-completions'))), 'error');
   }
 };
