@@ -10,7 +10,6 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import type { ResponsesItemsCommit } from '../responses/items/output.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
 
@@ -113,16 +112,15 @@ export const respondMessages = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
-  commitStoredItems: ResponsesItemsCommit | undefined,
-): Promise<Response> => {
+): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);
-    return upstreamErrorToResponse(result);
+    return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordSourcePerformance(request, result.performance, true);
-    return internalMessagesErrorResponse(result.status, result.error);
+    return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   const state = createSourceStreamState();
@@ -135,18 +133,14 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
       recordSourcePerformance(request, metadata.performance, state.failed);
-      // Persist the settled items (failed drains threw above, so they persist
-      // nothing); awaited for read-after-write, swallowed so it can't sink this
-      // billable response.
-      await commitStoredItems?.();
-      return Response.json(response);
+      return { success: true, response: Response.json(response) };
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);
-      return internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages'));
+      return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
 
-  return streamSSE(c, async stream => {
+  const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
@@ -162,4 +156,6 @@ export const respondMessages = async (
       }
     }
   });
+
+  return { success: true, response };
 };

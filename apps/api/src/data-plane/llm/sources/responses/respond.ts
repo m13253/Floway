@@ -4,7 +4,6 @@ import { streamSSE } from 'hono/streaming';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './errors.ts';
 import { collectResponsesProtocolEventsToResult } from './events/reassemble.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import type { ResponsesItemsCommit } from './items/output.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
@@ -100,16 +99,15 @@ export const respondResponses = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
-  commitStoredItems: ResponsesItemsCommit | undefined,
-): Promise<Response> => {
+): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);
-    return upstreamErrorToResponse(result);
+    return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordSourcePerformance(request, result.performance, true);
-    return internalResponsesErrorResponse(result.status, result.error);
+    return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 
   const state = createSourceStreamState();
@@ -121,18 +119,14 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
       recordSourcePerformance(request, metadata.performance, state.failed || response.status === 'failed');
-      // Persist the settled items (failed drains threw above, so they persist
-      // nothing); awaited for read-after-write, swallowed so it can't sink this
-      // billable response.
-      await commitStoredItems?.();
-      return Response.json(response);
+      return { success: true, response: Response.json(response) };
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);
-      return internalResponsesErrorResponse(502, toInternalDebugError(error, 'responses'));
+      return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error, 'responses')) };
     }
   }
 
-  return streamSSE(c, async stream => {
+  const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, responsesSseFrames(frames, state), {
@@ -148,4 +142,6 @@ export const respondResponses = async (
       }
     }
   });
+
+  return { success: true, response };
 };

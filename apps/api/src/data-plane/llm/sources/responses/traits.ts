@@ -101,8 +101,8 @@ const renderResponsesFailure = (failure: LlmSourceFailure): ExecuteResult<Protoc
 
 export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,
-  respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
-    await respondResponses(c, result, wantsStream, request, downstreamAbortController, commit),
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondResponses(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
     const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
     const notFound = previousResponseNotFoundResponse(payload);
@@ -113,7 +113,7 @@ export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputIte
     return {
       request,
       items: payload.input,
-      view: responsesItemsView,
+      responsesItemsView,
       wantsStream,
       store: payload.store,
       model: payload.model,

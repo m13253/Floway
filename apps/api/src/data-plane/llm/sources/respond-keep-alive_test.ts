@@ -126,17 +126,17 @@ const request = (): RequestContext => ({
 });
 
 test('Messages streaming keepalive uses Anthropic ping events', async () => {
-  await assertSourceKeepAlive<MessagesStreamEventData>((c, events) => respondMessages(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined, undefined), 'event: ping\ndata: {"type":"ping"}\n\n');
+  await assertSourceKeepAlive<MessagesStreamEventData>(async (c, events) => (await respondMessages(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, 'event: ping\ndata: {"type":"ping"}\n\n');
 });
 
 test('Responses streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<ResponsesStreamEvent>((c, events) => respondResponses(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined, undefined), ': keepalive\n\n');
+  await assertSourceKeepAlive<ResponsesStreamEvent>(async (c, events) => (await respondResponses(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, ': keepalive\n\n');
 });
 
 test('Chat Completions streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<ChatCompletionChunk>((c, events) => respondChatCompletions(c, eventResult(events, testTelemetryModelIdentity), true, true, request(), undefined, undefined), ': keepalive\n\n');
+  await assertSourceKeepAlive<ChatCompletionChunk>(async (c, events) => (await respondChatCompletions(c, eventResult(events, testTelemetryModelIdentity), true, true, request(), undefined)).response, ': keepalive\n\n');
 });
 
 test('Gemini streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<GeminiStreamEvent>((c, events) => respondGemini(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined, undefined), ': keepalive\n\n');
+  await assertSourceKeepAlive<GeminiStreamEvent>(async (c, events) => (await respondGemini(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, ': keepalive\n\n');
 });

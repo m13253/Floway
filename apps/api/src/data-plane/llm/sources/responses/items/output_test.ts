@@ -343,7 +343,7 @@ test('non-streaming buffers item rows and persists nothing until commit', async 
   const storedId = eventAt(events, 'response.output_item.done').item.id!;
   assertEquals((await repo.responsesItems.lookupMany(apiKeyId, [storedId])).length, 0);
 
-  await stored.commit();
+  await stored.commitForNonStreaming!();
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.payload, { item: original });
 });

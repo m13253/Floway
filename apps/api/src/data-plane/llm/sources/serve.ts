@@ -41,7 +41,7 @@ export type LlmSourceFailure =
 export interface LlmSourcePlan<TItems, TEvent> {
   readonly request: RequestContext;
   readonly items: TItems;
-  readonly view: ResponsesItemsView<TItems, Frame<TEvent>>;
+  readonly responsesItemsView: ResponsesItemsView<TItems, Frame<TEvent>>;
   readonly wantsStream: boolean;
   // `store: false` requests persist null payloads; sources that have no
   // `store` concept (Messages, Gemini) pass `undefined`.
@@ -66,16 +66,17 @@ export interface LlmSourcePlan<TItems, TEvent> {
 
 export interface LlmSourceTraits<TItems, TEvent> {
   // Static — usable even before/if `setup()` runs. Maps a failure to this API's
-  // error envelope and shapes the final Response from a result.
+  // error envelope and shapes the final Response from a result. `respond` only
+  // reports whether the response was produced successfully; the orchestrator
+  // owns what to do with that (e.g. committing stored items).
   renderFailure(failure: LlmSourceFailure): Result<TEvent>;
   respond(input: {
     c: Context;
     result: Result<TEvent>;
     request: RequestContext;
     wantsStream: boolean;
-    commit?: ResponsesItemsCommit;
     downstreamAbortController: AbortController | undefined;
-  }): Promise<Response>;
+  }): Promise<{ success: boolean; response: Response }>;
   setup(c: Context): Promise<LlmSourcePlan<TItems, TEvent> | Response>;
 }
 
@@ -90,21 +91,22 @@ export const serveLlm = <TItems, TEvent>(
     if (plan instanceof Response) return plan;
     request = plan.request;
 
-    const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.view);
+    const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.responsesItemsView);
     const preparedDiagnostic = prepared.diagnostics[0];
     if (preparedDiagnostic) {
-      return await traits.respond({
+      const { response } = await traits.respond({
         c,
         result: traits.renderFailure({ kind: 'diagnostic', diagnostic: preparedDiagnostic }),
         request,
         wantsStream: plan.wantsStream,
         downstreamAbortController: plan.downstreamAbortController,
       });
+      return response;
     }
 
     const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), prepared);
     let result: Result<TEvent> | undefined;
-    let commit: ResponsesItemsCommit | undefined;
+    let commitForNonStreaming: ResponsesItemsCommit | undefined;
     let sawModel = false;
     let resolvedModelId = plan.model;
     if (providerPlan.type === 'error') {
@@ -123,12 +125,12 @@ export const serveLlm = <TItems, TEvent>(
         binding,
         target,
         model: resolvedModelId,
-        rewriteItems: items => rewriteStoredResponsesItemsForProvider(items, prepared, binding, plan.view),
+        rewriteItems: items => rewriteStoredResponsesItemsForProvider(items, prepared, binding, plan.responsesItemsView),
       });
       if (rawResult.type === 'events') {
-        const stored = storeResponsesOutputItems(rawResult.events, plan.view, { targetApi: target, upstream: binding.upstream, store: plan.store }, request, plan.wantsStream);
+        const stored = storeResponsesOutputItems(rawResult.events, plan.responsesItemsView, { targetApi: target, upstream: binding.upstream, store: plan.store }, request, plan.wantsStream);
         result = { ...rawResult, events: stored.events };
-        commit = stored.commit;
+        commitForNonStreaming = stored.commitForNonStreaming;
       } else {
         result = rawResult;
       }
@@ -137,11 +139,19 @@ export const serveLlm = <TItems, TEvent>(
 
     result ??= traits.renderFailure(sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId });
 
-    return await traits.respond({ c, result, request, wantsStream: plan.wantsStream, commit, downstreamAbortController: plan.downstreamAbortController });
+    // `respond` reports only whether the response was produced; the orchestrator
+    // owns commit timing. `commitForNonStreaming` exists solely on a successful
+    // non-streaming attempt — it flushes the buffered rows once the body is
+    // known good (streaming rows were already written per frame). A failed
+    // response leaves the buffer unflushed.
+    const { success, response } = await traits.respond({ c, result, request, wantsStream: plan.wantsStream, downstreamAbortController: plan.downstreamAbortController });
+    if (success) await commitForNonStreaming?.();
+    return response;
   } catch (error) {
     const failure: LlmSourceFailure = error instanceof StoredResponsesItemsDiagnosticError
       ? { kind: 'diagnostic', diagnostic: error.diagnostic }
       : { kind: 'source-error', error };
-    return await traits.respond({ c, result: traits.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
+    const { response } = await traits.respond({ c, result: traits.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
+    return response;
   }
 };

@@ -10,7 +10,6 @@ import type { ExecuteResult, UpstreamErrorResult } from '../../shared/errors/res
 import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import type { ResponsesItemsCommit } from '../responses/items/output.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
@@ -199,16 +198,15 @@ export const respondGemini = async (
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
-  commitStoredItems: ResponsesItemsCommit | undefined,
-): Promise<Response> => {
+): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordSourcePerformance(request, result.performance, true);
-    return geminiUpstreamErrorResponse(result);
+    return { success: false, response: geminiUpstreamErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordSourcePerformance(request, result.performance, true);
-    return internalGeminiErrorResponse(result.status, result.error);
+    return { success: false, response: internalGeminiErrorResponse(result.status, result.error) };
   }
 
   const state = createSourceStreamState();
@@ -220,18 +218,14 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
       recordSourcePerformance(request, metadata.performance, state.failed);
-      // Persist the settled items (failed drains threw above, so they persist
-      // nothing); awaited for read-after-write, swallowed so it can't sink this
-      // billable response.
-      await commitStoredItems?.();
-      return Response.json(response);
+      return { success: true, response: Response.json(response) };
     } catch (error) {
       recordSourcePerformance(request, result.performance, true);
-      return geminiCollectErrorResponse(error);
+      return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
 
-  return streamSSE(c, async stream => {
+  const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, geminiSseFrames(frames, state), {
@@ -247,4 +241,6 @@ export const respondGemini = async (
       }
     }
   });
+
+  return { success: true, response };
 };

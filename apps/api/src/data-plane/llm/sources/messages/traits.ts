@@ -101,8 +101,8 @@ const renderMessagesFailure = (failure: LlmSourceFailure): ExecuteResult<Protoco
 
 export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEventData> = {
   renderFailure: renderMessagesFailure,
-  respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
-    await respondMessages(c, result, wantsStream, request, downstreamAbortController, commit),
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondMessages(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);
@@ -114,7 +114,7 @@ export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], Message
     return {
       request,
       items: payload.messages,
-      view: messagesViaResponsesItemsView,
+      responsesItemsView: messagesViaResponsesItemsView,
       wantsStream,
       store: undefined,
       model: payload.model,

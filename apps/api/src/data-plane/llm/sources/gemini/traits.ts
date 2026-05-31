@@ -82,8 +82,8 @@ const renderGeminiFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolF
 // `countTokens` and unknown actions return their own Responses early.
 export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStreamEvent> = {
   renderFailure: renderGeminiFailure,
-  respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
-    await respondGemini(c, result, wantsStream, request, downstreamAbortController, commit),
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondGemini(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
     const modelAction = c.req.param('modelAction');
     if (!modelAction) return geminiRpcErrorResponse(404, 'Missing Gemini model action.');
@@ -107,7 +107,7 @@ export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStrea
     return {
       request,
       items: payload.contents ?? [],
-      view: geminiViaResponsesItemsView,
+      responsesItemsView: geminiViaResponsesItemsView,
       wantsStream,
       store: undefined,
       model,

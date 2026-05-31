@@ -48,13 +48,14 @@ export interface StoreResponsesContext {
   readonly store: boolean | null | undefined;
 }
 
-// Writes rows buffered during a non-streaming drain. A no-op in streaming
-// mode, where each row was already written at its done frame.
+// Flushes the rows buffered during a non-streaming drain. Streaming has no
+// buffer to flush — each row is written at its carrier's done frame — so the
+// stream carries no committer at all in that mode.
 export type ResponsesItemsCommit = () => Promise<void>;
 
 export interface StoredResponsesItemsStream<TFrame> {
   readonly events: AsyncIterable<TFrame>;
-  readonly commit: ResponsesItemsCommit;
+  readonly commitForNonStreaming: ResponsesItemsCommit | undefined;
 }
 
 export const storeResponsesOutputItems = <TFrame>(
@@ -99,9 +100,11 @@ export const storeResponsesOutputItems = <TFrame>(
     else buffer.push(row);
   };
 
-  const commit: ResponsesItemsCommit = () => insertStoredItems(buffer);
+  // Streaming writes each row at its done frame, so there is nothing to flush;
+  // only a non-streaming drain buffers rows for a single commit at the end.
+  const commitForNonStreaming = wantsStream ? undefined : (): Promise<void> => insertStoredItems(buffer);
 
-  return { events: view.streamMapIdAsResponsesItems(frames, idMapper, onItemFinalized), commit };
+  return { events: view.streamMapIdAsResponsesItems(frames, idMapper, onItemFinalized), commitForNonStreaming };
 };
 
 const buildRow = async (

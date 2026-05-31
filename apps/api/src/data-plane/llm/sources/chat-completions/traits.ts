@@ -62,8 +62,8 @@ const INCLUDE_USAGE_CHUNK_KEY = 'chatCompletionsIncludeUsageChunk';
 
 export const chatCompletionsTraits: LlmSourceTraits<readonly ChatMessage[], ChatCompletionChunk> = {
   renderFailure: renderChatCompletionsFailure,
-  respond: async ({ c, result, request, wantsStream, commit, downstreamAbortController }) =>
-    await respondChatCompletions(c, result, wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, request, downstreamAbortController, commit),
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondChatCompletions(c, result, wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, request, downstreamAbortController),
   setup: async c => {
     const payload = await c.req.json<ChatCompletionsPayload>();
     c.set(INCLUDE_USAGE_CHUNK_KEY, payload.stream_options?.include_usage === true);
@@ -73,7 +73,7 @@ export const chatCompletionsTraits: LlmSourceTraits<readonly ChatMessage[], Chat
     return {
       request,
       items: payload.messages,
-      view: chatCompletionsViaResponsesItemsView,
+      responsesItemsView: chatCompletionsViaResponsesItemsView,
       wantsStream,
       store: payload.store,
       model: payload.model,
