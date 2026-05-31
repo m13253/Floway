@@ -6,7 +6,7 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, renderOpenAiServeFailure } from '../execute.ts';
+import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
 import { type LlmServeFailure } from '../failure.ts';
 import { type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -87,8 +87,26 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
-  renderOpenAiServeFailure<ResponsesStreamEvent>(failure, { endpoint: '/responses', sourceApi: 'responses' });
+// OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
+// stored-item miss must byte-match OpenAI's own "not found" body, which
+// stateless clients (codex) compare verbatim.
+const openAiErrorResult = (status: number, message: string, extra?: { param: string; code: string | null }): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
+  jsonUpstreamErrorResult(status, { error: { message, type: 'invalid_request_error', ...extra } });
+
+const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+  switch (failure.kind) {
+  case 'item-not-found':
+    return openAiErrorResult(404, `Item with id '${failure.itemId}' not found.`, { param: 'input', code: null });
+  case 'routing-unavailable':
+    return openAiErrorResult(400, failure.message, { param: 'input', code: 'responses_item_routing_unavailable' });
+  case 'model-missing':
+    return openAiErrorResult(404, `Model ${failure.model} is not available on any configured upstream.`);
+  case 'model-unsupported':
+    return openAiErrorResult(400, `Model ${failure.model} does not support the /responses endpoint.`);
+  case 'internal':
+    return sourceErrorResult<ResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
+  }
+};
 
 export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,
