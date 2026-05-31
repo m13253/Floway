@@ -42,7 +42,7 @@ const openAiModelErrorResult = (status: number, message: string) =>
     error: { message, type: 'invalid_request_error' },
   });
 
-export const openAiMissingModelResult = (model: string) => openAiModelErrorResult(404, `No upstream provides model ${model}. Configure an upstream that exposes this model in the dashboard.`);
+export const openAiMissingModelResult = (model: string) => openAiModelErrorResult(404, `Model ${model} is not available on any configured upstream.`);
 
 export const openAiUnsupportedEndpointResult = (model: string, endpoint: string) => openAiModelErrorResult(400, `Model ${model} does not support the ${endpoint} endpoint.`);
 

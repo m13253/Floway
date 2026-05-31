@@ -24,16 +24,21 @@ export interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
   affinity?: StoredResponsesAffinity;
 }
 
+// Stored-item routing only ever diagnoses these two failures of the wider
+// serve-failure union; model and internal failures arise later, in the
+// provider walk and the top-level catch.
+export type StoredResponsesItemsFailure = Extract<LlmServeFailure, { kind: 'item-not-found' | 'routing-unavailable' }>;
+
 export interface PreparedStoredResponsesItems {
   references: ResolvedStoredResponsesItemRef[];
-  failures: LlmServeFailure[];
+  failures: StoredResponsesItemsFailure[];
   forcingUpstreamIds: ReadonlySet<string>;
   preferredUpstreamIds: ReadonlySet<string>;
 }
 
 export type StoredResponsesProviderPlan =
   | { type: 'providers'; providers: readonly ModelProviderInstance[] }
-  | { type: 'failure'; failure: LlmServeFailure };
+  | { type: 'failure'; failure: StoredResponsesItemsFailure };
 
 // A stored row either belongs to the upstream that produced it — native
 // Responses upstreams hand back their own item ids — or is gateway-synthesized
@@ -64,7 +69,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   const rowById = new Map(byId.map(row => [row.id, row]));
   const rowByHash = new Map(byHash.flatMap(row => row.encryptedContentHash !== null ? [[row.encryptedContentHash, row] as const] : []));
 
-  const failures: LlmServeFailure[] = [];
+  const failures: StoredResponsesItemsFailure[] = [];
   for (const ref of references) {
     const row = (ref.id !== undefined ? rowById.get(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined ? rowByHash.get(hashByContent.get(ref.encryptedContent)!) : undefined);

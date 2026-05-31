@@ -29,15 +29,17 @@ import type {
 // - Streaming: the row is awaited at the carrier's done frame, just before
 //   that frame is yielded onward, so a client that has seen `done` finds the
 //   row on its next turn. The stored id is exposed earlier at the added
-//   frame; the added->done replay race is accepted. `commit` is a no-op.
+//   frame; the added->done replay race is accepted. There is no buffer to
+//   flush, so `commitForNonStreaming` is undefined.
 //
 // - Non-streaming: the response is assembled by draining the whole stream
 //   into one JSON body; an item-done followed by a stream-level error makes
 //   the reassembler throw and the request returns 502 with no body. Persisting
 //   per item during that drain would leave rows for items the client never
-//   received, so the handler only buffers finalized rows and `commit` writes
-//   the batch — awaited by the respond layer on the success branch, after the
-//   body is known good, so the returned ids are immediately referenceable.
+//   received, so the handler only buffers finalized rows and
+//   `commitForNonStreaming` writes the batch — awaited by the orchestrator on
+//   the success branch, after the body is known good, so the returned ids are
+//   immediately referenceable.
 //
 // The stored row carries the upstream's original item in `payload.item`, so the
 // id there is the upstream's id, not the stored id; `request-plan.ts` rewrites

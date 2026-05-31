@@ -89,19 +89,18 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
 
 // Maps a serve failure to the Messages (Anthropic) error envelope, shared with
 // the count_tokens path which answers in the same shape under a different
-// endpoint label. `internal` falls back to a generic shape but is normally
-// rendered with a stack trace by the caller instead.
+// endpoint label. `internal` is excluded — it is rendered with a stack trace by
+// the caller, not as a flat envelope.
 export const messagesFailureEnvelope = (
-  failure: LlmServeFailure,
+  failure: Exclude<LlmServeFailure, { kind: 'internal' }>,
   endpoint: string,
 ): { status: number; body: { type: 'error'; error: { type: string; message: string } } } => {
   const [status, type, message]: [number, string, string] = (() => {
     switch (failure.kind) {
     case 'item-not-found': return [400, 'invalid_request_error', `Item with id '${failure.itemId}' not found.`];
     case 'routing-unavailable': return [400, 'invalid_request_error', failure.message];
-    case 'model-missing': return [404, 'not_found_error', `No upstream provides model ${failure.model}. Configure an upstream that exposes this model in the dashboard.`];
+    case 'model-missing': return [404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`];
     case 'model-unsupported': return [400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpoint} endpoint.`];
-    case 'internal': return [500, 'api_error', 'Internal server error.'];
     }
   })();
   return { status, body: { type: 'error', error: { type, message } } };

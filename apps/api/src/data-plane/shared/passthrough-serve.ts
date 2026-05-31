@@ -158,7 +158,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
   try {
     const { id: modelId, model: resolved } = await resolveModelForRequest(model, apiKeyUpstreamIdsFromContext(c));
     if (!resolved) {
-      return passthroughApiError(c, `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`, 404);
+      return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
     }
 
     for (const binding of resolved.providers) {
