@@ -18,6 +18,6 @@ export const chatCompletionsInvocation = (payload: ChatCompletionsPayload, enabl
 
 export const stubRequestContext: RequestContext = {
   requestStartedAt: 0,
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 };

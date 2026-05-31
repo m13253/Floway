@@ -20,7 +20,7 @@ const testTelemetryModelIdentity = {
 };
 const request = (): RequestContext => ({
   requestStartedAt: performance.now(),
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 });
 

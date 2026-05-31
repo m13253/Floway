@@ -16,6 +16,7 @@ export const createRequestContext = (c: Context, downstreamAbortSignal: AbortSig
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     scheduleBackground,
     clientStream,
+    responsesSyntheticItemIds: new Set(),
     ...(downstreamAbortSignal !== undefined ? { downstreamAbortSignal } : {}),
   };
 };

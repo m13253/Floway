@@ -40,6 +40,11 @@ export interface RequestContext {
   readonly scheduleBackground?: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
+  // Ids of Responses output items the gateway itself synthesized this request
+  // (e.g. a server-tool shim's web_search_call), which carry a gateway-minted
+  // id no upstream issued. Persistence stores these with no upstream identity —
+  // non_affinity — even on a native Responses upstream.
+  readonly responsesSyntheticItemIds: Set<string>;
 }
 
 /**

@@ -119,7 +119,11 @@ const buildRow = async (
   if (upstreamId === null) {
     throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
   }
-  const upstreamOwned = context.targetApi === 'responses';
+  // A native Responses upstream owns its items — except those a source
+  // interceptor synthesized this request (e.g. the web-search shim's
+  // web_search_call), whose gateway-minted ids the upstream never issued.
+  // Those persist with no upstream identity so they stay non_affinity.
+  const upstreamOwned = context.targetApi === 'responses' && !request.responsesSyntheticItemIds.has(upstreamId);
   const encryptedContent = responsesItemEncryptedContent(originalItem);
   return {
     id: newId,

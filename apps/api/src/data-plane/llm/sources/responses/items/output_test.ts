@@ -23,11 +23,12 @@ const makeContext = (overrides: Partial<StoreResponsesContext> = {}): StoreRespo
   store: overrides.store,
 });
 
-const makeRequest = (): RequestContext => ({
+const makeRequest = (syntheticItemIds: Iterable<string> = []): RequestContext => ({
   requestStartedAt: 0,
   apiKeyId,
   runtimeLocation: 'test',
   clientStream: true,
+  responsesSyntheticItemIds: new Set(syntheticItemIds),
 });
 
 const messageItem = (id: string, text: string): Extract<ResponseOutputItem, { type: 'message' }> => ({
@@ -325,6 +326,34 @@ test('via-translation synthesized items do not claim upstream ownership', async 
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, null);
   assertEquals(row.upstreamItemId, null);
+});
+
+test('gateway-synthesized items registered this request do not claim upstream ownership on a native stream', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  // A source interceptor (the web-search shim) synthesizes a web_search_call
+  // with a gateway-minted id and registers it on the request. Even though the
+  // upstream is a native Responses upstream (targetApi: 'responses'), the row
+  // must carry no upstream identity — the upstream never issued this id — so it
+  // stays non_affinity rather than biasing routing toward that upstream.
+  const synthetic: Extract<ResponseOutputItem, { type: 'web_search_call' }> = {
+    type: 'web_search_call',
+    id: 'ws_gw_synthetic00000000000',
+    status: 'completed',
+    action: { type: 'search', query: 'q', queries: ['q'] },
+    results: [],
+  };
+
+  const events = await collectEvents(storeStreaming(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: synthetic },
+    { type: 'response.completed', response: response([synthetic]) },
+  ]), makeContext(), makeRequest([synthetic.id])));
+
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.upstreamId, null);
+  assertEquals(row.upstreamItemId, null);
+  assertEquals(row.itemType, 'web_search_call');
 });
 
 test('non-streaming buffers item rows and persists nothing until commit', async () => {

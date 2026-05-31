@@ -337,7 +337,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
 
 const makeRequest = (apiKeyId: string | undefined = 'k1'): RequestContext => ({
   requestStartedAt: 0,
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: true,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -635,6 +635,34 @@ test('shim drives one search then a final message in two upstream turns', async 
   const wsCallTypes = events.filter(e => e.type.startsWith('response.web_search_call'));
   assertEquals(wsCallTypes.length, 3);
   assertEquals(events[events.length - 1].type, 'response.completed');
+});
+
+test('synthesized web_search_call ids are registered as gateway-synthetic on the request', async () => {
+  makeStubDeps();
+  const shim = withResponsesWebSearchShim;
+  const inv = makeInvocation();
+  const request = makeRequest();
+  const script = scriptedRun([
+    searchCallTurn(0, 'call_1', 'q1'),
+    messageTurn('summary', 0),
+  ]);
+
+  const { frames } = await runShimAndDrain(shim, inv, request, script.run);
+
+  // Every web_search_call the shim synthesizes carries a gateway-minted id no
+  // upstream issued; persistence relies on these being registered so it stores
+  // them with no upstream identity (non_affinity).
+  const doneEvents = outputItemDoneEvents(frames);
+  const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
+  assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
+  for (const id of wsCallDoneIds) {
+    assert(id.startsWith('ws_gw_'));
+    assert(request.responsesSyntheticItemIds.has(id), `expected ${id} registered as synthetic`);
+  }
+  // A genuine upstream item (the final message) is not registered.
+  for (const e of doneEvents.filter(e => e.item.type === 'message')) {
+    assertFalse(request.responsesSyntheticItemIds.has(e.item.id!));
+  }
 });
 
 // ── Multi-action umbrella call = 1 iteration ──────────────────────────
@@ -4733,7 +4761,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const inv = makeInvocation();
   const request: RequestContext = {
     requestStartedAt: 0,
-    runtimeLocation: 'test',
+    responsesSyntheticItemIds: new Set(),    runtimeLocation: 'test',
     clientStream: true,
     apiKeyId: 'k1',
     downstreamAbortSignal: controller.signal,

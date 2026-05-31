@@ -12,7 +12,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  runtimeLocation: 'test',
+  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
   clientStream: false,
 };
 

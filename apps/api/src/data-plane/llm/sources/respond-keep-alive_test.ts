@@ -121,6 +121,7 @@ const testTelemetryModelIdentity = {
 const requestStartedAt = performance.now();
 const request = (): RequestContext => ({
   requestStartedAt,
+  responsesSyntheticItemIds: new Set(),
   runtimeLocation: 'test',
   clientStream: true,
 });
