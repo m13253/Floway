@@ -1,8 +1,12 @@
 import type { Context } from 'hono';
 
+import type { PerformanceApiName } from '../../../repo/types.ts';
 import type { ProviderModelRecord } from '../../providers/types.ts';
+import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { LlmTargetApi, RequestContext } from '../interceptors.ts';
-import type { ExecuteResult } from '../shared/errors/result.ts';
+import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
+import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
+import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -54,6 +58,34 @@ export class LlmServeFailureError extends Error {
 
 export const throwLlmServeFailure = (failure: LlmServeFailure): never => {
   throw new LlmServeFailureError(failure);
+};
+
+type PerformanceLlmSourceApi = Exclude<PerformanceApiName, NonLlmServeApiName>;
+
+// The base every source's `renderFailure` wraps: a synthetic `upstream-error`
+// result carrying a gateway-built JSON body, so the respond layer renders a
+// gateway-invented failure through the same path as a real upstream error.
+export const jsonUpstreamErrorResult = (status: number, body: unknown): UpstreamErrorResult => ({
+  type: 'upstream-error',
+  status,
+  headers: new Headers({ 'content-type': 'application/json' }),
+  body: new TextEncoder().encode(JSON.stringify(body)),
+});
+
+// Renders the `internal` failure kind shared by every source: a thrown upstream
+// error passes through verbatim, otherwise the caught value becomes an
+// internal-error result with a stack trace tagged to the source API.
+export const sourceErrorResult = <TEvent>(
+  error: unknown,
+  options: {
+    sourceApi: PerformanceLlmSourceApi;
+    internalStatus: number;
+  },
+): Result<TEvent> => {
+  const upstreamError = thrownUpstreamErrorResult(error);
+  if (upstreamError) return upstreamError;
+
+  return internalErrorResult(options.internalStatus, toInternalDebugError(error, options.sourceApi));
 };
 
 export interface LlmSourcePlan<TItems, TEvent> {
