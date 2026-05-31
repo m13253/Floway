@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './errors.ts';
-import { collectResponsesProtocolEventsToResult } from './events/reassemble.ts';
+import { collectResponsesProtocolEventsToResult } from './events/to-response.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';

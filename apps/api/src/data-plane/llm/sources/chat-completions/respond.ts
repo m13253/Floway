@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { CHAT_COMPLETIONS_MISSING_DONE_MESSAGE } from './events/protocol.ts';
-import { collectChatProtocolEventsToCompletion } from './events/reassemble.ts';
+import { collectChatProtocolEventsToCompletion } from './events/to-response.ts';
 import { chatProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';

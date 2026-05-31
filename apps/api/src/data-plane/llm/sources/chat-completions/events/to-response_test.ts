@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { collectChatProtocolEventsToCompletion } from './reassemble.ts';
+import { collectChatProtocolEventsToCompletion } from './to-response.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
