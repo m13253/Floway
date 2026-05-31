@@ -60,6 +60,10 @@ export interface ResponsesItemsView<TSourceItems, TStreamFrame = unknown> {
   ): AsyncGenerator<TStreamFrame>;
 }
 
+// ---------------------------------------------------------------------------
+// Responses source
+// ---------------------------------------------------------------------------
+
 export const responsesItemsView = {
   visitAsResponsesItems: async (
     input: string | readonly ResponseInputItem[],
@@ -175,20 +179,14 @@ export const responsesItemsView = {
   },
 } satisfies ResponsesItemsView<string | readonly ResponseInputItem[], ProtocolFrame<ResponsesStreamEvent>>;
 
-// A reasoning block echoed back by a Messages client carries the packed
-// `${encrypted_content}@${id}` value in `thinking.signature` or
-// `redacted_thinking.data`. Returns the unpacked id only when the carrier was
-// issued by this gateway; a native upstream signature (no `@`) has no
-// stored id to rewrite and is left untouched.
-const reasoningCarrier = (block: MessagesAssistantContentBlock): { id: string; encryptedContent: string; thinking: string } | null => {
-  const carrier = block.type === 'thinking' ? block.signature : block.type === 'redacted_thinking' ? block.data : undefined;
-  if (carrier === undefined) return null;
-
-  const { id, encryptedContent } = unpackReasoningSignature(carrier);
-  if (id === null) return null;
-
-  return { id, encryptedContent, thinking: block.type === 'thinking' ? block.thinking : '' };
+const itemId = (item: { id?: unknown }): string | null => {
+  const id = item.id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
 };
+
+// ---------------------------------------------------------------------------
+// Messages source
+// ---------------------------------------------------------------------------
 
 export const messagesViaResponsesItemsView = {
   visitAsResponsesItems: async (
@@ -378,6 +376,51 @@ export const messagesViaResponsesItemsView = {
   },
 } satisfies ResponsesItemsView<readonly MessagesMessage[], ProtocolFrame<MessagesStreamEventData>>;
 
+// A reasoning block echoed back by a Messages client carries the packed
+// `${encrypted_content}@${id}` value in `thinking.signature` or
+// `redacted_thinking.data`. Returns the unpacked id only when the carrier was
+// issued by this gateway; a native upstream signature (no `@`) has no
+// stored id to rewrite and is left untouched.
+const reasoningCarrier = (block: MessagesAssistantContentBlock): { id: string; encryptedContent: string; thinking: string } | null => {
+  const carrier = block.type === 'thinking' ? block.signature : block.type === 'redacted_thinking' ? block.data : undefined;
+  if (carrier === undefined) return null;
+
+  const { id, encryptedContent } = unpackReasoningSignature(carrier);
+  if (id === null) return null;
+
+  return { id, encryptedContent, thinking: block.type === 'thinking' ? block.thinking : '' };
+};
+
+const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
+  switch (item.type) {
+  case 'reasoning':
+    return responsesReasoningToMessagesBlock(item);
+  case 'message': {
+    if (item.role !== 'assistant') return null;
+    const text = responseMessageOutputText(item);
+    return text ? { type: 'text', text } : null;
+  }
+  case 'function_call':
+    return { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArgumentsObject(item.arguments) };
+  case 'custom_tool_call':
+    return { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } };
+  default:
+    throw new Error(`Cannot project Responses ${item.type} item into a Messages assistant content block`);
+  }
+};
+
+const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'message' }>): string => {
+  if (typeof item.content === 'string') return item.content;
+  return item.content
+    .filter((part): part is Extract<typeof part, { text: string }> => 'text' in part)
+    .map(part => part.text)
+    .join('');
+};
+
+// ---------------------------------------------------------------------------
+// Chat Completions source
+// ---------------------------------------------------------------------------
+
 export const chatCompletionsViaResponsesItemsView = {
   visitAsResponsesItems: async (
     messages: readonly ChatMessage[],
@@ -480,6 +523,10 @@ export const chatCompletionsViaResponsesItemsView = {
   },
 } satisfies ResponsesItemsView<readonly ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
 
+// ---------------------------------------------------------------------------
+// Gemini source
+// ---------------------------------------------------------------------------
+
 // Placeholder view. Gemini does not yet have a reasoning-id / signature
 // carrier in its protocol, so there is nothing to project. The empty
 // implementations let `gemini/serve.ts` go through the uniform stored-items
@@ -502,34 +549,3 @@ export const geminiViaResponsesItemsView = {
     for await (const frame of frames) yield frame;
   },
 } satisfies ResponsesItemsView<readonly GeminiContent[], ProtocolFrame<GeminiStreamEvent>>;
-
-const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
-  switch (item.type) {
-  case 'reasoning':
-    return responsesReasoningToMessagesBlock(item);
-  case 'message': {
-    if (item.role !== 'assistant') return null;
-    const text = responseMessageOutputText(item);
-    return text ? { type: 'text', text } : null;
-  }
-  case 'function_call':
-    return { type: 'tool_use', id: item.call_id, name: item.name, input: parseToolArgumentsObject(item.arguments) };
-  case 'custom_tool_call':
-    return { type: 'tool_use', id: item.call_id, name: item.name, input: { input: item.input } };
-  default:
-    throw new Error(`Cannot project Responses ${item.type} item into a Messages assistant content block`);
-  }
-};
-
-const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'message' }>): string => {
-  if (typeof item.content === 'string') return item.content;
-  return item.content
-    .filter((part): part is Extract<typeof part, { text: string }> => 'text' in part)
-    .map(part => part.text)
-    .join('');
-};
-
-const itemId = (item: { id?: unknown }): string | null => {
-  const id = item.id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
-};
