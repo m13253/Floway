@@ -2,7 +2,7 @@ import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, isSt
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
-import { throwLlmServeFailure, type LlmServeFailure } from '../../failure.ts';
+import { throwLlmServeFailure, type LlmServeFailure } from '../../traits.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

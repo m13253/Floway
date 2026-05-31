@@ -1,18 +1,11 @@
 import type { Context } from 'hono';
 
-import { type LlmServeFailure, LlmServeFailureError } from './failure.ts';
 import { createRequestContext } from './request-context.ts';
+import type { RequestContext } from '../interceptors.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import { planResponsesItemProviders, type PreparedStoredResponsesItems, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider, type StoredResponsesProviderPlan } from './responses/items/request-plan.ts';
+import { type LlmServeFailure, LlmServeFailureError, type LlmSourcePlan, type LlmSourceTraits, type Result } from './traits.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
-import type { ProviderModelRecord } from '../../providers/types.ts';
-import { type LlmTargetApi, type RequestContext } from '../interceptors.ts';
-import type { ExecuteResult } from '../shared/errors/result.ts';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
-
-type Frame<TEvent> = ProtocolFrame<TEvent>;
-type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
 
 // The control flow every LLM source serve shares: look up referenced stored
 // items, plan a provider order from their routing affinity, then walk that
@@ -27,48 +20,6 @@ type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
 // an early `Response`), and yields a plan whose `attempt` closure captures the
 // payload to clone, rewrite, and run. The orchestrator only drives the planner
 // and persistence, then hands every result — success or failure — to `respond`.
-
-export interface LlmSourcePlan<TItems, TEvent> {
-  readonly request: RequestContext;
-  readonly items: TItems;
-  readonly responsesItemsView: ResponsesItemsView<TItems, Frame<TEvent>>;
-  readonly wantsStream: boolean;
-  // `store: false` requests persist null payloads; sources that have no
-  // `store` concept (Messages, Gemini) pass `undefined`.
-  readonly store: boolean | null | undefined;
-  // The model id the planner resolves against. Most sources read it off the
-  // parsed payload; Gemini carries it on the request path instead of the body.
-  readonly model: string;
-  readonly downstreamAbortController: AbortController | undefined;
-  pickTarget(endpoints: readonly ModelEndpoint[]): LlmTargetApi | null;
-  // Clones the captured payload once, rewrites that clone's items in place via
-  // `rewriteItems`, builds the fully protocol-typed invocation / emit table /
-  // interceptor chain, and runs. The single per-attempt clone is the sole
-  // source of mutation isolation, so the rewrite runs on owned items — never on
-  // the original parsed items the orchestrator still iterates read-only.
-  attempt(input: {
-    binding: ProviderModelRecord;
-    target: LlmTargetApi;
-    model: string;
-    rewriteItems: (items: TItems) => Promise<Mutable<TItems>>;
-  }): Promise<Result<TEvent>>;
-}
-
-export interface LlmSourceTraits<TItems, TEvent> {
-  // Static — usable even before/if `setup()` runs. Maps a failure to this API's
-  // error envelope and shapes the final Response from a result. `respond` only
-  // reports whether the response was produced successfully; the orchestrator
-  // owns what to do with that (e.g. committing stored items).
-  renderFailure(failure: LlmServeFailure): Result<TEvent>;
-  respond(input: {
-    c: Context;
-    result: Result<TEvent>;
-    request: RequestContext;
-    wantsStream: boolean;
-    downstreamAbortController: AbortController | undefined;
-  }): Promise<{ success: boolean; response: Response }>;
-  setup(c: Context): Promise<LlmSourcePlan<TItems, TEvent> | Response>;
-}
 
 export const serveLlm = <TItems, TEvent>(
   traits: LlmSourceTraits<TItems, TEvent>,
