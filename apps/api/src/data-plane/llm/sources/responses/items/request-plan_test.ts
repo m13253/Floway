@@ -97,18 +97,17 @@ const storedReasoningId = (_label: string): string => createStoredResponsesItemI
 
 const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
 
-test('missing stored item_reference returns a source-renderable not found diagnostic', async () => {
+test('missing stored item_reference returns a source-renderable not-found failure', async () => {
   await insertRows([]);
   const id = storedMessageId('missing');
 
   const prepared = await prepareResponsesItems([{ type: 'item_reference', id }]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') {
-    assertEquals(plan.diagnostic.kind, 'not_found');
-    assertEquals(plan.diagnostic.status, 404);
-    assertEquals(plan.diagnostic.body.error.param, 'input');
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') {
+    assertEquals(plan.failure.kind, 'item-not-found');
+    if (plan.failure.kind === 'item-not-found') assertEquals(plan.failure.itemId, id);
   }
 });
 
@@ -121,8 +120,8 @@ test('invalid stored item_reference ids are not looked up as stored rows', async
   const prepared = await prepareResponsesItems([{ type: 'item_reference', id }]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'not_found');
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') assertEquals(plan.failure.kind, 'item-not-found');
 });
 
 test('metadata-only item_reference without upstream affinity rejects instead of emitting a temporary reference', async () => {
@@ -134,8 +133,8 @@ test('metadata-only item_reference without upstream affinity rejects instead of 
   const prepared = await prepareResponsesItems([{ type: 'item_reference', id }]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'not_found');
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') assertEquals(plan.failure.kind, 'item-not-found');
 });
 
 test('metadata-only item_reference with upstream affinity but no upstream item id rejects as not found', async () => {
@@ -147,8 +146,8 @@ test('metadata-only item_reference with upstream affinity but no upstream item i
   const prepared = await prepareResponsesItems([{ type: 'item_reference', id }]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'not_found');
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') assertEquals(plan.failure.kind, 'item-not-found');
 });
 
 test('ordinary non-carrier strings are ignored', async () => {
@@ -210,11 +209,8 @@ test('conflicting compaction forcing upstreams reject the request', async () => 
   ] as ResponseInputItem[]);
   const plan = planResponsesItemProviders([provider('up_a'), provider('up_b')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') {
-    assertEquals(plan.diagnostic.kind, 'routing_unavailable');
-    assertEquals(plan.diagnostic.body.error.code, 'responses_item_routing_unavailable');
-  }
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') assertEquals(plan.failure.kind, 'routing-unavailable');
 });
 
 test('matching upstream rewrites to upstream_item_id', async () => {
@@ -286,8 +282,8 @@ test('row item type must match source item type before downgrade or rewrite', as
   ] as ResponseInputItem[]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') assertEquals(plan.diagnostic.kind, 'routing_unavailable');
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') assertEquals(plan.failure.kind, 'routing-unavailable');
 });
 
 test('matching upstream rewrites Chat reasoning_items to upstream reasoning id', async () => {
@@ -468,11 +464,10 @@ test('metadata-only item_reference rejects when the origin upstream does not sup
   const prepared = await prepareResponsesItems([{ type: 'item_reference', id }]);
   const plan = planResponsesItemProviders([provider('up_a', false)], prepared);
 
-  assertEquals(plan.type, 'error');
-  if (plan.type === 'error') {
-    assertEquals(plan.diagnostic.kind, 'not_found');
-    assertEquals(plan.diagnostic.status, 404);
-    assertEquals(plan.diagnostic.body.error.message, `Item with id '${id}' not found.`);
+  assertEquals(plan.type, 'failure');
+  if (plan.type === 'failure') {
+    assertEquals(plan.failure.kind, 'item-not-found');
+    if (plan.failure.kind === 'item-not-found') assertEquals(plan.failure.itemId, id);
   }
 });
 
@@ -513,8 +508,8 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
   if (plan.type === 'providers') assertEquals(plan.providers.map(item => item.upstream), ['up_a']);
 
   const gone = planResponsesItemProviders([provider('up_b')], prepared);
-  assertEquals(gone.type, 'error');
-  if (gone.type === 'error') assertEquals(gone.diagnostic.kind, 'routing_unavailable');
+  assertEquals(gone.type, 'failure');
+  if (gone.type === 'failure') assertEquals(gone.failure.kind, 'routing-unavailable');
 
   // At the forced owner the compaction is stamped with the upstream's item id.
   assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), [{ type: 'compaction', encrypted_content: enc, id: 'raw_cmp_a' }]);
@@ -525,7 +520,7 @@ test('id-less encrypted_content with no stored match is a benign passthrough', a
   const items = [{ type: 'reasoning', summary: [], encrypted_content: 'never-stored' }] as unknown as ResponseInputItem[];
   const prepared = await prepareResponsesItems(items);
 
-  assertEquals(prepared.diagnostics, []);
+  assertEquals(prepared.failures, []);
   assertEquals(prepared.references, [{ type: 'reasoning', encryptedContent: 'never-stored' }]);
 
   const plan = planResponsesItemProviders([provider('up_a'), provider('up_b')], prepared);

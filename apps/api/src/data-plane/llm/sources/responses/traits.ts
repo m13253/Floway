@@ -6,8 +6,9 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { type LlmSourceFailure, type LlmSourceTraits } from '../serve.ts';
+import { createRequestContext, renderOpenAiServeFailure } from '../execute.ts';
+import { type LlmServeFailure } from '../failure.ts';
+import { type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -86,18 +87,8 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderResponsesFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
-  switch (failure.kind) {
-  case 'diagnostic':
-    return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
-  case 'model-missing':
-    return openAiMissingModelResult(failure.model);
-  case 'model-unsupported':
-    return openAiUnsupportedEndpointResult(failure.model, '/responses');
-  case 'source-error':
-    return sourceErrorResult<ResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
-  }
-};
+const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
+  renderOpenAiServeFailure<ResponsesStreamEvent>(failure, { endpoint: '/responses', sourceApi: 'responses' });
 
 export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,

@@ -8,7 +8,8 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
-import { type LlmSourceFailure, type LlmSourceTraits } from '../serve.ts';
+import { type LlmServeFailure } from '../failure.ts';
+import { type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -62,15 +63,17 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderGeminiFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
+const renderGeminiFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
   switch (failure.kind) {
-  case 'diagnostic':
-    return geminiErrorResult(failure.diagnostic.status, failure.diagnostic.message);
+  case 'item-not-found':
+    return geminiErrorResult(404, `Item with id '${failure.itemId}' not found.`);
+  case 'routing-unavailable':
+    return geminiErrorResult(400, failure.message);
   case 'model-missing':
     return geminiErrorResult(404, `Model ${failure.model} is not available on any configured upstream.`);
   case 'model-unsupported':
     return geminiErrorResult(400, `Model ${failure.model} does not support the Gemini generateContent endpoint.`);
-  case 'source-error':
+  case 'internal':
     return sourceErrorResult<GeminiStreamEvent>(failure.error, { sourceApi: 'gemini', internalStatus: 500 });
   }
 };

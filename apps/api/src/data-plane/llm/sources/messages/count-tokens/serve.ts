@@ -6,7 +6,7 @@ import { type MessagesInvocation, runInterceptors } from '../../../interceptors.
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
 import { createRequestContext } from '../../execute.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
-import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../traits.ts';
+import { bodyAnthropicBetaResponse, bodyBetaParam, messagesFailureEnvelope, parseAnthropicBeta } from '../traits.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -19,11 +19,17 @@ export const countTokens = async (c: Context) => {
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
     const request = createRequestContext(c, undefined, false);
     const preparedStoredItems = await prepareStoredResponsesItemsForSource(payload.messages, request.apiKeyId ?? null, messagesViaResponsesItemsView);
-    const preparedDiagnostic = preparedStoredItems.diagnostics[0];
-    if (preparedDiagnostic) return Response.json(preparedDiagnostic.body, { status: preparedDiagnostic.status });
+    const preparedFailure = preparedStoredItems.failures[0];
+    if (preparedFailure) {
+      const { status, body } = messagesFailureEnvelope(preparedFailure, '/messages/count_tokens');
+      return Response.json(body, { status });
+    }
     let resp: Response | undefined;
     const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), preparedStoredItems);
-    if (providerPlan.type === 'error') return Response.json(providerPlan.diagnostic.body, { status: providerPlan.diagnostic.status });
+    if (providerPlan.type === 'failure') {
+      const { status, body } = messagesFailureEnvelope(providerPlan.failure, '/messages/count_tokens');
+      return Response.json(body, { status });
+    }
     let resolvedModelId = payload.model;
     let sawModel = false;
 
@@ -72,18 +78,11 @@ export const countTokens = async (c: Context) => {
     }
 
     if (!resp) {
-      const message = sawModel
-        ? `Model ${resolvedModelId} does not support the /messages/count_tokens endpoint.`
-        : `No upstream provides model ${resolvedModelId}. Configure an upstream that exposes this model in the dashboard.`;
-      return c.json(
-        {
-          error: {
-            type: 'invalid_request_error',
-            message,
-          },
-        },
-        sawModel ? 400 : 404,
+      const { status, body } = messagesFailureEnvelope(
+        sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId },
+        '/messages/count_tokens',
       );
+      return Response.json(body, { status });
     }
 
     return new Response(resp.body, {

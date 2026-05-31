@@ -5,6 +5,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import { type PerformanceTelemetryContext, runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { RequestContext } from '../interceptors.ts';
+import { type LlmServeFailure } from './failure.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
@@ -56,4 +57,32 @@ export const sourceErrorResult = <TEvent>(
   if (upstreamError) return upstreamError;
 
   return internalErrorResult(options.internalStatus, toInternalDebugError(error, options.sourceApi));
+};
+
+// OpenAI input-error envelope. `param`/`code` reproduce the native Responses
+// error fields verbatim — a stored-item miss must byte-match OpenAI's own
+// "not found" body, which downstream clients (codex) compare against.
+const openAiInputErrorBody = (message: string, code: string | null) => ({
+  error: { message, type: 'invalid_request_error' as const, param: 'input', code },
+});
+
+// The OpenAI-shaped half of the `LlmServeFailure` × source-protocol product:
+// shared by the Responses and Chat Completions sources, which answer in the
+// same envelope and differ only by endpoint label and telemetry tag.
+export const renderOpenAiServeFailure = <TEvent>(
+  failure: LlmServeFailure,
+  options: { endpoint: string; sourceApi: PerformanceLlmSourceApi },
+): ExecuteResult<ProtocolFrame<TEvent>> => {
+  switch (failure.kind) {
+  case 'item-not-found':
+    return jsonUpstreamErrorResult(404, openAiInputErrorBody(`Item with id '${failure.itemId}' not found.`, null));
+  case 'routing-unavailable':
+    return jsonUpstreamErrorResult(400, openAiInputErrorBody(failure.message, 'responses_item_routing_unavailable'));
+  case 'model-missing':
+    return openAiMissingModelResult(failure.model);
+  case 'model-unsupported':
+    return openAiUnsupportedEndpointResult(failure.model, options.endpoint);
+  case 'internal':
+    return sourceErrorResult<TEvent>(failure.error, { sourceApi: options.sourceApi, internalStatus: 502 });
+  }
 };

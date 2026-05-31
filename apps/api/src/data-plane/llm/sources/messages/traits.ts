@@ -6,8 +6,9 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { type LlmSourceFailure, type LlmSourceTraits } from '../serve.ts';
+import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
+import { type LlmServeFailure } from '../failure.ts';
+import { type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
@@ -86,17 +87,30 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderMessagesFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolFrame<MessagesStreamEventData>> => {
-  switch (failure.kind) {
-  case 'diagnostic':
-    return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
-  case 'model-missing':
-    return openAiMissingModelResult(failure.model);
-  case 'model-unsupported':
-    return openAiUnsupportedEndpointResult(failure.model, '/messages');
-  case 'source-error':
-    return sourceErrorResult<MessagesStreamEventData>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
-  }
+// Maps a serve failure to the Messages (Anthropic) error envelope, shared with
+// the count_tokens path which answers in the same shape under a different
+// endpoint label. `internal` falls back to a generic shape but is normally
+// rendered with a stack trace by the caller instead.
+export const messagesFailureEnvelope = (
+  failure: LlmServeFailure,
+  endpoint: string,
+): { status: number; body: { type: 'error'; error: { type: string; message: string } } } => {
+  const [status, type, message]: [number, string, string] = (() => {
+    switch (failure.kind) {
+    case 'item-not-found': return [400, 'invalid_request_error', `Item with id '${failure.itemId}' not found.`];
+    case 'routing-unavailable': return [400, 'invalid_request_error', failure.message];
+    case 'model-missing': return [404, 'not_found_error', `No upstream provides model ${failure.model}. Configure an upstream that exposes this model in the dashboard.`];
+    case 'model-unsupported': return [400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpoint} endpoint.`];
+    case 'internal': return [500, 'api_error', 'Internal server error.'];
+    }
+  })();
+  return { status, body: { type: 'error', error: { type, message } } };
+};
+
+const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<MessagesStreamEventData>> => {
+  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEventData>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
+  const { status, body } = messagesFailureEnvelope(failure, '/messages');
+  return jsonUpstreamErrorResult(status, body);
 };
 
 export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEventData> = {

@@ -6,8 +6,9 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext, jsonUpstreamErrorResult, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import { type LlmSourceFailure, type LlmSourceTraits } from '../serve.ts';
+import { createRequestContext, renderOpenAiServeFailure } from '../execute.ts';
+import { type LlmServeFailure } from '../failure.ts';
+import { type LlmSourceTraits } from '../serve.ts';
 import type { ChatCompletionChunk, ChatCompletionsPayload, Message as ChatMessage } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -40,18 +41,8 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
   return null;
 };
 
-const renderChatCompletionsFailure = (failure: LlmSourceFailure): ExecuteResult<ProtocolFrame<ChatCompletionChunk>> => {
-  switch (failure.kind) {
-  case 'diagnostic':
-    return jsonUpstreamErrorResult(failure.diagnostic.status, failure.diagnostic.body);
-  case 'model-missing':
-    return openAiMissingModelResult(failure.model);
-  case 'model-unsupported':
-    return openAiUnsupportedEndpointResult(failure.model, '/chat/completions');
-  case 'source-error':
-    return sourceErrorResult<ChatCompletionChunk>(failure.error, { sourceApi: 'chat-completions', internalStatus: 502 });
-  }
-};
+const renderChatCompletionsFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ChatCompletionChunk>> =>
+  renderOpenAiServeFailure<ChatCompletionChunk>(failure, { endpoint: '/chat/completions', sourceApi: 'chat-completions' });
 
 // Target interceptors may force upstream usage for gateway accounting, but
 // Chat SSE exposes usage only when the caller requested `include_usage`.

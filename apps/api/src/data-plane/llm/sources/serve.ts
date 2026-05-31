@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import { createRequestContext } from './execute.ts';
-import { type StoredResponsesItemsDiagnostic, StoredResponsesItemsDiagnosticError } from './responses/items/errors.ts';
+import { type LlmServeFailure, LlmServeFailureError } from './failure.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from './responses/items/request-plan.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
@@ -27,16 +27,6 @@ type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
 // an early `Response`), and yields a plan whose `attempt` closure captures the
 // payload to clone, rewrite, and run. The orchestrator only drives the planner
 // and persistence, then hands every result — success or failure — to `respond`.
-
-// The four ways LLM serving can fail before a usable upstream result.
-// `diagnostic` covers both prepare-time input diagnostics and the planner's
-// routing diagnostic; `model-missing`/`model-unsupported` describe the planner
-// walk finding no usable binding; `source-error` is the top-level catch.
-export type LlmSourceFailure =
-  | { kind: 'diagnostic'; diagnostic: StoredResponsesItemsDiagnostic }
-  | { kind: 'model-missing'; model: string }
-  | { kind: 'model-unsupported'; model: string }
-  | { kind: 'source-error'; error: unknown };
 
 export interface LlmSourcePlan<TItems, TEvent> {
   readonly request: RequestContext;
@@ -69,7 +59,7 @@ export interface LlmSourceTraits<TItems, TEvent> {
   // error envelope and shapes the final Response from a result. `respond` only
   // reports whether the response was produced successfully; the orchestrator
   // owns what to do with that (e.g. committing stored items).
-  renderFailure(failure: LlmSourceFailure): Result<TEvent>;
+  renderFailure(failure: LlmServeFailure): Result<TEvent>;
   respond(input: {
     c: Context;
     result: Result<TEvent>;
@@ -92,11 +82,11 @@ export const serveLlm = <TItems, TEvent>(
     request = plan.request;
 
     const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.responsesItemsView);
-    const preparedDiagnostic = prepared.diagnostics[0];
-    if (preparedDiagnostic) {
+    const preparedFailure = prepared.failures[0];
+    if (preparedFailure) {
       const { response } = await traits.respond({
         c,
-        result: traits.renderFailure({ kind: 'diagnostic', diagnostic: preparedDiagnostic }),
+        result: traits.renderFailure(preparedFailure),
         request,
         wantsStream: plan.wantsStream,
         downstreamAbortController: plan.downstreamAbortController,
@@ -109,8 +99,8 @@ export const serveLlm = <TItems, TEvent>(
     let commitForNonStreaming: ResponsesItemsCommit | undefined;
     let sawModel = false;
     let resolvedModelId = plan.model;
-    if (providerPlan.type === 'error') {
-      result = traits.renderFailure({ kind: 'diagnostic', diagnostic: providerPlan.diagnostic });
+    if (providerPlan.type === 'failure') {
+      result = traits.renderFailure(providerPlan.failure);
     } else for (const provider of providerPlan.providers) {
       const resolved = await resolveModelForProvider(provider, plan.model);
       if (!resolved) continue;
@@ -148,9 +138,7 @@ export const serveLlm = <TItems, TEvent>(
     if (success) await commitForNonStreaming?.();
     return response;
   } catch (error) {
-    const failure: LlmSourceFailure = error instanceof StoredResponsesItemsDiagnosticError
-      ? { kind: 'diagnostic', diagnostic: error.diagnostic }
-      : { kind: 'source-error', error };
+    const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
     const { response } = await traits.respond({ c, result: traits.renderFailure(failure), request, wantsStream: false, downstreamAbortController: undefined });
     return response;
   }

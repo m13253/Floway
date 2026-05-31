@@ -1,13 +1,8 @@
-import {
-  createStoredResponsesItemNotFoundDiagnostic,
-  createStoredResponsesRoutingUnavailableDiagnostic,
-  throwStoredResponsesItemsDiagnostic,
-  type StoredResponsesItemsDiagnostic,
-} from './errors.ts';
 import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, parseStoredResponsesItemId, responsesItemEncryptedContent } from './format.ts';
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
+import { throwLlmServeFailure, type LlmServeFailure } from '../../failure.ts';
 import type { ResponseInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -31,14 +26,14 @@ export interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
 
 export interface PreparedStoredResponsesItems {
   references: ResolvedStoredResponsesItemRef[];
-  diagnostics: StoredResponsesItemsDiagnostic[];
+  failures: LlmServeFailure[];
   forcingUpstreamIds: ReadonlySet<string>;
   preferredUpstreamIds: ReadonlySet<string>;
 }
 
 export type StoredResponsesProviderPlan =
   | { type: 'providers'; providers: readonly ModelProviderInstance[] }
-  | { type: 'error'; diagnostic: StoredResponsesItemsDiagnostic };
+  | { type: 'failure'; failure: LlmServeFailure };
 
 // A stored row either belongs to the upstream that produced it — native
 // Responses upstreams hand back their own item ids — or is gateway-synthesized
@@ -69,7 +64,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   const rowById = new Map(byId.map(row => [row.id, row]));
   const rowByHash = new Map(byHash.flatMap(row => row.encryptedContentHash !== null ? [[row.encryptedContentHash, row] as const] : []));
 
-  const diagnostics: StoredResponsesItemsDiagnostic[] = [];
+  const failures: LlmServeFailure[] = [];
   for (const ref of references) {
     const row = (ref.id !== undefined ? rowById.get(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined ? rowByHash.get(hashByContent.get(ref.encryptedContent)!) : undefined);
@@ -78,31 +73,32 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
       // one too, so either resolving to nothing is a hard not-found. An id-less
       // blob that matches nothing is benign — a fresh or foreign reasoning.
       if (ref.type === 'item_reference' || (ref.id !== undefined && queryableIds.has(ref.id))) {
-        diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(ref.id ?? ''));
+        failures.push({ kind: 'item-not-found', itemId: ref.id ?? '' });
       }
       continue;
     }
 
     ref.row = row;
     if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
-      diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
+      failures.push({ kind: 'item-not-found', itemId: row.id });
       continue;
     }
     if (ref.type !== 'item_reference' && ref.type !== row.itemType) {
-      diagnostics.push(createStoredResponsesRoutingUnavailableDiagnostic(
-        `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${ref.type}'.`,
-      ));
+      failures.push({
+        kind: 'routing-unavailable',
+        message: `Stored Responses item '${row.id}' has type '${row.itemType}', incompatible with the requested item type '${ref.type}'.`,
+      });
       continue;
     }
     ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
     if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
-      diagnostics.push(createStoredResponsesItemNotFoundDiagnostic(row.id));
+      failures.push({ kind: 'item-not-found', itemId: row.id });
     }
   }
 
   return {
     references,
-    diagnostics,
+    failures,
     forcingUpstreamIds: collectUpstreamsForAffinities(references, new Set(['forcing'])),
     preferredUpstreamIds: collectPreferredUpstreams(references),
   };
@@ -112,15 +108,16 @@ export const planResponsesItemProviders = (
   providers: readonly ModelProviderInstance[],
   prepared: PreparedStoredResponsesItems,
 ): StoredResponsesProviderPlan => {
-  if (prepared.diagnostics.length > 0) return { type: 'error', diagnostic: prepared.diagnostics[0] };
+  if (prepared.failures.length > 0) return { type: 'failure', failure: prepared.failures[0] };
 
   const forcingUpstreamIds = [...prepared.forcingUpstreamIds];
   if (forcingUpstreamIds.length > 1) {
     return {
-      type: 'error',
-      diagnostic: createStoredResponsesRoutingUnavailableDiagnostic(
-        `Stored Responses items in this request require multiple incompatible upstreams: ${forcingUpstreamIds.map(id => `'${id}'`).join(', ')}.`,
-      ),
+      type: 'failure',
+      failure: {
+        kind: 'routing-unavailable',
+        message: `Stored Responses items in this request require multiple incompatible upstreams: ${forcingUpstreamIds.map(id => `'${id}'`).join(', ')}.`,
+      },
     };
   }
 
@@ -129,17 +126,18 @@ export const planResponsesItemProviders = (
     const matching = providers.filter(provider => provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
-        type: 'error',
-        diagnostic: createStoredResponsesRoutingUnavailableDiagnostic(
-          `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
-        ),
+        type: 'failure',
+        failure: {
+          kind: 'routing-unavailable',
+          message: `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
+        },
       };
     }
     const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(prepared, upstreamId);
     if (unexpandedReferenceId !== null) {
       const itemReferenceCapable = matching.filter(provider => provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
-        return { type: 'error', diagnostic: createStoredResponsesItemNotFoundDiagnostic(unexpandedReferenceId) };
+        return { type: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
       }
       return { type: 'providers', providers: itemReferenceCapable };
     }
@@ -170,7 +168,7 @@ export const rewriteStoredResponsesItemsForProvider = async <TSourceItems>(
   provider: ProviderModelRecord,
   view: ResponsesItemsView<TSourceItems>,
 ): Promise<Mutable<TSourceItems>> => {
-  throwForPreparedDiagnostics(prepared);
+  throwForPreparedFailures(prepared);
   const rowById = new Map(prepared.references.flatMap(ref => ref.id !== undefined && ref.row ? [[ref.id, ref.row] as const] : []));
   const rowByEncryptedContent = new Map(prepared.references.flatMap(ref => ref.encryptedContent !== undefined && ref.row ? [[ref.encryptedContent, ref.row] as const] : []));
   return await view.mapAsResponsesItems(sourceItems, item => rewriteStoredResponsesItemForProvider(item, rowById, rowByEncryptedContent, provider));
@@ -260,7 +258,7 @@ const rewriteStoredResponsesItemForProvider = (
   if (row === undefined) return item;
 
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
-    throwStoredResponsesItemsDiagnostic(createStoredResponsesItemNotFoundDiagnostic(row.id));
+    throwLlmServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
 
   // Only upstream-owned reasoning is bound to the upstream that produced it and
@@ -300,9 +298,9 @@ const itemWithId = (item: ResponseInputItem, id: string): ResponseInputItem => (
   id,
 } as ResponseInputItem);
 
-const throwForPreparedDiagnostics = (prepared: PreparedStoredResponsesItems): void => {
-  const [diagnostic] = prepared.diagnostics;
-  if (!diagnostic) return;
+const throwForPreparedFailures = (prepared: PreparedStoredResponsesItems): void => {
+  const [failure] = prepared.failures;
+  if (!failure) return;
 
-  throwStoredResponsesItemsDiagnostic(diagnostic);
+  throwLlmServeFailure(failure);
 };
