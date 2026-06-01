@@ -182,3 +182,80 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   const bytes = await (images[0] as Blob).text();
   assertEquals(bytes, 'AAAA');
 });
+
+const rateLimitResponse = (retryAfterMs: number | null): Response => {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (retryAfterMs !== null) headers['retry-after-ms'] = String(retryAfterMs);
+  return new Response(
+    JSON.stringify({ error: { code: 'RateLimitReached', type: 'image_generation_error', message: 'Please retry after 1 seconds.' } }),
+    { status: 429, headers },
+  );
+};
+
+test('retries on 429 and surfaces the eventual success', async () => {
+  // First two attempts rate-limit (retry-after-ms: 1 so the test waits ~1ms each
+  // round); third succeeds with bytes "OK". The orchestrator should see a single
+  // completed image_generation_call.
+  stub.nextGenerations = [
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+    jsonResponse('T0s='),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), REQ, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('done'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 3);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; result: string } }).item;
+  assertEquals(item.status, 'completed');
+  assertEquals(item.result, 'T0s=');
+});
+
+test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a failed item', async () => {
+  // Three 429s total = 1 initial + 2 retries; after that the shim returns the
+  // upstream's RateLimitReached as a failed image_generation_call.
+  stub.nextGenerations = [
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+    rateLimitResponse(1),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), REQ, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 3);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; type: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'RateLimitReached');
+  assertEquals(item.error.type, 'image_generation_error');
+});
+
+test('does not retry non-rate-limit upstream failures', async () => {
+  // Single 400 with a validation error; no retry should happen.
+  stub.nextGenerations = [
+    new Response(
+      JSON.stringify({ error: { code: 'invalid_value', type: 'invalid_request_error', message: 'bad size' } }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    ),
+  ];
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), REQ, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 1);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'invalid_value');
+});

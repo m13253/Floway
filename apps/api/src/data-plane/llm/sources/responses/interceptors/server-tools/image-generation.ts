@@ -418,6 +418,68 @@ const RETRYABLE_IMAGE_ERROR_CODES = new Set([
 const isRetryableImageError = (code: string, type?: string): boolean =>
   RETRYABLE_IMAGE_ERROR_CODES.has(code) || (type !== undefined && RETRYABLE_IMAGE_ERROR_CODES.has(type));
 
+// Rate-limit retry policy for the gpt-image-* backend call. Triggered by
+// HTTP 429 — both Azure and openai.com use it. Cap is intentionally tight:
+// backend image quotas refill per-minute on every observed surface (Azure
+// TPM/RPM, openai.com tier limits), so a 60s ceiling matches the natural
+// refill window without holding the orchestrator turn open longer than a
+// client would tolerate. openai-python's `_calculate_retry_timeout` uses
+// the same 60s clamp.
+const RETRY_CAP_MS = 60_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+
+// Resolve the upstream's "wait this long before retrying" hint from headers.
+// Priority follows the openai-python `_parse_retry_after_header` chain plus
+// Azure's `x-ms-retry-after-ms` alias. Returns null when no header is present
+// or all values parse to <= 0 (the gpt-image-1 `0.0` hint from openai.com
+// falls into this bucket), so the caller can fall back to backoff. Exported
+// for unit tests.
+export const parseRetryAfterMs = (headers: Headers): number | null => {
+  for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
+    const raw = headers.get(name);
+    if (raw === null) continue;
+    const ms = Number(raw);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  const ra = headers.get('retry-after');
+  if (ra !== null) {
+    const seconds = Number(ra);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+    const httpDateMs = Date.parse(ra);
+    if (!Number.isNaN(httpDateMs)) {
+      const delta = httpDateMs - Date.now();
+      if (delta > 0) return delta;
+    }
+  }
+  return null;
+};
+
+// Jittered exponential backoff when no upstream hint is available. 0-th
+// attempt waits ~1s, 1-st ~2s; the 25% jitter desynchronizes parallel
+// callers so a burst of orchestrator turns doesn't all re-issue at the same
+// instant. Cap delegated to the caller (RETRY_CAP_MS).
+const rateLimitBackoffMs = (attempt: number): number => {
+  const base = 1000 * 2 ** attempt;
+  return base + Math.random() * base * 0.25;
+};
+
+const sleepWithAbort = (delayMs: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const handle = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = (): void => {
+      clearTimeout(handle);
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
 const errorFromBody = (body: string, status: number): { type?: string; code: string; message: string } => {
   try {
     const parsed = JSON.parse(body) as { error?: { message?: unknown; code?: unknown; type?: unknown } };
@@ -573,6 +635,35 @@ const issueImageCall = (
     ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal)
     : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal);
 
+// Wraps `issueImageCall` with a small retry loop honoring upstream rate-limit
+// hints. Replays the same backend call up to MAX_RATE_LIMIT_RETRIES times on
+// HTTP 429, sleeping for the parsed `retry-after-ms` / `x-ms-retry-after-ms`
+// / `Retry-After` header (clamped to RETRY_CAP_MS) or jittered exponential
+// backoff when the header is absent. Non-429 failures and transport throws
+// pass through to the caller untouched — those become the synthesized
+// `image_generation_call(status=failed)` and the orchestrator decides next
+// steps. The returned `response` always has a fresh, unread body so downstream
+// non-stream / stream consumers can call `.text()` / `.body` as usual.
+const issueImageCallWithRateLimitRetry = async (
+  binding: ProviderModelRecord,
+  prompt: string,
+  isEdit: boolean,
+  sources: readonly ImageSource[],
+  state: ShimState,
+  stream: boolean,
+): Promise<{ response: Response; modelKey: string }> => {
+  for (let attempt = 0; ; attempt++) {
+    const { response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, stream);
+    if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
+
+    const hint = parseRetryAfterMs(response.headers);
+    const delayMs = Math.min(hint ?? rateLimitBackoffMs(attempt), RETRY_CAP_MS);
+    // Drain the body before discarding so the underlying socket can be reused.
+    await response.text().catch(() => undefined);
+    await sleepWithAbort(delayMs, state.downstreamAbortSignal);
+  }
+};
+
 // Consume a non-streaming backend response (partial_images = 0) into an
 // outcome. Transport/backend failures become `{ok:false}` rather than
 // throwing, so the caller always produces a terminal image item.
@@ -706,7 +797,7 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCallWithRateLimitRetry(binding, prompt, isEdit, sources, state, wantsPartials));
   } catch (e) {
     return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }

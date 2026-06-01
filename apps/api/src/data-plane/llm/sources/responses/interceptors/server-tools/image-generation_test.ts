@@ -11,6 +11,7 @@ import {
   imageTerminal,
   isHostedImageGenerationTool,
   parseImageStreamEvent,
+  parseRetryAfterMs,
   prepareImageGenerationConfig,
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
@@ -484,4 +485,59 @@ test('image dispatch budget caps real backend calls per response, not ReAct turn
   const item = step.value.item as { status?: string; error?: { code?: string } };
   assertEquals(item.status, 'failed');
   assertEquals(item.error?.code, 'tool_call_budget_exhausted');
+});
+
+// ── parseRetryAfterMs ──
+
+test('parseRetryAfterMs prefers retry-after-ms over Retry-After', () => {
+  const h = new Headers({ 'retry-after-ms': '2500', 'retry-after': '7' });
+  assertEquals(parseRetryAfterMs(h), 2500);
+});
+
+test('parseRetryAfterMs falls back to x-ms-retry-after-ms when retry-after-ms absent', () => {
+  const h = new Headers({ 'x-ms-retry-after-ms': '1800', 'retry-after': '7' });
+  assertEquals(parseRetryAfterMs(h), 1800);
+});
+
+test('parseRetryAfterMs reads Retry-After as integer seconds → milliseconds', () => {
+  const h = new Headers({ 'retry-after': '5' });
+  assertEquals(parseRetryAfterMs(h), 5000);
+});
+
+test('parseRetryAfterMs parses Retry-After fractional seconds', () => {
+  const h = new Headers({ 'retry-after': '0.5' });
+  assertEquals(parseRetryAfterMs(h), 500);
+});
+
+test('parseRetryAfterMs interprets Retry-After HTTP-date as delta from now', () => {
+  // HTTP-date has 1-second resolution and Date.parse() strips ms; in addition,
+  // a hairline race between toUTCString() and the parser's own Date.now() can
+  // push the delta a second or two off the nominal target. Allow a generous
+  // window: any positive value within ~5s of the intended delta is fine,
+  // because what we're verifying is "HTTP-date is parsed, not that the math
+  // is exact".
+  const future = new Date(Date.now() + 10_000).toUTCString();
+  const h = new Headers({ 'retry-after': future });
+  const result = parseRetryAfterMs(h);
+  assert(result !== null);
+  assert(result > 0 && result <= 11_000);
+});
+
+test('parseRetryAfterMs returns null for missing headers', () => {
+  assertEquals(parseRetryAfterMs(new Headers()), null);
+});
+
+test('parseRetryAfterMs returns null for zero / negative values (gpt-image-1 "0.0s" hint)', () => {
+  assertEquals(parseRetryAfterMs(new Headers({ 'retry-after-ms': '0' })), null);
+  assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '0' })), null);
+  assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '-5' })), null);
+});
+
+test('parseRetryAfterMs returns null for non-numeric, non-HTTP-date Retry-After', () => {
+  assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': 'soon' })), null);
+});
+
+test('parseRetryAfterMs skips an unparseable retry-after-ms and falls through to Retry-After', () => {
+  const h = new Headers({ 'retry-after-ms': 'nope', 'retry-after': '3' });
+  assertEquals(parseRetryAfterMs(h), 3000);
 });
