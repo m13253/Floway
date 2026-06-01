@@ -23,12 +23,15 @@ const makeContext = (overrides: Partial<StoreResponsesContext> = {}): StoreRespo
   store: overrides.store,
 });
 
-const makeRequest = (syntheticItemIds: Iterable<string> = []): RequestContext => ({
+const makeRequest = (
+  syntheticItemIds: Iterable<string> = [],
+  privatePayloads: Iterable<readonly [string, unknown]> = [],
+): RequestContext => ({
   requestStartedAt: 0,
   apiKeyId,
   runtimeLocation: 'test',
   clientStream: true,
-  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set(syntheticItemIds) },
+  statefulResponsesContext: { privatePayload: new Map(privatePayloads), newSyntheticIds: new Set(syntheticItemIds) },
 });
 
 const messageItem = (id: string, text: string): Extract<ResponsesOutputItem, { type: 'message' }> => ({
@@ -354,6 +357,57 @@ test('gateway-synthesized items registered this request do not claim upstream ow
   assertEquals(row.upstreamId, null);
   assertEquals(row.upstreamItemId, null);
   assertEquals(row.itemType, 'web_search_call');
+});
+
+test('private payload registered on the request is attached to the persisted row by upstream id', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  // The shim registers `statefulResponsesContext.privatePayload[slot.id] = {...}` before
+  // yielding the wire item. The persistence layer keys off the wire item's id
+  // (which equals slot.id here), so the row picks up `payload.private` even
+  // though the wire item itself never carries it.
+  const synthetic: Extract<ResponsesOutputItem, { type: 'web_search_call' }> = {
+    type: 'web_search_call',
+    id: 'ws_gw_priv00000000000000000',
+    status: 'completed',
+    action: { type: 'search', query: 'q', queries: ['q'] },
+    results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire' }],
+  };
+  const privateBlob = { v: 1, functionCallItem: { type: 'function_call', call_id: 'call_orig_xyz', name: 'web_search', arguments: '{"search_query":[{"q":"q"}]}', status: 'completed' }, ir: { action: synthetic.action, results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'server-only body' }] } };
+
+  const events = await collectEvents(storeStreaming(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: synthetic },
+    { type: 'response.completed', response: response([synthetic]) },
+  ]), makeContext(), makeRequest([synthetic.id], [[synthetic.id, privateBlob]])));
+
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  assertEquals(row.payload?.private, privateBlob);
+});
+
+test('store: false skips persisting private payload even when one was registered', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const synthetic: Extract<ResponsesOutputItem, { type: 'web_search_call' }> = {
+    type: 'web_search_call',
+    id: 'ws_gw_priv00000000000000001',
+    status: 'completed',
+    action: { type: 'search', query: 'q', queries: ['q'] },
+    results: [],
+  };
+  const privateBlob = { v: 1, functionCallItem: { type: 'function_call', call_id: 'call_orig_xyz', name: 'web_search', arguments: '{}', status: 'completed' }, ir: { action: synthetic.action, results: [] } };
+
+  const events = await collectEvents(storeStreaming(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: synthetic },
+    { type: 'response.completed', response: response([synthetic]) },
+  ]), makeContext({ store: false }), makeRequest([synthetic.id], [[synthetic.id, privateBlob]])));
+
+  const storedId = eventAt(events, 'response.output_item.done').item.id!;
+  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  // store:false retains the metadata-only row but drops both `item` and
+  // `private` so the gateway behaves like OpenAI's own "stored item disappears"
+  // semantics on the next-turn lookup.
+  assertEquals(row.payload, null);
 });
 
 test('non-streaming buffers item rows and persists nothing until commit', async () => {

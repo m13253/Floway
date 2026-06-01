@@ -51,7 +51,8 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
 
 const requestContext = (apiKeyId?: string): RequestContext => ({
   requestStartedAt: 0,
-  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+  runtimeLocation: 'test',
   clientStream: false,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -176,7 +177,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 // event sequence used by the replay-only wiring tests below. Only handles text
 // blocks (with optional citations) because that is the shape these fixtures
 // exercise; extend if a future test needs other block kinds.
-const messagesResultToUpstreamFrames = (response: MessagesResult): ProtocolFrame<MessagesStreamEvent>[] => {
+const messagesResponseToUpstreamFrames = (response: MessagesResult): ProtocolFrame<MessagesStreamEvent>[] => {
   const frames: ProtocolFrame<MessagesStreamEvent>[] = [
     eventFrame({
       type: 'message_start',
@@ -195,7 +196,7 @@ const messagesResultToUpstreamFrames = (response: MessagesResult): ProtocolFrame
 
   response.content.forEach((block, index) => {
     if (block.type !== 'text') {
-      throw new Error(`messagesResultToUpstreamFrames only handles text blocks; got ${block.type}`);
+      throw new Error(`messagesResponseToUpstreamFrames only handles text blocks; got ${block.type}`);
     }
     frames.push(eventFrame({
       type: 'content_block_start',
@@ -561,7 +562,7 @@ test('withMessagesWebSearchShim allows replay-only history when the search provi
     Promise.resolve({
       type: 'events',
       events: toAsyncIterable(
-        messagesResultToUpstreamFrames({
+        messagesResponseToUpstreamFrames({
           id: 'msg_replay_only',
           type: 'message',
           role: 'assistant',
@@ -610,7 +611,7 @@ test('withMessagesWebSearchShim emits native-like citation deltas for replay-onl
     Promise.resolve({
       type: 'events',
       events: toAsyncIterable(
-        messagesResultToUpstreamFrames({
+        messagesResponseToUpstreamFrames({
           id: 'msg_replay_only_stream',
           type: 'message',
           role: 'assistant',

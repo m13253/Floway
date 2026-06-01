@@ -49,7 +49,7 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
   // names). Native Responses targets receive those entries unchanged; this
   // translator narrows to function and Freeform `custom` tools, recording
   // the latter in `customToolNames` so the events translator can recover
-  // the freeform shape on the way back. The umbrella shim's web_search
+  // the freeform shape on the way back. The shim's web_search
   // function tool is in `payload.tools` under its resolved name (the shim
   // injects it on every request that uses hosted web_search) and reaches
   // here as an ordinary function tool — no special carve-out needed.

@@ -2,54 +2,43 @@ import { test } from 'vitest';
 
 import { resolveServerToolName } from '../server-tool-shim.ts';
 import {
-  findInPageIr,
   findMatches,
-  findNoMatchesText,
   formatMatches,
-  inputItemToIr,
-  irToOutputText,
-  irToUpstreamPair,
   isHostedWebSearchTool,
   isUrlAllowed,
-  iterationCapText,
-  openFailedText,
-  openPageIr,
-  parseUmbrellaOperations,
+  parseShimOperations,
   prepareToolsForShim,
-  schemaErrorIr,
-  searchFailedText,
-  searchIr,
   SHIM_TOOL_NAME,
   synthesizeWebSearchCallId,
-  truncationSentinel,
+  transformInputItemsForWebSearch,
   WEB_SEARCH_HOSTED_TYPES,
   type ShimLogicalOperation,
-  type WebSearchCallIR,
+  type WebSearchCallPrivatePayload,
 } from './web-search.ts';
 import { assert, assertEquals, assertFalse } from '../../../../../../test-assert.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
-import type { ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 
-// ── Umbrella argument parsing (parseUmbrellaOperations) ──
+// ── Shim call argument parsing (parseShimOperations) ──
 
 const opsOf = (args: Record<string, unknown> | null): ShimLogicalOperation[] => {
-  const parsed = parseUmbrellaOperations(args);
+  const parsed = parseShimOperations(args);
   assert(parsed.kind === 'ops');
   return parsed.ops;
 };
 
-test('parseUmbrellaOperations returns ops:[] for empty object', () => {
-  assertEquals(parseUmbrellaOperations({}), { kind: 'ops', ops: [] });
+test('parseShimOperations returns ops:[] for empty object', () => {
+  assertEquals(parseShimOperations({}), { kind: 'ops', ops: [] });
 });
 
-test('parseUmbrellaOperations parses one search_query entry', () => {
+test('parseShimOperations parses one search_query entry', () => {
   assertEquals(
     opsOf({ search_query: [{ q: 'hello' }] }),
     [{ kind: 'search', arrayIndex: 0, query: 'hello' }],
   );
 });
 
-test('parseUmbrellaOperations parses multiple search_query entries with stable arrayIndex', () => {
+test('parseShimOperations parses multiple search_query entries with stable arrayIndex', () => {
   assertEquals(
     opsOf({ search_query: [{ q: 'a' }, { q: 'b' }, { q: 'c' }] }),
     [
@@ -60,21 +49,21 @@ test('parseUmbrellaOperations parses multiple search_query entries with stable a
   );
 });
 
-test('parseUmbrellaOperations parses open entry with URL ref_id', () => {
+test('parseShimOperations parses open entry with URL ref_id', () => {
   assertEquals(
     opsOf({ open: [{ ref_id: 'https://example.com' }] }),
     [{ kind: 'open', arrayIndex: 0, url: 'https://example.com' }],
   );
 });
 
-test('parseUmbrellaOperations parses find entry with URL ref_id and pattern', () => {
+test('parseShimOperations parses find entry with URL ref_id and pattern', () => {
   assertEquals(
     opsOf({ find: [{ ref_id: 'https://example.com', pattern: 'needle' }] }),
     [{ kind: 'find', arrayIndex: 0, url: 'https://example.com', pattern: 'needle' }],
   );
 });
 
-test('parseUmbrellaOperations: non-URL open ref_id produces an error sentinel', () => {
+test('parseShimOperations: non-URL open ref_id produces an error sentinel', () => {
   const ops = opsOf({ open: [{ ref_id: 'opaque-prior-id' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -86,7 +75,7 @@ test('parseUmbrellaOperations: non-URL open ref_id produces an error sentinel', 
   assertEquals(err!.includes('opaque-prior-id'), true);
 });
 
-test('parseUmbrellaOperations: non-URL find ref_id produces an error sentinel', () => {
+test('parseShimOperations: non-URL find ref_id produces an error sentinel', () => {
   const ops = opsOf({ find: [{ ref_id: 'cursor-123', pattern: 'p' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -98,7 +87,7 @@ test('parseUmbrellaOperations: non-URL find ref_id produces an error sentinel', 
   assertEquals(err!.includes('cursor-123'), true);
 });
 
-test('parseUmbrellaOperations: multi-action batched call returns all ops in order search→open→find', () => {
+test('parseShimOperations: multi-action batched call returns all ops in order search→open→find', () => {
   const ops = opsOf({
     search_query: [{ q: 'a' }],
     open: [{ ref_id: 'https://x' }],
@@ -107,7 +96,7 @@ test('parseUmbrellaOperations: multi-action batched call returns all ops in orde
   assertEquals(ops.map(o => o.kind), ['search', 'open', 'find']);
 });
 
-test('parseUmbrellaOperations: unsupported sub-properties surface one unsupported op per entry', () => {
+test('parseShimOperations: unsupported sub-properties surface one unsupported op per entry', () => {
   const ops = opsOf({
     click: [{ ref_id: 'https://x', id: 1 }],
     screenshot: [{ ref_id: 'https://x', pageno: 1 }, { ref_id: 'https://y', pageno: 2 }],
@@ -124,7 +113,7 @@ test('parseUmbrellaOperations: unsupported sub-properties surface one unsupporte
   assertEquals(ops[5], { kind: 'unsupported', subProperty: 'response_length', arrayIndex: 0 });
 });
 
-test('parseUmbrellaOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {
+test('parseShimOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ search_query: [{}] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -134,7 +123,7 @@ test('parseUmbrellaOperations: missing q on search_query entry surfaces a missin
   assert((op as { error: string }).error.includes('"q"'));
 });
 
-test('parseUmbrellaOperations: missing ref_id on open entry surfaces a missing-argument error sentinel', () => {
+test('parseShimOperations: missing ref_id on open entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ open: [{}] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -143,7 +132,7 @@ test('parseUmbrellaOperations: missing ref_id on open entry surfaces a missing-a
   assert((op as { error: string }).error.includes('"ref_id"'));
 });
 
-test('parseUmbrellaOperations: missing pattern on find entry surfaces a missing-argument error sentinel', () => {
+test('parseShimOperations: missing pattern on find entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ find: [{ ref_id: 'https://x' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -152,13 +141,13 @@ test('parseUmbrellaOperations: missing pattern on find entry surfaces a missing-
   assert((op as { error: string }).error.includes('"pattern"'));
 });
 
-test('parseUmbrellaOperations: array values for non-array shape are skipped', () => {
+test('parseShimOperations: array values for non-array shape are skipped', () => {
   assertEquals(opsOf({ search_query: 'oops' }), [
     { kind: 'wrong-type', subProperty: 'search_query', actualType: 'string' },
   ]);
 });
 
-test('parseUmbrellaOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
+test('parseShimOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
   // A model that populates `search_query: {"q":"x"}` (or any
   // non-array) used to be silently dropped because the array guard
   // skipped it. Surface as a model-visible `wrong-type` op so the
@@ -169,14 +158,14 @@ test('parseUmbrellaOperations: supported key with non-array value surfaces a wro
   ]);
 });
 
-test('parseUmbrellaOperations: wrong-typed supported key does not block other supported keys from executing', () => {
+test('parseShimOperations: wrong-typed supported key does not block other supported keys from executing', () => {
   const ops = opsOf({ search_query: { q: 'x' }, open: [{ ref_id: 'https://y' }] });
   assertEquals(ops.length, 2);
   assertEquals(ops[0], { kind: 'wrong-type', subProperty: 'search_query', actualType: 'object' });
   assertEquals(ops[1], { kind: 'open', arrayIndex: 0, url: 'https://y' });
 });
 
-test('parseUmbrellaOperations: wrong-typed open / find surface as wrong-type ops', () => {
+test('parseShimOperations: wrong-typed open / find surface as wrong-type ops', () => {
   assertEquals(opsOf({ open: 'https://x' }), [
     { kind: 'wrong-type', subProperty: 'open', actualType: 'string' },
   ]);
@@ -185,17 +174,7 @@ test('parseUmbrellaOperations: wrong-typed open / find surface as wrong-type ops
   ]);
 });
 
-// ── IR builders and replay (searchIr / inputItemToIr / irToUpstreamPair …) ──
-
-const FIXED_ID = 'ws_test_fixed_0123456789abcdef';
-
-const fixedIr = (overrides: Partial<WebSearchCallIR> = {}): WebSearchCallIR => ({
-  id: FIXED_ID,
-  status: 'completed',
-  action: { type: 'search', queries: ['hello'] },
-  results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snip' }],
-  ...overrides,
-});
+// ── IR builders (private to web-search.ts; exercised end-to-end below) ──
 
 test('synthesizeWebSearchCallId produces unique ws_gw_ prefixed ids', () => {
   const a = synthesizeWebSearchCallId();
@@ -203,199 +182,6 @@ test('synthesizeWebSearchCallId produces unique ws_gw_ prefixed ids', () => {
   assert(a.startsWith('ws_gw_'));
   assert(b.startsWith('ws_gw_'));
   assert(a !== b);
-});
-
-test('searchIr places query in action.queries and uses status=completed', () => {
-  const ir = searchIr(FIXED_ID, 'hello world', []);
-  assertEquals(ir.status, 'completed');
-  assertEquals(ir.id, FIXED_ID);
-  // Both `query` (singular, required by openai-python ActionSearch)
-  // and `queries` (plural, newer codex) are populated so every typed
-  // SDK reads the value regardless of which field its model declares.
-  assertEquals(ir.action, { type: 'search', query: 'hello world', queries: ['hello world'] });
-  assertEquals(ir.results, []);
-});
-
-test('openPageIr with url preserves it on the action', () => {
-  const ir = openPageIr(FIXED_ID, 'https://example.com', []);
-  assertEquals(ir.action, { type: 'open_page', url: 'https://example.com' });
-});
-
-test('openPageIr with undefined url omits the field from the action (matches native soft-failure shape)', () => {
-  const ir = openPageIr(FIXED_ID, undefined, [{ type: 'text_result', url: '', title: 'Error', snippet: 'fetch failed' }]);
-  assertEquals(ir.action, { type: 'open_page' });
-  assertEquals(ir.results.length, 1);
-});
-
-test('findInPageIr keeps url and pattern on the action', () => {
-  const ir = findInPageIr(FIXED_ID, 'https://x', 'p', []);
-  assertEquals(ir.action, { type: 'find_in_page', url: 'https://x', pattern: 'p' });
-});
-
-test('schemaErrorIr uses action.type=search with descriptive queries entry', () => {
-  const ir = schemaErrorIr(FIXED_ID, 'unsupported action: click[0]', 'Unsupported action', 'Error: this gateway does not support `click`.');
-  // Both `query` and `queries` set so openai-python-style SDKs reading
-  // the singular `query` field don't see undefined for the diagnostic.
-  assertEquals(ir.action, { type: 'search', query: 'unsupported action: click[0]', queries: ['unsupported action: click[0]'] });
-  assertEquals(ir.results.length, 1);
-  assertEquals(ir.results[0].snippet, 'Error: this gateway does not support `click`.');
-  assertEquals(ir.results[0].title, 'Unsupported action');
-});
-
-test('schemaErrorIr accepts a custom title (Case 5 malformed args uses "Malformed arguments")', () => {
-  const ir = schemaErrorIr(FIXED_ID, 'malformed umbrella arguments', 'Malformed arguments', 'Error: arguments must be a JSON object.');
-  assertEquals(ir.results[0].title, 'Malformed arguments');
-  assertEquals(ir.results[0].snippet, 'Error: arguments must be a JSON object.');
-});
-
-test('inputItemToIr passes through a well-formed input item verbatim', () => {
-  const ir = inputItemToIr({
-    type: 'web_search_call',
-    id: 'ws_input_abc',
-    status: 'completed',
-    action: { type: 'open_page', url: 'https://y' },
-    results: [{ type: 'text_result', url: 'https://y', title: 'Y', snippet: 'body' }],
-  });
-  assert(ir !== null);
-  assertEquals(ir.id, 'ws_input_abc');
-  assertEquals(ir.action, { type: 'open_page', url: 'https://y' });
-  assertEquals(ir.results.length, 1);
-});
-
-test('inputItemToIr returns null for items lacking an action (no neutral fabrication)', () => {
-  const ir = inputItemToIr({ type: 'web_search_call' });
-  assertEquals(ir, null);
-});
-
-test('inputItemToIr synthesizes a fresh id when the echoed item dropped it (clients like codex CLI strip ws_gw_ ids on session persist)', () => {
-  const irMissing = inputItemToIr({
-    type: 'web_search_call',
-    action: { type: 'search', queries: ['q'] },
-  });
-  assert(irMissing !== null);
-  assertEquals(irMissing.id.startsWith('ws_gw_'), true);
-  const irEmpty = inputItemToIr({
-    type: 'web_search_call',
-    id: '',
-    action: { type: 'search', queries: ['q'] },
-  });
-  assert(irEmpty !== null);
-  assertEquals(irEmpty.id.startsWith('ws_gw_'), true);
-});
-
-test('inputItemToIr marks resultsStripped when the echoed item has no results field', () => {
-  const ir = inputItemToIr({
-    type: 'web_search_call',
-    id: 'ws_kept',
-    action: { type: 'search', queries: ['q'] },
-  });
-  assert(ir !== null);
-  assertEquals(ir.resultsStripped, true);
-  assertEquals(ir.results, []);
-});
-
-test('inputItemToIr leaves resultsStripped unset when results is an empty array (zero-hit search, not stripped)', () => {
-  const ir = inputItemToIr({
-    type: 'web_search_call',
-    id: 'ws_kept',
-    action: { type: 'search', queries: ['q'] },
-    results: [],
-  });
-  assert(ir !== null);
-  assertEquals(ir.resultsStripped, undefined);
-});
-
-test('inputItemToIr clamps status to completed regardless of source value', () => {
-  const ir = inputItemToIr({
-    type: 'web_search_call',
-    id: 'ws_abc',
-    status: 'failed',
-    action: { type: 'search', queries: ['q'] },
-  });
-  assert(ir !== null);
-  assertEquals(ir.status, 'completed');
-});
-
-test('irToUpstreamPair derives a stable call_id from the IR id and shares it on both items', () => {
-  const ir = fixedIr({ id: 'ws_x' });
-  const pair = irToUpstreamPair(ir, 'web_search');
-  assertEquals(pair.functionCall.call_id, pair.functionCallOutput.call_id);
-  assertEquals(pair.functionCall.call_id, 'cc_from_ws_x');
-  assertEquals(pair.functionCall.name, 'web_search');
-  assertEquals(pair.functionCall.arguments, JSON.stringify({ search_query: [{ q: 'hello' }] }));
-});
-
-test('irToUpstreamPair uses the umbrella tool name passed in (collision-fallback aware)', () => {
-  const ir = fixedIr();
-  const pair = irToUpstreamPair(ir, 'web_search_2');
-  assertEquals(pair.functionCall.name, 'web_search_2');
-});
-
-test('irToOutputText for search action uses formatSearchResults shape (Search results for X then numbered hits)', () => {
-  const ir = searchIr(FIXED_ID, 'hello', [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'body' }]);
-  const text = irToOutputText(ir);
-  assert(text.startsWith('Search results for "hello":'));
-  assert(text.includes('[1] X'));
-  assert(text.includes('https://x'));
-  assert(text.includes('body'));
-});
-
-test('irToOutputText for open_page action uses the result snippet (page body) as the text', () => {
-  const ir = openPageIr(FIXED_ID, 'https://y', [{ type: 'text_result', url: 'https://y', title: 'Y', snippet: 'page body here' }]);
-  const text = irToOutputText(ir);
-  assertEquals(text, 'page body here');
-});
-
-test('irToOutputText for find_in_page action uses the result snippet (formatMatches output) verbatim', () => {
-  const ir = findInPageIr(FIXED_ID, 'https://x', 'needle', [{ type: 'text_result', url: '', title: 'No match', snippet: 'No matching `needle` found on https://x.' }]);
-  const text = irToOutputText(ir);
-  assertEquals(text, 'No matching `needle` found on https://x.');
-});
-
-test('irToOutputText for an open_page failure (no results) emits a "(no body returned)" sentinel', () => {
-  const ir = openPageIr(FIXED_ID, undefined, []);
-  const text = irToOutputText(ir);
-  assertEquals(text, 'Open (no url): (no body returned)');
-});
-
-test('searchFailedText formats provider message', () => {
-  assertEquals(searchFailedText('rate limited'), 'Search failed: rate limited');
-});
-
-test('openFailedText formats URL and provider message', () => {
-  assertEquals(openFailedText('https://x.com', '404'), 'Error fetching URL `https://x.com`: 404');
-});
-
-test('openFailedText handles the blocked-by-filter sentinel uniformly', () => {
-  assertEquals(
-    openFailedText('https://x.com', 'Blocked by tool filters'),
-    'Error fetching URL `https://x.com`: Blocked by tool filters',
-  );
-});
-
-test('findNoMatchesText includes URL and uses "No matching ..." wording (mirrors native find_in_page no-match snippet)', () => {
-  assertEquals(findNoMatchesText('foo bar', 'https://x.com'), 'No matching `foo bar` found on https://x.com.');
-});
-
-test('iterationCapText is the exact text fed back to the model on cap-exceeded turns', () => {
-  assertEquals(
-    iterationCapText,
-    'Web search iteration limit (30) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you\'ve gathered.',
-  );
-});
-
-test('truncationSentinel formats full-page byte count', () => {
-  assertEquals(
-    truncationSentinel(50_000),
-    '[Content truncated; full page is 50000 bytes. Use web_search\'s `find` sub-property with a pattern to locate specific content.]',
-  );
-});
-
-test('truncationSentinel handles zero bytes', () => {
-  assertEquals(
-    truncationSentinel(0),
-    '[Content truncated; full page is 0 bytes. Use web_search\'s `find` sub-property with a pattern to locate specific content.]',
-  );
 });
 
 // ── truncatePreservingCodePoints boundary cases ───────────────────────
@@ -427,44 +213,6 @@ test('truncatePreservingCodePoints: high surrogate at position max-1 walks back 
     const code = out.charCodeAt(i);
     assertFalse(code >= 0xD800 && code <= 0xDBFF);
   }
-});
-
-// Search-result text rendering is exercised through `irToOutputText`
-// because the formatter is a private helper inside ir.ts. These tests
-// verify the wire shape clients depend on.
-
-test('irToOutputText (search) empty results renders header + (no results)', () => {
-  assertEquals(
-    irToOutputText(searchIr(FIXED_ID, 'deepseek', [])),
-    'Search results for "deepseek":\n\n(no results)',
-  );
-});
-
-test('irToOutputText (search) single result rendered with index 1', () => {
-  const out = irToOutputText(searchIr(FIXED_ID, 'deepseek', [
-    { type: 'text_result', url: 'https://deepseek.ai', title: 'DeepSeek', snippet: 'AI company.' },
-  ]));
-  assertEquals(
-    out,
-    'Search results for "deepseek":\n\n[1] DeepSeek\nhttps://deepseek.ai\nAI company.',
-  );
-});
-
-test('irToOutputText (search) three results separated by blank lines', () => {
-  const out = irToOutputText(searchIr(FIXED_ID, 'llms', [
-    { type: 'text_result', url: 'https://a.com', title: 'A', snippet: 'sa' },
-    { type: 'text_result', url: 'https://b.com', title: 'B', snippet: 'sb' },
-    { type: 'text_result', url: 'https://c.com', title: 'C', snippet: 'sc' },
-  ]));
-  assertEquals(
-    out,
-    'Search results for "llms":\n\n[1] A\nhttps://a.com\nsa\n\n[2] B\nhttps://b.com\nsb\n\n[3] C\nhttps://c.com\nsc',
-  );
-});
-
-test('irToOutputText (search) query is interpolated verbatim into the header', () => {
-  const out = irToOutputText(searchIr(FIXED_ID, 'quotes "inside" the query', []));
-  assertEquals(out.startsWith('Search results for "quotes "inside" the query":'), true);
 });
 
 // ── Backend dispatch helpers (isUrlAllowed / findMatches / formatMatches) ──
@@ -582,13 +330,13 @@ test('formatMatches: multi-match output uses Match N: headers', () => {
 
 // ── Tool detection, filter prep, and name resolution ──
 
-const UMBRELLA = SHIM_TOOL_NAME;
+const SHIM_TOOL = SHIM_TOOL_NAME;
 const hostedVariants = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
 
 const prepare = (tools: ResponsesTool[]) => {
   const result = prepareToolsForShim(tools);
   assert(result.ok);
-  return result.prepared;
+  return { filters: result.filters };
 };
 
 test('isHostedWebSearchTool recognizes every hosted variant', () => {
@@ -623,15 +371,128 @@ test('prepareToolsForShim passes through with empty filters when no hosted web_s
 });
 
 test('resolveServerToolName returns the first free sequential name', () => {
-  assertEquals(resolveServerToolName(UMBRELLA, []), UMBRELLA);
-  assertEquals(resolveServerToolName(UMBRELLA, [{ type: 'function', name: UMBRELLA, parameters: {}, strict: false }]), `${UMBRELLA}_2`);
-  assertEquals(resolveServerToolName(UMBRELLA, [
-    { type: 'function', name: UMBRELLA, parameters: {}, strict: false },
-    { type: 'custom', name: `${UMBRELLA}_2` },
-  ]), `${UMBRELLA}_3`);
+  assertEquals(resolveServerToolName(SHIM_TOOL, []), SHIM_TOOL);
+  assertEquals(resolveServerToolName(SHIM_TOOL, [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }]), `${SHIM_TOOL}_2`);
+  assertEquals(resolveServerToolName(SHIM_TOOL, [
+    { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
+    { type: 'custom', name: `${SHIM_TOOL}_2` },
+  ]), `${SHIM_TOOL}_3`);
 });
 
 test('prepareToolsForShim rejects invalid hosted fields', () => {
   const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as ResponsesTool]);
   assertEquals(result.ok, false);
+});
+
+// ── Private-payload restoration (transformInputItemsForWebSearch) ──
+
+const makePrivatePayload = (
+  upstreamCallId: string,
+  upstreamArgs: string,
+  action: ResponsesWebSearchAction,
+  results: ResponsesWebSearchResult[],
+): WebSearchCallPrivatePayload => ({
+  v: 1,
+  functionCallItem: {
+    type: 'function_call',
+    call_id: upstreamCallId,
+    name: 'web_search',
+    arguments: upstreamArgs,
+    status: 'completed',
+  },
+  ir: { action, results },
+});
+
+test('transformInputItemsForWebSearch replays the upstream function_call verbatim when a private payload exists', () => {
+  // One wsc maps 1:1 to one shim call. The shim's
+  // jsonrepair-canonical args and the per-op output are persisted on
+  // this single row.
+  const payload = makePrivatePayload(
+    'call_orig_xyz',
+    '{"search_query":[{"q":"caffeine","topn":5}]}',
+    { type: 'search', query: 'caffeine', queries: ['caffeine'] },
+    [{ type: 'text_result', url: 'u', title: 't', snippet: 'cached body' }],
+  );
+  const map = new Map<string, unknown>([['ws_xxx_abc', payload]]);
+  const out = transformInputItemsForWebSearch(
+    [{ type: 'web_search_call', id: 'ws_xxx_abc' }],
+    'web_search',
+    map,
+  );
+  assertEquals(out.length, 2);
+  const [fc, fco] = out as [{ type: string; name: string; arguments: string; call_id: string }, { type: string; output: string; call_id: string }];
+  assertEquals(fc.type, 'function_call');
+  assertEquals(fc.call_id, 'call_orig_xyz');
+  assertEquals(fc.name, 'web_search');
+  // The upstream's call_id and canonical args are preserved bit-exact —
+  // `topn` survives even though the IR drops it.
+  assertEquals(fc.arguments, '{"search_query":[{"q":"caffeine","topn":5}]}');
+  assertEquals(fco.call_id, 'call_orig_xyz');
+  assert(fco.output.includes('cached body'));
+});
+
+test('transformInputItemsForWebSearch replays each echoed wsc independently (one pair per wsc)', () => {
+  // Two distinct shim calls (different upstream call_ids) → two replay
+  // pairs, one per wsc.
+  const p1 = makePrivatePayload('call_u1', '{"search_query":[{"q":"q1"}]}',
+    { type: 'search', queries: ['q1'] }, [{ type: 'text_result', url: 'u1', title: 't1', snippet: 'body1' }]);
+  const p2 = makePrivatePayload('call_u2', '{"search_query":[{"q":"q2"}]}',
+    { type: 'search', queries: ['q2'] }, [{ type: 'text_result', url: 'u2', title: 't2', snippet: 'body2' }]);
+  const map = new Map<string, unknown>([['ws_one', p1], ['ws_two', p2]]);
+  const out = transformInputItemsForWebSearch(
+    [
+      { type: 'web_search_call', id: 'ws_one' },
+      { type: 'web_search_call', id: 'ws_two' },
+    ],
+    'web_search',
+    map,
+  );
+  assertEquals(out.length, 4);
+  const callIds = out.map(it => (it as { call_id?: unknown }).call_id).filter((id): id is string => typeof id === 'string');
+  assertEquals(callIds, ['call_u1', 'call_u1', 'call_u2', 'call_u2']);
+  const outputs = out.filter(it => (it as { type: string }).type === 'function_call_output') as Array<{ output: string }>;
+  assert(outputs[0].output.includes('body1'));
+  assert(outputs[1].output.includes('body2'));
+});
+
+test('transformInputItemsForWebSearch emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
+  const out = transformInputItemsForWebSearch(
+    [{
+      type: 'web_search_call', id: 'ws_xxx_abc',
+      action: { type: 'search', queries: ['caffeine'] },
+      results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire body' }],
+    }],
+    'web_search',
+  );
+  assertEquals(out.length, 2);
+  const fc = out[0] as { type: string; arguments: string };
+  const fco = out[1] as { type: string; output: string };
+  // The synthesized function_call mirrors the wire action shape so the
+  // model still sees what it had asked for.
+  assertEquals(fc.arguments, '{"search_query":[{"q":"caffeine"}]}');
+  // ... but the function_call_output is the placeholder — we deliberately
+  // ignore the wire `results` field, since we have no way to verify it
+  // matches what the gateway actually returned on turn 1.
+  assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
+});
+
+test('transformInputItemsForWebSearch emits the not-preserved placeholder when results are missing and no private payload exists', () => {
+  const out = transformInputItemsForWebSearch(
+    [{ type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } }],
+    'web_search',
+  );
+  const fco = out[1] as { type: string; output: string };
+  assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
+});
+
+test('transformInputItemsForWebSearch ignores a stashed value with the wrong schema version (forward-compat)', () => {
+  const map = new Map<string, unknown>([['ws_xxx_abc', { v: 99, anything: 'goes' }]]);
+  // Falls back to public-wire reconstruction; no crash, no false hydration.
+  const out = transformInputItemsForWebSearch(
+    [{ type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } }],
+    'web_search',
+    map,
+  );
+  const fco = out[1] as { type: string; output: string };
+  assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });

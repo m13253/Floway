@@ -5,9 +5,6 @@ import type { GeminiPayload, GeminiToolGroup } from '@floway-dev/protocols/gemin
  * Only function declarations are currently translatable from Gemini tool
  * groups. Strip the rest after target planning so target emitters never see
  * unsupported tool capabilities.
- *
- * TODO: Support Gemini googleSearch through the existing web-search shim
- * instead of dropping it here.
  */
 const stripToolCapabilities = (tool: GeminiToolGroup): void => {
   delete tool.googleSearch;

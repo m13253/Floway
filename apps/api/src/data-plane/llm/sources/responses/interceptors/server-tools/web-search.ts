@@ -5,9 +5,8 @@ import { loadSearchConfig } from '../../../../../tools/web-search/search-config.
 import { searchWebAndRecordUsage, searchWebWithoutRecordingUsage } from '../../../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
-import { serverToolResultSlot } from '../server-tool-shim.ts';
-import type { ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
-import type { ResponsesFunctionCallOutputItem, ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesInputWebSearchCall, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
+import { serverToolResultSlot, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
+import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 
 // Runtime set derived from the canonical tuple declared next to
@@ -16,7 +15,7 @@ import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 //   https://github.com/openai/openai-python/blob/e75766769547601a25ed83b666c4d0fd046881f0/src/openai/types/responses/web_search_preview_tool.py
 export const WEB_SEARCH_HOSTED_TYPES: ReadonlySet<string> = new Set<string>(WEB_SEARCH_HOSTED_TYPE_NAMES);
 
-// Function-name regex `^[a-zA-Z0-9_-]+$` forbids dots, so the umbrella
+// Function-name regex `^[a-zA-Z0-9_-]+$` forbids dots, so the shim call
 // uses the underscored form of the model's training-time `web.run`.
 export const SHIM_TOOL_NAME = 'web_search';
 
@@ -46,11 +45,6 @@ const DEFAULT_SEARCH_CONTEXT_SIZE: keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS = 'm
 export const isValidSearchContextSize = (v: unknown): v is keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS =>
   typeof v === 'string' && v in CONTEXT_SIZE_TO_MAX_RESULTS;
 
-// Both `function` and `custom` client tools share the upstream callable
-// namespace (responses-via-* translators wrap `custom` as `function`
-// for non-Responses upstreams), so a client tool of either kind named
-// `web_search` collides with the umbrella. Returning a resolved name
-// (rather than throwing) lets such a client coexist.
 // The hosted tool's `user_location` must surface to the model, not just
 // to the backend provider — without this hint the model asks "Which
 // city should I check?" even when the client supplied one.
@@ -64,12 +58,12 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
   return joined.length === 0 ? `(timezone: ${loc.timezone})` : `${joined} (timezone: ${loc.timezone})`;
 };
 
-// `web.run` umbrella shape: 13 sub-properties on a single tool. The
+// `web.run` shim call shape: 13 sub-properties on a single tool. The
 // shim implements 3 (`search_query`, `open`, `find`); the other 10
 // surface as per-entry error IRs at dispatch time. The description
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
-const buildUmbrellaTool = (
+const buildShimFunctionTool = (
   name: string,
   userLocation?: ShimToolFilters['userLocation'],
 ): ResponsesFunctionTool => {
@@ -157,10 +151,6 @@ const extractFilters = (tool: ResponsesHostedTool): ShimToolFilters => {
   return out;
 };
 
-export interface PreparedTools {
-  filters: ShimToolFilters;
-}
-
 export interface PrepareToolsError {
   /** Human-readable error message; goes into the 400 envelope's `error.message`. */
   message: string;
@@ -169,7 +159,7 @@ export interface PrepareToolsError {
 }
 
 export type PrepareToolsResult =
-  | { ok: true; prepared: PreparedTools }
+  | { ok: true; filters: ShimToolFilters }
   | { ok: false; error: PrepareToolsError };
 
 // Per-list cap matches the OpenAI documented "up to 100 allowed_domains
@@ -198,7 +188,7 @@ const validateDomainListEntry = (
 // Validate the parts of a hosted-web-search entry the shim acts on.
 // Anything else (`external_web_access`, `return_token_budget`, etc.)
 // is silently dropped along with the hosted tool itself — the shim
-// replaces the hosted entry with its umbrella function tool, so any
+// replaces the hosted entry with its shim function tool, so any
 // hosted-only field the shim doesn't process never reaches upstream
 // regardless.
 const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | null => {
@@ -248,7 +238,7 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
 // shim will act on. When a request carries multiple hosted blocks the
 // LAST one's filters win (most-recent declaration), so callers don't
 // have to define a tie-break. Name-collision resolution and the
-// hosted-tool → umbrella-function replacement are the shim's
+// hosted-tool → shim's function-tool replacement are the shim's
 // responsibility (`resolveServerToolName` /
 // `replaceHostedToolsWithFunctionTool`); this function only reads the
 // hosted entries.
@@ -268,23 +258,25 @@ export const prepareToolsForShim = (
   }
 
   if (!hostedSeen) {
-    return { ok: true, prepared: { filters: {} } };
+    return { ok: true, filters: {} };
   }
 
-  return { ok: true, prepared: { filters: lastHostedFilters } };
+  return { ok: true, filters: lastHostedFilters };
 };
 
-// Parses one umbrella function_call's arguments into a flat list of
-// logical operations. 13 documented sub-properties total; shim
-// implements 3 (search/open/find), the other 10 surface as
-// `unsupported` ops.
+// ── Shim call parsing ──
+// Types describe one logical operation parsed out of a shim call
+// function_call. 13 documented sub-properties total in the gpt-5.x
+// `web.run` shape; the shim implements 3 (search/open/find) and surfaces
+// the other 10 as `unsupported` ops. `parseShimOperations` below
+// produces a flat list in source order.
 
 export type ShimOperationErrorKind = 'invalid-ref' | 'missing-arg';
 
 export type ShimLogicalOperation =
   | {
     kind: 'search';
-    /** Original index inside the umbrella's `search_query` array. */
+    /** Original index inside the shim's `search_query` array. */
     arrayIndex: number;
     query: string;
     /** When set, dispatch returns this verbatim instead of hitting the backend. */
@@ -308,7 +300,7 @@ export type ShimLogicalOperation =
   }
   | {
     kind: 'unsupported';
-    /** The umbrella sub-property name the model populated (e.g. `click`). */
+    /** The shim call sub-property name the model populated (e.g. `click`). */
     subProperty: string;
     /** Original index inside that sub-property's array. */
     arrayIndex: number;
@@ -319,7 +311,7 @@ export type ShimLogicalOperation =
     actualType: string;
   };
 
-export type ParsedUmbrella = { kind: 'ops'; ops: ShimLogicalOperation[] } | { kind: 'malformed' };
+export type ParsedShimCall = { kind: 'ops'; ops: ShimLogicalOperation[] } | { kind: 'malformed' };
 
 // Stricter than `/^https?:\/\//i`: that regex accepts `https://` (empty
 // host). Reject malformed refs at parse time so dispatch always sees a
@@ -344,23 +336,31 @@ const missingArgError = (field: string): string =>
 
 const SUPPORTED_KEYS: ReadonlySet<string> = new Set(['search_query', 'open', 'find']);
 
-export const parseUmbrellaOperations = (args: Record<string, unknown> | null): ParsedUmbrella => {
+// Cap on the wire-item dump inlined into the malformed-input branch's
+// `function_call_output` placeholder. A pathological prior wsc echo
+// (deeply nested, multi-kilobyte) shouldn't get to blow the upstream
+// context window through the diagnostic that explains it.
+const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
+
+const stringField = (entry: unknown, key: string): string => {
+  if (entry === null || typeof entry !== 'object') return '';
+  const value = (entry as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+};
+
+const describeJsonType = (v: unknown): string => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+
+export const parseShimOperations = (args: Record<string, unknown> | null): ParsedShimCall => {
   if (args === null) return { kind: 'malformed' };
   const ops: ShimLogicalOperation[] = [];
-
-  // Surface wrong-typed keys as visible IRs.
-  const describeType = (v: unknown): string => v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
 
   const searchQuery = args.search_query;
   if (searchQuery !== undefined) {
     if (!Array.isArray(searchQuery)) {
-      ops.push({ kind: 'wrong-type', subProperty: 'search_query', actualType: describeType(searchQuery) });
+      ops.push({ kind: 'wrong-type', subProperty: 'search_query', actualType: describeJsonType(searchQuery) });
     } else {
       for (let i = 0; i < searchQuery.length; i++) {
-        const entry = searchQuery[i];
-        const q = entry !== null && typeof entry === 'object' && 'q' in entry && typeof entry.q === 'string'
-          ? entry.q
-          : '';
+        const q = stringField(searchQuery[i], 'q');
         if (q === '') {
           ops.push({ kind: 'search', arrayIndex: i, query: '', error: missingArgError('q'), errorKind: 'missing-arg' });
           continue;
@@ -373,13 +373,10 @@ export const parseUmbrellaOperations = (args: Record<string, unknown> | null): P
   const open = args.open;
   if (open !== undefined) {
     if (!Array.isArray(open)) {
-      ops.push({ kind: 'wrong-type', subProperty: 'open', actualType: describeType(open) });
+      ops.push({ kind: 'wrong-type', subProperty: 'open', actualType: describeJsonType(open) });
     } else {
       for (let i = 0; i < open.length; i++) {
-        const entry = open[i];
-        const refId = entry !== null && typeof entry === 'object' && 'ref_id' in entry && typeof entry.ref_id === 'string'
-          ? entry.ref_id
-          : '';
+        const refId = stringField(open[i], 'ref_id');
         if (refId === '') {
           ops.push({ kind: 'open', arrayIndex: i, url: '', error: missingArgError('ref_id'), errorKind: 'missing-arg' });
           continue;
@@ -396,16 +393,11 @@ export const parseUmbrellaOperations = (args: Record<string, unknown> | null): P
   const find = args.find;
   if (find !== undefined) {
     if (!Array.isArray(find)) {
-      ops.push({ kind: 'wrong-type', subProperty: 'find', actualType: describeType(find) });
+      ops.push({ kind: 'wrong-type', subProperty: 'find', actualType: describeJsonType(find) });
     } else {
       for (let i = 0; i < find.length; i++) {
-        const entry = find[i];
-        const refId = entry !== null && typeof entry === 'object' && 'ref_id' in entry && typeof entry.ref_id === 'string'
-          ? entry.ref_id
-          : '';
-        const pattern = entry !== null && typeof entry === 'object' && 'pattern' in entry && typeof entry.pattern === 'string'
-          ? entry.pattern
-          : '';
+        const refId = stringField(find[i], 'ref_id');
+        const pattern = stringField(find[i], 'pattern');
         if (refId === '') {
           ops.push({ kind: 'find', arrayIndex: i, url: '', pattern, error: missingArgError('ref_id'), errorKind: 'missing-arg' });
           continue;
@@ -423,8 +415,7 @@ export const parseUmbrellaOperations = (args: Record<string, unknown> | null): P
     }
   }
 
-  // Top-level keys outside `search_query` / `open` / `find` surface as
-  // one `unsupported` op per array entry (or a single op for a scalar).
+  // Top-level keys outside the shim call surface as unsupported ops.
   for (const key of Object.keys(args)) {
     if (SUPPORTED_KEYS.has(key)) continue;
     const value = args[key];
@@ -443,98 +434,75 @@ export const parseUmbrellaOperations = (args: Record<string, unknown> | null): P
   };
 };
 
-export const unsupportedSubPropertyText = (subProperty: string): string =>
-  `Error: the \`${subProperty}\` sub-property is not supported by this gateway. `
-  + 'Only `search_query`, `open`, and `find` are available.';
-
-export const wrongTypeSubPropertyText = (subProperty: string, actualType: string): string =>
-  `Error: the \`${subProperty}\` sub-property must be an array of objects; got ${actualType}.`;
-
-// Web_search_call IR — canonical representation of one search action,
-// the model-visible error strings that feed into IR results, and the
-// downstream lifecycle frames the IR materializes into. `id` is both the
-// value the client sees on the synthesized `web_search_call` item and
-// the seed for the upstream call_id when the reverse path replays the
-// item.
-//
-// Error-text phrasings closely follow OpenAI's gpt-oss reference
-// simple_browser tool so gpt-oss-family models (trained on those exact
-// phrasings) recognize the structure; non-OpenAI models read them as
-// plain natural-language tool output.
-//
-// References (pinned to commit 285b05d for stable line numbers):
-// - gpt-oss simple_browser_tool.py `find` no-match phrase, line 246:
-//   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L246
-// - gpt-oss simple_browser_tool.py `BackendError` fetching phrase, lines 444-445:
-//   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L444-L445
-// - litellm `Search failed: <e>` idiom:
-//   https://github.com/BerriAI/litellm/blob/main/litellm/integrations/websearch_interception/transformation.py
-
-// Sole safety valve — do not introduce additional safety caps in
-// this server tool. Past iteration 30 the dispatcher swaps backend
-// dispatch for the cap snippet so the model sees the bypass and
-// steers itself toward a terminal message.
+// Safety cap; see usage in `planShimSlots`.
 export const ITERATION_CAP = 30;
 
+// One web_search backend op's result data: the action shape downstream
+// references and the result list the renderer formats. Thin DTO — the
+// wsc id and `status: 'completed'` live on the dispatcher's slot, not
+// in here.
 export interface WebSearchCallIR {
-  id: string;
-  status: 'completed';
   action: ResponsesWebSearchAction;
-  /** Always populated; see file-header divergence note in server-tools/web-search.ts. */
   results: ResponsesWebSearchResult[];
-  /**
-   * Set when this IR was built from a replayed input item that lacked
-   * a `results` field — e.g. codex CLI strips the field before
-   * persisting to its session rollout. `irToOutputText` swaps the
-   * usual formatted snippet for a one-line notice so the model knows
-   * the prior content was not preserved (rather than confusing it
-   * with a genuine zero-hit search).
-   */
-  resultsStripped?: boolean;
 }
+
+/**
+ * Persistent `payload.private` shape for one `web_search_call`. One shim call
+ * function_call corresponds to exactly one wsc and one op — multi-op
+ * shim calls (multi-kind mix or multi-instance same-kind) are rejected at
+ * dispatch with an `ambiguous` error, so there is never an array to
+ * denormalize. The row id IS the wsc id, so we don't repeat it inside.
+ *
+ * - `functionCallItem` is the upstream's literal function_call from the
+ *   originating turn, with `arguments` replaced by the
+ *   jsonrepair-canonical strict-JSON form (every other field — type,
+ *   call_id, name, status — passes through untouched). Replayed verbatim
+ *   so the upstream model's prior assistant turn looks bit-exact.
+ *
+ * - `ir` is the in-flight `(action, results)` tuple straight from
+ *   `planShimSlots`. Stored as data so the rendering format can
+ *   evolve without re-persisting; reused by the renderer at replay time.
+ *   Composition (rather than inlining `action` / `results` here) keeps
+ *   any future IR field automatically reaching the persisted shape.
+ *
+ * Version-tagged: an unknown `v` falls through the no-payload branch in
+ * `transformInputItemsForWebSearch` (action re-serialized into the
+ * shim call shape, output replaced with the not-preserved notice). Starts
+ * at 1; bump only on a wire-incompatible change after release.
+ */
+export interface WebSearchCallPrivatePayload {
+  v: 1;
+  functionCallItem: ResponsesFunctionToolCallItem;
+  ir: WebSearchCallIR;
+}
+
+const isWebSearchCallPrivatePayload = (value: unknown): value is WebSearchCallPrivatePayload => {
+  if (value === null || typeof value !== 'object') return false;
+  const obj = value as Record<string, unknown>;
+  if (obj.v !== 1) return false;
+  const fc = obj.functionCallItem;
+  if (fc === null || typeof fc !== 'object') return false;
+  const fcObj = fc as Record<string, unknown>;
+  if (fcObj.type !== 'function_call' || typeof fcObj.call_id !== 'string' || typeof fcObj.name !== 'string' || typeof fcObj.arguments !== 'string') return false;
+  const ir = obj.ir;
+  if (ir === null || typeof ir !== 'object') return false;
+  const irObj = ir as Record<string, unknown>;
+  return irObj.action !== undefined && Array.isArray(irObj.results);
+};
 
 export const synthesizeWebSearchCallId = (): string =>
   `ws_gw_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
-export const searchFailedText = (providerMessage: string): string =>
-  `Search failed: ${providerMessage}`;
+// Distinct id namespace (cc_replay_*) from synthesized wsc ids (ws_gw_*)
+// so a replay call_id never reads as a wsc id in logs.
+const synthesizeReplayCallId = (): string =>
+  `cc_replay_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
-export const openFailedText = (url: string, providerMessage: string): string =>
-  `Error fetching URL \`${url}\`: ${providerMessage}`;
-
-export const findNoMatchesText = (pattern: string, url: string): string =>
-  `No matching \`${pattern}\` found on ${url}.`;
-
-export const iterationCapText
-  = `Web search iteration limit (${ITERATION_CAP}) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you've gathered.`;
-
-export const truncationSentinel = (fullBytes: number): string =>
-  `[Content truncated; full page is ${fullBytes} bytes. Use web_search's \`find\` sub-property with a pattern to locate specific content.]`;
-
-// Returned as the function_call_output when a replayed `web_search_call`
-// item arrived without `results` (the client did not preserve them
-// across the round trip). The model still sees the action via the
-// paired function_call's arguments, so this only has to communicate
-// that re-searching is the way to recover the contents.
-export const resultsStrippedText
-  = 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.';
-
-// Returned as the function_call_output (and as the snippet of the
-// synthesized lifecycle item on the malformed-args path) when an umbrella
-// call has no logical ops the shim can attribute — empty args object,
-// malformed JSON, or a non-object top-level shape. The hint names the
-// supported sub-properties so the model knows what shape to retry with.
-export const emptyUmbrellaArgsText
-  = 'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).';
-
-export const searchIr = (
-  id: string,
+const searchIr = (
   query: string,
   results: ResponsesWebSearchResult[],
   sources?: { type: 'url'; url: string }[],
 ): WebSearchCallIR => ({
-  id,
-  status: 'completed',
   // Emit both `query` and `queries`; see `actionSearchQueries`.
   action: {
     type: 'search',
@@ -549,13 +517,10 @@ export const searchIr = (
   results,
 });
 
-export const openPageIr = (
-  id: string,
+const openPageIr = (
   url: string | undefined,
   results: ResponsesWebSearchResult[],
 ): WebSearchCallIR => ({
-  id,
-  status: 'completed',
   // Omit `url` when undefined to match native's soft-failure shape;
   // never emit `url: ''`.
   action: url !== undefined && url.length > 0
@@ -564,14 +529,11 @@ export const openPageIr = (
   results,
 });
 
-export const findInPageIr = (
-  id: string,
+const findInPageIr = (
   url: string,
   pattern: string,
   results: ResponsesWebSearchResult[],
 ): WebSearchCallIR => ({
-  id,
-  status: 'completed',
   action: { type: 'find_in_page', url, pattern },
   results,
 });
@@ -580,14 +542,11 @@ export const findInPageIr = (
 // sub-property, malformed args); encode them via action.type:'search'
 // with the diagnostic in queries[0] so wire-typed SDKs still parse the
 // item.
-export const schemaErrorIr = (
-  id: string,
+const schemaErrorIr = (
   queryLabel: string,
   title: string,
   snippet: string,
 ): WebSearchCallIR => ({
-  id,
-  status: 'completed',
   // Emit both `query` and `queries`; see `actionSearchQueries`.
   action: { type: 'search', query: queryLabel, queries: [queryLabel] },
   results: [{
@@ -598,6 +557,24 @@ export const schemaErrorIr = (
   }],
 });
 
+// Error-text phrasings closely follow OpenAI's gpt-oss reference
+// simple_browser tool so gpt-oss-family models (trained on those exact
+// phrasings) recognize the structure; non-OpenAI models read them as
+// plain natural-language tool output.
+//
+// References (pinned to commit 285b05d for stable line numbers):
+// - gpt-oss simple_browser_tool.py `find` no-match phrase, line 246:
+//   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L246
+// - gpt-oss simple_browser_tool.py `BackendError` fetching phrase, lines 444-445:
+//   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L444-L445
+// - litellm `Search failed: <e>` idiom:
+//   https://github.com/BerriAI/litellm/blob/main/litellm/integrations/websearch_interception/transformation.py
+const searchFailedText = (providerMessage: string): string =>
+  `Search failed: ${providerMessage}`;
+
+const openFailedText = (url: string, providerMessage: string): string =>
+  `Error fetching URL \`${url}\`: ${providerMessage}`;
+
 // openai-python `ActionSearch.query` is a single string; some clients
 // send only `queries[]`. Accept both: the shim emits both fields on
 // every search action so typed SDKs reading either one keep working.
@@ -607,84 +584,12 @@ const actionSearchQueries = (action: Extract<ResponsesWebSearchAction, { type: '
   return [];
 };
 
-/**
- * Wire input item → IR. Returns null only when `action` is missing —
- * without it we can't even tell upstream what was previously searched.
- * `id` is synthesized when missing (it's an internal ref the model
- * never sees); `results` missing toggles `resultsStripped` so the
- * function_call_output reads as "not preserved" instead of "no hits".
- *
- * Replay today is reconstructed solely from the public wire item, so a
- * client that drops `results` from the echoed `web_search_call` (e.g.
- * codex CLI strips it before persisting to its rollout) forces the
- * `resultsStripped` degradation. A separate effort persists synthetic
- * Responses items server-side together with a private payload (the
- * `responses_items` store; `StoredResponsesItemPayload.private`,
- * reached via `getRepo().responsesItems`). Once the shim populates that
- * private payload at synthesis time and the replay seam
- * (`transformInputItemsForWebSearch`) gains access to a lookup, this
- * function should first restore the real results from the persisted
- * private payload keyed by the item's `id`, and fall back to the public
- * item (and `resultsStripped`) only when no persisted payload exists.
- */
-export const inputItemToIr = (item: ResponsesInputWebSearchCall): WebSearchCallIR | null => {
-  if (item.action === undefined) return null;
-  let action: ResponsesWebSearchAction;
-  if (item.action.type === 'search') {
-    const queries = actionSearchQueries(item.action);
-    // Emit both `query` and `queries`; see `actionSearchQueries`.
-    action = {
-      type: 'search',
-      ...(queries.length > 0 ? { query: queries[0] } : {}),
-      queries,
-    };
-  } else {
-    action = item.action;
-  }
-  const id = item.id !== undefined && item.id.length > 0
-    ? item.id
-    : synthesizeWebSearchCallId();
-  const hasResults = Array.isArray(item.results);
-  return {
-    id,
-    status: 'completed',
-    action,
-    results: hasResults ? item.results! : [],
-    ...(hasResults ? {} : { resultsStripped: true }),
-  };
-};
-
-/**
- * IR → umbrella function_call + function_call_output pair sharing a
- * synthetic call_id derived from the IR id. Every replay path goes
- * through this helper so echoed history and internally produced
- * web_search_call items cannot diverge.
- */
-export const irToUpstreamPair = (
-  ir: WebSearchCallIR,
-  umbrellaToolName: string,
-): {
-  functionCall: ResponsesFunctionToolCallItem;
-  functionCallOutput: ResponsesFunctionCallOutputItem;
-} => {
-  const callId = `cc_from_${ir.id}`;
-  return {
-    functionCall: {
-      type: 'function_call',
-      call_id: callId,
-      name: umbrellaToolName,
-      arguments: actionToUmbrellaArgsJson(ir.action),
-      status: 'completed',
-    },
-    functionCallOutput: {
-      type: 'function_call_output',
-      call_id: callId,
-      output: irToOutputText(ir),
-    },
-  };
-};
-
-const actionToUmbrellaArgsJson = (action: ResponsesWebSearchAction): string => {
+// Re-serializes a wire `action` back into the shim's JSON arguments
+// shape (`{search_query:[{q}]}` / `{open:[{ref_id}]}` /
+// `{find:[{ref_id,pattern}]}`). Used only on the replay-fallback path to
+// fill the paired function_call's `arguments` when no private payload
+// exists; the happy path replays the upstream's original args verbatim.
+const actionToShimCallArgsJson = (action: ResponsesWebSearchAction): string => {
   switch (action.type) {
   case 'search':
     return JSON.stringify({
@@ -712,69 +617,117 @@ const formatSearchResultsText = (query: string, results: readonly ResponsesWebSe
   return `${header}\n\n${sections.join('\n\n')}`;
 };
 
-/**
- * IR rendered as a labeled text section the upstream model reads from
- * function_call_output. Format matches what model variants have seen
- * historically so model behaviour doesn't drift on the rewrite.
- */
-export const irToOutputText = (ir: WebSearchCallIR): string => {
-  if (ir.resultsStripped) return resultsStrippedText;
-  switch (ir.action.type) {
+const renderOpOutputText = (action: ResponsesWebSearchAction, results: ResponsesWebSearchResult[]): string => {
+  switch (action.type) {
   case 'search': {
-    const queryLabel = actionSearchQueries(ir.action).join(' | ');
-    return formatSearchResultsText(queryLabel, ir.results);
+    const queryLabel = actionSearchQueries(action).join(' | ');
+    return formatSearchResultsText(queryLabel, results);
   }
   case 'open_page': {
-    if (ir.results.length === 0) {
-      const url = ir.action.url ?? '(no url)';
+    if (results.length === 0) {
+      const url = action.url ?? '(no url)';
       return `Open ${url}: (no body returned)`;
     }
-    return ir.results[0].snippet;
+    return results[0].snippet;
   }
   case 'find_in_page':
-    return ir.results.length > 0 ? ir.results[0].snippet : '';
+    return results.length > 0 ? results[0].snippet : '';
   }
 };
 
-// Echoed items without `action` become placeholder function_call /
-// function_call_output pairs with the original wire item inlined so the
-// model can inspect them; positional indices stay stable.
+// Replay preprocessor: turns echoed `web_search_call` items back into the
+// (function_call, function_call_output) pair the upstream model originally
+// saw on turn 1.
+//
+// Two paths:
+//
+// 1. Private payload hit (the request resolved the wsc id to a persisted
+//    `payload.private`): emit the upstream's literal `functionCallItem`
+//    (jsonrepair-canonical args, original call_id) plus a
+//    `function_call_output` whose body is rendered from the persisted
+//    `output.action / output.results` via `renderOpOutputText`. This is
+//    the bit-exact round-trip.
+//
+// 2. No payload (`store: false`, expired, foreign id, cross-account, or
+//    schema-version mismatch): degrade to a synthesized pair whose
+//    `function_call.arguments` is the wire action re-serialized into
+//    the shim call shape (so the model still sees what it asked for) and
+//    whose `function_call_output` text is the not-preserved placeholder.
+//    The shim deliberately does not read `item.results` from the
+//    wire — turn 1's wire results may or may not exist depending on the
+//    client's `include` opt-in, and trusting them across the wire would
+//    couple state correctness to client storage discipline.
+//
+// Echoed items with no `action` at all surface as a placeholder
+// `function_call + function_call_output` pair that inlines the raw wire
+// item so the model can see what the client actually sent.
 export const transformInputItemsForWebSearch = (
   input: ResponsesInputItem[],
-  umbrellaToolName: string,
+  toolName: string,
+  privatePayloads?: ReadonlyMap<string, unknown>,
 ): ResponsesInputItem[] => {
   const out: ResponsesInputItem[] = [];
+
   for (const item of input) {
-    if (item.type === 'web_search_call') {
-      const ir = inputItemToIr(item);
-      if (ir === null) {
-        const id = synthesizeWebSearchCallId();
-        const callId = `cc_from_${id}_malformed`;
-        out.push(
-          {
-            type: 'function_call',
-            call_id: callId,
-            name: umbrellaToolName,
-            arguments: '{}',
-            status: 'completed',
-          },
-          {
-            type: 'function_call_output',
-            call_id: callId,
-            // Include the original wire item verbatim so the model
-            // can see what was there — the placeholder shape stays
-            // stable while the malformed payload reaches the LLM
-            // for inspection.
-            output: `A prior web_search_call item in the conversation history was malformed (no \`action\` field). Original wire item: ${JSON.stringify(item)}`,
-          },
-        );
-        continue;
-      }
-      const { functionCall, functionCallOutput } = irToUpstreamPair(ir, umbrellaToolName);
-      out.push(functionCall, functionCallOutput);
+    if (item.type !== 'web_search_call') {
+      out.push(item);
       continue;
     }
-    out.push(item);
+
+    const candidatePayload = item.id !== undefined ? privatePayloads?.get(item.id) : undefined;
+    if (isWebSearchCallPrivatePayload(candidatePayload)) {
+      out.push(
+        candidatePayload.functionCallItem,
+        {
+          type: 'function_call_output',
+          call_id: candidatePayload.functionCallItem.call_id,
+          output: renderOpOutputText(candidatePayload.ir.action, candidatePayload.ir.results),
+        },
+      );
+      continue;
+    }
+
+    if (item.action === undefined) {
+      const callId = synthesizeReplayCallId();
+      // Truncate the wire dump so a deeply-nested or large prior item
+      // doesn't blow the upstream context window via a multi-kilobyte
+      // function_call_output. The model still sees enough to recognize
+      // the malformed shape.
+      const wireDump = truncatePreservingCodePoints(JSON.stringify(item), MAX_MALFORMED_WIRE_DUMP_CHARS);
+      out.push(
+        {
+          type: 'function_call',
+          call_id: callId,
+          name: toolName,
+          arguments: '{}',
+          status: 'completed',
+        },
+        {
+          type: 'function_call_output',
+          call_id: callId,
+          output: `A prior web_search_call item in the conversation history was malformed (no \`action\` field). Original wire item: ${wireDump}`,
+        },
+      );
+      continue;
+    }
+
+    const callId = synthesizeReplayCallId();
+    out.push(
+      {
+        type: 'function_call',
+        call_id: callId,
+        name: toolName,
+        arguments: actionToShimCallArgsJson(item.action),
+        status: 'completed',
+      },
+      {
+        type: 'function_call_output',
+        call_id: callId,
+        // See path 2 in the function docstring above for why the wire
+        // `item.results` is ignored.
+        output: 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.',
+      },
+    );
   }
   return out;
 };
@@ -800,6 +753,12 @@ export interface ShimState {
   // `undefined` for keyless requests (admin playground); usage
   // recording is skipped in that case.
   apiKeyId: string | undefined;
+  // Set when the client passed `include: ["web_search_call.results"]` on
+  // the request. Native Responses gates the `results` field on this
+  // include token; the shim follows suit on the wire item — but the IR
+  // (and therefore `payload.private`) always carries the real results
+  // so a subsequent turn echoing the item id can be hydrated regardless.
+  includeSearchResults: boolean;
   // Set when the client passed
   // `include: ["web_search_call.action.sources"]` on the request,
   // mirroring native Responses' opt-in shape for the search-action
@@ -881,7 +840,7 @@ export const findMatches = (
 };
 
 export const formatMatches = (pattern: string, url: string, matches: readonly FindMatch[]): string => {
-  if (matches.length === 0) return findNoMatchesText(pattern, url);
+  if (matches.length === 0) return `No matching \`${pattern}\` found on ${url}.`;
   const noun = matches.length === 1 ? 'match' : 'matches';
   const lines: string[] = [`${matches.length} ${noun} for pattern: \`${pattern}\``, ''];
   for (let i = 0; i < matches.length; i++) {
@@ -921,7 +880,6 @@ const resolveActiveProvider = async (
 };
 
 const runBackendSearch = async (
-  id: string,
   op: Extract<ShimLogicalOperation, { kind: 'search' }>,
   state: ShimState,
 ): Promise<WebSearchCallIR> => {
@@ -929,12 +887,12 @@ const runBackendSearch = async (
 
   if (op.error !== undefined) {
     const title = op.errorKind === 'missing-arg' ? 'Missing argument' : 'Invalid ref_id';
-    return searchIr(id, query, [errorSnippet(title, op.error)]);
+    return searchIr(query, [errorSnippet(title, op.error)]);
   }
 
   const active = await resolveActiveProvider(state);
   if ('unavailable' in active) {
-    return searchIr(id, query, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
+    return searchIr(query, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
   }
 
   try {
@@ -960,7 +918,7 @@ const runBackendSearch = async (
 
     if (result.type === 'error') {
       const msg = result.message ?? result.errorCode;
-      return searchIr(id, query, [errorSnippet('Search error', searchFailedText(msg))]);
+      return searchIr(query, [errorSnippet('Search error', searchFailedText(msg))]);
     }
 
     // Per-snippet char cap on web_search_call.results[].snippet. Providers
@@ -980,10 +938,10 @@ const runBackendSearch = async (
     const sources = state.includeSearchActionSources
       ? result.results.map(r => ({ type: 'url' as const, url: r.source }))
       : undefined;
-    return searchIr(id, query, results, sources);
+    return searchIr(query, results, sources);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return searchIr(id, query, [errorSnippet('Search error', searchFailedText(msg))]);
+    return searchIr(query, [errorSnippet('Search error', searchFailedText(msg))]);
   }
 };
 
@@ -1058,11 +1016,11 @@ const runBatchFetch = async (
   }
 };
 
-// Intra-umbrella batching: collect every URL the umbrella's
+// Intra-call batching: collect every URL the shim's
 // open[]/find[] sub-arrays reference, dedup, hit cache, and issue
-// one batched provider.fetchPage for the remainder. Cross-umbrella
+// one batched provider.fetchPage for the remainder. Cross-call
 // joining is deliberately NOT done — same-turn serial execution
-// means later umbrellas can simply read the populated cache.
+// means later shim calls can simply read the populated cache.
 const fetchAndCacheManyPages = async (
   urls: string[],
   state: ShimState,
@@ -1091,12 +1049,14 @@ const fetchAndCacheManyPages = async (
   return results;
 };
 
-const openPageSuccessIr = (id: string, url: string, cached: PageCacheEntry): WebSearchCallIR => {
+const openPageSuccessIr = (url: string, cached: PageCacheEntry): WebSearchCallIR => {
   // Provider truncates to its 10 KiB per-page cap. Truncated bodies get
   // a sentinel so the model can choose to `find` for specific content.
   const body = cached.content
-    + (cached.truncated ? `\n\n${truncationSentinel(cached.fullContentBytes)}` : '');
-  return openPageIr(id, url, [{
+    + (cached.truncated
+      ? `\n\n[Content truncated; full page is ${cached.fullContentBytes} bytes. Use web_search's \`find\` sub-property with a pattern to locate specific content.]`
+      : '');
+  return openPageIr(url, [{
     type: 'text_result',
     url,
     title: cached.title ?? '',
@@ -1105,7 +1065,6 @@ const openPageSuccessIr = (id: string, url: string, cached: PageCacheEntry): Web
 };
 
 const runBackendOpenPage = async (
-  id: string,
   op: Extract<ShimLogicalOperation, { kind: 'open' }>,
   batchPromise: Promise<Map<string, FetchAndCacheResult>>,
 ): Promise<WebSearchCallIR> => {
@@ -1116,20 +1075,19 @@ const runBackendOpenPage = async (
   // open_page action would be meaningless.
   if (op.error !== undefined) {
     const title = op.errorKind === 'missing-arg' ? 'Missing argument' : 'Invalid ref_id';
-    return searchIr(id, op.url, [errorSnippet(title, op.error)]);
+    return searchIr(op.url, [errorSnippet(title, op.error)]);
   }
 
   // Batch fetch pre-populates entries for every URL the parser produced
   // (blocked URLs get an explicit failure entry), so the lookup is total.
   const fetched = (await batchPromise).get(url)!;
   if (!fetched.ok) {
-    return openPageIr(id, url, [errorSnippet('Open page error', fetched.output)]);
+    return openPageIr(url, [errorSnippet('Open page error', fetched.output)]);
   }
-  return openPageSuccessIr(id, url, fetched.cached);
+  return openPageSuccessIr(url, fetched.cached);
 };
 
 const runBackendFind = async (
-  id: string,
   op: Extract<ShimLogicalOperation, { kind: 'find' }>,
   batchPromise: Promise<Map<string, FetchAndCacheResult>>,
 ): Promise<WebSearchCallIR> => {
@@ -1138,7 +1096,7 @@ const runBackendFind = async (
 
   if (op.error !== undefined) {
     const title = op.errorKind === 'missing-arg' ? 'Missing argument' : 'Invalid ref_id';
-    return findInPageIr(id, url, pattern, [errorSnippet(title, op.error)]);
+    return findInPageIr(url, pattern, [errorSnippet(title, op.error)]);
   }
 
   // Pre-fetch failures keep the `find_in_page` action carrying the
@@ -1146,7 +1104,7 @@ const runBackendFind = async (
   // change `action.type` mid-result.
   const fetched = (await batchPromise).get(url)!;
   if (!fetched.ok) {
-    return findInPageIr(id, url, pattern, [errorSnippet('Find error', fetched.output)]);
+    return findInPageIr(url, pattern, [errorSnippet('Find error', fetched.output)]);
   }
 
   // Mirror gpt-oss `find` defaults.
@@ -1157,7 +1115,7 @@ const runBackendFind = async (
   // Native find_in_page returns one result whose snippet either lists
   // the matches or says "No matching ...".
   const title = matches.length === 0 ? 'No match' : 'Matches';
-  return findInPageIr(id, url, pattern, [{
+  return findInPageIr(url, pattern, [{
     type: 'text_result',
     url,
     title,
@@ -1166,71 +1124,35 @@ const runBackendFind = async (
 };
 
 const executeOperation = (
-  id: string,
   op: ShimLogicalOperation,
   state: ShimState,
   batchPromise: Promise<Map<string, FetchAndCacheResult>>,
 ): Promise<WebSearchCallIR> => {
   switch (op.kind) {
   case 'search':
-    return runBackendSearch(id, op, state);
+    return runBackendSearch(op, state);
   case 'open':
-    return runBackendOpenPage(id, op, batchPromise);
+    return runBackendOpenPage(op, batchPromise);
   case 'find':
-    return runBackendFind(id, op, batchPromise);
+    return runBackendFind(op, batchPromise);
   case 'unsupported':
     return Promise.resolve(schemaErrorIr(
-      id,
       `unsupported action: ${op.subProperty}[${op.arrayIndex}]`,
       'Unsupported action',
-      unsupportedSubPropertyText(op.subProperty),
+      `Error: the \`${op.subProperty}\` sub-property is not supported by this gateway. Only \`search_query\`, \`open\`, and \`find\` are available.`,
     ));
   case 'wrong-type':
     return Promise.resolve(schemaErrorIr(
-      id,
       `wrong-type sub-property: ${op.subProperty}`,
       'Malformed sub-property',
-      wrongTypeSubPropertyText(op.subProperty, op.actualType),
+      `Error: the \`${op.subProperty}\` sub-property must be an array of objects; got ${op.actualType}.`,
     ));
   }
 };
 
-// Per-umbrella bypass: each parsed op resolves to a snippet IR
-// carrying `snippetText` in the action shape closest to what the
-// model asked for. Used for both the iteration-cap exhaustion and
-// the `max_tool_calls` budget exhaustion.
-//   https://github.com/tinfoilsh/confidential-model-router/blob/4ad5a7229fdd37f5d270b56a92dfb23a3fb2b562/toolruntime/chat_stream.go#L1014-L1019
-const irForBypassedOp = (id: string, op: ShimLogicalOperation, snippetText: string): WebSearchCallIR => {
-  switch (op.kind) {
-  case 'search':
-    return searchIr(id, op.query, [errorSnippet('Search error', snippetText)]);
-  case 'open':
-    if (op.error !== undefined) {
-      return searchIr(id, op.url, [errorSnippet('Open page error', snippetText)]);
-    }
-    return openPageIr(id, op.url, [errorSnippet('Open page error', snippetText)]);
-  case 'find':
-    return findInPageIr(id, op.url, op.pattern, [errorSnippet('Find error', snippetText)]);
-  case 'unsupported':
-    return schemaErrorIr(
-      id,
-      `unsupported action: ${op.subProperty}[${op.arrayIndex}]`,
-      'Unsupported action',
-      snippetText,
-    );
-  case 'wrong-type':
-    return schemaErrorIr(
-      id,
-      `wrong-type sub-property: ${op.subProperty}`,
-      'Malformed sub-property',
-      snippetText,
-    );
-  }
-};
-
-// Collect the open/find URL set for THIS umbrella and kick off one
+// Collect the open/find URL set for THIS shim call and kick off one
 // provider.fetchPage covering all of them. `fetchAndCacheManyPages`
-// installs per-URL inflight slots synchronously so later umbrellas in
+// installs per-URL inflight slots synchronously so later shim calls in
 // the same turn dedup against this batch.
 //
 // Blocked URLs (failing `isUrlAllowed`) are filtered OUT of the batch
@@ -1241,10 +1163,8 @@ const irForBypassedOp = (id: string, op: ShimLogicalOperation, snippetText: stri
 // That way the per-op handlers (`runBackendOpenPage` /
 // `runBackendFind`) can trust the gate's verdict by reading the map
 // directly instead of re-running `isUrlAllowed` themselves.
-const BLOCKED_BY_FILTER_OUTPUT = 'Blocked by tool filters';
-
-const startBatchFetchForUmbrella = async (
-  parsed: ParsedUmbrella,
+const startBatchFetchForShimCall = async (
+  parsed: ParsedShimCall,
   state: ShimState,
 ): Promise<Map<string, FetchAndCacheResult>> => {
   if (parsed.kind !== 'ops') return new Map();
@@ -1266,44 +1186,61 @@ const startBatchFetchForUmbrella = async (
   }
   const fetched = await fetchAndCacheManyPages(batchUrls, state);
   for (const url of blockedUrls) {
-    fetched.set(url, { ok: false, output: openFailedText(url, BLOCKED_BY_FILTER_OUTPUT) });
+    fetched.set(url, { ok: false, output: openFailedText(url, 'Blocked by tool filters') });
   }
   return fetched;
 };
 
-const planUmbrellaSlots = (
-  parsed: ParsedUmbrella,
+const planShimSlots = (
+  parsed: ParsedShimCall,
+  toolName: string,
   state: ShimState,
   loopState: ServerToolLoopState,
-): { id: string; promise: Promise<WebSearchCallIR> }[] => {
+): { id: string; promise: Promise<WebSearchCallIR> } => {
   if (loopState.iterationCount > ITERATION_CAP) {
-    if (parsed.kind === 'malformed' || parsed.ops.length === 0) {
-      const id = synthesizeWebSearchCallId();
-      return [{
-        id,
-        promise: Promise.resolve(schemaErrorIr(id, 'malformed umbrella arguments', 'Tool call budget exhausted', iterationCapText)),
-      }];
-    }
-    return parsed.ops.map(op => {
-      const id = synthesizeWebSearchCallId();
-      return { id, promise: Promise.resolve(irForBypassedOp(id, op, iterationCapText)) };
-    });
+    return {
+      id: synthesizeWebSearchCallId(),
+      promise: Promise.resolve(schemaErrorIr(
+        'tool budget exhausted',
+        'Tool call budget exhausted',
+        `Web search iteration limit (${ITERATION_CAP}) reached. Further web_search calls in this response will return this same error. Summarize what you have already learned, and continue the task using other available tools (shell, file inspection, prior knowledge) or directly answer based on what you've gathered.`,
+      )),
+    };
   }
 
   if (parsed.kind === 'malformed' || parsed.ops.length === 0) {
-    const id = synthesizeWebSearchCallId();
-    return [{
-      id,
-      promise: Promise.resolve(schemaErrorIr(id, 'malformed umbrella arguments', 'Malformed arguments', emptyUmbrellaArgsText)),
-    }];
+    return {
+      id: synthesizeWebSearchCallId(),
+      promise: Promise.resolve(schemaErrorIr(
+        'malformed shim call arguments',
+        'Malformed arguments',
+        'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
+      )),
+    };
   }
 
-  const batchPromise = startBatchFetchForUmbrella(parsed, state);
+  // One private payload ⇄ one wsc ⇄ one op. A shim call that bundles
+  // more than one logical op (multi-kind mix, or multi-instance of any
+  // sub-property array) cannot be reduced to a single wsc action shape,
+  // so surface it as an ambiguous error and let the model split the
+  // request into independent calls.
+  if (parsed.ops.length > 1) {
+    return {
+      id: synthesizeWebSearchCallId(),
+      promise: Promise.resolve(schemaErrorIr(
+        'ambiguous shim call',
+        'Ambiguous tool call',
+        `Error: ambiguous \`${toolName}\` tool call — each function_call may carry only one operation. `
+        + 'Split into multiple independent calls (one search_query[] entry, OR one open[] entry, OR one find[] entry per call).',
+      )),
+    };
+  }
 
-  return parsed.ops.map(op => {
-    const id = synthesizeWebSearchCallId();
-    return { id, promise: executeOperation(id, op, state, batchPromise) };
-  });
+  const batchPromise = startBatchFetchForShimCall(parsed, state);
+  return {
+    id: synthesizeWebSearchCallId(),
+    promise: executeOperation(parsed.ops[0], state, batchPromise),
+  };
 };
 
 export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
@@ -1325,17 +1262,18 @@ export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
     };
   }
 
-  const rewritten = prepared.prepared;
+  const { filters } = prepared;
   const includeArray = Array.isArray(ctx.payload.include) ? ctx.payload.include : [];
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const state: ShimState = {
-    filters: rewritten.filters,
+    filters,
     pageCache: new Map(),
     getProvider: () => {
       configuredProvider ??= loadSearchConfig().then(cfg => resolveConfiguredWebSearchProvider(cfg));
       return configuredProvider;
     },
     apiKeyId: request.apiKeyId,
+    includeSearchResults: includeArray.includes('web_search_call.results'),
     includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     ...(request.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: request.downstreamAbortSignal } : {}),
   };
@@ -1343,29 +1281,52 @@ export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName),
+    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, request.statefulResponsesContext.privatePayload),
     ...(hasHostedWebSearch
       ? {
           hosted: {
             isHostedTool: isHostedWebSearchTool,
-            buildFunctionTool: toolName => buildUmbrellaTool(toolName, rewritten.filters.userLocation),
+            buildFunctionTool: toolName => buildShimFunctionTool(toolName, filters.userLocation),
             dispatcher: ({ intercepted, loopState }) => {
-              const planned = planUmbrellaSlots(parseUmbrellaOperations(intercepted.arguments), state, loopState);
-              return planned.map(({ id, promise }) => serverToolResultSlot({
-                id,
+              const slot = planShimSlots(parseShimOperations(intercepted.arguments), intercepted.name, state, loopState);
+              const functionCallItem: ResponsesFunctionToolCallItem = {
+                type: 'function_call',
+                call_id: intercepted.callId,
+                name: intercepted.name,
+                // Serialize the post-jsonrepair parsed object rather than
+                // re-using the upstream's raw `arguments` string (which
+                // might be malformed); `{}` is the safe fallback when
+                // jsonrepair couldn't even produce an object.
+                arguments: JSON.stringify(intercepted.arguments ?? {}),
+                status: 'completed',
+              };
+              return [serverToolResultSlot({
+                id: slot.id,
                 startItem: { type: 'web_search_call', status: 'in_progress' },
                 startEvents: [
                   { type: 'response.web_search_call.in_progress' },
                   { type: 'response.web_search_call.searching' },
                 ],
-                result: promise.then(ir => {
-                  const item: ServerToolOutputItem & Omit<ResponsesOutputWebSearchCall, 'id'> = { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results };
+                result: slot.promise.then(ir => {
+                  // `results` is gated on the client's `include`
+                  // opt-in to match native Responses' default wire
+                  // shape; the IR keeps them either way for the
+                  // private-payload round-trip.
+                  const item: ServerToolOutputItem & Omit<ResponsesOutputWebSearchCall, 'id'> = state.includeSearchResults
+                    ? { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results }
+                    : { type: 'web_search_call', status: 'completed', action: ir.action };
+                  const privatePayload: WebSearchCallPrivatePayload = {
+                    v: 1,
+                    functionCallItem,
+                    ir,
+                  };
                   return {
                     item,
                     endEvents: [{ type: 'response.web_search_call.completed' }],
+                    privatePayload,
                   };
                 }),
-              }));
+              })];
             },
           },
         }

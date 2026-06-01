@@ -19,8 +19,8 @@ export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
  *
  * - `privatePayload`: wire item id → shim-defined opaque blob, round-tripped
  *   verbatim by persistence as `payload.private`. The shape is shim-specific.
- * - `newSyntheticIds`: gateway-minted item ids no upstream issued (e.g. a
- *   server-tool shim's `web_search_call`), persisted as non_affinity.
+ * - `newSyntheticIds`: gateway-minted item ids no upstream issued, persisted
+ *   as non_affinity.
  */
 export interface StatefulResponsesContext {
   readonly privatePayload: Map<string, unknown>;

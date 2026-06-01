@@ -296,19 +296,6 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
   return { backend };
 };
 
-// Read every search-usage row recorded into the in-memory repo. Tests
-// that previously asserted on a captured `usageRecorded` array now
-// drain the repo aggregator.
-const drainUsageRows = async (): Promise<Array<{ provider: string; keyId: string; action: string; requests: number }>> => {
-  const repo = (await import('../../../../../repo/index.ts')).getRepo();
-  return (await repo.searchUsage.listAll()).map(r => ({
-    provider: r.provider,
-    keyId: r.keyId,
-    action: r.action,
-    requests: r.requests,
-  }));
-};
-
 interface InvocationOverrides {
   targetApi?: ResponsesInvocation['targetApi'];
   enabledFlags?: ResponsesInvocation['enabledFlags'];
@@ -331,13 +318,18 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
     model: 'claude-x',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     tools: [{ type: 'web_search' }],
+    // Opt the wire item into `results` so most tests can inspect them
+    // directly; the new include-gating tests explicitly omit this and
+    // assert the wire-item shape without `results`.
+    include: ['web_search_call.results'],
     ...overrides.payload,
   } as ResponsesPayload,
 });
 
 const makeRequest = (apiKeyId: string | undefined = 'k1'): RequestContext => ({
   requestStartedAt: 0,
-  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+  runtimeLocation: 'test',
   clientStream: true,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -517,7 +509,7 @@ test('shim no-ops when no hosted web_search tool is present', async () => {
 
 const hostedAliasTypes = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
 for (const type of hostedAliasTypes) {
-  test(`shim rewrites hosted ${type} alias into the umbrella function tool`, async () => {
+  test(`shim rewrites hosted ${type} alias into the shim function tool`, async () => {
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const inv = makeInvocation({
@@ -535,7 +527,7 @@ for (const type of hostedAliasTypes) {
 // ── tool_choice rewrite × 4 hosted-type values ─────────────────────────
 
 for (const type of hostedAliasTypes) {
-  test(`shim rewrites tool_choice {type: ${type}} to forced umbrella function`, async () => {
+  test(`shim rewrites tool_choice {type: ${type}} to forced shim's function tool`, async () => {
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const inv = makeInvocation({
@@ -629,8 +621,10 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(tail[0].type, 'function_call');
   assertEquals(tail[1].type, 'function_call_output');
   assert(tail[0].type === 'function_call');
-  assertFalse(tail[0].call_id === 'call_1');
-  assert(tail[0].call_id.startsWith('cc_from_ws_gw_'));
+  // Shim replay preserves the upstream's original shim call
+  // verbatim (call_id, name, jsonrepair-canonical args) so the upstream
+  // model on turn 2 sees its prior assistant turn unchanged.
+  assertEquals(tail[0].call_id, 'call_1');
   const events = eventPayloads(frames);
   const wsCallTypes = events.filter(e => e.type.startsWith('response.web_search_call'));
   assertEquals(wsCallTypes.length, 3);
@@ -663,33 +657,6 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
     assertFalse(request.statefulResponsesContext.newSyntheticIds.has(e.item.id!));
   }
-});
-
-// ── Multi-action umbrella call = 1 iteration ──────────────────────────
-
-test('shim dispatches multiple logical operations from one umbrella call (one iteration)', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    search_query: [{ q: 'q1' }, { q: 'q2' }, { q: 'q3' }],
-  });
-  const parallelTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(script.callCount(), 2);
-  // Three backend searches from ONE upstream call.
-  assertEquals(backend.calls.length, 3);
-  assertEquals(backend.calls.every(c => c.kind === 'search'), true);
 });
 
 // ── find_in_page cache hit ────────────────────────────────────────────
@@ -746,7 +713,7 @@ test('find_in_page triggers implicit fetchPage when URL not cached', async () =>
 
 // ── Iteration cap exhausted ───────────────────────────────────────────
 
-test('iteration cap returns iterationCapText without backend call on cap+1', async () => {
+test('iteration cap returns the iteration-cap notice without backend call on cap+1', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -772,8 +739,9 @@ test('iteration cap returns iterationCapText without backend call on cap+1', asy
 
   // The cap-exceeded turn still synthesizes a full web_search_call
   // lifecycle: 31 done events = 30 successful + 1 capped. The capped
-  // call's done item carries its action with the original query so the
-  // downstream item is recognizable.
+  // call surfaces as the schema-error shape (action.type='search' with
+  // the cap diagnostic in queries[0]) rather than the original query —
+  // the shim call is rejected before backend dispatch.
   const wsCallDone = events.filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
@@ -781,7 +749,64 @@ test('iteration cap returns iterationCapText without backend call on cap+1', asy
   const capItem = wsCallDone[30].item as ResponsesOutputWebSearchCall;
   assert(capItem.action !== undefined);
   assertEquals(capItem.action.type, 'search');
-  assertEquals((capItem.action as { queries: string[] }).queries, ['qcap']);
+});
+
+// ── Ambiguous multi-op function_call rejection ─────────────────────────────
+
+// One private payload ⇄ one wsc ⇄ one op. Any shim call that carries more
+// than one logical operation — multi-kind mix or multi-instance same-kind
+// — is rejected before backend dispatch with a single ambiguous-error wsc
+// so the model knows to split the request into independent calls.
+
+const assertAmbiguousShimRejection = async (args: string, backend: { calls: unknown[] }): Promise<void> => {
+  const shim = withResponsesWebSearchShim;
+  const inv = makeInvocation();
+  const turn: ScriptedTurn = [
+    mkResponseCreated(),
+    mkResponseInProgress(),
+    mkFunctionCallAdded(0, 'call_ambig', SHIM_TOOL_NAME),
+    mkFunctionCallArgsDone(0, args),
+    mkFunctionCallDone(0, 'call_ambig', SHIM_TOOL_NAME, args),
+    mkResponseCompleted(),
+  ];
+  const script = scriptedRun([turn, messageTurn('done', 0)]);
+  const result = await shim(inv, makeRequest(), script.run);
+  assert(result.type === 'events');
+  const events = eventPayloads(await collectFrames(result.events));
+  assertEquals(backend.calls.length, 0);
+  const wsCallDone = events.filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    e.type === 'response.output_item.done'
+    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
+  assertEquals(wsCallDone.length, 1);
+  const item = wsCallDone[0].item as ResponsesOutputWebSearchCall;
+  assertEquals(item.action?.type, 'search');
+  assert(Array.isArray(item.results));
+  assert(item.results![0].snippet.includes('ambiguous'));
+  assert(item.results![0].snippet.includes('one operation'));
+};
+
+test('multi-kind shim call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ search_query: [{ q: 'q' }], open: [{ ref_id: 'https://example.com/' }] }),
+    backend,
+  );
+});
+
+test('multi-instance same-kind shim call (two search_query entries) is rejected as ambiguous', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ search_query: [{ q: 'q1' }, { q: 'q2' }] }),
+    backend,
+  );
+});
+
+test('multi-instance same-kind shim call (two open entries) is rejected as ambiguous', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ open: [{ ref_id: 'https://example.com/a' }, { ref_id: 'https://example.com/b' }] }),
+    backend,
+  );
 });
 
 // ── Backend search zero-results case ─────────────────────────────────
@@ -810,242 +835,6 @@ test('search returning zero results surfaces the "(no results)" template', async
     (lastOutput as { output: string }).output,
     'Search results for "empty-query":\n\n(no results)',
   );
-});
-
-// ── fetchPage per-URL failure in multi-URL batch ─────────────────────
-
-test('fetchPage with mixed success/failure across parallel opens surfaces distinct outputs', async () => {
-  // ONE umbrella call whose `open[]` array carries both URLs. The shim
-  // batches into one fetchPage({urls: [success, failure]}); the provider
-  // returns a page for one and a per-URL failure for the other.
-  const successUrl = 'https://example.com/success';
-  const failureUrl = 'https://example.com/missing';
-  const { backend } = makeStubDeps({
-    providerOverrides: {
-      async fetchPage(req): Promise<WebSearchFetchPageResult> {
-        // Tavily shape: pages + failures in one 200.
-        const out: WebSearchFetchPageResult = { type: 'ok', pages: [], failures: [] };
-        for (const url of req.urls) {
-          if (url === successUrl) {
-            out.pages.push({
-              url,
-              title: 'Hello',
-              content: 'body of success page',
-              truncated: false,
-              fullContentBytes: 20,
-            });
-          } else {
-            out.failures.push({
-              url,
-              errorCode: 'unavailable',
-              message: '404',
-            });
-          }
-        }
-        return out;
-      },
-    },
-  });
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({ open: [{ ref_id: successUrl }, { ref_id: failureUrl }] });
-  const parallelOpensTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelOpensTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // ONE fetchPage call carrying BOTH URLs.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const batched = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals(batched.urls.length, 2);
-  assert(batched.urls.includes(successUrl));
-  assert(batched.urls.includes(failureUrl));
-
-  const input = inv.payload.input as ResponsesInputItem[];
-  // One function_call_output per logical op (umbrella unrolled into N pairs
-  // by the shared `irToUpstreamPair` renderer).
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('body of success page'));
-  assert(combined.includes(`Error fetching URL \`${failureUrl}\``));
-  assert(combined.includes('404'));
-});
-
-// ── Parallel opens batched into one fetchPage call ──────────────────
-
-test('two parallel open[] entries issue ONE fetchPage with both URLs', async () => {
-  // ≥2 `open[]` entries with distinct URLs (no cache hit, no in-flight)
-  // must batch into one provider.fetchPage call (one usage row).
-  const url1 = 'https://example.com/a';
-  const url2 = 'https://example.com/b';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const parallelOpensArgs = JSON.stringify({ open: [{ ref_id: url1 }, { ref_id: url2 }] });
-  const parallelOpensTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, parallelOpensArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, parallelOpensArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelOpensTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals([...req.urls].sort(), [url1, url2]);
-  // ONE usage record for the single batched provider call.
-  const usageRows = await drainUsageRows();
-  assertEquals(usageRows.filter(u => u.action === 'fetch_page').length, 1);
-
-  const input = inv.payload.input as ResponsesInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes(`body of ${url1}`));
-  assert(combined.includes(`body of ${url2}`));
-});
-
-// ── Mixed cache-hit + fresh open in one turn ─────────────────────────
-
-test('mixed cache-hit + fresh open in one turn issues ONE fetchPage with only the fresh URL', async () => {
-  const cachedUrl = 'https://example.com/cached';
-  const freshUrl = 'https://example.com/fresh';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  // Turn 1: warm pageCache with cachedUrl.
-  // Turn 2: open both URLs; only freshUrl should hit fetchPage.
-  const turn1 = openCallTurn(0, 'call_warm', cachedUrl);
-  const turn2Args = JSON.stringify({ open: [{ ref_id: cachedUrl }, { ref_id: freshUrl }] });
-  const turn2: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, turn2Args),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, turn2Args),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn1, turn2, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  // Turn 1: cachedUrl. Turn 2: freshUrl only (cachedUrl served from cache). Total = 2.
-  assertEquals(fetchCalls.length, 2);
-  const turn2Req = fetchCalls[1].request as WebSearchFetchPageRequest;
-  assertEquals(turn2Req.urls, [freshUrl]);
-});
-
-// ── find joins concurrent open's in-flight batch ─────────────────────
-
-test('parallel open + find on the same URL share ONE fetchPage call', async () => {
-  // open kicks off a fetch; find joins the in-flight slot installed by
-  // the batch instead of starting a second fetchPage.
-  const url = 'https://example.com/shared';
-  const { backend } = makeStubDeps({
-    providerOverrides: {
-      async fetchPage(req) {
-        return {
-          type: 'ok',
-          pages: req.urls.map(u => ({
-            url: u,
-            title: 'p',
-            content: 'this body has the needle in it',
-            truncated: false,
-            fullContentBytes: 30,
-          })),
-          failures: [],
-        };
-      },
-    },
-  });
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const parallelArgs = JSON.stringify({
-    open: [{ ref_id: url }],
-    find: [{ ref_id: url, pattern: 'needle' }],
-  });
-  const parallelTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, parallelArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, parallelArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // ONE fetchPage call serves both ops — the pre-batch bundles every
-  // open AND find URL from the umbrella call into one provider call.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-
-  const input = inv.payload.input as ResponsesInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  // One pair per logical op: the open and the find each get their own.
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('this body has the needle in it'));
-  assert(combined.includes('[needle]'));
-});
-
-// ── Mixed search + open + open is one fetchPage + one search ────────
-
-test('mixed search + two opens dispatches one search and ONE batched fetchPage', async () => {
-  const url1 = 'https://example.com/x';
-  const url2 = 'https://example.com/y';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const mixedArgs = JSON.stringify({
-    search_query: [{ q: 'q' }],
-    open: [{ ref_id: url1 }, { ref_id: url2 }],
-  });
-  const mixedTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, mixedArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, mixedArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([mixedTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(backend.calls.filter(c => c.kind === 'search').length, 1);
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals([...req.urls].sort(), [url1, url2]);
 });
 
 // ── Backend search failure ────────────────────────────────────────────
@@ -1077,7 +866,7 @@ test('backend search failure surfaces "Search failed: <message>"', async () => {
 
 // ── Backend fetchPage whole-batch failure ─────────────────────────────
 
-test('fetchPage whole-batch failure surfaces openFailedText', async () => {
+test('fetchPage whole-batch failure surfaces the open-page error text', async () => {
   makeStubDeps({
     providerOverrides: {
       async fetchPage() {
@@ -1497,8 +1286,8 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
 });
 
 for (const field of ['external_web_access', 'search_content_types', 'return_token_budget'] as const) {
-  test(`explicitly-set hosted ${field} is silently stripped (the umbrella tool the shim forwards never carries it)`, async () => {
-    // The shim replaces the hosted entry with its umbrella function
+  test(`explicitly-set hosted ${field} is silently stripped (the shim's function tool the shim forwards never carries it)`, async () => {
+    // The shim replaces the hosted entry with its shim's function tool
     // tool; any hosted-only field — including ones the shim has no
     // opinion on — drops out with the entry. Mirrors native: silently
     // stripped. Tests the request completes normally instead of being
@@ -2172,7 +1961,7 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   assertEquals(completed.response.usage?.output_tokens_details, undefined);
 });
 
-test('next-turn function_call echo always carries the canonical re-stringified umbrella args (single shape unified with client-roundtrip)', async () => {
+test('next-turn function_call echo always carries the canonical re-stringified shim call args (single shape unified with client-roundtrip)', async () => {
   // The dispatcher always overwrites the intercepted call's
   // arguments with the canonical re-stringified form, regardless of
   // whether the upstream string was already valid JSON. This
@@ -2282,7 +2071,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   assertEquals(failed.response.error?.message, 'mid-stream upstream blew up');
   // Upstream-supplied code carries through verbatim.
   assertEquals(failed.response.error?.code, 'server_error');
-  // No synthetic `type` field — the OpenAPI ResponseError schema
+  // No synthetic `type` field — the OpenAPI ResponsesError schema
   // defines only `{code, message}` and the bare `error` upstream frame
   // doesn't carry a `type` to forward.
   assertFalse('type' in (failed.response.error as object));
@@ -2388,7 +2177,7 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('connection reset by peer'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
-  // No synthetic `type` per the spec ResponseError schema (only
+  // No synthetic `type` per the spec ResponsesError schema (only
   // `{code, message}`).
   assertFalse('type' in (failed.response.error as object));
 });
@@ -3162,10 +2951,10 @@ test('without include: ["web_search_call.action.sources"], action.sources is abs
   assertEquals(action.sources, undefined);
 });
 
-test('web_search_call results field is always populated (always-include divergence from native)', async () => {
+test('web_search_call results field is populated on the wire when the client opted in via include: ["web_search_call.results"]', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
+  const inv = makeInvocation(); // Default already opts in.
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),
@@ -3181,13 +2970,14 @@ test('web_search_call results field is always populated (always-include divergen
   assert(item.results!.length > 0);
 });
 
-test('web_search_call results stays populated even when client omits include: ["web_search_call.results"]', async () => {
-  // Native makes results opt-in via the include field; the shim ignores
-  // that opt-in because results must travel through both internal-loop
-  // and client-roundtrip directions (see server-tools/web-search.ts file header).
+test('web_search_call results field is omitted from the wire when the client did not include it (matches native default)', async () => {
+  // When the client omits `include: ["web_search_call.results"]`, the
+  // wire item carries only id/action — same as native. The IR (and
+  // therefore the persisted `payload.private`) still holds the full
+  // results so a later-turn echo can be hydrated.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
+  const inv = makeInvocation({ payload: { include: [] } });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),
@@ -3199,15 +2989,14 @@ test('web_search_call results stays populated even when client omits include: ["
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
   const item = wsCallDone.item as ResponsesOutputWebSearchCall;
-  assert(Array.isArray(item.results));
-  assert(item.results!.length > 0);
+  assertEquals(item.results, undefined);
 });
 
-// ── Mixed-tool turn (umbrella + client tool present) ─────────────────
+// ── Mixed-tool turn (shim call + client tool present) ─────────────────
 
-test('mixed-tool: umbrella + client function_call exits to client after one turn, with both sets of items downstream', async () => {
+test('mixed-tool: shim call + client function_call exits to client after one turn, with both sets of items downstream', async () => {
   // GPT-5.x emits both kinds of tool calls in one turn. The shim executes
-  // the umbrella's searches server-side (so the client sees completed
+  // the shim's searches server-side (so the client sees completed
   // web_search_call lifecycles) and lets the client round-trip its own
   // function_call. No internal rerun, no rejection injection.
   const { backend } = makeStubDeps();
@@ -3244,7 +3033,7 @@ test('mixed-tool: umbrella + client function_call exits to client after one turn
   assertEquals(wsLifecycleCount, 3);
 });
 
-test('mixed-tool: umbrella + custom_tool_call exits to client; custom_tool_call frames flush downstream', async () => {
+test('mixed-tool: shim call + custom_tool_call exits to client; custom_tool_call frames flush downstream', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -3305,13 +3094,18 @@ test('client-only tool turn (no shim call): pass-through function_call frames fl
 
 // ── Pass-through of replayed web_search_call from input ────────────────
 
-// ── Input preprocessor: web_search_call items → umbrella pair ─────────
+// ── Input preprocessor: web_search_call items → shim call pair ─────────
 
-test('input preprocessor: each web_search_call item becomes one umbrella function_call + function_call_output pair', async () => {
-  // Upstream knows the umbrella only as a function tool; a hosted
+test('input preprocessor: each web_search_call item becomes one shim call + function_call_output pair', async () => {
+  // Upstream knows the shim call only as a function tool; a hosted
   // `web_search_call` item type in its input would be unrecognized. We
   // translate each echoed item into a function_call + function_call_output
-  // pair that the upstream model can reason over.
+  // pair that the upstream model can reason over. With no per-item
+  // private payload (this test runs raw through the shim), the
+  // function_call mirrors the wire action shape and the
+  // function_call_output is the placeholder — the shim deliberately
+  // ignores the wire `results` field because gateway-side state is the
+  // only source of truth.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const replayedSearch: ResponsesInputWebSearchCall = {
@@ -3351,16 +3145,18 @@ test('input preprocessor: each web_search_call item becomes one umbrella functio
   ]);
   // No web_search_call items remain after preprocessing.
   assertFalse(input.some(i => i.type === 'web_search_call'));
-  // The pair from the search reflects its action; the body carries the snippet.
+  // The pair from the search reflects its action.
   const searchFc = input[1] as { name: string; arguments: string };
   assertEquals(searchFc.name, SHIM_TOOL_NAME);
   assert(searchFc.arguments.includes('hello world'));
+  // No payload → output is the not-preserved placeholder, not the
+  // wire snippet. The model is told to re-search if it needs the data.
   const searchOut = input[2] as { output: string };
-  assert(searchOut.output.includes('Search results for "hello world"'));
-  assert(searchOut.output.includes('snippet body'));
+  assert(searchOut.output.includes('not preserved'));
+  assertFalse(searchOut.output.includes('snippet body'));
   const openOut = input[5] as { output: string };
-  // open_page IR's output text is the page body (its sole result snippet) verbatim.
-  assertEquals(openOut.output, 'page body');
+  assert(openOut.output.includes('not preserved'));
+  assertFalse(openOut.output.includes('page body'));
 });
 
 test('input preprocessor: replay-only activation leaves hosted tool_choice unchanged when no hosted tool is declared', async () => {
@@ -3396,10 +3192,10 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   // item entirely silently shortens conversation history, which can
   // mislead the model (e.g. its reasoning about "your last 3 tool
   // calls" no longer matches reality). Replace with a placeholder
-  // umbrella function_call (empty args, no logical ops) + a
+  // shim call (empty args, no logical ops) + a
   // function_call_output telling the model the prior contents
-  // weren't preserved. Same idea as the `resultsStripped` path for
-  // partial echoes.
+  // weren't preserved. Same idea as the no-payload-with-action path
+  // for partial echoes.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -3463,11 +3259,11 @@ test('input preprocessor: web_search_call with empty id has its id synthesized a
   assertEquals(input[2].type, 'function_call_output');
 });
 
-test('input preprocessor: web_search_call without results emits the stripped-notice function_call_output (not a "(no results)" zero-hit message)', async () => {
+test('input preprocessor: web_search_call without results emits the not-preserved placeholder function_call_output (not a "(no results)" zero-hit message)', async () => {
   // Clients like codex CLI 0.133 drop the results field when persisting
-  // sessions. We backfill an empty array AND set resultsStripped, so the
-  // model sees an explicit "not preserved" notice instead of being misled
-  // into thinking the prior search returned zero hits.
+  // sessions. We emit an explicit "not preserved" notice instead of
+  // synthesizing a phantom zero-hit response that would mislead the
+  // model into thinking the prior search returned nothing.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -3491,7 +3287,7 @@ test('input preprocessor: web_search_call without results emits the stripped-not
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
-// ── Umbrella tool name resolution / collision fallback ────────────────
+// ── Shim tool name resolution / collision fallback ────────────────
 
 test('client declaring web_search + hosted web_search: shim falls back to web_search_2', async () => {
   makeStubDeps();
@@ -3789,7 +3585,7 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
 
 test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-enum normalization)', async () => {
   // The shim no longer normalizes upstream error codes to the
-  // OpenAPI `ResponseErrorCode` enum. A 429 with no OpenAI-shaped
+  // OpenAPI `ResponsesErrorCode` enum. A 429 with no OpenAI-shaped
   // body falls back to `upstream_429` — the HTTP status is the most
   // honest signal, and downstream clients pattern-matching on
   // upstream's actual code see it directly.
@@ -4073,7 +3869,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
   assertEquals(seenToolChoices[1], 'auto');
 });
 
-test('tool_choice {type:"function", name:<umbrella>} demotes to "auto" after first intercepted turn', async () => {
+test('tool_choice {type:"function", name:<shim tool name>} demotes to "auto" after first intercepted turn', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -4396,154 +4192,6 @@ test('two consecutive tool-call turns each with a thinking-out-loud message pres
   assertEquals(wsCallAdded.length, 2);
 });
 
-// ── Umbrella-specific behaviors ──────────────────────────────────────────
-
-test('umbrella web_search with batched multi-action args dispatches all logical ops in one iteration', async () => {
-  // ONE upstream function_call populates search_query, open, and find
-  // simultaneously — one lifecycle per op + ONE combined
-  // function_call_output.
-  const url1 = 'https://example.com/a';
-  const url2 = 'https://example.com/b';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    search_query: [{ q: 'first' }, { q: 'second' }],
-    open: [{ ref_id: url1 }],
-    find: [{ ref_id: url2, pattern: 'needle' }],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  const result = await shim(inv, makeRequest(), script.run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-
-  // Two searches + one fetchPage (batching url1 + url2).
-  assertEquals(backend.calls.filter(c => c.kind === 'search').length, 2);
-  assertEquals(backend.calls.filter(c => c.kind === 'fetchPage').length, 1);
-  // Cap budget consumed twice (once per turn), not 4x for the 4 ops.
-  assertEquals(script.callCount(), 2);
-
-  // Four lifecycles (one per logical op).
-  const wsCallAdded = events.filter(e =>
-    e.type === 'response.output_item.added'
-    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
-  assertEquals(wsCallAdded.length, 4);
-
-  // One function_call_output per logical op, in source order.
-  const input = inv.payload.input as ResponsesInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 4);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  // Each section is the per-action formatted body (search results / page
-  // body / find matches) joined in source order. The exact text formats
-  // are unit-tested in ir_test.ts and format-search-results_test.ts.
-  assert(combined.includes('Search results for "first"'));
-  assert(combined.includes('Search results for "second"'));
-  assert(combined.includes(`body of ${url1}`));
-  assert(combined.includes('needle'));
-});
-
-test('non-URL ref_id produces error sentinel; supported call in same batch still works', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  // One umbrella call mixing a valid URL with a bogus opaque ref_id. The
-  // bogus one produces an error sentinel without hitting the backend.
-  const argsJson = JSON.stringify({
-    open: [
-      { ref_id: 'https://example.com/good' },
-      { ref_id: 'opaque-prior-id-not-a-url' },
-    ],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // Only the valid URL hit fetchPage; the bogus ref short-circuited.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals(req.urls, ['https://example.com/good']);
-
-  const input = inv.payload.input as ResponsesInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  // One pair per op: the valid open and the bogus ref each get their own.
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('body of https://example.com/good'));
-  assert(combined.includes('ref_id must be a fully-qualified URL'));
-  assert(combined.includes('opaque-prior-id-not-a-url'));
-});
-
-test('umbrella call with only unsupported sub-properties surfaces per-entry errors as web_search_call IR items', async () => {
-  // Each unsupported entry becomes one web_search_call IR with
-  // action.type='search' (neutral carrier) + a snippet explaining what
-  // sub-property the gateway does not support. The model sees them via
-  // both the downstream wire items (always-include results) and the
-  // upstream function_call_output text.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    click: [{ ref_id: 'https://x', id: 1 }],
-    screenshot: [{ ref_id: 'https://x', pageno: 1 }],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_bogus', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_bogus', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  const { frames } = await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(backend.calls.length, 0);
-  // Two web_search_call lifecycle items downstream (one per unsupported entry).
-  const events = eventPayloads(frames);
-  const wsAdded = events.filter(e =>
-    e.type === 'response.output_item.added'
-    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
-  assertEquals(wsAdded.length, 2);
-
-  const input = inv.payload.input as ResponsesInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  assert(outputs[0].output.includes('`click` sub-property is not supported'));
-  assert(outputs[1].output.includes('`screenshot` sub-property is not supported'));
-});
-
 test('lifecycle start frames yield BEFORE backend resolves, giving searching real wall-clock duration', async () => {
   // Gate provider.search() so the test can observe ordering: lifecycle
   // start frames must be drainable WHILE the backend is pending. If the
@@ -4611,13 +4259,13 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
   assert(types.includes('response.output_item.done'));
 });
 
-test('terminal response.completed.output is in output_index order, not completion order (umbrella backend resolves AFTER a later live item)', async () => {
-  // The umbrella reserves downstream index 0 at output_item.added time;
+test('terminal response.completed.output is in output_index order, not completion order (shim backend resolves AFTER a later live item)', async () => {
+  // The shim call reserves downstream index 0 at output_item.added time;
   // the mixed-tool client function_call gets downstream index 1.
-  // We gate the backend so the umbrella's output_item.done fires AFTER
+  // We gate the backend so the shim's output_item.done fires AFTER
   // the client function_call has already finalized into accumulatedOutput.
   // The sparse-index materialization at terminal time must still place
-  // the umbrella at output[0] and the client tool at output[1].
+  // the shim call at output[0] and the client tool at output[1].
   let releaseSearch: (() => void) | null = null;
   const searchGate = new Promise<void>(resolve => { releaseSearch = resolve; });
   makeStubDeps({
@@ -4638,7 +4286,7 @@ test('terminal response.completed.output is in output_index order, not completio
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
   const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-  // Umbrella at upstream index 0, client tool at upstream index 1. The
+  // Shim call at upstream index 0, client tool at upstream index 1. The
   // upstream's response.completed arrives BEFORE the gated backend
   // resolves; the shim will release end frames lazily as the consumer
   // pulls (so we must release the gate to finish the stream).
@@ -4656,25 +4304,25 @@ test('terminal response.completed.output is in output_index order, not completio
   const script = scriptedRun([mixedTurn]);
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
-  // Release the gate so the umbrella end frames + terminal can resolve.
+  // Release the gate so the shim call end frames + terminal can resolve.
   releaseSearch!();
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.completed');
   const output = (terminal as { response: { output: Array<{ type: string }> } }).response.output;
-  // Two items: umbrella web_search_call at slot 0, client function_call at slot 1.
+  // Two items: shim web_search_call at slot 0, client function_call at slot 1.
   // Reserved-slot ordering wins even though the client tool finalized
-  // first (no await on the .done path) and the umbrella finalized last.
+  // first (no await on the .done path) and the shim call finalized last.
   assertEquals(output.map(o => o.type), ['web_search_call', 'function_call']);
 });
 
 // ── End-to-end protocol-violation paths ──────────────────────────────
 
-test('umbrella function_call without output_item.done synthesizes response.failed (no backend dispatch)', async () => {
-  // Protocol violation: upstream emits the umbrella's added +
-  // arguments deltas but no `.done`. The unmatched-umbrella detector
+test('shim call without output_item.done synthesizes response.failed (no backend dispatch)', async () => {
+  // Protocol violation: upstream emits the shim's added +
+  // arguments deltas but no `.done`. The unmatched-shim-call detector
   // in consume-turn must promote the turn to `response.failed`; no
-  // backend search / fetchPage should fire (the umbrella never
+  // backend search / fetchPage should fire (the shim call never
   // dispatched).
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
@@ -4695,7 +4343,7 @@ test('umbrella function_call without output_item.done synthesizes response.faile
   const terminal = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(terminal.type, 'response.failed');
   assertEquals(terminal.response.error?.code, 'server_error');
-  assert(terminal.response.error?.message.includes('without closing umbrella function_call items'));
+  assert(terminal.response.error?.message.includes('without closing shim call items'));
   // Backend never invoked — dispatch only fires from output_item.done.
   assertEquals(backend.calls.length, 0);
 });
@@ -4761,7 +4409,8 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const inv = makeInvocation();
   const request: RequestContext = {
     requestStartedAt: 0,
-    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },    runtimeLocation: 'test',
+    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+    runtimeLocation: 'test',
     clientStream: true,
     apiKeyId: 'k1',
     downstreamAbortSignal: controller.signal,
@@ -4823,7 +4472,7 @@ interface DispatchRecord {
   intercepted: InterceptedFunctionCall;
 }
 
-// Records every umbrella call without producing IRs or start frames.
+// Records every shim call call without producing IRs or start frames.
 // Tests that care about dispatcher behavior pass a custom dispatcher.
 const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { intercepted: InterceptedFunctionCall }) => {
   records.push({ intercepted });
@@ -5053,7 +4702,7 @@ test('consumeTurn second turn swallows upstream response.created and in_progress
   assertEquals(eventTypesOf(result.downstreamFrames), []);
 });
 
-test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 events', async () => {
+test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 events', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5074,7 +4723,6 @@ test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 e
   assertEquals(result.records[0].intercepted, {
     callId: 'cc_1',
     name: SHIM_TOOL_NAME,
-    argumentsJson: '{"search_query":[{"q":"hello"}]}',
     arguments: { search_query: [{ q: 'hello' }] },
   });
   assertEquals(result.summary.dispatched.length, 1);
@@ -5090,7 +4738,7 @@ test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 e
   assertFalse(result.summary.sawClientToolCall);
 });
 
-test('consumeTurn intercepts two umbrella calls within one turn', async () => {
+test('consumeTurn intercepts two shim call calls within one turn', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5105,12 +4753,12 @@ test('consumeTurn intercepts two umbrella calls within one turn', async () => {
     true,
   );
   assertEquals(result.records.length, 2);
-  assertEquals(result.records[0].intercepted.argumentsJson, '{"open":[{"ref_id":"https://x"}]}');
-  assertEquals(result.records[1].intercepted.argumentsJson, '{"find":[{"ref_id":"https://x","pattern":"p"}]}');
+  assertEquals(result.records[0].intercepted.arguments, { open: [{ ref_id: 'https://x' }] });
+  assertEquals(result.records[1].intercepted.arguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
 });
 
-test('consumeTurn synthesizes response.failed when upstream terminates without closing an umbrella function_call', async () => {
-  // An umbrella reservation that never receives `output_item.done` is
+test('consumeTurn synthesizes response.failed when upstream terminates without closing a shim call', async () => {
+  // A shim call reservation that never receives `output_item.done` is
   // an upstream protocol violation: the model intended a tool call,
   // the gateway accepted the reservation, but the close frame never
   // arrived. Without explicit detection here the reservation is
@@ -5140,7 +4788,7 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
   assertEquals(result.summary.dispatched.length, 0);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assert((ts.response.error?.message ?? '').includes('without closing umbrella function_call items'));
+  assert((ts.response.error?.message ?? '').includes('without closing shim call items'));
   assert((ts.response.error?.message ?? '').includes('response.completed'));
 });
 
@@ -5159,7 +4807,7 @@ test('consumeTurn dispatches at function_call.done with .done args canonical ove
     state,
     true,
   );
-  assertEquals(result.records[0].intercepted.argumentsJson, '{"search_query":[{"q":"x"}]}');
+  assertEquals(result.records[0].intercepted.arguments, { search_query: [{ q: 'x' }] });
 });
 
 test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCall', async () => {
@@ -5284,7 +4932,7 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
-test('consumeTurn one umbrella call then message in same turn: FORWARDS the message live (umbrella is consumed)', async () => {
+test('consumeTurn one shim call call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5302,7 +4950,7 @@ test('consumeTurn one umbrella call then message in same turn: FORWARDS the mess
 
   assertEquals(result.records.length, 1);
   assertEquals(state.accumulatedOutput.size, 1);
-  // Recording dispatcher doesn't emit lifecycle frames so the umbrella's
+  // Recording dispatcher doesn't emit lifecycle frames so the shim's
   // reserved slot stays empty in accumulatedOutput, but outputIndex was
   // still bumped. The message therefore lands at index 1.
   assertEquals(state.accumulatedOutput.get(1)?.type, 'message');
@@ -5702,11 +5350,11 @@ test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a sy
 
 test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (no synthetic `unknown_upstream_error` literal)', async () => {
   // A bare upstream `{type: 'error'}` frame without a `code` field
-  // falls back to the OpenAPI `ResponseErrorCode` enum value
+  // falls back to the OpenAPI `ResponsesErrorCode` enum value
   // `'server_error'`. The previous `'unknown_upstream_error'`
   // synthetic literal is not in the enum and typed SDKs (openai-python
   // `Literal[...]` with strict Pydantic validation, openai-node
-  // literal union, openai-go `ResponseErrorCode string` named type)
+  // literal union, openai-go `ResponsesErrorCode string` named type)
   // reject unknown values at parse time. Reference:
   // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
   const state = createMergeState();
@@ -5723,7 +5371,7 @@ test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (
   );
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assertEquals(ts.response.error?.code, 'server_error');
-  // No synthetic `type` — the spec's ResponseError schema defines
+  // No synthetic `type` — the spec's ResponsesError schema defines
   // only `{code, message}` and the upstream `error` frame doesn't
   // carry a `type` field on the wire either.
   assertFalse('type' in (ts.response.error as object));
@@ -5780,7 +5428,7 @@ test('consumeTurn surfaces bare `error` event arriving BEFORE response.created a
   assertEquals(ts.error.message, 'upstream dropped before response shell');
   // Spec-defined fallback (no `code` on upstream's error frame). See
   // the matching test above for the in-shell path; both default to
-  // `server_error` from the `ResponseErrorCode` enum.
+  // `server_error` from the `ResponsesErrorCode` enum.
   assertEquals(ts.error.code, 'server_error');
 });
 
@@ -5819,7 +5467,7 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot precedes later items)', async () => {
+test('dispatcher start frames yield IN-LINE at function_call.done (shim call slot precedes later items)', async () => {
   const state = createMergeState();
   let dispatchOrder = 0;
   const records: DispatchRecord[] = [];
@@ -5866,9 +5514,9 @@ test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot
   assert(syntheticIdx < messageAddedIdx, `expected dispatcher start frame BEFORE later live items (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
 });
 
-test('umbrella output_index is reserved at output_item.added so interleaved items get later indices', async () => {
-  // Reserving at `.added` (rather than `.done`) keeps a non-umbrella
-  // item arriving between added and done from stealing the umbrella's
+test('shim call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
+  // Reserving at `.added` (rather than `.done`) keeps a non-shim call
+  // item arriving between added and done from stealing the shim's
   // would-be downstream index. See spec § Output-index allocation.
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
