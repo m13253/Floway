@@ -455,15 +455,6 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
   return null;
 };
 
-// Jittered exponential backoff when no upstream hint is available. 0-th
-// attempt waits ~1s, 1-st ~2s; the 25% jitter desynchronizes parallel
-// callers so a burst of orchestrator turns doesn't all re-issue at the same
-// instant. Cap delegated to the caller (RETRY_CAP_MS).
-const rateLimitBackoffMs = (attempt: number): number => {
-  const base = 1000 * 2 ** attempt;
-  return base + Math.random() * base * 0.25;
-};
-
 const errorFromBody = (body: string, status: number): { type?: string; code: string; message: string } => {
   try {
     const parsed = JSON.parse(body) as { error?: { message?: unknown; code?: unknown; type?: unknown } };
@@ -607,28 +598,16 @@ const resolveImageBinding = async (
   return { ok: true, binding };
 };
 
-const issueImageCall = (
-  binding: ProviderModelRecord,
-  prompt: string,
-  isEdit: boolean,
-  sources: readonly ImageSource[],
-  state: ShimState,
-  stream: boolean,
-): Promise<{ response: Response; modelKey: string }> =>
-  isEdit
-    ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal)
-    : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal);
-
-// Wraps `issueImageCall` with a small retry loop honoring upstream rate-limit
-// hints. Replays the same backend call up to MAX_RATE_LIMIT_RETRIES times on
-// HTTP 429, sleeping for the parsed `retry-after-ms` / `x-ms-retry-after-ms`
+// Issue one backend image call with a small retry loop honoring upstream
+// rate-limit hints. Replays the same call up to MAX_RATE_LIMIT_RETRIES times
+// on HTTP 429, sleeping for the parsed `retry-after-ms` / `x-ms-retry-after-ms`
 // / `Retry-After` header (clamped to RETRY_CAP_MS) or jittered exponential
 // backoff when the header is absent. Non-429 failures and transport throws
 // pass through to the caller untouched — those become the synthesized
 // `image_generation_call(status=failed)` and the orchestrator decides next
 // steps. The returned `response` always has a fresh, unread body so downstream
 // non-stream / stream consumers can call `.text()` / `.body` as usual.
-const issueImageCallWithRateLimitRetry = async (
+const issueImageCall = async (
   binding: ProviderModelRecord,
   prompt: string,
   isEdit: boolean,
@@ -637,11 +616,16 @@ const issueImageCallWithRateLimitRetry = async (
   stream: boolean,
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
-    const { response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, stream);
+    const { response, modelKey } = await (isEdit
+      ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal)
+      : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal));
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
-    const hint = parseRetryAfterMs(response.headers);
-    const delayMs = Math.min(hint ?? rateLimitBackoffMs(attempt), RETRY_CAP_MS);
+    // 25% jitter desynchronizes parallel callers so a burst of orchestrator
+    // turns doesn't all re-issue at the same instant.
+    const base = 1000 * 2 ** attempt;
+    const backoffMs = base + Math.random() * base * 0.25;
+    const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
     // Drain the body before discarding so the underlying socket can be reused.
     await response.text().catch(() => undefined);
     await sleep(delayMs, state.downstreamAbortSignal);
@@ -781,7 +765,7 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCallWithRateLimitRetry(binding, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, wantsPartials));
   } catch (e) {
     return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }
