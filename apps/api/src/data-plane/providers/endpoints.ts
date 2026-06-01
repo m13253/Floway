@@ -24,6 +24,7 @@ export const isStreamingEndpoint = (endpoint: EndpointKey): boolean =>
 const ENDPOINT_TO_PUBLIC_PATH: Record<ModelEndpoint, string> = {
   chat_completions: '/chat/completions',
   responses: '/responses',
+  responses_compact: '/v1/responses/compact',
   messages: '/v1/messages',
   messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/embeddings',
@@ -73,7 +74,9 @@ export const publicPathsToModelEndpoints = (paths: readonly string[]): ModelEndp
 export const modelEndpointsToPublicPaths = (endpoints: readonly ModelEndpoint[]): string[] => {
   const paths: string[] = [];
   for (const endpoint of endpoints) {
-    if (endpoint === 'messages_count_tokens') continue;
+    // Auxiliary endpoints share a primary endpoint's input and are not
+    // advertised as standalone model paths.
+    if (endpoint === 'messages_count_tokens' || endpoint === 'responses_compact') continue;
     const path = modelEndpointToPublicPath(endpoint);
     if (!paths.includes(path)) paths.push(path);
   }

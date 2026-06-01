@@ -4,6 +4,7 @@
 export type ModelEndpoint =
   | 'chat_completions'
   | 'responses'
+  | 'responses_compact'
   | 'messages'
   | 'messages_count_tokens'
   | 'embeddings'
