@@ -72,6 +72,15 @@ const jsonResponse = (b64: string): Response =>
 const sseResponse = (lines: string[]): Response =>
   new Response(lines.map(l => `data: ${l}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
 
+const rateLimitResponse = (retryAfterMs: number | null): Response => {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (retryAfterMs !== null) headers['retry-after-ms'] = String(retryAfterMs);
+  return new Response(
+    JSON.stringify({ error: { code: 'RateLimitReached', type: 'image_generation_error', message: 'rate limited' } }),
+    { status: 429, headers },
+  );
+};
+
 // One scripted upstream turn: the orchestrator calls image_generation with the
 // given prompt, then the upstream completes.
 const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<ResponsesStreamEvent>[] => {
@@ -182,15 +191,6 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   const bytes = await (images[0] as Blob).text();
   assertEquals(bytes, 'AAAA');
 });
-
-const rateLimitResponse = (retryAfterMs: number | null): Response => {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (retryAfterMs !== null) headers['retry-after-ms'] = String(retryAfterMs);
-  return new Response(
-    JSON.stringify({ error: { code: 'RateLimitReached', type: 'image_generation_error', message: 'Please retry after 1 seconds.' } }),
-    { status: 429, headers },
-  );
-};
 
 test('retries on 429 and surfaces the eventual success', async () => {
   // Two 429s then success; the orchestrator should see one completed image_generation_call.
