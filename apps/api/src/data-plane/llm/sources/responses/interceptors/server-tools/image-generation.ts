@@ -562,22 +562,16 @@ const resolveImageBinding = async (
   return { ok: true, binding };
 };
 
-// Rate-limit retry policy for the gpt-image-* backend call. Triggered by
-// HTTP 429 — both Azure and openai.com use it. Cap is intentionally tight:
-// backend image quotas refill per-minute on every observed surface (Azure
-// TPM/RPM, openai.com tier limits), so a 60s ceiling matches the natural
-// refill window without holding the orchestrator turn open longer than a
-// client would tolerate. openai-python's `_calculate_retry_timeout` uses
-// the same 60s clamp.
+// 60s cap matches the per-minute refill window of Azure TPM/RPM and
+// openai.com tier image quotas — same clamp openai-python applies in
+// [`_calculate_retry_timeout`](https://github.com/openai/openai-python/blob/d76d8c11c1da9f97aa8a0aaee8ccd44d2bc8f5e7/src/openai/_base_client.py#L789).
 const RETRY_CAP_MS = 60_000;
 const MAX_RATE_LIMIT_RETRIES = 2;
 
-// Resolve the upstream's "wait this long before retrying" hint from headers.
-// Priority follows the openai-python `_parse_retry_after_header` chain plus
-// Azure's `x-ms-retry-after-ms` alias. Returns null when no header is present
-// or all values parse to <= 0 (the gpt-image-1 `0.0` hint from openai.com
-// falls into this bucket), so the caller can fall back to backoff. Exported
-// for unit tests.
+// Header priority matches openai-python's `_parse_retry_after_header` with
+// Azure's `x-ms-retry-after-ms` alias added. Treats <= 0 as "no hint" so the
+// gpt-image-1 `retry-after: 0.0` quirk falls back to backoff instead of
+// pretending the quota is free. Exported for unit tests.
 export const parseRetryAfterMs = (headers: Headers): number | null => {
   for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
     const raw = headers.get(name);
@@ -598,15 +592,11 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
   return null;
 };
 
-// Issue one backend image call with a small retry loop honoring upstream
-// rate-limit hints. Replays the same call up to MAX_RATE_LIMIT_RETRIES times
-// on HTTP 429, sleeping for the parsed `retry-after-ms` / `x-ms-retry-after-ms`
-// / `Retry-After` header (clamped to RETRY_CAP_MS) or jittered exponential
-// backoff when the header is absent. Non-429 failures and transport throws
-// pass through to the caller untouched — those become the synthesized
-// `image_generation_call(status=failed)` and the orchestrator decides next
-// steps. The returned `response` always has a fresh, unread body so downstream
-// non-stream / stream consumers can call `.text()` / `.body` as usual.
+// On 429, sleep for the upstream's retry hint (or jittered exponential
+// backoff when absent) and replay the same backend call up to
+// MAX_RATE_LIMIT_RETRIES times. The returned `response` always has a fresh,
+// unread body — intermediate failed responses are drained inside the loop so
+// the underlying socket can be reused while we sleep.
 const issueImageCall = async (
   binding: ProviderModelRecord,
   prompt: string,

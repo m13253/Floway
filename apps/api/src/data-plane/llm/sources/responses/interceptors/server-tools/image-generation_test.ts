@@ -510,12 +510,8 @@ test('parseRetryAfterMs parses Retry-After fractional seconds', () => {
 });
 
 test('parseRetryAfterMs interprets Retry-After HTTP-date as delta from now', () => {
-  // HTTP-date has 1-second resolution and Date.parse() strips ms; in addition,
-  // a hairline race between toUTCString() and the parser's own Date.now() can
-  // push the delta a second or two off the nominal target. Allow a generous
-  // window: any positive value within ~5s of the intended delta is fine,
-  // because what we're verifying is "HTTP-date is parsed, not that the math
-  // is exact".
+  // HTTP-date is 1-second resolution and Date.parse() strips ms, so allow a
+  // ~1s skew between toUTCString() and the parser's Date.now().
   const future = new Date(Date.now() + 10_000).toUTCString();
   const h = new Headers({ 'retry-after': future });
   const result = parseRetryAfterMs(h);

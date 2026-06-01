@@ -193,9 +193,7 @@ const rateLimitResponse = (retryAfterMs: number | null): Response => {
 };
 
 test('retries on 429 and surfaces the eventual success', async () => {
-  // First two attempts rate-limit (retry-after-ms: 1 so the test waits ~1ms each
-  // round); third succeeds with bytes "OK". The orchestrator should see a single
-  // completed image_generation_call.
+  // Two 429s then success; the orchestrator should see one completed image_generation_call.
   stub.nextGenerations = [
     rateLimitResponse(1),
     rateLimitResponse(1),
@@ -216,8 +214,7 @@ test('retries on 429 and surfaces the eventual success', async () => {
 });
 
 test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a failed item', async () => {
-  // Three 429s total = 1 initial + 2 retries; after that the shim returns the
-  // upstream's RateLimitReached as a failed image_generation_call.
+  // 1 initial + MAX_RATE_LIMIT_RETRIES = 3 total 429s before giving up.
   stub.nextGenerations = [
     rateLimitResponse(1),
     rateLimitResponse(1),
@@ -239,7 +236,6 @@ test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a fai
 });
 
 test('does not retry non-rate-limit upstream failures', async () => {
-  // Single 400 with a validation error; no retry should happen.
   stub.nextGenerations = [
     new Response(
       JSON.stringify({ error: { code: 'invalid_value', type: 'invalid_request_error', message: 'bad size' } }),
