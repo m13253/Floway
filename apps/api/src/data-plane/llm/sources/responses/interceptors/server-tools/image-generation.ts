@@ -1,3 +1,4 @@
+import { sleep } from '../../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../../providers/registry.ts';
 import type { ProviderModelRecord } from '../../../../../providers/types.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../../shared/telemetry/usage.ts';
@@ -463,23 +464,6 @@ const rateLimitBackoffMs = (attempt: number): number => {
   return base + Math.random() * base * 0.25;
 };
 
-const sleepWithAbort = (delayMs: number, signal?: AbortSignal): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const handle = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    const onAbort = (): void => {
-      clearTimeout(handle);
-      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-
 const errorFromBody = (body: string, status: number): { type?: string; code: string; message: string } => {
   try {
     const parsed = JSON.parse(body) as { error?: { message?: unknown; code?: unknown; type?: unknown } };
@@ -660,7 +644,7 @@ const issueImageCallWithRateLimitRetry = async (
     const delayMs = Math.min(hint ?? rateLimitBackoffMs(attempt), RETRY_CAP_MS);
     // Drain the body before discarding so the underlying socket can be reused.
     await response.text().catch(() => undefined);
-    await sleepWithAbort(delayMs, state.downstreamAbortSignal);
+    await sleep(delayMs, state.downstreamAbortSignal);
   }
 };
 
