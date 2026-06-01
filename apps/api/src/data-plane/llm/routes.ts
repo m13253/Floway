@@ -1,4 +1,4 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 
 import { chatCompletionsTraits } from './sources/chat-completions/traits.ts';
 import { geminiTraits } from './sources/gemini/traits.ts';
@@ -11,7 +11,12 @@ export const mountLlmRoutes = (app: Hono) => {
   const serveResponses = serveLlm(responsesTraits, 'generate');
   const serveMessages = serveLlm(messagesTraits, 'generate');
   const serveMessagesCountTokens = serveLlm(messagesTraits, 'countTokens');
-  const serveGemini = serveLlm(geminiTraits, 'generate');
+  const serveGeminiGenerate = serveLlm(geminiTraits, 'generate');
+  const serveGeminiCountTokens = serveLlm(geminiTraits, 'countTokens');
+  // Gemini encodes the action in the path: route `:countTokens` to the count
+  // endpoint and everything else (including malformed actions) to generate,
+  // whose setup renders the action error.
+  const serveGemini = (c: Context) => (c.req.param('modelAction')?.endsWith(':countTokens') ? serveGeminiCountTokens : serveGeminiGenerate)(c);
 
   app.post('/v1/chat/completions', serveChatCompletions);
   app.post('/chat/completions', serveChatCompletions);

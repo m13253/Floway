@@ -2,11 +2,12 @@ import { messagesSourceInterceptors } from './interceptors/index.ts';
 import { respondMessages } from './respond.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
-import { type ExecuteResult, plainResult } from '../../shared/errors/result.ts';
+import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
+import { plainResultFromResponse } from '../respond.ts';
 import { type LlmEndpoint, type LlmEndpointName, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -190,11 +191,7 @@ const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStrea
           const { response } = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, body, undefined, invocation.headers, invocation.anthropicBeta);
           return response;
         });
-        return plainResult(
-          response.status,
-          new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
-          new Uint8Array(await response.arrayBuffer()),
-        );
+        return await plainResultFromResponse(response);
       },
     };
   },

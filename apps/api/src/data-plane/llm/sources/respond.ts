@@ -3,6 +3,7 @@ import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/perfor
 import { hasTokenUsage, recordTokenUsageForApiKey } from '../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../interceptors.ts';
 import type { EventResultMetadata, ExecuteResult, PlainResult } from '../shared/errors/result.ts';
+import { plainResult } from '../shared/errors/result.ts';
 import type { StreamCompletion } from '../shared/stream/proxy-sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -11,6 +12,16 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 // envelope — so every source's `respond` renders a plain result identically.
 export const plainResultToResponse = (result: PlainResult): Response =>
   new Response(result.body.slice().buffer, { status: result.status, headers: result.headers });
+
+// Captures an upstream HTTP response as a plain result, keeping its status and
+// content type. Used by count_tokens endpoints that either proxy the upstream
+// body or wrap an already-built error/success Response.
+export const plainResultFromResponse = async (response: Response): Promise<PlainResult> =>
+  plainResult(
+    response.status,
+    new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
+    new Uint8Array(await response.arrayBuffer()),
+  );
 
 // Per-stream observation accumulated by each source's frame observer and read
 // back when the response settles: did the stream fail, did it reach its
