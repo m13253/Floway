@@ -419,42 +419,6 @@ const RETRYABLE_IMAGE_ERROR_CODES = new Set([
 const isRetryableImageError = (code: string, type?: string): boolean =>
   RETRYABLE_IMAGE_ERROR_CODES.has(code) || (type !== undefined && RETRYABLE_IMAGE_ERROR_CODES.has(type));
 
-// Rate-limit retry policy for the gpt-image-* backend call. Triggered by
-// HTTP 429 — both Azure and openai.com use it. Cap is intentionally tight:
-// backend image quotas refill per-minute on every observed surface (Azure
-// TPM/RPM, openai.com tier limits), so a 60s ceiling matches the natural
-// refill window without holding the orchestrator turn open longer than a
-// client would tolerate. openai-python's `_calculate_retry_timeout` uses
-// the same 60s clamp.
-const RETRY_CAP_MS = 60_000;
-const MAX_RATE_LIMIT_RETRIES = 2;
-
-// Resolve the upstream's "wait this long before retrying" hint from headers.
-// Priority follows the openai-python `_parse_retry_after_header` chain plus
-// Azure's `x-ms-retry-after-ms` alias. Returns null when no header is present
-// or all values parse to <= 0 (the gpt-image-1 `0.0` hint from openai.com
-// falls into this bucket), so the caller can fall back to backoff. Exported
-// for unit tests.
-export const parseRetryAfterMs = (headers: Headers): number | null => {
-  for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
-    const raw = headers.get(name);
-    if (raw === null) continue;
-    const ms = Number(raw);
-    if (Number.isFinite(ms) && ms > 0) return ms;
-  }
-  const ra = headers.get('retry-after');
-  if (ra !== null) {
-    const seconds = Number(ra);
-    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
-    const httpDateMs = Date.parse(ra);
-    if (!Number.isNaN(httpDateMs)) {
-      const delta = httpDateMs - Date.now();
-      if (delta > 0) return delta;
-    }
-  }
-  return null;
-};
-
 const errorFromBody = (body: string, status: number): { type?: string; code: string; message: string } => {
   try {
     const parsed = JSON.parse(body) as { error?: { message?: unknown; code?: unknown; type?: unknown } };
@@ -596,6 +560,42 @@ const resolveImageBinding = async (
     };
   }
   return { ok: true, binding };
+};
+
+// Rate-limit retry policy for the gpt-image-* backend call. Triggered by
+// HTTP 429 — both Azure and openai.com use it. Cap is intentionally tight:
+// backend image quotas refill per-minute on every observed surface (Azure
+// TPM/RPM, openai.com tier limits), so a 60s ceiling matches the natural
+// refill window without holding the orchestrator turn open longer than a
+// client would tolerate. openai-python's `_calculate_retry_timeout` uses
+// the same 60s clamp.
+const RETRY_CAP_MS = 60_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+
+// Resolve the upstream's "wait this long before retrying" hint from headers.
+// Priority follows the openai-python `_parse_retry_after_header` chain plus
+// Azure's `x-ms-retry-after-ms` alias. Returns null when no header is present
+// or all values parse to <= 0 (the gpt-image-1 `0.0` hint from openai.com
+// falls into this bucket), so the caller can fall back to backoff. Exported
+// for unit tests.
+export const parseRetryAfterMs = (headers: Headers): number | null => {
+  for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
+    const raw = headers.get(name);
+    if (raw === null) continue;
+    const ms = Number(raw);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  const ra = headers.get('retry-after');
+  if (ra !== null) {
+    const seconds = Number(ra);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+    const httpDateMs = Date.parse(ra);
+    if (!Number.isNaN(httpDateMs)) {
+      const delta = httpDateMs - Date.now();
+      if (delta > 0) return delta;
+    }
+  }
+  return null;
 };
 
 // Issue one backend image call with a small retry loop honoring upstream
