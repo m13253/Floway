@@ -3,16 +3,16 @@ import { test } from 'vitest';
 import { translateChatCompletionsToResponses } from './request.ts';
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
 import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
-import type { ResponseInputReasoning, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesInputReasoning, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-type ResponseOutputItemDoneEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.done' }>;
+type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
 
-type ResponseOutputItemAddedEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.added' }>;
+type ResponsesOutputItemAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
 
-type ResponseCompletedEvent = Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+type ResponsesCompletedEvent = Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
 
-const chunk = (delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null): ChatCompletionChunk => ({
+const chunk = (delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_stream_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -20,13 +20,13 @@ const chunk = (delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: 
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 });
 
-const assertEveryAddedOutputItemIsDone = (events: ResponseStreamEvent[]): void => {
+const assertEveryAddedOutputItemIsDone = (events: ResponsesStreamEvent[]): void => {
   const added = events
-    .filter((event): event is ResponseOutputItemAddedEvent => event.type === 'response.output_item.added')
+    .filter((event): event is ResponsesOutputItemAddedEvent => event.type === 'response.output_item.added')
     .map(event => event.output_index)
     .sort((a, b) => a - b);
   const done = events
-    .filter((event): event is ResponseOutputItemDoneEvent => event.type === 'response.output_item.done')
+    .filter((event): event is ResponsesOutputItemDoneEvent => event.type === 'response.output_item.done')
     .map(event => event.output_index)
     .sort((a, b) => a - b);
 
@@ -47,7 +47,7 @@ test('translateChatCompletionsToResponses uses rs-prefixed ids for reasoning inp
   });
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as ResponseInputReasoning;
+  const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning.type, 'reasoning');
   assertEquals(reasoning.id, 'rs_0');
 });
@@ -241,7 +241,7 @@ test('translateChatCompletionsChunkToResponsesEvents keeps late opaque with prio
     ...flushChatCompletionsToResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponseOutputItemDoneEvent).item.type === 'reasoning') as ResponseOutputItemDoneEvent[];
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
 
   assertEquals(reasoningDoneEvents.length, 1);
   assertEquals(reasoningDoneEvents[0].output_index, 0);
@@ -274,8 +274,8 @@ test('translateChatCompletionsChunkToResponsesEvents prefers reasoning_items ove
     ...flushChatCompletionsToResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponseOutputItemDoneEvent).item.type === 'reasoning') as ResponseOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponseCompletedEvent | undefined;
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
 
   assertEveryAddedOutputItemIsDone(events);
   assertEquals(reasoningDoneEvents.length, 1);
@@ -332,8 +332,8 @@ test('translateChatCompletionsChunkToResponsesEvents keeps terminal output order
     ...flushChatCompletionsToResponsesEvents(state),
   ];
 
-  const added = events.filter(event => event.type === 'response.output_item.added') as ResponseOutputItemAddedEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponseCompletedEvent | undefined;
+  const added = events.filter(event => event.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
 
   assertEquals(
     added.map(event => [event.output_index, event.item.type]),
@@ -371,8 +371,8 @@ test('translateChatCompletionsChunkToResponsesEvents discards scalar reasoning w
     ...flushChatCompletionsToResponsesEvents(state),
   ];
 
-  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponseOutputItemDoneEvent).item.type === 'reasoning') as ResponseOutputItemDoneEvent[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponseCompletedEvent | undefined;
+  const reasoningDoneEvents = events.filter(event => event.type === 'response.output_item.done' && (event as ResponsesOutputItemDoneEvent).item.type === 'reasoning') as ResponsesOutputItemDoneEvent[];
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
 
   assertEveryAddedOutputItemIsDone(events);
   assertEquals(reasoningDoneEvents.length, 1);
@@ -411,7 +411,7 @@ test('translateChatCompletionsChunkToResponsesEvents ignores empty tool_calls ar
   // Content delta should create a message item and emit text delta — not a new
   // output item for empty tool_calls.
   const events2 = translateChatCompletionsChunkToResponsesEvents(chunk({ content: 'hello' }), state);
-  const addedEvents = events2.filter(e => e.type === 'response.output_item.added') as ResponseOutputItemAddedEvent[];
+  const addedEvents = events2.filter(e => e.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent[];
   assertEquals(addedEvents.length, 1, 'content delta should create one message output item');
   assertEquals(addedEvents[0].item.type, 'message');
 

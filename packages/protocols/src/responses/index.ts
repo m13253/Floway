@@ -5,7 +5,7 @@
 
 export interface ResponsesPayload {
   model: string;
-  input: string | ResponseInputItem[];
+  input: string | ResponsesInputItem[];
   previous_response_id?: string | null;
   instructions?: string | null;
   temperature?: number | null;
@@ -18,8 +18,8 @@ export interface ResponsesPayload {
   // ignored." Reference (openai-python parameter declaration):
   // https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response_create_params.py
   max_tool_calls?: number | null;
-  tools?: ResponseTool[] | null;
-  tool_choice?: ResponseToolChoice;
+  tools?: ResponsesTool[] | null;
+  tool_choice?: ResponsesToolChoice;
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
@@ -35,56 +35,56 @@ export interface ResponsesPayload {
   service_tier?: string | null;
 }
 
-export type ResponseInputItem =
-  | ResponseInputMessage
-  | ResponseFunctionToolCallItem
-  | ResponseFunctionCallOutputItem
-  | ResponseCustomToolCallItem
-  | ResponseCustomToolCallOutputItem
-  | ResponseInputReasoning
-  | ResponseItemReference
-  | ResponseInputWebSearchCall
-  | ResponseFileSearchCallItem
-  | ResponseComputerCallItem
-  | ResponseComputerCallOutputItem
-  | ResponseToolSearchCallItem
-  | ResponseToolSearchOutputItem
-  | ResponseCompactionItem
-  | ResponseInputImageGenerationCall
-  | ResponseCodeInterpreterCallItem
-  | ResponseLocalShellCallItem
-  | ResponseLocalShellCallOutputItem
-  | ResponseShellCallItem
-  | ResponseShellCallOutputItem
-  | ResponseApplyPatchCallItem
-  | ResponseApplyPatchCallOutputItem
-  | ResponseMcpCallItem
-  | ResponseMcpListToolsItem
-  | ResponseMcpApprovalRequestItem
-  | ResponseMcpApprovalResponseItem;
+export type ResponsesInputItem =
+  | ResponsesInputMessage
+  | ResponsesFunctionToolCallItem
+  | ResponsesFunctionCallOutputItem
+  | ResponsesCustomToolCallItem
+  | ResponsesCustomToolCallOutputItem
+  | ResponsesInputReasoning
+  | ResponsesItemReference
+  | ResponsesInputWebSearchCall
+  | ResponsesFileSearchCallItem
+  | ResponsesComputerCallItem
+  | ResponsesComputerCallOutputItem
+  | ResponsesToolSearchCallItem
+  | ResponsesToolSearchOutputItem
+  | ResponsesCompactionItem
+  | ResponsesInputImageGenerationCall
+  | ResponsesCodeInterpreterCallItem
+  | ResponsesLocalShellCallItem
+  | ResponsesLocalShellCallOutputItem
+  | ResponsesShellCallItem
+  | ResponsesShellCallOutputItem
+  | ResponsesApplyPatchCallItem
+  | ResponsesApplyPatchCallOutputItem
+  | ResponsesMcpCallItem
+  | ResponsesMcpListToolsItem
+  | ResponsesMcpApprovalRequestItem
+  | ResponsesMcpApprovalResponseItem;
 
-export interface ResponseInputMessage {
+export interface ResponsesInputMessage {
   type: 'message';
   id?: string;
   status?: string;
   role: 'user' | 'assistant' | 'system' | 'developer';
-  content: string | ResponseInputContent[];
+  content: string | ResponsesInputContent[];
 }
 
-export type ResponseInputContent = ResponseInputText | ResponseInputImage;
+export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage;
 
-export interface ResponseInputText {
+export interface ResponsesInputText {
   type: 'input_text' | 'output_text';
   text: string;
 }
 
-export interface ResponseInputImage {
+export interface ResponsesInputImage {
   type: 'input_image';
   image_url: string;
   detail: 'auto' | 'low' | 'high';
 }
 
-export interface ResponseInputReasoning {
+export interface ResponsesInputReasoning {
   type: 'reasoning';
   id: string;
   summary: { type: 'summary_text'; text: string }[];
@@ -96,7 +96,7 @@ export interface ResponseInputReasoning {
   encrypted_content?: string;
 }
 
-export interface ResponseFunctionToolCallItem {
+export interface ResponsesFunctionToolCallItem {
   type: 'function_call';
   id?: string;
   call_id: string;
@@ -105,20 +105,20 @@ export interface ResponseFunctionToolCallItem {
   status: 'completed' | 'in_progress' | 'incomplete';
 }
 
-export interface ResponseFunctionCallOutputItem {
+export interface ResponsesFunctionCallOutputItem {
   type: 'function_call_output';
   id?: string;
   call_id: string;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
-  output: string | ResponseInputContent[];
+  output: string | ResponsesInputContent[];
   status?: 'completed' | 'incomplete';
 }
 
 // Freeform custom tool invocation echoed back to the model in conversation
 // history. The model's own emission of a custom tool call is identical in
 // shape (it is also a `custom_tool_call` item).
-export interface ResponseCustomToolCallItem {
+export interface ResponsesCustomToolCallItem {
   type: 'custom_tool_call';
   call_id: string;
   name: string;
@@ -128,7 +128,7 @@ export interface ResponseCustomToolCallItem {
   status?: string;
 }
 
-export interface ResponseCustomToolCallOutputItem {
+export interface ResponsesCustomToolCallOutputItem {
   type: 'custom_tool_call_output';
   call_id: string;
   output: string;
@@ -136,23 +136,23 @@ export interface ResponseCustomToolCallOutputItem {
   status?: string;
 }
 
-export interface ResponseItemReference {
+export interface ResponsesItemReference {
   type: 'item_reference';
   id: string;
 }
 
-// Tolerant input mirror of ResponseOutputWebSearchCall: clients may
+// Tolerant input mirror of ResponsesOutputWebSearchCall: clients may
 // echo previously emitted web_search_call items back. Every field is
 // optional so the wire shape accepts whatever the client carries.
-export interface ResponseInputWebSearchCall {
+export interface ResponsesInputWebSearchCall {
   type: 'web_search_call';
   id?: string;
   status?: 'completed' | 'in_progress' | 'searching' | 'failed';
-  action?: ResponseWebSearchAction;
-  results?: ResponseWebSearchResult[];
+  action?: ResponsesWebSearchAction;
+  results?: ResponsesWebSearchResult[];
 }
 
-export interface ResponsePermissiveItem<TType extends string> {
+export interface ResponsesPermissiveItem<TType extends string> {
   type: TType;
   id?: string;
   call_id?: string;
@@ -162,93 +162,93 @@ export interface ResponsePermissiveItem<TType extends string> {
   [key: string]: unknown;
 }
 
-export interface ResponseFileSearchCallItem extends ResponsePermissiveItem<'file_search_call'> {
+export interface ResponsesFileSearchCallItem extends ResponsesPermissiveItem<'file_search_call'> {
   queries?: string[];
   results?: unknown[];
 }
 
-export interface ResponseComputerCallItem extends ResponsePermissiveItem<'computer_call'> {
+export interface ResponsesComputerCallItem extends ResponsesPermissiveItem<'computer_call'> {
   call_id: string;
   action?: unknown;
   pending_safety_checks?: unknown[];
 }
 
-export interface ResponseComputerCallOutputItem extends ResponsePermissiveItem<'computer_call_output'> {
+export interface ResponsesComputerCallOutputItem extends ResponsesPermissiveItem<'computer_call_output'> {
   call_id: string;
   output?: unknown;
   acknowledged_safety_checks?: unknown[];
 }
 
-export interface ResponseToolSearchCallItem extends ResponsePermissiveItem<'tool_search_call'> {
+export interface ResponsesToolSearchCallItem extends ResponsesPermissiveItem<'tool_search_call'> {
   call_id?: string;
   query?: string;
   results?: unknown[];
 }
 
-export interface ResponseToolSearchOutputItem extends ResponsePermissiveItem<'tool_search_output'> {
+export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'tool_search_output'> {
   call_id?: string;
   output?: unknown;
 }
 
-export type ResponseCompactionItem = ResponsePermissiveItem<'compaction'>;
+export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
 
-export interface ResponseCodeInterpreterCallItem extends ResponsePermissiveItem<'code_interpreter_call'> {
+export interface ResponsesCodeInterpreterCallItem extends ResponsesPermissiveItem<'code_interpreter_call'> {
   call_id?: string;
   code?: string;
   results?: unknown[];
 }
 
-export interface ResponseLocalShellCallItem extends ResponsePermissiveItem<'local_shell_call'> {
+export interface ResponsesLocalShellCallItem extends ResponsesPermissiveItem<'local_shell_call'> {
   call_id: string;
   command?: string;
 }
 
-export interface ResponseLocalShellCallOutputItem extends ResponsePermissiveItem<'local_shell_call_output'> {
+export interface ResponsesLocalShellCallOutputItem extends ResponsesPermissiveItem<'local_shell_call_output'> {
   call_id: string;
   output?: unknown;
 }
 
-export interface ResponseShellCallItem extends ResponsePermissiveItem<'shell_call'> {
+export interface ResponsesShellCallItem extends ResponsesPermissiveItem<'shell_call'> {
   call_id: string;
   command?: string;
 }
 
-export interface ResponseShellCallOutputItem extends ResponsePermissiveItem<'shell_call_output'> {
+export interface ResponsesShellCallOutputItem extends ResponsesPermissiveItem<'shell_call_output'> {
   call_id: string;
   output?: unknown;
 }
 
-export interface ResponseApplyPatchCallItem extends ResponsePermissiveItem<'apply_patch_call'> {
+export interface ResponsesApplyPatchCallItem extends ResponsesPermissiveItem<'apply_patch_call'> {
   call_id: string;
   patch?: string;
 }
 
-export interface ResponseApplyPatchCallOutputItem extends ResponsePermissiveItem<'apply_patch_call_output'> {
+export interface ResponsesApplyPatchCallOutputItem extends ResponsesPermissiveItem<'apply_patch_call_output'> {
   call_id: string;
   output?: unknown;
 }
 
-export interface ResponseMcpCallItem extends ResponsePermissiveItem<'mcp_call'> {
+export interface ResponsesMcpCallItem extends ResponsesPermissiveItem<'mcp_call'> {
   call_id: string;
   name?: string;
   arguments?: unknown;
   output?: unknown;
 }
 
-export interface ResponseMcpListToolsItem extends ResponsePermissiveItem<'mcp_list_tools'> {
+export interface ResponsesMcpListToolsItem extends ResponsesPermissiveItem<'mcp_list_tools'> {
   tools?: unknown[];
 }
 
-export interface ResponseMcpApprovalRequestItem extends ResponsePermissiveItem<'mcp_approval_request'> {
+export interface ResponsesMcpApprovalRequestItem extends ResponsesPermissiveItem<'mcp_approval_request'> {
   call_id?: string;
 }
 
-export interface ResponseMcpApprovalResponseItem extends ResponsePermissiveItem<'mcp_approval_response'> {
+export interface ResponsesMcpApprovalResponseItem extends ResponsesPermissiveItem<'mcp_approval_response'> {
   call_id?: string;
   output?: unknown;
 }
 
-export interface ResponseInputImageGenerationCall {
+export interface ResponsesInputImageGenerationCall {
   type: 'image_generation_call';
   id?: string;
   status?: 'completed' | 'in_progress' | 'generating' | 'failed';
@@ -256,7 +256,7 @@ export interface ResponseInputImageGenerationCall {
   revised_prompt?: string;
 }
 
-export interface ResponseFunctionTool {
+export interface ResponsesFunctionTool {
   type: 'function';
   name: string;
   parameters: Record<string, unknown>;
@@ -284,14 +284,14 @@ export const WEB_SEARCH_HOSTED_TYPE_NAMES = [
   'web_search_preview_2025_03_11',
 ] as const;
 
-export type ResponseHostedToolType =
+export type ResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
   | 'tool_search'
   | 'namespace';
 
-export interface ResponseHostedTool {
-  type: ResponseHostedToolType;
+export interface ResponsesHostedTool {
+  type: ResponsesHostedToolType;
   // web_search-specific fields per the OpenAI Responses guide. Typed
   // explicitly to avoid unsafe index-signature casts at the call site.
   filters?: {
@@ -314,22 +314,22 @@ export interface ResponseHostedTool {
   [key: string]: unknown;
 }
 
-export interface ResponseCustomTool {
+export interface ResponsesCustomTool {
   type: 'custom';
   name: string;
   description?: string;
   format?: Record<string, unknown>;
 }
 
-export type ResponseTool = ResponseFunctionTool | ResponseHostedTool | ResponseCustomTool;
+export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool;
 
-export type ResponseToolChoice =
+export type ResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
-  | { type: ResponseHostedToolType };
+  | { type: ResponsesHostedToolType };
 
 // ── Response types ──
 
@@ -337,7 +337,7 @@ export interface ResponsesResult {
   id: string;
   object: string;
   model: string;
-  output: ResponseOutputItem[];
+  output: ResponsesOutputItem[];
   // SDK-only convenience alias for "all assistant text in this
   // response". Optional on the wire because OpenAI's SDKs derive it
   // from `output` rather than reading it from the JSON (see
@@ -373,54 +373,54 @@ export interface ResponsesResult {
   };
 }
 
-export type ResponseOutputItem =
-  | ResponseOutputMessage
-  | ResponseOutputFunctionCall
-  | ResponseFunctionCallOutputItem
-  | ResponseOutputCustomToolCall
-  | ResponseCustomToolCallOutputItem
-  | ResponseOutputReasoning
-  | ResponseOutputWebSearchCall
-  | ResponseFileSearchCallItem
-  | ResponseComputerCallItem
-  | ResponseComputerCallOutputItem
-  | ResponseToolSearchCallItem
-  | ResponseToolSearchOutputItem
-  | ResponseCompactionItem
-  | ResponseCodeInterpreterCallItem
-  | ResponseLocalShellCallItem
-  | ResponseLocalShellCallOutputItem
-  | ResponseShellCallItem
-  | ResponseShellCallOutputItem
-  | ResponseApplyPatchCallItem
-  | ResponseApplyPatchCallOutputItem
-  | ResponseMcpCallItem
-  | ResponseMcpListToolsItem
-  | ResponseMcpApprovalRequestItem
-  | ResponseMcpApprovalResponseItem
-  | ResponseOutputImageGenerationCall;
+export type ResponsesOutputItem =
+  | ResponsesOutputMessage
+  | ResponsesOutputFunctionCall
+  | ResponsesFunctionCallOutputItem
+  | ResponsesOutputCustomToolCall
+  | ResponsesCustomToolCallOutputItem
+  | ResponsesOutputReasoning
+  | ResponsesOutputWebSearchCall
+  | ResponsesFileSearchCallItem
+  | ResponsesComputerCallItem
+  | ResponsesComputerCallOutputItem
+  | ResponsesToolSearchCallItem
+  | ResponsesToolSearchOutputItem
+  | ResponsesCompactionItem
+  | ResponsesCodeInterpreterCallItem
+  | ResponsesLocalShellCallItem
+  | ResponsesLocalShellCallOutputItem
+  | ResponsesShellCallItem
+  | ResponsesShellCallOutputItem
+  | ResponsesApplyPatchCallItem
+  | ResponsesApplyPatchCallOutputItem
+  | ResponsesMcpCallItem
+  | ResponsesMcpListToolsItem
+  | ResponsesMcpApprovalRequestItem
+  | ResponsesMcpApprovalResponseItem
+  | ResponsesOutputImageGenerationCall;
 
-export interface ResponseOutputMessage {
+export interface ResponsesOutputMessage {
   type: 'message';
   id?: string;
   status?: string;
   role: 'assistant';
-  content: ResponseOutputContentBlock[];
+  content: ResponsesOutputContentBlock[];
 }
 
-export type ResponseOutputContentBlock = ResponseOutputText | ResponseOutputRefusal;
+export type ResponsesOutputContentBlock = ResponsesOutputText | ResponsesOutputRefusal;
 
-interface ResponseOutputText {
+interface ResponsesOutputText {
   type: 'output_text';
   text: string;
 }
 
-interface ResponseOutputRefusal {
+interface ResponsesOutputRefusal {
   type: 'refusal';
   refusal: string;
 }
 
-export interface ResponseOutputFunctionCall {
+export interface ResponsesOutputFunctionCall {
   type: 'function_call';
   id?: string;
   call_id: string;
@@ -429,7 +429,7 @@ export interface ResponseOutputFunctionCall {
   status: string;
 }
 
-export interface ResponseOutputCustomToolCall {
+export interface ResponsesOutputCustomToolCall {
   type: 'custom_tool_call';
   call_id: string;
   name: string;
@@ -439,11 +439,11 @@ export interface ResponseOutputCustomToolCall {
   status?: string;
 }
 
-export interface ResponseOutputReasoning {
+export interface ResponsesOutputReasoning {
   type: 'reasoning';
   id: string;
   summary: { type: 'summary_text'; text: string }[];
-  // See `ResponseInputReasoning.encrypted_content`.
+  // See `ResponsesInputReasoning.encrypted_content`.
   encrypted_content?: string;
 }
 
@@ -451,7 +451,7 @@ export interface ResponseOutputReasoning {
 // it on `include: ["web_search_call.results"]`); consumers must
 // tolerate its absence.
 
-export type ResponseWebSearchAction =
+export type ResponsesWebSearchAction =
   // `type: 'search'` carries either `queries: string[]` (preferred,
   // emitted by newer variants) or the deprecated `query: string` (older
   // codex). Producers should populate `queries`; consumers should read
@@ -465,25 +465,25 @@ export type ResponseWebSearchAction =
   | { type: 'open_page'; url?: string }
   | { type: 'find_in_page'; url: string; pattern: string };
 
-export interface ResponseWebSearchResult {
+export interface ResponsesWebSearchResult {
   type: 'text_result';
   url: string;
   title: string;
   snippet: string;
 }
 
-export interface ResponseOutputWebSearchCall {
+export interface ResponsesOutputWebSearchCall {
   type: 'web_search_call';
   id: string;
   status: 'in_progress' | 'searching' | 'completed' | 'failed';
   // Optional because upstream omits `action` on the in-flight
   // `output_item.added` and only populates it on `.done` once the
   // action shape (search vs open_page vs find_in_page) is known.
-  action?: ResponseWebSearchAction;
-  results?: ResponseWebSearchResult[];
+  action?: ResponsesWebSearchAction;
+  results?: ResponsesWebSearchResult[];
 }
 
-export interface ResponseOutputImageGenerationCall {
+export interface ResponsesOutputImageGenerationCall {
   type: 'image_generation_call';
   id: string;
   status: 'in_progress' | 'generating' | 'completed' | 'failed';
@@ -494,32 +494,32 @@ export interface ResponseOutputImageGenerationCall {
 
 // ── Stream event types ──
 
-export type ResponseStreamEvent =
+export type ResponsesStreamEvent =
   | { type: 'response.created'; response: ResponsesResult }
   | { type: 'response.in_progress'; response: ResponsesResult }
   | {
     type: 'response.output_item.added';
     output_index: number;
-    item: ResponseOutputItem;
+    item: ResponsesOutputItem;
   }
   | {
     type: 'response.output_item.done';
     output_index: number;
-    item: ResponseOutputItem;
+    item: ResponsesOutputItem;
   }
   | {
     type: 'response.content_part.added';
     item_id: string;
     output_index: number;
     content_index: number;
-    part: ResponseOutputContentBlock;
+    part: ResponsesOutputContentBlock;
   }
   | {
     type: 'response.content_part.done';
     item_id: string;
     output_index: number;
     content_index: number;
-    part: ResponseOutputContentBlock;
+    part: ResponsesOutputContentBlock;
   }
   | {
     type: 'response.reasoning_summary_part.added';
@@ -658,18 +658,18 @@ export type ResponseStreamEvent =
   | { type: 'ping' };
 
 // Forward-compatibility escape hatch for unknown event types. Earlier
-// versions of `ResponseStreamEvent` ended with a permissive
+// versions of `ResponsesStreamEvent` ended with a permissive
 // `{ type: string; [key: string]: unknown }` catch-all in the union;
 // because that branch matches any object with a `type` field and any
 // extra keys, it silently let test fixtures compile against
-// `ResponseStreamEvent` while missing required fields on the
+// `ResponsesStreamEvent` while missing required fields on the
 // `response` member (e.g. spec-required `error: null` /
 // `incomplete_details: null` on `response.created.response`). Splitting
 // the catch-all into a separate exported type means callers that need
 // to accept unknown future events must opt in explicitly (and assume
 // the responsibility of asserting field shapes themselves) instead of
 // letting every malformed fixture compile through silently.
-export interface UnknownResponseStreamEvent {
+export interface UnknownResponsesStreamEvent {
   type: string;
   [key: string]: unknown;
 }
@@ -678,29 +678,29 @@ export interface UnknownResponseStreamEvent {
 // event types alongside the strongly-typed ones. Use this when reading
 // from an upstream wire we do not fully control. Producers (test
 // fixtures, gateway synthesizers) should keep using
-// `ResponseStreamEvent` so missing required fields are caught at
+// `ResponsesStreamEvent` so missing required fields are caught at
 // compile time.
-export type ResponseStreamEventOrUnknown = ResponseStreamEvent | UnknownResponseStreamEvent;
+export type ResponsesStreamEventOrUnknown = ResponsesStreamEvent | UnknownResponsesStreamEvent;
 
 // Gateway-side extension: upstream Responses streams may omit `sequence_number`
 // when probing, so the gateway-internal shape leaves it optional.
-export type ResponsesStreamEvent = ResponseStreamEvent & {
+export type RawResponsesStreamEvent = ResponsesStreamEvent & {
   sequence_number?: number;
 };
 
-// Sibling of ResponsesStreamEvent for sequences synthesized inside the
+// Sibling of RawResponsesStreamEvent for sequences synthesized inside the
 // gateway (from-result expansion, from-stream projection), where the
 // sequence number is always present.
-export type SequencedResponsesStreamEvent = ResponseStreamEvent & {
+export type SequencedResponsesStreamEvent = ResponsesStreamEvent & {
   sequence_number: number;
 };
 
 // Either side of the Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape
 // is identical aside from the type tag's role.
-export type ResponsesReasoningItem = ResponseInputReasoning | ResponseOutputReasoning;
+export type ResponsesReasoningItem = ResponsesInputReasoning | ResponsesOutputReasoning;
 
-export const isResponsesTerminalEvent = (event: Pick<ResponseStreamEvent, 'type'>): boolean =>
+export const isResponsesTerminalEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
 export { responsesResultToEvents } from './from-result.ts';

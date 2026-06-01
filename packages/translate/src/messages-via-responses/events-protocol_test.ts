@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { responsesResultToEvents, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   id: 'resp_123',
@@ -29,7 +29,7 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   },
 });
 
-const toProtocolFrame = (event: ResponseStreamEvent): ProtocolFrame<ResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
+const toProtocolFrame = (event: ResponsesStreamEvent): ProtocolFrame<RawResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -165,7 +165,7 @@ test('translateToSourceEvents translates Responses failed terminal to Messages e
         type: 'api_error',
         message: 'upstream failed',
       },
-    } satisfies MessagesStreamEventData),
+    } satisfies MessagesStreamEvent),
   ]);
 });
 
@@ -195,7 +195,7 @@ test('translateToSourceEvents translates Responses error terminal to Messages er
         type: 'api_error',
         message: 'upstream overloaded',
       },
-    } satisfies MessagesStreamEventData),
+    } satisfies MessagesStreamEvent),
   ]);
 });
 

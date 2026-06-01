@@ -5,9 +5,9 @@ import { assertEquals } from '../../test-assert.ts';
 import { packReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponseInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 
 test('mapAsResponsesItems maps Responses input items through the callback', async () => {
   const payload: ResponsesPayload = {
@@ -85,7 +85,7 @@ test('visitAsResponsesItems scans Messages carriers without rebuilding source me
       ],
     },
   ];
-  const visited: ResponseInputItem[] = [];
+  const visited: ResponsesInputItem[] = [];
 
   const result = await messagesViaResponsesItemsView.visitAsResponsesItems(messages, item => {
     visited.push(item);
@@ -161,7 +161,7 @@ test('mapAsResponsesItems maps Chat reasoning_items and leaves non-carriers unch
 });
 
 test('mapAsResponsesItems does not treat Gemini thought signatures as Responses carriers', async () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',

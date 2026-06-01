@@ -6,7 +6,7 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -43,7 +43,7 @@ const stubRequest: RequestContext = {
   clientStream: false,
 };
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEventData>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 test('resolveMessagesDownstreamThinkingDisplay exposes 4.7+ omitted by default and older Claude as summarized', () => {
   assertEquals(resolveMessagesDownstreamThinkingDisplay(makeCtx({ type: 'adaptive' })), 'omitted');
@@ -149,23 +149,23 @@ test('withThinkingDisplayPromoted simulates omitted display on protocol events',
   const result = await withThinkingDisplayPromoted(ctx, stubRequest, () =>
     Promise.resolve(
       eventResult(
-        (async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
-          yield eventFrame<MessagesStreamEventData>({
+        (async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+          yield eventFrame<MessagesStreamEvent>({
             type: 'content_block_start',
             index: 0,
             content_block: { type: 'thinking', thinking: 'summary prefix' },
           });
-          yield eventFrame<MessagesStreamEventData>({
+          yield eventFrame<MessagesStreamEvent>({
             type: 'content_block_delta',
             index: 0,
             delta: { type: 'thinking_delta', thinking: 'summary body' },
           });
-          yield eventFrame<MessagesStreamEventData>({
+          yield eventFrame<MessagesStreamEvent>({
             type: 'content_block_delta',
             index: 0,
             delta: { type: 'signature_delta', signature: 'sig_unchanged' },
           });
-          yield eventFrame<MessagesStreamEventData>({
+          yield eventFrame<MessagesStreamEvent>({
             type: 'content_block_stop',
             index: 0,
           });
@@ -179,17 +179,17 @@ test('withThinkingDisplayPromoted simulates omitted display on protocol events',
   if (result.type !== 'events') throw new Error('expected events');
 
   assertEquals(await collect(result.events), [
-    eventFrame<MessagesStreamEventData>({
+    eventFrame<MessagesStreamEvent>({
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'thinking', thinking: '' },
     }),
-    eventFrame<MessagesStreamEventData>({
+    eventFrame<MessagesStreamEvent>({
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'signature_delta', signature: 'sig_unchanged' },
     }),
-    eventFrame<MessagesStreamEventData>({
+    eventFrame<MessagesStreamEvent>({
       type: 'content_block_stop',
       index: 0,
     }),

@@ -5,14 +5,14 @@ import type { EventResult, EventResultMetadata, ExecuteResult } from '../../../s
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
-  ResponseInputItem,
-  ResponseOutputItem,
+  ResponsesInputItem,
+  ResponsesOutputItem,
   ResponsesPayload,
   ResponsesResult,
+  RawResponsesStreamEvent,
   ResponsesStreamEvent,
-  ResponseStreamEvent,
-  ResponseTool,
-  ResponseToolChoice,
+  ResponsesTool,
+  ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 
 export interface MergeUsage {
@@ -26,7 +26,7 @@ export interface MergeUsage {
 export interface MergeState {
   sequenceNumber: number;
   outputIndex: number;
-  accumulatedOutput: Map<number, ResponseOutputItem>;
+  accumulatedOutput: Map<number, ResponsesOutputItem>;
   accumulatedUsage: Partial<MergeUsage>;
   lastSeenModel: string | null;
   synthesizedResponseId: string;
@@ -77,8 +77,8 @@ export type ServerToolDispatcher = (args: {
 // Grouping them makes a partial declaration a compile error instead of a
 // registration that silently never dispatches.
 export interface ServerToolHostedDispatch {
-  isHostedTool: (tool: ResponseTool) => boolean;
-  buildFunctionTool: (toolName: string) => ResponseTool;
+  isHostedTool: (tool: ResponsesTool) => boolean;
+  buildFunctionTool: (toolName: string) => ResponsesTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -92,7 +92,7 @@ export type ServerToolPrepareResult =
     // turn so replayed items (e.g. an echoed `web_search_call`) become
     // upstream-readable even on a request that no longer declares the
     // hosted tool.
-    transformItems?: (items: ResponseInputItem[], toolName: string) => ResponseInputItem[];
+    transformItems?: (items: ResponsesInputItem[], toolName: string) => ResponsesInputItem[];
     // Present only when the request actually declares this tool's hosted
     // form; absent for replay-only activation.
     hosted?: ServerToolHostedDispatch;
@@ -142,12 +142,12 @@ export const createMergeState = (): MergeState => ({
   upstreamResponseSnapshot: undefined,
 });
 
-export const materializeAccumulatedOutput = (state: MergeState): ResponseOutputItem[] => {
+export const materializeAccumulatedOutput = (state: MergeState): ResponsesOutputItem[] => {
   const sorted = [...state.accumulatedOutput.keys()].sort((a, b) => a - b);
   return sorted.map(k => state.accumulatedOutput.get(k)!);
 };
 
-export const rebuildOutputText = (items: readonly ResponseOutputItem[]): string => {
+export const rebuildOutputText = (items: readonly ResponsesOutputItem[]): string => {
   let out = '';
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -210,15 +210,15 @@ export const usageOf = (usage: ResponsesResult['usage']): Partial<MergeUsage> =>
   return out;
 };
 
-const serverToolChoiceType = (toolChoice: ResponseToolChoice | undefined): string | undefined =>
+const serverToolChoiceType = (toolChoice: ResponsesToolChoice | undefined): string | undefined =>
   typeof toolChoice === 'object' && toolChoice !== null && typeof toolChoice.type === 'string'
     ? toolChoice.type
     : undefined;
 
 const rewriteHostedToolChoice = (
-  toolChoice: ResponseToolChoice | undefined,
+  toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
-): ResponseToolChoice | undefined => {
+): ResponsesToolChoice | undefined => {
   const choiceType = serverToolChoiceType(toolChoice);
   if (choiceType === undefined) return toolChoice;
   for (const entry of active) {
@@ -228,7 +228,7 @@ const rewriteHostedToolChoice = (
     // faithful (if sparse) tool object: hosted Responses tools are
     // identified by `type`. `isHostedTool` must therefore classify on
     // `type` alone.
-    if (entry.hosted?.isHostedTool({ type: choiceType } as ResponseTool)) return { type: 'function', name: entry.toolName };
+    if (entry.hosted?.isHostedTool({ type: choiceType } as ResponsesTool)) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
 };
@@ -237,7 +237,7 @@ const rewriteHostedToolChoice = (
 // that somehow occupies every `<baseName>_<n>` candidate.
 const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
 
-export const resolveServerToolName = (baseName: string, tools: readonly ResponseTool[]): string => {
+export const resolveServerToolName = (baseName: string, tools: readonly ResponsesTool[]): string => {
   const taken = new Set(tools.flatMap(tool => (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
   if (!taken.has(baseName)) return baseName;
   // `baseName` was attempt 1; suffixes `_2`…`_MAX` make up the rest, so
@@ -250,11 +250,11 @@ export const resolveServerToolName = (baseName: string, tools: readonly Response
 };
 
 const replaceHostedToolsWithFunctionTool = (
-  tools: readonly ResponseTool[],
-  isHostedTool: (tool: ResponseTool) => boolean,
-  functionTool: ResponseTool,
-): ResponseTool[] => {
-  const rewritten: ResponseTool[] = [];
+  tools: readonly ResponsesTool[],
+  isHostedTool: (tool: ResponsesTool) => boolean,
+  functionTool: ResponsesTool,
+): ResponsesTool[] => {
+  const rewritten: ResponsesTool[] = [];
   let injected = false;
   for (const tool of tools) {
     if (isHostedTool(tool)) {
@@ -299,12 +299,12 @@ const syntheticInProgressResponse = (state: MergeState, id: string, model: strin
 };
 
 const rewriteOutputIndex = (
-  event: ResponseStreamEvent,
+  event: ResponsesStreamEvent,
   openItems: Map<number, number>,
   openItemIds: Map<number, string>,
   merge: MergeState,
-): ResponseStreamEvent | null => {
-  const indexed = event as ResponseStreamEvent & { output_index?: unknown; item_id?: unknown };
+): ResponsesStreamEvent | null => {
+  const indexed = event as ResponsesStreamEvent & { output_index?: unknown; item_id?: unknown };
   if (typeof indexed.output_index !== 'number') return null;
   let downstreamIndex = openItems.get(indexed.output_index);
   if (downstreamIndex === undefined) {
@@ -316,11 +316,11 @@ const rewriteOutputIndex = (
     ...event,
     output_index: downstreamIndex,
     ...(typeof indexed.item_id === 'string' && downstreamItemId !== undefined ? { item_id: downstreamItemId } : {}),
-  } as ResponseStreamEvent;
+  } as ResponsesStreamEvent;
 };
 
 const captureTerminalEvent = (
-  event: ResponseStreamEvent,
+  event: ResponsesStreamEvent,
   merge: MergeState,
 ): { status: UpstreamTerminal; usage: Partial<MergeUsage> } | null => {
   if (event.type === 'response.completed') {
@@ -345,13 +345,13 @@ const stampServerToolEvent = (
   outputIndex: number,
   itemId: string,
   event: ServerToolLifecycleEvent,
-): ProtocolFrame<ResponsesStreamEvent> =>
+): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     ...event,
     output_index: outputIndex,
     item_id: itemId,
     sequence_number: merge.sequenceNumber++,
-  } as ResponsesStreamEvent);
+  } as RawResponsesStreamEvent);
 
 export const serverToolResultSlot = (args: {
   id: string;
@@ -375,13 +375,13 @@ const serverToolStartFrames = (
   merge: MergeState,
   outputIndex: number,
   slot: ServerToolResultSlot,
-): ProtocolFrame<ResponsesStreamEvent>[] => [
+): ProtocolFrame<RawResponsesStreamEvent>[] => [
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: attachServerToolItemId(slot.startItem, slot.id),
     sequence_number: merge.sequenceNumber++,
-  } as ResponsesStreamEvent),
+  } as RawResponsesStreamEvent),
   ...slot.startEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
 ];
 
@@ -390,7 +390,7 @@ const serverToolEndFrames = (
   outputIndex: number,
   slot: ServerToolResultSlot,
   result: Awaited<ServerToolResultSlot['result']>,
-): ProtocolFrame<ResponsesStreamEvent>[] => {
+): ProtocolFrame<RawResponsesStreamEvent>[] => {
   const frames = [
     ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
     eventFrame({
@@ -398,21 +398,21 @@ const serverToolEndFrames = (
       output_index: outputIndex,
       item: attachServerToolItemId(result.item, slot.id),
       sequence_number: merge.sequenceNumber++,
-    } as ResponsesStreamEvent),
+    } as RawResponsesStreamEvent),
   ];
   merge.accumulatedOutput.set(outputIndex, attachServerToolItemId(result.item, slot.id));
   return frames;
 };
 
-const attachServerToolItemId = (item: ServerToolOutputItem, id: string): ResponseOutputItem => ({ ...item, id } as ResponseOutputItem);
+const attachServerToolItemId = (item: ServerToolOutputItem, id: string): ResponsesOutputItem => ({ ...item, id } as ResponsesOutputItem);
 
-const responseInputItemsOf = (input: ResponsesPayload['input']): ResponseInputItem[] =>
+const responsesInputItemsOf = (input: ResponsesPayload['input']): ResponsesInputItem[] =>
   Array.isArray(input) ? input : [{ type: 'message', role: 'user', content: input }];
 
 const transformServerToolItems = (
-  items: ResponseInputItem[],
+  items: ResponsesInputItem[],
   active: readonly ActiveServerTool[],
-): ResponseInputItem[] => {
+): ResponsesInputItem[] => {
   let next = items;
   for (const entry of active) {
     if (entry.transformItems !== undefined) next = entry.transformItems(next, entry.toolName);
@@ -421,12 +421,12 @@ const transformServerToolItems = (
 };
 
 export const consumeTurnStreaming = async function* (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>,
   merge: MergeState,
   isFirstTurn: boolean,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
   loopState: ServerToolLoopState,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary> {
+): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>, TurnSummary> {
   const dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }> = [];
   let sawClientToolCall = false;
   let turnUsage: Partial<MergeUsage> = {};
@@ -443,11 +443,11 @@ export const consumeTurnStreaming = async function* (
     return merge.lastSeenModel;
   };
 
-  const stamp = (event: ResponseStreamEvent): ProtocolFrame<ResponsesStreamEvent> =>
+  const stamp = (event: ResponsesStreamEvent): ProtocolFrame<RawResponsesStreamEvent> =>
     eventFrame({
       ...event,
       sequence_number: merge.sequenceNumber++,
-    } as ResponsesStreamEvent);
+    } as RawResponsesStreamEvent);
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
@@ -481,7 +481,7 @@ export const consumeTurnStreaming = async function* (
     }
 
     if (event.type === 'error') {
-      const e = event as Extract<ResponseStreamEvent, { type: 'error' }>;
+      const e = event as Extract<ResponsesStreamEvent, { type: 'error' }>;
       const code = typeof e.code === 'string' && e.code.length > 0 ? e.code : 'server_error';
       if (merge.lastSeenModel === null) {
         terminalStatus = { kind: 'bare-error-pre-shell', error: { message: e.message, code } };
@@ -552,7 +552,7 @@ export const consumeTurnStreaming = async function* (
       yield stamp({
         type: 'response.output_item.added',
         output_index: downstreamIndex,
-        item: itemId !== undefined && upstreamItemId !== itemId ? { ...item, id: itemId } as ResponseOutputItem : item,
+        item: itemId !== undefined && upstreamItemId !== itemId ? { ...item, id: itemId } as ResponsesOutputItem : item,
       });
       continue;
     }
@@ -579,8 +579,8 @@ export const consumeTurnStreaming = async function* (
       if (downstreamIndex === undefined) continue;
       const itemId = openItemIds.get(upstreamIndex);
       const upstreamDoneItemId = (event.item as { id?: unknown }).id;
-      const doneItem: ResponseOutputItem = itemId !== undefined && upstreamDoneItemId !== itemId
-        ? { ...event.item, id: itemId } as ResponseOutputItem
+      const doneItem: ResponsesOutputItem = itemId !== undefined && upstreamDoneItemId !== itemId
+        ? { ...event.item, id: itemId } as ResponsesOutputItem
         : event.item;
       yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
       merge.accumulatedOutput.set(downstreamIndex, doneItem);
@@ -609,14 +609,14 @@ export const consumeTurnStreaming = async function* (
       continue;
     }
 
-    const maybeIndexedForIntercepted = event as ResponseStreamEvent & { output_index?: unknown };
+    const maybeIndexedForIntercepted = event as ResponsesStreamEvent & { output_index?: unknown };
     if (typeof maybeIndexedForIntercepted.output_index === 'number' && interceptedByUpstreamIndex.has(maybeIndexedForIntercepted.output_index)) {
       continue;
     }
 
     const rewriteResult = rewriteOutputIndex(event, openItems, openItemIds, merge);
     if (rewriteResult !== null) {
-      const maybeItemEvent = rewriteResult as ResponseStreamEvent & { output_index?: number; item?: unknown };
+      const maybeItemEvent = rewriteResult as ResponsesStreamEvent & { output_index?: number; item?: unknown };
       if (maybeItemEvent.item !== undefined && typeof maybeItemEvent.output_index === 'number' && (rewriteResult.type.endsWith('.added') || rewriteResult.type.endsWith('.done'))) {
         merge.accumulatedOutput.set(maybeItemEvent.output_index, maybeItemEvent.item as Parameters<MergeState['accumulatedOutput']['set']>[1]);
       }
@@ -713,7 +713,7 @@ export const buildErrorFromResult = (
 export const invalidRequestEnvelope = (
   message: string,
   param: string,
-): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> => {
   const body = JSON.stringify({
     error: {
       message,
@@ -759,7 +759,7 @@ const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'r
 export const synthesizeTerminalEnvelope = (
   state: MergeState,
   kind: SynthesizedTerminal,
-): ProtocolFrame<ResponsesStreamEvent> => {
+): ProtocolFrame<RawResponsesStreamEvent> => {
   if (state.lastSeenModel === null) {
     throw new Error('Server-tool shim cannot synthesize a Responses terminal envelope before upstream `response.created` reports a model.');
   }
@@ -780,14 +780,14 @@ export const synthesizeTerminalEnvelope = (
       ...(kind.kind === 'failed' ? { error: kind.error } : {}),
       ...(kind.kind === 'incomplete' ? { incomplete_details: kind.incompleteDetails } : {}),
     }),
-  } as ResponsesStreamEvent);
+  } as RawResponsesStreamEvent);
 };
 
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
   syntheticItemIds: Set<string>,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, void> {
+): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
       const result = await slot.result;
@@ -802,18 +802,18 @@ async function* materializeServerToolItems(
 
 async function* runMultiTurnLoop(args: {
   ctx: ResponsesInvocation;
-  run: InterceptorRun<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
+  run: InterceptorRun<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
   merge: MergeState;
   loopState: ServerToolLoopState;
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
-  turn1Iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>;
+  turn1Iter: AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>, TurnSummary>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
   syntheticItemIds: Set<string>;
-  canonicalInput: ResponseInputItem[];
+  canonicalInput: ResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestMetadata;
   resolveFinalMetadata: (m: EventResultMetadata) => void;
-}): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+}): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
   const { ctx, run, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, turn1Iter, dispatchers, syntheticItemIds, active, metadata, resolveFinalMetadata } = args;
   const baseInput = args.canonicalInput;
   let midStreamError: unknown = undefined;
@@ -860,7 +860,7 @@ async function* runMultiTurnLoop(args: {
       // bridges the output/input naming.
       const nextCanonicalInput = [
         ...baseInput,
-        ...materializeAccumulatedOutput(merge).map(item => item as ResponseInputItem),
+        ...materializeAccumulatedOutput(merge).map(item => item as ResponsesInputItem),
       ];
       const nextPayload: ResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
       if (loopState.remainingToolCalls !== undefined) {
@@ -930,7 +930,7 @@ export const withResponsesServerToolShim = (
       : { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
-  const canonicalInput = responseInputItemsOf(ctx.payload.input);
+  const canonicalInput = responsesInputItemsOf(ctx.payload.input);
   const inputArray = Array.isArray(ctx.payload.input) ? ctx.payload.input : undefined;
   if (inputArray !== undefined) {
     const nextInput = transformServerToolItems(inputArray, active);
@@ -956,7 +956,7 @@ export const withResponsesServerToolShim = (
   const merge = createMergeState();
   const firstResultRaw = await run();
   if (firstResultRaw.type !== 'events') return firstResultRaw;
-  const firstResult: EventResult<ProtocolFrame<ResponsesStreamEvent>> = firstResultRaw;
+  const firstResult: EventResult<ProtocolFrame<RawResponsesStreamEvent>> = firstResultRaw;
   const turn1Iter = consumeTurnStreaming(firstResult.events, merge, true, dispatchers, loopState);
 
   let resolveFinalMetadata!: (m: EventResultMetadata) => void;

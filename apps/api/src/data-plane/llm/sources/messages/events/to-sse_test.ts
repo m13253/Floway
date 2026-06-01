@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { messagesProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 test('messagesProtocolFrameToSSEFrame serializes events without owning termination', () => {
-  const frames = [eventFrame({ type: 'message_stop' } satisfies MessagesStreamEventData), eventFrame({ type: 'ping' } satisfies MessagesStreamEventData)].map(messagesProtocolFrameToSSEFrame);
+  const frames = [eventFrame({ type: 'message_stop' } satisfies MessagesStreamEvent), eventFrame({ type: 'ping' } satisfies MessagesStreamEvent)].map(messagesProtocolFrameToSSEFrame);
 
   assertEquals(
     frames.map(frame => frame?.event),
@@ -30,7 +30,7 @@ test('messagesProtocolFrameToSSEFrame maps search_result_location url to SSE sou
           end_block_index: 0,
         },
       },
-    } satisfies MessagesStreamEventData),
+    } satisfies MessagesStreamEvent),
   );
 
   const payload = JSON.parse(frame!.data) as {

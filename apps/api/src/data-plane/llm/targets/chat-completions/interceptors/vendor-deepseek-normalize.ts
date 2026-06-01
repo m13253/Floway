@@ -39,7 +39,7 @@
 
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../../shared/json-helpers.ts';
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload, ChatReasoningItem, Message } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsReasoningItem, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 // DeepSeek's `thinking: { type: 'disabled' }` rides alongside the typed
@@ -50,24 +50,24 @@ interface DeepseekDisableField {
 
 type ChatCompletionsPayloadWithDeepseekDisable = Omit<ChatCompletionsPayload, 'reasoning_effort'> & DeepseekDisableField;
 
-type DeepseekReasoningDelta = ChatCompletionChunk['choices'][number]['delta'] & {
+type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
   reasoning_content?: unknown;
 };
 
-const synthesizeFromItems = (items: ChatReasoningItem[] | null | undefined): string | undefined => {
+const synthesizeFromItems = (items: ChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
   if (!items?.length) return undefined;
   const parts = items.flatMap(item => item.summary?.map(s => s.text) ?? []);
   return parts.length > 0 ? parts.join('') : undefined;
 };
 
-const rewriteOutboundMessage = (message: Message): Message => {
+const rewriteOutboundMessage = (message: ChatCompletionsMessage): ChatCompletionsMessage => {
   // `reasoning_opaque` is the OpenAI-canonical signature for cross-turn
   // reasoning replay; DeepSeek doesn't accept it, so it's dropped on the
   // floor when we project assistant messages onto `reasoning_content`.
   const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message;
   const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items);
-  if (text === undefined) return rest as Message;
-  return { ...rest, reasoning_content: text } as Message;
+  if (text === undefined) return rest as ChatCompletionsMessage;
+  return { ...rest, reasoning_content: text } as ChatCompletionsMessage;
 };
 
 const stripCanonicalReasoningSentinel = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
@@ -92,7 +92,7 @@ const rewriteOutboundPayload = (payload: ChatCompletionsPayload): ChatCompletion
   };
 };
 
-const rewriteInboundDeltas = (chunk: ChatCompletionChunk): ChatCompletionChunk => {
+const rewriteInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
   let changed = false;
   const choices = chunk.choices.map(choice => {
     const delta = choice.delta as DeepseekReasoningDelta;
@@ -113,7 +113,7 @@ const rewriteInboundDeltas = (chunk: ChatCompletionChunk): ChatCompletionChunk =
 
 const VENDOR_CACHE_FIELDS = ['prompt_cache_hit_tokens', 'prompt_cache_miss_tokens'] as const;
 
-const rewriteInboundUsage = (chunk: ChatCompletionChunk): ChatCompletionChunk => {
+const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (!usage) return chunk;
   const hit = readJsonNumber(usage.prompt_cache_hit_tokens);
@@ -128,10 +128,10 @@ const rewriteInboundUsage = (chunk: ChatCompletionChunk): ChatCompletionChunk =>
       cached_tokens: hit,
     };
   }
-  return { ...chunk, usage: next as unknown as ChatCompletionChunk['usage'] };
+  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
 };
 
-const rewriteInboundChunk = (chunk: ChatCompletionChunk): ChatCompletionChunk => rewriteInboundUsage(rewriteInboundDeltas(chunk));
+const rewriteInboundChunk = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => rewriteInboundUsage(rewriteInboundDeltas(chunk));
 
 export const withVendorDeepseekChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _request, run) => {
   if (!ctx.enabledFlags.has('vendor-deepseek')) return await run();

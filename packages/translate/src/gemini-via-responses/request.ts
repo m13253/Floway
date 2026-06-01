@@ -12,16 +12,16 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
-import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool } from '@floway-dev/protocols/responses';
+import type { GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
+import type { ResponsesInputContent, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 
-const flushPendingContent = (input: ResponseInputItem[], pending: ResponseInputContent[], role: 'user' | 'assistant'): void => {
+const flushPendingContent = (input: ResponsesInputItem[], pending: ResponsesInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
   input.push({ type: 'message', role, content: [...pending] });
   pending.length = 0;
 };
 
-const inlineDataToInputImage = (part: GeminiPart): ResponseInputContent | null => {
+const inlineDataToInputImage = (part: GeminiPart): ResponsesInputContent | null => {
   const imageUrl = geminiInlineDataUrl(part);
   if (imageUrl === null) return null;
 
@@ -32,7 +32,7 @@ const inlineDataToInputImage = (part: GeminiPart): ResponseInputContent | null =
   };
 };
 
-const buildFunctionCallOutput = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponseInputItem | null => {
+const buildFunctionCallOutput = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem | null => {
   const functionResponsePart = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex);
   if (!functionResponsePart) return null;
 
@@ -44,7 +44,7 @@ const buildFunctionCallOutput = (part: GeminiPart, turnIndex: number, partIndex:
   };
 };
 
-const buildFunctionCall = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponseInputItem | null => {
+const buildFunctionCall = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem | null => {
   const functionCallPart = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex);
   if (!functionCallPart) return null;
 
@@ -57,7 +57,7 @@ const buildFunctionCall = (part: GeminiPart, turnIndex: number, partIndex: numbe
   };
 };
 
-const buildReasoningItem = (part: GeminiPart, turnIndex: number, partIndex: number): ResponseInputItem | null => {
+const buildReasoningItem = (part: GeminiPart, turnIndex: number, partIndex: number): ResponsesInputItem | null => {
   const text = geminiThoughtText(part) ?? '';
 
   if (!text) return null;
@@ -69,9 +69,9 @@ const buildReasoningItem = (part: GeminiPart, turnIndex: number, partIndex: numb
   };
 };
 
-const buildUserInputItems = (content: NonNullable<GeminiGenerateContentRequest['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponseInputItem[] => {
-  const input: ResponseInputItem[] = [];
-  const pendingContent: ResponseInputContent[] = [];
+const buildUserInputItems = (content: NonNullable<GeminiPayload['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
+  const input: ResponsesInputItem[] = [];
+  const pendingContent: ResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
     const functionOutput = buildFunctionCallOutput(part, turnIndex, partIndex, unmatchedToolCallIds);
@@ -95,9 +95,9 @@ const buildUserInputItems = (content: NonNullable<GeminiGenerateContentRequest['
   return input;
 };
 
-const buildAssistantInputItems = (content: NonNullable<GeminiGenerateContentRequest['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponseInputItem[] => {
-  const input: ResponseInputItem[] = [];
-  const pendingContent: ResponseInputContent[] = [];
+const buildAssistantInputItems = (content: NonNullable<GeminiPayload['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
+  const input: ResponsesInputItem[] = [];
+  const pendingContent: ResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
     const reasoning = buildReasoningItem(part, turnIndex, partIndex);
@@ -159,7 +159,7 @@ const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: Gem
   };
 };
 
-const buildTools = (payload: GeminiGenerateContentRequest): ResponseTool[] | undefined => {
+const buildTools = (payload: GeminiPayload): ResponsesTool[] | undefined => {
   const tools = geminiFunctionDeclarations(payload, 'any').map(declaration => ({
     type: 'function' as const,
     name: declaration.name,
@@ -171,7 +171,7 @@ const buildTools = (payload: GeminiGenerateContentRequest): ResponseTool[] | und
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentRequest, model: string): ResponsesPayload => {
+export const buildTargetRequest = (payload: GeminiPayload, model: string): ResponsesPayload => {
   const request: ResponsesPayload = {
     model,
     stream: true,
@@ -182,7 +182,7 @@ export const buildTargetRequest = (payload: GeminiGenerateContentRequest, model:
   const instructions = geminiText(payload.systemInstruction);
   if (instructions !== null) request.instructions = instructions;
 
-  const input = request.input as ResponseInputItem[];
+  const input = request.input as ResponsesInputItem[];
   payload.contents?.forEach((content, turnIndex) => {
     input.push(...(content.role === 'model' ? buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds) : buildUserInputItems(content, turnIndex, unmatchedToolCallIds)));
   });

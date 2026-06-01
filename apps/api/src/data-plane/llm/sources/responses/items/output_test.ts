@@ -8,14 +8,14 @@ import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../rep
 import { assert, assertEquals } from '../../../../../test-assert.ts';
 import type { RequestContext } from '../../../../llm/interceptors.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesOutputItem, ResponsesResult, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { translateResponsesViaMessages } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const apiKeyId = 'key_output';
 
-type IteratorResultPromise = Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>;
+type IteratorResultPromise = Promise<IteratorResult<ProtocolFrame<RawResponsesStreamEvent>>>;
 
 const makeContext = (overrides: Partial<StoreResponsesContext> = {}): StoreResponsesContext => ({
   targetApi: overrides.targetApi ?? 'responses',
@@ -31,7 +31,7 @@ const makeRequest = (syntheticItemIds: Iterable<string> = []): RequestContext =>
   responsesSyntheticItemIds: new Set(syntheticItemIds),
 });
 
-const messageItem = (id: string, text: string): Extract<ResponseOutputItem, { type: 'message' }> => ({
+const messageItem = (id: string, text: string): Extract<ResponsesOutputItem, { type: 'message' }> => ({
   type: 'message',
   id,
   role: 'assistant',
@@ -39,7 +39,7 @@ const messageItem = (id: string, text: string): Extract<ResponseOutputItem, { ty
   content: [{ type: 'output_text', text }],
 });
 
-const response = (output: ResponseOutputItem[], status: ResponsesResult['status'] = 'completed'): ResponsesResult => ({
+const response = (output: ResponsesOutputItem[], status: ResponsesResult['status'] = 'completed'): ResponsesResult => ({
   id: 'resp_test',
   object: 'response',
   model: 'gpt-test',
@@ -50,7 +50,7 @@ const response = (output: ResponseOutputItem[], status: ResponsesResult['status'
   incomplete_details: null,
 });
 
-const framesFrom = async function* (events: readonly ResponsesStreamEvent[]) {
+const framesFrom = async function* (events: readonly RawResponsesStreamEvent[]) {
   for (const event of events) yield eventFrame(event);
 };
 
@@ -58,25 +58,25 @@ const framesFrom = async function* (events: readonly ResponsesStreamEvent[]) {
 // the stream exercise the streaming path, where finalized items write through
 // at once. `.events` drops the commit handle, which is a no-op there.
 const storeStreaming = (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>,
   context: StoreResponsesContext,
   request: RequestContext,
-): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> =>
+): AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> =>
   storeResponsesOutputItems(frames, responsesItemsView, context, request, true).events;
 
-const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
-  const collected: ResponsesStreamEvent[] = [];
+const collectEvents = async (events: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>): Promise<RawResponsesStreamEvent[]> => {
+  const collected: RawResponsesStreamEvent[] = [];
   for await (const item of events) {
     if (item.type === 'event') collected.push(item.event);
   }
   return collected;
 };
 
-const eventAt = <TType extends ResponsesStreamEvent['type']>(
-  events: readonly ResponsesStreamEvent[],
+const eventAt = <TType extends RawResponsesStreamEvent['type']>(
+  events: readonly RawResponsesStreamEvent[],
   type: TType,
-): Extract<ResponsesStreamEvent, { type: TType }> => {
-  const event = events.find((candidate): candidate is Extract<ResponsesStreamEvent, { type: TType }> => candidate.type === type);
+): Extract<RawResponsesStreamEvent, { type: TType }> => {
+  const event = events.find((candidate): candidate is Extract<RawResponsesStreamEvent, { type: TType }> => candidate.type === type);
   assert(event, `expected ${type}`);
   return event;
 };
@@ -168,7 +168,7 @@ test('persists each row before yielding the item-done frame', async () => {
   // added flows real-time without persist; mid-stream replay race is
   // accepted per design.
   const addedFrame = await iterator.next();
-  assertEquals((addedFrame.value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  assertEquals((addedFrame.value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
   assertEquals(controlled.calls.length, 0);
 
   // done is held until the row insert resolves, so a client that has seen
@@ -177,7 +177,7 @@ test('persists each row before yielding the item-done frame', async () => {
   assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
   assertEquals(controlled.calls.length, 1);
   controlled.resolveInsert?.();
-  assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  assertEquals(((await doneFrame).value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
 });
 
 test('insert failure does not sink the stream', async () => {
@@ -194,16 +194,16 @@ test('insert failure does not sink the stream', async () => {
       { type: 'response.completed', response: response([original]) },
     ]), makeContext(), makeRequest())[Symbol.asyncIterator]();
 
-    assertEquals(((await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+    assertEquals(((await iterator.next()).value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
 
     // done is held until the insert settles; a failing insert is swallowed and
     // the frame still flows, so storage can never sink the stream.
     const doneFrame = iterator.next();
     assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
     controlled.rejectInsert?.(new Error('insert failed'));
-    assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+    assertEquals(((await doneFrame).value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
 
-    const completed = (await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>;
+    const completed = (await iterator.next()).value as ProtocolFrame<RawResponsesStreamEvent>;
     assert(completed.type === 'event' && completed.event.type === 'response.completed');
     assert((await iterator.next()).done);
     assert(errorSpy.mock.calls.length > 0);
@@ -285,7 +285,7 @@ test('two distinct upstream items receive distinct stored ids', async () => {
     { type: 'response.completed', response: response([first, second]) },
   ]), makeContext(), makeRequest()));
 
-  const done = events.filter((event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done');
+  const done = events.filter((event): event is Extract<RawResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done');
   assert(done[0].item.id !== done[1].item.id);
   assert(isStoredResponsesItemId(done[0].item.id!));
   assert(isStoredResponsesItemId(done[1].item.id!));
@@ -336,7 +336,7 @@ test('gateway-synthesized items registered this request do not claim upstream ow
   // upstream is a native Responses upstream (targetApi: 'responses'), the row
   // must carry no upstream identity — the upstream never issued this id — so it
   // stays non_affinity rather than biasing routing toward that upstream.
-  const synthetic: Extract<ResponseOutputItem, { type: 'web_search_call' }> = {
+  const synthetic: Extract<ResponsesOutputItem, { type: 'web_search_call' }> = {
     type: 'web_search_call',
     id: 'ws_gw_synthetic00000000000',
     status: 'completed',
@@ -402,13 +402,13 @@ test('non-streaming item-done then stream error persists nothing when commit is 
 // and `storeResponsesOutputItems` (targetApi: 'messages') records each as a
 // synthetic row (upstreamId null, payload present) that later requests can
 // inline-expand via item_reference.
-const messagesFramesFrom = async function* (events: readonly MessagesStreamEventData[]) {
+const messagesFramesFrom = async function* (events: readonly MessagesStreamEvent[]) {
   for (const event of events) yield eventFrame(event);
 };
 
 const translateMessagesUpstreamToResponses = async (
-  events: readonly MessagesStreamEventData[],
-): Promise<AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>> => {
+  events: readonly MessagesStreamEvent[],
+): Promise<AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>> => {
   const trip = await translateResponsesViaMessages(
     { model: 'claude-test', input: [], stream: true } as never,
     { model: 'claude-test' },
@@ -430,14 +430,14 @@ test('responses-via-messages synthesized message and function_call items persist
     { type: 'content_block_stop', index: 1 },
     { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
     { type: 'message_stop' },
-  ] as MessagesStreamEventData[]);
+  ] as MessagesStreamEvent[]);
 
   const events = await collectEvents(
     storeStreaming(upstreamFrames, makeContext({ targetApi: 'messages', upstream: 'up_anthropic' }), makeRequest()),
   );
 
   const doneEvents = events.filter(
-    (event): event is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done',
+    (event): event is Extract<RawResponsesStreamEvent, { type: 'response.output_item.done' }> => event.type === 'response.output_item.done',
   );
   const messageDone = doneEvents.find(event => event.item.type === 'message');
   const functionDone = doneEvents.find(event => event.item.type === 'function_call');

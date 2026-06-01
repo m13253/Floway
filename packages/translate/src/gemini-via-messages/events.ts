@@ -1,9 +1,9 @@
-import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiResponse, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
+import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
-const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEventData, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
+const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEvent, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
   switch (stopReason) {
   case 'end_turn':
   case 'tool_use':
@@ -20,7 +20,7 @@ const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEventData,
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
-const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<MessagesStreamEventData> {
+const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -40,7 +40,7 @@ interface MessagesToolUseDraft {
   args?: Record<string, unknown>;
 }
 
-interface GeminiViaMessagesStreamState extends GeminiThoughtSignatureState {
+interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
   inputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
@@ -51,7 +51,7 @@ interface GeminiViaMessagesStreamState extends GeminiThoughtSignatureState {
 // promptTokenCount is an inclusive total like OpenAI's prompt_tokens. Fold all
 // three Anthropic buckets into the Gemini total, then surface cache reads
 // separately as cachedContentTokenCount.
-const mapUsage = (state: GeminiViaMessagesStreamState, usage?: Extract<MessagesStreamEventData, { type: 'message_delta' }>['usage']): GeminiUsageMetadata | undefined => {
+const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata | undefined => {
   if (!usage) return undefined;
 
   const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
@@ -65,14 +65,14 @@ const mapUsage = (state: GeminiViaMessagesStreamState, usage?: Extract<MessagesS
   };
 };
 
-const throwOnMessagesFatalEvent = (event: MessagesStreamEventData): void => {
+const throwOnMessagesFatalEvent = (event: MessagesStreamEvent): void => {
   if (event.type !== 'error') return;
 
   throw new Error(`Upstream Messages stream error: ${event.error.type}: ${event.error.message}`, { cause: event });
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
-  const state: GeminiViaMessagesStreamState = {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
+  const state: MessagesToGeminiStreamState = {
     inputTokens: 0,
     cacheReadInputTokens: 0,
     cacheCreationInputTokens: 0,
@@ -107,7 +107,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
       if (event.content_block.type === 'thinking' && event.content_block.thinking.length > 0) {
         yield eventFrame(
-          geminiResponse([
+          geminiCandidateEvent([
             {
               text: event.content_block.thinking,
               thought: true,
@@ -118,7 +118,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       }
 
       if (event.content_block.type === 'text' && event.content_block.text.length > 0) {
-        yield eventFrame(geminiResponse([signGeminiPart(state, { text: event.content_block.text })]));
+        yield eventFrame(geminiCandidateEvent([signGeminiPart(state, { text: event.content_block.text })]));
       }
       break;
 
@@ -126,7 +126,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       switch (event.delta.type) {
       case 'thinking_delta':
         if (event.delta.thinking.length > 0) {
-          yield eventFrame(geminiResponse([{ text: event.delta.thinking, thought: true }]));
+          yield eventFrame(geminiCandidateEvent([{ text: event.delta.thinking, thought: true }]));
         }
         break;
       case 'signature_delta':
@@ -134,7 +134,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         break;
       case 'text_delta':
         if (event.delta.text.length > 0) {
-          yield eventFrame(geminiResponse([signGeminiPart(state, { text: event.delta.text })]));
+          yield eventFrame(geminiCandidateEvent([signGeminiPart(state, { text: event.delta.text })]));
         }
         break;
       case 'input_json_delta':
@@ -156,7 +156,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         }
 
         yield eventFrame(
-          geminiResponse([
+          geminiCandidateEvent([
             signGeminiPart(state, {
               functionCall: {
                 ...(toolUse.id !== undefined ? { id: toolUse.id } : {}),
@@ -171,7 +171,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'message_delta': {
-      yield eventFrame(geminiResponse(flushGeminiThoughtSignature(state), messagesStopReasonToGemini(event.delta.stop_reason), mapUsage(state, event.usage)));
+      yield eventFrame(geminiCandidateEvent(flushGeminiThoughtSignature(state), messagesStopReasonToGemini(event.delta.stop_reason), mapUsage(state, event.usage)));
       break;
     }
 

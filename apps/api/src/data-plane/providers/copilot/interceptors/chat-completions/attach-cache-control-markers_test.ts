@@ -5,7 +5,7 @@ import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
-import type { ChatCompletionChunk, Message } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const stubRequest: RequestContext = {
@@ -14,10 +14,10 @@ const stubRequest: RequestContext = {
   clientStream: false,
 };
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionChunk>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (messages: Message[]): ChatCompletionsInvocation => ({
+const invocation = (messages: ChatCompletionsMessage[]): ChatCompletionsInvocation => ({
   sourceApi: 'chat-completions',
   targetApi: 'chat-completions',
   model: 'gpt-test',
@@ -29,7 +29,7 @@ const invocation = (messages: Message[]): ChatCompletionsInvocation => ({
   headers: {},
 });
 
-const markedIndexes = (messages: readonly Message[]): number[] =>
+const markedIndexes = (messages: readonly ChatCompletionsMessage[]): number[] =>
   messages.flatMap((m, i) => ((m as CopilotCacheableMessage).copilot_cache_control ? [i] : []));
 
 test('Chat Completions cache markers attach to first two systems and last two non-systems', async () => {

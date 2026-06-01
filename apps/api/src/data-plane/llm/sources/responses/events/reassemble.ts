@@ -1,7 +1,7 @@
-import type { ResponsesResult, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponsesReassembleEvent =
-  | ResponseStreamEvent
+  | ResponsesStreamEvent
   | {
     type: 'error';
     message?: string;

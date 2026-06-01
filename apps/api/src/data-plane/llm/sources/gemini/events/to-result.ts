@@ -1,5 +1,5 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiCandidate, GeminiErrorResponse, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiCandidate, GeminiErrorResponse, GeminiResult, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 export const GEMINI_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a terminal event.';
 
@@ -58,9 +58,9 @@ const mergeCandidate = (candidates: Map<number, GeminiCandidate>, incoming: Gemi
   }
 };
 
-export const collectGeminiProtocolEventsToResponse = async (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): Promise<GeminiGenerateContentResponse> => {
+export const collectGeminiProtocolEventsToResult = async (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): Promise<GeminiResult> => {
   const candidates = new Map<number, GeminiCandidate>();
-  const response: GeminiGenerateContentResponse = {};
+  const result: GeminiResult = {};
   let completed = false;
 
   for await (const frame of frames) {
@@ -81,11 +81,11 @@ export const collectGeminiProtocolEventsToResponse = async (frames: AsyncIterabl
     }
 
     if (event.modelVersion !== undefined) {
-      response.modelVersion = event.modelVersion;
+      result.modelVersion = event.modelVersion;
     }
-    if (event.responseId !== undefined) response.responseId = event.responseId;
+    if (event.responseId !== undefined) result.responseId = event.responseId;
     if (event.usageMetadata !== undefined) {
-      response.usageMetadata = event.usageMetadata;
+      result.usageMetadata = event.usageMetadata;
     }
 
     if (isGeminiTerminalEvent(event)) {
@@ -99,7 +99,7 @@ export const collectGeminiProtocolEventsToResponse = async (frames: AsyncIterabl
   }
 
   const mergedCandidates = [...candidates.values()].sort((a, b) => a.index - b.index);
-  if (mergedCandidates.length > 0) response.candidates = mergedCandidates;
+  if (mergedCandidates.length > 0) result.candidates = mergedCandidates;
 
-  return response;
+  return result;
 };

@@ -1,11 +1,11 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import type { TranslateTrip } from '../types.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 export const translateChatCompletionsViaMessages: TranslateTrip<
-  ChatCompletionsPayload, ChatCompletionChunk, MessagesPayload, MessagesStreamEventData,
+  ChatCompletionsPayload, ChatCompletionsStreamEvent, MessagesPayload, MessagesStreamEvent,
   { fallbackMaxOutputTokens?: number }
 > = async (src, ctx) => ({
   target: await buildTargetRequest(src, { fallbackMaxOutputTokens: ctx.fallbackMaxOutputTokens }),

@@ -6,10 +6,10 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { MessagesInvocation, RequestContext } from '../../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEventData>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   sourceApi: 'messages',

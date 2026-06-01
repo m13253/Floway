@@ -1,12 +1,12 @@
 import type { MessagesAssistantContentBlock, MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@floway-dev/protocols/messages';
 
-export interface ChatScalarReasoning {
+export interface ChatCompletionsScalarReasoning {
   reasoningText: string | null;
   reasoningOpaque: string | null;
   hasReasoningOpaque: boolean;
 }
 
-export const messagesThinkingBlockFromChatScalarReasoning = (
+export const messagesThinkingBlockFromChatCompletionsScalarReasoning = (
   reasoningText: string | null | undefined,
   reasoningOpaque: string | null | undefined,
 ): MessagesThinkingBlock | MessagesRedactedThinkingBlock | null => {
@@ -21,7 +21,7 @@ export const messagesThinkingBlockFromChatScalarReasoning = (
   return reasoningOpaque !== undefined && reasoningOpaque !== null ? { type: 'redacted_thinking', data: reasoningOpaque } : null;
 };
 
-export const chatScalarReasoningFromMessagesBlock = (block: MessagesAssistantContentBlock): ChatScalarReasoning | null => {
+export const chatCompletionsScalarReasoningFromMessagesBlock = (block: MessagesAssistantContentBlock): ChatCompletionsScalarReasoning | null => {
   if (block.type === 'thinking') {
     return {
       reasoningText: block.thinking || null,

@@ -16,10 +16,10 @@
 
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../../shared/json-helpers.ts';
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
-const rewriteInboundUsage = (chunk: ChatCompletionChunk): ChatCompletionChunk => {
+const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
   if (!usage) return chunk;
   const cached = readJsonNumber(usage.cached_tokens);
@@ -33,7 +33,7 @@ const rewriteInboundUsage = (chunk: ChatCompletionChunk): ChatCompletionChunk =>
       cached_tokens: cached,
     },
   };
-  return { ...chunk, usage: next as unknown as ChatCompletionChunk['usage'] };
+  return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
 };
 
 export const withVendorKimiChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _request, run) => {

@@ -1,9 +1,9 @@
-import { chatContentToResponsesInputContent, chatContentToText } from '../shared/chat-and-responses/content.ts';
-import { scalarToResponseReasoningItem, translateChatReasoningItems } from '../shared/chat-and-responses/reasoning.ts';
-import type { ChatCompletionsPayload, Tool } from '@floway-dev/protocols/chat-completions';
-import type { ResponseInputItem, ResponseInputReasoning, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
+import { chatCompletionsContentToResponsesInputContent, chatCompletionsContentToText } from '../shared/chat-completions-and-responses/content.ts';
+import { scalarToResponsesReasoningItem, translateChatCompletionsReasoningItems } from '../shared/chat-completions-and-responses/reasoning.ts';
+import type { ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
-const translateChatTools = (tools?: Tool[] | null): ResponseTool[] | null =>
+const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool[] | null =>
   tools?.length
     ? tools.map(tool => ({
         type: 'function',
@@ -16,12 +16,12 @@ const translateChatTools = (tools?: Tool[] | null): ResponseTool[] | null =>
       }))
     : null;
 
-const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponseToolChoice =>
+const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
   choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
 
 export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): ResponsesPayload => {
   const instructions: string[] = [];
-  const input: ResponseInputItem[] = [];
+  const input: ResponsesInputItem[] = [];
   let hoistSystemPrefix = true;
 
   for (const message of payload.messages) {
@@ -29,7 +29,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
     // `instructions`; later `system` and `developer` turns are
     // chronology-bearing input items.
     if (hoistSystemPrefix && message.role === 'system') {
-      const text = chatContentToText(message.content);
+      const text = chatCompletionsContentToText(message.content);
       if (text) instructions.push(text);
       continue;
     }
@@ -40,14 +40,14 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
       input.push({
         type: 'message',
         role: 'user',
-        content: chatContentToResponsesInputContent(message.content),
+        content: chatCompletionsContentToResponsesInputContent(message.content),
       });
       continue;
     }
 
     if (message.role === 'assistant') {
-      const reasoningItems = translateChatReasoningItems<ResponseInputReasoning>(message.reasoning_items, () => input.length);
-      const scalarReasoning = scalarToResponseReasoningItem<ResponseInputReasoning>(message.reasoning_text, `rs_${input.length}`);
+      const reasoningItems = translateChatCompletionsReasoningItems<ResponsesInputReasoning>(message.reasoning_items, () => input.length);
+      const scalarReasoning = scalarToResponsesReasoningItem<ResponsesInputReasoning>(message.reasoning_text, `rs_${input.length}`);
       if (reasoningItems) {
         input.push(...reasoningItems);
       } else if (scalarReasoning) {
@@ -55,7 +55,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
       }
 
       if (message.tool_calls?.length) {
-        const text = chatContentToText(message.content);
+        const text = chatCompletionsContentToText(message.content);
         if (text) {
           input.push({
             type: 'message',
@@ -77,7 +77,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
         continue;
       }
 
-      const text = chatContentToText(message.content);
+      const text = chatCompletionsContentToText(message.content);
       input.push({
         type: 'message',
         role: 'assistant',
@@ -90,7 +90,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
       input.push({
         type: 'message',
         role: message.role,
-        content: chatContentToResponsesInputContent(message.content),
+        content: chatCompletionsContentToResponsesInputContent(message.content),
       });
       continue;
     }

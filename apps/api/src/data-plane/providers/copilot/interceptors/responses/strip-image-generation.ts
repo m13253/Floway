@@ -1,5 +1,5 @@
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
-import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool
@@ -15,9 +15,9 @@ import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway
  * - https://github.com/openai/codex/blob/9f42c89c0112771dc29100a6f3fc904049b2655f/codex-rs/tools/src/tool_spec.rs#L17-L27
  * - https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
  */
-const isImageGenerationTool = (tool: ResponseTool): boolean => tool.type === 'image_generation';
+const isImageGenerationTool = (tool: ResponsesTool): boolean => tool.type === 'image_generation';
 
-const isImageGenerationToolChoice = (choice: ResponseToolChoice | undefined): boolean =>
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean =>
   typeof choice === 'object' && choice !== null && (choice as { type?: unknown }).type === 'image_generation';
 
 export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {

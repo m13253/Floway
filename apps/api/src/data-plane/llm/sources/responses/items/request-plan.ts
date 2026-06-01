@@ -3,7 +3,7 @@ import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import { throwLlmServeFailure, type LlmServeFailure } from '../../traits.ts';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -254,11 +254,11 @@ const classifyStoredResponsesAffinity = (
 };
 
 const rewriteStoredResponsesItemForProvider = (
-  item: ResponseInputItem,
+  item: ResponsesInputItem,
   rowById: ReadonlyMap<string, StoredResponsesItem>,
   rowByEncryptedContent: ReadonlyMap<string, StoredResponsesItem>,
   provider: ProviderModelRecord,
-): ResponseInputItem | null => {
+): ResponsesInputItem | null => {
   const id = responsesItemId(item);
   const encryptedContent = responsesItemEncryptedContent(item);
   const row = (id !== null ? rowById.get(id) : undefined)
@@ -283,18 +283,18 @@ const rewriteStoredResponsesItemForProvider = (
 };
 
 const storedItemReplacementBase = (
-  item: ResponseInputItem,
+  item: ResponsesInputItem,
   row: StoredResponsesItem,
-): ResponseInputItem => {
+): ResponsesInputItem => {
   // The caller hands us items it already owns (the per-attempt payload clone),
   // so the no-stored-payload branch may reuse `item` directly. The stored row,
   // by contrast, lives in the shared lookup cache and is cloned so downstream
   // interceptor mutation cannot corrupt it across the request.
   if (row.payload === null) return item;
-  return structuredClone(row.payload.item) as ResponseInputItem;
+  return structuredClone(row.payload.item) as ResponsesInputItem;
 };
 
-const itemWithId = (item: ResponseInputItem, id: string): ResponseInputItem => ({
+const itemWithId = (item: ResponsesInputItem, id: string): ResponsesInputItem => ({
   ...item,
   id,
-} as ResponseInputItem);
+} as ResponsesInputItem);

@@ -14,15 +14,15 @@ import {
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
 } from '@floway-dev/protocols/messages';
-import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesInputContent, ResponsesInputItem, ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
-const flushPendingContent = (pending: ResponseInputContent[], input: ResponseInputItem[], role: 'user' | 'assistant'): void => {
+const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
   input.push({ type: 'message', role, content: [...pending] });
   pending.length = 0;
 };
 
-const translateUserContentBlock = (block: MessagesUserContentBlock): ResponseInputContent | undefined => {
+const translateUserContentBlock = (block: MessagesUserContentBlock): ResponsesInputContent | undefined => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
   if (block.type !== 'image') return undefined;
 
@@ -46,7 +46,7 @@ const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']
   return JSON.stringify(content);
 };
 
-const toResponsesFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ResponseInputItem => ({
+const toResponsesFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ResponsesInputItem => ({
   type: 'function_call',
   call_id: block.id,
   name: block.name,
@@ -54,7 +54,7 @@ const toResponsesFunctionCall = (block: MessagesToolUseBlock | MessagesServerToo
   status: 'completed',
 });
 
-const toResponsesStructuredToolOutput = (block: MessagesWebSearchToolResultBlock): Extract<ResponseInputItem, { type: 'function_call_output' }> => ({
+const toResponsesStructuredToolOutput = (block: MessagesWebSearchToolResultBlock): Extract<ResponsesInputItem, { type: 'function_call_output' }> => ({
   type: 'function_call_output',
   call_id: block.tool_use_id,
   output: JSON.stringify(block.content),
@@ -68,13 +68,13 @@ const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] 
   return clientTools.length > 0 ? clientTools : undefined;
 };
 
-const translateUserMessage = (message: MessagesUserMessage): ResponseInputItem[] => {
+const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
   }
 
-  const input: ResponseInputItem[] = [];
-  const pendingContent: ResponseInputContent[] = [];
+  const input: ResponsesInputItem[] = [];
+  const pendingContent: ResponsesInputContent[] = [];
 
   for (const block of message.content) {
     if (block.type === 'tool_result') {
@@ -99,13 +99,13 @@ const translateUserMessage = (message: MessagesUserMessage): ResponseInputItem[]
   return input;
 };
 
-const translateAssistantMessage = (message: MessagesAssistantMessage): ResponseInputItem[] => {
+const translateAssistantMessage = (message: MessagesAssistantMessage): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
 
-  const input: ResponseInputItem[] = [];
-  const pendingContent: ResponseInputContent[] = [];
+  const input: ResponsesInputItem[] = [];
+  const pendingContent: ResponsesInputContent[] = [];
 
   for (const block of message.content) {
     if (block.type === 'tool_use' || block.type === 'server_tool_use') {
@@ -135,7 +135,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): ResponseI
   return input;
 };
 
-const translateMessagesInput = (messages: MessagesMessage[]): ResponseInputItem[] =>
+const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem[] =>
   messages.flatMap(message => (message.role === 'user' ? translateUserMessage(message) : translateAssistantMessage(message)));
 
 const translateSystemPrompt = (system: string | MessagesTextBlock[] | undefined): string | null => {
@@ -148,7 +148,7 @@ const translateSystemPrompt = (system: string | MessagesTextBlock[] | undefined)
   return text.length > 0 ? text : null;
 };
 
-const translateTools = (tools: MessagesClientTool[] | undefined): ResponseTool[] | null => {
+const translateTools = (tools: MessagesClientTool[] | undefined): ResponsesTool[] | null => {
   if (!tools || tools.length === 0) return null;
 
   return tools.map(tool => ({
@@ -162,7 +162,7 @@ const translateTools = (tools: MessagesClientTool[] | undefined): ResponseTool[]
   }));
 };
 
-const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?: MessagesClientTool[]): ResponseToolChoice => {
+const translateToolChoice = (toolChoice: MessagesPayload['tool_choice'], tools?: MessagesClientTool[]): ResponsesToolChoice => {
   if (!toolChoice || !tools || tools.length === 0) return 'auto';
 
   const toolNames = new Set(tools.map(tool => tool.name));

@@ -6,7 +6,7 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponseInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
@@ -14,8 +14,8 @@ const stubRequest: RequestContext = {
   clientStream: false,
 };
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   sourceApi: 'responses',
@@ -124,7 +124,7 @@ test('Responses initiator is agent when the last input item is a custom_tool_cal
 
 test('Responses initiator is agent when the last input item is a hosted-tool output without a role field', async () => {
   // Future / non-canonical hosted-tool output shapes (e.g. `tool_search_output`)
-  // are not in our `ResponseInputItem` union but they reach Copilot's wire shape
+  // are not in our `ResponsesInputItem` union but they reach Copilot's wire shape
   // in the wild. They have no `role` field, which is exactly the discriminator
   // caozhiyuan/copilot-api uses to classify them as agent-initiated.
   const ctx = invocation({
@@ -135,7 +135,7 @@ test('Responses initiator is agent when the last input item is a hosted-tool out
         role: 'user',
         content: [{ type: 'input_text', text: 'search the web' }],
       },
-      { type: 'tool_search_output', output: 'result' } as unknown as ResponseInputItem,
+      { type: 'tool_search_output', output: 'result' } as unknown as ResponsesInputItem,
     ],
   });
 

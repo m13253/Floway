@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { createChatCompletionsToMessagesStreamState, flushChatCompletionsToMessagesEvents, mapChatCompletionsUsageToMessagesUsage, translateChatCompletionsChunkToMessagesEvents } from './events.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 
-const chunk = (delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null): ChatCompletionChunk => ({
+const chunk = (delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -12,7 +12,7 @@ const chunk = (delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: 
   choices: [{ index: 0, delta, finish_reason: finishReason }],
 });
 
-const usageChunk = (): ChatCompletionChunk => ({
+const usageChunk = (): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,

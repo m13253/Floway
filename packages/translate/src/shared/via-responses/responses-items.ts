@@ -1,16 +1,16 @@
 import { parseToolArgumentsObject } from '../messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock, unpackReasoningSignature } from '../messages-and-responses/reasoning.ts';
-import type { ChatCompletionChunk, ChatReasoningItem, Message as ChatMessage } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { MessagesAssistantContentBlock, MessagesMessage, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponseInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { MessagesAssistantContentBlock, MessagesMessage, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesInputItem, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export type ResponsesItemMapper = (
-  item: ResponseInputItem,
-) => ResponseInputItem | null | Promise<ResponseInputItem | null>;
+  item: ResponsesInputItem,
+) => ResponsesInputItem | null | Promise<ResponsesInputItem | null>;
 
-export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<void>;
+export type ResponsesItemVisitor = (item: ResponsesInputItem) => void | Promise<void>;
 
 // Stream side splits id-rewrite from persistence. The id rewrite is a sync,
 // per-frame transform — every appearance of a Responses item carrier in the
@@ -23,7 +23,7 @@ export type ResponsesItemVisitor = (item: ResponseInputItem) => void | Promise<v
 export type ResponsesItemIdMapper = (upstreamId: string, itemType: string) => string;
 
 export type ResponsesItemFinalizedHandler = (
-  originalItem: ResponseInputItem,
+  originalItem: ResponsesInputItem,
   newId: string,
 ) => void | Promise<void>;
 
@@ -46,8 +46,8 @@ export type ResponsesItemFinalizedHandler = (
 // top-level `readonly`: the view owns the per-attempt payload clone, so it
 // hands back a freely-mutable container. The mapped type is therefore derived
 // rather than carried as a second generic. Distributing over unions keeps
-// `Mutable<string | readonly ResponseInputItem[]>` equal to
-// `string | ResponseInputItem[]`.
+// `Mutable<string | readonly ResponsesInputItem[]>` equal to
+// `string | ResponsesInputItem[]`.
 export type Mutable<T> = T extends readonly (infer E)[] ? E[] : T;
 
 export interface ResponsesItemsView<TSourceItems, TStreamFrame = unknown> {
@@ -66,19 +66,19 @@ export interface ResponsesItemsView<TSourceItems, TStreamFrame = unknown> {
 
 export const responsesItemsView = {
   visitAsResponsesItems: async (
-    input: string | readonly ResponseInputItem[],
+    input: string | readonly ResponsesInputItem[],
     visitor: ResponsesItemVisitor,
   ): Promise<void> => {
     if (typeof input === 'string') return;
     for (const item of input) await visitor(item);
   },
   mapAsResponsesItems: async (
-    input: string | readonly ResponseInputItem[],
+    input: string | readonly ResponsesInputItem[],
     mapper: ResponsesItemMapper,
-  ): Promise<string | ResponseInputItem[]> => {
+  ): Promise<string | ResponsesInputItem[]> => {
     if (typeof input === 'string') return input;
 
-    const out: ResponseInputItem[] = [];
+    const out: ResponsesInputItem[] = [];
     for (const item of input) {
       const mapped = await mapper(item);
       if (mapped !== null) out.push(mapped);
@@ -86,10 +86,10 @@ export const responsesItemsView = {
     return out;
   },
   async *streamMapIdAsResponsesItems(
-    frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+    frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>,
     idMapper: ResponsesItemIdMapper,
     onItemFinalized?: ResponsesItemFinalizedHandler,
-  ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  ): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
     // `seenItemTypes` records the item type for every upstream id we have
     // mapped via an item-bearing frame. Delta events only carry `item_id`
     // and no type, so we look the type up here before re-invoking idMapper,
@@ -128,27 +128,27 @@ export const responsesItemsView = {
         const newId = idMapper(upstreamId, event.item.type);
         if (onItemFinalized && !finalized.has(upstreamId)) {
           finalized.add(upstreamId);
-          await onItemFinalized(event.item as unknown as ResponseInputItem, newId);
+          await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
         }
         yield eventFrame({ ...event, item: { ...event.item, id: newId } });
         continue;
       }
 
       if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-        const output: ResponseInputItem[] = [];
+        const output: ResponsesInputItem[] = [];
         for (const item of event.response.output) {
           const upstreamId = itemId(item);
           if (upstreamId === null) {
-            output.push(item as unknown as ResponseInputItem);
+            output.push(item as unknown as ResponsesInputItem);
             continue;
           }
           seenItemTypes.set(upstreamId, item.type);
           const newId = idMapper(upstreamId, item.type);
           if (onItemFinalized && !finalized.has(upstreamId)) {
             finalized.add(upstreamId);
-            await onItemFinalized(item as unknown as ResponseInputItem, newId);
+            await onItemFinalized(item as unknown as ResponsesInputItem, newId);
           }
-          output.push({ ...(item as unknown as ResponseInputItem), id: newId });
+          output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
         }
         yield eventFrame({
           ...event,
@@ -170,13 +170,13 @@ export const responsesItemsView = {
           continue;
         }
         const newId = idMapper(refId, knownType);
-        yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
+        yield eventFrame({ ...event, item_id: newId } as RawResponsesStreamEvent);
         continue;
       }
       yield frame;
     }
   },
-} satisfies ResponsesItemsView<string | readonly ResponseInputItem[], ProtocolFrame<ResponsesStreamEvent>>;
+} satisfies ResponsesItemsView<string | readonly ResponsesInputItem[], ProtocolFrame<RawResponsesStreamEvent>>;
 
 const itemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
@@ -264,10 +264,10 @@ export const messagesViaResponsesItemsView = {
   // signature_delta after stop, or a thinking_delta after stop, is treated
   // as upstream protocol corruption and surfaced as a 5xx via plain throw.
   async *streamMapIdAsResponsesItems(
-    frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
+    frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
     idMapper: ResponsesItemIdMapper,
     onItemFinalized?: ResponsesItemFinalizedHandler,
-  ): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     interface BlockState {
       thinking: string;
       signature?: string;
@@ -347,7 +347,7 @@ export const messagesViaResponsesItemsView = {
             });
           } else {
             const newId = idMapper(upstreamId, 'reasoning');
-            const originalItem: ResponseInputItem = {
+            const originalItem: ResponsesInputItem = {
               type: 'reasoning',
               id: upstreamId,
               summary: state.thinking ? [{ type: 'summary_text', text: state.thinking }] : [],
@@ -373,7 +373,7 @@ export const messagesViaResponsesItemsView = {
       yield frame;
     }
   },
-} satisfies ResponsesItemsView<readonly MessagesMessage[], ProtocolFrame<MessagesStreamEventData>>;
+} satisfies ResponsesItemsView<readonly MessagesMessage[], ProtocolFrame<MessagesStreamEvent>>;
 
 // A reasoning block echoed back by a Messages client carries the packed
 // `${encrypted_content}@${id}` value in `thinking.signature` or
@@ -390,13 +390,13 @@ const reasoningCarrier = (block: MessagesAssistantContentBlock): { id: string; e
   return { id, encryptedContent, thinking: block.type === 'thinking' ? block.thinking : '' };
 };
 
-const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): MessagesAssistantContentBlock | null => {
+const responsesItemToMessagesAssistantBlock = (item: ResponsesInputItem): MessagesAssistantContentBlock | null => {
   switch (item.type) {
   case 'reasoning':
     return responsesReasoningToMessagesBlock(item);
   case 'message': {
     if (item.role !== 'assistant') return null;
-    const text = responseMessageOutputText(item);
+    const text = responsesMessageOutputText(item);
     return text ? { type: 'text', text } : null;
   }
   case 'function_call':
@@ -408,7 +408,7 @@ const responsesItemToMessagesAssistantBlock = (item: ResponseInputItem): Message
   }
 };
 
-const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'message' }>): string => {
+const responsesMessageOutputText = (item: Extract<ResponsesInputItem, { type: 'message' }>): string => {
   if (typeof item.content === 'string') return item.content;
   return item.content
     .filter((part): part is Extract<typeof part, { text: string }> => 'text' in part)
@@ -422,7 +422,7 @@ const responseMessageOutputText = (item: Extract<ResponseInputItem, { type: 'mes
 
 export const chatCompletionsViaResponsesItemsView = {
   visitAsResponsesItems: async (
-    messages: readonly ChatMessage[],
+    messages: readonly ChatCompletionsMessage[],
     visitor: ResponsesItemVisitor,
   ): Promise<void> => {
     for (const message of messages) {
@@ -435,17 +435,17 @@ export const chatCompletionsViaResponsesItemsView = {
     }
   },
   mapAsResponsesItems: async (
-    messages: readonly ChatMessage[],
+    messages: readonly ChatCompletionsMessage[],
     mapper: ResponsesItemMapper,
-  ): Promise<ChatMessage[]> => {
-    const out: ChatMessage[] = [];
+  ): Promise<ChatCompletionsMessage[]> => {
+    const out: ChatCompletionsMessage[] = [];
     for (const message of messages) {
       if (message.role !== 'assistant' || !message.reasoning_items?.length) {
         out.push(message);
         continue;
       }
 
-      const reasoningItems: ChatReasoningItem[] = [];
+      const reasoningItems: ChatCompletionsReasoningItem[] = [];
       for (const item of message.reasoning_items) {
         if (!item.id) {
           reasoningItems.push(item);
@@ -471,10 +471,10 @@ export const chatCompletionsViaResponsesItemsView = {
   // across chunks still produces a single row (first chunk's content wins —
   // accepted limitation; native upstreams don't hit this path).
   async *streamMapIdAsResponsesItems(
-    frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>,
+    frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
     idMapper: ResponsesItemIdMapper,
     onItemFinalized?: ResponsesItemFinalizedHandler,
-  ): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> {
+  ): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
     const finalized = new Set<string>();
 
     for await (const frame of frames) {
@@ -488,7 +488,7 @@ export const chatCompletionsViaResponsesItemsView = {
         if (!reasoningItems?.length) return { choice, mutated: false };
 
         let mutated = false;
-        const out: ChatReasoningItem[] = [];
+        const out: ChatCompletionsReasoningItem[] = [];
         for (const item of reasoningItems) {
           if (!item.id) {
             out.push(item);
@@ -520,7 +520,7 @@ export const chatCompletionsViaResponsesItemsView = {
       yield eventFrame({ ...chunk, choices: rewritten.map(entry => entry.choice) });
     }
   },
-} satisfies ResponsesItemsView<readonly ChatMessage[], ProtocolFrame<ChatCompletionChunk>>;
+} satisfies ResponsesItemsView<readonly ChatCompletionsMessage[], ProtocolFrame<ChatCompletionsStreamEvent>>;
 
 // ---------------------------------------------------------------------------
 // Gemini source

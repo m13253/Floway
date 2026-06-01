@@ -1,18 +1,18 @@
-import { responsesContentToChatContent, responsesContentToText } from '../shared/chat-and-responses/content.ts';
-import { addResponseReasoningToChatProjection, type ChatReasoningProjection, chatReasoningProjectionFields, createChatReasoningProjection } from '../shared/chat-and-responses/reasoning.ts';
+import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
+import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import type { ChatCompletionsPayload, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
+import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
-  message: Message;
-  reasoning: ChatReasoningProjection;
+  message: ChatCompletionsMessage;
+  reasoning: ChatCompletionsReasoningProjection;
 }
 
 const ensureAssistant = (assistant: AssistantAccumulator | null): AssistantAccumulator =>
   assistant ?? {
     message: { role: 'assistant', content: null },
-    reasoning: createChatReasoningProjection(),
+    reasoning: createChatCompletionsReasoningProjection(),
   };
 
 const appendAssistantText = (assistant: AssistantAccumulator | null, text: string): AssistantAccumulator | null => {
@@ -37,12 +37,12 @@ const appendAssistantToolCall = (
         name: call.name,
         arguments: call.arguments,
       },
-    } satisfies ToolCall,
+    } satisfies ChatCompletionsToolCall,
   ];
   return next;
 };
 
-const translateResponseTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): Tool[] | undefined => {
+const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): ChatCompletionsTool[] | undefined => {
   // Translated Chat Completions targets do not currently have a faithful
   // bridge for hosted/deferred Responses tools (`web_search`,
   // `tool_search`, `namespace`, `image_generation`, and future builtin
@@ -53,7 +53,7 @@ const translateResponseTools = (tools: ResponseTool[] | null | undefined, custom
   // function tool is in `payload.tools` under its resolved name (the shim
   // injects it on every request that uses hosted web_search) and reaches
   // here as an ordinary function tool — no special carve-out needed.
-  const out: Tool[] = [];
+  const out: ChatCompletionsTool[] = [];
 
   for (const tool of tools ?? []) {
     if (tool.type === 'function') {
@@ -85,7 +85,7 @@ const translateResponseTools = (tools: ResponseTool[] | null | undefined, custom
   return out.length > 0 ? out : undefined;
 };
 
-const translateResponseToolChoice = (choice?: ResponseToolChoice): ChatCompletionsPayload['tool_choice'] => {
+const translateResponsesToolChoice = (choice?: ResponsesToolChoice): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
@@ -94,7 +94,7 @@ const translateResponseToolChoice = (choice?: ResponseToolChoice): ChatCompletio
   return { type: 'function', function: { name: choice.name } };
 };
 
-const buildChatResponseFormat = (text: ResponsesPayload['text']): ChatCompletionsPayload['response_format'] | undefined => {
+const buildChatCompletionsResponseFormat = (text: ResponsesPayload['text']): ChatCompletionsPayload['response_format'] | undefined => {
   if (text === undefined) return undefined;
   if (text === null) return null;
   // `text: {}` means no explicit format. Keep it omitted instead of converting
@@ -132,8 +132,8 @@ export interface ResponsesToChatCompletionsResult {
 
 export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ResponsesToChatCompletionsResult => {
   const customToolNames = new Set<string>();
-  const responseFormat = buildChatResponseFormat(payload.text);
-  const messages: Message[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
+  const responseFormat = buildChatCompletionsResponseFormat(payload.text);
+  const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
 
   if (typeof payload.input === 'string') {
     messages.push({ role: 'user', content: payload.input });
@@ -143,7 +143,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       if (!assistant) return;
       messages.push({
         ...assistant.message,
-        ...chatReasoningProjectionFields(assistant.reasoning),
+        ...chatCompletionsReasoningProjectionFields(assistant.reasoning),
       });
       assistant = null;
     };
@@ -151,7 +151,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
     for (const item of payload.input) {
       if (item.type === 'reasoning') {
         assistant = ensureAssistant(assistant);
-        addResponseReasoningToChatProjection(assistant.reasoning, item);
+        addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);
         continue;
       }
 
@@ -168,7 +168,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
         messages.push({
           role: 'tool',
           tool_call_id: item.call_id,
-          content: responsesContentToChatContent(item.output),
+          content: responsesContentToChatCompletionsContent(item.output),
         });
         continue;
       }
@@ -218,14 +218,14 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       flushAssistant();
       messages.push({
         role: item.role,
-        content: responsesContentToChatContent(item.content),
+        content: responsesContentToChatCompletionsContent(item.content),
       });
     }
 
     flushAssistant();
   }
 
-  const tools = translateResponseTools(payload.tools, customToolNames);
+  const tools = translateResponsesTools(payload.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader
   // Responses-only state such as `previous_response_id` remains native-only.
   const target: ChatCompletionsPayload = {
@@ -246,7 +246,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
     // Chat Completions has no request-level counterpart for Responses
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
-    tool_choice: translateResponseToolChoice(payload.tool_choice),
+    tool_choice: translateResponsesToolChoice(payload.tool_choice),
   };
 
   return { target, customToolNames };

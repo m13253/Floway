@@ -7,11 +7,11 @@ import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderN
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
 import { serverToolResultSlot } from '../server-tool-shim.ts';
 import type { ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
-import type { ResponseFunctionCallOutputItem, ResponseFunctionTool, ResponseFunctionToolCallItem, ResponseHostedTool, ResponseInputItem, ResponseInputWebSearchCall, ResponseOutputWebSearchCall, ResponseTool, ResponseWebSearchAction, ResponseWebSearchResult } from '@floway-dev/protocols/responses';
+import type { ResponsesFunctionCallOutputItem, ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesInputWebSearchCall, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 
 // Runtime set derived from the canonical tuple declared next to
-// `ResponseHostedToolType` so the type union and runtime check can't drift.
+// `ResponsesHostedToolType` so the type union and runtime check can't drift.
 //   https://github.com/openai/openai-python/blob/e75766769547601a25ed83b666c4d0fd046881f0/src/openai/types/responses/web_search_tool.py
 //   https://github.com/openai/openai-python/blob/e75766769547601a25ed83b666c4d0fd046881f0/src/openai/types/responses/web_search_preview_tool.py
 export const WEB_SEARCH_HOSTED_TYPES: ReadonlySet<string> = new Set<string>(WEB_SEARCH_HOSTED_TYPE_NAMES);
@@ -72,7 +72,7 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 const buildUmbrellaTool = (
   name: string,
   userLocation?: ShimToolFilters['userLocation'],
-): ResponseFunctionTool => {
+): ResponsesFunctionTool => {
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -140,10 +140,10 @@ const buildUmbrellaTool = (
   };
 };
 
-export const isHostedWebSearchTool = (tool: ResponseTool): tool is ResponseHostedTool =>
+export const isHostedWebSearchTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   typeof tool.type === 'string' && WEB_SEARCH_HOSTED_TYPES.has(tool.type);
 
-const extractFilters = (tool: ResponseHostedTool): ShimToolFilters => {
+const extractFilters = (tool: ResponsesHostedTool): ShimToolFilters => {
   const out: ShimToolFilters = {};
   if (tool.filters?.allowed_domains) out.allowedDomains = tool.filters.allowed_domains;
   if (tool.filters?.blocked_domains) out.blockedDomains = tool.filters.blocked_domains;
@@ -201,7 +201,7 @@ const validateDomainListEntry = (
 // replaces the hosted entry with its umbrella function tool, so any
 // hosted-only field the shim doesn't process never reaches upstream
 // regardless.
-const validateHostedEntry = (tool: ResponseHostedTool): PrepareToolsError | null => {
+const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | null => {
   const sizeField = (tool as { search_context_size?: unknown }).search_context_size;
   if (sizeField !== undefined && sizeField !== null && !isValidSearchContextSize(sizeField)) {
     return {
@@ -253,7 +253,7 @@ const validateHostedEntry = (tool: ResponseHostedTool): PrepareToolsError | null
 // `replaceHostedToolsWithFunctionTool`); this function only reads the
 // hosted entries.
 export const prepareToolsForShim = (
-  tools: ResponseTool[],
+  tools: ResponsesTool[],
 ): PrepareToolsResult => {
   let hostedSeen = false;
   let lastHostedFilters: ShimToolFilters = {};
@@ -479,9 +479,9 @@ export const ITERATION_CAP = 30;
 export interface WebSearchCallIR {
   id: string;
   status: 'completed';
-  action: ResponseWebSearchAction;
+  action: ResponsesWebSearchAction;
   /** Always populated; see file-header divergence note in server-tools/web-search.ts. */
-  results: ResponseWebSearchResult[];
+  results: ResponsesWebSearchResult[];
   /**
    * Set when this IR was built from a replayed input item that lacked
    * a `results` field — e.g. codex CLI strips the field before
@@ -530,7 +530,7 @@ export const emptyUmbrellaArgsText
 export const searchIr = (
   id: string,
   query: string,
-  results: ResponseWebSearchResult[],
+  results: ResponsesWebSearchResult[],
   sources?: { type: 'url'; url: string }[],
 ): WebSearchCallIR => ({
   id,
@@ -552,7 +552,7 @@ export const searchIr = (
 export const openPageIr = (
   id: string,
   url: string | undefined,
-  results: ResponseWebSearchResult[],
+  results: ResponsesWebSearchResult[],
 ): WebSearchCallIR => ({
   id,
   status: 'completed',
@@ -568,7 +568,7 @@ export const findInPageIr = (
   id: string,
   url: string,
   pattern: string,
-  results: ResponseWebSearchResult[],
+  results: ResponsesWebSearchResult[],
 ): WebSearchCallIR => ({
   id,
   status: 'completed',
@@ -601,7 +601,7 @@ export const schemaErrorIr = (
 // openai-python `ActionSearch.query` is a single string; some clients
 // send only `queries[]`. Accept both: the shim emits both fields on
 // every search action so typed SDKs reading either one keep working.
-const actionSearchQueries = (action: Extract<ResponseWebSearchAction, { type: 'search' }>): string[] => {
+const actionSearchQueries = (action: Extract<ResponsesWebSearchAction, { type: 'search' }>): string[] => {
   if (action.queries !== undefined) return action.queries;
   if (action.query !== undefined) return [action.query];
   return [];
@@ -627,9 +627,9 @@ const actionSearchQueries = (action: Extract<ResponseWebSearchAction, { type: 's
  * private payload keyed by the item's `id`, and fall back to the public
  * item (and `resultsStripped`) only when no persisted payload exists.
  */
-export const inputItemToIr = (item: ResponseInputWebSearchCall): WebSearchCallIR | null => {
+export const inputItemToIr = (item: ResponsesInputWebSearchCall): WebSearchCallIR | null => {
   if (item.action === undefined) return null;
-  let action: ResponseWebSearchAction;
+  let action: ResponsesWebSearchAction;
   if (item.action.type === 'search') {
     const queries = actionSearchQueries(item.action);
     // Emit both `query` and `queries`; see `actionSearchQueries`.
@@ -664,8 +664,8 @@ export const irToUpstreamPair = (
   ir: WebSearchCallIR,
   umbrellaToolName: string,
 ): {
-  functionCall: ResponseFunctionToolCallItem;
-  functionCallOutput: ResponseFunctionCallOutputItem;
+  functionCall: ResponsesFunctionToolCallItem;
+  functionCallOutput: ResponsesFunctionCallOutputItem;
 } => {
   const callId = `cc_from_${ir.id}`;
   return {
@@ -684,7 +684,7 @@ export const irToUpstreamPair = (
   };
 };
 
-const actionToUmbrellaArgsJson = (action: ResponseWebSearchAction): string => {
+const actionToUmbrellaArgsJson = (action: ResponsesWebSearchAction): string => {
   switch (action.type) {
   case 'search':
     return JSON.stringify({
@@ -705,7 +705,7 @@ const actionToUmbrellaArgsJson = (action: ResponseWebSearchAction): string => {
 // specific search hits in its final answer. Empty results emit
 // `(no results)` rather than a bare header so the model recognizes the
 // call ran successfully but returned nothing.
-const formatSearchResultsText = (query: string, results: readonly ResponseWebSearchResult[]): string => {
+const formatSearchResultsText = (query: string, results: readonly ResponsesWebSearchResult[]): string => {
   const header = `Search results for "${query}":`;
   if (results.length === 0) return `${header}\n\n(no results)`;
   const sections = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`);
@@ -740,10 +740,10 @@ export const irToOutputText = (ir: WebSearchCallIR): string => {
 // function_call_output pairs with the original wire item inlined so the
 // model can inspect them; positional indices stay stable.
 export const transformInputItemsForWebSearch = (
-  input: ResponseInputItem[],
+  input: ResponsesInputItem[],
   umbrellaToolName: string,
-): ResponseInputItem[] => {
-  const out: ResponseInputItem[] = [];
+): ResponsesInputItem[] => {
+  const out: ResponsesInputItem[] = [];
   for (const item of input) {
     if (item.type === 'web_search_call') {
       const ir = inputItemToIr(item);
@@ -896,7 +896,7 @@ export const formatMatches = (pattern: string, url: string, matches: readonly Fi
 const truncateString = (s: string, maxChars: number): string =>
   s.length <= maxChars ? s : `${truncatePreservingCodePoints(s, maxChars)}…`;
 
-const errorSnippet = (title: string, snippet: string): ResponseWebSearchResult => ({
+const errorSnippet = (title: string, snippet: string): ResponsesWebSearchResult => ({
   type: 'text_result',
   url: '',
   title,
@@ -967,7 +967,7 @@ const runBackendSearch = async (
     // like Tavily can return multi-KB snippets per hit; without this cap a
     // single noisy query can blow the upstream context window. Independent
     // of the provider-enforced 10 KiB cap on open_page bodies.
-    const results: ResponseWebSearchResult[] = result.results.map(r => ({
+    const results: ResponsesWebSearchResult[] = result.results.map(r => ({
       type: 'text_result' as const,
       url: r.source,
       title: r.title,
@@ -1359,7 +1359,7 @@ export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
                   { type: 'response.web_search_call.searching' },
                 ],
                 result: promise.then(ir => {
-                  const item: ServerToolOutputItem & Omit<ResponseOutputWebSearchCall, 'id'> = { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results };
+                  const item: ServerToolOutputItem & Omit<ResponsesOutputWebSearchCall, 'id'> = { type: 'web_search_call', status: 'completed', action: ir.action, results: ir.results };
                   return {
                     item,
                     endEvents: [{ type: 'response.web_search_call.completed' }],

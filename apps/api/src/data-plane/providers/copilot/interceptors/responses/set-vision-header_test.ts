@@ -6,7 +6,7 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponseInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
@@ -14,8 +14,8 @@ const stubRequest: RequestContext = {
   clientStream: false,
 };
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   sourceApi: 'responses',
@@ -67,7 +67,7 @@ test('Responses vision header set when an input_image is nested inside a non-mes
         // shim path can stuff arbitrary content blocks here, and caozhiyuan's
         // detector treats any nested `input_image` as vision input.
         content: [{ type: 'input_image', image_url: 'data:image/png;base64,BBBB' }],
-      } as unknown as ResponseInputItem,
+      } as unknown as ResponsesInputItem,
     ],
   });
 

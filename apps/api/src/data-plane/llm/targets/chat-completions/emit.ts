@@ -4,15 +4,15 @@ import { type ChatCompletionsInvocation, type RequestContext, runInterceptors } 
 import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 
 const targetApi = 'chat-completions';
 
 // Probes for OpenAI-style streamed error payloads before the unknown body is
-// committed to the ChatCompletionChunk shape. Receives unknown (not the
-// generic `ChatCompletionChunk`) because the inspection runs on the raw
+// committed to the ChatCompletionsStreamEvent shape. Receives unknown (not the
+// generic `ChatCompletionsStreamEvent`) because the inspection runs on the raw
 // upstream JSON.
 const guardChatCompletionsError = (parsed: unknown): void => {
   const errorMessage = chatCompletionsErrorPayloadMessage(parsed);
@@ -21,9 +21,9 @@ const guardChatCompletionsError = (parsed: unknown): void => {
   }
 };
 
-export const chatCompletionsStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> =>
+export const chatCompletionsStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> =>
   (async function* () {
-    for await (const frame of parseTargetStreamFrames<ChatCompletionChunk>(frames, {
+    for await (const frame of parseTargetStreamFrames<ChatCompletionsStreamEvent>(frames, {
       protocol: 'Chat Completions',
     })) {
       if (frame.type === 'done') {
@@ -35,7 +35,7 @@ export const chatCompletionsStreamFramesToEvents = (frames: AsyncIterable<SseFra
     }
   })();
 
-export const emitToChatCompletions = async (invocation: ChatCompletionsInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<ChatCompletionChunk>>> => {
+export const emitToChatCompletions = async (invocation: ChatCompletionsInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   let modelIdentity: TelemetryModelIdentity | undefined;
 
   try {

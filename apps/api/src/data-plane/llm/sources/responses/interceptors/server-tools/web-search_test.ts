@@ -28,7 +28,7 @@ import {
 } from './web-search.ts';
 import { assert, assertEquals, assertFalse } from '../../../../../../test-assert.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
-import type { ResponseTool } from '@floway-dev/protocols/responses';
+import type { ResponsesTool } from '@floway-dev/protocols/responses';
 
 // ── Umbrella argument parsing (parseUmbrellaOperations) ──
 
@@ -585,7 +585,7 @@ test('formatMatches: multi-match output uses Match N: headers', () => {
 const UMBRELLA = SHIM_TOOL_NAME;
 const hostedVariants = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
 
-const prepare = (tools: ResponseTool[]) => {
+const prepare = (tools: ResponsesTool[]) => {
   const result = prepareToolsForShim(tools);
   assert(result.ok);
   return result.prepared;
@@ -593,14 +593,14 @@ const prepare = (tools: ResponseTool[]) => {
 
 test('isHostedWebSearchTool recognizes every hosted variant', () => {
   assertEquals([...WEB_SEARCH_HOSTED_TYPES].sort(), [...hostedVariants].sort());
-  for (const type of hostedVariants) assertEquals(isHostedWebSearchTool({ type } as ResponseTool), true);
+  for (const type of hostedVariants) assertEquals(isHostedWebSearchTool({ type } as ResponsesTool), true);
   assertEquals(isHostedWebSearchTool({ type: 'function', name: 'x', parameters: {}, strict: false }), false);
   assertEquals(isHostedWebSearchTool({ type: 'custom', name: 'x' }), false);
 });
 
 for (const type of hostedVariants) {
   test(`prepareToolsForShim accepts ${type} and extracts default filters`, () => {
-    assertEquals(prepare([{ type } as ResponseTool]).filters, { maxResults: 20 });
+    assertEquals(prepare([{ type } as ResponsesTool]).filters, { maxResults: 20 });
   });
 }
 
@@ -610,7 +610,7 @@ test('prepareToolsForShim extracts filters, user_location, and context size', ()
     filters: { allowed_domains: ['a.com'], blocked_domains: ['b.com'] },
     user_location: { country: 'JP', city: 'Tokyo' },
     search_context_size: 'high',
-  } as ResponseTool]);
+  } as ResponsesTool]);
   assertEquals(filters.allowedDomains, ['a.com']);
   assertEquals(filters.blockedDomains, ['b.com']);
   assertEquals(filters.userLocation, { country: 'JP', city: 'Tokyo' });
@@ -618,7 +618,7 @@ test('prepareToolsForShim extracts filters, user_location, and context size', ()
 });
 
 test('prepareToolsForShim passes through with empty filters when no hosted web_search exists', () => {
-  const fn: ResponseTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
+  const fn: ResponsesTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
   assertEquals(prepare([fn]).filters, {});
 });
 
@@ -632,6 +632,6 @@ test('resolveServerToolName returns the first free sequential name', () => {
 });
 
 test('prepareToolsForShim rejects invalid hosted fields', () => {
-  const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as ResponseTool]);
+  const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as ResponsesTool]);
   assertEquals(result.ok, false);
 });

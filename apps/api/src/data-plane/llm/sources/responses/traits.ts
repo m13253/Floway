@@ -11,7 +11,7 @@ import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type 
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponseInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -89,10 +89,10 @@ const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
 // OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body, which
 // stateless clients (codex) compare verbatim.
-const openAiErrorResult = (status: number, message: string, extra?: { param: string; code: string | null }): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
+const openAiErrorResult = (status: number, message: string, extra?: { param: string; code: string | null }): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> =>
   jsonUpstreamErrorResult(status, { error: { message, type: 'invalid_request_error', ...extra } });
 
-const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> => {
   switch (failure.kind) {
   case 'item-not-found':
     return openAiErrorResult(404, `Item with id '${failure.itemId}' not found.`, { param: 'input', code: null });
@@ -103,11 +103,11 @@ const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<Protoco
   case 'model-unsupported':
     return openAiErrorResult(400, `Model ${failure.model} does not support the /responses endpoint.`);
   case 'internal':
-    return sourceErrorResult<ResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
+    return sourceErrorResult<RawResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
   }
 };
 
-export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputItem[], ResponsesStreamEvent> = {
+export const responsesTraits: LlmSourceTraits<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondResponses(c, result, wantsStream, request, downstreamAbortController),
@@ -132,7 +132,7 @@ export const responsesTraits: LlmSourceTraits<string | readonly ResponseInputIte
         attemptPayload.model = model;
         attemptPayload.input = await rewriteItems(attemptPayload.input);
         const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
-        const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>> = {
+        const emits: Record<LlmTargetApi, SourceEmit<ResponsesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>> = {
           responses: async srcPayload => await emitToResponses({ ...invocation, payload: srcPayload }, request),
           messages: viaTranslation(translateResponsesViaMessages, async (tgtPayload: MessagesPayload) =>
             await emitToMessages(responsesInvocation(binding, 'messages', model, tgtPayload), request)),

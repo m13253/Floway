@@ -14,7 +14,7 @@ import type {
   MessagesNativeWebSearchTool,
   MessagesPayload,
   MessagesSearchResultBlock,
-  MessagesStreamEventData,
+  MessagesStreamEvent,
   MessagesTextBlock,
   MessagesTextCitation,
   MessagesTool,
@@ -665,13 +665,13 @@ interface ShimStreamingState {
   hasRemainingClientToolUse: boolean;
 }
 
-const isNativeWebSearchToolUseStart = (event: MessagesStreamEventData, state: MessagesWebSearchShimState): boolean =>
+const isNativeWebSearchToolUseStart = (event: MessagesStreamEvent, state: MessagesWebSearchShimState): boolean =>
   state.mode === 'active' && event.type === 'content_block_start' && event.content_block.type === 'tool_use' && event.content_block.name === WEB_SEARCH_TOOL_NAME;
 
 const rewriteContentBlockStartCitations = (
-  event: Extract<MessagesStreamEventData, { type: 'content_block_start' }>,
+  event: Extract<MessagesStreamEvent, { type: 'content_block_start' }>,
   state: MessagesWebSearchShimState,
-): Extract<MessagesStreamEventData, { type: 'content_block_start' }> => {
+): Extract<MessagesStreamEvent, { type: 'content_block_start' }> => {
   if (event.content_block.type !== 'text' || !event.content_block.citations?.length) {
     return event;
   }
@@ -686,9 +686,9 @@ const rewriteContentBlockStartCitations = (
 };
 
 const rewriteContentBlockDeltaCitations = (
-  event: Extract<MessagesStreamEventData, { type: 'content_block_delta' }>,
+  event: Extract<MessagesStreamEvent, { type: 'content_block_delta' }>,
   state: MessagesWebSearchShimState,
-): Extract<MessagesStreamEventData, { type: 'content_block_delta' }> => {
+): Extract<MessagesStreamEvent, { type: 'content_block_delta' }> => {
   if (event.delta.type === 'text_delta' && event.delta.citations?.length) {
     return {
       ...event,
@@ -721,7 +721,7 @@ const runWebSearchStopHandler = async function* (
   shimState: ShimStreamingState,
   state: Extract<MessagesWebSearchShimState, { mode: 'active' }>,
   provider: ActiveMessagesWebSearchProvider,
-): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
     try {
@@ -788,10 +788,10 @@ const runWebSearchStopHandler = async function* (
 };
 
 export const rewriteMessagesWebSearchEventsToNative = async function* (
-  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
+  frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: MessagesWebSearchShimState,
   provider?: ActiveMessagesWebSearchProvider,
-): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   if (state.mode === 'inactive') {
     yield* frames;
     return;

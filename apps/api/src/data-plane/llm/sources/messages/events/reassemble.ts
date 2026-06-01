@@ -2,9 +2,9 @@ import { isJsonObject } from '../../../../../shared/json-helpers.ts';
 import type {
   MessagesAssistantContentBlock,
   MessagesRedactedThinkingBlock,
-  MessagesResponse,
+  MessagesResult,
   MessagesServerToolUseBlock,
-  MessagesStreamEventData,
+  MessagesStreamEvent,
   MessagesTextCitation,
   MessagesThinkingBlock,
   MessagesToolUseBlock,
@@ -62,17 +62,17 @@ const normalizeMessagesTextCitations = (value: unknown): MessagesTextCitation[] 
       })
     : [];
 
-type TextBlockAccumulator = {
+type MessagesTextBlockAccumulator = {
   type: 'text';
   text: string;
   citations: MessagesTextCitation[];
 };
 
-type ToolUseBlockAccumulator = MessagesToolUseBlock & {
+type MessagesToolUseBlockAccumulator = MessagesToolUseBlock & {
   inputJson: string;
 };
 
-type BlockAccumulator = TextBlockAccumulator | ToolUseBlockAccumulator | MessagesServerToolUseBlock | MessagesWebSearchToolResultBlock | MessagesThinkingBlock | MessagesRedactedThinkingBlock;
+type MessagesBlockAccumulator = MessagesTextBlockAccumulator | MessagesToolUseBlockAccumulator | MessagesServerToolUseBlock | MessagesWebSearchToolResultBlock | MessagesThinkingBlock | MessagesRedactedThinkingBlock;
 
 const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage> | undefined): void => {
   if (!update) return;
@@ -91,7 +91,7 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
   }
 };
 
-const createBlockAccumulator = (event: Extract<MessagesStreamEventData, { type: 'content_block_start' }>): BlockAccumulator => {
+const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'content_block_start' }>): MessagesBlockAccumulator => {
   const block = event.content_block;
 
   switch (block.type) {
@@ -129,7 +129,7 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEventData, { type: 
   }
 };
 
-const applyBlockDelta = (block: BlockAccumulator | undefined, event: Extract<MessagesStreamEventData, { type: 'content_block_delta' }>): void => {
+const applyBlockDelta = (block: MessagesBlockAccumulator | undefined, event: Extract<MessagesStreamEvent, { type: 'content_block_delta' }>): void => {
   if (!block) return;
 
   switch (event.delta.type) {
@@ -159,7 +159,7 @@ const applyBlockDelta = (block: BlockAccumulator | undefined, event: Extract<Mes
   }
 };
 
-const finalizeToolUseInput = (block: BlockAccumulator | undefined): void => {
+const finalizeToolUseInput = (block: MessagesBlockAccumulator | undefined): void => {
   if (block?.type !== 'tool_use' || !block.inputJson) return;
 
   try {
@@ -174,7 +174,7 @@ const finalizeToolUseInput = (block: BlockAccumulator | undefined): void => {
   }
 };
 
-const finalizeContentBlock = (block: BlockAccumulator): MessagesAssistantContentBlock => {
+const finalizeContentBlock = (block: MessagesBlockAccumulator): MessagesAssistantContentBlock => {
   switch (block.type) {
   case 'text': {
     const { citations, ...textBlock } = block;
@@ -189,17 +189,17 @@ const finalizeContentBlock = (block: BlockAccumulator): MessagesAssistantContent
   }
 };
 
-export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStreamEventData>): Promise<MessagesResponse> {
+export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStreamEvent>): Promise<MessagesResult> {
   let id = '';
   let model = '';
-  const usage: MessagesResponse['usage'] = {
+  const usage: MessagesResult['usage'] = {
     input_tokens: 0,
     output_tokens: 0,
   };
-  let stopReason: MessagesResponse['stop_reason'] = null;
+  let stopReason: MessagesResult['stop_reason'] = null;
   let stopSequence: string | null = null;
 
-  const blocks: Array<BlockAccumulator | undefined> = [];
+  const blocks: Array<MessagesBlockAccumulator | undefined> = [];
 
   for await (const event of events) {
     switch (event.type) {

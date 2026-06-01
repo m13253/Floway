@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResponse } from './events/to-response.ts';
+import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './events/to-result.ts';
 import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
@@ -11,10 +11,10 @@ import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type GE = GeminiStreamEvent;
-type GR = GeminiGenerateContentResponse;
+type GR = GeminiResult;
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
@@ -44,7 +44,7 @@ export const respondGemini = async (
 
   if (!wantsStream) {
     try {
-      const response = await collectGeminiProtocolEventsToResponse(frames);
+      const response = await collectGeminiProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
       recordSourcePerformance(request, metadata.performance, state.failed);

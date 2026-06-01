@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import { collectChatProtocolEventsToCompletion } from './to-response.ts';
+import { collectChatCompletionsProtocolEventsToResult } from './to-result.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
-test('collectChatProtocolEventsToCompletion reassembles synthetic Chat chunks', async () => {
-  const expected: ChatCompletionResponse = {
+test('collectChatCompletionsProtocolEventsToResult reassembles synthetic Chat chunks', async () => {
+  const expected: ChatCompletionsResult = {
     id: 'chatcmpl_1',
     object: 'chat.completion',
     created: 123,
@@ -25,7 +25,7 @@ test('collectChatProtocolEventsToCompletion reassembles synthetic Chat chunks', 
     usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
   };
 
-  const chunk = (delta: ChatCompletionChunk['choices'][number]['delta'], finish_reason: 'stop' | null = null): ChatCompletionChunk => ({
+  const chunk = (delta: ChatCompletionsStreamEvent['choices'][number]['delta'], finish_reason: 'stop' | null = null): ChatCompletionsStreamEvent => ({
     id: expected.id,
     object: 'chat.completion.chunk',
     created: expected.created,
@@ -45,14 +45,14 @@ test('collectChatProtocolEventsToCompletion reassembles synthetic Chat chunks', 
       model: expected.model,
       choices: [],
       usage: expected.usage,
-    } as ChatCompletionChunk);
+    } as ChatCompletionsStreamEvent);
     yield doneFrame();
   }
 
-  assertEquals(await collectChatProtocolEventsToCompletion(events()), expected);
+  assertEquals(await collectChatCompletionsProtocolEventsToResult(events()), expected);
 });
 
-test('collectChatProtocolEventsToCompletion rejects Chat streams without DONE', async () => {
+test('collectChatCompletionsProtocolEventsToResult rejects Chat streams without DONE', async () => {
   async function* events() {
     yield eventFrame({
       id: 'chatcmpl_truncated',
@@ -69,5 +69,5 @@ test('collectChatProtocolEventsToCompletion rejects Chat streams without DONE', 
     });
   }
 
-  await assertRejects(async () => await collectChatProtocolEventsToCompletion(events()), Error, 'Chat Completions stream ended without a DONE sentinel.');
+  await assertRejects(async () => await collectChatCompletionsProtocolEventsToResult(events()), Error, 'Chat Completions stream ended without a DONE sentinel.');
 });

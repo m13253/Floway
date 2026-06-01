@@ -1,7 +1,7 @@
 import type { MessagesInterceptor, MessagesInvocation } from '../../../../llm/interceptors.ts';
 import { copilotRawModelId } from '../../model-name.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 
@@ -32,7 +32,7 @@ export const resolveMessagesDownstreamThinkingDisplay = (ctx: Pick<MessagesInvoc
   return isClaudeVersionAtLeast(ctx.payload.model, 4, 7) ? 'omitted' : 'summarized';
 };
 
-const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<MessagesStreamEventData>): ProtocolFrame<MessagesStreamEventData> | undefined => {
+const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<MessagesStreamEvent>): ProtocolFrame<MessagesStreamEvent> | undefined => {
   if (frame.type === 'done') return frame;
 
   const { event } = frame;
@@ -53,7 +53,7 @@ const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<MessagesStreamEv
   return frame;
 };
 
-const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   for await (const frame of frames) {
     const omitted = omitThinkingTextFromProtocolFrame(frame);
     if (omitted) yield omitted;

@@ -11,7 +11,7 @@ import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiContent, GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
@@ -90,7 +90,7 @@ export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStrea
 
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
-    const payload = await c.req.json<GeminiGenerateContentRequest>();
+    const payload = await c.req.json<GeminiPayload>();
     return {
       request,
       items: payload.contents ?? [],
@@ -106,7 +106,7 @@ export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStrea
         // Gemini source payload has no `model` field on the request body; the
         // invocation carries the resolved id for telemetry/dispatch use.
         const invocation: GeminiInvocation = geminiInvocation(binding, target, resolvedModelId, attemptPayload);
-        const emits: Record<LlmTargetApi, SourceEmit<GeminiGenerateContentRequest, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>> = {
+        const emits: Record<LlmTargetApi, SourceEmit<GeminiPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>> = {
           messages: viaTranslation(translateGeminiViaMessages, async (tgtPayload: MessagesPayload) =>
             await emitToMessages(geminiInvocation(binding, 'messages', resolvedModelId, tgtPayload), request)),
           responses: viaTranslation(translateGeminiViaResponses, async (tgtPayload: ResponsesPayload) =>

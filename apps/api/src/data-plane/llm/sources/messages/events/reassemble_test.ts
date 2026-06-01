@@ -3,11 +3,11 @@ import { test } from 'vitest';
 import { reassembleMessagesEvents } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import type {
-  MessagesResponse,
+  MessagesResult,
   MessagesSearchResultBlock,
   MessagesSearchResultLocationCitation,
   MessagesServerToolUseBlock,
-  MessagesStreamEventData,
+  MessagesStreamEvent,
   MessagesTextBlock,
   MessagesTool,
   MessagesToolResultContentBlock,
@@ -15,7 +15,7 @@ import type {
   MessagesWebSearchToolResultBlock,
 } from '@floway-dev/protocols/messages';
 
-function makeEvents<T = MessagesStreamEventData>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
+function makeEvents<T = MessagesStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
     for (const chunk of chunks) {
       if (typeof chunk.data === 'string') continue;
@@ -90,7 +90,7 @@ test('reassembleMessagesEvents reassembles text response', async () => {
     { event: 'message_stop', data: { type: 'message_stop' } },
   ]);
 
-  const result: MessagesResponse = await reassembleMessagesEvents(body);
+  const result: MessagesResult = await reassembleMessagesEvents(body);
 
   assertEquals(result.id, 'msg_1');
   assertEquals(result.model, 'claude-test');

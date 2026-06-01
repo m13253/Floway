@@ -12,7 +12,7 @@ import {
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
-import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -209,7 +209,7 @@ const inputSchemaForDeclaration = (parameters: Record<string, unknown> | undefin
   return { type: 'object', properties: {} };
 };
 
-const buildTools = (payload: GeminiGenerateContentRequest): MessagesTool[] | undefined => {
+const buildTools = (payload: GeminiPayload): MessagesTool[] | undefined => {
   const tools = geminiFunctionDeclarations(payload, 'all').map(declaration => ({
     type: 'custom' as const,
     name: declaration.name,
@@ -221,7 +221,7 @@ const buildTools = (payload: GeminiGenerateContentRequest): MessagesTool[] | und
 };
 
 export const buildTargetRequest = (
-  payload: GeminiGenerateContentRequest,
+  payload: GeminiPayload,
   model: string,
   options: { fallbackMaxOutputTokens?: number },
 ): MessagesPayload => {

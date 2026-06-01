@@ -1,5 +1,5 @@
 import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
-import type { Message } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 
 /**
  * Prime Copilot's content-addressed prompt cache by tagging a small set of
@@ -8,9 +8,9 @@ import type { Message } from '@floway-dev/protocols/chat-completions';
  * non-system messages, in original order.
  *
  * The field is a Copilot-private extension to the OpenAI Chat Completions
- * wire shape — kept off the shared `Message` type so other OpenAI-compatible
+ * wire shape — kept off the shared `ChatCompletionsMessage` type so other OpenAI-compatible
  * upstreams never see it on their inbound payloads, and attached here through
- * a Copilot-local view that widens `Message` with the marker.
+ * a Copilot-local view that widens `ChatCompletionsMessage` with the marker.
  *
  * Probe findings (not obvious from the upstream reference):
  *
@@ -35,7 +35,7 @@ import type { Message } from '@floway-dev/protocols/chat-completions';
  * - https://github.com/caozhiyuan/copilot-api/blob/9be0eb602f1ffee7597741c9af9bc66a68e1a241/src/routes/messages/api-flows.ts#L381-L432
  */
 
-export interface CopilotCacheableMessage extends Message {
+export interface CopilotCacheableMessage extends ChatCompletionsMessage {
   copilot_cache_control?: { type: 'ephemeral' };
 }
 
@@ -43,13 +43,13 @@ const COPILOT_CONTEXT_CACHE_SYSTEM_MARKER_LIMIT = 2;
 const COPILOT_CONTEXT_CACHE_NON_SYSTEM_MARKER_LIMIT = 2;
 const COPILOT_CONTEXT_CACHE_CONTROL = { type: 'ephemeral' } as const;
 
-const isEligible = (message: Message): boolean => {
+const isEligible = (message: ChatCompletionsMessage): boolean => {
   const { content } = message;
   if (typeof content === 'string') return content.length > 0;
   return Array.isArray(content) && content.length > 0;
 };
 
-const selectCacheMarkerIndexes = (messages: readonly Message[]): number[] => {
+const selectCacheMarkerIndexes = (messages: readonly ChatCompletionsMessage[]): number[] => {
   const systemIndexes: number[] = [];
   for (let i = 0; i < messages.length && systemIndexes.length < COPILOT_CONTEXT_CACHE_SYSTEM_MARKER_LIMIT; i++) {
     if (messages[i].role === 'system' && isEligible(messages[i])) systemIndexes.push(i);

@@ -2,7 +2,7 @@ import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, respons
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type {
   ResponsesItemFinalizedHandler,
   ResponsesItemIdMapper,
@@ -111,7 +111,7 @@ export const storeResponsesOutputItems = <TFrame>(
 
 const buildRow = async (
   newId: string,
-  originalItem: ResponseInputItem,
+  originalItem: ResponsesInputItem,
   context: StoreResponsesContext,
   request: RequestContext,
 ): Promise<StoredResponsesItem> => {

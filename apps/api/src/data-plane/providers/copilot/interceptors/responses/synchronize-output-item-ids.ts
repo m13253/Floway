@@ -1,5 +1,5 @@
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
-import type { ResponseStreamEvent, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` stream is inconsistent about per-output-item ids:
@@ -42,17 +42,17 @@ const synthesizeItemId = (outputIndex: number): string => {
 // `response.output_item.added` and `.done` carry the canonical id on
 // `item.id`. Every other id-bearing event carries `item_id` directly on the
 // envelope. Both shapes are covered by the planner-emitted
-// `ResponseStreamEvent` union.
-type ItemIdEvent = ResponseStreamEvent & { item_id?: string; output_index?: number };
+// `ResponsesStreamEvent` union.
+type ItemIdEvent = ResponsesStreamEvent & { item_id?: string; output_index?: number };
 
-const fixResponsesStreamIds = (event: ResponsesStreamEvent, tracker: StreamIdTracker): ResponsesStreamEvent => {
+const fixResponsesStreamIds = (event: RawResponsesStreamEvent, tracker: StreamIdTracker): RawResponsesStreamEvent => {
   if (event.type === 'response.output_item.added') {
     if (typeof event.output_index !== 'number') return event;
     const item = event.item as { id?: unknown };
     const pinnedId = typeof item.id === 'string' && item.id.length > 0 ? item.id : synthesizeItemId(event.output_index);
     tracker.outputItemIds.set(event.output_index, pinnedId);
     if (item.id === pinnedId) return event;
-    return { ...event, item: { ...item, id: pinnedId } } as ResponsesStreamEvent;
+    return { ...event, item: { ...item, id: pinnedId } } as RawResponsesStreamEvent;
   }
 
   if (event.type === 'response.output_item.done') {
@@ -61,7 +61,7 @@ const fixResponsesStreamIds = (event: ResponsesStreamEvent, tracker: StreamIdTra
     if (!pinnedId) return event;
     const item = event.item as { id?: unknown };
     if (item.id === pinnedId) return event;
-    return { ...event, item: { ...item, id: pinnedId } } as ResponsesStreamEvent;
+    return { ...event, item: { ...item, id: pinnedId } } as RawResponsesStreamEvent;
   }
 
   // Any other event that names an output_index AND already declares an
@@ -72,7 +72,7 @@ const fixResponsesStreamIds = (event: ResponsesStreamEvent, tracker: StreamIdTra
   if (typeof carrier.output_index !== 'number' || typeof carrier.item_id !== 'string') return event;
   const pinnedId = tracker.outputItemIds.get(carrier.output_index);
   if (!pinnedId || carrier.item_id === pinnedId) return event;
-  return { ...carrier, item_id: pinnedId } as ResponsesStreamEvent;
+  return { ...carrier, item_id: pinnedId } as RawResponsesStreamEvent;
 };
 
 export const withOutputItemIdsSynchronized: ResponsesInterceptor = async (_ctx, _request, run) => {

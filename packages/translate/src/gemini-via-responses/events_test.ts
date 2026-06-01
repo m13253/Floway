@@ -4,7 +4,7 @@ import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { ResponsesResult, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const response = (status: ResponsesResult['status'], extra: Partial<ResponsesResult> = {}): ResponsesResult => ({
   id: 'resp_1',
@@ -18,7 +18,7 @@ const response = (status: ResponsesResult['status'], extra: Partial<ResponsesRes
   ...extra,
 });
 
-const collect = async (input: ProtocolFrame<ResponseStreamEvent>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<ResponsesStreamEvent>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiStreamEvent>[] = [];
 
   async function* frames() {
@@ -34,7 +34,7 @@ const collect = async (input: ProtocolFrame<ResponseStreamEvent>[]): Promise<Pro
 
 const geminiFrame = (event: GeminiStreamEvent): ProtocolFrame<GeminiStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<ResponseStreamEvent>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<ResponsesStreamEvent>[]): Promise<void> => {
   await collect(input);
 };
 

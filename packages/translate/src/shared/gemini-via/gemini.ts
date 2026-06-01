@@ -1,4 +1,4 @@
-import type { GeminiContent, GeminiFinishReason, GeminiFunctionCallingConfig, GeminiFunctionDeclaration, GeminiGenerateContentRequest, GeminiPart, GeminiStreamEvent, GeminiThinkingConfig, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiFinishReason, GeminiFunctionCallingConfig, GeminiFunctionDeclaration, GeminiPayload, GeminiPart, GeminiStreamEvent, GeminiThinkingConfig, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -109,7 +109,7 @@ export const geminiReasoningEffort = (thinkingConfig?: GeminiThinkingConfig): 'n
   return geminiThinkingLevelEffort(thinkingConfig) ?? null;
 };
 
-export const geminiFunctionDeclarations = (payload: GeminiGenerateContentRequest, allowedNameMode: 'any' | 'all' | 'none'): GeminiFunctionDeclaration[] => {
+export const geminiFunctionDeclarations = (payload: GeminiPayload, allowedNameMode: 'any' | 'all' | 'none'): GeminiFunctionDeclaration[] => {
   const config = payload.toolConfig?.functionCallingConfig;
   const allowedFunctionNames = config?.allowedFunctionNames;
   const allowedNames = allowedFunctionNames?.length && (allowedNameMode === 'all' || (allowedNameMode === 'any' && config?.mode === 'ANY')) ? new Set(allowedFunctionNames) : null;
@@ -177,7 +177,7 @@ export const parseStrictJsonObject = (json: string, subject: string): Record<str
 
 // Shape a single-candidate Gemini stream event. Lives in shared because both
 // gemini-via-messages and gemini-via-responses produce the same envelope.
-export const geminiResponse = (parts: GeminiPart[], finishReason?: GeminiFinishReason, usageMetadata?: GeminiUsageMetadata): GeminiStreamEvent => ({
+export const geminiCandidateEvent = (parts: GeminiPart[], finishReason?: GeminiFinishReason, usageMetadata?: GeminiUsageMetadata): GeminiStreamEvent => ({
   candidates: [
     {
       index: 0,

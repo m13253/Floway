@@ -255,7 +255,7 @@ test('responsesStreamFramesToEvents fast-paths response.failed terminal with err
       (async function* () {
         // The in-progress wrapper must carry `error: null` per spec
         // (Response.error is required-nullable); upstreams that omit
-        // the field are normalized by `responseStartSnapshot`, which
+        // the field are normalized by `responsesStartSnapshot`, which
         // is also what the fast-path expansion uses. Pre-populate the
         // null here so the assertion below reflects a single wire
         // contract across raw and synthesized frames.

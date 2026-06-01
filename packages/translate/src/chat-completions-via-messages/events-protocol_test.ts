@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertRejects } from '../test-assert.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -12,7 +12,7 @@ const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
 };
 
 test('translateToSourceEvents rejects Messages error events', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({
       type: 'error',
       error: {
@@ -26,7 +26,7 @@ test('translateToSourceEvents rejects Messages error events', async () => {
 });
 
 test('translateToSourceEvents rejects truncated Messages streams without message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({
       type: 'message_start',
       message: {

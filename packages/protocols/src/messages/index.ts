@@ -219,7 +219,7 @@ export interface MessagesUsage {
   server_tool_use?: MessagesUsageServerToolUse;
 }
 
-export interface MessagesResponse {
+export interface MessagesResult {
   id: string;
   type: 'message';
   role: 'assistant';
@@ -230,7 +230,7 @@ export interface MessagesResponse {
   usage: MessagesUsage;
 }
 
-export type MessagesStreamEventData =
+export type MessagesStreamEvent =
   | MessagesMessageStartEvent
   | MessagesContentBlockStartEvent
   | MessagesContentBlockDeltaEvent
@@ -242,7 +242,7 @@ export type MessagesStreamEventData =
 
 export interface MessagesMessageStartEvent {
   type: 'message_start';
-  message: Omit<MessagesResponse, 'content' | 'stop_reason' | 'stop_sequence'> & {
+  message: Omit<MessagesResult, 'content' | 'stop_reason' | 'stop_sequence'> & {
     content: [];
     stop_reason: null;
     stop_sequence: null;
@@ -282,7 +282,7 @@ export interface MessagesContentBlockStopEvent {
 export interface MessagesMessageDeltaEvent {
   type: 'message_delta';
   delta: {
-    stop_reason?: MessagesResponse['stop_reason'];
+    stop_reason?: MessagesResult['stop_reason'];
     stop_sequence?: string | null;
   };
   usage?: {

@@ -7,14 +7,14 @@ import type {
   MessagesContentBlockStopEvent,
   MessagesMessageDeltaEvent,
   MessagesMessageStartEvent,
-  MessagesStreamEventData,
+  MessagesStreamEvent,
   MessagesTextCitation,
 } from '@floway-dev/protocols/messages';
-import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputItem, ResponsesResult, RawResponsesStreamEvent, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
-const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<MessagesStreamEventData> {
+const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -74,7 +74,7 @@ interface MessagesToResponsesStreamState {
   sequenceNumber: number;
   blockMap: Map<number, OutputBlockInfo>;
   accumulatedText: string;
-  completedItems: ResponseOutputItem[];
+  completedItems: ResponsesOutputItem[];
   inputTokens: number;
   outputTokens: number;
   cacheReadInputTokens?: number;
@@ -101,7 +101,7 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
   });
 };
 
-const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   state.inputTokens = event.message.usage.input_tokens;
   state.cacheReadInputTokens = event.message.usage.cache_read_input_tokens;
   state.cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens;
@@ -111,7 +111,7 @@ const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToR
   return responses.started(state, response);
 };
 
-const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   switch (event.content_block.type) {
   case 'thinking': {
     const outputIndex = state.outputIndex++;
@@ -205,7 +205,7 @@ const handleContentBlockStart = (event: MessagesContentBlockStartEvent, state: M
 // anchor them. The chat-completions-via-messages translator
 // blanket-drops every `citations_delta` because Chat Completions has no
 // url_citation equivalent.
-const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, citation: MessagesTextCitation, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, citation: MessagesTextCitation, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   // Future citation variants (`char_location`, `page_location`,
   // `content_block_location` from Anthropic native long-document
   // citations) are not in the current `MessagesTextCitation` union; if
@@ -244,7 +244,7 @@ const handleTextCitation = (info: Extract<OutputBlockInfo, { type: 'text' }>, ci
   ]);
 };
 
-const handleContentBlockDelta = (event: MessagesContentBlockDeltaEvent, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+const handleContentBlockDelta = (event: MessagesContentBlockDeltaEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   const info = state.blockMap.get(event.index);
   if (!info) return [];
 
@@ -283,7 +283,7 @@ const handleContentBlockDelta = (event: MessagesContentBlockDeltaEvent, state: M
   }
 };
 
-const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+const handleContentBlockStop = (event: MessagesContentBlockStopEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   const info = state.blockMap.get(event.index);
   if (!info) return [];
 
@@ -336,7 +336,7 @@ export const createMessagesToResponsesStreamState = (responseId: string, model: 
   customToolNames,
 });
 
-export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEventData, state: MessagesToResponsesStreamState): ResponseStreamEvent[] => {
+export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
   switch (event.type) {
   case 'message_start':
     return handleMessageStart(event, state);
@@ -375,11 +375,11 @@ export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEve
 };
 
 export const translateToSourceEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
+  frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
   const state = createMessagesToResponsesStreamState(responseId, model, customToolNames);
 
   for await (const event of upstreamMessagesEventsUntilTerminal(frames)) {

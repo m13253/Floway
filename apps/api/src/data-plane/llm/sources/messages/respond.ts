@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResponse } from './events/to-response.ts';
+import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
@@ -11,9 +11,9 @@ import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
+import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 
-type MU = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
+type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 
 // Renders an upstream Messages result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
@@ -22,7 +22,7 @@ type MU = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 // produced, so the orchestrator knows whether to flush stored items.
 export const respondMessages = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<MessagesStreamEventData>>,
+  result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>>,
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
@@ -43,7 +43,7 @@ export const respondMessages = async (
 
   if (!wantsStream) {
     try {
-      const response = await collectMessagesProtocolEventsToResponse(frames);
+      const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
       recordSourcePerformance(request, metadata.performance, state.failed);
@@ -78,7 +78,7 @@ export const respondMessages = async (
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the
 // cache figures. Map them straight onto the billing dimensions without summing.
-const tokenUsageFromMessagesUsage = (u: MU) =>
+const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) =>
   tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
@@ -92,9 +92,9 @@ export const createMessagesStreamUsageState = () => ({
 });
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
-const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MU) => (state.current = tokenUsageFromMessagesUsage(u));
+const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MessagesUsageLike) => (state.current = tokenUsageFromMessagesUsage(u));
 
-export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEventData>, state: MessagesStreamUsageState) => {
+export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEvent>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
@@ -132,10 +132,10 @@ const internalMessagesErrorResponse = (status: number, error: InternalDebugError
 
 // --- frame observation ---
 
-const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEventData>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
+const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 
 const observeMessagesFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
+  frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: SourceStreamState,
   usageState: ReturnType<typeof createMessagesStreamUsageState>,
   observeUsage: boolean,
@@ -153,7 +153,7 @@ const observeMessagesFrames = async function* (
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
 };
 
-const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>, state: SourceStreamState) {
+const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = messagesProtocolFrameToSSEFrame(frame);

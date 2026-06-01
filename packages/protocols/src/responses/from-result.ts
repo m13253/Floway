@@ -1,5 +1,5 @@
 import { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
-import type { ResponseOutputCustomToolCall, ResponseOutputFunctionCall, ResponseOutputImageGenerationCall, ResponseOutputItem, ResponseOutputMessage, ResponseOutputReasoning, ResponseOutputWebSearchCall, ResponsesResult, ResponseStreamEvent, SequencedResponsesStreamEvent } from './index.ts';
+import type { ResponsesOutputCustomToolCall, ResponsesOutputFunctionCall, ResponsesOutputImageGenerationCall, ResponsesOutputItem, ResponsesOutputMessage, ResponsesOutputReasoning, ResponsesOutputWebSearchCall, ResponsesResult, ResponsesStreamEvent, SequencedResponsesStreamEvent } from './index.ts';
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
 
@@ -10,7 +10,7 @@ const getTerminalEventName = (response: ResponsesResult): 'response.failed' | 'r
   return 'response.completed';
 };
 
-const responseStartSnapshot = (response: ResponsesResult): ResponsesResult => {
+const responsesStartSnapshot = (response: ResponsesResult): ResponsesResult => {
   const { error: _error, incomplete_details: _incompleteDetails, output: _output, output_text: _outputText, ...snapshot } = response;
 
   // JSON fallback has no upstream incremental frames, so synthesize the same
@@ -42,9 +42,9 @@ const requireItemId = (item: { type: string; id?: string }): string => {
   return item.id;
 };
 
-const responseMessageEvents = (item: ResponseOutputMessage, outputIndex: number): ResponseStreamEvent[] => {
+const responsesMessageEvents = (item: ResponsesOutputMessage, outputIndex: number): ResponsesStreamEvent[] => {
   const itemId = requireItemId(item);
-  const events: ResponseStreamEvent[] = [
+  const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -119,8 +119,8 @@ const responseMessageEvents = (item: ResponseOutputMessage, outputIndex: number)
   return events;
 };
 
-const responseReasoningEvents = (item: ResponseOutputReasoning, outputIndex: number): ResponseStreamEvent[] => {
-  const events: ResponseStreamEvent[] = [
+const responsesReasoningEvents = (item: ResponsesOutputReasoning, outputIndex: number): ResponsesStreamEvent[] => {
+  const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -176,9 +176,9 @@ const responseReasoningEvents = (item: ResponseOutputReasoning, outputIndex: num
   return events;
 };
 
-const responseFunctionCallEvents = (item: ResponseOutputFunctionCall, outputIndex: number): ResponseStreamEvent[] => {
+const responsesFunctionCallEvents = (item: ResponsesOutputFunctionCall, outputIndex: number): ResponsesStreamEvent[] => {
   const itemId = requireItemId(item);
-  const events: ResponseStreamEvent[] = [
+  const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -217,9 +217,9 @@ const responseFunctionCallEvents = (item: ResponseOutputFunctionCall, outputInde
   return events;
 };
 
-const responseCustomToolCallEvents = (item: ResponseOutputCustomToolCall, outputIndex: number): ResponseStreamEvent[] => {
+const responsesCustomToolCallEvents = (item: ResponsesOutputCustomToolCall, outputIndex: number): ResponsesStreamEvent[] => {
   const itemId = requireItemId(item);
-  const events: ResponseStreamEvent[] = [
+  const events: ResponsesStreamEvent[] = [
     {
       type: 'response.output_item.added',
       output_index: outputIndex,
@@ -251,17 +251,17 @@ const responseCustomToolCallEvents = (item: ResponseOutputCustomToolCall, output
   return events;
 };
 
-const responseWebSearchCallEvents = (item: ResponseOutputWebSearchCall, outputIndex: number): ResponseStreamEvent[] => {
+const responsesWebSearchCallEvents = (item: ResponsesOutputWebSearchCall, outputIndex: number): ResponsesStreamEvent[] => {
   const { startFrames, endFrames } = webSearchCallLifecycleEvents(item, outputIndex);
   return [...startFrames, ...endFrames];
 };
 
-const responseImageGenerationCallEvents = (item: ResponseOutputImageGenerationCall, outputIndex: number): ResponseStreamEvent[] => {
+const responsesImageGenerationCallEvents = (item: ResponsesOutputImageGenerationCall, outputIndex: number): ResponsesStreamEvent[] => {
   const { startFrames, endFrames } = imageGenerationCallLifecycleEvents(item, outputIndex);
   return [...startFrames, ...endFrames];
 };
 
-const responseGenericOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => [
+const responsesGenericOutputItemEvents = (item: ResponsesOutputItem, outputIndex: number): ResponsesStreamEvent[] => [
   {
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -274,24 +274,24 @@ const responseGenericOutputItemEvents = (item: ResponseOutputItem, outputIndex: 
   },
 ];
 
-const responseOutputItemEvents = (item: ResponseOutputItem, outputIndex: number): ResponseStreamEvent[] => {
+const responsesOutputItemEvents = (item: ResponsesOutputItem, outputIndex: number): ResponsesStreamEvent[] => {
   switch (item.type) {
-  case 'message': return responseMessageEvents(item, outputIndex);
-  case 'reasoning': return responseReasoningEvents(item, outputIndex);
-  case 'function_call': return responseFunctionCallEvents(item, outputIndex);
-  case 'custom_tool_call': return responseCustomToolCallEvents(item, outputIndex);
-  case 'web_search_call': return responseWebSearchCallEvents(item, outputIndex);
-  case 'image_generation_call': return responseImageGenerationCallEvents(item, outputIndex);
-  default: return responseGenericOutputItemEvents(item, outputIndex);
+  case 'message': return responsesMessageEvents(item, outputIndex);
+  case 'reasoning': return responsesReasoningEvents(item, outputIndex);
+  case 'function_call': return responsesFunctionCallEvents(item, outputIndex);
+  case 'custom_tool_call': return responsesCustomToolCallEvents(item, outputIndex);
+  case 'web_search_call': return responsesWebSearchCallEvents(item, outputIndex);
+  case 'image_generation_call': return responsesImageGenerationCallEvents(item, outputIndex);
+  default: return responsesGenericOutputItemEvents(item, outputIndex);
   }
 };
 
 export const responsesResultToEvents = (response: ResponsesResult): EventFrame<SequencedResponsesStreamEvent>[] => {
-  const started = responseStartSnapshot(response);
-  const events: ResponseStreamEvent[] = [
+  const started = responsesStartSnapshot(response);
+  const events: ResponsesStreamEvent[] = [
     { type: 'response.created', response: started },
     { type: 'response.in_progress', response: started },
-    ...response.output.flatMap(responseOutputItemEvents),
+    ...response.output.flatMap(responsesOutputItemEvents),
     { type: getTerminalEventName(response), response },
   ];
 

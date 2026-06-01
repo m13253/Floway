@@ -1,8 +1,8 @@
-import type { ChatCompletionChunk, ChatCompletionResponse, Delta } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
-const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResponse['stop_reason']): ChatCompletionResponse['choices'][0]['finish_reason'] => {
+const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResult['stop_reason']): ChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
   case null:
   case 'end_turn':
@@ -19,7 +19,7 @@ const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: Messages
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 
-const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<MessagesStreamEventData> {
+const upstreamMessagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -56,7 +56,7 @@ const claimReasoningBlock = (state: MessagesToChatCompletionsStreamState, index:
   return state.reasoningBlockIndex === index;
 };
 
-const makeChunk = (state: MessagesToChatCompletionsStreamState, delta: Delta, finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null): ChatCompletionChunk => ({
+const makeChunk = (state: MessagesToChatCompletionsStreamState, delta: ChatCompletionsDelta, finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -70,7 +70,7 @@ const makeChunk = (state: MessagesToChatCompletionsStreamState, delta: Delta, fi
   ],
 });
 
-const makeUsageChunk = (state: MessagesToChatCompletionsStreamState, outputTokens: number): ChatCompletionChunk => ({
+const makeUsageChunk = (state: MessagesToChatCompletionsStreamState, outputTokens: number): ChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
@@ -94,7 +94,7 @@ const unexpectedMessagesVariant = (value: never): never => {
   throw new Error(`Unexpected Messages stream variant: ${JSON.stringify(value)}`);
 };
 
-export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStreamEventData, state: MessagesToChatCompletionsStreamState): ChatCompletionChunk[] | 'DONE' => {
+export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStreamEvent, state: MessagesToChatCompletionsStreamState): ChatCompletionsStreamEvent[] | 'DONE' => {
   switch (event.type) {
   case 'message_start': {
     state.messageId = event.message.id;
@@ -193,13 +193,13 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
   }
 };
 
-const throwOnMessagesFatalEvent = (event: MessagesStreamEventData): void => {
+const throwOnMessagesFatalEvent = (event: MessagesStreamEvent): void => {
   if (event.type !== 'error') return;
 
   throw new Error(`Upstream Messages stream error: ${event.error.type}: ${event.error.message}`, { cause: event });
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
   const state = createMessagesToChatCompletionsStreamState();
 
   for await (const event of upstreamMessagesEventsUntilTerminal(frames)) {

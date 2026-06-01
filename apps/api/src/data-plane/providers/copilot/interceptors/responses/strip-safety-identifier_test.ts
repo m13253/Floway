@@ -6,7 +6,7 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { LlmSourceApi, RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
@@ -14,8 +14,8 @@ const stubRequest: RequestContext = {
   clientStream: false,
 };
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ResponsesPayload, sourceApi: LlmSourceApi = 'responses'): ResponsesInvocation => ({
   sourceApi,

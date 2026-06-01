@@ -1,23 +1,23 @@
-import type { ResponseOutputItem, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export interface ResponsesOutputOrderState {
   pendingOutputIndexes: Set<number>;
-  deferredEvents: ResponseStreamEvent[];
+  deferredEvents: ResponsesStreamEvent[];
 }
 
-export type ShouldTrackResponseOutputItem = (item: ResponseOutputItem, outputIndex: number) => boolean;
+export type ShouldTrackResponsesOutputItem = (item: ResponsesOutputItem, outputIndex: number) => boolean;
 
 export const createResponsesOutputOrderState = (): ResponsesOutputOrderState => ({
   pendingOutputIndexes: new Set(),
   deferredEvents: [],
 });
 
-const getOutputIndex = (event: ResponseStreamEvent): number | undefined => ('output_index' in event && typeof event.output_index === 'number' ? event.output_index : undefined);
+const getOutputIndex = (event: ResponsesStreamEvent): number | undefined => ('output_index' in event && typeof event.output_index === 'number' ? event.output_index : undefined);
 
 // Responses can interleave deltas for multiple output items. Downstream Chat
 // scalar reasoning and Anthropic content blocks are not safely retractable once
 // emitted, so visible later-output events wait for earlier tracked items to end.
-export const shouldDeferForEarlierResponseOutput = (event: ResponseStreamEvent, state: ResponsesOutputOrderState): boolean => {
+export const shouldDeferForEarlierResponsesOutput = (event: ResponsesStreamEvent, state: ResponsesOutputOrderState): boolean => {
   const outputIndex = getOutputIndex(event);
   if (outputIndex === undefined) return false;
 
@@ -28,15 +28,15 @@ export const shouldDeferForEarlierResponseOutput = (event: ResponseStreamEvent, 
   return false;
 };
 
-type ResponseOutputItemAddedEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.added' }>;
+type ResponsesOutputItemAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
 
-type ResponseOutputItemDoneEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.done' }>;
+type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
 
-const isOutputItemAddedEvent = (event: ResponseStreamEvent): event is ResponseOutputItemAddedEvent => event.type === 'response.output_item.added';
+const isOutputItemAddedEvent = (event: ResponsesStreamEvent): event is ResponsesOutputItemAddedEvent => event.type === 'response.output_item.added';
 
-const isOutputItemDoneEvent = (event: ResponseStreamEvent): event is ResponseOutputItemDoneEvent => event.type === 'response.output_item.done';
+const isOutputItemDoneEvent = (event: ResponsesStreamEvent): event is ResponsesOutputItemDoneEvent => event.type === 'response.output_item.done';
 
-export const recordResponseOutputOrderEvent = (event: ResponseStreamEvent, state: ResponsesOutputOrderState, shouldTrack: ShouldTrackResponseOutputItem): void => {
+export const recordResponsesOutputOrderEvent = (event: ResponsesStreamEvent, state: ResponsesOutputOrderState, shouldTrack: ShouldTrackResponsesOutputItem): void => {
   if (isOutputItemAddedEvent(event)) {
     if (shouldTrack(event.item, event.output_index)) {
       state.pendingOutputIndexes.add(event.output_index);

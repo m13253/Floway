@@ -5,10 +5,10 @@ import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-no
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import { eventResult } from '../../../shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
-type DeepseekReasoningDelta = ChatCompletionChunk['choices'][number]['delta'] & {
+type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
   reasoning_content?: string;
 };
 
@@ -42,14 +42,14 @@ const baseRequest = (): ChatCompletionsPayload => ({
 const exchangeCtx = (payload: ChatCompletionsPayload = baseRequest()): ReturnType<typeof chatCompletionsInvocation> =>
   chatCompletionsInvocation(payload, new Set(['vendor-deepseek']));
 
-const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionChunk>>): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events result');
-  const out: ProtocolFrame<ChatCompletionChunk>[] = [];
+  const out: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const usageRecord = (usage: NonNullable<ChatCompletionChunk['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 // ── Outbound: assistant reasoning field rewrite ──
 
@@ -277,7 +277,7 @@ test('vendor-deepseek leaves an already-json_object response_format untouched', 
 
 test('vendor-deepseek renames inbound protocol reasoning_content deltas to reasoning_text', async () => {
   const ctx = exchangeCtx();
-  const upstreamChunk: ChatCompletionChunk = {
+  const upstreamChunk: ChatCompletionsStreamEvent = {
     id: 'chunk_1',
     object: 'chat.completion.chunk',
     created: 1,
@@ -314,7 +314,7 @@ test('vendor-deepseek preserves reasoning_content from non-stream JSON responses
   const ctx = exchangeCtx();
   const id = 'chatcmpl_deepseek_json';
   const model = 'deepseek-reasoner';
-  const chunk = (delta: ChatCompletionChunk['choices'][number]['delta'], finish_reason: 'stop' | null = null): ChatCompletionChunk => ({
+  const chunk = (delta: ChatCompletionsStreamEvent['choices'][number]['delta'], finish_reason: 'stop' | null = null): ChatCompletionsStreamEvent => ({
     id,
     object: 'chat.completion.chunk',
     created: 1,
@@ -329,7 +329,7 @@ test('vendor-deepseek preserves reasoning_content from non-stream JSON responses
           yield eventFrame(chunk({ role: 'assistant' }));
           // DeepSeek's legacy non-stream JSON exposes the scalar as reasoning_content.
           // The vendor interceptor must normalize it to reasoning_text.
-          yield eventFrame(chunk({ reasoning_content: 'json thinking' } as ChatCompletionChunk['choices'][number]['delta']));
+          yield eventFrame(chunk({ reasoning_content: 'json thinking' } as ChatCompletionsStreamEvent['choices'][number]['delta']));
           yield eventFrame(chunk({ content: 'answer' }));
           yield eventFrame(chunk({}, 'stop'));
           yield doneFrame();
@@ -364,7 +364,7 @@ test('vendor-deepseek rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens 
               total_tokens: 120,
               prompt_cache_hit_tokens: 70,
               prompt_cache_miss_tokens: 30,
-            } as unknown as ChatCompletionChunk['usage'],
+            } as unknown as ChatCompletionsStreamEvent['usage'],
           });
         })(),
         testTelemetryModelIdentity,

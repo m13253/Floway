@@ -2,10 +2,10 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 
 test('buildTargetRequest maps system instruction and multimodal user content', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     systemInstruction: {
       parts: [{ text: 'Be precise.' }, { text: 'Use markdown.' }],
     },
@@ -37,7 +37,7 @@ test('buildTargetRequest maps system instruction and multimodal user content', (
 });
 
 test('buildTargetRequest maps function calls, tool responses, and reasoning history', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -80,7 +80,7 @@ test('buildTargetRequest maps function calls, tool responses, and reasoning hist
 });
 
 test('buildTargetRequest matches omitted functionResponse ids to same-name calls in call order', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -136,7 +136,7 @@ test('buildTargetRequest matches omitted functionResponse ids to same-name calls
 });
 
 test('buildTargetRequest does not rematch a prior call already answered by explicit id', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -196,7 +196,7 @@ test('buildTargetRequest does not rematch a prior call already answered by expli
 });
 
 test('buildTargetRequest maps generation config and reasoning effort', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     generationConfig: {
       maxOutputTokens: 512,
       temperature: 0.25,
@@ -260,7 +260,7 @@ test('buildTargetRequest maps structured output schema and zero thinking budget'
 });
 
 test('buildTargetRequest maps tool declarations and tool choice modes', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     tools: [
       {
         functionDeclarations: [

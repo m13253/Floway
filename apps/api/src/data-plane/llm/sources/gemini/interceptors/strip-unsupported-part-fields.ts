@@ -1,5 +1,5 @@
 import type { GeminiInterceptor } from '../../../interceptors.ts';
-import type { GeminiGenerateContentRequest, GeminiPart } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload, GeminiPart } from '@floway-dev/protocols/gemini';
 
 /**
  * Gemini file/code parts have no current equivalent in the upstream target
@@ -14,7 +14,7 @@ const stripPartFields = (parts: GeminiPart[]): GeminiPart[] =>
     return Object.keys(part).length > 0;
   });
 
-export const stripUnsupportedPartFieldsFromPayload = (payload: GeminiGenerateContentRequest): void => {
+export const stripUnsupportedPartFieldsFromPayload = (payload: GeminiPayload): void => {
   payload.contents?.forEach(content => {
     content.parts = stripPartFields(content.parts);
   });

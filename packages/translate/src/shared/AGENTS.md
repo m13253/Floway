@@ -18,16 +18,16 @@ flat `.ts` files at the top level of `shared/`.
    appears as either source or target. Example: `messages/tool-arguments.ts`
    parses tool-call argument JSON wherever Messages appears.
 5. **Two-protocol-bidirectional, `<A>-and-<B>/`** — helpers used by both
-   `A-via-B` AND `B-via-A`. Example: `chat-and-responses/reasoning.ts` runs
-   both directions of the Chat ↔ Responses reasoning round trip.
+   `A-via-B` AND `B-via-A`. Example: `chat-completions-and-responses/reasoning.ts`
+   runs both directions of the Chat Completions ↔ Responses reasoning round trip.
 
 ## Current subdirectories
 
 - `messages/` — helpers used wherever Messages appears (source or target).
-- `chat-and-responses/` — helpers used by both `chat-via-responses` AND
-  `responses-via-chat`.
-- `chat-and-messages/` — helpers used by both `chat-via-messages` AND
-  `messages-via-chat`.
+- `chat-completions-and-responses/` — helpers used by both
+  `chat-completions-via-responses` AND `responses-via-chat-completions`.
+- `chat-completions-and-messages/` — helpers used by both
+  `chat-completions-via-messages` AND `messages-via-chat-completions`.
 - `messages-and-responses/` — helpers used by both `messages-via-responses` AND
   `responses-via-messages`.
 - `via-responses/` — helpers used by all `*-via-responses` pairs

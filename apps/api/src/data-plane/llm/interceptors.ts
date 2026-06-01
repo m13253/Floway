@@ -1,11 +1,11 @@
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemini';
 
@@ -92,7 +92,7 @@ export interface MessagesInvocation extends Invocation<MessagesPayload> {
 }
 export type ResponsesInvocation = Invocation<ResponsesPayload>;
 export type ChatCompletionsInvocation = Invocation<ChatCompletionsPayload>;
-export type GeminiInvocation = Invocation<GeminiGenerateContentRequest>;
+export type GeminiInvocation = Invocation<GeminiPayload>;
 
 export type InterceptorRun<TResult> = () => Promise<TResult>;
 
@@ -109,9 +109,9 @@ export const runInterceptors = async <TContext, TRequest, TResult>(
   return await run(0);
 };
 
-export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>;
-export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
-export type ChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, RequestContext, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>;
+export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>;
+export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
+export type ChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, RequestContext, ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>>;
 export type GeminiInterceptor = Interceptor<GeminiInvocation, RequestContext, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>;
 
 // count_tokens is a one-shot, non-streaming HTTP exchange — the terminal

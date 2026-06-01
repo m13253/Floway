@@ -14,7 +14,7 @@ import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts'
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import { chatCompletionsViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const packReasoningSignature = (id: string): string => `@${id}`;
@@ -45,11 +45,11 @@ const insertRows = async (rows: readonly StoredResponsesItem[]) => {
   await repo.responsesItems.insertMany(rows);
 };
 
-const prepareResponsesItems = async (sourceItems: string | readonly ResponseInputItem[]) =>
+const prepareResponsesItems = async (sourceItems: string | readonly ResponsesInputItem[]) =>
   await prepareStoredResponsesItemsForSource(sourceItems, API_KEY_ID, responsesItemsView);
 
 const rewriteResponsesItems = async (
-  sourceItems: string | readonly ResponseInputItem[],
+  sourceItems: string | readonly ResponsesInputItem[],
   prepared: Awaited<ReturnType<typeof prepareResponsesItems>>,
   binding: ProviderModelRecord,
 ) => await rewriteStoredResponsesItemsForProvider(sourceItems, prepared, binding, responsesItemsView);
@@ -206,7 +206,7 @@ test('conflicting compaction forcing upstreams reject the request', async () => 
   const prepared = await prepareResponsesItems([
     { type: 'compaction', id: first },
     { type: 'compaction', id: second },
-  ] as ResponseInputItem[]);
+  ] as ResponsesInputItem[]);
   const plan = planResponsesItemProviders([provider('up_a'), provider('up_b')], prepared);
 
   assertEquals(plan.type, 'failure');
@@ -219,7 +219,7 @@ test('matching upstream rewrites to upstream_item_id', async () => {
     storedRow({ id, itemType: 'message', upstreamId: 'up_a', upstreamItemId: 'raw_msg_a' }),
   ]);
 
-  const sourceItems: ResponseInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'stale' }];
+  const sourceItems: ResponsesInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'stale' }];
   const prepared = await prepareResponsesItems(sourceItems);
   const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_a'));
 
@@ -279,7 +279,7 @@ test('row item type must match source item type before downgrade or rewrite', as
 
   const prepared = await prepareResponsesItems([
     { type: 'message', id: reasoningId, role: 'assistant', content: 'visible message' },
-  ] as ResponseInputItem[]);
+  ] as ResponsesInputItem[]);
   const plan = planResponsesItemProviders([provider('up_a')], prepared);
 
   assertEquals(plan.type, 'failure');
@@ -360,9 +360,9 @@ test('non-matching portable inline items get temporary ids without leaking raw u
     storedRow({ id, itemType: 'message', upstreamId: 'up_a', upstreamItemId: 'raw_msg_a' }),
   ]);
 
-  const sourceItems: ResponseInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'portable body' }];
+  const sourceItems: ResponsesInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'portable body' }];
   const prepared = await prepareResponsesItems(sourceItems);
-  const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_b')) as ResponseInputItem[];
+  const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_b')) as ResponsesInputItem[];
   const [item] = rewritten;
 
   assert(item.type === 'message');
@@ -390,7 +390,7 @@ test('stored payload replaces stale caller content before provider id rewrite', 
     }),
   ]);
 
-  const sourceItems: ResponseInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'stale caller content' }];
+  const sourceItems: ResponsesInputItem[] = [{ type: 'message', id, role: 'assistant', content: 'stale caller content' }];
   const prepared = await prepareResponsesItems(sourceItems);
   const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_a'));
 
@@ -419,7 +419,7 @@ test('matching upstream keeps item_reference shape and rewrites to upstream item
     }),
   ]);
 
-  const sourceItems: ResponseInputItem[] = [{ type: 'item_reference', id }];
+  const sourceItems: ResponsesInputItem[] = [{ type: 'item_reference', id }];
   const prepared = await prepareResponsesItems(sourceItems);
   const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_a'));
 
@@ -443,7 +443,7 @@ test('matching upstream without item_reference support expands the stored item b
     }),
   ]);
 
-  const sourceItems: ResponseInputItem[] = [{ type: 'item_reference', id }];
+  const sourceItems: ResponsesInputItem[] = [{ type: 'item_reference', id }];
   const prepared = await prepareResponsesItems(sourceItems);
   const rewritten = await rewriteResponsesItems(sourceItems, prepared, provider('up_a', false));
 
@@ -478,7 +478,7 @@ test('id-less reasoning is matched by encrypted_content hash and prefers its own
     storedRow({ id: storedReasoningId('owned'), itemType: 'reasoning', upstreamId: 'up_a', upstreamItemId: 'raw_rs_a', encryptedContentHash: hash, payload: null }),
   ]);
 
-  const items = [{ type: 'reasoning', summary: [], encrypted_content: enc }] as unknown as ResponseInputItem[];
+  const items = [{ type: 'reasoning', summary: [], encrypted_content: enc }] as unknown as ResponsesInputItem[];
   const prepared = await prepareResponsesItems(items);
   const plan = planResponsesItemProviders([provider('up_b'), provider('up_a')], prepared);
 
@@ -500,7 +500,7 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
     storedRow({ id: storedCompactionId('owned'), itemType: 'compaction', upstreamId: 'up_a', upstreamItemId: 'raw_cmp_a', encryptedContentHash: hash, payload: null }),
   ]);
 
-  const items = [{ type: 'compaction', encrypted_content: enc }] as unknown as ResponseInputItem[];
+  const items = [{ type: 'compaction', encrypted_content: enc }] as unknown as ResponsesInputItem[];
   const prepared = await prepareResponsesItems(items);
 
   const plan = planResponsesItemProviders([provider('up_b'), provider('up_a')], prepared);
@@ -517,7 +517,7 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
 
 test('id-less encrypted_content with no stored match is a benign passthrough', async () => {
   await insertRows([]);
-  const items = [{ type: 'reasoning', summary: [], encrypted_content: 'never-stored' }] as unknown as ResponseInputItem[];
+  const items = [{ type: 'reasoning', summary: [], encrypted_content: 'never-stored' }] as unknown as ResponsesInputItem[];
   const prepared = await prepareResponsesItems(items);
 
   assertEquals(prepared.failures, []);

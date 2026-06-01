@@ -1,5 +1,5 @@
-import type { ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-export type ResponseEvent<TType extends ResponseStreamEvent['type']> = Extract<ResponseStreamEvent, { type: TType }>;
+export type ResponsesEvent<TType extends ResponsesStreamEvent['type']> = Extract<ResponsesStreamEvent, { type: TType }>;
 
-export const responsePartKey = (outputIndex: number, partIndex: number): string => `${outputIndex}:${partIndex}`;
+export const responsesPartKey = (outputIndex: number, partIndex: number): string => `${outputIndex}:${partIndex}`;

@@ -1,20 +1,20 @@
 import type * as Responses from '@floway-dev/protocols/responses';
 
-type ResponseOutputContentBlock = Responses.ResponseOutputContentBlock;
-type ResponseOutputCustomToolCall = Responses.ResponseOutputCustomToolCall;
-type ResponseOutputFunctionCall = Responses.ResponseOutputFunctionCall;
-type ResponseOutputItem = Responses.ResponseOutputItem;
-type ResponseOutputMessage = Responses.ResponseOutputMessage;
-type ResponseOutputReasoning = Responses.ResponseOutputReasoning;
+type ResponsesOutputContentBlock = Responses.ResponsesOutputContentBlock;
+type ResponsesOutputCustomToolCall = Responses.ResponsesOutputCustomToolCall;
+type ResponsesOutputFunctionCall = Responses.ResponsesOutputFunctionCall;
+type ResponsesOutputItem = Responses.ResponsesOutputItem;
+type ResponsesOutputMessage = Responses.ResponsesOutputMessage;
+type ResponsesOutputReasoning = Responses.ResponsesOutputReasoning;
 type ResponsesResult = Responses.ResponsesResult;
-type ResponseStreamEvent = Responses.ResponseStreamEvent;
+type ResponsesStreamEvent = Responses.ResponsesStreamEvent;
 
 export interface ResponsesSequenceState {
   sequenceNumber: number;
 }
 
-type OutputTextPart = Extract<ResponseOutputContentBlock, { type: 'output_text' }>;
-type ResponseUsage = NonNullable<ResponsesResult['usage']>;
+type OutputTextPart = Extract<ResponsesOutputContentBlock, { type: 'output_text' }>;
+type ResponsesUsage = NonNullable<ResponsesResult['usage']>;
 
 const textPart = (text: string): OutputTextPart => ({
   type: 'output_text',
@@ -23,38 +23,38 @@ const textPart = (text: string): OutputTextPart => ({
 
 const summaryPart = (text: string) => ({ type: 'summary_text' as const, text });
 
-const outputItemEvent = (state: 'added' | 'done', outputIndex: number, item: ResponseOutputItem): ResponseStreamEvent => ({
+const outputItemEvent = (state: 'added' | 'done', outputIndex: number, item: ResponsesOutputItem): ResponsesStreamEvent => ({
   type: `response.output_item.${state}`,
   output_index: outputIndex,
   item,
 });
 
-const outputTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponseStreamEvent =>
+const outputTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponsesStreamEvent =>
   ({
     type: `response.output_text.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     content_index: 0,
     [state === 'delta' ? 'delta' : 'text']: text,
-  } as ResponseStreamEvent);
+  } as ResponsesStreamEvent);
 
-const functionCallArgumentsEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponseStreamEvent =>
+const functionCallArgumentsEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponsesStreamEvent =>
   ({
     type: `response.function_call_arguments.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     [state === 'delta' ? 'delta' : 'arguments']: text,
-  } as ResponseStreamEvent);
+  } as ResponsesStreamEvent);
 
-const customToolCallInputEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponseStreamEvent =>
+const customToolCallInputEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, text: string): ResponsesStreamEvent =>
   ({
     type: `response.custom_tool_call_input.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     [state === 'delta' ? 'delta' : 'input']: text,
-  } as ResponseStreamEvent);
+  } as ResponsesStreamEvent);
 
-const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): ResponseStreamEvent => ({
+const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): ResponsesStreamEvent => ({
   type: `response.reasoning_summary_part.${state}`,
   item_id: itemId,
   output_index: outputIndex,
@@ -62,22 +62,22 @@ const reasoningSummaryPartEvent = (state: 'added' | 'done', outputIndex: number,
   part: summaryPart(text),
 });
 
-const reasoningSummaryTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): ResponseStreamEvent =>
+const reasoningSummaryTextEvent = (state: 'delta' | 'done', outputIndex: number, itemId: string, summaryIndex: number, text: string): ResponsesStreamEvent =>
   ({
     type: `response.reasoning_summary_text.${state}`,
     item_id: itemId,
     output_index: outputIndex,
     summary_index: summaryIndex,
     [state === 'delta' ? 'delta' : 'text']: text,
-  } as ResponseStreamEvent);
+  } as ResponsesStreamEvent);
 
-export const seq = (state: ResponsesSequenceState, events: ResponseStreamEvent[]): ResponseStreamEvent[] =>
+export const seq = (state: ResponsesSequenceState, events: ResponsesStreamEvent[]): ResponsesStreamEvent[] =>
   events.map(event => ({
     ...event,
     sequence_number: state.sequenceNumber++,
   }));
 
-export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number): ResponseUsage => ({
+export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number): ResponsesUsage => ({
   input_tokens: inputTokens,
   output_tokens: outputTokens,
   total_tokens: inputTokens + outputTokens,
@@ -93,10 +93,10 @@ export const usage = (inputTokens: number, outputTokens: number, cacheReadInputT
 export const result = (input: {
   id: string;
   model: string;
-  output: ResponseOutputItem[];
+  output: ResponsesOutputItem[];
   outputText: string;
   status: ResponsesResult['status'];
-  usage?: ResponseUsage;
+  usage?: ResponsesUsage;
   incompleteDetails?: ResponsesResult['incomplete_details'];
 }): ResponsesResult => ({
   id: input.id,
@@ -120,21 +120,21 @@ export const result = (input: {
 // mint a stored id and record the item. Ids are derived from the item's
 // output index (see the `msg_`/`fc_`/`ctc_`/`rs_` callers), so they are stable
 // within a response and do not parse as gateway stored ids.
-export const messageItem = (id: string, text: string): ResponseOutputMessage => ({
+export const messageItem = (id: string, text: string): ResponsesOutputMessage => ({
   type: 'message',
   id,
   role: 'assistant',
   content: [textPart(text)],
 });
 
-export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponseOutputReasoning => ({
+export const reasoningItem = (id: string, summaryText: string, encryptedContent?: string): ResponsesOutputReasoning => ({
   type: 'reasoning',
   id,
   summary: summaryText ? [summaryPart(summaryText)] : [],
   ...(encryptedContent !== undefined ? { encrypted_content: encryptedContent } : {}),
 });
 
-export const functionCallItem = (id: string, callId: string, name: string, args: string, status: ResponseOutputFunctionCall['status']): ResponseOutputFunctionCall => ({
+export const functionCallItem = (id: string, callId: string, name: string, args: string, status: ResponsesOutputFunctionCall['status']): ResponsesOutputFunctionCall => ({
   type: 'function_call',
   id,
   call_id: callId,
@@ -143,7 +143,7 @@ export const functionCallItem = (id: string, callId: string, name: string, args:
   status,
 });
 
-export const customToolCallItem = (id: string, callId: string, name: string, input: string): ResponseOutputCustomToolCall => ({
+export const customToolCallItem = (id: string, callId: string, name: string, input: string): ResponsesOutputCustomToolCall => ({
   type: 'custom_tool_call',
   id,
   call_id: callId,
@@ -172,7 +172,7 @@ export const terminal = (state: ResponsesSequenceState, response: ResponsesResul
   ]);
 };
 
-export const itemAdded = (state: ResponsesSequenceState, outputIndex: number, item: ResponseOutputItem) =>
+export const itemAdded = (state: ResponsesSequenceState, outputIndex: number, item: ResponsesOutputItem) =>
   seq(state, [outputItemEvent('added', outputIndex, item)]);
 
 export const textStart = (state: ResponsesSequenceState, outputIndex: number, itemId: string) =>
@@ -190,7 +190,7 @@ export const textStart = (state: ResponsesSequenceState, outputIndex: number, it
 export const textDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [outputTextEvent('delta', outputIndex, itemId, delta)]);
 
-export const textDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, text: string, item: ResponseOutputMessage) =>
+export const textDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, text: string, item: ResponsesOutputMessage) =>
   seq(state, [
     outputTextEvent('done', outputIndex, itemId, text),
     {
@@ -206,10 +206,10 @@ export const textDone = (state: ResponsesSequenceState, outputIndex: number, ite
 export const argumentsDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [functionCallArgumentsEvent('delta', outputIndex, itemId, delta)]);
 
-export const functionCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, args: string, item: ResponseOutputFunctionCall) =>
+export const functionCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, args: string, item: ResponsesOutputFunctionCall) =>
   seq(state, [functionCallArgumentsEvent('done', outputIndex, itemId, args), outputItemEvent('done', outputIndex, item)]);
 
-export const customToolCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, input: string, item: ResponseOutputCustomToolCall) =>
+export const customToolCallDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, input: string, item: ResponsesOutputCustomToolCall) =>
   seq(state, [
     ...(input.length > 0 ? [customToolCallInputEvent('delta', outputIndex, itemId, input)] : []),
     customToolCallInputEvent('done', outputIndex, itemId, input),
@@ -222,14 +222,14 @@ export const reasoningStart = (state: ResponsesSequenceState, outputIndex: numbe
 export const reasoningDelta = (state: ResponsesSequenceState, outputIndex: number, itemId: string, delta: string) =>
   seq(state, [reasoningSummaryTextEvent('delta', outputIndex, itemId, 0, delta)]);
 
-export const reasoningDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, summaryText: string, item: ResponseOutputReasoning) =>
+export const reasoningDone = (state: ResponsesSequenceState, outputIndex: number, itemId: string, summaryText: string, item: ResponsesOutputReasoning) =>
   seq(state, [
     ...(summaryText ? [reasoningSummaryTextEvent('done', outputIndex, itemId, 0, summaryText)] : []),
     reasoningSummaryPartEvent('done', outputIndex, itemId, 0, summaryText),
     outputItemEvent('done', outputIndex, item),
   ]);
 
-export const completedReasoning = (state: ResponsesSequenceState, outputIndex: number, item: ResponseOutputReasoning) =>
+export const completedReasoning = (state: ResponsesSequenceState, outputIndex: number, item: ResponsesOutputReasoning) =>
   seq(state, [
     outputItemEvent('added', outputIndex, item),
     ...item.summary.flatMap((part, summaryIndex) => [

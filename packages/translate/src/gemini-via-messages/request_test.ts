@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 const noOptions = {};
@@ -10,7 +10,7 @@ const noOptions = {};
 const withMaxOutputTokens = (maxOutputTokens: number) => ({ fallbackMaxOutputTokens: maxOutputTokens });
 
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     systemInstruction: {
       parts: [{ text: 'Be precise.' }, { text: 'Use markdown.' }],
     },
@@ -52,7 +52,7 @@ test('buildTargetRequest prefers capabilities.maxOutputTokens over the gateway d
 });
 
 test('buildTargetRequest maps generation config and thinking controls', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     generationConfig: {
       maxOutputTokens: 512,
       temperature: 0.25,
@@ -83,7 +83,7 @@ test('buildTargetRequest maps generation config and thinking controls', () => {
 });
 
 test('buildTargetRequest maps assistant thinking signatures and tool calls', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -137,7 +137,7 @@ test('buildTargetRequest maps assistant thinking signatures and tool calls', () 
 });
 
 test('buildTargetRequest correlates omitted function response ids in call order', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -205,7 +205,7 @@ test('buildTargetRequest correlates omitted function response ids in call order'
 });
 
 test('buildTargetRequest maps tool declarations and tool choice modes', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     tools: [
       {
         functionDeclarations: [
@@ -258,7 +258,7 @@ test('buildTargetRequest maps tool declarations and tool choice modes', () => {
 });
 
 test('buildTargetRequest filters tools to multiple allowed names for ANY mode', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     tools: [
       {
         functionDeclarations: [{ name: 'lookup' }, { name: 'ping' }, { name: 'blocked' }],
