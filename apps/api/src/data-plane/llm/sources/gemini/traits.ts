@@ -8,7 +8,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -64,11 +64,10 @@ const renderGeminiFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFr
 
 // The Gemini wire API encodes both the model and the action in one path
 // segment, e.g. `models/gemini-2.5-pro:streamGenerateContent`. `setup` splits
-// that here so the modelAction route maps straight onto `serveLlm(geminiTraits)`:
-// `generateContent`/`streamGenerateContent` flow into the shared serve, while
-// `countTokens` and unknown actions return their own Responses early.
-export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStreamEvent> = {
-  renderFailure: renderGeminiFailure,
+// that here: `generateContent`/`streamGenerateContent` flow into the shared
+// serve, while `countTokens` and unknown actions return their own Responses
+// early.
+const geminiGenerate: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondGemini(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
@@ -120,4 +119,9 @@ export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStrea
       },
     };
   },
+};
+
+export const geminiTraits: LlmSourceTraits<readonly GeminiContent[], GeminiStreamEvent> = {
+  renderFailure: renderGeminiFailure,
+  endpoints: { generate: geminiGenerate },
 };

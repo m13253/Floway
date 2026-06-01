@@ -7,7 +7,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -67,8 +67,7 @@ const renderChatCompletionsFailure = (failure: LlmServeFailure): ExecuteResult<P
 // state.
 const INCLUDE_USAGE_CHUNK_KEY = 'chatCompletionsIncludeUsageChunk';
 
-export const chatCompletionsTraits: LlmSourceTraits<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
-  renderFailure: renderChatCompletionsFailure,
+const chatCompletionsGenerate: LlmEndpoint<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondChatCompletions(c, result, wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, request, downstreamAbortController),
   setup: async c => {
@@ -104,4 +103,9 @@ export const chatCompletionsTraits: LlmSourceTraits<readonly ChatCompletionsMess
       },
     };
   },
+};
+
+export const chatCompletionsTraits: LlmSourceTraits<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
+  renderFailure: renderChatCompletionsFailure,
+  endpoints: { generate: chatCompletionsGenerate },
 };

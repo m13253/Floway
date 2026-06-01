@@ -4,18 +4,20 @@ import { createRequestContext } from './request-context.ts';
 import type { RequestContext } from '../interceptors.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import { planResponsesItemProviders, type PreparedStoredResponsesItems, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider, type StoredResponsesProviderPlan } from './responses/items/request-plan.ts';
-import { type LlmServeFailure, LlmServeFailureError, type LlmSourcePlan, type LlmSourceTraits, type Result } from './traits.ts';
+import { type LlmEndpointName, type LlmEndpointPlan, type LlmServeFailure, LlmServeFailureError, type LlmSourceTraits, type Result } from './traits.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 
-// The control flow every LLM source serve shares: look up referenced stored
+// The control flow every LLM source endpoint shares: look up referenced stored
 // items, plan a provider order from their routing affinity, then walk that
 // order resolving the model, running source interceptors, and wrapping the
 // events branch so output items are persisted with the right commit timing.
 // Only the protocol-shaped pieces — payload parsing, item carrier location,
 // target preference, the interceptor-wrapped emit, response shaping — differ
-// per API and are injected through the per-source traits.
+// per API/endpoint and are injected through the per-source traits.
 //
-// payload and request never reach this orchestrator: they live in the per-API
+// A source declares one or more endpoints (generate, count_tokens, compact);
+// `serveLlm(traits, endpointName)` binds one of them to a route. payload and
+// request never reach this orchestrator: they live in the per-endpoint
 // closures. `setup(c)` parses the body, runs input-level pre-checks (returning
 // an early `Response`), and yields a plan whose `attempt` closure captures the
 // payload to clone, rewrite, and run. The orchestrator only drives the planner
@@ -23,40 +25,46 @@ import { listModelProviders, resolveModelForProvider } from '../../providers/reg
 
 export const serveLlm = <TItems, TEvent>(
   traits: LlmSourceTraits<TItems, TEvent>,
-) => async (c: Context): Promise<Response> => {
-  // `request`/`wantsStream`/abort start provisional so a parse or setup throw
-  // can still be rendered with telemetry; `setup` replaces them on success.
-  // `respond` closes over them so every call site — early diagnostic, main
-  // path, and catch — renders identically.
-  let request = createRequestContext(c, undefined, false);
-  let wantsStream = false;
-  let downstreamAbortController: AbortController | undefined;
-  const respond = (result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
-    traits.respond({ c, result, request, wantsStream, downstreamAbortController });
+  endpointName: LlmEndpointName,
+) => {
+  const endpoint = traits.endpoints[endpointName];
+  if (!endpoint) throw new Error(`LLM source does not define the '${endpointName}' endpoint.`);
 
-  try {
-    const plan = await traits.setup(c);
-    if (plan instanceof Response) return plan;
-    ({ request, wantsStream, downstreamAbortController } = plan);
+  return async (c: Context): Promise<Response> => {
+    // `request`/`wantsStream`/abort start provisional so a parse or setup throw
+    // can still be rendered with telemetry; `setup` replaces them on success.
+    // `respond` closes over them so every call site — early diagnostic, main
+    // path, and catch — renders identically.
+    let request = createRequestContext(c, undefined, false);
+    let wantsStream = false;
+    let downstreamAbortController: AbortController | undefined;
+    const respond = (result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
+      endpoint.respond({ c, result, request, wantsStream, downstreamAbortController });
 
-    const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.responsesItemsView);
-    if (prepared.failures[0]) return (await respond(traits.renderFailure(prepared.failures[0]))).response;
+    try {
+      const plan = await endpoint.setup(c);
+      if (plan instanceof Response) return plan;
+      ({ request, wantsStream, downstreamAbortController } = plan);
 
-    const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), prepared);
-    const { result, commitForNonStreaming } = await attemptProviders(providerPlan, plan, prepared, request, traits.renderFailure);
+      const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.responsesItemsView);
+      if (prepared.failures[0]) return (await respond(traits.renderFailure(prepared.failures[0]))).response;
 
-    // `respond` reports only whether the response was produced; the orchestrator
-    // owns commit timing. `commitForNonStreaming` exists solely on a successful
-    // non-streaming attempt — it flushes the buffered rows once the body is
-    // known good (streaming rows were already written per frame). A failed
-    // response leaves the buffer unflushed.
-    const { success, response } = await respond(result);
-    if (success) await commitForNonStreaming?.();
-    return response;
-  } catch (error) {
-    const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
-    return (await respond(traits.renderFailure(failure))).response;
-  }
+      const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), prepared);
+      const { result, commitForNonStreaming } = await attemptProviders(providerPlan, plan, prepared, request, traits.renderFailure);
+
+      // `respond` reports only whether the response was produced; the orchestrator
+      // owns commit timing. `commitForNonStreaming` exists solely on a successful
+      // non-streaming attempt — it flushes the buffered rows once the body is
+      // known good (streaming rows were already written per frame). A failed
+      // response leaves the buffer unflushed.
+      const { success, response } = await respond(result);
+      if (success) await commitForNonStreaming?.();
+      return response;
+    } catch (error) {
+      const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
+      return (await respond(traits.renderFailure(failure))).response;
+    }
+  };
 };
 
 // Walk the planned providers in order: resolve the model, pick a target, run
@@ -67,7 +75,7 @@ export const serveLlm = <TItems, TEvent>(
 // no usable target.
 const attemptProviders = async <TItems, TEvent>(
   providerPlan: StoredResponsesProviderPlan,
-  plan: LlmSourcePlan<TItems, TEvent>,
+  plan: LlmEndpointPlan<TItems, TEvent>,
   prepared: PreparedStoredResponsesItems,
   request: RequestContext,
   renderFailure: (failure: LlmServeFailure) => Result<TEvent>,

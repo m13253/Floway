@@ -7,7 +7,7 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -111,8 +111,7 @@ const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<Protocol
   return jsonUpstreamErrorResult(status, body);
 };
 
-export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEvent> = {
-  renderFailure: renderMessagesFailure,
+const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondMessages(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
@@ -151,4 +150,9 @@ export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], Message
       },
     };
   },
+};
+
+export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEvent> = {
+  renderFailure: renderMessagesFailure,
+  endpoints: { generate: messagesGenerate },
 };

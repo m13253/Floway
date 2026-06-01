@@ -8,10 +8,10 @@ import { responsesTraits } from './sources/responses/traits.ts';
 import { serveLlm } from './sources/serve.ts';
 
 export const mountLlmRoutes = (app: Hono) => {
-  const serveChatCompletions = serveLlm(chatCompletionsTraits);
-  const serveResponses = serveLlm(responsesTraits);
-  const serveMessages = serveLlm(messagesTraits);
-  const serveGemini = serveLlm(geminiTraits);
+  const serveChatCompletions = serveLlm(chatCompletionsTraits, 'generate');
+  const serveResponses = serveLlm(responsesTraits, 'generate');
+  const serveMessages = serveLlm(messagesTraits, 'generate');
+  const serveGemini = serveLlm(geminiTraits, 'generate');
 
   app.post('/v1/chat/completions', serveChatCompletions);
   app.post('/chat/completions', serveChatCompletions);

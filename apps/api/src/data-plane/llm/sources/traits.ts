@@ -88,7 +88,7 @@ export const sourceErrorResult = <TEvent>(
   return internalErrorResult(options.internalStatus, toInternalDebugError(error, options.sourceApi));
 };
 
-export interface LlmSourcePlan<TItems, TEvent> {
+export interface LlmEndpointPlan<TItems, TEvent> {
   readonly request: RequestContext;
   readonly items: TItems;
   readonly responsesItemsView: ResponsesItemsView<TItems, Frame<TEvent>>;
@@ -114,12 +114,24 @@ export interface LlmSourcePlan<TItems, TEvent> {
   }): Promise<Result<TEvent>>;
 }
 
-export interface LlmSourceTraits<TItems, TEvent> {
-  // Static — usable even before/if `setup()` runs. Maps a failure to this API's
-  // error envelope and shapes the final Response from a result. `respond` only
-  // reports whether the response was produced successfully; the orchestrator
-  // owns what to do with that (e.g. committing stored items).
-  renderFailure(failure: LlmServeFailure): Result<TEvent>;
+// One client-facing operation of a source. Every endpoint shares the source's
+// input (TItems) and `renderFailure`, and differs only in how it reaches the
+// upstream and shapes the answer:
+//   - generate / compact produce LLM output — an `events` result whose output
+//     items the orchestrator persists, then `respond` renders.
+//   - count_tokens produces a measurement — a non-`events` result the
+//     orchestrator passes straight to `respond`, never persisting.
+//
+// `pickTarget` and `attempt` are NOT here: they live on the plan `setup`
+// returns, because `attempt` closes over the parsed payload.
+export interface LlmEndpoint<TItems, TEvent> {
+  // Parses the body, runs input-level pre-checks (returning an early
+  // `Response`), and yields the plan the orchestrator drives.
+  setup(c: Context): Promise<LlmEndpointPlan<TItems, TEvent> | Response>;
+  // Shapes the final Response from a result — both upstream results and the
+  // `renderFailure` envelope pass through here. Reports only whether the
+  // response was produced; the orchestrator owns commit timing for persisted
+  // items.
   respond(input: {
     c: Context;
     result: Result<TEvent>;
@@ -127,5 +139,15 @@ export interface LlmSourceTraits<TItems, TEvent> {
     wantsStream: boolean;
     downstreamAbortController: AbortController | undefined;
   }): Promise<{ success: boolean; response: Response }>;
-  setup(c: Context): Promise<LlmSourcePlan<TItems, TEvent> | Response>;
+}
+
+export type LlmEndpointName = 'generate' | 'countTokens' | 'compact';
+
+// A source exposes one or more endpoints that share its input and error
+// envelope. `renderFailure` is source-wide — every endpoint answers a failure
+// in the same protocol shape — while the per-endpoint pieces live on
+// `LlmEndpoint`.
+export interface LlmSourceTraits<TItems, TEvent> {
+  renderFailure(failure: LlmServeFailure): Result<TEvent>;
+  endpoints: Partial<Record<LlmEndpointName, LlmEndpoint<TItems, TEvent>>>;
 }
