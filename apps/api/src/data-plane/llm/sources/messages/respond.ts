@@ -6,10 +6,10 @@ import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
-import type { ExecuteResult } from '../../shared/errors/result.ts';
+import type { ExecuteResult, PlainResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 
@@ -22,7 +22,7 @@ type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['
 // produced, so the orchestrator knows whether to flush stored items.
 export const respondMessages = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>>,
+  result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
@@ -36,6 +36,8 @@ export const respondMessages = async (
     recordSourcePerformance(request, result.performance, true);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
+
+  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();

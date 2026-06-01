@@ -5,13 +5,13 @@ import type { ProviderModelRecord } from '../../providers/types.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { LlmTargetApi, RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
-import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
+import { internalErrorResult, type ExecuteResult, type PlainResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;
-export type Result<TEvent> = ExecuteResult<Frame<TEvent>>;
+export type Result<TEvent> = ExecuteResult<Frame<TEvent>> | PlainResult;
 
 // Every way `serveLlm` can fail before producing a usable upstream result.
 // These are protocol-agnostic: each source's `renderFailure` maps a failure to
@@ -81,7 +81,7 @@ export const sourceErrorResult = <TEvent>(
     sourceApi: PerformanceLlmSourceApi;
     internalStatus: number;
   },
-): Result<TEvent> => {
+): ExecuteResult<Frame<TEvent>> => {
   const upstreamError = thrownUpstreamErrorResult(error);
   if (upstreamError) return upstreamError;
 
@@ -148,6 +148,6 @@ export type LlmEndpointName = 'generate' | 'countTokens' | 'compact';
 // in the same protocol shape — while the per-endpoint pieces live on
 // `LlmEndpoint`.
 export interface LlmSourceTraits<TItems, TEvent> {
-  renderFailure(failure: LlmServeFailure): Result<TEvent>;
+  renderFailure(failure: LlmServeFailure, endpoint: LlmEndpointName): Result<TEvent>;
   endpoints: Partial<Record<LlmEndpointName, LlmEndpoint<TItems, TEvent>>>;
 }

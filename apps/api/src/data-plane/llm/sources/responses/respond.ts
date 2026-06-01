@@ -6,10 +6,10 @@ import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
-import type { ExecuteResult } from '../../shared/errors/result.ts';
+import type { ExecuteResult, PlainResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -23,7 +23,7 @@ type RR = ResponsesResult;
 // produced, so the orchestrator knows whether to flush stored items.
 export const respondResponses = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>,
+  result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
@@ -37,6 +37,8 @@ export const respondResponses = async (
     recordSourcePerformance(request, result.performance, true);
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
+
+  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
 
   const state = new SourceStreamState();
   const frames = observeResponsesFrames(result.events, state, wantsStream);

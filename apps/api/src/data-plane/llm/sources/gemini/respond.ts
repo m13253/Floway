@@ -6,10 +6,10 @@ import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
-import type { ExecuteResult, UpstreamErrorResult } from '../../shared/errors/result.ts';
+import type { ExecuteResult, PlainResult, UpstreamErrorResult } from '../../shared/errors/result.ts';
 import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
-import { SourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
@@ -24,7 +24,7 @@ type GR = GeminiResult;
 // to flush stored items.
 export const respondGemini = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>>,
+  result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult,
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
@@ -38,6 +38,8 @@ export const respondGemini = async (
     recordSourcePerformance(request, result.performance, true);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
+
+  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
 
   const state = new SourceStreamState();
   const frames = observeGeminiFrames(result.events, state, wantsStream);

@@ -40,6 +40,7 @@ export const serveLlm = <TItems, TEvent>(
     let downstreamAbortController: AbortController | undefined;
     const respond = (result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
       endpoint.respond({ c, result, request, wantsStream, downstreamAbortController });
+    const renderFailure = (failure: LlmServeFailure): Result<TEvent> => traits.renderFailure(failure, endpointName);
 
     try {
       const plan = await endpoint.setup(c);
@@ -47,10 +48,10 @@ export const serveLlm = <TItems, TEvent>(
       ({ request, wantsStream, downstreamAbortController } = plan);
 
       const prepared = await prepareStoredResponsesItemsForSource(plan.items, request.apiKeyId ?? null, plan.responsesItemsView);
-      if (prepared.failures[0]) return (await respond(traits.renderFailure(prepared.failures[0]))).response;
+      if (prepared.failures[0]) return (await respond(renderFailure(prepared.failures[0]))).response;
 
       const providerPlan = planResponsesItemProviders(await listModelProviders(request.apiKeyUpstreamIds), prepared);
-      const { result, commitForNonStreaming } = await attemptProviders(providerPlan, plan, prepared, request, traits.renderFailure);
+      const { result, commitForNonStreaming } = await attemptProviders(providerPlan, plan, prepared, request, renderFailure);
 
       // `respond` reports only whether the response was produced; the orchestrator
       // owns commit timing. `commitForNonStreaming` exists solely on a successful
@@ -62,7 +63,7 @@ export const serveLlm = <TItems, TEvent>(
       return response;
     } catch (error) {
       const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
-      return (await respond(traits.renderFailure(failure))).response;
+      return (await respond(renderFailure(failure))).response;
     }
   };
 };

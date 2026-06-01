@@ -2,12 +2,12 @@ import { messagesSourceInterceptors } from './interceptors/index.ts';
 import { respondMessages } from './respond.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
-import type { ExecuteResult } from '../../shared/errors/result.ts';
+import { type ExecuteResult, plainResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
-import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { type LlmEndpoint, type LlmEndpointName, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -105,9 +105,9 @@ export const messagesFailureEnvelope = (
   return { status, body: { type: 'error', error: { type, message } } };
 };
 
-const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
+const renderMessagesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointName): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
   if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEvent>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
-  const { status, body } = messagesFailureEnvelope(failure, '/messages');
+  const { status, body } = messagesFailureEnvelope(failure, endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages');
   return jsonUpstreamErrorResult(status, body);
 };
 
@@ -152,7 +152,55 @@ const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEv
   },
 };
 
+// count_tokens shares the Messages input and provider walk but produces a
+// measurement, not a stream: it gates on the `messages_count_tokens` upstream
+// capability, calls that endpoint through the same count_tokens interceptors,
+// and proxies the upstream body back as a plain result.
+const pickCountTokensTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
+  endpoints.includes('messages_count_tokens') ? 'messages' : null;
+
+const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
+  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
+    await respondMessages(c, result, wantsStream, request, downstreamAbortController),
+  setup: async c => {
+    const payload = await c.req.json<MessagesPayload>();
+    const rejectedBetaParam = bodyBetaParam(payload);
+    if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+    const request = createRequestContext(c, undefined, false);
+    const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
+    return {
+      request,
+      items: payload.messages,
+      responsesItemsView: messagesViaResponsesItemsView,
+      wantsStream: false,
+      store: undefined,
+      model: payload.model,
+      downstreamAbortController: undefined,
+      pickTarget: pickCountTokensTarget,
+      attempt: async ({ binding, model, rewriteItems }) => {
+        const attemptPayload = structuredClone(payload);
+        attemptPayload.model = model;
+        attemptPayload.messages = await rewriteItems(attemptPayload.messages);
+        // targetApi is 'messages' because count_tokens hits the Messages
+        // endpoint family; the same provider count_tokens interceptors run so
+        // Copilot's vision/initiator/anthropic-beta header workarounds apply.
+        const invocation: MessagesInvocation = messagesInvocation(binding, 'messages', model, attemptPayload, anthropicBeta, {});
+        const response = await runInterceptors(invocation, request, invocation.targetInterceptors?.messagesCountTokens ?? [], async () => {
+          const { model: _model, ...body } = invocation.payload;
+          const { response } = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, body, undefined, invocation.headers, invocation.anthropicBeta);
+          return response;
+        });
+        return plainResult(
+          response.status,
+          new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
+          new Uint8Array(await response.arrayBuffer()),
+        );
+      },
+    };
+  },
+};
+
 export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEvent> = {
   renderFailure: renderMessagesFailure,
-  endpoints: { generate: messagesGenerate },
+  endpoints: { generate: messagesGenerate, countTokens: messagesCountTokens },
 };

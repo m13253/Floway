@@ -14,13 +14,13 @@ const decodeUpstreamError = (result: ReturnType<typeof responsesTraits.renderFai
 };
 
 test('Responses renders item-not-found as the byte-exact OpenAI native body', () => {
-  const { status, body } = decodeUpstreamError(responsesTraits.renderFailure({ kind: 'item-not-found', itemId: 'rs_x' }));
+  const { status, body } = decodeUpstreamError(responsesTraits.renderFailure({ kind: 'item-not-found', itemId: 'rs_x' }, 'generate'));
   assertEquals(status, 404);
   assertEquals(body, { error: { message: "Item with id 'rs_x' not found.", type: 'invalid_request_error', param: 'input', code: null } });
 });
 
 test('Responses tags routing-unavailable with the gateway-specific code', () => {
-  const { status, body } = decodeUpstreamError(responsesTraits.renderFailure({ kind: 'routing-unavailable', message: 'no upstream' }));
+  const { status, body } = decodeUpstreamError(responsesTraits.renderFailure({ kind: 'routing-unavailable', message: 'no upstream' }, 'generate'));
   assertEquals(status, 400);
   assertEquals(body, { error: { message: 'no upstream', type: 'invalid_request_error', param: 'input', code: 'responses_item_routing_unavailable' } });
 });

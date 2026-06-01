@@ -30,6 +30,19 @@ export interface InternalErrorResult {
   performance?: PerformanceTelemetryContext;
 }
 
+// A fully-shaped non-streaming success body — the output of a source endpoint
+// that measures rather than generates (count_tokens). It is NOT an
+// `ExecuteResult`: the target emit/interceptor layer never produces one. It is
+// combined into the source-level `Result` (see sources/traits.ts), so the
+// orchestrator passes it straight to `respond` without persistence, and
+// `respond` emits it verbatim.
+export interface PlainResult {
+  type: 'plain';
+  status: number;
+  headers: Headers;
+  body: Uint8Array;
+}
+
 export type ExecuteResult<T> = EventResult<T> | UpstreamErrorResult | InternalErrorResult;
 
 export const eventResult = <T>(
@@ -52,3 +65,5 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
   error,
   ...(performance ? { performance } : {}),
 });
+
+export const plainResult = (status: number, headers: Headers, body: Uint8Array): PlainResult => ({ type: 'plain', status, headers, body });
