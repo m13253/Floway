@@ -6,9 +6,9 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext } from '../request-context.ts';
+import { createHttpRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
-import { type LlmEndpoint, type LlmEndpointName, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { type LlmEndpointName, type LlmHttpEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -105,16 +105,16 @@ const renderMessagesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointNa
   return jsonUpstreamErrorResult(status, body);
 };
 
-const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondMessages(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
+const messagesGenerate: LlmHttpEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondMessages(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);
     if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
     const wantsStream = payload.stream === true;
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
     return {
       request,
@@ -150,14 +150,14 @@ const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEv
 // measurement, not a stream: it gates on the `messages.countTokens` upstream
 // capability, calls that endpoint through the same count_tokens interceptors,
 // and proxies the upstream body back as a plain result.
-const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondMessages(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
+const messagesCountTokens: LlmHttpEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondMessages(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);
     if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
-    const request = createRequestContext(c, undefined, false);
+    const request = createHttpRequestContext(c, undefined, false);
     const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
     return {
       request,

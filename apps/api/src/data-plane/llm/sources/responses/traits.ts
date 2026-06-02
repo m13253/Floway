@@ -6,8 +6,8 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext } from '../request-context.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { createHttpRequestContext } from '../request-context.ts';
+import { jsonUpstreamErrorResult, sourceErrorResult, type LlmHttpEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -100,16 +100,16 @@ const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<Protoco
   }
 };
 
-const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondResponses(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
+const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondResponses(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
     const notFound = previousResponseNotFoundResponse(payload);
     if (notFound) return notFound;
     const wantsStream = payload.stream === true;
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);
     return {
       request,
       items: payload.input,

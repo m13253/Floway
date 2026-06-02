@@ -8,9 +8,9 @@ import { type ExecuteResult, plainResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext } from '../request-context.ts';
+import { createHttpRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpointName, type LlmHttpEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -66,10 +66,10 @@ const parseGeminiModelAction = (modelAction: string | undefined): { model: strin
   return { model: modelAction.slice(0, separator).replace(/^models\//, ''), action: modelAction.slice(separator + 1) };
 };
 
-const geminiGenerate: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondGemini(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
+const geminiGenerate: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondGemini(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
     const { model, action } = parsed;
@@ -79,7 +79,7 @@ const geminiGenerate: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> =
     const wantsStream = action === 'streamGenerateContent';
 
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);
     const payload = await c.req.json<GeminiPayload>();
     return {
       request,
@@ -132,13 +132,13 @@ const totalTokensFromUpstream = (value: unknown): number | null => {
   return null;
 };
 
-const geminiCountTokens: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondGemini(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
+const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondGemini(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
-    const request = createRequestContext(c, undefined, false);
+    const request = createHttpRequestContext(c, undefined, false);
     const body = await c.req.json<GeminiCountTokensRequest>();
     const generateContentRequest = body.generateContentRequest ?? { contents: body.contents };
     return {

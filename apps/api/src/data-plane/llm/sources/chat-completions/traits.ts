@@ -6,8 +6,8 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
-import { createRequestContext } from '../request-context.ts';
-import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { createHttpRequestContext } from '../request-context.ts';
+import { type LlmHttpEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -55,20 +55,20 @@ const renderChatCompletionsFailure = (failure: LlmServeFailure): ExecuteResult<P
 
 // Target interceptors may force upstream usage for gateway accounting, but
 // Chat SSE exposes usage only when the caller requested `include_usage`.
-// `setup` parses that intent off the body; `respond` reads it back from the
+// `prepare` parses that intent off the body; `respond` reads it back from the
 // per-request Hono context, since the shared traits object holds no per-call
 // state.
 const INCLUDE_USAGE_CHUNK_KEY = 'chatCompletionsIncludeUsageChunk';
 
-const chatCompletionsGenerate: LlmEndpoint<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondChatCompletions(c, result, wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, request, downstreamAbortController),
-  setup: async c => {
+const chatCompletionsGenerate: LlmHttpEndpoint<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
+  respond: async ({ c, result, runtime }) =>
+    await respondChatCompletions(c, result, runtime.wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, runtime.request, runtime.downstreamAbortController),
+  prepare: async c => {
     const payload = await c.req.json<ChatCompletionsPayload>();
     c.set(INCLUDE_USAGE_CHUNK_KEY, payload.stream_options?.include_usage === true);
     const wantsStream = payload.stream === true;
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const request = createRequestContext(c, downstreamAbortController?.signal, wantsStream);
+    const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);
     return {
       request,
       items: payload.messages,
