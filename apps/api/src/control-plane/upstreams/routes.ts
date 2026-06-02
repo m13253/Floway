@@ -167,7 +167,7 @@ const azureProbeRequest = (upstreamModelId: string, endpoint: ModelEndpointKey):
   }
 };
 
-// Image and Anthropic endpoints aside, a model touches Azure's OpenAI v1 surface
+// A model touches Azure's OpenAI v1 surface (which gates the /models probe)
 // when it serves any endpoint other than Messages.
 const azureModelUsesOpenAi = (model: { endpoints: ModelEndpoints }): boolean =>
   Object.keys(model.endpoints).some(endpoint => endpoint !== 'messages');

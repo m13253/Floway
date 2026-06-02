@@ -173,8 +173,8 @@ const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawR
         const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
         const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
         return await runInterceptors(invocation, request, interceptors, () => {
-          // compactPickTarget only ever yields the native Responses target;
-          // compaction has no translate realization, so any other target is a
+          // This endpoint's pickTarget only ever yields the native Responses
+          // target; compaction has no translate realization, so any other target is a
           // routing invariant violation rather than a degraded fallback.
           if (target !== 'responses') throw new Error('Responses compaction is only supported on a native Responses upstream.');
           return emitToResponsesCompact(invocation, request);

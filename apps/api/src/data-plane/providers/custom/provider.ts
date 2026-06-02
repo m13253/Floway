@@ -26,13 +26,10 @@ const HARD_MS = 2 * 60 * 60 * 1000;
 const L1_TTL_MS = 120_000;
 const providerData = (model: UpstreamModel): CustomProviderData => model.providerData as CustomProviderData;
 
-// Auto-fetched custom models receive their `endpoints` directly; `kind` is then
-// a pure projection (`kindForEndpoints`) used only for the catalog/UI. Custom
-// `/models` carries no per-model endpoint hint, so we infer the served
-// endpoints: Tier 1 maps an upstream-published kind, Tier 2 an id heuristic, and
-// anything unrecognized (the chat case) takes the per-upstream `endpoints`
-// config. Display metadata (display_name / created) and `cost` pass through to
-// the public catalog when the upstream chose to publish them.
+// Projects a raw custom model into the slim provider-neutral fields; the
+// caller adds kind / endpoints / providerData / enabledFlags. Display metadata
+// (display_name / created) and `cost` pass through to the public catalog when
+// the upstream chose to publish them.
 const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
