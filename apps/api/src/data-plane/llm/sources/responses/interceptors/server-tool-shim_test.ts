@@ -7,7 +7,6 @@ import {
   materializeAccumulatedOutput,
   parseServerToolArguments,
   serverToolResultSlot,
-  serverToolStreamingResultSlot,
   sumUsage,
   type InterceptedFunctionCall,
   type ServerToolResultSlot,
@@ -5711,12 +5710,12 @@ test('sumUsage with one-sided details preserves the field (treats missing side a
 
 // ── Slot run() contract ────────────────────────────────────────────────
 
-test('serverToolStreamingResultSlot run() yields mid events in order then returns the terminal', async () => {
-  const slot = serverToolStreamingResultSlot({
+test('serverToolResultSlot run() yields mid events in order then returns the terminal', async () => {
+  const slot = serverToolResultSlot({
     id: 'ig_1',
     startItem: { type: 'image_generation_call', status: 'in_progress' },
     startEvents: [{ type: 'response.image_generation_call.in_progress' }],
-    async *stream() {
+    async *run() {
       yield { type: 'response.image_generation_call.partial_image', partial_image_index: 0 };
       yield { type: 'response.image_generation_call.partial_image', partial_image_index: 1 };
       return {
@@ -5738,15 +5737,17 @@ test('serverToolStreamingResultSlot run() yields mid events in order then return
   assertEquals(step.value.endEvents.map(e => e.type), ['response.image_generation_call.completed']);
 });
 
-test('serverToolResultSlot run() yields nothing and returns the awaited terminal', async () => {
+test('serverToolResultSlot run() yields nothing and returns the terminal', async () => {
   const slot = serverToolResultSlot({
     id: 'ws_1',
     startItem: { type: 'web_search_call', status: 'in_progress' },
     startEvents: [],
-    result: Promise.resolve({
-      item: { type: 'web_search_call', status: 'completed' },
-      endEvents: [{ type: 'response.web_search_call.completed' }],
-    }),
+    async *run() {
+      return {
+        item: { type: 'web_search_call', status: 'completed' },
+        endEvents: [{ type: 'response.web_search_call.completed' }],
+      };
+    },
   });
 
   const gen = slot.run();

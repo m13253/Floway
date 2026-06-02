@@ -4,7 +4,7 @@ import type { ProviderModelRecord } from '../../../../../providers/types.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../../shared/telemetry/usage.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../interceptors.ts';
 import { parseSSEStream } from '../../../../shared/stream/parse-sse.ts';
-import { serverToolResultSlot, serverToolStreamingResultSlot } from '../server-tool-shim.ts';
+import { serverToolResultSlot } from '../server-tool-shim.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type {
   ResponsesFunctionCallOutputItem,
@@ -616,7 +616,6 @@ const issueImageCall = async (
     const base = 1000 * 2 ** attempt;
     const backoffMs = base + Math.random() * base * 0.25;
     const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
-    // Drain the body before discarding so the underlying socket can be reused.
     await response.text().catch(() => undefined);
     await sleep(delayMs, state.downstreamAbortSignal);
   }
@@ -975,10 +974,12 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
             id,
             startItem: { type: 'image_generation_call', status: 'in_progress' },
             startEvents: [{ type: 'response.image_generation_call.in_progress' }, { type: 'response.image_generation_call.generating' }],
-            result: Promise.resolve(imageTerminal(promptArg, 'generate', {
-              ok: false,
-              error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
-            })),
+            async *run() {
+              return imageTerminal(promptArg, 'generate', {
+                ok: false,
+                error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
+              });
+            },
           })];
         }
         state.imageDispatchCount += 1;
@@ -990,14 +991,14 @@ export const imageGenerationServerTool: ServerToolRegistration = (ctx, request) 
         const isEdit = config.action === 'edit' || (config.action === 'auto' && sources.length > 0);
         const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
 
-        return [serverToolStreamingResultSlot({
+        return [serverToolResultSlot({
           id,
           startItem: { type: 'image_generation_call', status: 'in_progress' },
           startEvents: [
             { type: 'response.image_generation_call.in_progress' },
             { type: 'response.image_generation_call.generating' },
           ],
-          stream: streamImageGeneration(promptArg, action, isEdit, sources, state),
+          run: streamImageGeneration(promptArg, action, isEdit, sources, state),
         })];
       },
     },

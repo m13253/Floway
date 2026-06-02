@@ -371,36 +371,22 @@ const stampServerToolEvent = (
     sequence_number: merge.sequenceNumber++,
   } as RawResponsesStreamEvent);
 
-// A slot whose terminal item is produced by a single deferred computation
-// with no intermediate frames (e.g. web search: one backend round-trip, then
-// the finished `web_search_call`). The promise is awaited at materialization.
+// Builds a slot whose deferred lifecycle is driven by `run` at materialization:
+// `run` yields any intermediate frames as they arrive (e.g. image generation's
+// progressive partial_image previews) and returns the terminal item plus its
+// closing events. A one-shot tool whose terminal needs no preview frames (e.g.
+// web search: one backend round-trip, then the finished `web_search_call`)
+// passes a generator that yields nothing and returns the terminal directly.
 export const serverToolResultSlot = (args: {
   id: string;
   startItem: ServerToolOutputItem;
   startEvents: readonly ServerToolLifecycleEvent[];
-  result: Promise<ServerToolTerminal>;
+  run: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
 }): ServerToolResultSlot => ({
   id: args.id,
   startItem: args.startItem,
   startEvents: [...args.startEvents],
-  async *run() {
-    return await args.result;
-  },
-});
-
-// A slot whose terminal item is preceded by intermediate lifecycle frames
-// streamed over time (e.g. image generation: progressive partial_image
-// previews). `stream` is the generator factory invoked at materialization.
-export const serverToolStreamingResultSlot = (args: {
-  id: string;
-  startItem: ServerToolOutputItem;
-  startEvents: readonly ServerToolLifecycleEvent[];
-  stream: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
-}): ServerToolResultSlot => ({
-  id: args.id,
-  startItem: args.startItem,
-  startEvents: [...args.startEvents],
-  run: args.stream,
+  run: args.run,
 });
 
 const attachServerToolItemId = (item: ServerToolOutputItem, id: string): ResponsesOutputItem => ({ ...item, id } as ResponsesOutputItem);
