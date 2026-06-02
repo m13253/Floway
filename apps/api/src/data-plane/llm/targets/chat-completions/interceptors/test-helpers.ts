@@ -19,6 +19,6 @@ export const chatCompletionsInvocation = (payload: ChatCompletionsPayload, enabl
 export const stubRequestContext: RequestContext = {
   requestStartedAt: 0,
   apiKeyUpstreamIds: null,
-  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
+  runtimeLocation: 'test',
   clientStream: false,
 };

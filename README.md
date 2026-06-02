@@ -77,9 +77,10 @@ the shim driving the internal multi-turn loop and replaying prior
 `/v1/responses` stores replayable Responses input and output items for API-key
 scoped requests. Clients can send `previous_response_id` to continue from a
 stored snapshot, or resend full input history; repeated full-history input is
-deduplicated by content hash instead of stored again. `store: false` keeps
-output item metadata for routing but does not create durable snapshots or full
-input payload rows.
+deduplicated by content hash instead of stored again. `store: false` does not
+create durable snapshots or input payload rows, but it keeps output item
+metadata for routing; if a later `store: true` request echoes that item with a
+full payload, the metadata row is filled in place.
 
 ## Development
 

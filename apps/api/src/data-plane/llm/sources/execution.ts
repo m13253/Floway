@@ -35,7 +35,7 @@ export const executeLlmSourcePlan = async <TItems, TEvent>(
     const target = plan.pickTarget(binding.upstreamModel.endpoints);
     if (!target) continue;
 
-    plan.request.statefulResponsesContext = statefulResponsesStore.beginAttempt(prepared.references);
+    statefulResponsesStore.beginAttempt(prepared.references);
 
     const rawResult = await plan.attempt({
       binding,

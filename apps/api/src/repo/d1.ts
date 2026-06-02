@@ -721,6 +721,22 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     await this.runStatements(statements);
   }
 
+  async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
+    const statements = await Promise.all(items.flatMap(item => {
+      if (item.payload === null) return [];
+      return [serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload).then(payload =>
+        this.db
+          .prepare(
+            `UPDATE responses_items
+             SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
+             WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
+          )
+          .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
+    }));
+    const results = await this.runStatements(statements);
+    return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
+  }
+
   async refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
     const unique = [...new Set(ids)];
     if (unique.length === 0) return 0;
@@ -753,13 +769,14 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     await deleteAllResponsesItemPayloadFiles();
   }
 
-  private async runStatements(statements: D1PreparedStatement[]): Promise<void> {
-    if (statements.length === 0) return;
+  private async runStatements(statements: D1PreparedStatement[]): Promise<Array<{ results: unknown[]; success: boolean; meta: Record<string, unknown> }>> {
+    if (statements.length === 0) return [];
     if (this.db.batch) {
-      await this.db.batch(statements);
-      return;
+      return await this.db.batch(statements);
     }
-    for (const statement of statements) await statement.run();
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
   }
 }
 

@@ -5,6 +5,7 @@ import { loadSearchConfig } from '../../../../../tools/web-search/search-config.
 import { searchWebAndRecordUsage, searchWebWithoutRecordingUsage } from '../../../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
+import { statefulResponsesStoreForRequest } from '../../stateful-store.ts';
 import { serverToolResultSlot, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
@@ -673,7 +674,7 @@ const renderOpOutputText = (action: ResponsesWebSearchAction, results: Responses
 export const transformInputItemsForWebSearch = (
   input: ResponsesInputItem[],
   toolName: string,
-  privatePayloads?: ReadonlyMap<string, unknown>,
+  getPrivatePayload?: (id: string) => unknown,
 ): ResponsesInputItem[] => {
   const out: ResponsesInputItem[] = [];
 
@@ -683,7 +684,7 @@ export const transformInputItemsForWebSearch = (
       continue;
     }
 
-    const candidatePayload = item.id !== undefined ? privatePayloads?.get(item.id) : undefined;
+    const candidatePayload = item.id !== undefined ? getPrivatePayload?.(item.id) : undefined;
     if (isWebSearchCallPrivatePayload(candidatePayload)) {
       out.push(
         candidatePayload.functionCallItem,
@@ -1334,7 +1335,7 @@ export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, request.statefulResponsesContext.privatePayload),
+    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => statefulResponsesStoreForRequest(request).getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
           hosted: {

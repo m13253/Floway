@@ -29,14 +29,14 @@ const makeRequest = (
   privatePayloads: Iterable<readonly [string, unknown]> = [],
 ): RequestContext => {
   const statefulResponsesStore = createHttpStatefulResponsesStore(apiKeyId, undefined);
-  for (const id of syntheticItemIds) statefulResponsesStore.addSyntheticItem(id);
-  for (const [id, payload] of privatePayloads) statefulResponsesStore.attemptContext.privatePayload.set(id, payload);
+  const privatePayloadById = new Map(privatePayloads);
+  for (const id of syntheticItemIds) statefulResponsesStore.addSyntheticItem(id, privatePayloadById.get(id));
   return {
     requestStartedAt: 0,
     apiKeyId,
+    apiKeyUpstreamIds: null,
     runtimeLocation: 'test',
     clientStream: true,
-    statefulResponsesContext: statefulResponsesStore.attemptContext,
     statefulResponsesStore,
   };
 };
@@ -135,6 +135,10 @@ class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
       this.resolveInsert = resolve;
       this.rejectInsert = reject;
     });
+  }
+
+  fillPayloads(): Promise<number> {
+    return Promise.resolve(0);
   }
 
   refreshMany(): Promise<number> {
@@ -387,10 +391,9 @@ test('gateway-synthesized items registered this request do not claim upstream ow
 test('private payload registered on the request is attached to the persisted row by upstream id', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  // The shim registers `statefulResponsesContext.privatePayload[slot.id] = {...}` before
-  // yielding the wire item. The persistence layer keys off the wire item's id
-  // (which equals slot.id here), so the row picks up `payload.private` even
-  // though the wire item itself never carries it.
+  // The shim registers the private payload before yielding the wire item. The
+  // persistence layer keys off that wire id (which equals slot.id here), so the
+  // row picks up `payload.private` even though the wire item never carries it.
   const synthetic: Extract<ResponsesOutputItem, { type: 'web_search_call' }> = {
     type: 'web_search_call',
     id: 'ws_gw_priv00000000000000000',

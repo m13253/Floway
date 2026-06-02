@@ -24,7 +24,6 @@ export const createRequestContext = (input: CreateRequestContextInput): RequestC
     runtimeLocation: input.runtimeLocation,
     ...(input.scheduleBackground !== undefined ? { scheduleBackground: input.scheduleBackground } : {}),
     clientStream: input.clientStream,
-    statefulResponsesContext: statefulResponsesStore.attemptContext,
     statefulResponsesStore,
     ...(input.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: input.downstreamAbortSignal } : {}),
   };

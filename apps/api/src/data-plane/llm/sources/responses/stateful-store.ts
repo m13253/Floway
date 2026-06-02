@@ -1,12 +1,11 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './items/format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
-import type { RequestContext, StatefulResponsesContext } from '../../interceptors.ts';
+import type { RequestContext } from '../../interceptors.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface StatefulResponsesStore {
-  readonly attemptContext: StatefulResponsesContext;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems<TSourceItems>(options: {
     readonly sourceItems: TSourceItems;
@@ -26,11 +25,11 @@ export interface StatefulResponsesStore {
 }
 
 class HttpStatefulResponsesStore implements StatefulResponsesStore {
-  readonly attemptContext: StatefulResponsesContext = { privatePayload: new Map(), newSyntheticIds: new Set() };
-
   private readonly loadedItemsById = new Map<string, StoredResponsesItem>();
   private readonly loadedItemsByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly loadedItemsByEncryptedContentHash = new Map<string, StoredResponsesItem[]>();
+  private readonly privatePayload = new Map<string, unknown>();
+  private readonly syntheticItemIds = new Set<string>();
   private readonly snapshotsById = new Map<string, StoredResponsesSnapshot>();
   private readonly stagedInputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
@@ -38,6 +37,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedOutputItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
+  private readonly payloadUpgradeIds = new Set<string>();
   private readonly committedSnapshotIds = new Set<string>();
   private readonly touchedItemIds = new Set<string>();
   private readonly refreshedItemIds = new Set<string>();
@@ -110,26 +110,26 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
   beginAttempt(references: Iterable<{ readonly row?: StoredResponsesItem }>): void {
     this.stagedOutputItems.clear();
     this.stagedOutputItemIds.length = 0;
-    this.attemptContext.privatePayload.clear();
-    this.attemptContext.newSyntheticIds.clear();
+    this.privatePayload.clear();
+    this.syntheticItemIds.clear();
     for (const ref of references) {
       if (ref.row?.payload?.private === undefined) continue;
       const wireId = responsesItemId(ref.row.payload.item as { id?: unknown });
-      if (wireId !== null) this.attemptContext.privatePayload.set(wireId, ref.row.payload.private);
+      if (wireId !== null) this.privatePayload.set(wireId, ref.row.payload.private);
     }
   }
 
   addSyntheticItem(id: string, privatePayload?: unknown): void {
-    this.attemptContext.newSyntheticIds.add(id);
-    if (privatePayload !== undefined) this.attemptContext.privatePayload.set(id, privatePayload);
+    this.syntheticItemIds.add(id);
+    if (privatePayload !== undefined) this.privatePayload.set(id, privatePayload);
   }
 
   isSyntheticItem(id: string): boolean {
-    return this.attemptContext.newSyntheticIds.has(id);
+    return this.syntheticItemIds.has(id);
   }
 
   getPrivatePayload(id: string): unknown {
-    return this.attemptContext.privatePayload.get(id);
+    return this.privatePayload.get(id);
   }
 
   stageOutputItem(row: StoredResponsesItem): void {
@@ -184,6 +184,32 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
+    const storedId = responsesItemId(item);
+    if (storedId !== null && isStoredResponsesItemId(storedId)) {
+      const row = this.getItemById(storedId);
+      if (row !== undefined) {
+        if (row.payload !== null) {
+          this.stagedInputItemIds.push(row.id);
+          return;
+        }
+        await this.stagePayloadUpgrade(row, item, responsesItemEncryptedContent(item));
+        return;
+      }
+    }
+
+    const encryptedContent = responsesItemEncryptedContent(item);
+    if (encryptedContent !== null) {
+      const row = this.getItemByEncryptedContentHash(await hashResponsesItemEncryptedContent(encryptedContent));
+      if (row !== undefined) {
+        if (row.payload !== null) {
+          this.stagedInputItemIds.push(row.id);
+          return;
+        }
+        await this.stagePayloadUpgrade(row, item, encryptedContent);
+        return;
+      }
+    }
+
     const contentHash = await hashResponsesItemContent(item);
     const existing = this.reusableItemByContentHash(contentHash);
     if (existing) {
@@ -191,7 +217,6 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       return;
     }
 
-    const encryptedContent = responsesItemEncryptedContent(item);
     const now = Date.now();
     const row: StoredResponsesItem = {
       id: createStoredResponsesItemId(item.type),
@@ -209,6 +234,22 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
     this.stagedInputItems.set(row.id, row);
     this.stagedInputItemIds.push(row.id);
     this.rememberItem(row);
+  }
+
+  private async stagePayloadUpgrade(row: StoredResponsesItem, item: ResponsesInputItem, encryptedContent: string | null): Promise<void> {
+    const now = Date.now();
+    const upgraded: StoredResponsesItem = {
+      ...row,
+      payload: { item: structuredClone(item) },
+      contentHash: await hashResponsesItemContent(item),
+      encryptedContentHash: encryptedContent === null ? row.encryptedContentHash : await hashResponsesItemEncryptedContent(encryptedContent),
+      createdAt: now,
+      refreshedAt: now,
+    };
+    this.stagedInputItems.set(upgraded.id, upgraded);
+    this.payloadUpgradeIds.add(upgraded.id);
+    this.stagedInputItemIds.push(upgraded.id);
+    this.rememberItem(upgraded);
   }
 
   private reusableItemByContentHash(hash: string): StoredResponsesItem | undefined {
@@ -247,7 +288,12 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
     if (pending.length === 0) return;
-    await this.repo.responsesItems.insertMany(pending);
+    const payloadUpgrades = pending.filter(row => this.payloadUpgradeIds.has(row.id));
+    const inserts = pending.filter(row => !this.payloadUpgradeIds.has(row.id));
+    await Promise.all([
+      this.repo.responsesItems.insertMany(inserts),
+      this.repo.responsesItems.fillPayloads(payloadUpgrades),
+    ]);
     for (const row of pending) this.committedItemIds.add(row.id);
     await this.refreshTouchedItems();
   }

@@ -192,6 +192,7 @@ export interface ResponsesItemsRepo {
   lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
   lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
+  fillPayloads(items: readonly StoredResponsesItem[]): Promise<number>;
   refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number>;
   clearPayloadOlderThan(createdBefore: number): Promise<number>;
   deleteOlderThan(refreshedBefore: number): Promise<number>;

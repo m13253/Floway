@@ -128,6 +128,37 @@ test('memory responses items repo scopes ids by api key and treats duplicate sco
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
 });
 
+const exerciseResponsesItemsRepoPayloadFill = async (repo: ResponsesItemsRepo) => {
+  initFileProvider(new MemoryFileProvider());
+  const metadata = storedItem({
+    id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
+    apiKeyId: 'key_a',
+    upstreamId: 'up_responses',
+    upstreamItemId: 'upstream_msg',
+    payload: null,
+    createdAt: 1_000,
+  });
+  const filled = {
+    ...metadata,
+    payload: { item: { type: 'message', id: metadata.id, role: 'user', content: 'captured later' } },
+    contentHash: 'content_hash_later',
+    encryptedContentHash: 'encrypted_content_hash_later',
+    createdAt: 2_000,
+    refreshedAt: 2_000,
+  } satisfies StoredResponsesItem;
+
+  await repo.insertMany([metadata]);
+
+  assertEquals(await repo.fillPayloads([filled]), 1);
+  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [filled]);
+  assertEquals(await repo.fillPayloads([{ ...filled, payload: { item: { changed: true } }, createdAt: 3_000, refreshedAt: 3_000 }]), 0);
+  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [filled]);
+};
+
+test('memory responses items repo fills metadata-only payloads once', async () => {
+  await exerciseResponsesItemsRepoPayloadFill(new InMemoryRepo().responsesItems);
+});
+
 test('D1 responses items repo inserts, looks up by scope, cleans payloads, deletes rows, and clears', async () => {
   await exerciseResponsesItemsRepo(new D1Repo(new FakeResponsesItemsD1Database()).responsesItems);
 });
@@ -162,6 +193,10 @@ test('D1 responses items repo scopes ids by api key and treats duplicate scoped 
 
   assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
   assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
+});
+
+test('D1 responses items repo fills metadata-only payloads once', async () => {
+  await exerciseResponsesItemsRepoPayloadFill(new D1Repo(new FakeResponsesItemsD1Database()).responsesItems);
 });
 
 test('D1 responses items repo chunks lookups exceeding D1 100-parameter limit and unions the results', async () => {
@@ -409,6 +444,10 @@ class FakeResponsesItemsD1PreparedStatement {
       const changes = this.db.refresh(this.binds);
       return Promise.resolve({ results: [], success: true, meta: { changes } });
     }
+    if (this.query.includes('SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?')) {
+      const changes = this.db.fillPayload(this.binds);
+      return Promise.resolve({ results: [], success: true, meta: { changes } });
+    }
     if (this.query.startsWith('UPDATE responses_items SET payload_json = NULL')) {
       const changes = this.db.clearPayloadOlderThan(this.binds[0] as number);
       return Promise.resolve({ results: [], success: true, meta: { changes } });
@@ -483,6 +522,26 @@ class FakeResponsesItemsD1Database implements D1Database {
       }
     }
     return changes;
+  }
+
+  fillPayload(binds: unknown[]): number {
+    const [payload, contentHash, encryptedContentHash, createdAt, refreshedAt, apiKeyId, id] = binds as [
+      string,
+      string | null,
+      string | null,
+      number,
+      number,
+      string | null,
+      string,
+    ];
+    const row = this.rows.find(candidate => candidate.id === id && candidate.api_key_id === apiKeyId);
+    if (row?.payload_json !== null) return 0;
+    row.payload_json = payload;
+    row.content_hash = contentHash;
+    row.encrypted_content_hash = encryptedContentHash;
+    row.created_at = createdAt;
+    row.refreshed_at = refreshedAt;
+    return 1;
   }
 
   lookup(query: string, binds: unknown[]): FakeResponsesItemRow[] {

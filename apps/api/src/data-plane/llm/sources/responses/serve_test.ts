@@ -194,6 +194,85 @@ test('/v1/responses reuses stored input items when clients resend full history',
   assertEquals(rows.filter(row => row.origin === 'input').length, 1);
 });
 
+test('/v1/responses fills a metadata-only output row when store true input echoes it', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const assistantItem = {
+    type: 'message' as const,
+    id: 'raw_assistant_store_false',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'Persist me later' }],
+  };
+  const upstreamBodies: Array<Record<string, any>> = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, any>);
+        return sseResponsesResponse({
+          id: upstreamBodies.length === 1 ? 'resp_store_false' : 'resp_store_true',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: upstreamBodies.length === 1 ? [assistantItem] : [],
+          output_text: 'ok',
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const first = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [{ type: 'message', role: 'user', content: 'First question' }],
+          store: false,
+          stream: false,
+        }),
+      });
+      assertEquals(first.status, 200);
+      const firstBody = await first.json() as { output: Array<{ id: string }> };
+      const storedId = firstBody.output[0].id;
+      const [metadataOnly] = await repo.responsesItems.lookupMany(apiKey.id, [storedId]);
+      assertExists(metadataOnly);
+      assertEquals(metadataOnly.payload, null);
+
+      const echoedInput = { ...assistantItem, id: storedId };
+      const second = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          input: [echoedInput],
+          stream: false,
+        }),
+      });
+      assertEquals(second.status, 200);
+      await second.json();
+
+      const [filled] = await repo.responsesItems.lookupMany(apiKey.id, [storedId]);
+      assertExists(filled);
+      assertEquals(filled.payload?.item, echoedInput);
+      const rows = await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent(echoedInput)]);
+      assertEquals(rows.map(row => row.id), [storedId]);
+    },
+  );
+
+  assertEquals((upstreamBodies[1].input as Array<{ id?: string }>)[0].id, assistantItem.id);
+});
+
 test('/v1/responses returns planner not_found for non-stored item_reference without generation', async () => {
   const { apiKey } = await setupAppTest();
   let generationFetchCalls = 0;

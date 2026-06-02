@@ -451,6 +451,22 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve();
   }
 
+  fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
+    let changes = 0;
+    for (const item of items) {
+      if (item.payload === null) continue;
+      const existing = this.store.get(responsesItemStoreKey(item.apiKeyId, item.id));
+      if (existing?.payload !== null) continue;
+      existing.payload = structuredClone(item.payload);
+      existing.contentHash = item.contentHash;
+      existing.encryptedContentHash = item.encryptedContentHash;
+      existing.createdAt = item.createdAt;
+      existing.refreshedAt = Math.max(existing.refreshedAt, item.refreshedAt);
+      changes += 1;
+    }
+    return Promise.resolve(changes);
+  }
+
   refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
     let changes = 0;
     for (const id of new Set(ids)) {
