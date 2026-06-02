@@ -15,10 +15,10 @@ export interface ModelOverride {
   auto_compact_token_limit?: number | null;
 }
 
-// gpt-5.5: advertise the 1M-context tier. codex's bundled catalog still
-// caps gpt-5.5 at 272K because the v1 OpenAI 1p backend rejected larger
-// windows; the Copilot upstream we wrap accepts the full 1.05M, so
-// flip every gate to expose it.
+// gpt-5.5 and gpt-5.4: advertise the 1M-context tier the Copilot upstream
+// publishes for both (1,050,000 / 922,000 prompt). codex's bundled catalog
+// pins context_window at 272000 for the v1 OpenAI 1p backend that rejected
+// larger windows; flipping every gate exposes the full window through floway.
 //
 //   effective_context_window_percent: codex multiplies context_window by
 //     this percent (default 95) when computing `model_context_window` —
@@ -27,13 +27,16 @@ export interface ModelOverride {
 //     when omitted, then clamps any explicit value to that ceiling. 945000
 //     pins the trigger at exactly 90% rather than letting codex round on
 //     its own.
+const ONE_M_OVERRIDE: ModelOverride = {
+  context_window: 1050000,
+  max_context_window: 1050000,
+  effective_context_window_percent: 100,
+  auto_compact_token_limit: 945000,
+};
+
 export const CODEX_MODEL_OVERRIDES: Record<string, ModelOverride> = {
-  'gpt-5.5': {
-    context_window: 1050000,
-    max_context_window: 1050000,
-    effective_context_window_percent: 100,
-    auto_compact_token_limit: 945000,
-  },
+  'gpt-5.5': ONE_M_OVERRIDE,
+  'gpt-5.4': ONE_M_OVERRIDE,
 };
 
 interface CatalogModel {

@@ -7,7 +7,8 @@ describe('applyCodexOverrides', () => {
     const input: CodexCatalog = {
       models: [
         { slug: 'gpt-5.5', context_window: 272000, base_instructions: 'unchanged' },
-        { slug: 'gpt-5.4', context_window: 272000 },
+        { slug: 'gpt-5.4', context_window: 272000, base_instructions: 'unchanged-too' },
+        { slug: 'gpt-5.3-codex', context_window: 272000 },
       ],
     };
     const out = applyCodexOverrides(input);
@@ -20,7 +21,16 @@ describe('applyCodexOverrides', () => {
       auto_compact_token_limit: 945000,
       base_instructions: 'unchanged',
     });
-    expect(out.models.find(m => m.slug === 'gpt-5.4')).toEqual({ slug: 'gpt-5.4', context_window: 272000 });
+    const gpt54 = out.models.find(m => m.slug === 'gpt-5.4');
+    expect(gpt54).toMatchObject({
+      slug: 'gpt-5.4',
+      context_window: 1050000,
+      max_context_window: 1050000,
+      effective_context_window_percent: 100,
+      auto_compact_token_limit: 945000,
+      base_instructions: 'unchanged-too',
+    });
+    expect(out.models.find(m => m.slug === 'gpt-5.3-codex')).toEqual({ slug: 'gpt-5.3-codex', context_window: 272000 });
   });
 
   it('returns input shape unchanged when no slug matches an override', () => {
@@ -35,12 +45,14 @@ describe('applyCodexOverrides', () => {
     expect(input).toEqual(snapshot);
   });
 
-  it('declares every override field as a numeric value matching the 1M-context contract', () => {
-    expect(CODEX_MODEL_OVERRIDES['gpt-5.5']).toEqual({
+  it('declares the 1M-context tier identically for both gpt-5.5 and gpt-5.4', () => {
+    const expected = {
       context_window: 1050000,
       max_context_window: 1050000,
       effective_context_window_percent: 100,
       auto_compact_token_limit: 945000,
-    });
+    };
+    expect(CODEX_MODEL_OVERRIDES['gpt-5.5']).toEqual(expected);
+    expect(CODEX_MODEL_OVERRIDES['gpt-5.4']).toEqual(expected);
   });
 });
