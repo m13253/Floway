@@ -72,6 +72,15 @@ Search**), and emitted back as Responses `web_search_call` items, with
 the shim driving the internal multi-turn loop and replaying prior
 `web_search_call` items across turns.
 
+## Stateful Responses
+
+`/v1/responses` stores replayable Responses input and output items for API-key
+scoped requests. Clients can send `previous_response_id` to continue from a
+stored snapshot, or resend full input history; repeated full-history input is
+deduplicated by content hash instead of stored again. `store: false` keeps
+output item metadata for routing but does not create durable snapshots or full
+input payload rows.
+
 ## Development
 
 ```bash
@@ -87,7 +96,7 @@ Vite in dev and by Workers Static Assets from `apps/web/dist` after build.
 `wrangler.example.jsonc` keeps API/data-plane routes Worker-first and lets
 other direct browser routes fall through to the SPA's `index.html`. It also
 includes an hourly cron trigger used by the Worker to age out retained Responses
-payloads and metadata. Cross-package imports go through each package's
+snapshots, payloads, and metadata. Cross-package imports go through each package's
 `exports` map; deep imports are blocked by ESLint.
 
 See [AGENTS.md](./AGENTS.md) for architecture, provider routing, deployment,
