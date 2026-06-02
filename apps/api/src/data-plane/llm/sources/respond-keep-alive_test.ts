@@ -121,6 +121,7 @@ const testTelemetryModelIdentity = {
 const requestStartedAt = performance.now();
 const request = (): RequestContext => ({
   requestStartedAt,
+  apiKeyUpstreamIds: null,
   statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
   runtimeLocation: 'test',
   clientStream: true,

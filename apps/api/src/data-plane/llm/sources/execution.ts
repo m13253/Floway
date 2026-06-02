@@ -55,7 +55,6 @@ export const executeLlmSourcePlan = async <TItems, TEvent>(
     return { result: { ...rawResult, events: stored.events }, commitForNonStreaming: stored.commitForNonStreaming };
   }
 
-  // The diagnostic names the model the client requested, not whichever upstream
-  // id a provider resolved it to.
+  // The diagnostic names the model the client requested, not whichever upstream id a provider resolved it to.
   return { result: renderFailure(sawModel ? { kind: 'model-unsupported', model: plan.model } : { kind: 'model-missing', model: plan.model }) };
 };
