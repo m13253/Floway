@@ -425,7 +425,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
         rows.push(cloneStoredResponsesItem(row));
       }
     }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
+    return Promise.resolve(rows.toSorted((a, b) => b.refreshedAt - a.refreshedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id)));
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
@@ -481,9 +481,6 @@ const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesIte
   ...item,
   payload: item.payload === null ? null : structuredClone(item.payload),
 });
-
-const compareResponsesItemsByFreshness = (a: StoredResponsesItem, b: StoredResponsesItem): number =>
-  b.refreshedAt - a.refreshedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id);
 
 const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `${apiKeyId ?? ''}\0${id}`;
 

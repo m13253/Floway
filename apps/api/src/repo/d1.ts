@@ -691,7 +691,18 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
         .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
         .bind(apiKeyId, ...chunk)
         .all<ResponsesItemRow>();
-      return await Promise.all(results.map(toStoredResponsesItem));
+      return await Promise.all(results.map(async row => ({
+        id: row.id,
+        apiKeyId: row.api_key_id,
+        upstreamId: row.upstream_id,
+        upstreamItemId: row.upstream_item_id,
+        itemType: row.item_type,
+        origin: row.origin,
+        payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+        encryptedContentHash: row.encrypted_content_hash,
+        createdAt: row.created_at,
+        refreshedAt: row.refreshed_at,
+      })));
     }));
     return perChunk.flat();
   }
@@ -769,19 +780,6 @@ interface ResponsesItemRow {
   created_at: number;
   refreshed_at: number;
 }
-
-const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
-  id: row.id,
-  apiKeyId: row.api_key_id,
-  upstreamId: row.upstream_id,
-  upstreamItemId: row.upstream_item_id,
-  itemType: row.item_type,
-  origin: row.origin,
-  payload: await parseStoredResponsesPayload(row.id, row.payload_json),
-  encryptedContentHash: row.encrypted_content_hash,
-  createdAt: row.created_at,
-  refreshedAt: row.refreshed_at,
-});
 
 class D1SearchConfigRepo implements SearchConfigRepo {
   constructor(private db: D1Database) {}
