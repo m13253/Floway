@@ -125,8 +125,8 @@ const expanded = reactive<Record<string, boolean>>({});
 // appended at the bottom.
 const reconcile = () => {
   const manual = models.value;
-  // Normalize kind on every manual entry (older configs predate the field) so
-  // the form, the JSON view, and the next save all carry an explicit kind.
+  // Normalize kind on every manual entry that omits it so the form, the JSON
+  // view, and the next save all carry an explicit kind.
   for (const c of manual) if (!c.kind) c.kind = kindFromEndpoints(c.endpoints);
   const manualIds = new Set(manual.map(m => m.upstreamModelId));
   const auto = (props.autoModels ?? []).filter(a => !manualIds.has(a.upstreamModelId));

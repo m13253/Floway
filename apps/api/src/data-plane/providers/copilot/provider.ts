@@ -12,13 +12,13 @@ import type { UpstreamRecord } from '../../../repo/types.ts';
 import { isCopilotAccountType, type CopilotAccountType } from '../../../shared/copilot.ts';
 import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { isStreamingEndpoint, kindForEndpoints, withMessagesCountTokens } from '../endpoints.ts';
+import { isStreamingEndpoint, withMessagesCountTokens } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpointKey, ModelEndpoints, ResponsesEndpoint } from '@floway-dev/protocols/common';
+import { type ModelEndpointKey, type ModelEndpoints, type ResponsesEndpoint, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 

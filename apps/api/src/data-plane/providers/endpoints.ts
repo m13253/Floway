@@ -1,7 +1,7 @@
 import type { UpstreamModelConfig } from '../../shared/upstream/model-config.ts';
 import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
-import type { ModelEndpointKey, ModelEndpoints, ModelKind } from '@floway-dev/protocols/common';
+import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
 
 export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpointKey => {
   switch (target) {
@@ -20,18 +20,6 @@ export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint
 // `messages_count_tokens` and `embeddings` remain non-streaming JSON.
 export const isStreamingEndpoint = (endpoint: EndpointKey): boolean =>
   endpoint === 'chat_completions' || endpoint === 'responses' || endpoint === 'messages';
-
-// Derive the high-level model kind from the supported endpoints. Each model
-// belongs to exactly one kind. `embeddings` implies embedding,
-// `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
-// Mixed endpoint sets (e.g. an upstream incorrectly tagging a model with both
-// `embeddings` and `chatCompletions`) are configuration errors; the first
-// matching branch wins.
-export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
-  if (endpoints.embeddings) return 'embedding';
-  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
-  return 'chat';
-};
 
 // `messages.countTokens` is not operator-configured: it is derived here whenever
 // `messages` is present so the count-tokens endpoint routes alongside it.

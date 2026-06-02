@@ -1,5 +1,5 @@
 import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
-import type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, ResponsesEndpoint } from '@floway-dev/protocols/common';
+import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing, type ResponsesEndpoint, kindForEndpoints } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;
@@ -151,16 +151,10 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
 
 // kind is a pure function of the routing endpoints, so an entry that omits it
-// (an older row, or an import) derives one rather than failing. The editor
+// (an import, or hand-edited JSON) derives one rather than failing. The editor
 // always writes an explicit kind, keeping it consistent with the endpoints.
-const kindFromEndpoints = (endpoints: ModelEndpoints): ModelKind => {
-  if (endpoints.embeddings) return 'embedding';
-  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
-  return 'chat';
-};
-
 const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
-  if (value === undefined) return kindFromEndpoints(endpoints);
+  if (value === undefined) return kindForEndpoints(endpoints);
   if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
     throw new Error(`Malformed ${label}: must be one of chat, embedding, image`);
   }

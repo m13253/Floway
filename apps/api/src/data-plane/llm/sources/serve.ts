@@ -84,12 +84,10 @@ const attemptProviders = async <TItems, TEvent>(
   if (providerPlan.type === 'failure') return { result: renderFailure(providerPlan.failure) };
 
   let sawModel = false;
-  let resolvedModelId = plan.model;
   for (const provider of providerPlan.providers) {
     const resolved = await resolveModelForProvider(provider, plan.model);
     if (!resolved) continue;
     sawModel = true;
-    resolvedModelId = resolved.id;
 
     const { binding } = resolved;
     const target = plan.pickTarget(binding.upstreamModel.endpoints);
@@ -98,7 +96,7 @@ const attemptProviders = async <TItems, TEvent>(
     const rawResult = await plan.attempt({
       binding,
       target,
-      model: resolvedModelId,
+      model: resolved.id,
       rewriteItems: items => rewriteStoredResponsesItemsForProvider(items, prepared, binding, plan.responsesItemsView),
     });
     if (rawResult.type !== 'events') return { result: rawResult };
@@ -107,5 +105,7 @@ const attemptProviders = async <TItems, TEvent>(
     return { result: { ...rawResult, events: stored.events }, commitForNonStreaming: stored.commitForNonStreaming };
   }
 
-  return { result: renderFailure(sawModel ? { kind: 'model-unsupported', model: resolvedModelId } : { kind: 'model-missing', model: resolvedModelId }) };
+  // The diagnostic names the model the client requested, not whichever upstream
+  // id a provider resolved it to.
+  return { result: renderFailure(sawModel ? { kind: 'model-unsupported', model: plan.model } : { kind: 'model-missing', model: plan.model }) };
 };

@@ -94,7 +94,7 @@ const drainToTerminalResponse = async (frames: AsyncIterable<Frame>): Promise<Re
     const event = frame.event;
     if (event.type === 'response.completed' || event.type === 'response.incomplete') return event.response;
     if (event.type === 'response.failed') throw new Error(`Responses compaction upstream failed: ${event.response.error?.message ?? 'unknown error'}`);
-    if (event.type === 'error') throw new Error(`Responses compaction upstream error: ${(event as { message?: string }).message ?? 'unknown error'}`);
+    if (event.type === 'error') throw new Error(`Responses compaction upstream error: ${event.message ?? 'unknown error'}`);
   }
   throw new Error('Responses compaction stream ended without a terminal response.');
 };

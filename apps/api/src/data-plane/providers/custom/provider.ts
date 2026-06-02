@@ -5,12 +5,12 @@ import { assertCustomUpstreamRecord, createCustomUpstream } from '../../../share
 import { publicModelId } from '../../../shared/upstream/model-config.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
 import { mergeAnthropicBetaHeader } from '../anthropic-beta.ts';
-import { isStreamingEndpoint, kindForEndpoints, modelConfigEndpoints } from '../endpoints.ts';
+import { isStreamingEndpoint, modelConfigEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
-import type { ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -55,7 +55,9 @@ const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' 
 
 // Tier 1 maps an upstream-published kind to its endpoints; Tier 2 falls back to
 // the id heuristic; an unrecognized chat model takes the upstream's configured
-// endpoints. The result is the model's `endpoints` — `kind` is derived from it.
+// endpoints verbatim (which may be empty, leaving the model listed but
+// unroutable until the operator declares an endpoint). The result is the
+// model's `endpoints` — `kind` is derived from it.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };

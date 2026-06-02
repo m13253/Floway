@@ -1,5 +1,8 @@
-// Pure protocol-level capability types. Runtime computation lives in
-// apps/api/src/data-plane/providers/endpoints.ts which consumes these.
+// Protocol-level model capability types, plus the kind-derivation that is
+// intrinsic to them. Other runtime computation over these (path mapping,
+// count-tokens augmentation) lives in apps/api/src/data-plane/providers/endpoints.ts.
+
+import type { ModelKind } from './models.ts';
 
 // The Responses endpoint's sub-capabilities. `compact` means the upstream
 // serves the native `/responses/compact` endpoint; `contextManagement` means it
@@ -28,3 +31,15 @@ export interface ModelEndpoints {
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
 // addressed by identity rather than as a presence map.
 export type ModelEndpointKey = keyof ModelEndpoints;
+
+// Derive the high-level model kind from the supported endpoints. Each model
+// belongs to exactly one kind. `embeddings` implies embedding,
+// `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
+// Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
+// `chatCompletions`) are configuration errors; the first matching branch wins.
+// `kind` is a pure projection of `endpoints`; routing never reads it.
+export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
+  if (endpoints.embeddings) return 'embedding';
+  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
+  return 'chat';
+};
