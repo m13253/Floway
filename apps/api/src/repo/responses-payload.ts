@@ -134,7 +134,6 @@ export const sweepExpiredResponsesItemPayloadFiles = async (now: number): Promis
   const keys = await provider.listKeys(RESPONSES_ITEMS_FILE_ROOT);
   const expiredBuckets = new Set<string>();
   for (const key of keys) {
-    if (!key.startsWith(RESPONSES_ITEMS_FILE_ROOT)) continue;
     const pathParts = key.slice(RESPONSES_ITEMS_FILE_ROOT.length).split('/');
     if (pathParts.length < 4) continue;
     const bucket = `${RESPONSES_ITEMS_FILE_ROOT}${pathParts.slice(0, 4).join('/')}/`;
