@@ -22,6 +22,14 @@
 // shape (`{"models":[ModelInfo]}`) is distinct from the OpenAI public
 // `{"object":"list","data":[...]}` we serve at `/v1/models`.
 // `/responses/compact` and the WS transport are handled in separate branches.
+//
+// Auth: this whole namespace is reached through the same `authMiddleware`
+// that protects every other API route. The operator forges
+// `~/.codex/auth.json` with `tokens.access_token` set to their floway API
+// key string; codex's `CodexAuth::get_token()` returns access_token verbatim
+// and sends it as `Authorization: Bearer <key>`; `extractKey()` in
+// middleware/auth.ts already accepts that header, so the namespace inherits
+// API-key auth with no new code.
 
 import type { Hono } from 'hono';
 
