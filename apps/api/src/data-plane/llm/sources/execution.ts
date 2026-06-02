@@ -8,17 +8,10 @@ import {
 } from './responses/items/request-plan.ts';
 import type { LlmEndpointPlan, LlmServeFailure, Result } from './traits.ts';
 
-export interface LlmSourceExecution<TEvent> {
-  result: Result<TEvent>;
-  commitForNonStreaming?: ResponsesItemsCommit;
-}
-
-export type RenderLlmFailure<TEvent> = (failure: LlmServeFailure) => Result<TEvent>;
-
 export const executeLlmSourcePlan = async <TItems, TEvent>(
   plan: LlmEndpointPlan<TItems, TEvent>,
-  renderFailure: RenderLlmFailure<TEvent>,
-): Promise<LlmSourceExecution<TEvent>> => {
+  renderFailure: (failure: LlmServeFailure) => Result<TEvent>,
+): Promise<{ result: Result<TEvent>; commitForNonStreaming?: ResponsesItemsCommit }> => {
   const prepared = await prepareStoredResponsesItemsForSource(plan.items, plan.request.apiKeyId ?? null, plan.responsesItemsView);
   if (prepared.failures[0]) return { result: renderFailure(prepared.failures[0]) };
 

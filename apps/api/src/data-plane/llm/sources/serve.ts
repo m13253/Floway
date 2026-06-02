@@ -4,10 +4,11 @@ import { executeLlmSourcePlan } from './execution.ts';
 import { createHttpRequestContext } from './request-context.ts';
 import { type LlmEndpointName, type LlmServeFailure, LlmServeFailureError, type LlmSourceRuntime, type LlmSourceTraits, type Result } from './traits.ts';
 
-// HTTP adapter for every LLM source endpoint. The adapter owns Hono request
-// setup, Response rendering, and the response-success gate for non-streaming
-// output-item commits. The Hono-free execution core owns stored-item lookup,
-// provider selection, per-attempt execution, and output-item wrapping.
+// HTTP adapter for every LLM source endpoint. `prepare` owns parsing and real
+// runtime construction; this layer binds Hono to prepare/respond, keeps a
+// provisional failure runtime, and gates non-streaming output-item commits.
+// The Hono-free execution core owns stored-item lookup, provider selection,
+// per-attempt execution, and output-item wrapping.
 
 export const serveLlm = <TItems, TEvent>(
   traits: LlmSourceTraits<TItems, TEvent>,
@@ -17,15 +18,13 @@ export const serveLlm = <TItems, TEvent>(
   if (!endpoint) throw new Error(`LLM source does not define the '${endpointName}' endpoint.`);
 
   return async (c: Context): Promise<Response> => {
-    // Runtime starts provisional so failures thrown before prepare returns can
-    // still render with telemetry. `respond` closes over the mutable binding
-    // that prepare replaces before normal execution.
+    // Provisional runtime lets failures thrown before prepare returns render with telemetry.
     let runtime: LlmSourceRuntime = {
       request: createHttpRequestContext(c, undefined, false),
       wantsStream: false,
       downstreamAbortController: undefined,
     };
-    const respond = (result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
+    const respond = (runtime: LlmSourceRuntime, result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
       endpoint.respond({ c, result, runtime });
     const renderFailure = (failure: LlmServeFailure): Result<TEvent> => traits.renderFailure(failure, endpointName);
 
@@ -36,17 +35,17 @@ export const serveLlm = <TItems, TEvent>(
 
       const { result, commitForNonStreaming } = await executeLlmSourcePlan(plan, renderFailure);
 
-      // `respond` reports only whether the response was produced; the orchestrator
+      // `respond` reports only whether the response was produced; this adapter
       // owns commit timing. `commitForNonStreaming` exists solely on a successful
       // non-streaming attempt — it flushes the buffered rows once the body is
       // known good (streaming rows were already written per frame). A failed
       // response leaves the buffer unflushed.
-      const { success, response } = await respond(result);
+      const { success, response } = await respond(runtime, result);
       if (success) await commitForNonStreaming?.();
       return response;
     } catch (error) {
       const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
-      return (await respond(renderFailure(failure))).response;
+      return (await respond(runtime, renderFailure(failure))).response;
     }
   };
 };
