@@ -289,6 +289,18 @@ test('migration 0025 adds responses item metadata and refresh index', async () =
       sqlJsRows<{ detail: string }>(db, 'EXPLAIN QUERY PLAN DELETE FROM responses_items WHERE refreshed_at < 10')
         .some(row => row.detail.includes('idx_responses_items_refreshed_at')),
     );
+    assert(
+      sqlJsRows<{ detail: string }>(
+        db,
+        "EXPLAIN QUERY PLAN SELECT id FROM responses_items WHERE COALESCE(api_key_id, '') = COALESCE('key_a', '') AND id IN ('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA')",
+      ).some(row => row.detail.includes('idx_responses_items_id_scope')),
+    );
+    assert(
+      sqlJsRows<{ detail: string }>(
+        db,
+        "EXPLAIN QUERY PLAN UPDATE responses_items SET refreshed_at = 10 WHERE COALESCE(api_key_id, '') = COALESCE('key_a', '') AND id IN ('msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA') AND refreshed_at < 10",
+      ).some(row => row.detail.includes('idx_responses_items_id_scope')),
+    );
   } finally {
     db.close();
   }

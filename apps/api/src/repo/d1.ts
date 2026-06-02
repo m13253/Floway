@@ -655,6 +655,7 @@ class D1CacheRepo implements CacheRepo {
 }
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, encrypted_content_hash, created_at, refreshed_at';
+const RESPONSES_ITEM_ID_SCOPE_SQL = "COALESCE(api_key_id, '') = COALESCE(?, '')";
 
 class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: D1Database) {}
@@ -685,8 +686,9 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     const perChunk = await Promise.all(chunks.map(async chunk => {
       const placeholders = chunk.map(() => '?').join(', ');
       const orderSql = column === 'id' ? '' : ' ORDER BY refreshed_at DESC, created_at DESC, id ASC';
+      const scopeSql = column === 'id' ? RESPONSES_ITEM_ID_SCOPE_SQL : 'api_key_id IS ?';
       const { results } = await this.db
-        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE api_key_id IS ? AND ${column} IN (${placeholders})${orderSql}`)
+        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
         .bind(apiKeyId, ...chunk)
         .all<ResponsesItemRow>();
       return await Promise.all(results.map(toStoredResponsesItem));
@@ -723,7 +725,7 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     const results = await Promise.all(chunks.map(async chunk => {
       const placeholders = chunk.map(() => '?').join(', ');
       return await this.db
-        .prepare(`UPDATE responses_items SET refreshed_at = ? WHERE api_key_id IS ? AND id IN (${placeholders}) AND refreshed_at < ?`)
+        .prepare(`UPDATE responses_items SET refreshed_at = ? WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id IN (${placeholders}) AND refreshed_at < ?`)
         .bind(refreshedAt, apiKeyId, ...chunk, refreshedAt)
         .run();
     }));
