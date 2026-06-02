@@ -50,12 +50,12 @@ const flagOverrideValuesSchema = z.record(z.string(), z.boolean()).refine(
 const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisabledPublicModelIds);
 
 // The structured endpoint capability map, shared by per-model config and the
-// custom upstream-level fallback. A present key declares the endpoint is served;
-// its value carries sub-capabilities (Responses compaction). One concept, all
-// endpoints — the runtime validators enforce presence/emptiness rules.
+// custom upstream-level fallback. A present key declares the endpoint is served.
+// One concept, all endpoints — the runtime validators enforce presence/emptiness
+// rules.
 const modelEndpointsSchema = z.object({
   chatCompletions: z.object({}).optional(),
-  responses: z.object({ compact: z.boolean().optional(), contextManagement: z.boolean().optional() }).optional(),
+  responses: z.object({}).optional(),
   messages: z.object({ countTokens: z.boolean().optional() }).optional(),
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),

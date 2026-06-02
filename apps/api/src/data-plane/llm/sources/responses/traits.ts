@@ -5,10 +5,9 @@ import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '..
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
-import { emitToResponsesCompact } from '../../targets/responses/compact.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
-import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
+import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -86,7 +85,7 @@ const responsesInvocation = <TPayload extends { model: string }>(
 const openAiErrorResult = (status: number, message: string, extra?: { param: string; code: string | null }): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> =>
   jsonUpstreamErrorResult(status, { error: { message, type: 'invalid_request_error', ...extra } });
 
-const renderResponsesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointName): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> => {
+const renderResponsesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> => {
   switch (failure.kind) {
   case 'item-not-found':
     return openAiErrorResult(404, `Item with id '${failure.itemId}' not found.`, { param: 'input', code: null });
@@ -95,7 +94,7 @@ const renderResponsesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointN
   case 'model-missing':
     return openAiErrorResult(404, `Model ${failure.model} is not available on any configured upstream.`);
   case 'model-unsupported':
-    return openAiErrorResult(400, `Model ${failure.model} does not support the ${endpoint === 'compact' ? '/responses/compact' : '/responses'} endpoint.`);
+    return openAiErrorResult(400, `Model ${failure.model} does not support the /responses endpoint.`);
   case 'internal':
     return sourceErrorResult<RawResponsesStreamEvent>(failure.error, { sourceApi: 'responses', internalStatus: 502 });
   }
@@ -140,51 +139,7 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
   },
 };
 
-// Compaction shares the Responses input and the LLM-output path — its
-// compaction items persist like any generated output — differing only in the
-// upstream call and the response envelope. It gates on the `responses` endpoint
-// advertising either compaction sub-capability; whether compaction reaches the
-// upstream natively (`/responses/compact`) or via the `context_management`
-// parameter is decided behind the responses target from the resolved binding.
-// External exposure collapses both into one capability, so `compact ||
-// contextManagement` is the gate.
-const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
-  // Compaction is non-streaming: the client receives one `response.compaction`
-  // JSON body, reassembled by the shared responses respond from the synthesized
-  // terminal the compact target emits.
-  respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
-    await respondResponses(c, result, wantsStream, request, downstreamAbortController),
-  setup: async c => {
-    const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
-    const request = createRequestContext(c, undefined, false);
-    return {
-      request,
-      items: payload.input,
-      responsesItemsView,
-      wantsStream: false,
-      store: payload.store,
-      model: payload.model,
-      downstreamAbortController: undefined,
-      pickTarget: endpoints => endpoints.responses?.compact || endpoints.responses?.contextManagement ? 'responses' : null,
-      attempt: async ({ binding, target, model, rewriteItems }) => {
-        const attemptPayload = structuredClone(payload);
-        attemptPayload.model = model;
-        attemptPayload.input = await rewriteItems(attemptPayload.input);
-        const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
-        const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
-        return await runInterceptors(invocation, request, interceptors, () => {
-          // This endpoint's pickTarget only ever yields the native Responses
-          // target; compaction has no translate realization, so any other target is a
-          // routing invariant violation rather than a degraded fallback.
-          if (target !== 'responses') throw new Error('Responses compaction is only supported on a native Responses upstream.');
-          return emitToResponsesCompact(invocation, request);
-        });
-      },
-    };
-  },
-};
-
 export const responsesTraits: LlmSourceTraits<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,
-  endpoints: { generate: responsesGenerate, compact: responsesCompact },
+  endpoints: { generate: responsesGenerate },
 };

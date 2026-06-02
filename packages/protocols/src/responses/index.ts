@@ -33,12 +33,6 @@ export interface ResponsesPayload {
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: string | null;
-  // Server-side context compaction directive. The gateway injects this when
-  // realizing `/responses/compact` on an upstream that lacks the native compact
-  // endpoint but honours this parameter: the upstream summarizes prior context
-  // into a `{type:"compaction"}` output item. `compact_threshold` (min 1000)
-  // only sets WHEN compaction fires, not how aggressively.
-  context_management?: { type: 'compaction'; compact_threshold?: number }[] | null;
 }
 
 export type ResponsesInputItem =

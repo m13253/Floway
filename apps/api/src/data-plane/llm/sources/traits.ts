@@ -117,8 +117,8 @@ export interface LlmEndpointPlan<TItems, TEvent> {
 // One client-facing operation of a source. Every endpoint shares the source's
 // input (TItems) and `renderFailure`, and differs only in how it reaches the
 // upstream and shapes the answer:
-//   - generate / compact produce LLM output — an `events` result whose output
-//     items the orchestrator persists, then `respond` renders.
+//   - generate produces LLM output — an `events` result whose output items the
+//     orchestrator persists, then `respond` renders.
 //   - count_tokens produces a measurement — a non-`events` result the
 //     orchestrator passes straight to `respond`, never persisting.
 //
@@ -141,7 +141,7 @@ export interface LlmEndpoint<TItems, TEvent> {
   }): Promise<{ success: boolean; response: Response }>;
 }
 
-export type LlmEndpointName = 'generate' | 'countTokens' | 'compact';
+export type LlmEndpointName = 'generate' | 'countTokens';
 
 // A source exposes one or more endpoints that share its input and error
 // envelope. `renderFailure` is source-wide — every endpoint answers a failure

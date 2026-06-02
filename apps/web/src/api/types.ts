@@ -8,11 +8,10 @@ export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot';
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
 // Structured per-endpoint capability map. Mirrors @floway-dev/protocols
-// ModelEndpoints: a present key means the model is served by that endpoint; its
-// value carries that endpoint's sub-capabilities.
+// ModelEndpoints: a present key means the model is served by that endpoint.
 export interface ModelEndpoints {
   chatCompletions?: {};
-  responses?: { compact?: boolean; contextManagement?: boolean };
+  responses?: {};
   messages?: { countTokens?: boolean };
   embeddings?: {};
   imagesGenerations?: {};

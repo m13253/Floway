@@ -18,7 +18,7 @@ import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import { type ModelEndpointKey, type ModelEndpoints, type ResponsesEndpoint, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
@@ -165,16 +165,9 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
   return false;
 };
 
-// Copilot's `/responses` honours the `context_management` parameter on its
-// gpt-5 family deployments (the codex backend), but does not serve the native
-// `/responses/compact` endpoint (404). Operators do not configure Copilot
-// per-model caps; the provider determines them from the public model id.
-const copilotResponsesEndpoint = (publicModelId: string): ResponsesEndpoint =>
-  publicModelId.startsWith('gpt-5') ? { contextManagement: true } : {};
-
 const copilotModelEndpoints = (publicModel: CopilotRawModel, rawModels: readonly CopilotRawModel[]): ModelEndpoints => {
   if (rawModels.some(model => rawModelSupportsEndpoint(model, 'responses'))) {
-    return { responses: copilotResponsesEndpoint(publicModel.id) };
+    return { responses: {} };
   }
 
   if (publicModel.id.startsWith('claude-') || rawModels.some(model => rawModelSupportsEndpoint(model, 'messages'))) {
@@ -320,13 +313,6 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         reasoningEffort: responsesReasoningEffort(body),
       });
       return call('responses', body, signal, rawModel, headers);
-    },
-    // Copilot's `/responses/compact` is a 404; the source layer realizes
-    // compaction through `context_management` on `callResponses` instead, so
-    // this native path is never dispatched (no Copilot model advertises
-    // `endpoints.responses.compact`).
-    callResponsesCompact: () => {
-      throw new Error('Copilot provider does not implement the native /responses/compact endpoint');
     },
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),

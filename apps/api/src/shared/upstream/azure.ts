@@ -18,7 +18,6 @@ type AzureUpstreamRecord = UpstreamRecord & {
 const AZURE_OPENAI_PATHS: Partial<Record<EndpointKey, string>> = {
   chat_completions: '/chat/completions',
   responses: '/responses',
-  responses_compact: '/responses/compact',
   embeddings: '/embeddings',
   models: '/models',
   images_generations: '/images/generations',

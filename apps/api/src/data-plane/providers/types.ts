@@ -116,12 +116,6 @@ export interface ModelProvider {
   // interceptor stack today, but the parameter stays for interface uniformity.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
-  // Native `/responses/compact`: a non-streaming summarization endpoint that
-  // returns a `response.compaction` object. Only upstreams advertising
-  // `endpoints.responses.compact` are dispatched here; providers without a
-  // native compact endpoint throw, and the source layer realizes compaction
-  // through `context_management` on `callResponses` instead.
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire
   // headers. Copilot uses it to pick a raw upstream model variant

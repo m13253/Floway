@@ -1,16 +1,15 @@
--- Migrate the per-model `supportedEndpoints` path array (+ optional `responses`
--- sub-capability object) and the custom upstream-level `supportedEndpoints` path
--- array into the structured `endpoints` capability map used by the current code.
+-- Migrate the per-model `supportedEndpoints` path array and the custom
+-- upstream-level `supportedEndpoints` path array into the structured `endpoints`
+-- capability map used by the current code.
 --
 -- The capability model is now a single concept: a present key means the model
--- (or upstream) serves that endpoint; the `responses` value carries compaction
--- sub-capabilities. Public paths (`/chat/completions`, `/v1/responses`, ...)
--- become structured keys (`chatCompletions`, `responses`, ...). The runtime
--- parser rejects the old array shape, so unmigrated rows would brick their
--- upstream; this rewrites them in place.
+-- (or upstream) serves that endpoint. Public paths (`/chat/completions`,
+-- `/v1/responses`, ...) become structured keys (`chatCompletions`, `responses`,
+-- ...). The runtime parser rejects the old array shape, so unmigrated rows would
+-- brick their upstream; this rewrites them in place.
 
 -- Per-model: rebuild config_json.models[], turning each model's
--- supportedEndpoints (+ responses) into endpoints, for azure and custom.
+-- supportedEndpoints path array into endpoints, for azure and custom.
 UPDATE upstreams
 SET config_json = json_set(
   config_json,
@@ -18,10 +17,10 @@ SET config_json = json_set(
   (
     SELECT json_group_array(
       json_set(
-        json_remove(model.value, '$.supportedEndpoints', '$.responses'),
+        json_remove(model.value, '$.supportedEndpoints'),
         '$.endpoints',
         json((
-          SELECT json_group_object(k, json(v))
+          SELECT json_group_object(k, json_object())
           FROM (
             SELECT DISTINCT
               CASE endpoint.value
@@ -37,12 +36,7 @@ SET config_json = json_set(
                 WHEN '/v1/images/generations' THEN 'imagesGenerations'
                 WHEN '/images/edits' THEN 'imagesEdits'
                 WHEN '/v1/images/edits' THEN 'imagesEdits'
-              END AS k,
-              CASE
-                WHEN endpoint.value IN ('/responses', '/v1/responses')
-                  THEN COALESCE(json_extract(model.value, '$.responses'), json_object())
-                ELSE json_object()
-              END AS v
+              END AS k
             FROM json_each(json_extract(model.value, '$.supportedEndpoints')) AS endpoint
           )
         ))
@@ -56,7 +50,7 @@ WHERE provider IN ('azure', 'custom')
   AND json_array_length(json_extract(config_json, '$.models')) > 0;
 
 -- Custom upstream-level: rebuild the top-level supportedEndpoints path array
--- into the structured endpoints map (chat protocols only; no sub-capabilities).
+-- into the structured endpoints map (chat protocols only).
 UPDATE upstreams
 SET config_json = json_set(
   json_remove(config_json, '$.supportedEndpoints'),

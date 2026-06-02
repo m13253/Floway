@@ -16,7 +16,7 @@ import { listModelProviders, resolveModelForProvider } from '../../providers/reg
 // target preference, the interceptor-wrapped emit, response shaping — differ
 // per API/endpoint and are injected through the per-source traits.
 //
-// A source declares one or more endpoints (generate, count_tokens, compact);
+// A source declares one or more endpoints (generate, count_tokens);
 // `serveLlm(traits, endpointName)` binds one of them to a route. payload and
 // request never reach this orchestrator: they live in the per-endpoint
 // closures. `setup(c)` parses the body, runs input-level pre-checks (returning

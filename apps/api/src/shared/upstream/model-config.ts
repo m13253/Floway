@@ -1,5 +1,5 @@
 import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
-import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing, type ResponsesEndpoint, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;
@@ -17,8 +17,7 @@ export interface UpstreamModelConfig {
   publicModelId?: string;
   // Required metadata mirroring our public model definition. Routing is driven
   // by `endpoints` (the structured capability map: a present key means the model
-  // is served by that endpoint, its value carries the endpoint's sub-capabilities
-  // such as `responses.compact`); `kind` decides which fields the dashboard form
+  // is served by that endpoint); `kind` decides which fields the dashboard form
   // surfaces and is derived from `endpoints` when an entry omits it.
   kind: ModelKind;
   endpoints: ModelEndpoints;
@@ -49,38 +48,23 @@ export const optionalStringField = (value: unknown, label: string): string | und
   return value;
 };
 
-const optionalBooleanField = (value: unknown, label: string): boolean | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') throw new Error(`Malformed ${label}: must be a boolean`);
-  return value;
-};
-
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
   'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits',
 ]);
 
-// Parses the Responses endpoint's sub-capabilities. `compact` /
-// `contextManagement` are optional booleans; absent means unsupported. Empty
-// when none are set so the stored config stays clean.
-const responsesEndpointSubField = (value: Record<string, unknown>, label: string): ResponsesEndpoint => ({
-  ...(value.compact !== undefined ? { compact: optionalBooleanField(value.compact, `${label}.compact`) } : {}),
-  ...(value.contextManagement !== undefined ? { contextManagement: optionalBooleanField(value.contextManagement, `${label}.contextManagement`) } : {}),
-});
-
 // The structured per-model capability map. A present key declares the model is
 // served by that endpoint; its value object carries that endpoint's
-// sub-capabilities (only `responses` has operator-configurable ones today —
-// `messages.countTokens` is derived at load time, so it is not stored here).
-// `allowEmpty` is set for the upstream-level fallback map (an upstream may serve
-// only kind-derived embedding/image models and declare no chat endpoint).
+// sub-capabilities (`messages.countTokens` is derived at load time, so no
+// operator-configurable sub-capability is stored here today). `allowEmpty` is
+// set for the upstream-level fallback map (an upstream may serve only
+// kind-derived embedding/image models and declare no chat endpoint).
 export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
   for (const [key, sub] of Object.entries(value)) {
     if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
-    if (key === 'responses') endpoints.responses = responsesEndpointSubField(sub, `${label}.responses`);
-    else endpoints[key as Exclude<ModelEndpointKey, 'responses'>] = {};
+    endpoints[key as ModelEndpointKey] = {};
   }
   if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
   return endpoints;
