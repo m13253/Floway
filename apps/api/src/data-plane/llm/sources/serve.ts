@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { executeLlmSourcePlan } from './execution.ts';
 import { createHttpRequestContext } from './request-context.ts';
-import { type LlmEndpointName, type LlmServeFailure, LlmServeFailureError, type LlmSourceRuntime, type LlmSourceTraits, type Result } from './traits.ts';
+import { type LlmEndpointName, type LlmServeFailure, LlmServeFailureError, type LlmSourceRuntime, type LlmSourceTraits } from './traits.ts';
 
 // HTTP adapter for every LLM source endpoint. `prepare` owns parsing and real
 // runtime construction; this layer binds Hono to prepare/respond, keeps a
@@ -24,14 +24,13 @@ export const serveLlm = <TItems, TEvent>(
       wantsStream: false,
       downstreamAbortController: undefined,
     };
-    const renderFailure = (failure: LlmServeFailure): Result<TEvent> => traits.renderFailure(failure, endpointName);
 
     try {
       const plan = await endpoint.prepare(c);
       if (plan instanceof Response) return plan;
       runtime = plan;
 
-      const { result, commitForNonStreaming } = await executeLlmSourcePlan(plan, renderFailure);
+      const { result, commitForNonStreaming } = await executeLlmSourcePlan(plan, failure => traits.renderFailure(failure, endpointName));
 
       // `respond` reports only whether the response was produced; this adapter
       // owns commit timing. `commitForNonStreaming` exists solely on a successful
@@ -43,7 +42,7 @@ export const serveLlm = <TItems, TEvent>(
       return response;
     } catch (error) {
       const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
-      return (await endpoint.respond({ c, result: renderFailure(failure), runtime })).response;
+      return (await endpoint.respond({ c, result: traits.renderFailure(failure, endpointName), runtime })).response;
     }
   };
 };
