@@ -4,6 +4,7 @@ import {
   geminiFunctionDeclarations,
   geminiFunctionResponsePart,
   geminiInlineData,
+  geminiPartKind,
   geminiPartText,
   geminiText,
   geminiThinkingLevelEffort,
@@ -20,7 +21,6 @@ import {
   type MessagesPayload,
   type MessagesTextBlock,
   type MessagesTool,
-  type MessagesToolResultBlock,
   type MessagesUserContentBlock,
 } from '@floway-dev/protocols/messages';
 
@@ -38,35 +38,36 @@ const inlineDataToImageBlock = (part: GeminiPart): MessagesImageBlock | null => 
   };
 };
 
-const buildToolResultBlock = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): MessagesToolResultBlock | null => {
-  const functionResponsePart = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex, 'last');
-  if (!functionResponsePart) return null;
-
-  return {
-    type: 'tool_result',
-    tool_use_id: functionResponsePart.id,
-    content: JSON.stringify(functionResponsePart.response.response),
-  };
-};
-
 const buildUserMessage = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): MessagesPayload['messages'][number] | null => {
   const blocks: MessagesUserContentBlock[] = [];
 
   content.parts.forEach((part, partIndex) => {
-    const toolResult = buildToolResultBlock(part, turnIndex, partIndex, unmatchedToolCallIds);
-    if (toolResult) {
-      blocks.push(toolResult);
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
+      return;
+    case 'function_response': {
+      const { response, id } = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex, 'last')!;
+      blocks.push({
+        type: 'tool_result',
+        tool_use_id: id,
+        content: JSON.stringify(response.response),
+      });
       return;
     }
-
-    const text = geminiPartText(part);
-    if (text !== null) {
-      blocks.push({ type: 'text', text });
+    case 'text': {
+      const text = geminiPartText(part);
+      if (text !== null) blocks.push({ type: 'text', text });
       return;
     }
-
-    const image = inlineDataToImageBlock(part);
-    if (image) blocks.push(image);
+    case 'inline_data': {
+      const image = inlineDataToImageBlock(part);
+      if (image) blocks.push(image);
+      return;
+    }
+    default:
+      throw new Error(`Gemini → Messages translator does not accept ${kind} parts in user content.`);
+    }
   });
 
   return blocks.length ? { role: 'user', content: blocks } : null;
@@ -94,18 +95,6 @@ const attachSignatureToThinking = (
   }
 };
 
-const buildToolUseBlock = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): MessagesAssistantContentBlock | null => {
-  const functionCallPart = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex);
-  if (!functionCallPart) return null;
-
-  return {
-    type: 'tool_use',
-    id: functionCallPart.id,
-    name: functionCallPart.call.name,
-    input: functionCallPart.call.args,
-  };
-};
-
 const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): MessagesPayload['messages'][number] | null => {
   const blocks: MessagesAssistantContentBlock[] = [];
   let firstThinkingIndex: number | undefined;
@@ -117,28 +106,37 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
       firstActionSignature = part.thoughtSignature;
     }
 
-    const thoughtText = geminiThoughtText(part);
-    if (thoughtText !== null) {
-      firstThinkingIndex ??= blocks.length;
-      blocks.push({ type: 'thinking', thinking: thoughtText });
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
+      return;
+    case 'function_call': {
+      const { call, id } = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
+      if (part.thoughtSignature !== undefined) firstSignedActionIndex ??= blocks.length;
+      blocks.push({
+        type: 'tool_use',
+        id,
+        name: call.name,
+        input: call.args,
+      });
       return;
     }
-
-    const toolUse = buildToolUseBlock(part, turnIndex, partIndex, unmatchedToolCallIds);
-    if (toolUse) {
-      if (part.thoughtSignature !== undefined) {
-        firstSignedActionIndex ??= blocks.length;
+    case 'text': {
+      const thoughtText = geminiThoughtText(part);
+      if (thoughtText !== null) {
+        firstThinkingIndex ??= blocks.length;
+        blocks.push({ type: 'thinking', thinking: thoughtText });
+        return;
       }
-      blocks.push(toolUse);
+      const text = geminiVisibleText(part);
+      if (text !== null) {
+        if (part.thoughtSignature !== undefined) firstSignedActionIndex ??= blocks.length;
+        blocks.push({ type: 'text', text });
+      }
       return;
     }
-
-    const text = geminiVisibleText(part);
-    if (text !== null) {
-      if (part.thoughtSignature !== undefined) {
-        firstSignedActionIndex ??= blocks.length;
-      }
-      blocks.push({ type: 'text', text });
+    default:
+      throw new Error(`Gemini → Messages translator does not accept ${kind} parts in model content.`);
     }
   });
 
@@ -245,7 +243,18 @@ export const buildTargetRequest = (
   }
 
   payload.contents?.forEach((content, turnIndex) => {
-    const message = content.role === 'model' ? buildAssistantMessage(content, turnIndex, unmatchedToolCallIds) : buildUserMessage(content, turnIndex, unmatchedToolCallIds);
+    let message: MessagesPayload['messages'][number] | null;
+    switch (content.role) {
+    case 'model':
+      message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
+      break;
+    case 'user':
+    case undefined:
+      message = buildUserMessage(content, turnIndex, unmatchedToolCallIds);
+      break;
+    default:
+      throw new Error(`Gemini → Messages translator does not accept ${(content as { role: string }).role} content roles.`);
+    }
     if (message) request.messages.push(message);
   });
 

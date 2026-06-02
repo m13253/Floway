@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateChatCompletionsToResponses } from './request.ts';
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
 import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsMessage, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesInputReasoning, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
@@ -418,4 +418,16 @@ test('translateChatCompletionsChunkToResponsesEvents ignores empty tool_calls ar
   const deltaEvents = events2.filter(e => e.type === 'response.output_text.delta');
   assertEquals(deltaEvents.length, 1);
   assertEquals((deltaEvents[0] as { delta: string }).delta, 'hello');
+});
+
+test('translateChatCompletionsToResponses rejects an unknown message role', () => {
+  assertThrows(
+    () =>
+      translateChatCompletionsToResponses({
+        model: 'gpt-test',
+        messages: [{ role: 'function', content: 'hi' } as unknown as ChatCompletionsMessage],
+      }),
+    Error,
+    'does not accept function messages',
+  );
 });
