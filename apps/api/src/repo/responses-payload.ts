@@ -45,8 +45,8 @@ export const serializeStoredResponsesPayload = async (
   const fileBody = encoder.encode(JSON.stringify(payload));
   const sha256 = await sha256Hex(fileBody);
   const expiresAt = createdAt + RESPONSES_ITEM_PAYLOAD_TTL_MS;
-  const scope = (await sha256Hex(encoder.encode(apiKeyId ?? ''))).slice(0, 16);
-  const key = `${responsesItemsHourPrefix(expiresAt)}${scope}/${id}/${sha256}.json`;
+  const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId ?? ''))).slice(0, 16);
+  const key = `${responsesItemsExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}.json`;
   await getFileProvider().put(key, fileBody);
   return JSON.stringify({
     version: 1,
@@ -129,7 +129,7 @@ const clonePayload = (payload: StoredResponsesItemPayload): StoredResponsesItemP
 // This is resilient to missed cron runs: a skipped hour is revisited on the
 // next run rather than leaking into R2.
 export const sweepExpiredResponsesItemPayloadFiles = async (now: number): Promise<void> => {
-  const currentHourPrefix = responsesItemsHourPrefix(startOfUtcHour(now));
+  const currentHourPrefix = responsesItemsExpiryBucketPrefix(startOfUtcHour(now));
   const provider = getFileProvider();
   const keys = await provider.listKeys(RESPONSES_ITEMS_FILE_ROOT);
   const expiredBuckets = new Set<string>();
@@ -148,7 +148,7 @@ export const deleteAllResponsesItemPayloadFiles = async (): Promise<void> => {
   await getFileProvider().deletePrefix(RESPONSES_ITEMS_FILE_ROOT);
 };
 
-const responsesItemsHourPrefix = (hourTimestamp: number): string => {
+const responsesItemsExpiryBucketPrefix = (hourTimestamp: number): string => {
   const date = new Date(hourTimestamp);
   const yyyy = String(date.getUTCFullYear()).padStart(4, '0');
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
