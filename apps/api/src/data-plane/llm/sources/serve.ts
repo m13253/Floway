@@ -24,8 +24,6 @@ export const serveLlm = <TItems, TEvent>(
       wantsStream: false,
       downstreamAbortController: undefined,
     };
-    const respond = (runtime: LlmSourceRuntime, result: Result<TEvent>): Promise<{ success: boolean; response: Response }> =>
-      endpoint.respond({ c, result, runtime });
     const renderFailure = (failure: LlmServeFailure): Result<TEvent> => traits.renderFailure(failure, endpointName);
 
     try {
@@ -40,12 +38,12 @@ export const serveLlm = <TItems, TEvent>(
       // non-streaming attempt — it flushes the buffered rows once the body is
       // known good (streaming rows were already written per frame). A failed
       // response leaves the buffer unflushed.
-      const { success, response } = await respond(runtime, result);
+      const { success, response } = await endpoint.respond({ c, result, runtime });
       if (success) await commitForNonStreaming?.();
       return response;
     } catch (error) {
       const failure: LlmServeFailure = error instanceof LlmServeFailureError ? error.failure : { kind: 'internal', error };
-      return (await respond(runtime, renderFailure(failure))).response;
+      return (await endpoint.respond({ c, result: renderFailure(failure), runtime })).response;
     }
   };
 };
