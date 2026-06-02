@@ -19,6 +19,12 @@ import type {
 const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] | MessagesAssistantContentBlock[]): string | ChatCompletionsContentPart[] | null => {
   if (typeof content === 'string') return content;
 
+  for (const block of content) {
+    if (block.type !== 'text' && block.type !== 'image') {
+      throw new Error(`Messages → Chat Completions translator does not accept ${block.type} content blocks in message content.`);
+    }
+  }
+
   if (!content.some(block => block.type === 'image')) {
     return content
       .filter((block): block is MessagesTextBlock => block.type === 'text')
@@ -34,14 +40,14 @@ const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] |
       continue;
     }
 
-    if (block.type !== 'image') continue;
-
-    parts.push({
-      type: 'image_url',
-      image_url: {
-        url: `data:${block.source.media_type};base64,${block.source.data}`,
-      },
-    });
+    if (block.type === 'image') {
+      parts.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:${block.source.media_type};base64,${block.source.data}`,
+        },
+      });
+    }
   }
 
   return parts;
@@ -193,6 +199,8 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatComp
         content: JSON.stringify(block.content),
       });
       break;
+    default:
+      throw new Error(`Messages → Chat Completions translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
     }
   }
 

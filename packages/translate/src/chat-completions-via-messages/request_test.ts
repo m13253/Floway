@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateChatCompletionsToMessages } from './request.ts';
 import type { RemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { assertEquals, assertExists, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsMessage, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -1111,4 +1111,28 @@ test('translateChatCompletionsToMessages drops response_format json_object (no A
   );
 
   assertEquals(result.output_config, undefined);
+});
+
+test('translateChatCompletionsToMessages rejects an unknown message role', async () => {
+  await assertRejects(
+    () =>
+      translateChatCompletionsToMessages({
+        model: 'claude-test',
+        messages: [{ role: 'function', content: 'hi' } as unknown as ChatCompletionsMessage],
+      }),
+    Error,
+    'does not accept function messages',
+  );
+});
+
+test('translateChatCompletionsToMessages rejects an unknown user content part type', async () => {
+  await assertRejects(
+    () =>
+      translateChatCompletionsToMessages({
+        model: 'claude-test',
+        messages: [{ role: 'user', content: [{ type: 'video_url' }] } as unknown as ChatCompletionsMessage],
+      }),
+    Error,
+    'does not accept video_url content parts',
+  );
 });

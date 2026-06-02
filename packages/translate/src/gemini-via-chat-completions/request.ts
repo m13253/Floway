@@ -4,6 +4,7 @@ import {
   geminiFunctionDeclarations,
   geminiFunctionResponsePart,
   geminiInlineDataUrl,
+  geminiPartKind,
   geminiPartText,
   geminiReasoningEffort,
   geminiText,
@@ -56,9 +57,12 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
   content.parts.forEach((part, partIndex) => {
     reasoningOpaque = appendOpaque(reasoningOpaque, part.thoughtSignature);
 
-    const functionCallPart = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex);
-    if (functionCallPart) {
-      const { call, id } = functionCallPart;
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
+      return;
+    case 'function_call': {
+      const { call, id } = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
       toolCalls.push({
         id,
         type: 'function',
@@ -69,15 +73,20 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
       });
       return;
     }
-
-    const thoughtText = geminiThoughtText(part);
-    if (thoughtText !== null) {
-      thoughtTexts.push(thoughtText);
+    case 'text': {
+      const thoughtText = geminiThoughtText(part);
+      if (thoughtText !== null) {
+        thoughtTexts.push(thoughtText);
+        return;
+      }
+      if (geminiVisibleText(part) !== null) visibleParts.push(part);
       return;
     }
-
-    if (geminiVisibleText(part) !== null || part.inlineData) {
+    case 'inline_data':
       visibleParts.push(part);
+      return;
+    default:
+      throw new Error(`Gemini → Chat Completions translator does not accept ${kind} parts in model content.`);
     }
   });
 
@@ -93,14 +102,13 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
   return message.content !== null || message.tool_calls?.length || message.reasoning_text !== undefined || message.reasoning_opaque !== undefined ? message : null;
 };
 
-const buildToolMessage = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ChatCompletionsMessage | null => {
-  const functionResponsePart = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex);
-  if (!functionResponsePart) return null;
+const buildToolMessage = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ChatCompletionsMessage => {
+  const { response, id } = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
 
   return {
     role: 'tool',
-    tool_call_id: functionResponsePart.id,
-    content: JSON.stringify(functionResponsePart.response.response),
+    tool_call_id: id,
+    content: JSON.stringify(response.response),
   };
 };
 
@@ -117,14 +125,21 @@ const buildUserMessages = (content: GeminiContent, turnIndex: number, unmatchedT
   };
 
   content.parts.forEach((part, partIndex) => {
-    const toolMessage = buildToolMessage(part, turnIndex, partIndex, unmatchedToolCallIds);
-    if (toolMessage) {
-      flushUserParts();
-      messages.push(toolMessage);
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
       return;
+    case 'function_response':
+      flushUserParts();
+      messages.push(buildToolMessage(part, turnIndex, partIndex, unmatchedToolCallIds));
+      return;
+    case 'text':
+    case 'inline_data':
+      pendingParts.push(part);
+      return;
+    default:
+      throw new Error(`Gemini → Chat Completions translator does not accept ${kind} parts in user content.`);
     }
-
-    if (part.text !== undefined || part.inlineData) pendingParts.push(part);
   });
 
   flushUserParts();
@@ -202,13 +217,19 @@ export const buildTargetRequest = (payload: GeminiPayload, model: string): ChatC
   }
 
   payload.contents?.forEach((content, turnIndex) => {
-    if (content.role === 'model') {
+    switch (content.role) {
+    case 'model': {
       const message = buildAssistantMessage(content, turnIndex, unmatchedToolCallIds);
       if (message) request.messages.push(message);
       return;
     }
-
-    request.messages.push(...buildUserMessages(content, turnIndex, unmatchedToolCallIds));
+    case 'user':
+    case undefined:
+      request.messages.push(...buildUserMessages(content, turnIndex, unmatchedToolCallIds));
+      return;
+    default:
+      throw new Error(`Gemini → Chat Completions translator does not accept ${(content as { role: string }).role} content roles.`);
+    }
   });
 
   applyGenerationConfig(request, payload.generationConfig);
