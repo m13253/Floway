@@ -108,7 +108,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
         },
       ],
     },
@@ -200,7 +200,7 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
       config: {
         baseUrl: 'https://custom.example.com',
         bearerToken: 'sk-custom',
-        supportedEndpoints: ['/v1/messages'],
+        endpoints: { messages: {} },
       },
     }),
   );
@@ -251,13 +251,13 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', bearerToken: 'sk-first', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://first.example.com', bearerToken: 'sk-first', endpoints: { responses: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', bearerToken: 'sk-second', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://second.example.com', bearerToken: 'sk-second', endpoints: { responses: {} } },
   }));
 
   const providers = await listModelProviders();
@@ -324,7 +324,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-key',
-      models: over.models.map(m => ({ ...m, supportedEndpoints: ['/chat/completions'] })),
+      models: over.models.map(m => ({ ...m, endpoints: { chatCompletions: {} } })),
     },
     flagOverrides: {},
     disabledPublicModelIds: over.disabledPublicModelIds,
@@ -381,8 +381,8 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-key',
       models: [
-        { upstreamModelId: 'enabled-model', supportedEndpoints: ['/chat/completions'] },
-        { upstreamModelId: 'disabled-model', supportedEndpoints: ['/chat/completions'] },
+        { upstreamModelId: 'enabled-model', endpoints: { chatCompletions: {} } },
+        { upstreamModelId: 'disabled-model', endpoints: { chatCompletions: {} } },
       ],
     },
     flagOverrides: {},

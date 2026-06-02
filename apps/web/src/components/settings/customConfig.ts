@@ -1,4 +1,4 @@
-import type { CustomEndpoint, UpstreamModelConfig } from '../../api/types.ts';
+import type { ModelEndpoints, UpstreamModelConfig } from '../../api/types.ts';
 
 type PathKey = 'chat_completions' | 'responses' | 'messages' | 'embeddings' | 'images_generations' | 'images_edits';
 
@@ -8,7 +8,7 @@ type PathKey = 'chat_completions' | 'responses' | 'messages' | 'embeddings' | 'i
 export interface CustomConfigDraft {
   baseUrl: string;
   authStyle: 'bearer' | 'anthropic';
-  supportedEndpoints: CustomEndpoint[];
+  endpoints: ModelEndpoints;
   bearerToken: string;
   pathOverrides: Record<PathKey, string>;
   // Live /models browse toggle and its endpoint override; an empty endpoint
@@ -28,7 +28,7 @@ export interface CustomDraft extends CustomConfigDraft {
 export interface CustomConfigCore {
   baseUrl: string;
   authStyle: 'bearer' | 'anthropic';
-  supportedEndpoints: CustomEndpoint[];
+  endpoints: ModelEndpoints;
   bearerToken?: string;
   modelsFetch: { enabled: boolean; endpoint?: string };
 }
@@ -41,7 +41,7 @@ export const buildCustomConfigCore = (draft: CustomConfigDraft): CustomConfigCor
   const core: CustomConfigCore = {
     baseUrl: draft.baseUrl.trim(),
     authStyle: draft.authStyle,
-    supportedEndpoints: draft.supportedEndpoints,
+    endpoints: draft.endpoints,
     modelsFetch: { enabled: draft.modelsFetch.enabled, ...(draft.modelsFetch.endpoint.trim() ? { endpoint: draft.modelsFetch.endpoint.trim() } : {}) },
   };
   if (draft.bearerToken.trim()) core.bearerToken = draft.bearerToken.trim();

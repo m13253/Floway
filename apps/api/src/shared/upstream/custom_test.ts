@@ -16,7 +16,7 @@ const baseRecord: UpstreamRecord = {
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',
-    supportedEndpoints: ['/chat/completions'],
+    endpoints: { chatCompletions: {} },
   },
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -141,7 +141,7 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
       ...(baseRecord.config as Record<string, unknown>),
       modelsFetch: { enabled: false },
       models: [
-        { upstreamModelId: 'pinned', supportedEndpoints: ['/chat/completions'], display_name: 'Pinned' },
+        { upstreamModelId: 'pinned', endpoints: { chatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
@@ -264,11 +264,11 @@ test('createCustomUpstream rejects malformed opaque config instead of dropping e
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
-          supportedEndpoints: ['chat_completions'],
+          endpoints: { bogus: {} },
         },
       }),
     Error,
-    'unsupported supportedEndpoints entry chat_completions',
+    'unsupported endpoint bogus',
   );
 
   assertThrows(

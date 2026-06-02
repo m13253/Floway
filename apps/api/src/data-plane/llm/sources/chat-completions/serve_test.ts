@@ -67,7 +67,7 @@ test('/v1/chat/completions rewrites stored Responses reasoning_items before the 
     config: {
       baseUrl: 'https://chat-origin.example.com',
       bearerToken: 'sk-chat',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -544,7 +544,7 @@ test('/v1/chat/completions plans per provider without letting a later native pro
     config: {
       baseUrl: 'https://chat.example.com',
       bearerToken: 'sk-chat',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -1958,7 +1958,7 @@ test('/v1/chat/completions preserves custom upstream /models HTTP errors', async
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 

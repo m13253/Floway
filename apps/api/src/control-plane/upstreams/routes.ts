@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 
 import { upstreamRecordToJson } from './serialize.ts';
 import { fetchCustomModels } from '../../data-plane/providers/custom/fetch-models.ts';
-import { modelEndpointsToPublicPaths } from '../../data-plane/providers/endpoints.ts';
 import { getFlagCatalog } from '../../data-plane/providers/flags.ts';
 import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError } from '../../data-plane/providers/models-store.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
@@ -16,6 +15,7 @@ import { assertCustomUpstreamRecord, createCustomUpstream } from '../../shared/u
 import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
 
 interface CopilotUpstreamUser {
   login: string;
@@ -109,10 +109,9 @@ const newId = (): string => `up_${crypto.randomUUID().replace(/-/g, '').slice(0,
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
 
-const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: EndpointKey; body: Record<string, unknown> } => {
-  switch (path) {
-  case '/chat/completions':
-  case '/v1/chat/completions':
+const azureProbeRequest = (upstreamModelId: string, endpoint: ModelEndpointKey): { endpoint: EndpointKey; body: Record<string, unknown> } => {
+  switch (endpoint) {
+  case 'chatCompletions':
     return {
       endpoint: 'chat_completions',
       body: {
@@ -121,8 +120,7 @@ const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: E
         max_tokens: 16,
       },
     };
-  case '/responses':
-  case '/v1/responses':
+  case 'responses':
     return {
       endpoint: 'responses',
       body: {
@@ -131,8 +129,7 @@ const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: E
         max_output_tokens: 16,
       },
     };
-  case '/v1/messages':
-  case '/messages':
+  case 'messages':
     return {
       endpoint: 'messages',
       body: {
@@ -141,8 +138,7 @@ const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: E
         messages: [{ role: 'user', content: 'Reply with ok only.' }],
       },
     };
-  case '/embeddings':
-  case '/v1/embeddings':
+  case 'embeddings':
     return {
       endpoint: 'embeddings',
       body: {
@@ -150,10 +146,8 @@ const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: E
         input: 'test',
       },
     };
-  case '/images/generations':
-  case '/v1/images/generations':
-  case '/images/edits':
-  case '/v1/images/edits':
+  case 'imagesGenerations':
+  case 'imagesEdits':
     // Both image endpoints probe via /v1/images/generations: synthesizing a
     // valid multipart edits body would require a real PNG and mask, which is
     // disproportionate for a connectivity test. If the model's credentials
@@ -170,13 +164,13 @@ const azureProbeRequest = (upstreamModelId: string, path: string): { endpoint: E
         size: '1024x1024',
       },
     };
-  default:
-    throw new Error(`Unsupported Azure model endpoint ${path}`);
   }
 };
 
-const azureModelUsesOpenAi = (model: { supportedEndpoints: readonly string[] }): boolean =>
-  model.supportedEndpoints.some(endpoint => endpoint !== '/v1/messages' && endpoint !== '/messages');
+// Image and Anthropic endpoints aside, a model touches Azure's OpenAI v1 surface
+// when it serves any endpoint other than Messages.
+const azureModelUsesOpenAi = (model: { endpoints: ModelEndpoints }): boolean =>
+  Object.keys(model.endpoints).some(endpoint => endpoint !== 'messages');
 
 const probeModelsEndpoint = async (upstream: Upstream): Promise<{ ok: boolean; status?: number; models?: string[]; body?: string; error?: string }> => {
   try {
@@ -295,16 +289,16 @@ export const testUpstream = async (c: Context) => {
     const modelProbes = [];
 
     for (const model of azure.config.models) {
-      for (const path of model.supportedEndpoints) {
+      for (const endpoint of Object.keys(model.endpoints) as ModelEndpointKey[]) {
         try {
-          const probe = azureProbeRequest(model.upstreamModelId, path);
+          const probe = azureProbeRequest(model.upstreamModelId, endpoint);
           const resp = await upstream.fetch(probe.endpoint, {
             method: 'POST',
             body: JSON.stringify(probe.body),
           });
           modelProbes.push({
             upstreamModelId: model.upstreamModelId,
-            endpoint: path,
+            endpoint,
             ok: resp.ok,
             status: resp.status,
             ...(resp.ok ? {} : { body: (await resp.text()).slice(0, 1000) }),
@@ -312,7 +306,7 @@ export const testUpstream = async (c: Context) => {
         } catch (e) {
           modelProbes.push({
             upstreamModelId: model.upstreamModelId,
-            endpoint: path,
+            endpoint,
             ok: false,
             error: e instanceof Error ? e.message : String(e),
           });
@@ -426,9 +420,7 @@ export const listUpstreamModels = async (c: Context) => {
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind: model.kind,
-      supportedEndpoints: modelEndpointsToPublicPaths(model.endpoints),
-      ...(model.endpoints.responses && (model.endpoints.responses.compact || model.endpoints.responses.contextManagement)
-        ? { responses: { ...model.endpoints.responses } } : {}),
+      endpoints: model.endpoints,
       ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.cost ? { cost: model.cost } : {}),

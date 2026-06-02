@@ -6,7 +6,7 @@ import { jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../t
 const customConfig = {
   baseUrl: 'https://custom.example.com',
   bearerToken: 'sk-test',
-  supportedEndpoints: ['/chat/completions'],
+  endpoints: { chatCompletions: {} },
 };
 
 const azureConfig = {
@@ -16,7 +16,7 @@ const azureConfig = {
     {
       upstreamModelId: 'gpt-prod',
       publicModelId: 'gpt-public',
-      supportedEndpoints: ['/chat/completions', '/responses'],
+      endpoints: { chatCompletions: {}, responses: {} },
     },
   ],
 };
@@ -142,7 +142,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache
       'content-type': 'application/json',
       'x-api-key': adminKey,
     },
-    body: JSON.stringify({ config: { supportedEndpoints: ['/responses'] } }),
+    body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
   });
 
   assertEquals(patch.status, 200);
@@ -150,7 +150,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache
   assertEquals(updated.config.bearerTokenSet, true);
   const stored = await repo.upstreams.getById(created.id);
   assertEquals((stored?.config as Record<string, unknown>).bearerToken, 'sk-test');
-  assertEquals((stored?.config as Record<string, unknown>).supportedEndpoints, ['/responses']);
+  assertEquals((stored?.config as Record<string, unknown>).endpoints, { responses: {} });
   assertEquals(await repo.cache.get(`models_store:${created.id}`), null);
 });
 
@@ -170,7 +170,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
-      models: [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/v1/messages'] }],
+      models: [{ upstreamModelId: 'gpt-prod', endpoints: { messages: {} } }],
     },
   });
 
@@ -182,7 +182,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     },
     body: JSON.stringify({
       config: {
-        models: [{ upstreamModelId: 'gpt-prod', supportedEndpoints: ['/responses'] }],
+        models: [{ upstreamModelId: 'gpt-prod', endpoints: { responses: {} } }],
       },
     }),
   });
@@ -192,7 +192,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   assertEquals(stored?.config, {
     endpoint: 'https://example.openai.azure.com/openai/v1',
     apiKey: 'az-secret',
-    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', supportedEndpoints: ['/responses'] }],
+    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { responses: {} } }],
   });
 });
 
@@ -247,8 +247,8 @@ test('POST /api/upstreams/:id/test probes custom, Azure, and Copilot models', as
       const azureProbeBody = await azureProbe.json();
       assertEquals(azureProbeBody.models, ['azure-model']);
       assertEquals(azureProbeBody.probes.map((probe: any) => ({ endpoint: probe.endpoint, ok: probe.ok, status: probe.status })), [
-        { endpoint: '/chat/completions', ok: true, status: 200 },
-        { endpoint: '/responses', ok: true, status: 200 },
+        { endpoint: 'chatCompletions', ok: true, status: 200 },
+        { endpoint: 'responses', ok: true, status: 200 },
       ]);
 
       const copilotProbe = await requestApp(`/api/upstreams/${copilot.id}/test`, authed(adminKey, {}));
@@ -378,7 +378,7 @@ test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s f
 
   const resp = await requestApp(`/api/upstreams/${created.id}/models`, { headers: { 'x-api-key': adminKey } });
   assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { data: Array<{ upstreamModelId: string; kind: string; supportedEndpoints: string[] }> };
+  const body = (await resp.json()) as { data: Array<{ upstreamModelId: string; kind: string; endpoints: Record<string, unknown> }> };
   assertEquals(body.data[0].upstreamModelId, 'gpt-public');
   assertEquals(body.data[0].kind, 'chat');
 

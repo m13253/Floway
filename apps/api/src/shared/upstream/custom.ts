@@ -20,9 +20,10 @@
 // path override, because it only matters when fetching is enabled.
 
 import { joinBaseAndPath, validateUpstreamPath } from './join.ts';
-import { modelsField, type UpstreamModelConfig } from './model-config.ts';
+import { endpointsField, modelsField, type UpstreamModelConfig } from './model-config.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { UpstreamRecord } from '../../repo/types.ts';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic';
 
@@ -35,7 +36,7 @@ export interface CustomUpstreamConfig {
   baseUrl: string;
   bearerToken: string;
   authStyle: CustomAuthStyle;
-  supportedEndpoints: string[];
+  endpoints: ModelEndpoints;
   pathOverrides?: Partial<Record<Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>, string>>;
   modelsFetch: CustomModelsFetch;
   models: UpstreamModelConfig[];
@@ -80,33 +81,6 @@ const baseUrlField = (value: unknown): string => {
     throw new Error('Malformed custom upstream config: baseUrl must be an http(s) URL');
   }
   return baseUrl;
-};
-
-// supportedEndpoints declares which chat generation protocols this upstream
-// speaks. Embeddings is implicit: a per-model `kind === 'embedding'`
-// derivation (Tier 1: upstream /models published `kind`; Tier 2: id
-// heuristic) decides per-model whether the embeddings endpoint is used, so
-// `/embeddings` is intentionally NOT a valid entry here.
-const SUPPORTED_ENDPOINT_PATHS = new Set(['/chat/completions', '/v1/chat/completions', '/responses', '/v1/responses', '/v1/messages', '/messages']);
-
-const supportedEndpointsField = (value: unknown): string[] => {
-  // Empty is allowed: an upstream that only serves embedding models
-  // (`kind === 'embedding'`) or image models (`kind === 'image'`) has no
-  // chat protocol to declare. supportedEndpoints stays an array contract
-  // so the storage shape is uniform across upstreams.
-  if (!Array.isArray(value)) {
-    throw new Error('Malformed custom upstream config: supportedEndpoints must be a string array');
-  }
-
-  const endpoints: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string') throw new Error('Malformed custom upstream config: supportedEndpoints must be a string array');
-    if (!SUPPORTED_ENDPOINT_PATHS.has(item)) {
-      throw new Error(`Malformed custom upstream config: unsupported supportedEndpoints entry ${item}`);
-    }
-    if (!endpoints.includes(item)) endpoints.push(item);
-  }
-  return endpoints;
 };
 
 const PATH_OVERRIDE_KEYS = new Set<Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>>(['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits']);
@@ -156,7 +130,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
       baseUrl: baseUrlField(record.config.baseUrl),
       bearerToken: nonEmptyStringField(record.config.bearerToken, 'bearerToken'),
       authStyle: authStyleField(record.config.authStyle),
-      supportedEndpoints: supportedEndpointsField(record.config.supportedEndpoints),
+      endpoints: endpointsField(record.config.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
       ...(record.config.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(record.config.pathOverrides) } : {}),
       modelsFetch: modelsFetchField(record.config.modelsFetch),
       models: modelsField(record.config.models ?? [], 'custom'),
@@ -202,7 +176,7 @@ export const createCustomUpstream = (record: UpstreamRecord): Upstream => {
     id: record.id,
     name: record.name,
     kind: 'custom',
-    supportedEndpoints: config.supportedEndpoints,
+    endpoints: config.endpoints,
     fetch: async (endpoint, init: RequestInit, options?: UpstreamFetchOptions) => {
       const headers = new Headers(init.headers);
       if (config.authStyle === 'anthropic') {

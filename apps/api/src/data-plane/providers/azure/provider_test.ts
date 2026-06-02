@@ -13,14 +13,14 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
       {
         upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-public',
-        supportedEndpoints: ['/chat/completions', '/responses', '/embeddings'],
+        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
         display_name: 'GPT Public',
         limits: { max_context_window_tokens: 128000 },
       },
       {
         upstreamModelId: 'gpt-small',
         publicModelId: ' ',
-        supportedEndpoints: ['/chat/completions'],
+        endpoints: { chatCompletions: {} },
       },
     ],
   };
@@ -116,12 +116,12 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
         models: [
           {
             upstreamModelId: 'deepseek-v4-pro',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
           },
           {
             upstreamModelId: 'gpt-5.4-pro',
             publicModelId: '',
-            supportedEndpoints: ['/responses'],
+            endpoints: { responses: {} },
           },
         ],
       },
@@ -184,7 +184,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
           {
             upstreamModelId: 'claude-prod',
             publicModelId: 'claude-public',
-            supportedEndpoints: ['/v1/messages'],
+            endpoints: { messages: {} },
           },
         ],
       },
@@ -236,7 +236,7 @@ test('createAzureProvider forwards the source-derived anthropicBeta slice as the
       config: {
         endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
         apiKey: 'az-key',
-        models: [{ upstreamModelId: 'claude-prod', supportedEndpoints: ['/v1/messages'] }],
+        models: [{ upstreamModelId: 'claude-prod', endpoints: { messages: {} } }],
       },
     }),
   );
@@ -273,10 +273,10 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
         endpoint: 'https://example.openai.azure.com/openai/v1',
         apiKey: 'az-key',
         models: [
-          { upstreamModelId: 'd1', supportedEndpoints: ['/chat/completions'] },
+          { upstreamModelId: 'd1', endpoints: { chatCompletions: {} } },
           {
             upstreamModelId: 'd2',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
             flagOverrides: { enabled: true, values: { 'vendor-deepseek': false, 'vendor-kimi': true } },
           },
         ],
@@ -305,7 +305,7 @@ test('createAzureProvider skips the per-model layer when flagOverrides.enabled i
         models: [
           {
             upstreamModelId: 'd1',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
             flagOverrides: { enabled: false, values: { 'vendor-deepseek': false } },
           },
         ],
@@ -327,12 +327,12 @@ test('createAzureProvider attaches cost field from model config', async () => {
           {
             upstreamModelId: 'gpt-prod',
             publicModelId: 'gpt-public',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
             cost: { input: 2.5, output: 15, input_cache_read: 0.25 },
           },
           {
             upstreamModelId: 'gpt-small',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
           },
         ],
       },
@@ -352,12 +352,12 @@ test('createAzureProvider getPricingForModelKey resolves by upstream model id', 
         models: [
           {
             upstreamModelId: 'gpt-prod',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
             cost: { input: 2.5, output: 15 },
           },
           {
             upstreamModelId: 'gpt-small',
-            supportedEndpoints: ['/chat/completions'],
+            endpoints: { chatCompletions: {} },
           },
         ],
       },
@@ -384,7 +384,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        supportedEndpoints: ['/v1/images/generations', '/v1/images/edits'],
+        endpoints: { imagesGenerations: {}, imagesEdits: {} },
       }],
     },
   };
@@ -428,7 +428,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        supportedEndpoints: ['/v1/images/edits'],
+        endpoints: { imagesEdits: {} },
       }],
     },
   };

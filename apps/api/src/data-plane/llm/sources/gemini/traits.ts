@@ -12,7 +12,7 @@ import { createRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -39,15 +39,6 @@ const geminiInvocation = <TPayload>(
   payload,
   headers: {} as Record<string, string>,
 });
-
-// Gemini has no native upstream target in the provider API; prefer Chat
-// Completions, then Messages, then Responses.
-const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
-  if (endpoints.chatCompletions) return 'chat-completions';
-  if (endpoints.messages) return 'messages';
-  if (endpoints.responses) return 'responses';
-  return null;
-};
 
 const renderGeminiFailure = (failure: LlmServeFailure, endpoint: LlmEndpointName): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
   switch (failure.kind) {
@@ -98,7 +89,9 @@ const geminiGenerate: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> =
       store: undefined,
       model,
       downstreamAbortController,
-      pickTarget,
+      // Gemini has no native upstream target in the provider API; prefer Chat
+      // Completions, then Messages, then Responses.
+      pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
       attempt: async ({ binding, target, model: resolvedModelId, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         if (attemptPayload.contents !== undefined) attemptPayload.contents = await rewriteItems(attemptPayload.contents);
@@ -123,18 +116,13 @@ const geminiGenerate: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> =
 
 // count_tokens accepts either a bare `{ contents }` or the full
 // `{ generateContentRequest }` form. It cannot run the streaming
-// source-interceptor pipeline, so it applies the same payload normalization
-// directly, translates to Messages, and counts via `messages_count_tokens`.
+// source-interceptor pipeline, so the few normalizations that path applies via
+// interceptors are done inline below, then it translates to Messages and counts
+// via `messages_count_tokens`.
 interface GeminiCountTokensRequest {
   contents?: GeminiContent[];
   generateContentRequest?: GeminiPayload;
 }
-
-const normalizeCountTokensRequest = (payload: GeminiPayload): void => {
-  stripUnsupportedPartFieldsFromPayload(payload);
-  stripUnsupportedToolsFromPayload(payload);
-  delete payload.safetySettings;
-};
 
 const totalTokensFromUpstream = (value: unknown): number | null => {
   if (!value || typeof value !== 'object') return null;
@@ -143,9 +131,6 @@ const totalTokensFromUpstream = (value: unknown): number | null => {
   if (typeof payload.total_tokens === 'number') return payload.total_tokens;
   return null;
 };
-
-const pickCountTokensTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
-  endpoints.messages?.countTokens ? 'messages' : null;
 
 const geminiCountTokens: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
@@ -164,11 +149,15 @@ const geminiCountTokens: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent
       store: undefined,
       model: parsed.model,
       downstreamAbortController: undefined,
-      pickTarget: pickCountTokensTarget,
+      pickTarget: endpoints => endpoints.messages?.countTokens ? 'messages' : null,
       attempt: async ({ binding, model: resolvedModelId, rewriteItems }) => {
         const countRequest = structuredClone(generateContentRequest);
         if (countRequest.contents !== undefined) countRequest.contents = await rewriteItems(countRequest.contents);
-        normalizeCountTokensRequest(countRequest);
+        // Apply inline the payload normalizations the generate path runs via
+        // source interceptors, which count_tokens cannot.
+        stripUnsupportedPartFieldsFromPayload(countRequest);
+        stripUnsupportedToolsFromPayload(countRequest);
+        delete countRequest.safetySettings;
         // The trip always emits `stream: true`; count_tokens is non-streaming,
         // so strip it before sending. The events translator never runs.
         const { target } = await translateGeminiViaMessages(countRequest, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens });

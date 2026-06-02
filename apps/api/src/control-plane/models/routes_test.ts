@@ -21,7 +21,7 @@ const azureUpstream = (): UpstreamRecord => ({
       {
         upstreamModelId: 'azure-model',
         publicModelId: 'azure-public',
-        supportedEndpoints: ['/responses'],
+        endpoints: { responses: {} },
       },
     ],
   },

@@ -8,6 +8,8 @@
 // stored `pathOverrides` config so admins can point one endpoint at a subpath
 // without disturbing the others.
 
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
+
 export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
 }
@@ -25,9 +27,9 @@ export interface Upstream {
   id: string;
   name: string;
   kind: UpstreamKind;
-  // Endpoints this upstream is *configured* to support. Used as a fallback
-  // when /models does not declare per-model `supported_endpoints` (Copilot
-  // does; most third-party providers do not).
-  supportedEndpoints: string[];
+  // Structured capability map this upstream is *configured* to support. Used as
+  // a fallback when /models does not declare per-model endpoints (Copilot does;
+  // most third-party providers do not).
+  endpoints: ModelEndpoints;
   fetch(endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response>;
 }

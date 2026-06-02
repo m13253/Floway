@@ -10,7 +10,7 @@ import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
@@ -80,13 +80,6 @@ const responsesInvocation = <TPayload extends { model: string }>(
   headers: {} as Record<string, string>,
 });
 
-const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
-  if (endpoints.responses) return 'responses';
-  if (endpoints.messages) return 'messages';
-  if (endpoints.chatCompletions) return 'chat-completions';
-  return null;
-};
-
 // OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body, which
 // stateless clients (codex) compare verbatim.
@@ -126,7 +119,7 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
       store: payload.store,
       model: payload.model,
       downstreamAbortController,
-      pickTarget,
+      pickTarget: endpoints => endpoints.responses ? 'responses' : endpoints.messages ? 'messages' : endpoints.chatCompletions ? 'chat-completions' : null,
       attempt: async ({ binding, target, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;
@@ -155,9 +148,6 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
 // parameter is decided behind the responses target from the resolved binding.
 // External exposure collapses both into one capability, so `compact ||
 // contextManagement` is the gate.
-const compactPickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
-  endpoints.responses?.compact || endpoints.responses?.contextManagement ? 'responses' : null;
-
 const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   // Compaction is non-streaming: the client receives one `response.compaction`
   // JSON body, reassembled by the shared responses respond from the synthesized
@@ -175,7 +165,7 @@ const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawR
       store: payload.store,
       model: payload.model,
       downstreamAbortController: undefined,
-      pickTarget: compactPickTarget,
+      pickTarget: endpoints => endpoints.responses?.compact || endpoints.responses?.contextManagement ? 'responses' : null,
       attempt: async ({ binding, target, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;

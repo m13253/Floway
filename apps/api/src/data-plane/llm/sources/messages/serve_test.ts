@@ -335,7 +335,7 @@ test('/v1/messages rewrites stored Responses reasoning signatures before the ups
     config: {
       baseUrl: 'https://messages-origin.example.com',
       bearerToken: 'sk-messages',
-      supportedEndpoints: ['/v1/messages'],
+      endpoints: { messages: {} },
     },
   }));
 
@@ -1783,7 +1783,7 @@ test('/v1/messages routes Azure Responses-only models through OpenAI v1 Response
       models: [
         {
           upstreamModelId: 'gpt-5.4-pro',
-          supportedEndpoints: ['/responses'],
+          endpoints: { responses: {} },
         },
       ],
     },
@@ -2367,7 +2367,7 @@ test('/v1/messages preserves cache_control.scope for custom Messages providers',
     config: {
       baseUrl: 'https://messages.example.com',
       bearerToken: 'sk-messages',
-      supportedEndpoints: ['/v1/messages'],
+      endpoints: { messages: {} },
     },
   }));
 
@@ -2467,7 +2467,7 @@ test('/v1/messages forwards native web search unchanged to custom Messages provi
     config: {
       baseUrl: 'https://messages-native-search.example.com',
       bearerToken: 'sk-messages',
-      supportedEndpoints: ['/v1/messages'],
+      endpoints: { messages: {} },
     },
   }));
 
@@ -2548,7 +2548,7 @@ test('/v1/messages applies native web search shim to custom Messages providers w
     config: {
       baseUrl: 'https://messages-shimmed-search.example.com',
       bearerToken: 'sk-messages',
-      supportedEndpoints: ['/v1/messages'],
+      endpoints: { messages: {} },
     },
   }));
 
@@ -2638,7 +2638,7 @@ test('/v1/messages applies native web search shim to custom Responses targets', 
     config: {
       baseUrl: 'https://responses-search.example.com',
       bearerToken: 'sk-responses',
-      supportedEndpoints: ['/responses'],
+      endpoints: { responses: {} },
     },
   }));
 
@@ -2749,7 +2749,7 @@ test('/v1/messages applies native web search shim to custom Chat Completions tar
     config: {
       baseUrl: 'https://chat-search.example.com',
       bearerToken: 'sk-chat',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -3673,7 +3673,7 @@ test('/v1/messages rejects embedding-only custom upstream model instead of legac
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: [],
+      endpoints: {  },
     },
   }));
 
@@ -3727,7 +3727,7 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 

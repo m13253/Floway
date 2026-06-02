@@ -10,7 +10,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   name: overrides.id,
   enabled: true,
   updatedAt: overrides.createdAt,
-  config: { nested: { value: overrides.id }, endpoints: ['chat_completions'] },
+  config: { nested: { value: overrides.id }, endpoints: { chatCompletions: {} } },
   flagOverrides: {},
   disabledPublicModelIds: [],
   ...overrides,
@@ -63,7 +63,7 @@ test('memory upstream repo saves, lists, updates, deletes, and clears rows', asy
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { nested: { value: 'updated' }, supportedEndpoints: ['responses'] },
+    config: { nested: { value: 'updated' }, endpoints: { responses: {} } },
     flagOverrides: { 'retry-tool-use': true },
     disabledPublicModelIds: [],
   });
@@ -157,7 +157,7 @@ const exerciseD1UpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 2,
     createdAt: '2026-05-21T10:00:02.000Z',
     updatedAt: '2026-05-21T10:00:02.000Z',
-    config: { baseUrl: 'https://custom.example/v1', bearerToken: 'sk-custom', supportedEndpoints: ['chat_completions'] },
+    config: { baseUrl: 'https://custom.example/v1', bearerToken: 'sk-custom', endpoints: { chatCompletions: {} } },
     flagOverrides: { 'z-fix': true, 'a-fix': true },
     disabledPublicModelIds: [],
   });
@@ -198,7 +198,7 @@ const exerciseD1UpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { baseUrl: 'https://updated.example/v1', bearerToken: 'sk-updated', supportedEndpoints: ['responses'] },
+    config: { baseUrl: 'https://updated.example/v1', bearerToken: 'sk-updated', endpoints: { responses: {} } },
     flagOverrides: { 'm-fix': true, 'a-fix': true },
     disabledPublicModelIds: [],
   });

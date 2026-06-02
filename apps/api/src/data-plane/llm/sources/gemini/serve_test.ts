@@ -724,7 +724,7 @@ test('/v1beta/models/:model:generateContent preserves custom upstream /models HT
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 

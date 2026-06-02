@@ -49,19 +49,27 @@ const flagOverrideValuesSchema = z.record(z.string(), z.boolean()).refine(
 // so this only trims and de-dupes rather than rejecting unknown ids.
 const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisabledPublicModelIds);
 
+// The structured endpoint capability map, shared by per-model config and the
+// custom upstream-level fallback. A present key declares the endpoint is served;
+// its value carries sub-capabilities (Responses compaction). One concept, all
+// endpoints — the runtime validators enforce presence/emptiness rules.
+const modelEndpointsSchema = z.object({
+  chatCompletions: z.object({}).optional(),
+  responses: z.object({ compact: z.boolean().optional(), contextManagement: z.boolean().optional() }).optional(),
+  messages: z.object({ countTokens: z.boolean().optional() }).optional(),
+  embeddings: z.object({}).optional(),
+  imagesGenerations: z.object({}).optional(),
+  imagesEdits: z.object({}).optional(),
+});
+
 // Mirrors the runtime UpstreamModelConfig in shared/upstream/model-config.ts.
 // Azure and custom upstreams share this per-model entry; the canonical
-// per-model endpoint-path validation lives in the runtime validator.
+// per-model endpoint validation lives in the runtime validator.
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
   publicModelId: z.string().optional(),
   kind: z.enum(['chat', 'embedding', 'image']).optional(),
-  supportedEndpoints: z.array(z.string()).min(1),
-  // Responses sub-capabilities; meaningful only when `/responses` is supported.
-  responses: z.object({
-    compact: z.boolean().optional(),
-    contextManagement: z.boolean().optional(),
-  }).optional(),
+  endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   cost: z.object({
     input: z.number().optional(),
@@ -88,9 +96,9 @@ const customConfigSchema = z.object({
   // parser in shared/upstream/custom.ts uses the same default, so accept
   // omitted authStyle here for parity with import/legacy payloads.
   authStyle: z.enum(['bearer', 'anthropic']).optional(),
-  // Generation endpoints only — embeddings routing is decided per-model from
-  // `kind === 'embedding'`, not from this list (see CLAUDE.md).
-  supportedEndpoints: z.array(z.enum(['/chat/completions', '/responses', '/v1/messages'])),
+  // Structured capability map (one concept, all endpoints) — the runtime parser
+  // permits an empty map for an upstream serving only kind-derived models.
+  endpoints: modelEndpointsSchema,
   bearerToken: z.string().optional(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch. The `/models` path no longer lives here — it is part of

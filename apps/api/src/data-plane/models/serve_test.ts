@@ -26,7 +26,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
     config: {
       baseUrl: 'https://oai.example.com',
       bearerToken: 'sk-test',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -85,7 +85,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           providers?: unknown;
           providerData?: unknown;
           endpoints?: unknown;
-          supportedEndpoints?: unknown;
           upstream?: unknown;
           upstreamModel?: unknown;
           name?: unknown;
@@ -121,7 +120,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
         assertEquals(model.endpoints, undefined);
-        assertEquals(model.supportedEndpoints, undefined);
         assertEquals(model.upstream, undefined);
         assertEquals(model.upstreamModel, undefined);
         // Copilot-only raw fields never reach the public DTO.
@@ -193,7 +191,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
     config: {
       baseUrl: 'https://images-proj.example.com',
       bearerToken: 'sk-images-proj',
-      supportedEndpoints: [],
+      endpoints: {  },
     },
   }));
 
@@ -287,7 +285,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
     config: {
       baseUrl: 'https://secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -323,7 +321,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
     config: {
       baseUrl: 'https://http-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -371,7 +369,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
     config: {
       baseUrl: 'https://throw-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -412,7 +410,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
     config: {
       baseUrl: 'https://malformed-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 

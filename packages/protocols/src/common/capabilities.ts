@@ -28,8 +28,3 @@ export interface ModelEndpoints {
 // Names a single endpoint within ModelEndpoints — used where one endpoint is
 // addressed by identity rather than as a presence map.
 export type ModelEndpointKey = keyof ModelEndpoints;
-
-export interface ModelCapabilities {
-  maxOutputTokens?: number;
-  supportedEndpoints: ModelEndpoints;
-}

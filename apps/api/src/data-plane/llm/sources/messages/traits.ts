@@ -10,7 +10,7 @@ import { createRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
 import { type LlmEndpoint, type LlmEndpointName, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
@@ -80,13 +80,6 @@ const messagesInvocation = <TPayload extends { model: string }>(
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });
 
-const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
-  if (endpoints.messages) return 'messages';
-  if (endpoints.responses) return 'responses';
-  if (endpoints.chatCompletions) return 'chat-completions';
-  return null;
-};
-
 // Maps a serve failure to the Messages (Anthropic) error envelope, shared with
 // the count_tokens path which answers in the same shape under a different
 // endpoint label. `internal` is excluded — it is rendered with a stack trace by
@@ -131,7 +124,7 @@ const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEv
       store: undefined,
       model: payload.model,
       downstreamAbortController,
-      pickTarget,
+      pickTarget: endpoints => endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : endpoints.chatCompletions ? 'chat-completions' : null,
       attempt: async ({ binding, target, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;
@@ -157,9 +150,6 @@ const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEv
 // measurement, not a stream: it gates on the `messages.countTokens` upstream
 // capability, calls that endpoint through the same count_tokens interceptors,
 // and proxies the upstream body back as a plain result.
-const pickCountTokensTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
-  endpoints.messages?.countTokens ? 'messages' : null;
-
 const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondMessages(c, result, wantsStream, request, downstreamAbortController),
@@ -177,7 +167,7 @@ const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStrea
       store: undefined,
       model: payload.model,
       downstreamAbortController: undefined,
-      pickTarget: pickCountTokensTarget,
+      pickTarget: endpoints => endpoints.messages?.countTokens ? 'messages' : null,
       attempt: async ({ binding, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;

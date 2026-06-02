@@ -375,13 +375,13 @@ test('/v1/responses prefers latest portable stored-item origin and rewrites only
     id: 'up_a',
     name: 'Origin A',
     sortOrder: 0,
-    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', endpoints: { responses: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_b',
     name: 'Origin B',
     sortOrder: 100,
-    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', endpoints: { responses: {} } },
   }));
 
   const firstItem = { type: 'reasoning', id: 'rs_first_body', summary: [{ type: 'summary_text', text: 'first' }] };
@@ -476,13 +476,13 @@ test('/v1/responses falls back with portable non-origin message items using temp
     id: 'up_a',
     name: 'Origin A',
     sortOrder: 0,
-    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://origin-a.example.com', bearerToken: 'sk-a', endpoints: { responses: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_b',
     name: 'Origin B',
     sortOrder: 100,
-    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', supportedEndpoints: ['/responses'] },
+    config: { baseUrl: 'https://origin-b.example.com', bearerToken: 'sk-b', endpoints: { responses: {} } },
   }));
 
   const firstItem = { type: 'message', id: 'msg_first_body', role: 'assistant', content: [{ type: 'output_text', text: 'first' }] };
@@ -1777,7 +1777,7 @@ test('/v1/responses preserves custom upstream /models HTTP errors', async () => 
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
-      supportedEndpoints: ['/responses'],
+      endpoints: { responses: {} },
     },
   }));
 

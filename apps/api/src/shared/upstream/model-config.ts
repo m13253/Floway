@@ -1,5 +1,5 @@
 import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
-import type { ModelKind, ModelPricing, ResponsesEndpoint } from '@floway-dev/protocols/common';
+import type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, ResponsesEndpoint } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;
@@ -15,17 +15,13 @@ export interface UpstreamModelFlagOverrides {
 export interface UpstreamModelConfig {
   upstreamModelId: string;
   publicModelId?: string;
-  // Required metadata mirroring our public model definition. Routing is still
-  // driven by supportedEndpoints (kept consistent with kind by the editor);
-  // kind decides which fields the dashboard form surfaces. Derived from the
-  // endpoints when an entry omits it.
+  // Required metadata mirroring our public model definition. Routing is driven
+  // by `endpoints` (the structured capability map: a present key means the model
+  // is served by that endpoint, its value carries the endpoint's sub-capabilities
+  // such as `responses.compact`); `kind` decides which fields the dashboard form
+  // surfaces and is derived from `endpoints` when an entry omits it.
   kind: ModelKind;
-  supportedEndpoints: string[];
-  // Operator-declared Responses sub-capabilities, meaningful only when
-  // `/responses` is among `supportedEndpoints`. Drives whether the gateway can
-  // realize `/responses/compact` for this model — natively (`compact`) or via
-  // the `context_management` parameter (`contextManagement`).
-  responses?: ResponsesEndpoint;
+  endpoints: ModelEndpoints;
   display_name?: string;
   limits?: UpstreamModelLimits;
   cost?: ModelPricing;
@@ -38,21 +34,6 @@ export const publicModelId = (model: UpstreamModelConfig): string => {
   const configured = model.publicModelId?.trim();
   return configured && configured.length > 0 ? configured : model.upstreamModelId;
 };
-
-// The accepted per-model endpoint path set. Azure exposes OpenAI v1 and
-// Anthropic deployment paths; custom upstreams pass their per-model
-// endpoints through the same validator and legitimately use the same paths
-// (`/chat/completions`, `/responses`, `/v1/messages`, ...), so this is the
-// shared set both providers validate against.
-export const OPENAI_MODEL_ENDPOINT_PATHS = new Set([
-  '/chat/completions', '/v1/chat/completions',
-  '/responses', '/v1/responses',
-  '/embeddings', '/v1/embeddings',
-  '/images/generations', '/v1/images/generations',
-  '/images/edits', '/v1/images/edits',
-]);
-export const ANTHROPIC_MODEL_ENDPOINT_PATHS = new Set(['/v1/messages', '/messages']);
-const SUPPORTED_ENDPOINT_PATHS = new Set([...OPENAI_MODEL_ENDPOINT_PATHS, ...ANTHROPIC_MODEL_ENDPOINT_PATHS]);
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -68,39 +49,41 @@ export const optionalStringField = (value: unknown, label: string): string | und
   return value;
 };
 
-export const supportedEndpointsField = (value: unknown, label: string): string[] => {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(`Malformed ${label}: must be a non-empty string array`);
-  }
-
-  const endpoints: string[] = [];
-  for (const item of value) {
-    if (typeof item !== 'string') throw new Error(`Malformed ${label}: must be a non-empty string array`);
-    if (!SUPPORTED_ENDPOINT_PATHS.has(item)) {
-      throw new Error(`Malformed ${label}: unsupported entry ${item}`);
-    }
-    if (!endpoints.includes(item)) endpoints.push(item);
-  }
-  return endpoints;
-};
-
 const optionalBooleanField = (value: unknown, label: string): boolean | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== 'boolean') throw new Error(`Malformed ${label}: must be a boolean`);
   return value;
 };
 
-// Parses the Responses sub-capability object. Each flag is optional; an absent
-// flag means the capability is unsupported. Only retained when at least one
-// flag is set, so the stored config stays clean for models that declare none.
-export const responsesEndpointField = (value: unknown, label: string): ResponsesEndpoint | undefined => {
-  if (value === undefined) return undefined;
+const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
+  'chatCompletions', 'responses', 'messages', 'embeddings', 'imagesGenerations', 'imagesEdits',
+]);
+
+// Parses the Responses endpoint's sub-capabilities. `compact` /
+// `contextManagement` are optional booleans; absent means unsupported. Empty
+// when none are set so the stored config stays clean.
+const responsesEndpointSubField = (value: Record<string, unknown>, label: string): ResponsesEndpoint => ({
+  ...(value.compact !== undefined ? { compact: optionalBooleanField(value.compact, `${label}.compact`) } : {}),
+  ...(value.contextManagement !== undefined ? { contextManagement: optionalBooleanField(value.contextManagement, `${label}.contextManagement`) } : {}),
+});
+
+// The structured per-model capability map. A present key declares the model is
+// served by that endpoint; its value object carries that endpoint's
+// sub-capabilities (only `responses` has operator-configurable ones today —
+// `messages.countTokens` is derived at load time, so it is not stored here).
+// `allowEmpty` is set for the upstream-level fallback map (an upstream may serve
+// only kind-derived embedding/image models and declare no chat endpoint).
+export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const responses: ResponsesEndpoint = {
-    ...(value.compact !== undefined ? { compact: optionalBooleanField(value.compact, `${label}.compact`) } : {}),
-    ...(value.contextManagement !== undefined ? { contextManagement: optionalBooleanField(value.contextManagement, `${label}.contextManagement`) } : {}),
-  };
-  return Object.keys(responses).length > 0 ? responses : undefined;
+  const endpoints: ModelEndpoints = {};
+  for (const [key, sub] of Object.entries(value)) {
+    if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
+    if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
+    if (key === 'responses') endpoints.responses = responsesEndpointSubField(sub, `${label}.responses`);
+    else endpoints[key as Exclude<ModelEndpointKey, 'responses'>] = {};
+  }
+  if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
+  return endpoints;
 };
 
 const optionalNumberField = (value: unknown, label: string): number | undefined => {
@@ -170,13 +153,13 @@ const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embeddi
 // kind is a pure function of the routing endpoints, so an entry that omits it
 // (an older row, or an import) derives one rather than failing. The editor
 // always writes an explicit kind, keeping it consistent with the endpoints.
-const kindFromEndpoints = (endpoints: readonly string[]): ModelKind => {
-  if (endpoints.some(e => e === '/embeddings' || e === '/v1/embeddings')) return 'embedding';
-  if (endpoints.some(e => e.includes('/images/'))) return 'image';
+const kindFromEndpoints = (endpoints: ModelEndpoints): ModelKind => {
+  if (endpoints.embeddings) return 'embedding';
+  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
   return 'chat';
 };
 
-const kindField = (value: unknown, endpoints: readonly string[], label: string): ModelKind => {
+const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): ModelKind => {
   if (value === undefined) return kindFromEndpoints(endpoints);
   if (typeof value !== 'string' || !MODEL_KINDS.has(value as ModelKind)) {
     throw new Error(`Malformed ${label}: must be one of chat, embedding, image`);
@@ -187,14 +170,12 @@ const kindField = (value: unknown, endpoints: readonly string[], label: string):
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const cost = pricingField(value.cost, `${label}.cost`);
-  const supportedEndpoints = supportedEndpointsField(value.supportedEndpoints, `${label}.supportedEndpoints`);
-  const responses = responsesEndpointField(value.responses, `${label}.responses`);
+  const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   return {
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
-    kind: kindField(value.kind, supportedEndpoints, `${label}.kind`),
-    supportedEndpoints,
-    ...(responses ? { responses } : {}),
+    kind: kindField(value.kind, endpoints, `${label}.kind`),
+    endpoints,
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
     ...(cost ? { cost } : {}),

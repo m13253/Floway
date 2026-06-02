@@ -5,7 +5,7 @@ import { assertCustomUpstreamRecord, createCustomUpstream } from '../../../share
 import { publicModelId } from '../../../shared/upstream/model-config.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
 import { mergeAnthropicBetaHeader } from '../anthropic-beta.ts';
-import { isStreamingEndpoint, kindForEndpoints, modelConfigEndpoints, publicPathsToModelEndpoints } from '../endpoints.ts';
+import { isStreamingEndpoint, kindForEndpoints, modelConfigEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '../models-store.ts';
@@ -29,7 +29,7 @@ const providerData = (model: UpstreamModel): CustomProviderData => model.provide
 // Endpoint routing for auto-fetched custom models is decided per-model:
 // `kind` comes from a tiered detector (Tier 1: upstream /models published
 // `kind`; Tier 2: id heuristic; default: 'chat'), and `endpoints` is then
-// derived from kind + the per-upstream `supportedEndpoints` config (which only
+// derived from kind + the per-upstream `endpoints` config (which only
 // declares chat-protocol availability). Display metadata (display_name /
 // created) and `cost` are surfaced through to the public catalog when the
 // upstream chose to publish them.
@@ -93,7 +93,7 @@ const pricingByRawIdFromResponse = (response: CustomModelsResponse): Map<string,
 export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
   const upstream = createCustomUpstream(record);
-  const configuredChatEndpoints = publicPathsToModelEndpoints(upstream.supportedEndpoints);
+  const configuredChatEndpoints = upstream.endpoints;
   // Computed once for the auto-fetch layer: only the upstream layer applies to
   // auto models (no per-model override layer). Manual models layer their own
   // flag overrides on top, resolved per-model below.

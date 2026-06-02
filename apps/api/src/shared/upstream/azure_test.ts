@@ -19,7 +19,7 @@ const baseRecord: UpstreamRecord = {
     models: [
       {
         upstreamModelId: 'gpt-prod',
-        supportedEndpoints: ['/chat/completions', '/responses', '/embeddings'],
+        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
       },
     ],
   },
@@ -105,7 +105,7 @@ test('createAzureUpstream accepts Foundry project endpoints for OpenAI v1 calls'
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          supportedEndpoints: ['/responses'],
+          endpoints: { responses: {} },
         },
       ],
     },
@@ -134,7 +134,7 @@ test('createAzureUpstream accepts Foundry project OpenAI v1 base URLs', async ()
       models: [
         {
           upstreamModelId: 'deepseek-prod',
-          supportedEndpoints: ['/responses', '/v1/messages'],
+          endpoints: { responses: {}, messages: {} },
         },
       ],
     },
@@ -167,7 +167,7 @@ test('createAzureUpstream keeps native Anthropic calls on the resource Anthropic
       models: [
         {
           upstreamModelId: 'claude-prod',
-          supportedEndpoints: ['/v1/messages'],
+          endpoints: { messages: {} },
         },
       ],
     },
@@ -196,7 +196,7 @@ test('createAzureUpstream supports Azure Foundry Anthropic Messages with x-api-k
       models: [
         {
           upstreamModelId: 'claude-prod',
-          supportedEndpoints: ['/v1/messages'],
+          endpoints: { messages: {} },
         },
       ],
     },
@@ -247,7 +247,7 @@ test('createAzureUpstream accepts an Azure Foundry Anthropic messages target URI
       models: [
         {
           upstreamModelId: 'claude-prod',
-          supportedEndpoints: ['/v1/messages'],
+          endpoints: { messages: {} },
         },
       ],
     },
@@ -383,7 +383,7 @@ test('assertAzureUpstreamRecord round-trips per-model flagOverrides', () => {
       models: [
         {
           upstreamModelId: 'gpt-5',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
           flagOverrides: { enabled: true, values: { 'vendor-kimi': true, 'vendor-deepseek': false } },
         },
       ],
@@ -406,7 +406,7 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               flagOverrides: { enabled: 'yes', values: {} },
             },
           ],
@@ -425,7 +425,7 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               flagOverrides: { enabled: true, values: { 'vendor-deepseek': 'on' } },
             },
           ],
@@ -446,7 +446,7 @@ test('assertAzureUpstreamRecord rejects per-model flagOverrides with unknown fla
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               flagOverrides: { enabled: true, values: { 'made-up-flag': true } },
             },
           ],
@@ -467,7 +467,7 @@ test('assertAzureUpstreamRecord reports all unknown per-model flag ids in one er
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               flagOverrides: { enabled: true, values: { 'made-up-flag': true, 'another-typo': false } },
             },
           ],
@@ -486,7 +486,7 @@ test('assertAzureUpstreamRecord round-trips model.cost with full pricing fields'
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
           cost: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 },
         },
       ],
@@ -510,7 +510,7 @@ test('createAzureUpstream accepts model without cost field', () => {
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
         },
       ],
     },
@@ -526,7 +526,7 @@ test('createAzureUpstream accepts model.cost with only input set', () => {
       models: [
         {
           upstreamModelId: 'gpt-prod',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
           cost: { input: 2.5 },
         },
       ],
@@ -545,7 +545,7 @@ test('createAzureUpstream rejects model.cost with negative input', () => {
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               cost: { input: -1, output: 1 },
             },
           ],
@@ -566,7 +566,7 @@ test('createAzureUpstream rejects model.cost with non-number input_cache_read', 
           models: [
             {
               upstreamModelId: 'gpt-prod',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               cost: { input: 2, output: 8, input_cache_read: 'cheap' },
             },
           ],

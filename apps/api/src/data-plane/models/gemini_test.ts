@@ -146,7 +146,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
     config: {
       baseUrl: 'https://custom.example.com',
       bearerToken: 'sk-custom',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -198,7 +198,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      supportedEndpoints: [],
+      endpoints: {  },
     },
   }));
 
@@ -240,7 +240,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
     config: {
       baseUrl: 'https://gemini-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -284,7 +284,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
     config: {
       baseUrl: 'https://gemini-http-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -331,7 +331,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
     config: {
       baseUrl: 'https://gemini-throw-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -375,7 +375,7 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
     config: {
       baseUrl: 'https://gemini-malformed-secret.example.com',
       bearerToken: 'sk-secret',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 

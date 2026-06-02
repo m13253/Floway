@@ -12,7 +12,7 @@ import type { UpstreamRecord } from '../../../repo/types.ts';
 import { isCopilotAccountType, type CopilotAccountType } from '../../../shared/copilot.ts';
 import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
 import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { isStreamingEndpoint, kindForEndpoints, publicPathsToModelEndpoints, withMessagesCountTokens } from '../endpoints.ts';
+import { isStreamingEndpoint, kindForEndpoints, withMessagesCountTokens } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
@@ -122,9 +122,37 @@ const inferredChatCompletionsSupport = (model: CopilotRawModel): boolean => mode
 
 const inferredEmbeddingSupport = (model: CopilotRawModel): boolean => model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
 
+// Copilot's `/models` reports each model's served endpoints as public paths; map
+// one onto our structured endpoint key. Both `/x` and `/v1/x` spellings appear.
+// Copilot is the only upstream whose catalog speaks paths — operator config and
+// our own constants are structured — so this lives here, not in a shared helper.
+const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined => {
+  switch (path) {
+  case '/chat/completions':
+  case '/v1/chat/completions':
+    return 'chatCompletions';
+  case '/responses':
+  case '/v1/responses':
+    return 'responses';
+  case '/v1/messages':
+  case '/messages':
+    return 'messages';
+  case '/embeddings':
+  case '/v1/embeddings':
+    return 'embeddings';
+  case '/images/generations':
+  case '/v1/images/generations':
+    return 'imagesGenerations';
+  case '/images/edits':
+  case '/v1/images/edits':
+    return 'imagesEdits';
+  default:
+    return undefined;
+  }
+};
+
 const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpointKey): boolean => {
-  const declared = publicPathsToModelEndpoints(model.supported_endpoints ?? []);
-  if (declared[endpoint] !== undefined) return true;
+  if ((model.supported_endpoints ?? []).some(path => copilotPathToModelEndpoint(path) === endpoint)) return true;
   // Copilot's Anthropic-family entries have historically under-reported their
   // native Messages path. Treating claude-* as Messages-capable is a
   // Copilot-provider workaround only; custom providers must declare their own

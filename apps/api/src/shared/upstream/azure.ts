@@ -1,7 +1,8 @@
 import { joinBaseAndPath } from './join.ts';
-import { ANTHROPIC_MODEL_ENDPOINT_PATHS, isRecord, modelsField, nonEmptyStringField, OPENAI_MODEL_ENDPOINT_PATHS, type UpstreamModelConfig } from './model-config.ts';
+import { isRecord, modelsField, nonEmptyStringField, type UpstreamModelConfig } from './model-config.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { UpstreamRecord } from '../../repo/types.ts';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
 
 export interface AzureUpstreamConfig {
   endpoint: string;
@@ -88,18 +89,6 @@ const azureEndpointField = (value: unknown, label: string): string => {
   return url;
 };
 
-const modelsUseAnyEndpoint = (models: readonly UpstreamModelConfig[], endpoints: ReadonlySet<string>): boolean =>
-  models.some(model => model.supportedEndpoints.some(endpoint => endpoints.has(endpoint)));
-
-const validateEndpointCoverage = (config: AzureUpstreamConfig): void => {
-  const usesOpenAi = modelsUseAnyEndpoint(config.models, OPENAI_MODEL_ENDPOINT_PATHS);
-  const usesAnthropic = modelsUseAnyEndpoint(config.models, ANTHROPIC_MODEL_ENDPOINT_PATHS);
-
-  if (!usesOpenAi && !usesAnthropic) {
-    throw new Error('Malformed azure upstream config: models must declare at least one OpenAI v1 or Anthropic endpoint');
-  }
-};
-
 export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstreamRecord => {
   if (record.provider !== 'azure') throw new Error(`Expected azure upstream record, got ${record.provider}`);
   if (!isRecord(record.config)) throw new Error('Malformed azure upstream config: config must be an object');
@@ -112,7 +101,6 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
     apiKey: nonEmptyStringField(record.config.apiKey, 'azure upstream config: apiKey'),
     models,
   };
-  validateEndpointCoverage(config);
 
   return {
     ...record,
@@ -121,15 +109,12 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
   };
 };
 
-const configuredSupportedEndpoints = (config: AzureUpstreamConfig): string[] => {
-  const endpoints: string[] = [];
-  for (const model of config.models) {
-    for (const endpoint of model.supportedEndpoints) {
-      if (!endpoints.includes(endpoint)) endpoints.push(endpoint);
-    }
-  }
-  return endpoints;
-};
+// The union of every model's declared endpoints. Azure always carries explicit
+// per-model endpoints, so this upstream-level map is informational only (the
+// per-model fallback never fires); sub-capabilities are dropped since only
+// presence matters here.
+const configuredEndpoints = (config: AzureUpstreamConfig): ModelEndpoints =>
+  config.models.reduce<ModelEndpoints>((acc, model) => ({ ...acc, ...model.endpoints }), {});
 
 const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
@@ -206,7 +191,7 @@ export const createAzureUpstream = (record: UpstreamRecord): Upstream => {
     id: record.id,
     name: record.name,
     kind: 'azure',
-    supportedEndpoints: configuredSupportedEndpoints(config),
+    endpoints: configuredEndpoints(config),
     fetch: async (endpoint, init: RequestInit, options?: UpstreamFetchOptions) => {
       const headers = new Headers(init.headers);
       if (isAnthropicEndpoint(endpoint)) {

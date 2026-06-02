@@ -78,7 +78,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
   const config = {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions'],
+    endpoints: { chatCompletions: {} },
   };
   const { config: overrideConfig, ...rest } = overrides;
 
@@ -336,7 +336,7 @@ export const stubUpstream = (overrides: Partial<Upstream> = {}): Upstream => ({
   id: 'test-upstream',
   name: 'Test Upstream',
   kind: 'custom',
-  supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages'],
+  endpoints: { chatCompletions: {}, responses: {}, messages: {} },
   fetch: () => Promise.reject(new Error('stubUpstream.fetch was called')),
   ...overrides,
 });

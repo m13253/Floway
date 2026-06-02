@@ -89,7 +89,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
     config: {
       baseUrl: 'https://chat.example.com',
       bearerToken: 'sk-chat',
-      supportedEndpoints: ['/chat/completions'],
+      endpoints: { chatCompletions: {} },
     },
   }));
 
@@ -127,7 +127,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
     config: {
       baseUrl: 'https://images.example.com',
       bearerToken: 'sk-images',
-      supportedEndpoints: [],
+      endpoints: {  },
     },
   }));
 
@@ -191,7 +191,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       apiKey: 'azkey',
       models: [{
         upstreamModelId: 'gpt-image-2',
-        supportedEndpoints: ['/v1/images/edits'],
+        endpoints: { imagesEdits: {} },
       }],
     },
   });

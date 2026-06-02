@@ -27,7 +27,7 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
     return {
       ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
       ...(config.authStyle !== undefined ? { authStyle: clone(config.authStyle) } : {}),
-      ...(config.supportedEndpoints !== undefined ? { supportedEndpoints: clone(config.supportedEndpoints) } : {}),
+      ...(config.endpoints !== undefined ? { endpoints: clone(config.endpoints) } : {}),
       ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
       ...(config.modelsFetch !== undefined ? { modelsFetch: clone(config.modelsFetch) } : {}),
       ...(config.models !== undefined ? { models: clone(config.models) } : {}),

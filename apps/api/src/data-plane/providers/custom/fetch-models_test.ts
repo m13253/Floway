@@ -19,7 +19,7 @@ const upstreamRecord = () => ({
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'token',
-    supportedEndpoints: ['/v1/chat/completions'],
+    endpoints: { chatCompletions: {} },
   },
 });
 

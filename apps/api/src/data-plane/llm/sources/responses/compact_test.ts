@@ -27,9 +27,9 @@ test('/v1/responses/compact passes through a native compaction', async () => {
       baseUrl: 'https://native.example.com',
       bearerToken: 'sk-native',
       authStyle: 'bearer',
-      supportedEndpoints: ['/responses'],
+      endpoints: { responses: {} },
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'native-compactor', kind: 'chat', supportedEndpoints: ['/responses'], responses: { compact: true } }],
+      models: [{ upstreamModelId: 'native-compactor', kind: 'chat', endpoints: { responses: { compact: true } } }],
     },
   }));
 
@@ -144,9 +144,9 @@ test('/v1/responses/compact reports not-supported when no compaction capability'
       baseUrl: 'https://plain.example.com',
       bearerToken: 'sk-plain',
       authStyle: 'bearer',
-      supportedEndpoints: ['/responses'],
+      endpoints: { responses: {} },
       modelsFetch: { enabled: false },
-      models: [{ upstreamModelId: 'plain-responses', kind: 'chat', supportedEndpoints: ['/responses'] }],
+      models: [{ upstreamModelId: 'plain-responses', kind: 'chat', endpoints: { responses: {} } }],
     },
   }));
 

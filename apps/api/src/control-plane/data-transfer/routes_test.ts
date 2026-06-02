@@ -43,7 +43,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-custom',
-    supportedEndpoints: ['/chat/completions', '/responses'],
+    endpoints: { chatCompletions: {}, responses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },
   },
 };
@@ -88,12 +88,12 @@ const AZURE_UPSTREAM: UpstreamRecord = {
         upstreamModelId: 'gpt-prod',
         publicModelId: 'gpt-public',
         kind: 'chat',
-        supportedEndpoints: ['/chat/completions', '/responses', '/embeddings'],
+        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
       },
       {
         upstreamModelId: 'deepseek-prod',
         kind: 'chat',
-        supportedEndpoints: ['/chat/completions'],
+        endpoints: { chatCompletions: {} },
       },
     ],
   },
@@ -414,7 +414,7 @@ test('import rejects invalid records before clearing existing data', async () =>
   });
   const badUpstream = await doImport(app, 'replace', {
     apiKeys: [],
-    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk', supportedEndpoints: ['chat_completions'] } }],
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk', endpoints: { bogus: {} } } }],
     usage: [],
     searchUsage: [],
     performanceIncluded: false,

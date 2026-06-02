@@ -19,7 +19,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',
-    supportedEndpoints: ['/chat/completions', '/responses', '/v1/messages'],
+    endpoints: { chatCompletions: {}, responses: {}, messages: {} },
   },
   ...overrides,
 });
@@ -189,7 +189,7 @@ test('Custom provider throws ProviderModelsUnavailableError when fetch fails bey
   assertEquals(thrown.httpResponse?.status, 429);
 });
 
-test('Custom provider uses configured supportedEndpoints regardless of per-model hints in the /models response', async () => {
+test('Custom provider uses configured endpoints regardless of per-model hints in the /models response', async () => {
   await setupAppTest();
   clearModelsStore();
 
@@ -204,7 +204,7 @@ test('Custom provider uses configured supportedEndpoints regardless of per-model
         config: {
           baseUrl: 'https://custom.example.com',
           bearerToken: 'sk-test',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
         },
       })).provider;
       const [model] = await provider.getProvidedModels();
@@ -268,7 +268,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
   await setupAppTest();
   clearModelsStore();
   const record = buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', endpoints: { chatCompletions: {} } },
   });
   await withMockedFetch(
     request => {
@@ -293,7 +293,7 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
   await setupAppTest();
   clearModelsStore();
   const record = buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', endpoints: { chatCompletions: {} } },
   });
   let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
   await withMockedFetch(
@@ -323,7 +323,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   await setupAppTest();
   clearModelsStore();
   const record = buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', endpoints: { chatCompletions: {} } },
   });
   let forwarded: { url: string; form: FormData } | undefined;
   await withMockedFetch(
@@ -365,13 +365,13 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
         config: {
           baseUrl: 'https://custom.example.com',
           bearerToken: 'sk-test',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
           modelsFetch: { enabled: false },
           models: [
             {
               upstreamModelId: 'pinned-chat',
               publicModelId: 'pinned',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
               cost: { input: 1, output: 2 },
@@ -420,12 +420,12 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         config: {
           baseUrl: 'https://custom.example.com',
           bearerToken: 'sk-test',
-          supportedEndpoints: ['/chat/completions'],
+          endpoints: { chatCompletions: {} },
           modelsFetch: { enabled: true },
           models: [
             {
               upstreamModelId: 'shared',
-              supportedEndpoints: ['/chat/completions'],
+              endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
               cost: { input: 1, output: 2 },
             },

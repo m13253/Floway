@@ -9,7 +9,7 @@ import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@floway-dev/translate';
@@ -32,13 +32,6 @@ const chatCompletionsInvocation = <TPayload extends { model: string }>(
   payload,
   headers: {} as Record<string, string>,
 });
-
-const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
-  if (endpoints.chatCompletions) return 'chat-completions';
-  if (endpoints.messages) return 'messages';
-  if (endpoints.responses) return 'responses';
-  return null;
-};
 
 // OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body.
@@ -84,7 +77,7 @@ const chatCompletionsGenerate: LlmEndpoint<readonly ChatCompletionsMessage[], Ch
       store: payload.store,
       model: payload.model,
       downstreamAbortController,
-      pickTarget,
+      pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
       attempt: async ({ binding, target, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;

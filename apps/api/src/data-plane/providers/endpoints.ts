@@ -21,57 +21,6 @@ export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint
 export const isStreamingEndpoint = (endpoint: EndpointKey): boolean =>
   endpoint === 'chat_completions' || endpoint === 'responses' || endpoint === 'messages';
 
-const ENDPOINT_TO_PUBLIC_PATH: Record<ModelEndpointKey, string> = {
-  chatCompletions: '/chat/completions',
-  responses: '/responses',
-  messages: '/v1/messages',
-  embeddings: '/embeddings',
-  imagesGenerations: '/images/generations',
-  imagesEdits: '/images/edits',
-};
-
-export const modelEndpointToPublicPath = (endpoint: ModelEndpointKey): string => ENDPOINT_TO_PUBLIC_PATH[endpoint];
-
-export const publicPathToModelEndpoint = (path: string): ModelEndpointKey | undefined => {
-  switch (path) {
-  case '/chat/completions':
-  case '/v1/chat/completions':
-    return 'chatCompletions';
-  case '/responses':
-  case '/v1/responses':
-    return 'responses';
-  case '/v1/messages':
-  case '/messages':
-    return 'messages';
-  case '/embeddings':
-  case '/v1/embeddings':
-    return 'embeddings';
-  case '/images/generations':
-  case '/v1/images/generations':
-    return 'imagesGenerations';
-  case '/images/edits':
-  case '/v1/images/edits':
-    return 'imagesEdits';
-  default:
-    return undefined;
-  }
-};
-
-export const publicPathsToModelEndpoints = (paths: readonly string[]): ModelEndpoints => {
-  const endpoints: ModelEndpoints = {};
-  for (const path of paths) {
-    const endpoint = publicPathToModelEndpoint(path);
-    if (endpoint) endpoints[endpoint] ??= {};
-  }
-  return endpoints;
-};
-
-// Lists the public paths for the present endpoint keys. Auxiliary sub-caps
-// (compact / contextManagement / countTokens) share a primary endpoint's input
-// and are not advertised as standalone model paths.
-export const modelEndpointsToPublicPaths = (endpoints: ModelEndpoints): string[] =>
-  (Object.keys(endpoints) as ModelEndpointKey[]).map(modelEndpointToPublicPath);
-
 // Derive the high-level model kind from the supported endpoints. Each model
 // belongs to exactly one kind. `embeddings` implies embedding,
 // `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
@@ -84,21 +33,12 @@ export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   return 'chat';
 };
 
-// A manually configured model declares only its chat-protocol availability via
-// `supportedEndpoints`. We augment with `messages.countTokens` whenever
-// `messages` is present so the count-tokens endpoint routes alongside it without
-// the operator having to list it explicitly.
+// `messages.countTokens` is not operator-configured: it is derived here whenever
+// `messages` is present so the count-tokens endpoint routes alongside it.
 export const withMessagesCountTokens = (endpoints: ModelEndpoints): ModelEndpoints =>
   endpoints.messages ? { ...endpoints, messages: { ...endpoints.messages, countTokens: true } } : { ...endpoints };
 
-// A manually configured model declares its chat-protocol availability via
-// `supportedEndpoints` and, for Responses, its compaction sub-capabilities via
-// `responses`. We augment with `messages.countTokens` whenever `messages` is
-// present so the count-tokens endpoint routes alongside it without the operator
-// having to list it explicitly, and fold the operator-declared Responses
-// sub-capabilities onto the `responses` endpoint when it is present.
-export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoints => {
-  const endpoints = withMessagesCountTokens(publicPathsToModelEndpoints(model.supportedEndpoints));
-  if (endpoints.responses && model.responses) endpoints.responses = { ...endpoints.responses, ...model.responses };
-  return endpoints;
-};
+// A manually configured model declares its structured `endpoints` directly; we
+// only derive the `messages.countTokens` sub-capability on top.
+export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoints =>
+  withMessagesCountTokens(model.endpoints);
