@@ -26,13 +26,17 @@ interface StatefulResponsesBacking {
   refreshSnapshot(apiKeyId: string | null, id: string, refreshedAt: number): Promise<void>;
 }
 
-interface StatefulResponsesReadTarget {
-  readonly backing: StatefulResponsesBacking;
-}
-
 interface StatefulResponsesWriteTarget {
   readonly backing: StatefulResponsesBacking;
   readonly durable: boolean;
+}
+
+interface LayeredStatefulResponsesStoreOptions {
+  readonly apiKeyId: string | null;
+  readonly reads: readonly StatefulResponsesBacking[];
+  readonly itemWrites: readonly StatefulResponsesWriteTarget[];
+  readonly snapshotWrites: readonly StatefulResponsesWriteTarget[];
+  readonly stageInputs: boolean;
 }
 
 export interface WebSocketStatefulResponsesStoragePolicy {
@@ -62,7 +66,7 @@ export interface StatefulResponsesStore {
   refreshTouchedItems(): Promise<void>;
 }
 
-class HttpStatefulResponsesStore implements StatefulResponsesStore {
+class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItemsById = new Map<string, StoredResponsesItem>();
   private readonly loadedItemsByContentHash = new Map<string, StoredResponsesItem[]>();
   private readonly loadedItemsByEncryptedContentHash = new Map<string, StoredResponsesItem[]>();
@@ -81,15 +85,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
   private readonly refreshedItemIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
 
-  constructor(
-    private readonly options: {
-      readonly apiKeyId: string | null;
-      readonly reads: readonly StatefulResponsesReadTarget[];
-      readonly itemWrites: readonly StatefulResponsesWriteTarget[];
-      readonly snapshotWrites: readonly StatefulResponsesWriteTarget[];
-      readonly stageInputs: boolean;
-    },
-  ) {}
+  constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
     const cached = this.snapshotsById.get(id);
@@ -98,8 +94,8 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       return cloneStoredResponsesSnapshot(cached);
     }
 
-    for (const read of this.options.reads) {
-      const snapshot = await read.backing.lookupSnapshot(this.options.apiKeyId, id);
+    for (const backing of this.options.reads) {
+      const snapshot = await backing.lookupSnapshot(this.options.apiKeyId, id);
       if (snapshot === null) continue;
       await this.loadItems({ ids: snapshot.itemIds, contentHashes: [], encryptedContentHashes: [] });
       if (!snapshot.itemIds.every(itemId => {
@@ -222,12 +218,12 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
 
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[]; encryptedContentHashes: readonly string[] }): Promise<void> {
     let ids = query.ids.filter(id => !this.loadedItemsById.has(id));
-    let contentHashes = query.contentHashes.filter(hash => !this.loadedItemsByContentHash.has(hash));
-    let encryptedContentHashes = query.encryptedContentHashes.filter(hash => !this.loadedItemsByEncryptedContentHash.has(hash));
+    const contentHashes = [...new Set(query.contentHashes)];
+    const encryptedContentHashes = [...new Set(query.encryptedContentHashes)];
 
-    for (const read of this.options.reads) {
+    for (const backing of this.options.reads) {
       if (ids.length === 0 && contentHashes.length === 0 && encryptedContentHashes.length === 0) return;
-      const results = await read.backing.lookupItems({
+      const results = await backing.lookupItems({
         apiKeyId: this.options.apiKeyId,
         ids,
         contentHashes,
@@ -235,8 +231,6 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       });
       for (const result of results) this.rememberItem(result.row, { durable: result.durable });
       ids = ids.filter(id => !this.loadedItemsById.has(id));
-      contentHashes = contentHashes.filter(hash => !this.loadedItemsByContentHash.has(hash));
-      encryptedContentHashes = encryptedContentHashes.filter(hash => !this.loadedItemsByEncryptedContentHash.has(hash));
     }
   }
 
@@ -520,9 +514,9 @@ class MemoryStatefulResponsesBacking implements StatefulResponsesBacking {
 }
 
 export const createHttpStatefulResponsesStore = (apiKeyId: string | null, store: boolean | null | undefined): StatefulResponsesStore =>
-  createStatefulResponsesStore({
+  new LayeredStatefulResponsesStore({
     apiKeyId,
-    reads: [{ backing: new RepoStatefulResponsesBacking(getRepo) }],
+    reads: [new RepoStatefulResponsesBacking(getRepo)],
     itemWrites: [{ backing: new RepoStatefulResponsesBacking(getRepo), durable: true }],
     snapshotWrites: store === false ? [] : [{ backing: new RepoStatefulResponsesBacking(getRepo), durable: true }],
     stageInputs: store !== false,
@@ -533,27 +527,49 @@ export const createWebSocketStatefulResponsesSession = () => {
   const repoBacking = new RepoStatefulResponsesBacking(getRepo);
   return {
     createStore(apiKeyId: string | null, store: boolean | null | undefined): WebSocketStatefulResponsesStoragePolicy {
-      const reads = [{ backing: localBacking }, { backing: repoBacking }];
-      const localWrite = { backing: localBacking, durable: false };
-      const repoWrite = { backing: repoBacking, durable: true };
-      const statefulResponsesStore = createStatefulResponsesStore({
-        apiKeyId,
-        reads,
-        itemWrites: store === false ? [localWrite] : [localWrite, repoWrite],
-        snapshotWrites: store === false ? [localWrite] : [localWrite, repoWrite],
-        stageInputs: store !== false,
-      });
-      return {
-        statefulResponsesStore,
-        outputStore: store === false ? true : store,
-        commitSnapshot: true,
-      };
+      return store === false
+        ? webSocketSessionOnlyPolicy(apiKeyId, localBacking, repoBacking)
+        : webSocketDurablePolicy(apiKeyId, store, localBacking, repoBacking);
     },
   };
 };
 
-const createStatefulResponsesStore = (options: ConstructorParameters<typeof HttpStatefulResponsesStore>[0]): StatefulResponsesStore =>
-  new HttpStatefulResponsesStore(options);
+const webSocketSessionOnlyPolicy = (
+  apiKeyId: string | null,
+  localBacking: StatefulResponsesBacking,
+  repoBacking: StatefulResponsesBacking,
+): WebSocketStatefulResponsesStoragePolicy => ({
+  statefulResponsesStore: new LayeredStatefulResponsesStore({
+    apiKeyId,
+    reads: [localBacking, repoBacking],
+    itemWrites: [{ backing: localBacking, durable: false }],
+    snapshotWrites: [{ backing: localBacking, durable: false }],
+    stageInputs: true,
+  }),
+  outputStore: true,
+  commitSnapshot: true,
+});
+
+const webSocketDurablePolicy = (
+  apiKeyId: string | null,
+  store: boolean | null | undefined,
+  localBacking: StatefulResponsesBacking,
+  repoBacking: StatefulResponsesBacking,
+): WebSocketStatefulResponsesStoragePolicy => {
+  const localWrite = { backing: localBacking, durable: false };
+  const repoWrite = { backing: repoBacking, durable: true };
+  return {
+    statefulResponsesStore: new LayeredStatefulResponsesStore({
+      apiKeyId,
+      reads: [localBacking, repoBacking],
+      itemWrites: [localWrite, repoWrite],
+      snapshotWrites: [localWrite, repoWrite],
+      stageInputs: true,
+    }),
+    outputStore: store,
+    commitSnapshot: true,
+  };
+};
 
 const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {
   const rows = target.get(hash) ?? [];

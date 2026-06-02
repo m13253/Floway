@@ -2,9 +2,10 @@ import type { Context } from 'hono';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createWebSocketStatefulResponsesSession } from './stateful-store.ts';
-import { responsesTraits, setupResponsesWebSocketSource } from './traits.ts';
+import { responsesTraits, setupResponsesSource } from './traits.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
+import { toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
 import type { ExecuteResult, PlainResult } from '../../shared/errors/result.ts';
 import type { StreamCompletion } from '../../shared/stream/proxy-sse.ts';
 import { executeLlmSourcePlan } from '../execution.ts';
@@ -101,9 +102,11 @@ const handleClientMessage = async (
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
     const storage = session.createStore((c.get('apiKeyId') as string | undefined) ?? null, payload.store);
-    const plan = await setupResponsesWebSocketSource(c, payload, {
+    const plan = await setupResponsesSource(c, payload, {
       downstreamAbortController,
-      storage,
+      statefulResponsesStore: storage.statefulResponsesStore,
+      storedItemsStore: storage.outputStore,
+      commitSnapshot: storage.commitSnapshot,
     });
     if (plan instanceof Response) {
       if (signal.aborted || isClosed()) return;
@@ -285,9 +288,8 @@ const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<RawRes
 });
 
 const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
-  type: 'server_error',
-  code: 'server_error',
-  message: error instanceof Error ? error.message : String(error),
+  ...toInternalDebugError(error, 'responses'),
+  code: 'internal_error',
 });
 
 const tokenUsageFromResponsesResult = (response: ResponsesResult) => {

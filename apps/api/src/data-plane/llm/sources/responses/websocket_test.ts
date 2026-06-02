@@ -1,6 +1,7 @@
 import type { ExecutionContext } from 'hono';
 import { test } from 'vitest';
 
+import { hashResponsesItemContent } from './items/format.ts';
 import { app } from '../../../../app.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes } from '../../../../test-assert.ts';
 import { copilotModels, jsonResponse, setupAppTest, sseResponsesResponse, withMockedFetch } from '../../../../test-helpers.ts';
@@ -337,9 +338,16 @@ test('Responses WebSocket store:false keeps previous_response_id state in the se
           store: false,
         },
       }));
-      await firstDone;
+      const firstMessages = await firstDone;
 
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_first'), null);
+      const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
+      assertExists(firstOutput?.item?.id);
+      assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
+      assertEquals(
+        await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
+        [],
+      );
 
       const secondDone = waitForMessages(client, messages => messages.filter(message => message.type === 'response.done').length === 1);
       client.send(JSON.stringify({
@@ -371,13 +379,16 @@ test('Responses WebSocket store:false keeps previous_response_id state in the se
   const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
   assertEquals(secondBody.previous_response_id, undefined);
   assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
+    ['message', 'user', 'first question'],
     ['message', 'assistant', [{ type: 'output_text', text: 'first answer' }]],
     ['message', 'user', 'second question'],
   ]);
   const thirdBody = upstreamBodies[2] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
   assertEquals(thirdBody.previous_response_id, undefined);
   assertEquals(thirdBody.input.map(item => [item.type, item.role, item.content]), [
+    ['message', 'user', 'first question'],
     ['message', 'assistant', [{ type: 'output_text', text: 'first answer' }]],
+    ['message', 'user', 'second question'],
     ['message', 'assistant', [{ type: 'output_text', text: 'second answer' }]],
     ['message', 'user', 'third question'],
   ]);

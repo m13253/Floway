@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { respondResponses } from './respond.ts';
-import type { StatefulResponsesStore, WebSocketStatefulResponsesStoragePolicy } from './stateful-store.ts';
+import type { StatefulResponsesStore } from './stateful-store.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
@@ -161,21 +161,6 @@ export const setupResponsesSource = async (
     },
   };
 };
-
-export const setupResponsesWebSocketSource = async (
-  c: Context,
-  payload: ResponsesPayload,
-  options: {
-    readonly downstreamAbortController: AbortController;
-    readonly storage: WebSocketStatefulResponsesStoragePolicy;
-  },
-): Promise<LlmEndpointPlan<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> | Response> =>
-  await setupResponsesSource(c, payload, {
-    downstreamAbortController: options.downstreamAbortController,
-    statefulResponsesStore: options.storage.statefulResponsesStore,
-    storedItemsStore: options.storage.outputStore,
-    commitSnapshot: options.storage.commitSnapshot,
-  });
 
 const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
