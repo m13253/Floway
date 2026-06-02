@@ -57,7 +57,7 @@ export interface RequestContext {
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
   statefulResponsesContext: StatefulResponsesContext;
-  statefulResponsesStore?: StatefulResponsesStore;
+  statefulResponsesStore: StatefulResponsesStore;
 }
 
 /**
