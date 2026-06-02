@@ -33,12 +33,12 @@
 
 import type { Hono } from 'hono';
 
-import { codexAnalyticsEvents, codexPluginsFeatured, codexPluginsList, codexPsPluginsInstalled, codexWhamAgentIdentitiesJwks, codexWhamApps } from './chatgpt-backend.ts';
+import { codexWhamAgentIdentitiesJwks, stub200, stub404 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import { responsesTraits } from '../llm/sources/responses/traits.ts';
 import { serveLlm } from '../llm/sources/serve.ts';
 
-export const CODEX_BASE_PATH = '/azure-api.codex';
+const CODEX_BASE_PATH = '/azure-api.codex';
 
 export const mountCodexRoutes = (app: Hono) => {
   const serveResponses = serveLlm(responsesTraits);
@@ -47,9 +47,9 @@ export const mountCodexRoutes = (app: Hono) => {
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
 
   app.get(`${CODEX_BASE_PATH}/wham/agent-identities/jwks`, codexWhamAgentIdentitiesJwks);
-  app.post(`${CODEX_BASE_PATH}/wham/apps`, codexWhamApps);
-  app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEvents);
-  app.get(`${CODEX_BASE_PATH}/plugins/featured`, codexPluginsFeatured);
-  app.get(`${CODEX_BASE_PATH}/plugins/list`, codexPluginsList);
-  app.get(`${CODEX_BASE_PATH}/ps/plugins/installed`, codexPsPluginsInstalled);
+  app.post(`${CODEX_BASE_PATH}/wham/apps`, stub404);
+  app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, stub200);
+  app.get(`${CODEX_BASE_PATH}/plugins/featured`, stub404);
+  app.get(`${CODEX_BASE_PATH}/plugins/list`, stub404);
+  app.get(`${CODEX_BASE_PATH}/ps/plugins/installed`, stub404);
 };

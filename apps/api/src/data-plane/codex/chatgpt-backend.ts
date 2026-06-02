@@ -25,13 +25,7 @@
 
 import type { Context } from 'hono';
 
-const empty200 = (c: Context) => c.body(null, 200);
-const empty404 = (c: Context) => c.json({ error: 'not_found' }, 404);
-
 export const codexWhamAgentIdentitiesJwks = (c: Context) => c.json({ keys: [] });
 
-export const codexWhamApps = empty404;
-export const codexAnalyticsEvents = empty200;
-export const codexPluginsFeatured = empty404;
-export const codexPluginsList = empty404;
-export const codexPsPluginsInstalled = empty404;
+export const stub200 = (c: Context) => c.body(null, 200);
+export const stub404 = (c: Context) => c.json({ error: 'not_found' }, 404);

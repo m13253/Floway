@@ -19,7 +19,15 @@
 // then bump the tag reference in this comment to match.
 
 import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
-import type { CodexCatalog } from './patches.ts';
+
+interface CatalogModel {
+  slug: string;
+  [key: string]: unknown;
+}
+
+export interface CodexCatalog {
+  models: CatalogModel[];
+}
 
 const VERSION_FROM_USER_AGENT = /codex_exec\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/;
 

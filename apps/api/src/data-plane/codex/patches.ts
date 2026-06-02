@@ -8,7 +8,9 @@
 // untouched so floway tracks upstream codex behavior automatically when
 // it changes between releases.
 
-export interface ModelOverride {
+import type { CodexCatalog } from './catalog.ts';
+
+interface ModelOverride {
   context_window?: number;
   max_context_window?: number;
   effective_context_window_percent?: number;
@@ -34,19 +36,10 @@ const ONE_M_OVERRIDE: ModelOverride = {
   auto_compact_token_limit: 945000,
 };
 
-export const CODEX_MODEL_OVERRIDES: Record<string, ModelOverride> = {
+const CODEX_MODEL_OVERRIDES: Record<string, ModelOverride> = {
   'gpt-5.5': ONE_M_OVERRIDE,
   'gpt-5.4': ONE_M_OVERRIDE,
 };
-
-interface CatalogModel {
-  slug: string;
-  [key: string]: unknown;
-}
-
-export interface CodexCatalog {
-  models: CatalogModel[];
-}
 
 export const applyCodexOverrides = (catalog: CodexCatalog): CodexCatalog => ({
   models: catalog.models.map(model => {

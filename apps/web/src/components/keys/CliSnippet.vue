@@ -121,9 +121,9 @@ const codexSnippet = computed(() => [
   'wire_api = "responses"',
 ].join('\n'));
 
-// Heredoc keeps codex's JSON-strict shape intact; outer single-quoted nodes
-// would clash with the base64url id_token. The auth.json content is the only
-// place we ship the user's API key as the literal bearer codex will resend.
+// Unquoted heredoc so `$(date -u +...)` runs in the user's shell to stamp
+// last_refresh at paste time. base64url chars are shell-safe so the JSON
+// body needs no escaping beyond what JSON.stringify produces.
 const codexAuthCommand = computed(() => {
   const auth = {
     auth_mode: 'chatgpt',

@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyCodexOverrides, CODEX_MODEL_OVERRIDES, type CodexCatalog } from './patches.ts';
+import type { CodexCatalog } from './catalog.ts';
+import { applyCodexOverrides } from './patches.ts';
 
 describe('applyCodexOverrides', () => {
+  const ONE_M = {
+    context_window: 1050000,
+    max_context_window: 1050000,
+    effective_context_window_percent: 100,
+    auto_compact_token_limit: 945000,
+  };
+
   it('overrides only the fields declared per slug, leaves other entries untouched', () => {
     const input: CodexCatalog = {
       models: [
@@ -12,24 +20,8 @@ describe('applyCodexOverrides', () => {
       ],
     };
     const out = applyCodexOverrides(input);
-    const gpt55 = out.models.find(m => m.slug === 'gpt-5.5');
-    expect(gpt55).toMatchObject({
-      slug: 'gpt-5.5',
-      context_window: 1050000,
-      max_context_window: 1050000,
-      effective_context_window_percent: 100,
-      auto_compact_token_limit: 945000,
-      base_instructions: 'unchanged',
-    });
-    const gpt54 = out.models.find(m => m.slug === 'gpt-5.4');
-    expect(gpt54).toMatchObject({
-      slug: 'gpt-5.4',
-      context_window: 1050000,
-      max_context_window: 1050000,
-      effective_context_window_percent: 100,
-      auto_compact_token_limit: 945000,
-      base_instructions: 'unchanged-too',
-    });
+    expect(out.models.find(m => m.slug === 'gpt-5.5')).toMatchObject({ slug: 'gpt-5.5', ...ONE_M, base_instructions: 'unchanged' });
+    expect(out.models.find(m => m.slug === 'gpt-5.4')).toMatchObject({ slug: 'gpt-5.4', ...ONE_M, base_instructions: 'unchanged-too' });
     expect(out.models.find(m => m.slug === 'gpt-5.3-codex')).toEqual({ slug: 'gpt-5.3-codex', context_window: 272000 });
   });
 
@@ -43,16 +35,5 @@ describe('applyCodexOverrides', () => {
     const snapshot = JSON.parse(JSON.stringify(input)) as CodexCatalog;
     applyCodexOverrides(input);
     expect(input).toEqual(snapshot);
-  });
-
-  it('declares the 1M-context tier identically for both gpt-5.5 and gpt-5.4', () => {
-    const expected = {
-      context_window: 1050000,
-      max_context_window: 1050000,
-      effective_context_window_percent: 100,
-      auto_compact_token_limit: 945000,
-    };
-    expect(CODEX_MODEL_OVERRIDES['gpt-5.5']).toEqual(expected);
-    expect(CODEX_MODEL_OVERRIDES['gpt-5.4']).toEqual(expected);
   });
 });

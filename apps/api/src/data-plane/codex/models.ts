@@ -9,8 +9,8 @@
 // Catalog source: dynamic by codex client version (see catalog.ts) with a
 // bundled snapshot as fallback. Overrides for individual model fields live
 // in patches.ts so we track upstream codex behavior automatically and only
-// diverge on the fields we explicitly need to (currently: 1M-context gates
-// for gpt-5.5).
+// diverge on the fields we explicitly need to (currently: the 1M-context
+// tier for gpt-5.5 and gpt-5.4).
 
 import type { Context } from 'hono';
 
