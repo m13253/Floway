@@ -18,7 +18,7 @@ import type { ResponsesOutputWebSearchCall, ResponsesStreamEvent } from './index
 // `Optional`) parse the start frame the same way they parse the
 // end frame. Native upstreams omit `action` on `.added` and only
 // populate it on `.done`; the shim diverges here because it always
-// knows the action at start time (the umbrella's parsed arguments
+// knows the action at start time (the shim's parsed arguments
 // produce the action shape before any backend work).
 //   https://github.com/openai/openai-python/blob/HEAD/src/openai/types/responses/response_function_web_search.py
 

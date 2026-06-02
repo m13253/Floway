@@ -231,7 +231,7 @@ const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNam
   // Responses targets receive those entries unchanged; this translator
   // narrows to function and Freeform `custom` tools, recording the latter
   // in `customToolNames` so the events translator can reverse the wrap.
-  // The umbrella shim's web_search function tool reaches this code under
+  // The shim's web_search function tool reaches this code under
   // its resolved name as an ordinary function tool — no special carve-out
   // needed.
   const out: MessagesTool[] = [];

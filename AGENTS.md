@@ -120,11 +120,23 @@ not match the code that the same agent is still running against. That
 window is hard to avoid, so every production deploy must be a deliberate,
 announced step.
 
-Always tell the user before you deploy. If the user already asked for the
-deploy up front, you do not have to re-ask for confirmation, but you still
-explicitly announce that the deploy is starting. Beyond that single
-announcement, the flow proceeds autonomously — no further confirmation
-between steps.
+Tell the user once, before Step 1 begins. If the user already asked for
+the deploy up front, you do not need to re-ask, but you still explicitly
+announce that the deploy is starting. That announcement is the only place
+during a deploy where the agent talks *to* the user instead of running the
+next tool.
+
+After that announcement the deploy is fully autonomous and must not stop.
+Never end a turn waiting for the user to reply or to take any action — no
+"shall I continue?", no "ready for Step 3?", no implicit pause after
+printing rollback commands, no waiting for the user to acknowledge the
+backup path. As soon as a step's tool output is in hand, the very next
+agent turn must call the next step's tool. The only legitimate reasons to
+stop are: the Worker is live and Step 3 succeeded, or a tool exited
+non-zero and the failure genuinely requires human judgement. Reporting
+findings, printing commands, and announcing the next step are inlined
+*alongside* the next tool call in the same turn — never as a standalone
+turn that ends and waits.
 
 Substitute `<WORKER_NAME>` (top-level `name`) and `<DB_NAME>` (the D1
 binding's `database_name`) from `wrangler.jsonc` wherever those
@@ -195,5 +207,11 @@ A complete deploy fits in a strict turn budget: **three agent turns when
 migrations are pending** (Step 1 = gather, Step 2 = backup + report + two
 rollback commands, Step 3 = deploy) and **two agent turns when no
 migrations are pending** (Step 2 collapses into Turn 1: gather + report +
-single code-rollback command; Turn 2 = deploy). Do not insert extra turns
-to ask for confirmation along the way.
+single code-rollback command; Turn 2 = deploy). A turn boundary in this
+flow exists only because a tool result has to arrive before the next tool
+call can be issued — it is never a checkpoint where the agent stops and
+waits for the user. Every turn in this budget ends on its step's tool
+call, and the agent re-enters the loop the instant that tool result
+returns. Do not insert extra turns to ask for confirmation along the way,
+and do not let any turn end on a text-only message that has no tool call
+attached.

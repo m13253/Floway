@@ -169,8 +169,7 @@ const retryCyberPolicyEvents = async function* (
  * - https://deploymentsafety.openai.com/gpt-5-3-codex/cybersecurity
  *
  * TODO: Add gateway-side recent cyber-policy retry/error-log storage so
- * operators can inspect detailed upstream failures, matching the web-search shim
- * error-log TODO pattern.
+ * operators can inspect detailed upstream failures.
  */
 export const withCyberPolicyRetried: ResponsesInterceptor = async (ctx, request, run) => {
   if (!ctx.enabledFlags.has('retry-cyber-policy')) return await run();
