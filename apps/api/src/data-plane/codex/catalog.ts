@@ -8,10 +8,15 @@
 //   4. Fall back to the bundled snapshot on any failure: missing/unparseable
 //      user-agent, GitHub 404 (unreleased version), network error
 //
-// The bundled snapshot is a frozen copy from openai/codex (Apache-2.0,
-// https://github.com/openai/codex/blob/main/codex-rs/models-manager/models.json).
-// It guarantees the endpoint stays useful for cold starts, network-restricted
-// operators, and clients running unreleased builds.
+// The bundled snapshot is a frozen copy of
+//   https://github.com/openai/codex/blob/rust-v0.136.0/codex-rs/models-manager/models.json
+// (Apache-2.0). It is the working fallback for cold starts, clients running
+// unreleased prerelease builds, and operators behind network egress
+// restrictions. Refresh it whenever a newer codex release ships material
+// changes to the catalog:
+//   curl -sf https://raw.githubusercontent.com/openai/codex/rust-v<NEW>/codex-rs/models-manager/models.json \
+//     > apps/api/src/data-plane/codex/catalog/bundled.json
+// then bump the tag reference in this comment to match.
 
 import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
 import type { CodexCatalog } from './patches.ts';
