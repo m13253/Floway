@@ -676,6 +676,19 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
   // well under the cap (the `api_key_id` bind shares the budget) and union
   // the results.
   private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+    interface ResponsesItemRow {
+      id: string;
+      api_key_id: string | null;
+      upstream_id: string | null;
+      upstream_item_id: string | null;
+      item_type: string;
+      origin: StoredResponsesItem['origin'];
+      payload_json: string | null;
+      encrypted_content_hash: string | null;
+      created_at: number;
+      refreshed_at: number;
+    }
+
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
 
@@ -766,19 +779,6 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     }
     for (const statement of statements) await statement.run();
   }
-}
-
-interface ResponsesItemRow {
-  id: string;
-  api_key_id: string | null;
-  upstream_id: string | null;
-  upstream_item_id: string | null;
-  item_type: string;
-  origin: StoredResponsesItem['origin'];
-  payload_json: string | null;
-  encrypted_content_hash: string | null;
-  created_at: number;
-  refreshed_at: number;
 }
 
 class D1SearchConfigRepo implements SearchConfigRepo {
