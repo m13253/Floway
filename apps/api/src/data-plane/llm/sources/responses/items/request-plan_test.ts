@@ -80,6 +80,7 @@ const storedRow = (
     apiKeyId: API_KEY_ID,
     upstreamId: null,
     upstreamItemId: null,
+    origin: overrides.origin ?? (overrides.upstreamId === undefined || overrides.upstreamId === null ? 'synthetic' : 'upstream'),
     encryptedContentHash: null,
     payload: payload === undefined || payload === null
       ? null
@@ -87,6 +88,7 @@ const storedRow = (
         ? payload as StoredResponsesItem['payload']
         : { item: payload },
     createdAt: 1_000,
+    refreshedAt: 1_000,
     ...rest,
   };
 };

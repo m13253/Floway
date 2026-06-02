@@ -131,14 +131,17 @@ const buildRow = async (
   // client stripped fields from the echoed wire item.
   const privatePayload = request.statefulResponsesContext.privatePayload.get(upstreamId);
   const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
+  const now = Date.now();
   return {
     id: newId,
     apiKeyId: request.apiKeyId ?? null,
     upstreamId: upstreamOwned ? context.upstream : null,
     upstreamItemId: upstreamOwned ? upstreamId : null,
     itemType: originalItem.type,
+    origin: upstreamOwned ? 'upstream' : 'synthetic',
     payload: context.store === false ? null : persistedPayload,
     encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
-    createdAt: Date.now(),
+    createdAt: now,
+    refreshedAt: now,
   };
 };

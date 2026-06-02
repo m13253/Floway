@@ -425,7 +425,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
         rows.push(cloneStoredResponsesItem(row));
       }
     }
-    return Promise.resolve(rows);
+    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
@@ -437,10 +437,22 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve();
   }
 
-  clearPayloadOlderThan(createdBefore: number): Promise<number> {
+  refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
+    let changes = 0;
+    for (const id of new Set(ids)) {
+      const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
+      if (row && row.refreshedAt < refreshedAt) {
+        row.refreshedAt = refreshedAt;
+        changes += 1;
+      }
+    }
+    return Promise.resolve(changes);
+  }
+
+  clearPayloadOlderThan(refreshedBefore: number): Promise<number> {
     let changes = 0;
     for (const row of this.store.values()) {
-      if (row.createdAt < createdBefore && row.payload !== null) {
+      if (row.refreshedAt < refreshedBefore && row.payload !== null) {
         row.payload = null;
         changes += 1;
       }
@@ -448,10 +460,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(changes);
   }
 
-  deleteOlderThan(createdBefore: number): Promise<number> {
+  deleteOlderThan(refreshedBefore: number): Promise<number> {
     let changes = 0;
     for (const [id, row] of this.store) {
-      if (row.createdAt < createdBefore) {
+      if (row.refreshedAt < refreshedBefore) {
         this.store.delete(id);
         changes += 1;
       }
@@ -469,6 +481,9 @@ const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesIte
   ...item,
   payload: item.payload === null ? null : structuredClone(item.payload),
 });
+
+const compareResponsesItemsByFreshness = (a: StoredResponsesItem, b: StoredResponsesItem): number =>
+  b.refreshedAt - a.refreshedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id);
 
 const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `${apiKeyId ?? ''}\0${id}`;
 
