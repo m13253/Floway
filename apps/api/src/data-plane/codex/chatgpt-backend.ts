@@ -22,17 +22,12 @@
 //   AgentIdentity login path; ChatGPT-mode never hits it. An empty JWKS
 //   keeps the endpoint present for deployments that later wire it up.
 //
-// /wham/apps — codex registers this as a Streamable HTTP MCP server
-//   (codex-rs/codex-mcp/src/mcp/mod.rs:434-477). A static 200 still fails
-//   the JSON-RPC `initialize` handshake, and the registration is
-//   `required: false` so a 404 only produces a warn-log. We leave it at
-//   404 — implementing a real empty-tool MCP server is the only way to
-//   silence it for real, and the user-visible UX is identical.
+// The /api/codex/apps MCP server lives in its own file (./apps-mcp.ts)
+// because it carries real JSON-RPC plumbing.
 
 import type { Context } from 'hono';
 
 export const codexWhamAgentIdentitiesJwks = (c: Context) => c.json({ keys: [] });
-export const codexWhamApps = (c: Context) => c.json({ error: 'not_found' }, 404);
 
 export const codexAnalyticsEventsEvents = (c: Context) => c.body(null, 200);
 

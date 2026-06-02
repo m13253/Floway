@@ -22,8 +22,12 @@
 // segment for the catalog / analytics / compaction endpoints
 // (`<chatgpt_base_url>/codex/models`, `…/codex/analytics-events/events`,
 // `…/codex/responses/compact`) while leaving `wham/*`, `plugins/*`, and
-// `ps/plugins/*` directly under the base. The mount table below mirrors
-// codex's actual request paths exactly.
+// `ps/plugins/*` directly under the base. The Apps MCP server lives at
+// `/api/codex/apps` — when the chatgpt base contains neither `/backend-api`
+// nor `/api/codex`, codex's `codex_apps_mcp_url_for_base_url`
+// (codex-rs/codex-mcp/src/mcp/mod.rs:422-446) appends `/api/codex` itself
+// and uses `apps` as the path; the mount below mirrors that derivation
+// exactly.
 //
 // Auth: this whole namespace is reached through the same `authMiddleware`
 // that protects every other API route. The operator forges
@@ -42,6 +46,7 @@
 
 import type { Hono } from 'hono';
 
+import { codexAppsMcp } from './apps-mcp.ts';
 import {
   codexAnalyticsEventsEvents,
   codexPluginsFeatured,
@@ -49,7 +54,6 @@ import {
   codexPsPluginsInstalled,
   codexPsPluginsList,
   codexWhamAgentIdentitiesJwks,
-  codexWhamApps,
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import { responsesTraits } from '../llm/sources/responses/traits.ts';
@@ -65,8 +69,9 @@ export const mountCodexRoutes = (app: Hono) => {
   app.get(`${CODEX_BASE_PATH}/codex/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
 
+  app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);
+
   app.get(`${CODEX_BASE_PATH}/wham/agent-identities/jwks`, codexWhamAgentIdentitiesJwks);
-  app.post(`${CODEX_BASE_PATH}/wham/apps`, codexWhamApps);
 
   app.get(`${CODEX_BASE_PATH}/plugins/featured`, codexPluginsFeatured);
   app.get(`${CODEX_BASE_PATH}/plugins/list`, codexPluginsList);
