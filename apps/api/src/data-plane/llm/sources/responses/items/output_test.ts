@@ -28,6 +28,7 @@ const makeRequest = (
   privatePayloads: Iterable<readonly [string, unknown]> = [],
 ): RequestContext => ({
   requestStartedAt: 0,
+  apiKeyUpstreamIds: null,
   apiKeyId,
   runtimeLocation: 'test',
   clientStream: true,

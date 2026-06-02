@@ -51,6 +51,7 @@ const baseRequest = (
   overrides: { downstreamAbortSignal?: AbortSignal; stream?: boolean; apiKeyId?: string | undefined } = {},
 ): RequestContext => ({
   requestStartedAt: 0,
+  apiKeyUpstreamIds: null,
   statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  apiKeyId: 'apiKeyId' in overrides ? overrides.apiKeyId : 'key_a',
   clientStream: overrides.stream ?? true,
   runtimeLocation: 'SJC',
@@ -317,6 +318,7 @@ test('withUpstreamTelemetry skips recording when apiKeyId is absent', async () =
     },
     {
       requestStartedAt: 0,
+      apiKeyUpstreamIds: null,
       statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },      clientStream: true,
       runtimeLocation: 'SJC',
       scheduleBackground: promise => background.push(promise),

@@ -329,6 +329,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
 
 const makeRequest = (apiKeyId: string | undefined = 'k1'): RequestContext => ({
   requestStartedAt: 0,
+  apiKeyUpstreamIds: null,
   statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
   runtimeLocation: 'test',
   clientStream: true,
@@ -4470,6 +4471,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const inv = makeInvocation();
   const request: RequestContext = {
     requestStartedAt: 0,
+    apiKeyUpstreamIds: null,
     statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
     runtimeLocation: 'test',
     clientStream: true,

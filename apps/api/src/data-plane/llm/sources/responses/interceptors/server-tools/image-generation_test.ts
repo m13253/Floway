@@ -37,7 +37,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   headers: {},
   payload: { model: 'm', input: [], ...payload } as ResponsesPayload,
 });
-const REQ = { requestStartedAt: 0, runtimeLocation: 'test', clientStream: true } as RequestContext;
+const REQ = { requestStartedAt: 0, apiKeyUpstreamIds: null, runtimeLocation: 'test', clientStream: true } as RequestContext;
 
 const imageMessage = (mime: string): ResponsesInputItem => ({
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],

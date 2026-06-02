@@ -19,6 +19,7 @@ const baseInvocation = (): Invocation<{ model: string; stream?: boolean }> => ({
 
 const baseRequest = (): RequestContext => ({
   requestStartedAt: 0,
+  apiKeyUpstreamIds: null,
   statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  apiKeyId: 'key_a',
   clientStream: true,
   runtimeLocation: 'SJC',

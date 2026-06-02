@@ -5,9 +5,9 @@ import { createHttpRequestContext } from './request-context.ts';
 import { type LlmEndpointName, type LlmServeFailure, LlmServeFailureError, type LlmSourceRuntime, type LlmSourceTraits, type Result } from './traits.ts';
 
 // HTTP adapter for every LLM source endpoint. The adapter owns Hono request
-// setup and Response rendering; the Hono-free execution core owns stored-item
-// lookup, provider selection, per-attempt execution, and output-item commit
-// timing.
+// setup, Response rendering, and the response-success gate for non-streaming
+// output-item commits. The Hono-free execution core owns stored-item lookup,
+// provider selection, per-attempt execution, and output-item wrapping.
 
 export const serveLlm = <TItems, TEvent>(
   traits: LlmSourceTraits<TItems, TEvent>,

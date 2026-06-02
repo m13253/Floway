@@ -15,23 +15,6 @@ import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } fr
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload): ResponsesPayload => {
-  if (payload.model !== 'codex-auto-review') return payload;
-
-  // TODO: Replace this source-entry hardcode with generic model alias support.
-  // Codex sends auto-review requests over the Responses wire API, so rewriting
-  // here keeps downstream routing, performance telemetry, and usage accounting
-  // on the real model name.
-  // References:
-  // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/model-provider/src/provider.rs#L73-L96
-  // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/codex-api/src/endpoint/responses.rs#L102-L134
-  return {
-    ...payload,
-    model: 'gpt-5.4',
-    reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
-  };
-};
-
 const responsesInvocation = <TPayload extends { model: string }>(
   binding: ProviderModelRecord,
   targetApi: LlmTargetApi,
@@ -75,7 +58,7 @@ const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[],
   respond: async ({ c, result, runtime }) =>
     await respondResponses(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
   prepare: async c => {
-    const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
+    const sourcePayload = await c.req.json<ResponsesPayload>();
     // previous_response_id relies on server-side conversation state that this
     // gateway does not implement. Stored Responses item ids are handled below; a
     // plain previous response pointer still gets OpenAI's not-found contract so
@@ -85,11 +68,11 @@ const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[],
     // - https://github.com/microsoft/semantic-kernel/issues/13128
     // - https://github.com/router-for-me/CLIProxyAPI/issues/999
     // - https://github.com/openai/openai-agents-python/issues/2020
-    if (payload.previous_response_id !== undefined && payload.previous_response_id !== null) {
+    if (sourcePayload.previous_response_id !== undefined && sourcePayload.previous_response_id !== null) {
       return Response.json(
         {
           error: {
-            message: `Previous response with id '${payload.previous_response_id}' not found.`,
+            message: `Previous response with id '${sourcePayload.previous_response_id}' not found.`,
             type: 'invalid_request_error',
             param: 'previous_response_id',
             code: 'previous_response_not_found',
@@ -98,6 +81,20 @@ const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[],
         { status: 400 },
       );
     }
+    // TODO: Replace this source-entry hardcode with generic model alias support.
+    // Codex sends auto-review requests over the Responses wire API, so rewriting
+    // here keeps downstream routing, performance telemetry, and usage accounting
+    // on the real model name.
+    // References:
+    // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/model-provider/src/provider.rs#L73-L96
+    // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/codex-api/src/endpoint/responses.rs#L102-L134
+    const payload: ResponsesPayload = sourcePayload.model === 'codex-auto-review'
+      ? {
+          ...sourcePayload,
+          model: 'gpt-5.4',
+          reasoning: { ...(sourcePayload.reasoning ?? {}), effort: 'low' },
+        }
+      : sourcePayload;
     const wantsStream = payload.stream === true;
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);

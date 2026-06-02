@@ -37,6 +37,7 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
 
 const stubRequest = (overrides: { downstreamAbortSignal?: AbortSignal } = {}): RequestContext => ({
   requestStartedAt: 0,
+  apiKeyUpstreamIds: null,
   statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: true,
   ...(overrides.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: overrides.downstreamAbortSignal } : {}),

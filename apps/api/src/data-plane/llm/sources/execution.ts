@@ -3,10 +3,8 @@ import { responsesItemId } from './responses/items/format.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import {
   planResponsesItemProviders,
-  type PreparedStoredResponsesItems,
   prepareStoredResponsesItemsForSource,
   rewriteStoredResponsesItemsForProvider,
-  type StoredResponsesProviderPlan,
 } from './responses/items/request-plan.ts';
 import type { LlmEndpointPlan, LlmServeFailure, Result } from './traits.ts';
 
@@ -25,15 +23,6 @@ export const executeLlmSourcePlan = async <TItems, TEvent>(
   if (prepared.failures[0]) return { result: renderFailure(prepared.failures[0]) };
 
   const providerPlan = planResponsesItemProviders(await listModelProviders(plan.request.apiKeyUpstreamIds), prepared);
-  return await attemptProviders(providerPlan, plan, prepared, renderFailure);
-};
-
-const attemptProviders = async <TItems, TEvent>(
-  providerPlan: StoredResponsesProviderPlan,
-  plan: LlmEndpointPlan<TItems, TEvent>,
-  prepared: PreparedStoredResponsesItems,
-  renderFailure: RenderLlmFailure<TEvent>,
-): Promise<LlmSourceExecution<TEvent>> => {
   if (providerPlan.type === 'failure') return { result: renderFailure(providerPlan.failure) };
 
   let sawModel = false;

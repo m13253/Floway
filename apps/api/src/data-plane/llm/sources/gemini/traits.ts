@@ -147,7 +147,7 @@ const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamE
         const invocation: MessagesInvocation = geminiInvocation(binding, 'messages', resolvedModelId, countPayload);
         const response = await runInterceptors(invocation, request, invocation.targetInterceptors?.messagesCountTokens ?? [], async () => {
           const { model: _model, ...callBody } = invocation.payload;
-          const result = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, callBody, undefined, invocation.headers);
+          const result = await invocation.provider.callMessagesCountTokens(invocation.upstreamModel, callBody, undefined, invocation.headers);
           return result.response;
         });
         if (!response.ok) {
