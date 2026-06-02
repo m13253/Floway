@@ -1,4 +1,4 @@
-import type { ResponsesCompactionItem, ResponsesInputItem, ResponsesInputMessage, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { ResponsesCompactionItem, ResponsesCompactionTriggerItem, ResponsesInputItem, ResponsesInputMessage, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
 
 // Copilot has no native `/responses/compact`, so we replicate codex's
 // RemoteCompactionV2: drive a normal `/responses` turn with a trailing
@@ -10,7 +10,7 @@ import type { ResponsesCompactionItem, ResponsesInputItem, ResponsesInputMessage
 // client to resend `output` verbatim as the next turn's `input`.
 // Reference (codex @ ebb79803697acee75baf24073ef49af87ad7e483):
 //   codex-rs/core/src/compact_remote_v2.rs#L409-L457
-export const COMPACTION_TRIGGER = { type: 'compaction_trigger' } as const;
+export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
 // codex's retained-message budget (its comment notes it mirrors the server-side
 // `/responses/compact` default) and its token heuristic `ceil(utf8_bytes / 4)`,

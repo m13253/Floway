@@ -324,7 +324,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       // SSE-forcing `call` helper) and re-emit the rebuilt envelope as SSE so it
       // flows the same target pipeline as a native compact. compaction.ts does
       // the codex-equivalent trigger + retained-message reshape.
-      const triggered = { ...body, input: [...input, COMPACTION_TRIGGER as unknown as ResponsesInputItem], stream: false, model: rawModel.id };
+      const triggered = { ...body, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
       const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined);
       if (!response.ok) return { response, modelKey: rawModel.id };
       const generated = (await response.json()) as ResponsesResult;

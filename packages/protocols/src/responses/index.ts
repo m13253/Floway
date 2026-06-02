@@ -50,6 +50,7 @@ export type ResponsesInputItem =
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
   | ResponsesCompactionItem
+  | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem
@@ -191,6 +192,12 @@ export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'
 }
 
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
+
+// codex's RemoteCompactionV2 trigger: a payload-free input item appended last to
+// a `/responses` call to request a compaction. Modeled permissively so callers
+// can build it without a cast; the translators reject it like any item they do
+// not handle.
+export type ResponsesCompactionTriggerItem = ResponsesPermissiveItem<'compaction_trigger'>;
 
 export interface ResponsesCodeInterpreterCallItem extends ResponsesPermissiveItem<'code_interpreter_call'> {
   call_id?: string;
