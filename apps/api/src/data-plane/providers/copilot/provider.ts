@@ -187,6 +187,10 @@ const chatReasoningEffort = (body: Omit<ChatCompletionsPayload, 'model'>): strin
 
 const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
 
+// The upstream fetch takes no options when there are no extra headers to attach.
+const extraHeaderOptions = (headers: Record<string, string> | undefined): { extraHeaders: Record<string, string> } | undefined =>
+  headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined;
+
 const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
 const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
@@ -268,7 +272,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         body: JSON.stringify(requestBody),
         signal,
       },
-      headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+      extraHeaderOptions(headers),
     );
     return { response, modelKey: rawModel.id };
   };
@@ -325,7 +329,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       // flows the same target pipeline as a native compact. compaction.ts does
       // the codex-equivalent trigger + retained-message reshape.
       const triggered = { ...body, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-      const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined);
+      const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, extraHeaderOptions(headers));
       if (!response.ok) return { response, modelKey: rawModel.id };
       const generated = (await response.json()) as ResponsesResult;
       return { response: compactionResultToSse(compactionResponse(input, generated)), modelKey: rawModel.id };
