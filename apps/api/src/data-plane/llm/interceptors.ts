@@ -31,7 +31,7 @@ export interface RequestContext {
   readonly scheduleBackground?: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
-  statefulResponsesStore?: StatefulResponsesStore;
+  statefulResponsesStore: StatefulResponsesStore;
 }
 
 /**

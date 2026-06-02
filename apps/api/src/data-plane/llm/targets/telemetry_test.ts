@@ -6,6 +6,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../test-helpers.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
+import { createHttpStatefulResponsesStore } from '../sources/responses/stateful-store.ts';
 
 interface TelemetryHarness {
   repo: InMemoryRepo;
@@ -54,6 +55,7 @@ const baseRequest = (
   apiKeyUpstreamIds: null,
   apiKeyId: 'apiKeyId' in overrides ? overrides.apiKeyId : 'key_a',
   clientStream: overrides.stream ?? true,
+  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
   runtimeLocation: 'SJC',
   scheduleBackground: (promise: Promise<unknown>) => {
     harness.background.push(promise);
@@ -320,6 +322,7 @@ test('withUpstreamTelemetry skips recording when apiKeyId is absent', async () =
       requestStartedAt: 0,
       apiKeyUpstreamIds: null,
       clientStream: true,
+      statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
       runtimeLocation: 'SJC',
       scheduleBackground: promise => background.push(promise),
     },

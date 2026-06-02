@@ -98,8 +98,9 @@ export interface LlmSourceRuntime {
 export interface LlmEndpointPlan<TItems, TEvent> extends LlmSourceRuntime {
   readonly items: TItems;
   readonly responsesItemsView: ResponsesItemsView<TItems, Frame<TEvent>>;
-  // `store: false` requests persist null payloads; sources that have no
-  // `store` concept (Messages, Gemini) pass `undefined`.
+  // Controls Responses output item persistence: `store: false` keeps routing
+  // metadata with null payloads. Input staging and snapshot commits are gated
+  // separately because only native Responses requests expose those concepts.
   readonly store: boolean | null | undefined;
   readonly statefulResponsesInputItems?: readonly ResponsesInputItem[];
   readonly commitStatefulResponsesSnapshot?: boolean;

@@ -507,13 +507,17 @@ test('id-less reasoning is matched by encrypted_content hash and prefers its own
   assertEquals(await rewriteResponsesItems(items, prepared, provider('up_b')), []);
 });
 
-test('matched stored items are refreshed during preparation', async () => {
+test('matched stored items are refreshed when selected touches are flushed', async () => {
   const id = storedReasoningId('refresh');
   const repo = await insertRows([
     storedRow({ id, itemType: 'reasoning', upstreamId: 'up_a', upstreamItemId: 'raw_rs_a', payload: null, createdAt: 1_000, refreshedAt: 1_000 }),
   ]);
+  const items = [{ type: 'item_reference', id }] as const;
+  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
 
-  await prepareResponsesItems([{ type: 'item_reference', id }]);
+  await store.loadInputItems({ sourceItems: items, view: responsesItemsView });
+  await prepareStoredResponsesItemsForSource(items, responsesItemsView, store);
+  await store.refreshTouchedItems();
 
   const [row] = await repo.responsesItems.lookupMany(API_KEY_ID, [id]);
   assert(row.refreshedAt > 1_000);
@@ -556,6 +560,36 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
 
   // At the forced owner the compaction is stamped with the upstream's item id.
   assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), [{ type: 'compaction', encrypted_content: enc, id: 'raw_cmp_a' }]);
+});
+
+test('id-less encrypted_content skips fresher incompatible hash candidates', async () => {
+  const enc = 'shared-encrypted-content';
+  const hash = await hashResponsesItemEncryptedContent(enc);
+  const incompatible = storedRow({
+    id: storedMessageId('incompatible'),
+    itemType: 'message',
+    upstreamId: 'up_b',
+    upstreamItemId: 'raw_msg_b',
+    encryptedContentHash: hash,
+    createdAt: 3_000,
+    refreshedAt: 3_000,
+  });
+  const compatible = storedRow({
+    id: storedReasoningId('compatible'),
+    itemType: 'reasoning',
+    upstreamId: 'up_a',
+    upstreamItemId: 'raw_rs_a',
+    encryptedContentHash: hash,
+    createdAt: 2_000,
+    refreshedAt: 2_000,
+  });
+  await insertRows([compatible, incompatible]);
+
+  const items = [{ type: 'reasoning', encrypted_content: enc, summary: [] }] as unknown as ResponsesInputItem[];
+  const prepared = await prepareResponsesItems(items);
+
+  assertEquals(prepared.references[0].row?.id, compatible.id);
+  assertEquals(await rewriteResponsesItems(items, prepared, provider('up_a')), [{ type: 'reasoning', encrypted_content: enc, summary: [], id: 'raw_rs_a' }]);
 });
 
 test('id-less encrypted_content with no stored match is a benign passthrough', async () => {

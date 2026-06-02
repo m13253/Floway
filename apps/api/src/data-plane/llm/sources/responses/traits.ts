@@ -1,6 +1,5 @@
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { respondResponses } from './respond.ts';
-import { statefulResponsesStoreForRequest } from './stateful-store.ts';
 import type { ProviderModelRecord } from '../../../providers/types.ts';
 import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
@@ -109,7 +108,7 @@ const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[],
     const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream, { store: payload.store });
     const currentInputItems = responsesInputItemsForStorage(payload.input);
     const previousResponseId = payload.previous_response_id ?? null;
-    const statefulResponsesStore = statefulResponsesStoreForRequest(request);
+    const statefulResponsesStore = request.statefulResponsesStore;
     if (previousResponseId !== null) {
       const snapshot = await statefulResponsesStore.loadSnapshot(previousResponseId);
       if (snapshot === null) return previousResponseNotFoundResponse(previousResponseId);

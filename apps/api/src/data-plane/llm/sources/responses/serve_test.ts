@@ -147,6 +147,60 @@ test('/v1/responses expands previous_response_id from the stored snapshot', asyn
   assertEquals(secondInput[2].content, 'Continue');
 });
 
+test('/v1/responses treats snapshots with expired input payloads as missing previous responses', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const id = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([
+    {
+      id,
+      apiKeyId: apiKey.id,
+      upstreamId: null,
+      upstreamItemId: null,
+      itemType: 'message',
+      origin: 'input',
+      contentHash: null,
+      encryptedContentHash: null,
+      payload: null,
+      createdAt: Date.now(),
+      refreshedAt: Date.now(),
+    },
+  ]);
+  await repo.responsesSnapshots.insert({
+    id: 'resp_expired_input',
+    apiKeyId: apiKey.id,
+    itemIds: [id],
+    createdAt: Date.now(),
+    refreshedAt: Date.now(),
+  });
+  let fetchCalls = 0;
+
+  await withMockedFetch(
+    () => {
+      fetchCalls++;
+      throw new Error('unexpected upstream fetch');
+    },
+    async () => {
+      const response = await requestApp('/v1/responses', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({
+          model: 'gpt-direct-responses',
+          previous_response_id: 'resp_expired_input',
+          input: [{ type: 'message', role: 'user', content: 'Continue' }],
+          stream: false,
+        }),
+      });
+
+      assertEquals(response.status, 400);
+      const body = await response.json();
+      assertEquals(body.error.param, 'previous_response_id');
+      assertEquals(body.error.code, 'previous_response_not_found');
+    },
+  );
+
+  assertEquals(fetchCalls, 0);
+});
+
 test('/v1/responses reuses stored input items when clients resend full history', async () => {
   const { apiKey, repo } = await setupAppTest();
   const userItem = { type: 'message' as const, role: 'user' as const, content: 'Repeat me' };

@@ -3,7 +3,7 @@ import { jsonrepair } from 'jsonrepair';
 import type { InterceptorRun, RequestContext, ResponsesInterceptor, ResponsesInvocation } from '../../../interceptors.ts';
 import type { EventResultMetadata, ExecuteResult } from '../../../shared/errors/result.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
-import { statefulResponsesStoreForRequest, type StatefulResponsesStore } from '../stateful-store.ts';
+import type { StatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   ResponsesInputItem,
@@ -1009,7 +1009,7 @@ export const withResponsesServerToolShim = (
       demoteForcedServerToolChoiceAfterFirstTurn,
       turn1Iter,
       dispatchers,
-      statefulResponsesStore: statefulResponsesStoreForRequest(request),
+      statefulResponsesStore: request.statefulResponsesStore,
       canonicalInput,
       active,
       metadata,

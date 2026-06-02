@@ -65,7 +65,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   const failures: StoredResponsesItemsFailure[] = [];
   for (const ref of references) {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
-      ?? (ref.encryptedContent !== undefined ? store.getItemByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!) : undefined);
+      ?? (ref.encryptedContent !== undefined ? selectEncryptedContentRow(ref, store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!)) : undefined);
     if (row === undefined) {
       // `item_reference` asserts a stored row, and a parseable gateway id names
       // one too, so either resolving to nothing is a hard not-found. An id-less
@@ -76,6 +76,7 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
       continue;
     }
 
+    store.touchItem(row.id);
     ref.row = row;
     if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
@@ -101,6 +102,12 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     preferredUpstreamIds: collectPreferredUpstreams(references),
   };
 };
+
+const selectEncryptedContentRow = (
+  ref: StoredResponsesItemRef,
+  candidates: readonly StoredResponsesItem[],
+): StoredResponsesItem | undefined =>
+  candidates.find(row => ref.type === 'item_reference' || row.itemType === ref.type) ?? candidates[0];
 
 export const planResponsesItemProviders = (
   providers: readonly ModelProviderInstance[],

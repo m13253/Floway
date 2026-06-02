@@ -6,6 +6,7 @@ import { respondChatCompletions } from './chat-completions/respond.ts';
 import { respondGemini } from './gemini/respond.ts';
 import { respondMessages } from './messages/respond.ts';
 import { respondResponses } from './responses/respond.ts';
+import { createHttpStatefulResponsesStore } from './responses/stateful-store.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { eventResult } from '../shared/errors/result.ts';
@@ -124,6 +125,7 @@ const request = (): RequestContext => ({
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
   clientStream: true,
+  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 });
 
 test('Messages streaming keepalive uses Anthropic ping events', async () => {

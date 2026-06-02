@@ -56,7 +56,7 @@ Open the deployed URL, log in with `ADMIN_KEY`, and:
    agent config.
 
 Import/export of upstreams, keys, and search config is in Settings; it uses the
-latest `version: 2` payload shape.
+latest `version: 3` payload shape.
 
 ## Server Tools
 

@@ -1,7 +1,6 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
-import { statefulResponsesStoreForRequest } from '../stateful-store.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type {
   ResponsesItemFinalizedHandler,
@@ -69,7 +68,7 @@ export const storeResponsesOutputItems = <TFrame>(
   wantsStream: boolean,
 ): StoredResponsesItemsStream<TFrame> => {
   const upstreamToStored = new Map<string, string>();
-  const statefulResponsesStore = statefulResponsesStoreForRequest(request);
+  const statefulResponsesStore = request.statefulResponsesStore;
 
   // An upstream id that happens to parse as a gateway stored id is not
   // special-cased: `request-plan.ts` rewrites our stored ids away before the
@@ -141,7 +140,7 @@ const buildRow = async (
   // interceptor synthesized this request, whose gateway-minted ids the
   // upstream never issued. Those persist with no upstream identity so they
   // stay non_affinity.
-  const statefulResponsesStore = statefulResponsesStoreForRequest(request);
+  const statefulResponsesStore = request.statefulResponsesStore;
   const upstreamOwned = context.targetApi === 'responses' && !statefulResponsesStore.isSyntheticItem(upstreamId);
   const encryptedContent = responsesItemEncryptedContent(originalItem);
   // Source interceptors register the per-item server-only payload under the

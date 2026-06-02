@@ -5,6 +5,7 @@ import { assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { LlmSourceApi, RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
+import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -13,6 +14,7 @@ const stubRequest: RequestContext = {
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
   clientStream: false,
+  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 };
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>

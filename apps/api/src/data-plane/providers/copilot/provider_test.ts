@@ -6,6 +6,7 @@ import { assertEquals, assertRejects } from '../../../test-assert.ts';
 import { copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { runInterceptors, type MessagesInvocation, type RequestContext } from '../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../llm/shared/errors/result.ts';
+import { createHttpStatefulResponsesStore } from '../../llm/sources/responses/stateful-store.ts';
 import { clearModelsStore, ProviderModelsUnavailableError } from '../models-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -372,6 +373,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
     apiKeyUpstreamIds: null,
     runtimeLocation: 'test',
     clientStream: false,
+    statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
   };
 
   const testTelemetryModelIdentity = {

@@ -29,7 +29,7 @@ import type {
 } from '../../../../tools/web-search/types.ts';
 import type { RequestContext, ResponsesInterceptor, ResponsesInvocation } from '../../../interceptors.ts';
 import type { EventResult, ExecuteResult } from '../../../shared/errors/result.ts';
-import { createHttpStatefulResponsesStore, statefulResponsesStoreForRequest } from '../stateful-store.ts';
+import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -654,7 +654,7 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
   // them with no upstream identity (non_affinity).
   const doneEvents = outputItemDoneEvents(frames);
   const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
-  const store = statefulResponsesStoreForRequest(request);
+  const store = request.statefulResponsesStore;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));

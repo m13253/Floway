@@ -5,7 +5,6 @@ import { loadSearchConfig } from '../../../../../tools/web-search/search-config.
 import { searchWebAndRecordUsage, searchWebWithoutRecordingUsage } from '../../../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
-import { statefulResponsesStoreForRequest } from '../../stateful-store.ts';
 import { serverToolResultSlot, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
@@ -1335,7 +1334,7 @@ export const webSearchServerTool: ServerToolRegistration = (ctx, request) => {
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => statefulResponsesStoreForRequest(request).getPrivatePayload(id)),
+    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => request.statefulResponsesStore.getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
           hosted: {

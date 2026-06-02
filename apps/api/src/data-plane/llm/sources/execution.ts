@@ -5,14 +5,13 @@ import {
   prepareStoredResponsesItemsForSource,
   rewriteStoredResponsesItemsForProvider,
 } from './responses/items/request-plan.ts';
-import { statefulResponsesStoreForRequest } from './responses/stateful-store.ts';
 import type { LlmEndpointPlan, LlmServeFailure, Result } from './traits.ts';
 
 export const executeLlmSourcePlan = async <TItems, TEvent>(
   plan: LlmEndpointPlan<TItems, TEvent>,
   renderFailure: (failure: LlmServeFailure) => Result<TEvent>,
 ): Promise<{ result: Result<TEvent>; commitForNonStreaming?: ResponsesItemsCommit }> => {
-  const statefulResponsesStore = statefulResponsesStoreForRequest(plan.request);
+  const statefulResponsesStore = plan.request.statefulResponsesStore;
   await statefulResponsesStore.loadInputItems({
     sourceItems: plan.items,
     view: plan.responsesItemsView,
@@ -21,6 +20,7 @@ export const executeLlmSourcePlan = async <TItems, TEvent>(
   const prepared = await prepareStoredResponsesItemsForSource(plan.items, plan.responsesItemsView, statefulResponsesStore);
   if (prepared.failures[0]) return { result: renderFailure(prepared.failures[0]) };
   if (plan.statefulResponsesInputItems !== undefined) await statefulResponsesStore.stageInputItems(plan.statefulResponsesInputItems);
+  await statefulResponsesStore.refreshTouchedItems();
 
   const providerPlan = planResponsesItemProviders(await listModelProviders(plan.request.apiKeyUpstreamIds), prepared);
   if (providerPlan.type === 'failure') return { result: renderFailure(providerPlan.failure) };

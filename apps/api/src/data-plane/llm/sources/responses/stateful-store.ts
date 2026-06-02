@@ -1,7 +1,6 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './items/format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
-import type { RequestContext } from '../../interceptors.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -13,7 +12,8 @@ export interface StatefulResponsesStore {
     readonly inputItemsToStage?: readonly ResponsesInputItem[];
   }): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
-  getItemByEncryptedContentHash(hash: string): StoredResponsesItem | undefined;
+  getItemsByEncryptedContentHash(hash: string): StoredResponsesItem[];
+  touchItem(id: string): void;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
   beginAttempt(references: Iterable<{ readonly row?: StoredResponsesItem }>): void;
   addSyntheticItem(id: string, privatePayload?: unknown): void;
@@ -22,6 +22,7 @@ export interface StatefulResponsesStore {
   stageOutputItem(row: StoredResponsesItem): void;
   commitOutputItems(): Promise<void>;
   commitSnapshot(responseId: string): Promise<void>;
+  refreshTouchedItems(): Promise<void>;
 }
 
 class HttpStatefulResponsesStore implements StatefulResponsesStore {
@@ -43,10 +44,14 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
   private readonly refreshedItemIds = new Set<string>();
 
   constructor(
-    private readonly repo: Repo,
+    private readonly repoProvider: Repo | (() => Repo),
     private readonly apiKeyId: string | null,
     private readonly store: boolean | null | undefined,
   ) {}
+
+  private get repo(): Repo {
+    return typeof this.repoProvider === 'function' ? this.repoProvider() : this.repoProvider;
+  }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
     const cached = this.snapshotsById.get(id);
@@ -57,6 +62,11 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
 
     const snapshot = await this.repo.responsesSnapshots.lookup(this.apiKeyId, id);
     if (snapshot === null) return null;
+    await this.loadItems({ ids: snapshot.itemIds, contentHashes: [], encryptedContentHashes: [] });
+    if (!snapshot.itemIds.every(itemId => {
+      const row = this.loadedItemsById.get(itemId);
+      return row !== undefined && isReplayableSnapshotRow(row);
+    })) return null;
     this.rememberSnapshot(snapshot);
     this.previousSnapshotItemIds = [...snapshot.itemIds];
     for (const itemId of snapshot.itemIds) this.touchedItemIds.add(itemId);
@@ -89,17 +99,20 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       contentHashes: [...contentHashes],
       encryptedContentHashes: [...encryptedContentHashes],
     });
-    await this.refreshTouchedItems();
   }
 
   getItemById(id: string): StoredResponsesItem | undefined {
     const row = this.loadedItemsById.get(id) ?? this.stagedInputItems.get(id) ?? this.stagedOutputItems.get(id);
+    if (row) this.touchItem(row.id);
     return row ? cloneStoredResponsesItem(row) : undefined;
   }
 
-  getItemByEncryptedContentHash(hash: string): StoredResponsesItem | undefined {
-    const row = this.loadedItemsByEncryptedContentHash.get(hash)?.[0];
-    return row ? cloneStoredResponsesItem(row) : undefined;
+  getItemsByEncryptedContentHash(hash: string): StoredResponsesItem[] {
+    return (this.loadedItemsByEncryptedContentHash.get(hash) ?? []).map(cloneStoredResponsesItem);
+  }
+
+  touchItem(id: string): void {
+    this.touchedItemIds.add(id);
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
@@ -173,7 +186,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       this.repo.responsesItems.lookupManyByContentHash(this.apiKeyId, contentHashes),
       this.repo.responsesItems.lookupManyByEncryptedContentHash(this.apiKeyId, encryptedContentHashes),
     ]);
-    for (const row of [...byId, ...byContentHash, ...byEncryptedContentHash]) this.rememberItem(row, { touch: true });
+    for (const row of [...byId, ...byContentHash, ...byEncryptedContentHash]) this.rememberItem(row);
   }
 
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
@@ -199,8 +212,10 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
 
     const encryptedContent = responsesItemEncryptedContent(item);
     if (encryptedContent !== null) {
-      const row = this.getItemByEncryptedContentHash(await hashResponsesItemEncryptedContent(encryptedContent));
+      const row = this.getItemsByEncryptedContentHash(await hashResponsesItemEncryptedContent(encryptedContent))
+        .find(candidate => candidate.itemType === item.type);
       if (row !== undefined) {
+        this.touchItem(row.id);
         if (row.payload !== null) {
           this.stagedInputItemIds.push(row.id);
           return;
@@ -213,6 +228,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
     const contentHash = await hashResponsesItemContent(item);
     const existing = this.reusableItemByContentHash(contentHash);
     if (existing) {
+      this.touchItem(existing.id);
       this.stagedInputItemIds.push(existing.id);
       return;
     }
@@ -258,10 +274,9 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
     return this.loadedItemsByContentHash.get(hash)?.find(row => row.payload !== null);
   }
 
-  private rememberItem(row: StoredResponsesItem, options: { readonly touch?: boolean } = {}): void {
+  private rememberItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     this.loadedItemsById.set(cloned.id, cloned);
-    if (options.touch === true) this.touchedItemIds.add(cloned.id);
     if (cloned.contentHash !== null) pushByHash(this.loadedItemsByContentHash, cloned.contentHash, cloned);
     if (cloned.encryptedContentHash !== null) pushByHash(this.loadedItemsByEncryptedContentHash, cloned.encryptedContentHash, cloned);
   }
@@ -277,7 +292,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
       if (seen.has(id)) continue;
       seen.add(id);
       const row = this.loadedItemsById.get(id) ?? this.stagedInputItems.get(id) ?? this.stagedOutputItems.get(id);
-      if (row?.payload === undefined || row.payload === null) {
+      if (row === undefined || !isReplayableSnapshotRow(row)) {
         throw new Error(`Cannot persist Responses snapshot with non-replayable item id=${id}`);
       }
       rows.push(row);
@@ -298,7 +313,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
     await this.refreshTouchedItems();
   }
 
-  private async refreshTouchedItems(): Promise<void> {
+  async refreshTouchedItems(): Promise<void> {
     const ids = [...this.touchedItemIds].filter(id => !this.refreshedItemIds.has(id));
     if (ids.length === 0) return;
     const refreshedAt = Date.now();
@@ -308,14 +323,7 @@ class HttpStatefulResponsesStore implements StatefulResponsesStore {
 }
 
 export const createHttpStatefulResponsesStore = (apiKeyId: string | null, store: boolean | null | undefined): StatefulResponsesStore =>
-  new HttpStatefulResponsesStore(getRepo(), apiKeyId, store);
-
-export const statefulResponsesStoreForRequest = (request: RequestContext): StatefulResponsesStore => {
-  if (request.statefulResponsesStore === undefined) {
-    throw new Error('RequestContext is missing statefulResponsesStore.');
-  }
-  return request.statefulResponsesStore;
-};
+  new HttpStatefulResponsesStore(getRepo, apiKeyId, store);
 
 const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {
   const rows = target.get(hash) ?? [];
@@ -325,6 +333,9 @@ const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, ro
   }
   target.set(hash, rows);
 };
+
+const isReplayableSnapshotRow = (row: StoredResponsesItem): boolean =>
+  row.payload !== null || (row.upstreamId !== null && row.upstreamItemId !== null);
 
 const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesItem => ({
   ...item,

@@ -4,6 +4,7 @@ import { targetProviderResultToFrames } from './emit.ts';
 import { assertEquals, assertStringIncludes } from '../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../test-helpers.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
+import { createHttpStatefulResponsesStore } from '../sources/responses/stateful-store.ts';
 
 const baseInvocation = (): Invocation<{ model: string; stream?: boolean }> => ({
   sourceApi: 'messages',
@@ -22,6 +23,7 @@ const baseRequest = (): RequestContext => ({
   apiKeyUpstreamIds: null,
   apiKeyId: 'key_a',
   clientStream: true,
+  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
   runtimeLocation: 'SJC',
 });
 

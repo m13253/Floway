@@ -5,6 +5,7 @@ import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../shared/errors/result.ts';
+import { createHttpStatefulResponsesStore } from '../../../sources/responses/stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -40,6 +41,7 @@ const stubRequest = (overrides: { downstreamAbortSignal?: AbortSignal } = {}): R
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
   clientStream: true,
+  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
   ...(overrides.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: overrides.downstreamAbortSignal } : {}),
 });
 
