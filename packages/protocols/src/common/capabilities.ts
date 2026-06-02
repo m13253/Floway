@@ -1,6 +1,6 @@
 // Protocol-level model capability types, plus the kind-derivation that is
-// intrinsic to them. Other runtime computation over these (path mapping,
-// count-tokens augmentation) lives in apps/api/src/data-plane/providers/endpoints.ts.
+// intrinsic to them. Other runtime computation over these lives in
+// apps/api/src/data-plane/providers/endpoints.ts.
 
 import type { ModelKind } from './models.ts';
 

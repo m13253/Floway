@@ -53,11 +53,13 @@ const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' 
   return internal;
 };
 
-// Tier 1 maps an upstream-published kind to its endpoints; Tier 2 falls back to
-// the id heuristic; an unrecognized chat model takes the upstream's configured
-// endpoints verbatim (which may be empty, leaving the model listed but
-// unroutable until the operator declares an endpoint). The result is the
-// model's `endpoints` — `kind` is derived from it.
+// A published kind of 'embedding'/'image' (Tier 1) maps directly to its
+// endpoints; a published 'chat' takes the upstream's configured endpoints
+// verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
+// and falls back to the configured endpoints when it does not match. The
+// configured set may be empty, leaving the model listed but unroutable until
+// the operator declares an endpoint. The result is the model's `endpoints`;
+// `kind` is derived back from it.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
