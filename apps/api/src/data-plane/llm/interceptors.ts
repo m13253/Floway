@@ -28,7 +28,7 @@ export interface StatefulResponsesContext {
 }
 
 /**
- * Per client request scope. Constructed once in `createRequestContext` and
+ * Per client request scope. Constructed once in `createHttpRequestContext` and
  * threaded through every layer (source interceptors, target emits, target
  * interceptors, telemetry). Holds both immutable identities/adapters and
  * mutable per-request bags that cross-layer producers and consumers share.
@@ -50,7 +50,7 @@ export interface RequestContext {
   readonly requestStartedAt: number;
   readonly apiKeyId?: string;
   // null = Default mode (inherit global upstream order).
-  readonly apiKeyUpstreamIds?: readonly string[] | null;
+  readonly apiKeyUpstreamIds: readonly string[] | null;
   readonly runtimeLocation: string;
   readonly scheduleBackground?: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;

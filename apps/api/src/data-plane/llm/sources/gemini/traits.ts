@@ -114,24 +114,6 @@ const geminiGenerate: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEven
   },
 };
 
-// count_tokens accepts either a bare `{ contents }` or the full
-// `{ generateContentRequest }` form. It cannot run the streaming
-// source-interceptor pipeline, so the few normalizations that path applies via
-// interceptors are done inline below, then it translates to Messages and counts
-// via `messages_count_tokens`.
-interface GeminiCountTokensRequest {
-  contents?: GeminiContent[];
-  generateContentRequest?: GeminiPayload;
-}
-
-const totalTokensFromUpstream = (value: unknown): number | null => {
-  if (!value || typeof value !== 'object') return null;
-  const payload = value as { input_tokens?: unknown; total_tokens?: unknown };
-  if (typeof payload.input_tokens === 'number') return payload.input_tokens;
-  if (typeof payload.total_tokens === 'number') return payload.total_tokens;
-  return null;
-};
-
 const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
     await respondGemini(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
@@ -139,7 +121,7 @@ const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamE
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
     const request = createHttpRequestContext(c, undefined, false);
-    const body = await c.req.json<GeminiCountTokensRequest>();
+    const body = await c.req.json<{ contents?: GeminiContent[]; generateContentRequest?: GeminiPayload }>();
     const generateContentRequest = body.generateContentRequest ?? { contents: body.contents };
     return {
       request,
@@ -162,18 +144,7 @@ const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamE
         // so strip it before sending. The events translator never runs.
         const { target } = await translateGeminiViaMessages(countRequest, { model: resolvedModelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens });
         const { stream: _stream, ...countPayload } = target;
-        const invocation: MessagesInvocation = {
-          sourceApi: 'gemini',
-          targetApi: 'messages',
-          model: resolvedModelId,
-          upstream: binding.upstream,
-          upstreamModel: binding.upstreamModel,
-          provider: binding.provider,
-          enabledFlags: binding.enabledFlags,
-          ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
-          payload: countPayload,
-          headers: {},
-        };
+        const invocation: MessagesInvocation = geminiInvocation(binding, 'messages', resolvedModelId, countPayload);
         const response = await runInterceptors(invocation, request, invocation.targetInterceptors?.messagesCountTokens ?? [], async () => {
           const { model: _model, ...callBody } = invocation.payload;
           const result = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, callBody, undefined, invocation.headers);
@@ -183,7 +154,15 @@ const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamE
           const text = await response.text();
           return await plainResultFromResponse(geminiRpcErrorResponse(response.status, text || 'Upstream token counting request failed.'));
         }
-        const totalTokens = totalTokensFromUpstream(await response.json());
+        const upstreamCount = await response.json();
+        const upstreamTokenCounts = upstreamCount && typeof upstreamCount === 'object'
+          ? upstreamCount as { input_tokens?: unknown; total_tokens?: unknown }
+          : {};
+        const totalTokens = typeof upstreamTokenCounts.input_tokens === 'number'
+          ? upstreamTokenCounts.input_tokens
+          : typeof upstreamTokenCounts.total_tokens === 'number'
+            ? upstreamTokenCounts.total_tokens
+            : null;
         if (totalTokens === null) return await plainResultFromResponse(geminiInternalRpcErrorResponse(502, new Error('Invalid upstream token counting response.')));
         return plainResult(200, new Headers({ 'content-type': 'application/json' }), new TextEncoder().encode(JSON.stringify({ totalTokens })));
       },

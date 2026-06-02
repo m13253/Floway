@@ -8,12 +8,6 @@ import { type LlmEndpointName, type LlmServeFailure, LlmServeFailureError, type 
 // setup and Response rendering; the Hono-free execution core owns stored-item
 // lookup, provider selection, per-attempt execution, and output-item commit
 // timing.
-//
-// A source declares one or more endpoints (generate, count_tokens);
-// `serveLlm(traits, endpointName)` binds one of them to a route. `prepare(c)`
-// parses the body, runs HTTP/input-level pre-checks (returning an early
-// `Response`), and yields a plan whose `attempt` closure captures the parsed
-// payload to clone, rewrite, and run.
 
 export const serveLlm = <TItems, TEvent>(
   traits: LlmSourceTraits<TItems, TEvent>,
@@ -23,10 +17,9 @@ export const serveLlm = <TItems, TEvent>(
   if (!endpoint) throw new Error(`LLM source does not define the '${endpointName}' endpoint.`);
 
   return async (c: Context): Promise<Response> => {
-    // Runtime starts provisional so a parse or prepare throw can still be
-    // rendered with telemetry; prepare replaces it on success.
-    // `respond` closes over them so every call site — early diagnostic, main
-    // path, and catch — renders identically.
+    // Runtime starts provisional so failures thrown before prepare returns can
+    // still render with telemetry. `respond` closes over the mutable binding
+    // that prepare replaces before normal execution.
     let runtime: LlmSourceRuntime = {
       request: createHttpRequestContext(c, undefined, false),
       wantsStream: false,

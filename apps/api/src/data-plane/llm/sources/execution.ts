@@ -1,5 +1,4 @@
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
-import type { RequestContext } from '../interceptors.ts';
 import { responsesItemId } from './responses/items/format.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import {
@@ -29,12 +28,6 @@ export const executeLlmSourcePlan = async <TItems, TEvent>(
   return await attemptProviders(providerPlan, plan, prepared, renderFailure);
 };
 
-// Walk the planned providers in order: resolve the model, pick a target, run
-// the attempt; the first provider yielding an upstream result wins, with its
-// output items wrapped for persistence. A provider whose model or target does
-// not resolve is skipped. An exhausted walk renders the model diagnostic —
-// missing when no provider had the model, unsupported when one did but offered
-// no usable target.
 const attemptProviders = async <TItems, TEvent>(
   providerPlan: StoredResponsesProviderPlan,
   plan: LlmEndpointPlan<TItems, TEvent>,
@@ -53,7 +46,13 @@ const attemptProviders = async <TItems, TEvent>(
     const target = plan.pickTarget(binding.upstreamModel.endpoints);
     if (!target) continue;
 
-    resetAttemptStatefulResponsesContext(plan.request, prepared);
+    plan.request.statefulResponsesContext = {
+      privatePayload: new Map(prepared.references.flatMap(ref => {
+        const wireId = ref.row?.payload && responsesItemId(ref.row.payload.item as { id?: unknown });
+        return wireId && ref.row?.payload?.private !== undefined ? [[wireId, ref.row.payload.private] as const] : [];
+      })),
+      newSyntheticIds: new Set(),
+    };
 
     const rawResult = await plan.attempt({
       binding,
@@ -70,16 +69,4 @@ const attemptProviders = async <TItems, TEvent>(
   // The diagnostic names the model the client requested, not whichever upstream
   // id a provider resolved it to.
   return { result: renderFailure(sawModel ? { kind: 'model-unsupported', model: plan.model } : { kind: 'model-missing', model: plan.model }) };
-};
-
-const resetAttemptStatefulResponsesContext = (request: RequestContext, prepared: PreparedStoredResponsesItems): void => {
-  // Fresh stateful bag per attempt so a failed earlier attempt's shim writes do
-  // not leak into the next provider attempt.
-  request.statefulResponsesContext = {
-    privatePayload: new Map(prepared.references.flatMap(ref => {
-      const wireId = ref.row?.payload && responsesItemId(ref.row.payload.item as { id?: unknown });
-      return wireId && ref.row?.payload?.private !== undefined ? [[wireId, ref.row.payload.private] as const] : [];
-    })),
-    newSyntheticIds: new Set(),
-  };
 };

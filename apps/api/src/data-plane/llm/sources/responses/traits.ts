@@ -15,37 +15,8 @@ import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } fr
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-const CODEX_AUTO_REVIEW_ALIAS = 'codex-auto-review';
-const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
-
-// previous_response_id relies on server-side conversation state that this
-// gateway does not implement. Stored Responses item ids are handled below; a
-// plain previous response pointer still gets OpenAI's not-found contract so
-// clients that retry with full input can keep using their existing fallback.
-// Verbatim payloads cross-verified from real upstream captures:
-// - https://github.com/cline/cline/issues/9399
-// - https://github.com/microsoft/semantic-kernel/issues/13128
-// - https://github.com/router-for-me/CLIProxyAPI/issues/999
-// - https://github.com/openai/openai-agents-python/issues/2020
-const previousResponseNotFoundResponse = (payload: ResponsesPayload): Response | undefined => {
-  if (payload.previous_response_id !== undefined && payload.previous_response_id !== null) {
-    return Response.json(
-      {
-        error: {
-          message: `Previous response with id '${payload.previous_response_id}' not found.`,
-          type: 'invalid_request_error',
-          param: 'previous_response_id',
-          code: 'previous_response_not_found',
-        },
-      },
-      { status: 400 },
-    );
-  }
-  return undefined;
-};
-
 const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload): ResponsesPayload => {
-  if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
+  if (payload.model !== 'codex-auto-review') return payload;
 
   // TODO: Replace this source-entry hardcode with generic model alias support.
   // Codex sends auto-review requests over the Responses wire API, so rewriting
@@ -56,7 +27,7 @@ const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload): ResponsesPa
   // https://github.com/openai/codex/blob/e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df/codex-rs/codex-api/src/endpoint/responses.rs#L102-L134
   return {
     ...payload,
-    model: CODEX_AUTO_REVIEW_TARGET,
+    model: 'gpt-5.4',
     reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
   };
 };
@@ -105,8 +76,28 @@ const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[],
     await respondResponses(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
   prepare: async c => {
     const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
-    const notFound = previousResponseNotFoundResponse(payload);
-    if (notFound) return notFound;
+    // previous_response_id relies on server-side conversation state that this
+    // gateway does not implement. Stored Responses item ids are handled below; a
+    // plain previous response pointer still gets OpenAI's not-found contract so
+    // clients that retry with full input can keep using their existing fallback.
+    // Verbatim payloads cross-verified from real upstream captures:
+    // - https://github.com/cline/cline/issues/9399
+    // - https://github.com/microsoft/semantic-kernel/issues/13128
+    // - https://github.com/router-for-me/CLIProxyAPI/issues/999
+    // - https://github.com/openai/openai-agents-python/issues/2020
+    if (payload.previous_response_id !== undefined && payload.previous_response_id !== null) {
+      return Response.json(
+        {
+          error: {
+            message: `Previous response with id '${payload.previous_response_id}' not found.`,
+            type: 'invalid_request_error',
+            param: 'previous_response_id',
+            code: 'previous_response_not_found',
+          },
+        },
+        { status: 400 },
+      );
+    }
     const wantsStream = payload.stream === true;
     const downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const request = createHttpRequestContext(c, downstreamAbortController?.signal, wantsStream);

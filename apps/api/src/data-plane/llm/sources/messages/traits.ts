@@ -16,7 +16,7 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
+const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
   const values = raw
     .split(',')
@@ -25,14 +25,14 @@ export const parseAnthropicBeta = (raw: string | undefined): string[] | undefine
   return values.length > 0 ? values : undefined;
 };
 
-export const bodyBetaParam = (payload: MessagesPayload): string | undefined => {
+const bodyBetaParam = (payload: MessagesPayload): string | undefined => {
   const record = payload as unknown as Record<string, unknown>;
   if (Object.hasOwn(record, 'anthropic_beta')) return 'anthropic_beta';
   if (Object.hasOwn(record, 'betas')) return 'betas';
   return undefined;
 };
 
-export const bodyAnthropicBetaResponse = (param: string): Response =>
+const bodyAnthropicBetaResponse = (param: string): Response =>
   Response.json(
     {
       error: {
@@ -80,28 +80,18 @@ const messagesInvocation = <TPayload extends { model: string }>(
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });
 
-// Maps a serve failure to the Messages (Anthropic) error envelope, shared with
-// the count_tokens path which answers in the same shape under a different
-// endpoint label. `internal` is excluded — it is rendered with a stack trace by
-// the caller, not as a flat envelope.
-export const messagesFailureEnvelope = (
-  failure: Exclude<LlmServeFailure, { kind: 'internal' }>,
-  endpoint: string,
-): { status: number; body: { type: 'error'; error: { type: string; message: string } } } => {
+const renderMessagesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointName): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
+  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEvent>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
+  const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';
   const [status, type, message]: [number, string, string] = (() => {
     switch (failure.kind) {
     case 'item-not-found': return [400, 'invalid_request_error', `Item with id '${failure.itemId}' not found.`];
     case 'routing-unavailable': return [400, 'invalid_request_error', failure.message];
     case 'model-missing': return [404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`];
-    case 'model-unsupported': return [400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpoint} endpoint.`];
+    case 'model-unsupported': return [400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpointPath} endpoint.`];
     }
   })();
-  return { status, body: { type: 'error', error: { type, message } } };
-};
-
-const renderMessagesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointName): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
-  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEvent>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
-  const { status, body } = messagesFailureEnvelope(failure, endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages');
+  const body = { type: 'error', error: { type, message } };
   return jsonUpstreamErrorResult(status, body);
 };
 
