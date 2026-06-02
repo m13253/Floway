@@ -187,7 +187,6 @@ const chatReasoningEffort = (body: Omit<ChatCompletionsPayload, 'model'>): strin
 
 const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
 
-// The upstream fetch takes no options when there are no extra headers to attach.
 const extraHeaderOptions = (headers: Record<string, string> | undefined): { extraHeaders: Record<string, string> } | undefined =>
   headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined;
 
@@ -326,8 +325,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       // Compaction is inherently non-streaming — a single encrypted blob, not a
       // token stream — so we drive /responses with stream:false (bypassing the
       // SSE-forcing `call` helper) and re-emit the rebuilt envelope as SSE so it
-      // flows the same target pipeline as a native compact. compaction.ts does
-      // the codex-equivalent trigger + retained-message reshape.
+      // flows the same target pipeline as a native compact.
       const triggered = { ...body, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
       const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, extraHeaderOptions(headers));
       if (!response.ok) return { response, modelKey: rawModel.id };
