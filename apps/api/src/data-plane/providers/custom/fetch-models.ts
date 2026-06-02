@@ -9,10 +9,9 @@
 // The parser is intentionally tolerant: a model is admitted if it has a string
 // `id`; everything else is best-effort metadata. The container is admitted if
 // `data` is an array. We do NOT read any per-model endpoint hint — endpoint
-// routing for custom upstreams is decided by per-model `kind` derivation
-// (Tier 1 reads `kind` here if the upstream emits it; Tier 2 falls back to an
-// id heuristic in the provider) and the per-upstream `endpoints`
-// config (which only declares chat protocol availability).
+// routing for an auto custom model is inferred by the provider (Tier 1 reads
+// the published `kind` here if the upstream emits it; Tier 2 falls back to an id
+// heuristic; the chat default takes the per-upstream `endpoints` config).
 
 import type { Upstream } from '../../../shared/upstream/types.ts';
 import { ProviderModelsUnavailableError } from '../models-store.ts';

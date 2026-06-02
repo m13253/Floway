@@ -1,9 +1,12 @@
 import { test } from 'vitest';
 
-import { inferKindFromModelId } from './infer-kind.ts';
+import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { assertEquals } from '../../../test-assert.ts';
 
-test('inferKindFromModelId returns embedding for known OpenAI / Voyage / Cohere / Mistral families', () => {
+const EMBEDDINGS = { embeddings: {} };
+const IMAGES = { imagesGenerations: {}, imagesEdits: {} };
+
+test('inferEndpointsFromModelId returns embeddings for known OpenAI / Voyage / Cohere / Mistral families', () => {
   for (const id of [
     'text-embedding-3-small',
     'text-embedding-3-large',
@@ -15,11 +18,11 @@ test('inferKindFromModelId returns embedding for known OpenAI / Voyage / Cohere 
     'embed-multilingual-light-v3.0',
     'mistral-embed',
   ]) {
-    assertEquals(inferKindFromModelId(id), 'embedding');
+    assertEquals(inferEndpointsFromModelId(id), EMBEDDINGS);
   }
 });
 
-test('inferKindFromModelId returns embedding for common local / open-weight embedding families', () => {
+test('inferEndpointsFromModelId returns embeddings for common local / open-weight embedding families', () => {
   for (const id of [
     'bge-large-en-v1.5',
     'BAAI/bge-large-en',
@@ -30,11 +33,11 @@ test('inferKindFromModelId returns embedding for common local / open-weight embe
     'mxbai-embed-large-v1',
     'WhereIsAI/UAE-Large-V1',
   ]) {
-    assertEquals(inferKindFromModelId(id), 'embedding');
+    assertEquals(inferEndpointsFromModelId(id), EMBEDDINGS);
   }
 });
 
-test('inferKindFromModelId returns chat for typical chat model ids', () => {
+test('inferEndpointsFromModelId returns null (chat fallback) for typical chat model ids', () => {
   for (const id of [
     'gpt-4o',
     'gpt-5.4-pro',
@@ -47,11 +50,11 @@ test('inferKindFromModelId returns chat for typical chat model ids', () => {
     'mistral-large-latest',
     'command-r-plus',
   ]) {
-    assertEquals(inferKindFromModelId(id), 'chat');
+    assertEquals(inferEndpointsFromModelId(id), null);
   }
 });
 
-test('inferKindFromModelId returns image for the gpt-image-* family', () => {
+test('inferEndpointsFromModelId returns both image endpoints for the gpt-image-* family', () => {
   for (const id of [
     'gpt-image-1',
     'gpt-image-1-mini',
@@ -59,11 +62,11 @@ test('inferKindFromModelId returns image for the gpt-image-* family', () => {
     'gpt-image-2',
     'gpt-image-2-2026-04-21',
   ]) {
-    assertEquals(inferKindFromModelId(id), 'image');
+    assertEquals(inferEndpointsFromModelId(id), IMAGES);
   }
 });
 
-test('inferKindFromModelId returns chat for non-OpenAI image families and gpt-4o-image variants', () => {
+test('inferEndpointsFromModelId returns null for non-OpenAI image families and gpt-4o-image variants', () => {
   for (const id of [
     'dall-e-3',
     'dall-e-2',
@@ -74,6 +77,6 @@ test('inferKindFromModelId returns chat for non-OpenAI image families and gpt-4o
     'imagen-4.0-generate-001',
     'gpt-4o-image-experimental',
   ]) {
-    assertEquals(inferKindFromModelId(id), 'chat');
+    assertEquals(inferEndpointsFromModelId(id), null);
   }
 });
