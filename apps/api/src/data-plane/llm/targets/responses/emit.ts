@@ -46,4 +46,10 @@ export const emitToResponses = (invocation: ResponsesInvocation, request: Reques
   emitResponsesVia(invocation, request, (provider, model, body, signal, headers) => provider.callResponses(model, body, signal, headers));
 
 export const emitToResponsesCompact = (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
-  emitResponsesVia(invocation, request, (provider, model, body, signal, headers) => provider.callResponsesCompact(model, body, signal, headers));
+  emitResponsesVia(invocation, request, (provider, model, body, signal, headers) => {
+    // `/responses/compact` is non-streaming on every realization, so a client
+    // `stream: true` must never reach the upstream request body (the native
+    // endpoint is contractually non-streaming; Copilot forces stream:false).
+    const { stream: _stream, ...compactBody } = body;
+    return provider.callResponsesCompact(model, compactBody, signal, headers);
+  });
