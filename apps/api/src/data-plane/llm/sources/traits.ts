@@ -121,6 +121,11 @@ export interface LlmEndpointPlan<TItems, TEvent> {
 //     orchestrator persists, then `respond` renders.
 //   - count_tokens produces a measurement — a non-`events` result the
 //     orchestrator passes straight to `respond`, never persisting.
+//   - compact rewrites a conversation into a `response.compaction` envelope.
+//     Like generate it yields an `events` result the orchestrator persists (the
+//     compaction blob keeps forced upstream affinity for next-turn routing), but
+//     it never translates across protocols — only a native `/responses` upstream
+//     can compact.
 //
 // `pickTarget` and `attempt` are NOT here: they live on the plan `setup`
 // returns, because `attempt` closes over the parsed payload.
@@ -141,7 +146,7 @@ export interface LlmEndpoint<TItems, TEvent> {
   }): Promise<{ success: boolean; response: Response }>;
 }
 
-export type LlmEndpointName = 'generate' | 'countTokens';
+export type LlmEndpointName = 'generate' | 'countTokens' | 'compact';
 
 // A source exposes one or more endpoints that share its input and error
 // envelope. `renderFailure` is source-wide — every endpoint answers a failure

@@ -37,7 +37,7 @@ export interface CustomUpstreamConfig {
   bearerToken: string;
   authStyle: CustomAuthStyle;
   endpoints: ModelEndpoints;
-  pathOverrides?: Partial<Record<Exclude<EndpointKey, 'messages_count_tokens' | 'models'>, string>>;
+  pathOverrides?: Partial<Record<Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>, string>>;
   modelsFetch: CustomModelsFetch;
   models: UpstreamModelConfig[];
 }
@@ -83,7 +83,7 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const PATH_OVERRIDE_KEYS = new Set<Exclude<EndpointKey, 'messages_count_tokens' | 'models'>>(['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits']);
+const PATH_OVERRIDE_KEYS = new Set<Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>>(['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits']);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides'] => {
   if (value === undefined) return undefined;
@@ -91,12 +91,12 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides
 
   const pathOverrides: NonNullable<CustomUpstreamConfig['pathOverrides']> = {};
   for (const [key, path] of Object.entries(value)) {
-    if (!PATH_OVERRIDE_KEYS.has(key as Exclude<EndpointKey, 'messages_count_tokens' | 'models'>)) {
+    if (!PATH_OVERRIDE_KEYS.has(key as Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>)) {
       throw new Error(`Malformed custom upstream config: unsupported pathOverrides key ${key}`);
     }
     const validPath = validateUpstreamPath(path, `pathOverrides.${key}`);
     if (!validPath.ok) throw new Error(`Malformed custom upstream config: ${validPath.error}`);
-    pathOverrides[key as Exclude<EndpointKey, 'messages_count_tokens' | 'models'>] = validPath.value;
+    pathOverrides[key as Exclude<EndpointKey, 'messages_count_tokens' | 'responses_compact' | 'models'>] = validPath.value;
   }
   return pathOverrides;
 };
@@ -141,6 +141,7 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
 const CUSTOM_DEFAULT_PATHS: Record<EndpointKey, string> = {
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
+  responses_compact: '/v1/responses/compact',
   messages: '/v1/messages',
   messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/v1/embeddings',
@@ -155,6 +156,11 @@ const resolveCustomPath = (config: CustomUpstreamConfig, endpoint: EndpointKey):
   if (endpoint === 'messages_count_tokens') {
     const messagesPath = config.pathOverrides?.messages ?? CUSTOM_DEFAULT_PATHS.messages;
     return `${messagesPath}/count_tokens`;
+  }
+  // Native compact likewise tracks the `responses` path, appending `/compact`.
+  if (endpoint === 'responses_compact') {
+    const responsesPath = config.pathOverrides?.responses ?? CUSTOM_DEFAULT_PATHS.responses;
+    return `${responsesPath}/compact`;
   }
   // The /models path lives on the fetch toggle, not in pathOverrides.
   if (endpoint === 'models') {

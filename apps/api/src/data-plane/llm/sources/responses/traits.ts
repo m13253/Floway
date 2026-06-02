@@ -5,7 +5,7 @@ import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '..
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
-import { emitToResponses } from '../../targets/responses/emit.ts';
+import { emitToResponses, emitToResponsesCompact } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -139,7 +139,43 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
   },
 };
 
+// `/responses/compact` rewrites the conversation into a `response.compaction`
+// envelope. It reuses the generate scaffolding (parse, store, persist output
+// items) but is non-streaming and never translates: compaction is meaningful
+// only against an upstream that natively serves `/responses`, so a model
+// without that endpoint surfaces `model-unsupported`.
+const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
+  respond: async ({ c, result, request }) => await respondResponses(c, result, false, request, undefined),
+  setup: async c => {
+    const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
+    const notFound = previousResponseNotFoundResponse(payload);
+    if (notFound) return notFound;
+    // The upstream answer is a single encrypted blob, so the gateway always
+    // collects the rebuilt envelope into one JSON body regardless of any
+    // `stream` field the client sent.
+    const request = createRequestContext(c, undefined, false);
+    return {
+      request,
+      items: payload.input,
+      responsesItemsView,
+      wantsStream: false,
+      store: payload.store,
+      model: payload.model,
+      downstreamAbortController: undefined,
+      pickTarget: endpoints => (endpoints.responses ? 'responses' : null),
+      attempt: async ({ binding, target, model, rewriteItems }) => {
+        const attemptPayload = structuredClone(payload);
+        attemptPayload.model = model;
+        attemptPayload.input = await rewriteItems(attemptPayload.input);
+        const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
+        const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
+        return await runInterceptors(invocation, request, interceptors, () => emitToResponsesCompact(invocation, request));
+      },
+    };
+  },
+};
+
 export const responsesTraits: LlmSourceTraits<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   renderFailure: renderResponsesFailure,
-  endpoints: { generate: responsesGenerate },
+  endpoints: { generate: responsesGenerate, compact: responsesCompact },
 };

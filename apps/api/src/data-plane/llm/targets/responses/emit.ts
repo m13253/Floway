@@ -1,6 +1,7 @@
 import { responsesStreamFramesToEvents } from './events/from-stream.ts';
 import { responsesBaseInterceptors } from './interceptors/index.ts';
 import type { TelemetryModelIdentity } from '../../../../repo/types.ts';
+import type { ModelProvider, ProviderCallResult, UpstreamModel } from '../../../providers/types.ts';
 import { type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
@@ -9,14 +10,28 @@ import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/prot
 
 const targetApi = 'responses';
 
-export const emitToResponses = async (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
+type ResponsesProviderCall = (
+  provider: ModelProvider,
+  model: UpstreamModel,
+  body: Omit<ResponsesPayload, 'model'>,
+  signal: AbortSignal | undefined,
+  headers: Record<string, string> | undefined,
+) => Promise<ProviderCallResult>;
+
+// `/responses` generation and `/responses/compact` share one target pipeline:
+// both run the responses interceptor stack, hand the provider's SSE through the
+// target boundary (which fast-path-expands a terminal-only stream), and surface
+// the canonical event sequence. They differ only in the provider method called,
+// so compaction never becomes a side path that bypasses interceptors — the
+// provider layer is responsible for returning `text/event-stream` either way.
+const emitResponsesVia = async (invocation: ResponsesInvocation, request: RequestContext, providerCall: ResponsesProviderCall): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
   let modelIdentity: TelemetryModelIdentity | undefined;
 
   try {
     return await runInterceptors(invocation, request, [...responsesBaseInterceptors, ...(invocation.targetInterceptors?.responses ?? [])], async () => {
       const upstreamStartedAt = performance.now();
       const { model: _model, ...body }: ResponsesPayload = invocation.payload;
-      const providerResult = await invocation.provider.callResponses(invocation.upstreamModel, body, request.downstreamAbortSignal, invocation.headers);
+      const providerResult = await providerCall(invocation.provider, invocation.upstreamModel, body, request.downstreamAbortSignal, invocation.headers);
       modelIdentity = targetModelIdentity(invocation, providerResult.modelKey);
       const result = await targetProviderResultToFrames(invocation, request, targetApi, providerResult, modelIdentity, upstreamStartedAt);
 
@@ -26,3 +41,9 @@ export const emitToResponses = async (invocation: ResponsesInvocation, request: 
     return targetInternalError(invocation, request, targetApi, error, modelIdentity);
   }
 };
+
+export const emitToResponses = (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+  emitResponsesVia(invocation, request, (provider, model, body, signal, headers) => provider.callResponses(model, body, signal, headers));
+
+export const emitToResponsesCompact = (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+  emitResponsesVia(invocation, request, (provider, model, body, signal, headers) => provider.callResponsesCompact(model, body, signal, headers));

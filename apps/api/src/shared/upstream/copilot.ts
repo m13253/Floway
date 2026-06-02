@@ -14,8 +14,9 @@ export interface CopilotUpstream extends Upstream {
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
 // `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
 // paths are not admin-configurable: they reflect Copilot's own contract, not
-// a deployment choice.
-const COPILOT_PATHS: Record<EndpointKey, string> = {
+// a deployment choice. There is no native `/responses/compact`; the provider
+// replicates compaction over `/responses` itself, so that key is absent here.
+const COPILOT_PATHS: Partial<Record<EndpointKey, string>> = {
   chat_completions: '/chat/completions',
   responses: '/responses',
   messages: '/v1/messages',
@@ -35,8 +36,10 @@ export const createCopilotUpstream = (id: string, name: string, githubToken: str
     kind: 'copilot',
     endpoints: COPILOT_ENDPOINTS,
     fetch: async (endpoint, init, options) => {
+      const path = COPILOT_PATHS[endpoint];
+      if (path === undefined) throw new Error(`Copilot upstream does not serve the ${endpoint} endpoint`);
       try {
-        return await copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
+        return await copilotFetch(path, init, githubToken, accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
       } catch (error) {
         if (!isCopilotTokenFetchError(error)) throw error;
         return new Response(error.body, {

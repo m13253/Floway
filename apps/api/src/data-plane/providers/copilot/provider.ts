@@ -1,3 +1,4 @@
+import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
 import { chatCompletionsCopilotInterceptors } from './interceptors/chat-completions/index.ts';
 import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors, messagesCountTokensCopilotInterceptors } from './interceptors/messages/index.ts';
@@ -16,11 +17,12 @@ import { isStreamingEndpoint, withMessagesCountTokens } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
+import { compactionResultToSse } from '../responses-compaction.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -313,6 +315,20 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         reasoningEffort: responsesReasoningEffort(body),
       });
       return call('responses', body, signal, rawModel, headers);
+    },
+    callResponsesCompact: async (model, body, signal, headers) => {
+      const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
+      const input: ResponsesInputItem[] = typeof body.input === 'string' ? [{ type: 'message', role: 'user', content: body.input }] : (body.input ?? []);
+      // Compaction is inherently non-streaming — a single encrypted blob, not a
+      // token stream — so we drive /responses with stream:false (bypassing the
+      // SSE-forcing `call` helper) and re-emit the rebuilt envelope as SSE so it
+      // flows the same target pipeline as a native compact. compaction.ts does
+      // the codex-equivalent trigger + retained-message reshape.
+      const triggered = { ...body, input: [...input, COMPACTION_TRIGGER as unknown as ResponsesInputItem], stream: false, model: rawModel.id };
+      const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined);
+      if (!response.ok) return { response, modelKey: rawModel.id };
+      const generated = (await response.json()) as ResponsesResult;
+      return { response: compactionResultToSse(compactionResponse(input, generated)), modelKey: rawModel.id };
     },
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),
