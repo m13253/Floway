@@ -286,12 +286,18 @@ const responsesOutputItemEvents = (item: ResponsesOutputItem, outputIndex: numbe
   }
 };
 
-export const responsesResultToEvents = (response: ResponsesResult): EventFrame<SequencedResponsesStreamEvent>[] => {
+// `genericOutputItems` expands every output item as a bare
+// `output_item.added`/`.done` pair instead of its per-type child events
+// (content parts, text deltas, …). The compaction fast path needs this: its
+// retained items are input-shaped messages that the per-type expander would
+// rewrite as assistant `output_text`.
+export const responsesResultToEvents = (response: ResponsesResult, options?: { genericOutputItems?: boolean }): EventFrame<SequencedResponsesStreamEvent>[] => {
   const started = responsesStartSnapshot(response);
+  const expandItem = options?.genericOutputItems ? responsesGenericOutputItemEvents : responsesOutputItemEvents;
   const events: ResponsesStreamEvent[] = [
     { type: 'response.created', response: started },
     { type: 'response.in_progress', response: started },
-    ...response.output.flatMap(responsesOutputItemEvents),
+    ...response.output.flatMap((item, index) => expandItem(item, index)),
     { type: getTerminalEventName(response), response },
   ];
 
