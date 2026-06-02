@@ -57,6 +57,11 @@ const upstreamModelSchema = z.object({
   publicModelId: z.string().optional(),
   kind: z.enum(['chat', 'embedding', 'image']).optional(),
   supportedEndpoints: z.array(z.string()).min(1),
+  // Responses sub-capabilities; meaningful only when `/responses` is supported.
+  responses: z.object({
+    compact: z.boolean().optional(),
+    contextManagement: z.boolean().optional(),
+  }).optional(),
   display_name: z.string().optional(),
   cost: z.object({
     input: z.number().optional(),

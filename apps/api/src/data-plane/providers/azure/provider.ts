@@ -67,6 +67,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     },
     callChatCompletions: (model, body, signal, headers) => call('chat_completions', model, body, signal, headers),
     callResponses: (model, body, signal, headers) => call('responses', model, body, signal, headers),
+    callResponsesCompact: (model, body, signal, headers) => call('responses_compact', model, body, signal, headers),
     callMessages: (model, body, signal, headers, anthropicBeta) => call('messages', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
     callMessagesCountTokens: (model, body, signal, headers, anthropicBeta) => call('messages_count_tokens', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
     callEmbeddings: (model, body, signal, headers) => call('embeddings', model, body, signal, headers),

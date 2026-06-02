@@ -91,5 +91,14 @@ export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
 export const withMessagesCountTokens = (endpoints: ModelEndpoints): ModelEndpoints =>
   endpoints.messages ? { ...endpoints, messages: { ...endpoints.messages, countTokens: true } } : { ...endpoints };
 
-export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoints =>
-  withMessagesCountTokens(publicPathsToModelEndpoints(model.supportedEndpoints));
+// A manually configured model declares its chat-protocol availability via
+// `supportedEndpoints` and, for Responses, its compaction sub-capabilities via
+// `responses`. We augment with `messages.countTokens` whenever `messages` is
+// present so the count-tokens endpoint routes alongside it without the operator
+// having to list it explicitly, and fold the operator-declared Responses
+// sub-capabilities onto the `responses` endpoint when it is present.
+export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoints => {
+  const endpoints = withMessagesCountTokens(publicPathsToModelEndpoints(model.supportedEndpoints));
+  if (endpoints.responses && model.responses) endpoints.responses = { ...endpoints.responses, ...model.responses };
+  return endpoints;
+};

@@ -17,8 +17,9 @@ export type UpstreamKind = 'copilot' | 'custom' | 'azure';
 // Logical endpoint keys used by the gateway-internal upstream dispatcher.
 // `messages_count_tokens` is intentionally a logical key: it is a sub-path of
 // `messages` and follows the same provider-owned path policy, so the UI never
-// exposes it as a separate configurable endpoint.
-export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'images_generations' | 'images_edits' | 'models';
+// exposes it as a separate configurable endpoint. `responses_compact` is the
+// native `/responses/compact` sub-path of `responses` (non-streaming).
+export type EndpointKey = 'chat_completions' | 'responses' | 'responses_compact' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'images_generations' | 'images_edits' | 'models';
 
 export interface Upstream {
   id: string;

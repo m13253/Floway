@@ -90,6 +90,15 @@ const defaultEndpointsForKind = (kind: ModelKind, current: string[] | undefined)
 
 const endpointOptionsForKind = (kind: ModelKind) => (kind === 'image' ? IMAGE_ENDPOINTS : CHAT_ENDPOINTS);
 
+// Responses sub-capabilities, surfaced only when `/responses` is supported.
+// `compact` advertises the native `/responses/compact` endpoint; `contextManagement`
+// advertises the `context_management` parameter — the gateway realizes
+// client-facing compaction through whichever the upstream offers.
+const RESPONSES_SUBCAPS = [
+  { key: 'compact', label: 'compact', hint: 'native /responses/compact' },
+  { key: 'contextManagement', label: 'context_management', hint: 'context_management parameter' },
+] as const;
+
 // One unified, ordered list of row descriptors. Each row is tagged with a
 // stable uiId (kept off the persisted data object) so converting a row in place
 // (auto <-> manual) never makes it jump, and so focus/expanded state survive
@@ -192,7 +201,17 @@ const setKind = (config: UpstreamModelConfig, kind: ModelKind) => {
 const toggleEndpoint = (config: UpstreamModelConfig, ep: string, on: boolean) => {
   const set = new Set(config.supportedEndpoints ?? []);
   if (on) set.add(ep); else set.delete(ep);
-  patchConfig(config, { supportedEndpoints: Array.from(set) });
+  // Dropping `/responses` makes its sub-capabilities meaningless, so clear them
+  // rather than leave orphaned flags in the stored config.
+  const patch: Partial<UpstreamModelConfig> = { supportedEndpoints: Array.from(set) };
+  if (ep === '/responses' && !on) patch.responses = undefined;
+  patchConfig(config, patch);
+};
+
+const toggleResponsesCap = (config: UpstreamModelConfig, cap: 'compact' | 'contextManagement', on: boolean) => {
+  const responses = { ...(config.responses ?? {}) };
+  if (on) responses[cap] = true; else delete responses[cap];
+  patchConfig(config, { responses: Object.keys(responses).length > 0 ? responses : undefined });
 };
 
 const updateLimit = (config: UpstreamModelConfig, key: 'max_context_window_tokens' | 'max_prompt_tokens' | 'max_output_tokens', value: string) => {
@@ -291,6 +310,7 @@ const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => ({
   upstreamModelId: auto.upstreamModelId,
   kind: auto.kind ?? kindFromEndpoints(auto.supportedEndpoints),
   supportedEndpoints: auto.supportedEndpoints?.length ? [...auto.supportedEndpoints] : ['/chat/completions'],
+  ...(auto.responses ? { responses: { ...auto.responses } } : {}),
   ...(auto.publicModelId ? { publicModelId: auto.publicModelId } : {}),
   ...(auto.display_name ? { display_name: auto.display_name } : {}),
   ...(auto.limits ? { limits: { ...auto.limits } } : {}),
@@ -495,6 +515,16 @@ const syncJsonScroll = (event: Event) => {
               <label v-for="ep in endpointOptionsForKind(kindFor(configOf(row)))" :key="ep.value" class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-surface-800/40 px-2 py-1 text-xs text-gray-200" :class="!isEditable(row) && 'opacity-80'">
                 <input type="checkbox" class="accent-accent-cyan" :checked="configOf(row).supportedEndpoints?.includes(ep.value)" :disabled="!isEditable(row)" @change="(e: Event) => isEditable(row) && toggleEndpoint(row.config, ep.value, (e.target as HTMLInputElement).checked)">
                 <code class="font-mono text-[11px]">{{ ep.label }}</code>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="kindFor(configOf(row)) === 'chat' && configOf(row).supportedEndpoints?.includes('/responses')" class="space-y-1.5">
+            <span class="block text-xs font-medium text-gray-500">Responses Compaction</span>
+            <div class="flex flex-wrap gap-2">
+              <label v-for="sub in RESPONSES_SUBCAPS" :key="sub.key" class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-surface-800/40 px-2 py-1 text-xs text-gray-200" :class="!isEditable(row) && 'opacity-80'" :title="sub.hint">
+                <input type="checkbox" class="accent-accent-cyan" :checked="configOf(row).responses?.[sub.key] === true" :disabled="!isEditable(row)" @change="(e: Event) => isEditable(row) && toggleResponsesCap(row.config, sub.key, (e.target as HTMLInputElement).checked)">
+                <code class="font-mono text-[11px]">{{ sub.label }}</code>
               </label>
             </div>
           </div>

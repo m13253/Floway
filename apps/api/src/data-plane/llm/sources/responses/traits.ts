@@ -5,6 +5,7 @@ import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '..
 import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
+import { emitToResponsesCompact } from '../../targets/responses/compact.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
@@ -148,19 +149,19 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
 
 // Compaction shares the Responses input and the LLM-output path — its
 // compaction items persist like any generated output — differing only in the
-// upstream call and the response envelope. It gates on the `responses.compact`
-// upstream capability; HOW compaction reaches the upstream (the native
-// `/responses/compact` endpoint, or the `context_management` parameter on
-// `/responses`) is realized behind the responses target and is a separate
-// effort. Until then no upstream advertises `responses.compact`, so the
-// endpoint answers the not-supported failure.
+// upstream call and the response envelope. It gates on the `responses` endpoint
+// advertising either compaction sub-capability; whether compaction reaches the
+// upstream natively (`/responses/compact`) or via the `context_management`
+// parameter is decided behind the responses target from the resolved binding.
+// External exposure collapses both into one capability, so `compact ||
+// contextManagement` is the gate.
 const compactPickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
-  endpoints.responses?.compact ? 'responses' : null;
+  endpoints.responses?.compact || endpoints.responses?.contextManagement ? 'responses' : null;
 
 const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
-  // TODO(compaction realization): render the `response.compaction` envelope
-  // from the reassembled output. Until then the endpoint only renders the
-  // not-supported failure, which the shared responses respond handles.
+  // Compaction is non-streaming: the client receives one `response.compaction`
+  // JSON body, reassembled by the shared responses respond from the synthesized
+  // terminal the compact target emits.
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondResponses(c, result, wantsStream, request, downstreamAbortController),
   setup: async c => {
@@ -175,13 +176,19 @@ const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawR
       model: payload.model,
       downstreamAbortController: undefined,
       pickTarget: compactPickTarget,
-      // TODO(compaction realization): build the compaction request and dispatch
-      // to the upstream strategy — native `/responses/compact` (non-streaming,
-      // expanded to events at the target boundary) or `context_management` on
-      // `/responses` (already SSE). Both normalize to the uniform events result,
-      // so the shared store + respond path persists the compaction items.
-      attempt: async (): Promise<never> => {
-        throw new Error('Responses compaction upstream is not yet implemented.');
+      attempt: async ({ binding, target, model, rewriteItems }) => {
+        const attemptPayload = structuredClone(payload);
+        attemptPayload.model = model;
+        attemptPayload.input = await rewriteItems(attemptPayload.input);
+        const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
+        const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
+        return await runInterceptors(invocation, request, interceptors, () => {
+          // compactPickTarget only ever yields the native Responses target;
+          // compaction has no translate realization, so any other target is a
+          // routing invariant violation rather than a degraded fallback.
+          if (target !== 'responses') throw new Error('Responses compaction is only supported on a native Responses upstream.');
+          return emitToResponsesCompact(invocation, request);
+        });
       },
     };
   },

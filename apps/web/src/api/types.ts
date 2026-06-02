@@ -18,6 +18,8 @@ export interface UpstreamModelConfig {
   publicModelId?: string;
   kind: ModelKind;
   supportedEndpoints: string[];
+  // Responses sub-capabilities; meaningful only when `/responses` is supported.
+  responses?: { compact?: boolean; contextManagement?: boolean };
   display_name?: string;
   limits?: { max_context_window_tokens?: number; max_prompt_tokens?: number; max_output_tokens?: number };
   cost?: ModelPricing;

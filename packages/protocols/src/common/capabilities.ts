@@ -1,6 +1,16 @@
 // Pure protocol-level capability types. Runtime computation lives in
 // apps/api/src/data-plane/providers/endpoints.ts which consumes these.
 
+// The Responses endpoint's sub-capabilities. `compact` means the upstream
+// serves the native `/responses/compact` endpoint; `contextManagement` means it
+// honours the `context_management` parameter on `/responses`. The gateway can
+// realize client-facing compaction through either, so externally it advertises
+// `compact || contextManagement` as a single compaction capability.
+export interface ResponsesEndpoint {
+  compact?: boolean;
+  contextManagement?: boolean;
+}
+
 // Structured per-endpoint capability map. A key being present means the model
 // is served by that endpoint; its value object carries that endpoint's
 // sub-capabilities. `responses.compact` / `responses.contextManagement` and
@@ -8,7 +18,7 @@
 // independently advertised endpoints.
 export interface ModelEndpoints {
   chatCompletions?: {};
-  responses?: { compact?: boolean; contextManagement?: boolean };
+  responses?: ResponsesEndpoint;
   messages?: { countTokens?: boolean };
   embeddings?: {};
   imagesGenerations?: {};

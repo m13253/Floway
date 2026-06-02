@@ -1,5 +1,5 @@
 import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
-import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelKind, ModelPricing, ResponsesEndpoint } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;
@@ -21,6 +21,11 @@ export interface UpstreamModelConfig {
   // endpoints when an entry omits it.
   kind: ModelKind;
   supportedEndpoints: string[];
+  // Operator-declared Responses sub-capabilities, meaningful only when
+  // `/responses` is among `supportedEndpoints`. Drives whether the gateway can
+  // realize `/responses/compact` for this model — natively (`compact`) or via
+  // the `context_management` parameter (`contextManagement`).
+  responses?: ResponsesEndpoint;
   display_name?: string;
   limits?: UpstreamModelLimits;
   cost?: ModelPricing;
@@ -77,6 +82,25 @@ export const supportedEndpointsField = (value: unknown, label: string): string[]
     if (!endpoints.includes(item)) endpoints.push(item);
   }
   return endpoints;
+};
+
+const optionalBooleanField = (value: unknown, label: string): boolean | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`Malformed ${label}: must be a boolean`);
+  return value;
+};
+
+// Parses the Responses sub-capability object. Each flag is optional; an absent
+// flag means the capability is unsupported. Only retained when at least one
+// flag is set, so the stored config stays clean for models that declare none.
+export const responsesEndpointField = (value: unknown, label: string): ResponsesEndpoint | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  const responses: ResponsesEndpoint = {
+    ...(value.compact !== undefined ? { compact: optionalBooleanField(value.compact, `${label}.compact`) } : {}),
+    ...(value.contextManagement !== undefined ? { contextManagement: optionalBooleanField(value.contextManagement, `${label}.contextManagement`) } : {}),
+  };
+  return Object.keys(responses).length > 0 ? responses : undefined;
 };
 
 const optionalNumberField = (value: unknown, label: string): number | undefined => {
@@ -164,11 +188,13 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const cost = pricingField(value.cost, `${label}.cost`);
   const supportedEndpoints = supportedEndpointsField(value.supportedEndpoints, `${label}.supportedEndpoints`);
+  const responses = responsesEndpointField(value.responses, `${label}.responses`);
   return {
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
     kind: kindField(value.kind, supportedEndpoints, `${label}.kind`),
     supportedEndpoints,
+    ...(responses ? { responses } : {}),
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
     ...(cost ? { cost } : {}),
