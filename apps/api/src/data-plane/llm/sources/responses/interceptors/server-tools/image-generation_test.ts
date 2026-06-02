@@ -19,7 +19,7 @@ import {
 } from './image-generation.ts';
 import { assert, assertEquals, assertFalse, assertStringIncludes } from '../../../../../../test-assert.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../interceptors.ts';
-import type { ResponseInputItem, ResponsesPayload, ResponseTool } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 
@@ -39,22 +39,22 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
 });
 const REQ = { requestStartedAt: 0, runtimeLocation: 'test', clientStream: true } as RequestContext;
 
-const imageMessage = (mime: string): ResponseInputItem => ({
+const imageMessage = (mime: string): ResponsesInputItem => ({
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
 });
 
 // ── isHostedImageGenerationTool ──
 
 test('isHostedImageGenerationTool matches only the hosted image_generation type', () => {
-  assert(isHostedImageGenerationTool({ type: 'image_generation' } as ResponseTool));
-  assertFalse(isHostedImageGenerationTool({ type: 'custom', name: 'x' } as ResponseTool));
-  assertFalse(isHostedImageGenerationTool({ type: 'function', name: 'x', parameters: {}, strict: false } as ResponseTool));
+  assert(isHostedImageGenerationTool({ type: 'image_generation' } as ResponsesTool));
+  assertFalse(isHostedImageGenerationTool({ type: 'custom', name: 'x' } as ResponsesTool));
+  assertFalse(isHostedImageGenerationTool({ type: 'function', name: 'x', parameters: {}, strict: false } as ResponsesTool));
 });
 
 // ── prepareImageGenerationConfig ──
 
 test('prepareImageGenerationConfig accepts a valid hosted entry and defaults the model', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', quality: 'low', size: '1024x1024' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', quality: 'low', size: '1024x1024' } as ResponsesTool]);
   assert(result.ok);
   assertEquals(result.config.model, DEFAULT_IMAGE_MODEL);
   assertEquals(result.config.quality, 'low');
@@ -63,14 +63,14 @@ test('prepareImageGenerationConfig accepts a valid hosted entry and defaults the
 });
 
 test('prepareImageGenerationConfig honors an explicit model', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', model: 'gpt-image-1.5' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', model: 'gpt-image-1.5' } as ResponsesTool]);
   assert(result.ok);
   assertEquals(result.config.model, 'gpt-image-1.5');
 });
 
 test('prepareImageGenerationConfig rejects any client-supplied n, including n:1', () => {
   for (const n of [2, 1, 0]) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', n } as ResponseTool]);
+    const result = prepareImageGenerationConfig([{ type: 'image_generation', n } as ResponsesTool]);
     assertFalse(result.ok);
     assert(!result.ok);
     assertEquals(result.error.code, 'unknown_parameter');
@@ -79,21 +79,21 @@ test('prepareImageGenerationConfig rejects any client-supplied n, including n:1'
 });
 
 test('prepareImageGenerationConfig rejects output_format webp', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', output_format: 'webp' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', output_format: 'webp' } as ResponsesTool]);
   assert(!result.ok);
   assertEquals(result.error.code, 'invalid_value');
   assertEquals(result.error.param, 'tools[0].output_format');
 });
 
 test('prepareImageGenerationConfig rejects an arbitrary size', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', size: '512x512' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', size: '512x512' } as ResponsesTool]);
   assert(!result.ok);
   assertEquals(result.error.code, 'invalid_value');
   assertEquals(result.error.param, 'tools[0].size');
 });
 
 test('prepareImageGenerationConfig accepts auto for size/quality/background', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', size: 'auto', quality: 'auto', background: 'auto' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', size: 'auto', quality: 'auto', background: 'auto' } as ResponsesTool]);
   assert(result.ok);
   assertEquals(result.config.size, 'auto');
   assertEquals(result.config.quality, 'auto');
@@ -101,7 +101,7 @@ test('prepareImageGenerationConfig accepts auto for size/quality/background', ()
 });
 
 test('prepareImageGenerationConfig rejects an invalid action', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', action: 'morph' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', action: 'morph' } as ResponsesTool]);
   assert(!result.ok);
   assertEquals(result.error.code, 'invalid_value');
   assertEquals(result.error.param, 'tools[0].action');
@@ -109,8 +109,8 @@ test('prepareImageGenerationConfig rejects an invalid action', () => {
 
 test('prepareImageGenerationConfig takes the last hosted entry when several are present', () => {
   const result = prepareImageGenerationConfig([
-    { type: 'image_generation', quality: 'low' } as ResponseTool,
-    { type: 'image_generation', quality: 'high' } as ResponseTool,
+    { type: 'image_generation', quality: 'low' } as ResponsesTool,
+    { type: 'image_generation', quality: 'high' } as ResponsesTool,
   ]);
   assert(result.ok);
   assertEquals(result.config.quality, 'high');
@@ -118,15 +118,15 @@ test('prepareImageGenerationConfig takes the last hosted entry when several are 
 
 test('prepareImageGenerationConfig reports the concrete tool index in error.param', () => {
   const result = prepareImageGenerationConfig([
-    { type: 'function', name: 'x', parameters: {}, strict: false } as ResponseTool,
-    { type: 'image_generation', size: '99x99' } as ResponseTool,
+    { type: 'function', name: 'x', parameters: {}, strict: false } as ResponsesTool,
+    { type: 'image_generation', size: '99x99' } as ResponsesTool,
   ]);
   assert(!result.ok);
   assertEquals(result.error.param, 'tools[1].size');
 });
 
 test('prepareImageGenerationConfig accepts output_compression in range and passes it through', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: 80 } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: 80 } as ResponsesTool]);
   assert(result.ok);
   assertEquals(result.config.output_compression, 80);
 });
@@ -134,7 +134,7 @@ test('prepareImageGenerationConfig accepts output_compression in range and passe
 test('prepareImageGenerationConfig rejects out-of-range output_compression', () => {
   const cases: [number, string][] = [[-1, 'integer_below_min_value'], [101, 'integer_above_max_value'], [50.5, 'invalid_value']];
   for (const [v, code] of cases) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: v } as ResponseTool]);
+    const result = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: v } as ResponsesTool]);
     assert(!result.ok);
     assertEquals(result.error.code, code);
     assertEquals(result.error.param, 'tools[0].output_compression');
@@ -143,7 +143,7 @@ test('prepareImageGenerationConfig rejects out-of-range output_compression', () 
 
 test('prepareImageGenerationConfig rejects unknown tool fields (Azure-strict)', () => {
   for (const field of ['seed', 'thinking', 'made_up_field']) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', [field]: 1 } as ResponseTool]);
+    const result = prepareImageGenerationConfig([{ type: 'image_generation', [field]: 1 } as ResponsesTool]);
     assert(!result.ok);
     assertEquals(result.error.code, 'unknown_parameter');
     assertEquals(result.error.param, `tools[0].${field}`);
@@ -151,31 +151,31 @@ test('prepareImageGenerationConfig rejects unknown tool fields (Azure-strict)', 
 });
 
 test('prepareImageGenerationConfig validates input_fidelity and partial_images', () => {
-  const okFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'high' } as ResponseTool]);
+  const okFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'high' } as ResponsesTool]);
   assert(okFidelity.ok);
   assertEquals(okFidelity.config.input_fidelity, 'high');
 
-  const badFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'ultra' } as ResponseTool]);
+  const badFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'ultra' } as ResponsesTool]);
   assert(!badFidelity.ok);
   assertEquals(badFidelity.error.param, 'tools[0].input_fidelity');
 
-  const okPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 2 } as ResponseTool]);
+  const okPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 2 } as ResponsesTool]);
   assert(okPartial.ok);
   assertEquals(okPartial.config.partial_images, 2);
 
-  const badPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 9 } as ResponseTool]);
+  const badPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 9 } as ResponsesTool]);
   assert(!badPartial.ok);
   assertEquals(badPartial.error.param, 'tools[0].partial_images');
 });
 
 test('prepareImageGenerationConfig decodes an inline mask once but rejects a file_id mask', () => {
-  const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponseTool]);
+  const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponsesTool]);
   assert(ok.ok);
   assert(ok.config.mask !== undefined);
   assertEquals(ok.config.mask.mimeType, 'image/png');
   assertEquals(ok.config.mask.bytes.byteLength, 5); // "hello"
 
-  const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponseTool]);
+  const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponsesTool]);
   assert(!fileId.ok);
   assertEquals(fileId.error.code, 'invalid_value');
   assertEquals(fileId.error.param, 'tools[0].input_image_mask');
@@ -197,7 +197,7 @@ test('buildImageGenerationFunctionTool exposes only an optional prompt and is no
 // ── collectImageSources ──
 
 test('collectImageSources reads input_image blocks and image_generation_call results', () => {
-  const input: ResponseInputItem[] = [
+  const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
         { type: 'input_text', text: 'edit this' },
@@ -211,7 +211,7 @@ test('collectImageSources reads input_image blocks and image_generation_call res
 });
 
 test('collectImageSources skips http(s) image urls (remote fetch deferred)', () => {
-  const input: ResponseInputItem[] = [
+  const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
         { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' },
@@ -226,7 +226,7 @@ test('collectImageSources returns empty for a plain string input', () => {
 });
 
 test('collectImageSources reads tool-result images and preserves forward order', () => {
-  const input: ResponseInputItem[] = [
+  const input: ResponsesInputItem[] = [
     // A function_call_output carrying structured input_image content (tool result).
     { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
@@ -286,7 +286,7 @@ test('transformInputItemsForImageGeneration encodes a failed call as ok:false wi
 });
 
 test('transformInputItemsForImageGeneration passes non-image items through untouched', () => {
-  const message: ResponseInputItem = { type: 'message', role: 'user', content: 'hi' };
+  const message: ResponsesInputItem = { type: 'message', role: 'user', content: 'hi' };
   const out = transformInputItemsForImageGeneration([message], 'image_generation');
   assertEquals(out.length, 1);
   assertEquals(out[0], message);
@@ -371,7 +371,7 @@ test('parseImageStreamEvent returns null for non-JSON or unrelated events', () =
 });
 
 test('prepareImageGenerationConfig rejects a present-but-invalid model', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', model: '' } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', model: '' } as ResponsesTool]);
   assert(!result.ok);
   assertEquals(result.error.code, 'invalid_value');
   assertEquals(result.error.param, 'tools[0].model');
@@ -379,8 +379,8 @@ test('prepareImageGenerationConfig rejects a present-but-invalid model', () => {
 
 test('prepareImageGenerationConfig validates every hosted entry, not just the last', () => {
   const result = prepareImageGenerationConfig([
-    { type: 'image_generation', n: 2 } as ResponseTool,
-    { type: 'image_generation', quality: 'low' } as ResponseTool,
+    { type: 'image_generation', n: 2 } as ResponsesTool,
+    { type: 'image_generation', quality: 'low' } as ResponsesTool,
   ]);
   assert(!result.ok);
   assertEquals(result.error.code, 'unknown_parameter');
@@ -388,16 +388,16 @@ test('prepareImageGenerationConfig validates every hosted entry, not just the la
 });
 
 test('prepareImageGenerationConfig uses Azure integer-range codes', () => {
-  const below = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: -1 } as ResponseTool]);
+  const below = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: -1 } as ResponsesTool]);
   assert(!below.ok);
   assertEquals(below.error.code, 'integer_below_min_value');
-  const above = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: 200 } as ResponseTool]);
+  const above = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: 200 } as ResponsesTool]);
   assert(!above.ok);
   assertEquals(above.error.code, 'integer_above_max_value');
 });
 
 test('prepareImageGenerationConfig rejects a non-decodable mask', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: 'https://example.com/m.png' } } as ResponseTool]);
+  const result = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: 'https://example.com/m.png' } } as ResponsesTool]);
   assert(!result.ok);
   assertEquals(result.error.code, 'invalid_value');
   assertEquals(result.error.param, 'tools[0].input_image_mask');

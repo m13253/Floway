@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateMessagesToResponses } from './request.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import type { ResponseFunctionTool, ResponseInputReasoning } from '@floway-dev/protocols/responses';
+import type { ResponsesFunctionTool, ResponsesInputReasoning } from '@floway-dev/protocols/responses';
 
 test('translateMessagesToResponses preserves a native thinking signature as encrypted_content with a synthesized id', () => {
   const result = translateMessagesToResponses({
@@ -18,7 +18,7 @@ test('translateMessagesToResponses preserves a native thinking signature as encr
   });
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as ResponseInputReasoning;
+  const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
     id: 'rs_0',
@@ -46,7 +46,7 @@ test('translateMessagesToResponses recovers Responses ids and encrypted_content 
   });
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as ResponseInputReasoning;
+  const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
     id: 'rs_42',
@@ -68,7 +68,7 @@ test('translateMessagesToResponses recovers an empty-front packed signature as i
   });
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as ResponseInputReasoning;
+  const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
     id: 'rs_7',
@@ -293,7 +293,7 @@ test('translateMessagesToResponses preserves text-only thinking input', () => {
   });
 
   if (!Array.isArray(result.input)) throw new Error('expected input array');
-  const reasoning = result.input[0] as ResponseInputReasoning;
+  const reasoning = result.input[0] as ResponsesInputReasoning;
   assertEquals(reasoning, {
     type: 'reasoning',
     id: 'rs_0',
@@ -340,7 +340,7 @@ test('translateMessagesToResponses preserves declared input_schema.properties ve
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  const tool = result.tools?.[0] as ResponseFunctionTool;
+  const tool = result.tools?.[0] as ResponsesFunctionTool;
   assertEquals(tool.parameters, {
     type: 'object',
     properties: { q: { type: 'string' } },
@@ -356,7 +356,7 @@ test('translateMessagesToResponses does not inject properties for non-object inp
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  const tool = result.tools?.[0] as ResponseFunctionTool;
+  const tool = result.tools?.[0] as ResponsesFunctionTool;
   assertEquals(tool.parameters, { type: 'string' });
 });
 

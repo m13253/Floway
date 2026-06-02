@@ -2,7 +2,7 @@ import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, respons
 import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { LlmTargetApi, RequestContext } from '../../../interceptors.ts';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type {
   ResponsesItemFinalizedHandler,
   ResponsesItemIdMapper,
@@ -111,7 +111,7 @@ export const storeResponsesOutputItems = <TFrame>(
 
 const buildRow = async (
   newId: string,
-  originalItem: ResponseInputItem,
+  originalItem: ResponsesInputItem,
   context: StoreResponsesContext,
   request: RequestContext,
 ): Promise<StoredResponsesItem> => {
@@ -120,18 +120,24 @@ const buildRow = async (
     throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
   }
   // A native Responses upstream owns its items — except those a source
-  // interceptor synthesized this request (e.g. the web-search shim's
-  // web_search_call), whose gateway-minted ids the upstream never issued.
-  // Those persist with no upstream identity so they stay non_affinity.
-  const upstreamOwned = context.targetApi === 'responses' && !request.responsesSyntheticItemIds.has(upstreamId);
+  // interceptor synthesized this request, whose gateway-minted ids the
+  // upstream never issued. Those persist with no upstream identity so they
+  // stay non_affinity.
+  const upstreamOwned = context.targetApi === 'responses' && !request.statefulResponsesContext.newSyntheticIds.has(upstreamId);
   const encryptedContent = responsesItemEncryptedContent(originalItem);
+  // Source interceptors register the per-item server-only payload under the
+  // wire id transformItems sees; the same id is `upstreamId` here. Attaching
+  // it lets a later turn restore the real success/failure state even when the
+  // client stripped fields from the echoed wire item.
+  const privatePayload = request.statefulResponsesContext.privatePayload.get(upstreamId);
+  const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
   return {
     id: newId,
     apiKeyId: request.apiKeyId ?? null,
     upstreamId: upstreamOwned ? context.upstream : null,
     upstreamItemId: upstreamOwned ? upstreamId : null,
     itemType: originalItem.type,
-    payload: context.store === false ? null : { item: originalItem },
+    payload: context.store === false ? null : persistedPayload,
     encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
     createdAt: Date.now(),
   };

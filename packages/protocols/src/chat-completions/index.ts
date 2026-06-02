@@ -2,7 +2,7 @@
 
 export interface ChatCompletionsPayload {
   model: string;
-  messages: Message[];
+  messages: ChatCompletionsMessage[];
   max_tokens?: number | null;
   stop?: string | string[] | null;
   stream?: boolean | null;
@@ -21,13 +21,13 @@ export interface ChatCompletionsPayload {
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: string | null;
-  tools?: Tool[] | null;
+  tools?: ChatCompletionsTool[] | null;
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
   stream_options?: { include_usage: boolean } | null;
 }
 
-export interface Tool {
+export interface ChatCompletionsTool {
   type: 'function';
   function: {
     name: string;
@@ -37,64 +37,64 @@ export interface Tool {
   };
 }
 
-export interface Message {
+export interface ChatCompletionsMessage {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'developer';
-  content: string | ContentPart[] | null;
+  content: string | ChatCompletionsContentPart[] | null;
   name?: string;
-  tool_calls?: ToolCall[];
+  tool_calls?: ChatCompletionsToolCall[];
   tool_call_id?: string;
   /** Human-readable reasoning text (thinking content) */
   reasoning_text?: string | null;
   /** Opaque reasoning token/signature for round-tripping */
   reasoning_opaque?: string | null;
-  reasoning_items?: ChatReasoningItem[] | null;
+  reasoning_items?: ChatCompletionsReasoningItem[] | null;
 }
 
-export interface ChatReasoningItem {
+export interface ChatCompletionsReasoningItem {
   type: 'reasoning';
   id?: string;
   summary?: { type: 'summary_text'; text: string }[];
 }
 
-export interface ToolCall {
+export interface ChatCompletionsToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
 }
 
-export type ContentPart = TextPart | ImagePart;
+export type ChatCompletionsContentPart = ChatCompletionsTextPart | ChatCompletionsImagePart;
 
-interface TextPart {
+interface ChatCompletionsTextPart {
   type: 'text';
   text: string;
 }
 
-interface ImagePart {
+interface ChatCompletionsImagePart {
   type: 'image_url';
   image_url: { url: string; detail?: 'low' | 'high' | 'auto' };
 }
 
 // Response types
 
-export interface ChatCompletionResponse {
+export interface ChatCompletionsResult {
   id: string;
   object: 'chat.completion';
   created: number;
   model: string;
-  choices: ChoiceNonStreaming[];
-  usage?: Usage;
+  choices: ChatCompletionsChoiceNonStreaming[];
+  usage?: ChatCompletionsUsage;
 }
 
-export interface ChatCompletionChunk {
+export interface ChatCompletionsStreamEvent {
   id: string;
   object: 'chat.completion.chunk';
   created: number;
   model: string;
-  choices: ChoiceStreaming[];
-  usage?: Usage;
+  choices: ChatCompletionsChoiceStreaming[];
+  usage?: ChatCompletionsUsage;
 }
 
-interface Usage {
+interface ChatCompletionsUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
@@ -106,26 +106,26 @@ interface Usage {
   };
 }
 
-export interface ChoiceNonStreaming {
+export interface ChatCompletionsChoiceNonStreaming {
   index: number;
   message: {
     role: 'assistant';
     content: string | null;
-    tool_calls?: ToolCall[];
+    tool_calls?: ChatCompletionsToolCall[];
     reasoning_text?: string | null;
     reasoning_opaque?: string | null;
-    reasoning_items?: ChatReasoningItem[] | null;
+    reasoning_items?: ChatCompletionsReasoningItem[] | null;
   };
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter';
 }
 
-interface ChoiceStreaming {
+interface ChatCompletionsChoiceStreaming {
   index: number;
-  delta: Delta;
+  delta: ChatCompletionsDelta;
   finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | null;
 }
 
-export interface Delta {
+export interface ChatCompletionsDelta {
   content?: string | null;
   role?: string;
   tool_calls?: {
@@ -138,7 +138,7 @@ export interface Delta {
   reasoning_text?: string | null;
   /** Opaque reasoning token/signature delta */
   reasoning_opaque?: string | null;
-  reasoning_items?: ChatReasoningItem[] | null;
+  reasoning_items?: ChatCompletionsReasoningItem[] | null;
 }
 
 export * from './errors.ts';

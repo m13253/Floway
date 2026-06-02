@@ -8,7 +8,7 @@ import { runInterceptors, type MessagesInvocation, type RequestContext } from '.
 import { eventResult, type ExecuteResult } from '../../llm/shared/errors/result.ts';
 import { clearModelsStore, ProviderModelsUnavailableError } from '../models-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
   const { copilotUpstream } = await setupAppTest();
@@ -369,7 +369,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
 
   const stubRequest: RequestContext = {
     requestStartedAt: 0,
-    responsesSyntheticItemIds: new Set(),    runtimeLocation: 'test',
+    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },    runtimeLocation: 'test',
     clientStream: false,
   };
 
@@ -398,7 +398,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       headers: {},
     };
 
-    await runInterceptors<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>(
+    await runInterceptors<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
       invocation,
       stubRequest,
       messagesCopilotInterceptors,

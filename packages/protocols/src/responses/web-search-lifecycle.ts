@@ -1,4 +1,4 @@
-import type { ResponseOutputWebSearchCall, ResponseStreamEvent } from './index.ts';
+import type { ResponsesOutputWebSearchCall, ResponsesStreamEvent } from './index.ts';
 
 // Hosted `web_search` lifecycle on Responses: 5 events at one output_index.
 //
@@ -18,19 +18,19 @@ import type { ResponseOutputWebSearchCall, ResponseStreamEvent } from './index.t
 // `Optional`) parse the start frame the same way they parse the
 // end frame. Native upstreams omit `action` on `.added` and only
 // populate it on `.done`; the shim diverges here because it always
-// knows the action at start time (the umbrella's parsed arguments
+// knows the action at start time (the shim's parsed arguments
 // produce the action shape before any backend work).
 //   https://github.com/openai/openai-python/blob/HEAD/src/openai/types/responses/response_function_web_search.py
 
 export const webSearchCallLifecycleEvents = (
-  item: ResponseOutputWebSearchCall,
+  item: ResponsesOutputWebSearchCall,
   outputIndex: number,
 ): {
-  startFrames: ResponseStreamEvent[];
-  endFrames: ResponseStreamEvent[];
+  startFrames: ResponsesStreamEvent[];
+  endFrames: ResponsesStreamEvent[];
 } => {
   const itemId = item.id;
-  const inProgressItem: ResponseOutputWebSearchCall = {
+  const inProgressItem: ResponsesOutputWebSearchCall = {
     type: 'web_search_call',
     id: itemId,
     status: 'in_progress',

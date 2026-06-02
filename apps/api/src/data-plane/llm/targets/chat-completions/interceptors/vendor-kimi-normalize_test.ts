@@ -5,17 +5,17 @@ import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import { eventResult } from '../../../shared/errors/result.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
-const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionChunk>>): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events result');
-  const out: ProtocolFrame<ChatCompletionChunk>[] = [];
+  const out: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const usageRecord = (usage: NonNullable<ChatCompletionChunk['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 const exchangeCtx = (enabledFlags: ReadonlySet<string> = new Set(['vendor-kimi'])) => chatCompletionsInvocation({ model: 'kimi-k2', messages: [{ role: 'user', content: 'hi' }] }, enabledFlags);
 
@@ -36,7 +36,7 @@ test('vendor-kimi rewrites flat cached_tokens into prompt_tokens_details.cached_
               completion_tokens: 20,
               total_tokens: 120,
               cached_tokens: 50,
-            } as unknown as ChatCompletionChunk['usage'],
+            } as unknown as ChatCompletionsStreamEvent['usage'],
           });
         })(),
         testTelemetryModelIdentity,
@@ -69,7 +69,7 @@ test('vendor-kimi early-returns when its flag is not set on the binding', async 
               completion_tokens: 20,
               total_tokens: 120,
               cached_tokens: 50,
-            } as unknown as ChatCompletionChunk['usage'],
+            } as unknown as ChatCompletionsStreamEvent['usage'],
           });
         })(),
         testTelemetryModelIdentity,

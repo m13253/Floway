@@ -7,18 +7,18 @@ import { createRequestContext } from '../../request-context.ts';
 import { stripUnsupportedPartFieldsFromPayload } from '../interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from '../interceptors/strip-unsupported-tools.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse } from '../respond.ts';
-import type { GeminiContent, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { translateGeminiViaMessages } from '@floway-dev/translate';
 
 interface GeminiCountTokensRequest {
   contents?: GeminiContent[];
-  generateContentRequest?: GeminiGenerateContentRequest;
+  generateContentRequest?: GeminiPayload;
 }
 
 // count_tokens reuses Gemini source request normalization, but cannot run the
 // full streaming source-interceptor pipeline. Apply the same payload mutations
 // directly so its translated request shape matches `generateContent`.
-const normalizeCountTokensRequest = (payload: GeminiGenerateContentRequest): void => {
+const normalizeCountTokensRequest = (payload: GeminiPayload): void => {
   stripUnsupportedPartFieldsFromPayload(payload);
   stripUnsupportedToolsFromPayload(payload);
   delete payload.safetySettings;

@@ -2,15 +2,15 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const chunk = (
-  delta: ChatCompletionChunk['choices'][0]['delta'],
-  finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null,
-  usage?: NonNullable<ChatCompletionChunk['usage']>,
-): ChatCompletionChunk => ({
+  delta: ChatCompletionsStreamEvent['choices'][0]['delta'],
+  finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
+  usage?: NonNullable<ChatCompletionsStreamEvent['usage']>,
+): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -19,7 +19,7 @@ const chunk = (
   ...(usage ? { usage } : {}),
 });
 
-const choiceChunk = (index: number, delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null): ChatCompletionChunk => ({
+const choiceChunk = (index: number, delta: ChatCompletionsStreamEvent['choices'][0]['delta'], finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -27,7 +27,7 @@ const choiceChunk = (index: number, delta: ChatCompletionChunk['choices'][0]['de
   choices: [{ index, delta, finish_reason: finishReason }],
 });
 
-const collect = async (input: ProtocolFrame<ChatCompletionChunk>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiStreamEvent>[] = [];
 
   async function* frames() {
@@ -43,7 +43,7 @@ const collect = async (input: ProtocolFrame<ChatCompletionChunk>[]): Promise<Pro
 
 const geminiFrame = (event: GeminiStreamEvent): ProtocolFrame<GeminiStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<ChatCompletionChunk>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<void> => {
   await collect(input);
 };
 
@@ -259,7 +259,7 @@ test('translateToSourceEvents throws on upstream Chat error payloads', async () 
       await drain([
         eventFrame({
           error: { type: 'invalid_request_error', message: 'bad request' },
-        } as unknown as ChatCompletionChunk),
+        } as unknown as ChatCompletionsStreamEvent),
         doneFrame(),
       ]),
     Error,

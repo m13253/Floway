@@ -5,11 +5,11 @@ import { type RequestContext, type ResponsesInvocation, runInterceptors } from '
 import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const targetApi = 'responses';
 
-export const emitToResponses = async (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+export const emitToResponses = async (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
   let modelIdentity: TelemetryModelIdentity | undefined;
 
   try {

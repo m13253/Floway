@@ -17,14 +17,14 @@ import {
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
 import type {
-  ResponseInputContent,
-  ResponseInputImage,
-  ResponseInputItem,
-  ResponseInputMessage,
-  ResponseInputText,
+  ResponsesInputContent,
+  ResponsesInputImage,
+  ResponsesInputItem,
+  ResponsesInputMessage,
+  ResponsesInputText,
   ResponsesPayload,
-  ResponseTool,
-  ResponseToolChoice,
+  ResponsesTool,
+  ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 
 interface TranslateResponsesToMessagesOptions {
@@ -49,7 +49,7 @@ export interface ResponsesToMessagesResult {
   customToolNames: Set<string>;
 }
 
-const extractSystemText = (message: ResponseInputMessage): string => {
+const extractSystemText = (message: ResponsesInputMessage): string => {
   if (typeof message.content === 'string') return message.content;
   if (!Array.isArray(message.content)) return '';
 
@@ -59,7 +59,7 @@ const extractSystemText = (message: ResponseInputMessage): string => {
   return message.content.map(block => ('text' in block ? block.text : '')).join('');
 };
 
-const translateUserMessage = async (message: ResponseInputMessage, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserMessage> => {
+const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserMessage> => {
   if (typeof message.content === 'string') {
     return { role: 'user', content: message.content };
   }
@@ -68,13 +68,13 @@ const translateUserMessage = async (message: ResponseInputMessage, loadRemoteIma
 
   for (const block of message.content) {
     if (block.type === 'input_text') {
-      content.push({ type: 'text', text: (block as ResponseInputText).text });
+      content.push({ type: 'text', text: (block as ResponsesInputText).text });
       continue;
     }
 
     if (block.type !== 'input_image') continue;
 
-    const image = await resolveImageUrlToMessagesImage((block as ResponseInputImage).image_url, loadRemoteImage);
+    const image = await resolveImageUrlToMessagesImage((block as ResponsesInputImage).image_url, loadRemoteImage);
     if (image) content.push(image);
   }
 
@@ -84,7 +84,7 @@ const translateUserMessage = async (message: ResponseInputMessage, loadRemoteIma
 // Multimodal `function_call_output` outputs carry the same content parts as a
 // user message; map them to Messages tool_result blocks (which natively carry
 // image blocks) rather than flattening images away.
-const translateToolOutput = async (output: string | ResponseInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | MessagesToolResultContentBlock[]> => {
+const translateToolOutput = async (output: string | ResponsesInputContent[], loadRemoteImage: RemoteImageLoader): Promise<string | MessagesToolResultContentBlock[]> => {
   if (typeof output === 'string') return output;
 
   const blocks: MessagesToolResultContentBlock[] = [];
@@ -100,7 +100,7 @@ const translateToolOutput = async (output: string | ResponseInputContent[], load
   return blocks.length > 0 ? blocks : '';
 };
 
-const translateAssistantMessage = (message: ResponseInputMessage): MessagesAssistantMessage => {
+const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssistantMessage => {
   if (typeof message.content === 'string') {
     return { role: 'assistant', content: message.content };
   }
@@ -109,7 +109,7 @@ const translateAssistantMessage = (message: ResponseInputMessage): MessagesAssis
 
   for (const block of message.content) {
     if (block.type === 'output_text') {
-      content.push({ type: 'text', text: (block as ResponseInputText).text });
+      content.push({ type: 'text', text: (block as ResponsesInputText).text });
     }
   }
 
@@ -138,11 +138,11 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
   messages.push({ role: 'user', content: [block] });
 };
 
-const unexpectedResponsesInputItem = (value: ResponseInputItem): never => {
+const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
   throw new Error(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
 };
 
-const translateResponsesInput = async (input: string | ResponseInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemParts: string[] }> => {
+const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemParts: string[] }> => {
   if (typeof input === 'string') {
     return {
       messages: [{ role: 'user', content: input }],
@@ -215,7 +215,7 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
     case 'image_generation_call':
       throw new Error('Responses → Messages translator does not accept image_generation_call input items until item-by-id image storage is available.');
     default:
-      // Exhaustiveness guard: a future ResponseInputItem variant must
+      // Exhaustiveness guard: a future ResponsesInputItem variant must
       // explicitly opt into translator behavior.
       unexpectedResponsesInputItem(item);
     }
@@ -224,14 +224,14 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
   return { messages, systemParts };
 };
 
-const translateTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
+const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
   // Translated Messages targets do not currently have a faithful bridge
   // for hosted/deferred Responses tools (`web_search`, `tool_search`,
   // `namespace`, `image_generation`, and future builtin names). Native
   // Responses targets receive those entries unchanged; this translator
   // narrows to function and Freeform `custom` tools, recording the latter
   // in `customToolNames` so the events translator can reverse the wrap.
-  // The umbrella shim's web_search function tool reaches this code under
+  // The shim's web_search function tool reaches this code under
   // its resolved name as an ordinary function tool — no special carve-out
   // needed.
   const out: MessagesTool[] = [];
@@ -259,7 +259,7 @@ const translateTools = (tools: ResponseTool[] | null | undefined, customToolName
   return out.length > 0 ? out : undefined;
 };
 
-const translateToolChoice = (toolChoice: ResponseToolChoice | undefined): MessagesPayload['tool_choice'] => {
+const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): MessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
   if (typeof toolChoice === 'string') {

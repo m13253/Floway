@@ -2,19 +2,19 @@ import { test } from 'vitest';
 
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents, translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-type ResponseCompletedEvent = Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+type ResponsesCompletedEvent = Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
 
-type ResponseIncompleteEvent = Extract<ResponseStreamEvent, { type: 'response.incomplete' }>;
+type ResponsesIncompleteEvent = Extract<ResponsesStreamEvent, { type: 'response.incomplete' }>;
 
 const chunk = (
-  delta: ChatCompletionChunk['choices'][0]['delta'],
-  finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null,
-  usage?: ChatCompletionChunk['usage'],
-): ChatCompletionChunk => ({
+  delta: ChatCompletionsStreamEvent['choices'][0]['delta'],
+  finishReason: ChatCompletionsStreamEvent['choices'][0]['finish_reason'] = null,
+  usage?: ChatCompletionsStreamEvent['usage'],
+): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_stream_test',
   object: 'chat.completion.chunk',
   created: 1,
@@ -23,12 +23,12 @@ const chunk = (
   ...(usage ? { usage } : {}),
 });
 
-const translate = (chunks: ChatCompletionChunk[]): ResponseStreamEvent[] => {
+const translate = (chunks: ChatCompletionsStreamEvent[]): ResponsesStreamEvent[] => {
   const state = createChatCompletionsToResponsesStreamState();
   return [...chunks.flatMap(item => translateChatCompletionsChunkToResponsesEvents(item, state)), ...flushChatCompletionsToResponsesEvents(state)];
 };
 
-const sequenceNumbers = (events: ResponseStreamEvent[]): number[] => events.map(event => (event as ResponseStreamEvent & { sequence_number: number }).sequence_number);
+const sequenceNumbers = (events: ResponsesStreamEvent[]): number[] => events.map(event => (event as ResponsesStreamEvent & { sequence_number: number }).sequence_number);
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -60,8 +60,8 @@ test('translateChatCompletionsChunkToResponsesEvents preserves tool call deltas 
     chunk({}, 'tool_calls'),
   ]);
 
-  const argumentDeltas = events.filter(event => event.type === 'response.function_call_arguments.delta') as Extract<ResponseStreamEvent, { type: 'response.function_call_arguments.delta' }>[];
-  const completed = events.find(event => event.type === 'response.completed') as ResponseCompletedEvent | undefined;
+  const argumentDeltas = events.filter(event => event.type === 'response.function_call_arguments.delta') as Extract<ResponsesStreamEvent, { type: 'response.function_call_arguments.delta' }>[];
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
 
   assertEquals(
     argumentDeltas.map(event => event.delta),
@@ -100,7 +100,7 @@ test('translateChatCompletionsChunkToResponsesEvents replaces buffered scalar re
     chunk({}, 'stop'),
   ]);
 
-  const completed = events.find(event => event.type === 'response.completed') as ResponseCompletedEvent | undefined;
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
 
   assertEquals(completed?.response.output, [
     {
@@ -134,7 +134,7 @@ test('translateChatCompletionsChunkToResponsesEvents maps usage on incomplete le
     }),
   ]);
 
-  const incomplete = events.find(event => event.type === 'response.incomplete') as ResponseIncompleteEvent | undefined;
+  const incomplete = events.find(event => event.type === 'response.incomplete') as ResponsesIncompleteEvent | undefined;
 
   assertEquals(incomplete?.response.status, 'incomplete');
   assertEquals(incomplete?.response.incomplete_details, {
@@ -162,7 +162,7 @@ test('translateToSourceEvents rejects Chat streams without DONE', async () => {
           finish_reason: 'stop',
         },
       ],
-    } satisfies ChatCompletionChunk);
+    } satisfies ChatCompletionsStreamEvent);
   }
 
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Chat Completions stream ended without a DONE sentinel.');
@@ -196,7 +196,7 @@ test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool
           finish_reason: null,
         },
       ],
-    } satisfies ChatCompletionChunk,
+    } satisfies ChatCompletionsStreamEvent,
     state,
   );
 
@@ -205,7 +205,7 @@ test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool
     startEvents.map(e => e.type),
     ['response.created', 'response.in_progress', 'response.output_item.added'],
   );
-  const added = startEvents.find((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
+  const added = startEvents.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added');
   if (!added) throw new Error('expected output_item.added');
   assertEquals(added.item.type, 'custom_tool_call');
 
@@ -230,7 +230,7 @@ test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool
           finish_reason: 'tool_calls',
         },
       ],
-    } satisfies ChatCompletionChunk,
+    } satisfies ChatCompletionsStreamEvent,
     state,
   );
   assertEquals(continueEvents, []);
@@ -240,7 +240,7 @@ test('translateChatCompletionsChunkToResponsesEvents unwraps wrapped custom tool
   assertEquals(types.includes('response.custom_tool_call_input.delta'), true);
   assertEquals(types.includes('response.custom_tool_call_input.done'), true);
 
-  const itemDone = finalEvents.find((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+  const itemDone = finalEvents.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
   if (!itemDone) throw new Error('expected output_item.done');
   assertEquals(itemDone.item.type, 'custom_tool_call');
   if (itemDone.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');

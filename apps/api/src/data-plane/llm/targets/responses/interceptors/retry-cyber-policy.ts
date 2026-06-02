@@ -2,12 +2,12 @@ import { isObjectLike } from '../../../../../shared/json-helpers.ts';
 import type { RequestContext, ResponsesInterceptor } from '../../../interceptors.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const CYBER_POLICY_ERROR_CODE = 'cyber_policy';
 const MAX_CYBER_POLICY_RETRIES = 10;
 
-type ResponsesResultFrames = ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
+type ResponsesResultFrames = ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>;
 type EventsResult = Extract<ResponsesResultFrames, { type: 'events' }>;
 type FailureResult = Exclude<ResponsesResultFrames, { type: 'events' }>;
 
@@ -30,10 +30,10 @@ const isCyberPolicyUpstreamError = (result: ResponsesResultFrames): boolean => {
   }
 };
 
-const isCyberPolicyFrame = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean =>
+const isCyberPolicyFrame = (frame: ProtocolFrame<RawResponsesStreamEvent>): boolean =>
   frame.type === 'event' && valueHasCyberPolicyCode(frame.event);
 
-const isRetryProbePrologue = (frame: ProtocolFrame<ResponsesStreamEvent>): boolean =>
+const isRetryProbePrologue = (frame: ProtocolFrame<RawResponsesStreamEvent>): boolean =>
   frame.type === 'event' && (frame.event.type === 'response.created' || frame.event.type === 'response.in_progress');
 
 const isDownstreamAborted = (request: RequestContext): boolean => request.downstreamAbortSignal?.aborted === true;
@@ -51,10 +51,10 @@ const unexpectedRetryFailureError = (result: FailureResult): Error => {
 };
 
 const replayBufferedThenRest = async function* (
-  buffered: readonly ProtocolFrame<ResponsesStreamEvent>[],
-  first: ProtocolFrame<ResponsesStreamEvent>,
-  iterator: AsyncIterator<ProtocolFrame<ResponsesStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  buffered: readonly ProtocolFrame<RawResponsesStreamEvent>[],
+  first: ProtocolFrame<RawResponsesStreamEvent>,
+  iterator: AsyncIterator<ProtocolFrame<RawResponsesStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
   let done = false;
 
   try {
@@ -93,7 +93,7 @@ const retryCyberPolicyEvents = async function* (
   run: () => Promise<ResponsesResultFrames>,
   initialResult: EventsResult,
   returned: EventsResult,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
   let result: ResponsesResultFrames = initialResult;
 
   for (let attempt = 0; attempt <= MAX_CYBER_POLICY_RETRIES; attempt++) {
@@ -110,7 +110,7 @@ const retryCyberPolicyEvents = async function* (
     }
 
     const iterator = result.events[Symbol.asyncIterator]();
-    const buffered: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    const buffered: ProtocolFrame<RawResponsesStreamEvent>[] = [];
 
     while (true) {
       const next = await iterator.next();
@@ -169,8 +169,7 @@ const retryCyberPolicyEvents = async function* (
  * - https://deploymentsafety.openai.com/gpt-5-3-codex/cybersecurity
  *
  * TODO: Add gateway-side recent cyber-policy retry/error-log storage so
- * operators can inspect detailed upstream failures, matching the web-search shim
- * error-log TODO pattern.
+ * operators can inspect detailed upstream failures.
  */
 export const withCyberPolicyRetried: ResponsesInterceptor = async (ctx, request, run) => {
   if (!ctx.enabledFlags.has('retry-cyber-policy')) return await run();

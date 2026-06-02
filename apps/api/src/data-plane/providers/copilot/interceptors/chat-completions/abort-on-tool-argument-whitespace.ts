@@ -1,6 +1,6 @@
 import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**
@@ -28,7 +28,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
  * - https://github.com/caozhiyuan/copilot-api/commit/3cdc32c0811469da9eebec5ca3892caf068df542
  */
 const isWhitespaceExceeded = (
-  chunk: ChatCompletionChunk,
+  chunk: ChatCompletionsStreamEvent,
   whitespaceByIndex: Map<number, number>,
 ): boolean => {
   for (const choice of chunk.choices) {
@@ -54,7 +54,7 @@ export const withToolArgumentWhitespaceAborted: ChatCompletionsInterceptor = asy
 
   return {
     ...result,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionChunk>> {
+    events: (async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
       const whitespaceByIndex = new Map<number, number>();
 
       for await (const frame of result.events) {

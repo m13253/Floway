@@ -1,6 +1,6 @@
 import { buf as crc32 } from 'crc-32';
 
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 const itemTypePrefixes = {
   message: 'msg',
@@ -70,7 +70,7 @@ export const responsesItemId = (item: { id?: unknown }): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-export const responsesItemEncryptedContent = (item: ResponseInputItem): string | null => {
+export const responsesItemEncryptedContent = (item: ResponsesInputItem): string | null => {
   const value = (item as { encrypted_content?: unknown }).encrypted_content;
   return typeof value === 'string' && value.length > 0 ? value : null;
 };

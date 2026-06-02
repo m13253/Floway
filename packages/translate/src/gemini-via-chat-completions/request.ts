@@ -11,12 +11,12 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
-import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
+import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
 
 const appendOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? `${current ?? ''}${signature}` : current);
 
-const inlineDataToContentPart = (part: GeminiPart): ContentPart | null => {
+const inlineDataToContentPart = (part: GeminiPart): ChatCompletionsContentPart | null => {
   const url = geminiInlineDataUrl(part);
   if (url === null) return null;
 
@@ -26,14 +26,14 @@ const inlineDataToContentPart = (part: GeminiPart): ContentPart | null => {
   };
 };
 
-const textToContentPart = (text: string): ContentPart => ({
+const textToContentPart = (text: string): ChatCompletionsContentPart => ({
   type: 'text',
   text,
 });
 
-const contentFromParts = (parts: GeminiPart[]): string | ContentPart[] | null => {
+const contentFromParts = (parts: GeminiPart[]): string | ChatCompletionsContentPart[] | null => {
   const textParts = parts.map(geminiPartText).filter((text): text is string => text !== null);
-  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is ContentPart => part !== null);
+  const mediaParts = parts.map(inlineDataToContentPart).filter((part): part is ChatCompletionsContentPart => part !== null);
 
   if (!textParts.length && !mediaParts.length) return null;
   if (!mediaParts.length) return textParts.join('\n\n');
@@ -47,10 +47,10 @@ const contentFromParts = (parts: GeminiPart[]): string | ContentPart[] | null =>
   });
 };
 
-const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): Message | null => {
+const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ChatCompletionsMessage | null => {
   const visibleParts: GeminiPart[] = [];
   const thoughtTexts: string[] = [];
-  const toolCalls: ToolCall[] = [];
+  const toolCalls: ChatCompletionsToolCall[] = [];
   let reasoningOpaque: string | null = null;
 
   content.parts.forEach((part, partIndex) => {
@@ -81,7 +81,7 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
     }
   });
 
-  const message: Message = {
+  const message: ChatCompletionsMessage = {
     role: 'assistant',
     content: contentFromParts(visibleParts),
   };
@@ -93,7 +93,7 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
   return message.content !== null || message.tool_calls?.length || message.reasoning_text !== undefined || message.reasoning_opaque !== undefined ? message : null;
 };
 
-const buildToolMessage = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): Message | null => {
+const buildToolMessage = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ChatCompletionsMessage | null => {
   const functionResponsePart = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex);
   if (!functionResponsePart) return null;
 
@@ -104,8 +104,8 @@ const buildToolMessage = (part: GeminiPart, turnIndex: number, partIndex: number
   };
 };
 
-const buildUserMessages = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): Message[] => {
-  const messages: Message[] = [];
+const buildUserMessages = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ChatCompletionsMessage[] => {
+  const messages: ChatCompletionsMessage[] = [];
   let pendingParts: GeminiPart[] = [];
 
   const flushUserParts = (): void => {
@@ -175,7 +175,7 @@ const applyGenerationConfig = (request: ChatCompletionsPayload, generationConfig
   if (reasoningEffort) request.reasoning_effort = reasoningEffort;
 };
 
-const buildTools = (payload: GeminiGenerateContentRequest): Tool[] | undefined => {
+const buildTools = (payload: GeminiPayload): ChatCompletionsTool[] | undefined => {
   const tools = geminiFunctionDeclarations(payload, 'any').map(declaration => ({
     type: 'function' as const,
     function: {
@@ -188,7 +188,7 @@ const buildTools = (payload: GeminiGenerateContentRequest): Tool[] | undefined =
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiGenerateContentRequest, model: string): ChatCompletionsPayload => {
+export const buildTargetRequest = (payload: GeminiPayload, model: string): ChatCompletionsPayload => {
   const request: ChatCompletionsPayload = {
     model,
     stream: true,

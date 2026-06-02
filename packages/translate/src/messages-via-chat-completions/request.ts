@@ -1,7 +1,7 @@
-import { type ChatScalarReasoning, chatScalarReasoningFromMessagesBlock } from '../shared/chat-and-messages/reasoning.ts';
+import { type ChatCompletionsScalarReasoning, chatCompletionsScalarReasoningFromMessagesBlock } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type {
   MessagesAssistantContentBlock,
   MessagesAssistantMessage,
@@ -16,7 +16,7 @@ import type {
   MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
 
-const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] | MessagesAssistantContentBlock[]): string | ContentPart[] | null => {
+const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] | MessagesAssistantContentBlock[]): string | ChatCompletionsContentPart[] | null => {
   if (typeof content === 'string') return content;
 
   if (!content.some(block => block.type === 'image')) {
@@ -26,7 +26,7 @@ const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] |
       .join('\n\n');
   }
 
-  const parts: ContentPart[] = [];
+  const parts: ChatCompletionsContentPart[] = [];
 
   for (const block of content) {
     if (block.type === 'text') {
@@ -60,7 +60,7 @@ const toChatCompletionsToolResultContent = (content: MessagesToolResultBlock['co
   return JSON.stringify(content);
 };
 
-const toChatCompletionsFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ToolCall => ({
+const toChatCompletionsFunctionCall = (block: MessagesToolUseBlock | MessagesServerToolUseBlock): ChatCompletionsToolCall => ({
   id: block.id,
   type: 'function',
   function: {
@@ -71,18 +71,18 @@ const toChatCompletionsFunctionCall = (block: MessagesToolUseBlock | MessagesSer
 
 type PendingAssistantMessage = {
   textParts: string[];
-  toolCalls: ToolCall[];
-  scalarReasoning: ChatScalarReasoning | null;
+  toolCalls: ChatCompletionsToolCall[];
+  scalarReasoning: ChatCompletionsScalarReasoning | null;
 };
 
 const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: MessagesAssistantContentBlock): void => {
   // Chat scalar reasoning cannot represent ordered interleaved Messages
   // thinking blocks. Project only the first source-order group so readable text
   // is never paired with an opaque signature from a later block.
-  pending.scalarReasoning ??= chatScalarReasoningFromMessagesBlock(block);
+  pending.scalarReasoning ??= chatCompletionsScalarReasoningFromMessagesBlock(block);
 };
 
-const flushPendingAssistantMessage = (messages: Message[], pending: PendingAssistantMessage): void => {
+const flushPendingAssistantMessage = (messages: ChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
   if (pending.textParts.length === 0 && pending.toolCalls.length === 0 && !pending.scalarReasoning) {
     return;
   }
@@ -111,7 +111,7 @@ const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] 
   return clientTools?.length ? clientTools : undefined;
 };
 
-const translateMessagesUser = (message: MessagesUserMessage): Message[] => {
+const translateMessagesUser = (message: MessagesUserMessage): ChatCompletionsMessage[] => {
   if (!Array.isArray(message.content)) {
     return [
       {
@@ -121,7 +121,7 @@ const translateMessagesUser = (message: MessagesUserMessage): Message[] => {
     ];
   }
 
-  const messages: Message[] = [];
+  const messages: ChatCompletionsMessage[] = [];
   const pendingUserBlocks: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>[] = [];
 
   const flushPendingUserBlocks = () => {
@@ -155,7 +155,7 @@ const translateMessagesUser = (message: MessagesUserMessage): Message[] => {
   return messages;
 };
 
-const translateMessagesAssistant = (message: MessagesAssistantMessage): Message[] => {
+const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatCompletionsMessage[] => {
   if (!Array.isArray(message.content)) {
     return [
       {
@@ -165,7 +165,7 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): Message[
     ];
   }
 
-  const messages: Message[] = [];
+  const messages: ChatCompletionsMessage[] = [];
   const pending: PendingAssistantMessage = {
     textParts: [],
     toolCalls: [],
@@ -200,10 +200,10 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): Message[
   return messages;
 };
 
-const translateMessagesInput = (messages: MessagesMessage[], system: string | MessagesTextBlock[] | undefined): Message[] => {
+const translateMessagesInput = (messages: MessagesMessage[], system: string | MessagesTextBlock[] | undefined): ChatCompletionsMessage[] => {
   // Messages system blocks are prompt boundaries; keep them as separated
   // paragraphs when falling back to Chat Completions.
-  const systemMessages: Message[] = system
+  const systemMessages: ChatCompletionsMessage[] = system
     ? [
         {
           role: 'system',
@@ -215,7 +215,7 @@ const translateMessagesInput = (messages: MessagesMessage[], system: string | Me
   return [...systemMessages, ...messages.flatMap(message => (message.role === 'user' ? translateMessagesUser(message) : translateMessagesAssistant(message)))];
 };
 
-const translateMessagesTools = (tools?: MessagesClientTool[]): Tool[] | undefined =>
+const translateMessagesTools = (tools?: MessagesClientTool[]): ChatCompletionsTool[] | undefined =>
   // Do not hide target-side function-name constraints by renaming tools here;
   // the Messages source contract has no reverse mapping surface for that.
   tools?.map(tool => ({

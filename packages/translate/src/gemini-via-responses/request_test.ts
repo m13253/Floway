@@ -2,10 +2,10 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 
 test('buildTargetRequest maps instructions and multimodal user input without defaults', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     systemInstruction: {
       parts: [{ text: 'Be precise.' }, { text: 'Use markdown.' }],
     },
@@ -38,7 +38,7 @@ test('buildTargetRequest maps instructions and multimodal user input without def
 });
 
 test('buildTargetRequest maps assistant reasoning, function calls, and call-order outputs', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -113,7 +113,7 @@ test('buildTargetRequest maps assistant reasoning, function calls, and call-orde
 });
 
 test('buildTargetRequest ignores thought signatures when translating to Responses', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'model',
@@ -150,7 +150,7 @@ test('buildTargetRequest maps generation config, JSON schema, and reasoning cont
     properties: { answer: { type: 'string' } },
     required: ['answer'],
   };
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     generationConfig: {
       maxOutputTokens: 512,
       temperature: 0.25,
@@ -240,7 +240,7 @@ test('buildTargetRequest maps thinking budget thresholds and zero-budget disable
 });
 
 test('buildTargetRequest maps tool declarations and tool choice modes only when tools exist', () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     tools: [
       {
         functionDeclarations: [

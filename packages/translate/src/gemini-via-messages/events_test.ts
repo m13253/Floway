@@ -4,9 +4,9 @@ import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
-const messageStart = (usage: MessagesResponse['usage'] = { input_tokens: 0, output_tokens: 0 }): MessagesStreamEventData => ({
+const messageStart = (usage: MessagesResult['usage'] = { input_tokens: 0, output_tokens: 0 }): MessagesStreamEvent => ({
   type: 'message_start',
   message: {
     id: 'msg_1',
@@ -20,7 +20,7 @@ const messageStart = (usage: MessagesResponse['usage'] = { input_tokens: 0, outp
   },
 });
 
-const collect = async (input: ProtocolFrame<MessagesStreamEventData>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
+const collect = async (input: ProtocolFrame<MessagesStreamEvent>[]): Promise<ProtocolFrame<GeminiStreamEvent>[]> => {
   const output: ProtocolFrame<GeminiStreamEvent>[] = [];
 
   async function* frames() {
@@ -36,7 +36,7 @@ const collect = async (input: ProtocolFrame<MessagesStreamEventData>[]): Promise
 
 const geminiFrame = (event: GeminiStreamEvent): ProtocolFrame<GeminiStreamEvent> => eventFrame(event);
 
-const drain = async (input: ProtocolFrame<MessagesStreamEventData>[]): Promise<void> => {
+const drain = async (input: ProtocolFrame<MessagesStreamEvent>[]): Promise<void> => {
   await collect(input);
 };
 

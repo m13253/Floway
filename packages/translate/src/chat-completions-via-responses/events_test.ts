@@ -2,18 +2,18 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Inlined copy of apps/api's chatProtocolFrameToSSEFrame: kept here so this
+// Inlined copy of apps/api's chatCompletionsProtocolFrameToSSEFrame: kept here so this
 // translate-package test does not deep-import into apps/api. The behavior
 // under test is the translate output's terminal-frame discipline, not the
 // SSE projection itself.
-const isUsageOnlyChunk = (frame: ProtocolFrame<ChatCompletionChunk>): boolean =>
+const isUsageOnlyChunk = (frame: ProtocolFrame<ChatCompletionsStreamEvent>): boolean =>
   frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
 
-const chatProtocolFrameToSSEFrame = (frame: ProtocolFrame<ChatCompletionChunk>, options: { includeUsageChunk: boolean }): SseFrame | null => {
+const chatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>, options: { includeUsageChunk: boolean }): SseFrame | null => {
   if (frame.type === 'done') return sseFrame('[DONE]');
   if (!options.includeUsageChunk && isUsageOnlyChunk(frame)) return null;
   return sseFrame(JSON.stringify(frame.event));
@@ -42,18 +42,18 @@ const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   },
 });
 
-const toProtocolFrame = (event: ResponseStreamEvent): ProtocolFrame<ResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
+const toProtocolFrame = (event: ResponsesStreamEvent): ProtocolFrame<RawResponsesStreamEvent> => eventFrame({ ...event, sequence_number: 0 });
 
 const includeUsageChunk = { includeUsageChunk: true };
 
-const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>) {
+const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>) {
   for await (const frame of translateToSourceEvents(frames)) {
-    const sse = chatProtocolFrameToSSEFrame(frame, includeUsageChunk);
+    const sse = chatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk);
     if (sse) yield sse;
   }
 };
 
-const countDoneSentinels = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<number> => {
+const countDoneSentinels = async (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Promise<number> => {
   let doneCount = 0;
 
   async function* stream() {
@@ -67,7 +67,7 @@ const countDoneSentinels = async (frames: ProtocolFrame<ResponsesStreamEvent>[])
   return doneCount;
 };
 
-const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
+const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
   let assistantStartCount = 0;
   let doneCount = 0;
 

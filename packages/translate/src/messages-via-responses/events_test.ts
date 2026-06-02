@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents, translateResponsesToMessagesResponse } from './events.ts';
+import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents, translateResponsesToMessagesResult } from './events.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assertEquals } from '../test-assert.ts';
 
@@ -499,8 +499,8 @@ test('reasoning stream with whitespace-only summary emits a redacted_thinking ca
   ]);
 });
 
-test('translateResponsesToMessagesResponse carries reasoning id in thinking signature', () => {
-  const result = translateResponsesToMessagesResponse({
+test('translateResponsesToMessagesResult carries reasoning id in thinking signature', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_123',
     object: 'response',
     model: 'gpt-test',
@@ -526,8 +526,8 @@ test('translateResponsesToMessagesResponse carries reasoning id in thinking sign
   assertEquals(block, { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_1', '') });
 });
 
-test('translateResponsesToMessagesResponse projects opaque-only reasoning into redacted_thinking', () => {
-  const result = translateResponsesToMessagesResponse({
+test('translateResponsesToMessagesResult projects opaque-only reasoning into redacted_thinking', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_123',
     object: 'response',
     model: 'gpt-test',
@@ -553,8 +553,8 @@ test('translateResponsesToMessagesResponse projects opaque-only reasoning into r
   assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_1', 'opaque') }]);
 });
 
-test('translateResponsesToMessagesResponse round-trips an id-only reasoning as packed redacted_thinking', () => {
-  const result = translateResponsesToMessagesResponse({
+test('translateResponsesToMessagesResult round-trips an id-only reasoning as packed redacted_thinking', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_drop',
     object: 'response',
     model: 'gpt-test',
@@ -579,8 +579,8 @@ test('translateResponsesToMessagesResponse round-trips an id-only reasoning as p
   ]);
 });
 
-test('translateResponsesToMessagesResponse round-trips an id-only reasoning with no readable summary', () => {
-  const result = translateResponsesToMessagesResponse({
+test('translateResponsesToMessagesResult round-trips an id-only reasoning with no readable summary', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_undef',
     object: 'response',
     model: 'gpt-test',
@@ -601,8 +601,8 @@ test('translateResponsesToMessagesResponse round-trips an id-only reasoning with
   assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_undef', '') }]);
 });
 
-test('translateResponsesToMessagesResponse projects whitespace-only reasoning summary as packed redacted_thinking', () => {
-  const result = translateResponsesToMessagesResponse({
+test('translateResponsesToMessagesResult projects whitespace-only reasoning summary as packed redacted_thinking', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_ws',
     object: 'response',
     model: 'gpt-test',

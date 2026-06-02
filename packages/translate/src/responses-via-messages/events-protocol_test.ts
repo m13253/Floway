@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {
@@ -18,7 +18,7 @@ const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
 };
 
 test('translateToSourceEvents stops after Messages message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({ type: 'message_stop' });
     yield eventFrame({
       type: 'error',
@@ -38,7 +38,7 @@ test('translateToSourceEvents stops after Messages message_stop', async () => {
 });
 
 test('translateToSourceEvents translates Messages error terminal and stops', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({
       type: 'error',
       error: {
@@ -64,7 +64,7 @@ test('translateToSourceEvents translates Messages error terminal and stops', asy
 });
 
 test('translateToSourceEvents rejects truncated Messages streams without message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+  async function* stream(): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({
       type: 'message_start',
       message: {

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
@@ -25,7 +25,7 @@ test('translateToSourceEvents rejects Chat streams without DONE', async () => {
           finish_reason: 'stop',
         },
       ],
-    } satisfies ChatCompletionChunk);
+    } satisfies ChatCompletionsStreamEvent);
   }
 
   await assertRejects(async () => await drain(translateToSourceEvents(stream())), Error, 'Upstream Chat Completions stream ended without a DONE sentinel.');

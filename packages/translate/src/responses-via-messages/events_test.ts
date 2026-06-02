@@ -2,12 +2,12 @@ import { test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesResult, RawResponsesStreamEvent, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-type ResponseOutputItemAddedEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.added' }>;
+type ResponsesOutputItemAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
 
-type ResponseOutputItemDoneEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.done' }>;
+type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>;
 
 // ── Helpers ──
 
@@ -32,7 +32,7 @@ const runToCompletion = (usage: { input_tokens: number; output_tokens: number; c
           cache_creation_input_tokens: usage.cache_creation_input_tokens,
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -41,7 +41,7 @@ const runToCompletion = (usage: { input_tokens: number; output_tokens: number; c
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'text', text: '' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -49,20 +49,20 @@ const runToCompletion = (usage: { input_tokens: number; output_tokens: number; c
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'Hello' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
-  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
   translateMessagesEventToResponsesEvents(
     {
       type: 'message_delta',
       delta: { stop_reason: 'end_turn' },
       usage: { output_tokens: usage.output_tokens },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
-  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'message_stop' } as MessagesStreamEventData, state);
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'message_stop' } as MessagesStreamEvent, state);
 
   const completed = stopEvents.find(e => e.type === 'response.completed');
   if (completed?.type !== 'response.completed') {
@@ -123,11 +123,11 @@ test('redacted_thinking stream block round-trips its opaque data as encrypted_co
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'redacted_thinking', data: 'opaque_sig' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
-  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
   assertEquals(state.completedItems, [
     {
@@ -147,7 +147,7 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'thinking', thinking: '' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -155,7 +155,7 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -163,10 +163,10 @@ test('thinking stream block carries the upstream signature verbatim as encrypted
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'signature_delta', signature: 'upstream-opaque-signature' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
-  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
   assertEquals(state.completedItems, [
     {
@@ -186,11 +186,11 @@ test('thinking stream block start emits a plain reasoning item', () => {
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'thinking', thinking: '' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
-  const added = events.find(event => event.type === 'response.output_item.added') as ResponseOutputItemAddedEvent | undefined;
+  const added = events.find(event => event.type === 'response.output_item.added') as ResponsesOutputItemAddedEvent | undefined;
   if (added?.type !== 'response.output_item.added') {
     throw new Error('expected response.output_item.added event');
   }
@@ -209,7 +209,7 @@ test('thinking stream block stop emits a plain reasoning item', () => {
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'thinking', thinking: '' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -217,12 +217,12 @@ test('thinking stream block stop emits a plain reasoning item', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
-  const events = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  const events = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
-  const done = events.find(event => event.type === 'response.output_item.done') as ResponseOutputItemDoneEvent | undefined;
+  const done = events.find(event => event.type === 'response.output_item.done') as ResponsesOutputItemDoneEvent | undefined;
   if (done?.type !== 'response.output_item.done') {
     throw new Error('expected response.output_item.done event');
   }
@@ -253,7 +253,7 @@ test('max_tokens stream stop becomes response.incomplete', () => {
         stop_sequence: null,
         usage: { input_tokens: 3, output_tokens: 0 },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -261,17 +261,17 @@ test('max_tokens stream stop becomes response.incomplete', () => {
       type: 'message_delta',
       delta: { stop_reason: 'max_tokens' },
       usage: { output_tokens: 7 },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
-  const events = translateMessagesEventToResponsesEvents({ type: 'message_stop' } as MessagesStreamEventData, state);
+  const events = translateMessagesEventToResponsesEvents({ type: 'message_stop' } as MessagesStreamEvent, state);
 
   assertEquals(
     events.map(event => event.type),
     ['response.incomplete'],
   );
-  const incomplete = events[0] as Extract<ResponseStreamEvent, { type: 'response.incomplete' }>;
+  const incomplete = events[0] as Extract<ResponsesStreamEvent, { type: 'response.incomplete' }>;
   if (incomplete.type !== 'response.incomplete') {
     throw new Error('expected response.incomplete');
   }
@@ -298,7 +298,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
         stop_sequence: null,
         usage: { input_tokens: 1, output_tokens: 0 },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -307,11 +307,11 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'tool_use', id: 'call_ctc', name: 'apply_patch', input: {} },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
-  const added = startEvents.find((e): e is ResponseOutputItemAddedEvent => e.type === 'response.output_item.added');
+  const added = startEvents.find((e): e is ResponsesOutputItemAddedEvent => e.type === 'response.output_item.added');
   if (!added) throw new Error('expected output_item.added');
   assertEquals(added.item.type, 'custom_tool_call');
   if (added.item.type !== 'custom_tool_call') throw new Error('expected custom_tool_call item');
@@ -325,7 +325,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '{"input":"*** Begin Patch' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   const deltaB = translateMessagesEventToResponsesEvents(
@@ -333,13 +333,13 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'input_json_delta', partial_json: '\\n*** End Patch"}' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   assertEquals(deltaA, []);
   assertEquals(deltaB, []);
 
-  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
   assertEquals(
     stopEvents.map(e => e.type),
@@ -350,9 +350,9 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
     ],
   );
 
-  const inputDelta = stopEvents[0] as Extract<ResponseStreamEvent, { type: 'response.custom_tool_call_input.delta' }>;
-  const inputDone = stopEvents[1] as Extract<ResponseStreamEvent, { type: 'response.custom_tool_call_input.done' }>;
-  const itemDone = stopEvents[2] as ResponseOutputItemDoneEvent;
+  const inputDelta = stopEvents[0] as Extract<ResponsesStreamEvent, { type: 'response.custom_tool_call_input.delta' }>;
+  const inputDone = stopEvents[1] as Extract<ResponsesStreamEvent, { type: 'response.custom_tool_call_input.done' }>;
+  const itemDone = stopEvents[2] as ResponsesOutputItemDoneEvent;
 
   assertEquals(inputDelta.delta, '*** Begin Patch\n*** End Patch');
   assertEquals(inputDone.input, '*** Begin Patch\n*** End Patch');
@@ -364,7 +364,7 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
 
 // ── citation_delta → response.output_text.annotation.added ──
 
-type AnnotationAddedEvent = Extract<ResponsesStreamEvent, { type: 'response.output_text.annotation.added' }>;
+type AnnotationAddedEvent = Extract<RawResponsesStreamEvent, { type: 'response.output_text.annotation.added' }>;
 
 const startTextBlockWithMessage = (state: ReturnType<typeof createMessagesToResponsesStreamState>): void => {
   translateMessagesEventToResponsesEvents(
@@ -380,7 +380,7 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createMessagesToResp
         stop_sequence: null,
         usage: { input_tokens: 1, output_tokens: 0 },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   translateMessagesEventToResponsesEvents(
@@ -388,7 +388,7 @@ const startTextBlockWithMessage = (state: ReturnType<typeof createMessagesToResp
       type: 'content_block_start',
       index: 0,
       content_block: { type: 'text', text: '' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 };
@@ -399,7 +399,7 @@ const pushTextDelta = (state: ReturnType<typeof createMessagesToResponsesStreamS
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 };
@@ -426,7 +426,7 @@ test('search_result_location citation_delta becomes one url_citation annotation'
           cited_text: 'cited inline',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -467,7 +467,7 @@ test('web_search_result_location citation_delta becomes one url_citation annotat
           cited_text: 'MDN',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -505,7 +505,7 @@ test('citation_delta without cited_text is skipped', () => {
           // cited_text intentionally omitted
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -537,7 +537,7 @@ test('unknown citation variant is skipped without throwing', () => {
           cited_text: 'hello',
         },
       },
-    } as unknown) as MessagesStreamEventData,
+    } as unknown) as MessagesStreamEvent,
     state,
   );
 
@@ -565,7 +565,7 @@ test('multiple citations on the same text content part get monotonic annotation_
           cited_text: 'quote here',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -584,7 +584,7 @@ test('multiple citations on the same text content part get monotonic annotation_
           cited_text: 'second one',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -620,7 +620,7 @@ test('citation offsets reflect running text length up to the citation_delta', ()
           cited_text: '"quoted text"',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -639,7 +639,7 @@ test('text_delta events on a text block with citations still emit text deltas un
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: 'Hello world.' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -664,7 +664,7 @@ test('text_delta events on a text block with citations still emit text deltas un
           cited_text: 'world',
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -673,7 +673,7 @@ test('text_delta events on a text block with citations still emit text deltas un
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'text_delta', text: ' More.' },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -690,15 +690,15 @@ test('text_delta events on a text block with citations still emit text deltas un
 // match the `item_id` on every child frame, and stay stable within the
 // response (index-derived, not a fresh gateway stored id).
 
-const itemIdOf = (events: ResponseStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
-  const event = events.find(candidate => candidate.type === type) as (ResponseOutputItemAddedEvent | ResponseOutputItemDoneEvent) | undefined;
+const itemIdOf = (events: ResponsesStreamEvent[], type: 'response.output_item.added' | 'response.output_item.done'): string => {
+  const event = events.find(candidate => candidate.type === type) as (ResponsesOutputItemAddedEvent | ResponsesOutputItemDoneEvent) | undefined;
   if (!event) throw new Error(`expected ${type}`);
   const id = (event.item as { id?: string }).id;
   if (id === undefined) throw new Error(`expected ${type} item to carry an id`);
   return id;
 };
 
-const childItemIds = (events: ResponseStreamEvent[]): string[] =>
+const childItemIds = (events: ResponsesStreamEvent[]): string[] =>
   events
     .filter(event => event.type !== 'response.output_item.added' && event.type !== 'response.output_item.done')
     .map(event => (event as { item_id?: string }).item_id)
@@ -708,14 +708,14 @@ test('synthesized message item carries a stable id consistent across added, chil
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   const startEvents = translateMessagesEventToResponsesEvents(
-    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as MessagesStreamEventData,
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } as MessagesStreamEvent,
     state,
   );
   const deltaEvents = translateMessagesEventToResponsesEvents(
-    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } } as MessagesStreamEventData,
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } } as MessagesStreamEvent,
     state,
   );
-  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
   const addedId = itemIdOf(startEvents, 'response.output_item.added');
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');
@@ -733,14 +733,14 @@ test('synthesized function_call item carries a stable id consistent across added
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-test');
 
   const startEvents = translateMessagesEventToResponsesEvents(
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } } as MessagesStreamEventData,
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} } } as MessagesStreamEvent,
     state,
   );
   const deltaEvents = translateMessagesEventToResponsesEvents(
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } } as MessagesStreamEventData,
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } } as MessagesStreamEvent,
     state,
   );
-  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEventData, state);
+  const stopEvents = translateMessagesEventToResponsesEvents({ type: 'content_block_stop', index: 0 } as MessagesStreamEvent, state);
 
   const addedId = itemIdOf(startEvents, 'response.output_item.added');
   const doneId = itemIdOf(stopEvents, 'response.output_item.done');

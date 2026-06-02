@@ -5,19 +5,19 @@ import { chatCompletionsInvocation, stubRequestContext, testTelemetryModelIdenti
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import { eventResult } from '../../../shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const baseCtx = (payload: ChatCompletionsPayload = { model: 'test-model', messages: [] }): ReturnType<typeof chatCompletionsInvocation> => chatCompletionsInvocation(payload);
 
-const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionChunk>>): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events result');
-  const out: ProtocolFrame<ChatCompletionChunk>[] = [];
+  const out: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const runWithFrames = async (...frames: ProtocolFrame<ChatCompletionChunk>[]): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const runWithFrames = async (...frames: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   const result = await withUsageNormalized(baseCtx(), stubRequestContext, () =>
     Promise.resolve(
       eventResult(
@@ -30,7 +30,7 @@ const runWithFrames = async (...frames: ProtocolFrame<ChatCompletionChunk>[]): P
   return await collectFrames(result);
 };
 
-const usageRecord = (usage: NonNullable<ChatCompletionChunk['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
+const usageRecord = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
 test('withUsageNormalized leaves spec-compliant carrier usage untouched', async () => {
   const frames = await runWithFrames(
@@ -45,7 +45,7 @@ test('withUsageNormalized leaves spec-compliant carrier usage untouched', async 
         completion_tokens: 20,
         total_tokens: 120,
         prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
-      } as unknown as ChatCompletionChunk['usage'],
+      } as unknown as ChatCompletionsStreamEvent['usage'],
     }),
   );
 
@@ -72,7 +72,7 @@ test('withUsageNormalized relocates usage from a non-empty choices chunk to a sy
         completion_tokens: 20,
         total_tokens: 120,
         prompt_tokens_details: { cached_tokens: 70 },
-      } as unknown as ChatCompletionChunk['usage'],
+      } as unknown as ChatCompletionsStreamEvent['usage'],
     }),
   );
 
@@ -112,7 +112,7 @@ test('withUsageNormalized passes raw vendor cache fields through unchanged; rewr
         total_tokens: 120,
         prompt_cache_hit_tokens: 70,
         cached_tokens: 25,
-      } as unknown as ChatCompletionChunk['usage'],
+      } as unknown as ChatCompletionsStreamEvent['usage'],
     }),
   );
 
@@ -138,7 +138,7 @@ test('withUsageNormalized leaves chunks without usage untouched', async () => {
         finish_reason: null,
       },
     ],
-  } satisfies ChatCompletionChunk);
+  } satisfies ChatCompletionsStreamEvent);
 
   const frames = await runWithFrames(original);
 

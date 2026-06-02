@@ -1,7 +1,7 @@
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
-import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem, ChoiceNonStreaming, ToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsChoiceNonStreaming, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 
-export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatCompletionChunk>): Promise<ChatCompletionResponse> {
+export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<ChatCompletionsStreamEvent>): Promise<ChatCompletionsResult> {
   let id = '';
   let model = '';
   let created = 0;
@@ -9,9 +9,9 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
   let reasoningText = '';
   let reasoningOpaque = '';
   let hasReasoningOpaque = false;
-  const reasoningItems: ChatReasoningItem[] = [];
-  let finishReason: ChoiceNonStreaming['finish_reason'] = 'stop';
-  let lastUsage: ChatCompletionResponse['usage'] | undefined;
+  const reasoningItems: ChatCompletionsReasoningItem[] = [];
+  let finishReason: ChatCompletionsChoiceNonStreaming['finish_reason'] = 'stop';
+  let lastUsage: ChatCompletionsResult['usage'] | undefined;
 
   const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
 
@@ -28,7 +28,7 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
     }
 
     if (chunk.usage) {
-      lastUsage = chunk.usage as ChatCompletionResponse['usage'];
+      lastUsage = chunk.usage as ChatCompletionsResult['usage'];
     }
 
     const choices = chunk.choices as unknown as Array<Record<string, unknown>> | undefined;
@@ -49,7 +49,7 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
         hasReasoningOpaque = true;
       }
       if (Array.isArray(delta.reasoning_items)) {
-        reasoningItems.push(...(delta.reasoning_items as ChatReasoningItem[]));
+        reasoningItems.push(...(delta.reasoning_items as ChatCompletionsReasoningItem[]));
       }
 
       if (Array.isArray(delta.tool_calls)) {
@@ -74,12 +74,12 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
       }
 
       if (choice.finish_reason) {
-        finishReason = choice.finish_reason as ChoiceNonStreaming['finish_reason'];
+        finishReason = choice.finish_reason as ChatCompletionsChoiceNonStreaming['finish_reason'];
       }
     }
   }
 
-  const toolCalls: ToolCall[] = [];
+  const toolCalls: ChatCompletionsToolCall[] = [];
   const sortedIndices = [...toolCallsMap.keys()].sort((a, b) => a - b);
   for (const idx of sortedIndices) {
     const toolCall = toolCallsMap.get(idx)!;
@@ -90,7 +90,7 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
     });
   }
 
-  const message: ChoiceNonStreaming['message'] = {
+  const message: ChatCompletionsChoiceNonStreaming['message'] = {
     role: 'assistant',
     content: content || null,
     ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
@@ -99,7 +99,7 @@ export async function reassembleChatCompletionChunks(chunks: AsyncIterable<ChatC
     ...(reasoningItems.length > 0 && { reasoning_items: reasoningItems }),
   };
 
-  const result: ChatCompletionResponse = {
+  const result: ChatCompletionsResult = {
     id,
     object: 'chat.completion',
     created,

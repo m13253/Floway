@@ -6,11 +6,11 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: false,
 };
 
@@ -39,14 +39,14 @@ const invocation = (): ResponsesInvocation => ({
   headers: {},
 });
 
-const collect = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
+const collect = async (result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>): Promise<ProtocolFrame<RawResponsesStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events');
-  const out: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  const out: ProtocolFrame<RawResponsesStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const runWith = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
+const runWith = async (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Promise<ProtocolFrame<RawResponsesStreamEvent>[]> => {
   const result = await withOutputItemIdsSynchronized(invocation(), stubRequest, () =>
     Promise.resolve(
       eventResult(
@@ -59,14 +59,14 @@ const runWith = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<P
   return await collect(result);
 };
 
-const itemEvent = (id: string | undefined, outputIndex: number, kind: 'added' | 'done'): ResponsesStreamEvent =>
+const itemEvent = (id: string | undefined, outputIndex: number, kind: 'added' | 'done'): RawResponsesStreamEvent =>
   ({
     type: kind === 'added' ? 'response.output_item.added' : 'response.output_item.done',
     output_index: outputIndex,
     item: id === undefined ? { type: 'message' } : { id, type: 'message' },
-  }) as ResponsesStreamEvent;
+  }) as RawResponsesStreamEvent;
 
-const itemIdOf = (frame: ProtocolFrame<ResponsesStreamEvent>): string | undefined => {
+const itemIdOf = (frame: ProtocolFrame<RawResponsesStreamEvent>): string | undefined => {
   if (frame.type !== 'event') throw new Error('expected event frame');
   const event = frame.event as { item?: { id?: string }; item_id?: string };
   return event.item?.id ?? event.item_id;
@@ -88,7 +88,7 @@ test('synthesizes a stable oi_<output_index>_<suffix> id when .added omits item.
   const out = await runWith([
     eventFrame(itemEvent(undefined, 3, 'added')),
     eventFrame(itemEvent('upstream-done-arbitrary', 3, 'done')),
-    eventFrame(({ type: 'response.output_text.delta', item_id: 'upstream-mid', output_index: 3, content_index: 0, delta: 'hi' }) as ResponsesStreamEvent),
+    eventFrame(({ type: 'response.output_text.delta', item_id: 'upstream-mid', output_index: 3, content_index: 0, delta: 'hi' }) as RawResponsesStreamEvent),
     doneFrame(),
   ]);
 
@@ -105,9 +105,9 @@ test('synthesizes a stable oi_<output_index>_<suffix> id when .added omits item.
 test('rewrites item_id on mid-item delta events by output_index', async () => {
   const out = await runWith([
     eventFrame(itemEvent('pinned-A', 0, 'added')),
-    eventFrame(({ type: 'response.content_part.added', item_id: 'drift-A', output_index: 0, content_index: 0, part: { type: 'output_text', text: '' } }) as ResponsesStreamEvent),
-    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-A', output_index: 0, content_index: 0, delta: 'hello' }) as ResponsesStreamEvent),
-    eventFrame(({ type: 'response.function_call_arguments.delta', item_id: 'drift-A', output_index: 0, delta: '{"k":' }) as ResponsesStreamEvent),
+    eventFrame(({ type: 'response.content_part.added', item_id: 'drift-A', output_index: 0, content_index: 0, part: { type: 'output_text', text: '' } }) as RawResponsesStreamEvent),
+    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-A', output_index: 0, content_index: 0, delta: 'hello' }) as RawResponsesStreamEvent),
+    eventFrame(({ type: 'response.function_call_arguments.delta', item_id: 'drift-A', output_index: 0, delta: '{"k":' }) as RawResponsesStreamEvent),
     eventFrame(itemEvent('drift-A', 0, 'done')),
     doneFrame(),
   ]);
@@ -121,8 +121,8 @@ test('tracks pinned ids per output_index independently', async () => {
   const out = await runWith([
     eventFrame(itemEvent('pinned-0', 0, 'added')),
     eventFrame(itemEvent('pinned-1', 1, 'added')),
-    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-1', output_index: 1, content_index: 0, delta: 'a' }) as ResponsesStreamEvent),
-    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-0', output_index: 0, content_index: 0, delta: 'b' }) as ResponsesStreamEvent),
+    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-1', output_index: 1, content_index: 0, delta: 'a' }) as RawResponsesStreamEvent),
+    eventFrame(({ type: 'response.output_text.delta', item_id: 'drift-0', output_index: 0, content_index: 0, delta: 'b' }) as RawResponsesStreamEvent),
     doneFrame(),
   ]);
 
@@ -136,7 +136,7 @@ test('leaves events without a tracked output_index unchanged', async () => {
   // A delta arrives before any .added pinned an id — the tracker has nothing
   // for output_index 7, so we MUST NOT invent one.
   const out = await runWith([
-    eventFrame(({ type: 'response.output_text.delta', item_id: 'untracked', output_index: 7, content_index: 0, delta: 'x' }) as ResponsesStreamEvent),
+    eventFrame(({ type: 'response.output_text.delta', item_id: 'untracked', output_index: 7, content_index: 0, delta: 'x' }) as RawResponsesStreamEvent),
     doneFrame(),
   ]);
 

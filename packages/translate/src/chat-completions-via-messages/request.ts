@@ -1,8 +1,8 @@
-import { messagesThinkingBlockFromChatScalarReasoning } from '../shared/chat-and-messages/reasoning.ts';
+import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 interface TranslateChatCompletionsToMessagesOptions {
@@ -16,9 +16,9 @@ interface TranslateChatCompletionsToMessagesOptions {
   fallbackMaxOutputTokens?: number;
 }
 
-const buildAssistantBlocks = (message: Message): MessagesAssistantContentBlock[] => {
+const buildAssistantBlocks = (message: ChatCompletionsMessage): MessagesAssistantContentBlock[] => {
   const blocks: MessagesAssistantContentBlock[] = [];
-  const thinkingBlock = messagesThinkingBlockFromChatScalarReasoning(message.reasoning_text, message.reasoning_opaque);
+  const thinkingBlock = messagesThinkingBlockFromChatCompletionsScalarReasoning(message.reasoning_text, message.reasoning_opaque);
 
   if (thinkingBlock) blocks.push(thinkingBlock);
 
@@ -54,7 +54,7 @@ const appendUserBlocks = (messages: MessagesMessage[], blocks: MessagesUserConte
   });
 };
 
-const convertUserContent = async (message: Message, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserContentBlock[]> => {
+const convertUserContent = async (message: ChatCompletionsMessage, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserContentBlock[]> => {
   if (typeof message.content === 'string') {
     return [{ type: 'text', text: message.content }];
   }
@@ -78,7 +78,7 @@ const convertUserContent = async (message: Message, loadRemoteImage: RemoteImage
   return blocks.length > 0 ? blocks : [{ type: 'text', text: '' }];
 };
 
-const buildMessagesInput = async (messages: Message[], loadRemoteImage: RemoteImageLoader): Promise<MessagesMessage[]> => {
+const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemoteImage: RemoteImageLoader): Promise<MessagesMessage[]> => {
   const result: MessagesMessage[] = [];
 
   for (const message of messages) {
@@ -111,7 +111,7 @@ const buildMessagesInput = async (messages: Message[], loadRemoteImage: RemoteIm
   return result;
 };
 
-const translateChatCompletionsTools = (tools: Tool[]): MessagesPayload['tools'] =>
+const translateChatCompletionsTools = (tools: ChatCompletionsTool[]): MessagesPayload['tools'] =>
   tools.map(tool => ({
     name: tool.function.name,
     description: tool.function.description,
@@ -133,7 +133,7 @@ const CHAT_TOOL_CHOICES = {
 
 export const translateChatCompletionsToMessages = async (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions = {}): Promise<MessagesPayload> => {
   const systemParts: string[] = [];
-  const nonSystemMessages: Message[] = [];
+  const nonSystemMessages: ChatCompletionsMessage[] = [];
 
   for (const message of payload.messages) {
     if (message.role === 'system' || message.role === 'developer') {
@@ -142,7 +142,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
           ? message.content
           : Array.isArray(message.content)
             ? message.content
-                .filter((part): part is Extract<ContentPart, { type: 'text' }> => part.type === 'text')
+                .filter((part): part is Extract<ChatCompletionsContentPart, { type: 'text' }> => part.type === 'text')
                 .map(part => part.text)
                 .join('')
             : '';

@@ -1,6 +1,6 @@
 import { asJsonObject } from '../../../../../shared/json-helpers.ts';
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 /**
@@ -20,9 +20,9 @@ import { eventFrame } from '@floway-dev/protocols/common';
  * already in the OpenAI standard shape.
  */
 
-const isCarrierChunk = (chunk: ChatCompletionChunk): boolean => chunk.choices.length === 0;
+const isCarrierChunk = (chunk: ChatCompletionsStreamEvent): boolean => chunk.choices.length === 0;
 
-const relocateUsageChunk = (chunk: ChatCompletionChunk): readonly ChatCompletionChunk[] => {
+const relocateUsageChunk = (chunk: ChatCompletionsStreamEvent): readonly ChatCompletionsStreamEvent[] => {
   const usage = asJsonObject(chunk.usage);
   if (!usage) return [chunk];
   if (isCarrierChunk(chunk)) return [chunk];

@@ -33,15 +33,15 @@ import type { EventResult, ExecuteResult } from '../../../shared/errors/result.t
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
-  ResponseOutputItem,
-  ResponseInputItem,
-  ResponseInputWebSearchCall,
-  ResponseOutputWebSearchCall,
+  ResponsesOutputItem,
+  ResponsesInputItem,
+  ResponsesInputWebSearchCall,
+  ResponsesOutputWebSearchCall,
   ResponsesPayload,
   ResponsesResult,
+  RawResponsesStreamEvent,
   ResponsesStreamEvent,
-  ResponseStreamEvent,
-  ResponseWebSearchAction,
+  ResponsesWebSearchAction,
 } from '@floway-dev/protocols/responses';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
@@ -57,19 +57,19 @@ const emptyResult = (id: string, status: ResponsesResult['status']): ResponsesRe
   incomplete_details: null,
 });
 
-const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
+const mkResponseCreated = (responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.created',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
+const mkResponseInProgress = (responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.in_progress',
     response: emptyResult(responseId, 'in_progress'),
   });
 
-const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -82,7 +82,7 @@ const mkFunctionCallAdded = (outputIndex: number, callId: string, name: string):
     },
   });
 
-const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<ResponsesStreamEvent> =>
+const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_${outputIndex}`): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.function_call_arguments.done',
     item_id: itemId,
@@ -90,7 +90,7 @@ const mkFunctionCallArgsDone = (outputIndex: number, args: string, itemId = `fc_
     arguments: args,
   });
 
-const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, args: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -103,7 +103,7 @@ const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, a
     },
   });
 
-const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -115,7 +115,7 @@ const mkCustomToolCallAdded = (outputIndex: number, callId: string, name: string
     },
   });
 
-const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<ResponsesStreamEvent> =>
+const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = `cti_${outputIndex}`): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.custom_tool_call_input.done',
     item_id: itemId,
@@ -123,7 +123,7 @@ const mkCustomToolCallInputDone = (outputIndex: number, input: string, itemId = 
     input,
   });
 
-const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string, input: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -135,7 +135,7 @@ const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string,
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<ResponsesStreamEvent> =>
+const mkMessageAdded = (outputIndex: number): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
@@ -146,7 +146,7 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<ResponsesStreamEvent
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -157,14 +157,14 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<Respons
     },
   });
 
-const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: { type: 'reasoning', id: reasoningId, summary: [] },
   });
 
-const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<ResponsesStreamEvent> =>
+const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
@@ -183,8 +183,8 @@ vi.mock('../../../../tools/web-search/provider.ts');
 const mkResponseCompleted = (
   usage?: ResponsesResult['usage'],
   responseId = 'upstream_test',
-): ProtocolFrame<ResponsesStreamEvent> =>
-  eventFrame<ResponsesStreamEvent>({
+): ProtocolFrame<RawResponsesStreamEvent> =>
+  eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       ...emptyResult(responseId, 'completed'),
@@ -195,8 +195,8 @@ const mkResponseCompleted = (
 const mkResponseIncomplete = (
   incompleteDetails?: { reason: string },
   responseId = 'upstream_test',
-): ProtocolFrame<ResponsesStreamEvent> =>
-  eventFrame<ResponsesStreamEvent>({
+): ProtocolFrame<RawResponsesStreamEvent> =>
+  eventFrame<RawResponsesStreamEvent>({
     type: 'response.incomplete',
     response: {
       ...emptyResult(responseId, 'incomplete'),
@@ -298,19 +298,6 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
   return { backend };
 };
 
-// Read every search-usage row recorded into the in-memory repo. Tests
-// that previously asserted on a captured `usageRecorded` array now
-// drain the repo aggregator.
-const drainUsageRows = async (): Promise<Array<{ provider: string; keyId: string; action: string; requests: number }>> => {
-  const repo = (await import('../../../../../repo/index.ts')).getRepo();
-  return (await repo.searchUsage.listAll()).map(r => ({
-    provider: r.provider,
-    keyId: r.keyId,
-    action: r.action,
-    requests: r.requests,
-  }));
-};
-
 interface InvocationOverrides {
   targetApi?: ResponsesInvocation['targetApi'];
   enabledFlags?: ResponsesInvocation['enabledFlags'];
@@ -333,13 +320,18 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
     model: 'claude-x',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     tools: [{ type: 'web_search' }],
+    // Opt the wire item into `results` so most tests can inspect them
+    // directly; the new include-gating tests explicitly omit this and
+    // assert the wire-item shape without `results`.
+    include: ['web_search_call.results'],
     ...overrides.payload,
   } as ResponsesPayload,
 });
 
 const makeRequest = (apiKeyId: string | undefined = 'k1'): RequestContext => ({
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+  runtimeLocation: 'test',
   clientStream: true,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -357,13 +349,13 @@ const runShimAndDrain = async (
   shim: ResponsesInterceptor,
   inv: ResponsesInvocation,
   request: RequestContext,
-  run: () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>,
+  run: () => Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>,
 ): Promise<{
-  result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
-  frames: ProtocolFrame<ResponsesStreamEvent>[];
+  result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>;
+  frames: ProtocolFrame<RawResponsesStreamEvent>[];
 }> => {
   const result = await shim(inv, request, run);
-  const frames: ProtocolFrame<ResponsesStreamEvent>[] = result.type === 'events'
+  const frames: ProtocolFrame<RawResponsesStreamEvent>[] = result.type === 'events'
     ? await collectFrames(result.events)
     : [];
   return { result, frames };
@@ -371,10 +363,10 @@ const runShimAndDrain = async (
 
 // Drive run() N times with one scripted event array per call. Reaches past
 // the scripted length crashes the test — invariant violations stay loud.
-type ScriptedTurn = ProtocolFrame<ResponsesStreamEvent>[];
+type ScriptedTurn = ProtocolFrame<RawResponsesStreamEvent>[];
 
 interface ScriptedRun {
-  run: () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
+  run: () => Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
   callCount: () => number;
 }
 
@@ -384,10 +376,10 @@ const scriptedRun = (turns: ScriptedTurn[]): ScriptedRun => {
     run: async () => {
       if (i >= turns.length) throw new Error(`unexpected run() call ${i + 1}; only ${turns.length} turn(s) scripted`);
       const frames = turns[i++];
-      const iterable: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of frames) yield f;
       })();
-      const result: EventResult<ProtocolFrame<ResponsesStreamEvent>> = {
+      const result: EventResult<ProtocolFrame<RawResponsesStreamEvent>> = {
         type: 'events',
         events: iterable,
         modelIdentity: testTelemetryModelIdentity,
@@ -431,12 +423,12 @@ const openCallTurn = (outputIndex: number, callId: string, url: string): Scripte
 const findCallTurn = (outputIndex: number, callId: string, url: string, pattern: string): ScriptedTurn =>
   fcTurn(outputIndex, callId, SHIM_TOOL_NAME, JSON.stringify({ find: [{ ref_id: url, pattern }] }));
 
-const eventPayloads = (frames: ProtocolFrame<ResponsesStreamEvent>[]): ResponsesStreamEvent[] =>
-  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: ResponsesStreamEvent }).event);
+const eventPayloads = (frames: ProtocolFrame<RawResponsesStreamEvent>[]): RawResponsesStreamEvent[] =>
+  frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: RawResponsesStreamEvent }).event);
 
-const outputItemDoneEvents = (frames: ProtocolFrame<ResponsesStreamEvent>[]): Array<Extract<ResponseStreamEvent, { type: 'response.output_item.done' }>> =>
+const outputItemDoneEvents = (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Array<Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }>> =>
   eventPayloads(frames)
-    .filter((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
+    .filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
 
 // ── Activation gating ──────────────────────────────────────────────────
 
@@ -519,7 +511,7 @@ test('shim no-ops when no hosted web_search tool is present', async () => {
 
 const hostedAliasTypes = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
 for (const type of hostedAliasTypes) {
-  test(`shim rewrites hosted ${type} alias into the umbrella function tool`, async () => {
+  test(`shim rewrites hosted ${type} alias into the shim function tool`, async () => {
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const inv = makeInvocation({
@@ -537,7 +529,7 @@ for (const type of hostedAliasTypes) {
 // ── tool_choice rewrite × 4 hosted-type values ─────────────────────────
 
 for (const type of hostedAliasTypes) {
-  test(`shim rewrites tool_choice {type: ${type}} to forced umbrella function`, async () => {
+  test(`shim rewrites tool_choice {type: ${type}} to forced shim's function tool`, async () => {
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const inv = makeInvocation({
@@ -626,13 +618,15 @@ test('shim drives one search then a final message in two upstream turns', async 
   assertEquals(script.callCount(), 2);
   assertEquals(backend.calls.length, 1);
   assertEquals(backend.calls[0].kind, 'search');
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const tail = input.slice(-2);
   assertEquals(tail[0].type, 'function_call');
   assertEquals(tail[1].type, 'function_call_output');
   assert(tail[0].type === 'function_call');
-  assertFalse(tail[0].call_id === 'call_1');
-  assert(tail[0].call_id.startsWith('cc_from_ws_gw_'));
+  // Shim replay preserves the upstream's original shim call
+  // verbatim (call_id, name, jsonrepair-canonical args) so the upstream
+  // model on turn 2 sees its prior assistant turn unchanged.
+  assertEquals(tail[0].call_id, 'call_1');
   const events = eventPayloads(frames);
   const wsCallTypes = events.filter(e => e.type.startsWith('response.web_search_call'));
   assertEquals(wsCallTypes.length, 3);
@@ -659,39 +653,12 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));
-    assert(request.responsesSyntheticItemIds.has(id), `expected ${id} registered as synthetic`);
+    assert(request.statefulResponsesContext.newSyntheticIds.has(id), `expected ${id} registered as synthetic`);
   }
   // A genuine upstream item (the final message) is not registered.
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(request.responsesSyntheticItemIds.has(e.item.id!));
+    assertFalse(request.statefulResponsesContext.newSyntheticIds.has(e.item.id!));
   }
-});
-
-// ── Multi-action umbrella call = 1 iteration ──────────────────────────
-
-test('shim dispatches multiple logical operations from one umbrella call (one iteration)', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    search_query: [{ q: 'q1' }, { q: 'q2' }, { q: 'q3' }],
-  });
-  const parallelTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(script.callCount(), 2);
-  // Three backend searches from ONE upstream call.
-  assertEquals(backend.calls.length, 3);
-  assertEquals(backend.calls.every(c => c.kind === 'search'), true);
 });
 
 // ── find_in_page cache hit ────────────────────────────────────────────
@@ -748,7 +715,7 @@ test('find_in_page triggers implicit fetchPage when URL not cached', async () =>
 
 // ── Iteration cap exhausted ───────────────────────────────────────────
 
-test('iteration cap returns iterationCapText without backend call on cap+1', async () => {
+test('iteration cap returns the iteration-cap notice without backend call on cap+1', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -767,23 +734,81 @@ test('iteration cap returns iterationCapText without backend call on cap+1', asy
   // 30 backend search calls, NOT 31 — the 31st short-circuits via the cap.
   const searchCalls = backend.calls.filter(c => c.kind === 'search');
   assertEquals(searchCalls.length, 30);
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assert((lastOutput as { output: string }).output.includes('iteration limit (30)'));
 
   // The cap-exceeded turn still synthesizes a full web_search_call
   // lifecycle: 31 done events = 30 successful + 1 capped. The capped
-  // call's done item carries its action with the original query so the
-  // downstream item is recognizable.
-  const wsCallDone = events.filter((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> =>
+  // call surfaces as the schema-error shape (action.type='search' with
+  // the cap diagnostic in queries[0]) rather than the original query —
+  // the shim call is rejected before backend dispatch.
+  const wsCallDone = events.filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
     e.type === 'response.output_item.done'
     && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
   assertEquals(wsCallDone.length, 31);
-  const capItem = wsCallDone[30].item as ResponseOutputWebSearchCall;
+  const capItem = wsCallDone[30].item as ResponsesOutputWebSearchCall;
   assert(capItem.action !== undefined);
   assertEquals(capItem.action.type, 'search');
-  assertEquals((capItem.action as { queries: string[] }).queries, ['qcap']);
+});
+
+// ── Ambiguous multi-op function_call rejection ─────────────────────────────
+
+// One private payload ⇄ one wsc ⇄ one op. Any shim call that carries more
+// than one logical operation — multi-kind mix or multi-instance same-kind
+// — is rejected before backend dispatch with a single ambiguous-error wsc
+// so the model knows to split the request into independent calls.
+
+const assertAmbiguousShimRejection = async (args: string, backend: { calls: unknown[] }): Promise<void> => {
+  const shim = withResponsesWebSearchShim;
+  const inv = makeInvocation();
+  const turn: ScriptedTurn = [
+    mkResponseCreated(),
+    mkResponseInProgress(),
+    mkFunctionCallAdded(0, 'call_ambig', SHIM_TOOL_NAME),
+    mkFunctionCallArgsDone(0, args),
+    mkFunctionCallDone(0, 'call_ambig', SHIM_TOOL_NAME, args),
+    mkResponseCompleted(),
+  ];
+  const script = scriptedRun([turn, messageTurn('done', 0)]);
+  const result = await shim(inv, makeRequest(), script.run);
+  assert(result.type === 'events');
+  const events = eventPayloads(await collectFrames(result.events));
+  assertEquals(backend.calls.length, 0);
+  const wsCallDone = events.filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
+    e.type === 'response.output_item.done'
+    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
+  assertEquals(wsCallDone.length, 1);
+  const item = wsCallDone[0].item as ResponsesOutputWebSearchCall;
+  assertEquals(item.action?.type, 'search');
+  assert(Array.isArray(item.results));
+  assert(item.results![0].snippet.includes('ambiguous'));
+  assert(item.results![0].snippet.includes('one operation'));
+};
+
+test('multi-kind shim call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ search_query: [{ q: 'q' }], open: [{ ref_id: 'https://example.com/' }] }),
+    backend,
+  );
+});
+
+test('multi-instance same-kind shim call (two search_query entries) is rejected as ambiguous', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ search_query: [{ q: 'q1' }, { q: 'q2' }] }),
+    backend,
+  );
+});
+
+test('multi-instance same-kind shim call (two open entries) is rejected as ambiguous', async () => {
+  const { backend } = makeStubDeps();
+  await assertAmbiguousShimRejection(
+    JSON.stringify({ open: [{ ref_id: 'https://example.com/a' }, { ref_id: 'https://example.com/b' }] }),
+    backend,
+  );
 });
 
 // ── Backend search zero-results case ─────────────────────────────────
@@ -805,249 +830,13 @@ test('search returning zero results surfaces the "(no results)" template', async
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   assertEquals(
     (lastOutput as { output: string }).output,
     'Search results for "empty-query":\n\n(no results)',
   );
-});
-
-// ── fetchPage per-URL failure in multi-URL batch ─────────────────────
-
-test('fetchPage with mixed success/failure across parallel opens surfaces distinct outputs', async () => {
-  // ONE umbrella call whose `open[]` array carries both URLs. The shim
-  // batches into one fetchPage({urls: [success, failure]}); the provider
-  // returns a page for one and a per-URL failure for the other.
-  const successUrl = 'https://example.com/success';
-  const failureUrl = 'https://example.com/missing';
-  const { backend } = makeStubDeps({
-    providerOverrides: {
-      async fetchPage(req): Promise<WebSearchFetchPageResult> {
-        // Tavily shape: pages + failures in one 200.
-        const out: WebSearchFetchPageResult = { type: 'ok', pages: [], failures: [] };
-        for (const url of req.urls) {
-          if (url === successUrl) {
-            out.pages.push({
-              url,
-              title: 'Hello',
-              content: 'body of success page',
-              truncated: false,
-              fullContentBytes: 20,
-            });
-          } else {
-            out.failures.push({
-              url,
-              errorCode: 'unavailable',
-              message: '404',
-            });
-          }
-        }
-        return out;
-      },
-    },
-  });
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({ open: [{ ref_id: successUrl }, { ref_id: failureUrl }] });
-  const parallelOpensTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelOpensTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // ONE fetchPage call carrying BOTH URLs.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const batched = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals(batched.urls.length, 2);
-  assert(batched.urls.includes(successUrl));
-  assert(batched.urls.includes(failureUrl));
-
-  const input = inv.payload.input as ResponseInputItem[];
-  // One function_call_output per logical op (umbrella unrolled into N pairs
-  // by the shared `irToUpstreamPair` renderer).
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('body of success page'));
-  assert(combined.includes(`Error fetching URL \`${failureUrl}\``));
-  assert(combined.includes('404'));
-});
-
-// ── Parallel opens batched into one fetchPage call ──────────────────
-
-test('two parallel open[] entries issue ONE fetchPage with both URLs', async () => {
-  // ≥2 `open[]` entries with distinct URLs (no cache hit, no in-flight)
-  // must batch into one provider.fetchPage call (one usage row).
-  const url1 = 'https://example.com/a';
-  const url2 = 'https://example.com/b';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const parallelOpensArgs = JSON.stringify({ open: [{ ref_id: url1 }, { ref_id: url2 }] });
-  const parallelOpensTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, parallelOpensArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, parallelOpensArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelOpensTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals([...req.urls].sort(), [url1, url2]);
-  // ONE usage record for the single batched provider call.
-  const usageRows = await drainUsageRows();
-  assertEquals(usageRows.filter(u => u.action === 'fetch_page').length, 1);
-
-  const input = inv.payload.input as ResponseInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes(`body of ${url1}`));
-  assert(combined.includes(`body of ${url2}`));
-});
-
-// ── Mixed cache-hit + fresh open in one turn ─────────────────────────
-
-test('mixed cache-hit + fresh open in one turn issues ONE fetchPage with only the fresh URL', async () => {
-  const cachedUrl = 'https://example.com/cached';
-  const freshUrl = 'https://example.com/fresh';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  // Turn 1: warm pageCache with cachedUrl.
-  // Turn 2: open both URLs; only freshUrl should hit fetchPage.
-  const turn1 = openCallTurn(0, 'call_warm', cachedUrl);
-  const turn2Args = JSON.stringify({ open: [{ ref_id: cachedUrl }, { ref_id: freshUrl }] });
-  const turn2: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, turn2Args),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, turn2Args),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn1, turn2, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  // Turn 1: cachedUrl. Turn 2: freshUrl only (cachedUrl served from cache). Total = 2.
-  assertEquals(fetchCalls.length, 2);
-  const turn2Req = fetchCalls[1].request as WebSearchFetchPageRequest;
-  assertEquals(turn2Req.urls, [freshUrl]);
-});
-
-// ── find joins concurrent open's in-flight batch ─────────────────────
-
-test('parallel open + find on the same URL share ONE fetchPage call', async () => {
-  // open kicks off a fetch; find joins the in-flight slot installed by
-  // the batch instead of starting a second fetchPage.
-  const url = 'https://example.com/shared';
-  const { backend } = makeStubDeps({
-    providerOverrides: {
-      async fetchPage(req) {
-        return {
-          type: 'ok',
-          pages: req.urls.map(u => ({
-            url: u,
-            title: 'p',
-            content: 'this body has the needle in it',
-            truncated: false,
-            fullContentBytes: 30,
-          })),
-          failures: [],
-        };
-      },
-    },
-  });
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const parallelArgs = JSON.stringify({
-    open: [{ ref_id: url }],
-    find: [{ ref_id: url, pattern: 'needle' }],
-  });
-  const parallelTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, parallelArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, parallelArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([parallelTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // ONE fetchPage call serves both ops — the pre-batch bundles every
-  // open AND find URL from the umbrella call into one provider call.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-
-  const input = inv.payload.input as ResponseInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  // One pair per logical op: the open and the find each get their own.
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('this body has the needle in it'));
-  assert(combined.includes('[needle]'));
-});
-
-// ── Mixed search + open + open is one fetchPage + one search ────────
-
-test('mixed search + two opens dispatches one search and ONE batched fetchPage', async () => {
-  const url1 = 'https://example.com/x';
-  const url2 = 'https://example.com/y';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const mixedArgs = JSON.stringify({
-    search_query: [{ q: 'q' }],
-    open: [{ ref_id: url1 }, { ref_id: url2 }],
-  });
-  const mixedTurn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, mixedArgs),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, mixedArgs),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([mixedTurn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(backend.calls.filter(c => c.kind === 'search').length, 1);
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals([...req.urls].sort(), [url1, url2]);
 });
 
 // ── Backend search failure ────────────────────────────────────────────
@@ -1069,7 +858,7 @@ test('backend search failure surfaces "Search failed: <message>"', async () => {
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1079,7 +868,7 @@ test('backend search failure surfaces "Search failed: <message>"', async () => {
 
 // ── Backend fetchPage whole-batch failure ─────────────────────────────
 
-test('fetchPage whole-batch failure surfaces openFailedText', async () => {
+test('fetchPage whole-batch failure surfaces the open-page error text', async () => {
   makeStubDeps({
     providerOverrides: {
       async fetchPage() {
@@ -1096,7 +885,7 @@ test('fetchPage whole-batch failure surfaces openFailedText', async () => {
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1499,8 +1288,8 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
 });
 
 for (const field of ['external_web_access', 'search_content_types', 'return_token_budget'] as const) {
-  test(`explicitly-set hosted ${field} is silently stripped (the umbrella tool the shim forwards never carries it)`, async () => {
-    // The shim replaces the hosted entry with its umbrella function
+  test(`explicitly-set hosted ${field} is silently stripped (the shim's function tool the shim forwards never carries it)`, async () => {
+    // The shim replaces the hosted entry with its shim's function tool
     // tool; any hosted-only field — including ones the shim has no
     // opinion on — drops out with the entry. Mirrors native: silently
     // stripped. Tests the request completes normally instead of being
@@ -1616,7 +1405,7 @@ test('open blocked by domain filter never calls backend', async () => {
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
   assertEquals(backend.calls.length, 0);
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1653,7 +1442,7 @@ test('find blocked by domain filter emits wire-side find_in_page (not open_page)
     e => (e.item as { type?: string }).type === 'web_search_call',
   );
   assertEquals(wsDones.length, 1);
-  const item = wsDones[0].item as ResponseOutputWebSearchCall;
+  const item = wsDones[0].item as ResponsesOutputWebSearchCall;
   assert(item.action !== undefined);
   assertEquals(item.action.type, 'find_in_page');
   const findAction = item.action as Extract<typeof item.action, { type: 'find_in_page' }>;
@@ -1690,7 +1479,7 @@ test('find with no matches returns the no-matches text', async () => {
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1726,7 +1515,7 @@ test('find with matches returns bracketed context', async () => {
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1763,7 +1552,7 @@ test('truncated page contents append the truncation sentinel', async () => {
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const lastOutput = input[input.length - 1];
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
@@ -1804,7 +1593,7 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
   assertEquals(seqs[0], 0);
 
   const addedIndices = events
-    .filter((e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
+    .filter((e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }> => e.type === 'response.output_item.added')
     .map(e => e.output_index);
   // Contiguous from 0 — uniqueness alone would not catch a missing slot.
   const sorted = [...addedIndices].sort((a, b) => a - b);
@@ -1818,20 +1607,20 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
 // served model — distinct from the client's payload.model so we can
 // prove the shim quotes upstream's served identity rather than the
 // requested literal.
-const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
-  eventFrame<ResponsesStreamEvent>({
+const mkResponseCreatedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
+  eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
-  eventFrame<ResponsesStreamEvent>({
+const mkResponseInProgressWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
+  eventFrame<RawResponsesStreamEvent>({
     type: 'response.in_progress',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'in_progress', error: null, incomplete_details: null },
   });
 
-const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
-  eventFrame<ResponsesStreamEvent>({
+const mkResponseCompletedWithModel = (model: string, responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
+  eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: { id: responseId, object: 'response', model, output: [], output_text: '', status: 'completed', error: null, incomplete_details: null },
   });
@@ -1870,9 +1659,9 @@ test('synthesized response.created / completed quote the upstream-reported model
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<ResponseStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<ResponseStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<ResponsesStreamEvent, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
   assertEquals(created.response.model, SERVED_MODEL);
   assertEquals(inProgress.response.model, SERVED_MODEL);
   assertEquals(completed.response.model, SERVED_MODEL);
@@ -1885,10 +1674,10 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: ProtocolFrame<ResponsesStreamEvent>[] = [
+      const frames: ProtocolFrame<RawResponsesStreamEvent>[] = [
         mkResponseCreatedWithModel(SERVED_MODEL),
         mkResponseInProgressWithModel(SERVED_MODEL),
         mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME),
@@ -1896,7 +1685,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
         mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'hi' }] })),
         mkResponseCompletedWithModel(SERVED_MODEL),
       ];
-      const iterable: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const iterable: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of frames) yield f;
       })();
       return { type: 'events', events: iterable, modelIdentity: testTelemetryModelIdentity };
@@ -1912,7 +1701,7 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.type, 'response.failed');
   assertEquals(failed.response.model, SERVED_MODEL);
 });
@@ -1928,7 +1717,7 @@ test('shim refuses to synthesize a response envelope when upstream response.crea
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const modelless = eventFrame<ResponsesStreamEvent>({
+  const modelless = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: { id: 'upstream_x', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
   });
@@ -1957,7 +1746,7 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
-  const idless = eventFrame<ResponsesStreamEvent>({
+  const idless = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: { model: 'gpt-5', object: 'response', output: [], output_text: '', status: 'in_progress' } as never,
   });
@@ -1966,7 +1755,7 @@ test('upstream response.created with no `id` field is tolerated (downstream uses
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<ResponseStreamEvent, { type: 'response.created' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
   assert(created.response.id.startsWith('resp_shim_'));
 });
 
@@ -1994,9 +1783,9 @@ test('synthesized response.created / completed quote the once-per-request synthe
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const created = events.find(e => e.type === 'response.created') as Extract<ResponseStreamEvent, { type: 'response.created' }>;
-  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<ResponseStreamEvent, { type: 'response.in_progress' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const inProgress = events.find(e => e.type === 'response.in_progress') as Extract<ResponsesStreamEvent, { type: 'response.in_progress' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_shim_'));
   assertEquals(inProgress.response.id, created.response.id);
   assertEquals(completed.response.id, created.response.id);
@@ -2036,8 +1825,8 @@ test('synthesized terminal id stays constant across multi-turn upstream id rotat
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<ResponseStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
   assert(created.response.id.startsWith('resp_shim_'));
   // Same shim-synthesized id end-to-end; neither upstream turn id
   // leaks downstream.
@@ -2086,7 +1875,7 @@ test('usage accumulates across three iterations', async () => {
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 305);
   assertEquals(completed.response.usage?.output_tokens, 82);
@@ -2129,7 +1918,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
   const result = await shim(inv, makeRequest(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.output_tokens, 60);
@@ -2167,14 +1956,14 @@ test('usage cached_tokens never reported on any turn is omitted from wire (no fa
   const result = await shim(inv, makeRequest(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals(completed.response.usage?.input_tokens, 150);
   assertEquals(completed.response.usage?.input_tokens_details, undefined);
   assertEquals(completed.response.usage?.output_tokens_details, undefined);
 });
 
-test('next-turn function_call echo always carries the canonical re-stringified umbrella args (single shape unified with client-roundtrip)', async () => {
+test('next-turn function_call echo always carries the canonical re-stringified shim call args (single shape unified with client-roundtrip)', async () => {
   // The dispatcher always overwrites the intercepted call's
   // arguments with the canonical re-stringified form, regardless of
   // whether the upstream string was already valid JSON. This
@@ -2203,7 +1992,7 @@ test('next-turn function_call echo always carries the canonical re-stringified u
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   const fc = input.find(i => i.type === 'function_call') as
     | { type: 'function_call'; arguments: string }
     | undefined;
@@ -2226,7 +2015,7 @@ test('upstream sends bare `error` frame BEFORE any response.created: shim throws
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
   const errorOnlyTurn: ScriptedTurn = [
-    eventFrame<ResponsesStreamEvent>({
+    eventFrame<RawResponsesStreamEvent>({
       type: 'error',
       message: 'upstream dropped before response shell',
     }),
@@ -2252,7 +2041,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const createdWith = eventFrame<ResponsesStreamEvent>({
+  const createdWith = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: {
       id: 'resp_captured_id_xyz',
@@ -2266,7 +2055,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   });
   const script = scriptedRun([[
     createdWith,
-    eventFrame<ResponsesStreamEvent>({
+    eventFrame<RawResponsesStreamEvent>({
       type: 'error',
       message: 'mid-stream upstream blew up',
       code: 'server_error',
@@ -2276,7 +2065,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.type, 'response.failed');
   assert(failed.response.id.startsWith('resp_shim_'));
   assertEquals(failed.response.model, 'gpt-5.4-2025-01-20');
@@ -2284,7 +2073,7 @@ test('upstream sends bare `error` frame AFTER response.created: shim emits respo
   assertEquals(failed.response.error?.message, 'mid-stream upstream blew up');
   // Upstream-supplied code carries through verbatim.
   assertEquals(failed.response.error?.code, 'server_error');
-  // No synthetic `type` field — the OpenAPI ResponseError schema
+  // No synthetic `type` field — the OpenAPI ResponsesError schema
   // defines only `{code, message}` and the bare `error` upstream frame
   // doesn't carry a `type` to forward.
   assertFalse('type' in (failed.response.error as object));
@@ -2300,11 +2089,11 @@ test('upstream iterator rejects before yielding any frame: shim surfaces the thr
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const failingIterator: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const failingIterator: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
     throw new Error('malformed SSE JSON at byte 42');
     yield undefined as never;
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => ({
     type: 'events',
     events: failingIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2334,16 +2123,16 @@ test('pathological upstream emitting frames without response.created: shim event
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const noisyIterator: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const noisyIterator: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
     for (let i = 0; i < 5; i++) {
-      yield eventFrame<ResponsesStreamEvent>({
+      yield eventFrame<RawResponsesStreamEvent>({
         type: 'response.unknown_future_call.in_progress',
         output_index: i,
         item_id: `unk_${i}`,
-      } as unknown as ResponsesStreamEvent);
+      } as unknown as RawResponsesStreamEvent);
     }
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => ({
     type: 'events',
     events: noisyIterator,
     modelIdentity: testTelemetryModelIdentity,
@@ -2368,11 +2157,11 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const failingMidStream: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const failingMidStream: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
     yield mkResponseCreated('upstream_mid');
     throw new Error('connection reset by peer');
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => ({
     type: 'events',
     events: failingMidStream,
     modelIdentity: testTelemetryModelIdentity,
@@ -2383,14 +2172,14 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.response.status, 'failed');
   assert(failed.response.id.startsWith('resp_shim_'));
   assertEquals(failed.response.model, 'test-model');
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('connection reset by peer'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
-  // No synthetic `type` per the spec ResponseError schema (only
+  // No synthetic `type` per the spec ResponsesError schema (only
   // `{code, message}`).
   assertFalse('type' in (failed.response.error as object));
 });
@@ -2404,16 +2193,16 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const turn1 = searchCallTurn(0, 'call_1', 'q1');
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of turn1) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
-    const failingTurn2: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+    const failingTurn2: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
       yield mkResponseCreated('upstream_test');
       throw new Error('upstream parser exploded');
     })();
@@ -2425,7 +2214,7 @@ test('turn-2 iterator throws: synthesizes response.failed with captured id/model
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = terminal as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'server_error');
   assert(failed.response.error?.message.includes('upstream parser exploded'));
   assert(failed.response.error?.message.includes('Upstream stream failed mid-response'));
@@ -2442,10 +2231,10 @@ test('consume-turn finishes without identity AND without bare-error-pre-shell: s
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const malformed: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const malformed: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
     yield mkResponseCompleted();
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => ({
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => ({
     type: 'events',
     events: malformed,
     modelIdentity: testTelemetryModelIdentity,
@@ -2496,11 +2285,11 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<ResponsesStreamEvent>({
+  const createdWith = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: upstreamSnapshot as ResponsesResult,
   });
-  const completedWith = eventFrame<ResponsesStreamEvent>({
+  const completedWith = eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
@@ -2517,8 +2306,8 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find(e => e.type === 'response.created') as Extract<ResponseStreamEvent, { type: 'response.created' }>;
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const created = events.find(e => e.type === 'response.created') as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
 
   // Every preserved field arrives on both the in-progress (response.created)
   // synthesized envelope and the final completed envelope.
@@ -2558,7 +2347,7 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
     error: null,
     incomplete_details: null,
   };
-  const createdWith = eventFrame<ResponsesStreamEvent>({
+  const createdWith = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: upstreamSnapshot as ResponsesResult,
   });
@@ -2567,16 +2356,16 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         yield createdWith;
         yield mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
         yield mkFunctionCallDone(0, 'call_1', SHIM_TOOL_NAME, wsArgs);
-        yield eventFrame<ResponsesStreamEvent>({
+        yield eventFrame<RawResponsesStreamEvent>({
           type: 'response.completed',
           response: { ...upstreamSnapshot, status: 'completed' } as ResponsesResult,
         });
@@ -2594,7 +2383,7 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   assertEquals(r.tools, [{ type: 'web_search' }]);
@@ -2619,11 +2408,11 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<ResponsesStreamEvent>({
+  const turn1Created = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: turn1Snapshot as ResponsesResult,
   });
-  const turn1Completed = eventFrame<ResponsesStreamEvent>({
+  const turn1Completed = eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       ...turn1Snapshot,
@@ -2636,11 +2425,11 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         yield turn1Created;
         yield mkFunctionCallAdded(0, 'call_1', SHIM_TOOL_NAME);
         yield mkFunctionCallArgsDone(0, wsArgs);
@@ -2660,7 +2449,7 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events.find(e => e.type === 'response.failed') as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events.find(e => e.type === 'response.failed') as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assert(failed !== undefined);
   const r = failed.response as unknown as Record<string, unknown>;
   // Pass-through contract: snapshot's completed_at flows through
@@ -2683,11 +2472,11 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<ResponsesStreamEvent>({
+  const turn1Created = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: upstreamSnapshot as ResponsesResult,
   });
-  const turn1Completed = eventFrame<ResponsesStreamEvent>({
+  const turn1Completed = eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
@@ -2708,7 +2497,7 @@ test('snapshot strip: emitFinalCompleted re-adds completed_at when upstream supp
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   assertEquals(r.completed_at, 1735689700);
@@ -2730,11 +2519,11 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
     error: null,
     incomplete_details: null,
   };
-  const turn1Created = eventFrame<ResponsesStreamEvent>({
+  const turn1Created = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: upstreamSnapshot as ResponsesResult,
   });
-  const turn1Completed = eventFrame<ResponsesStreamEvent>({
+  const turn1Completed = eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       ...upstreamSnapshot,
@@ -2755,7 +2544,7 @@ test('snapshot pass-through: incomplete_details: null on the captured snapshot p
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponseStreamEvent, { type: 'response.completed' }>;
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
   assert(completed !== undefined);
   const r = completed.response as unknown as Record<string, unknown>;
   // Field present and explicitly `null` — neither coerced to undefined
@@ -2787,7 +2576,7 @@ test('success-path synth envelopes carry spec-required `error: null` and `incomp
   // Every synthesized envelope (created, in_progress, completed) MUST
   // carry both fields as null.
   for (const frameType of ['response.created', 'response.in_progress', 'response.completed'] as const) {
-    const ev = events.find(e => e.type === frameType) as Extract<ResponseStreamEvent, { type: typeof frameType }>;
+    const ev = events.find(e => e.type === frameType) as Extract<ResponsesStreamEvent, { type: typeof frameType }>;
     assert(ev !== undefined, `expected ${frameType}`);
     const r = ev.response as unknown as Record<string, unknown>;
     assert('error' in r, `${frameType} missing 'error' key`);
@@ -2806,8 +2595,8 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
   // would desync from the cross-turn aggregated `output`. The shim
   // rebuilds the alias from `accumulatedOutput` and overrides the
   // snapshot's value on the terminal envelope.
-  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
-    eventFrame<ResponsesStreamEvent>({
+  const omitOutputText = (responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
+    eventFrame<RawResponsesStreamEvent>({
       type: 'response.completed',
       response: {
         id: responseId,
@@ -2819,8 +2608,8 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
         incomplete_details: null,
       },
     });
-  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<ResponsesStreamEvent> =>
-    eventFrame<ResponsesStreamEvent>({
+  const omitOutputTextCreated = (responseId = 'upstream_test'): ProtocolFrame<RawResponsesStreamEvent> =>
+    eventFrame<RawResponsesStreamEvent>({
       type: 'response.created',
       response: {
         id: responseId,
@@ -2846,7 +2635,7 @@ test('shim rebuilds `output_text` on terminal envelopes from the accumulated mes
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const completed = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
+  const completed = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.completed' }> => e.type === 'response.completed');
   assert(completed !== undefined);
   assertEquals((completed.response as unknown as { output_text: string }).output_text, 'hi there');
 });
@@ -2858,7 +2647,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   // value — terminal envelopes get a separately-rebuilt
   // `output_text` aggregated across turns (covered by the dedicated
   // rebuildOutputText test below).
-  const createdWithStaleText = eventFrame<ResponsesStreamEvent>({
+  const createdWithStaleText = eventFrame<RawResponsesStreamEvent>({
     type: 'response.created',
     response: {
       id: 'resp_stale',
@@ -2871,7 +2660,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       incomplete_details: null,
     } as ResponsesResult,
   });
-  const inProgressWithStaleText = eventFrame<ResponsesStreamEvent>({
+  const inProgressWithStaleText = eventFrame<RawResponsesStreamEvent>({
     type: 'response.in_progress',
     response: {
       id: 'resp_stale',
@@ -2884,7 +2673,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       incomplete_details: null,
     } as ResponsesResult,
   });
-  const completedFrame = eventFrame<ResponsesStreamEvent>({
+  const completedFrame = eventFrame<RawResponsesStreamEvent>({
     type: 'response.completed',
     response: {
       id: 'resp_stale',
@@ -2912,8 +2701,8 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const created = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.created' }> => e.type === 'response.created');
-  const inProgress = events.find((e): e is Extract<ResponseStreamEvent, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
+  const created = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.created' }> => e.type === 'response.created');
+  const inProgress = events.find((e): e is Extract<ResponsesStreamEvent, { type: 'response.in_progress' }> => e.type === 'response.in_progress');
   assert(created !== undefined);
   assert(inProgress !== undefined);
   // Snapshot's output_text flows through verbatim on in-progress
@@ -2936,12 +2725,12 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     const frames = runCalls === 1
       ? searchCallTurn(0, 'call_1', 'q1')
       : messageTurn('done', 0);
-    const iterable: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+    const iterable: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
       for (const f of frames) yield f;
     })();
     return {
@@ -2987,7 +2776,7 @@ test('synthesized web_search_call (search action) carries both `query` (singular
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
   const action = item.action as { type: 'search'; query?: string; queries?: string[] };
   assertEquals(action.query, 'who invented graphql');
@@ -3011,19 +2800,19 @@ test('response.output_item.added for web_search_call omits action (mirrors nativ
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsAdded = events.find(
-    (e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.added' }> =>
+    (e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }> =>
       e.type === 'response.output_item.added'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   const wsDone = events.find(
-    (e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   assert(wsAdded !== undefined);
   assert(wsDone !== undefined);
-  const addedItem = wsAdded.item as ResponseOutputWebSearchCall;
-  const doneItem = wsDone.item as ResponseOutputWebSearchCall;
+  const addedItem = wsAdded.item as ResponsesOutputWebSearchCall;
+  const doneItem = wsDone.item as ResponsesOutputWebSearchCall;
   assertEquals(addedItem.status, 'in_progress');
   assertEquals(doneItem.status, 'completed');
   assertFalse('action' in addedItem);
@@ -3055,15 +2844,15 @@ test('open with invalid ref_id: done frame carries action.type="search" with the
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   assert(wsDone !== undefined);
-  const doneItem = wsDone.item as ResponseOutputWebSearchCall;
+  const doneItem = wsDone.item as ResponsesOutputWebSearchCall;
   assert(doneItem.action !== undefined);
   assertEquals(doneItem.action.type, 'search');
-  assertEquals((doneItem.action as Extract<ResponseWebSearchAction, { type: 'search' }>).queries, [invalidRef]);
+  assertEquals((doneItem.action as Extract<ResponsesWebSearchAction, { type: 'search' }>).queries, [invalidRef]);
 });
 
 test('open with valid URL whose fetch fails: done frame carries action.type="open_page" with the same url', async () => {
@@ -3092,12 +2881,12 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const wsDone = events.find(
-    (e): e is Extract<ResponseStreamEvent, { type: 'response.output_item.done' }> =>
+    (e): e is Extract<ResponsesStreamEvent, { type: 'response.output_item.done' }> =>
       e.type === 'response.output_item.done'
       && (e.item as { type?: string }).type === 'web_search_call',
   );
   assert(wsDone !== undefined);
-  const doneItem = wsDone.item as ResponseOutputWebSearchCall;
+  const doneItem = wsDone.item as ResponsesOutputWebSearchCall;
   assertEquals(doneItem.action, { type: 'open_page', url: failingUrl });
   // Error explanation lives on the results snippet, not the action.
   assertEquals(doneItem.results?.length, 1);
@@ -3137,7 +2926,7 @@ test('include: ["web_search_call.action.sources"] populates action.sources with 
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
   const action = item.action as { type: 'search'; sources?: { type: 'url'; url: string }[] };
   assertEquals(action.sources, [
     { type: 'url', url: 'https://example.com/a' },
@@ -3159,15 +2948,15 @@ test('without include: ["web_search_call.action.sources"], action.sources is abs
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
   const action = item.action as { type: 'search'; sources?: unknown };
   assertEquals(action.sources, undefined);
 });
 
-test('web_search_call results field is always populated (always-include divergence from native)', async () => {
+test('web_search_call results field is populated on the wire when the client opted in via include: ["web_search_call.results"]', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
+  const inv = makeInvocation(); // Default already opts in.
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),
@@ -3178,18 +2967,19 @@ test('web_search_call results field is always populated (always-include divergen
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
   assert(Array.isArray(item.results));
   assert(item.results!.length > 0);
 });
 
-test('web_search_call results stays populated even when client omits include: ["web_search_call.results"]', async () => {
-  // Native makes results opt-in via the include field; the shim ignores
-  // that opt-in because results must travel through both internal-loop
-  // and client-roundtrip directions (see server-tools/web-search.ts file header).
+test('web_search_call results field is omitted from the wire when the client did not include it (matches native default)', async () => {
+  // When the client omits `include: ["web_search_call.results"]`, the
+  // wire item carries only id/action — same as native. The IR (and
+  // therefore the persisted `payload.private`) still holds the full
+  // results so a later-turn echo can be hydrated.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
+  const inv = makeInvocation({ payload: { include: [] } });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
     messageTurn('done', 0),
@@ -3200,16 +2990,15 @@ test('web_search_call results stays populated even when client omits include: ["
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
-  assert(Array.isArray(item.results));
-  assert(item.results!.length > 0);
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
+  assertEquals(item.results, undefined);
 });
 
-// ── Mixed-tool turn (umbrella + client tool present) ─────────────────
+// ── Mixed-tool turn (shim call + client tool present) ─────────────────
 
-test('mixed-tool: umbrella + client function_call exits to client after one turn, with both sets of items downstream', async () => {
+test('mixed-tool: shim call + client function_call exits to client after one turn, with both sets of items downstream', async () => {
   // GPT-5.x emits both kinds of tool calls in one turn. The shim executes
-  // the umbrella's searches server-side (so the client sees completed
+  // the shim's searches server-side (so the client sees completed
   // web_search_call lifecycles) and lets the client round-trip its own
   // function_call. No internal rerun, no rejection injection.
   const { backend } = makeStubDeps();
@@ -3229,12 +3018,12 @@ test('mixed-tool: umbrella + client function_call exits to client after one turn
   ];
   const script = scriptedRun([mixedTurn]);
 
-  const originalInputLen = (inv.payload.input as ResponseInputItem[]).length;
+  const originalInputLen = (inv.payload.input as ResponsesInputItem[]).length;
   const { frames } = await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
   assertEquals(backend.calls.length, 1);
   assertEquals(script.callCount(), 1);
-  assertEquals((inv.payload.input as ResponseInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as ResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3246,7 +3035,7 @@ test('mixed-tool: umbrella + client function_call exits to client after one turn
   assertEquals(wsLifecycleCount, 3);
 });
 
-test('mixed-tool: umbrella + custom_tool_call exits to client; custom_tool_call frames flush downstream', async () => {
+test('mixed-tool: shim call + custom_tool_call exits to client; custom_tool_call frames flush downstream', async () => {
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -3290,12 +3079,12 @@ test('client-only tool turn (no shim call): pass-through function_call frames fl
   ];
   const script = scriptedRun([clientOnlyTurn]);
 
-  const originalInputLen = (inv.payload.input as ResponseInputItem[]).length;
+  const originalInputLen = (inv.payload.input as ResponsesInputItem[]).length;
   const { frames } = await runShimAndDrain(shim, inv, makeRequest(), script.run);
   // Loop closes after the single turn — the client drives the next round.
   assertEquals(script.callCount(), 1);
   assertEquals(backend.calls.length, 0);
-  assertEquals((inv.payload.input as ResponseInputItem[]).length, originalInputLen);
+  assertEquals((inv.payload.input as ResponsesInputItem[]).length, originalInputLen);
 
   const events = eventPayloads(frames);
   const passThroughAdded = events.find(e =>
@@ -3307,23 +3096,28 @@ test('client-only tool turn (no shim call): pass-through function_call frames fl
 
 // ── Pass-through of replayed web_search_call from input ────────────────
 
-// ── Input preprocessor: web_search_call items → umbrella pair ─────────
+// ── Input preprocessor: web_search_call items → shim call pair ─────────
 
-test('input preprocessor: each web_search_call item becomes one umbrella function_call + function_call_output pair', async () => {
-  // Upstream knows the umbrella only as a function tool; a hosted
+test('input preprocessor: each web_search_call item becomes one shim call + function_call_output pair', async () => {
+  // Upstream knows the shim call only as a function tool; a hosted
   // `web_search_call` item type in its input would be unrecognized. We
   // translate each echoed item into a function_call + function_call_output
-  // pair that the upstream model can reason over.
+  // pair that the upstream model can reason over. With no per-item
+  // private payload (this test runs raw through the shim), the
+  // function_call mirrors the wire action shape and the
+  // function_call_output is the placeholder — the shim deliberately
+  // ignores the wire `results` field because gateway-side state is the
+  // only source of truth.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
-  const replayedSearch: ResponseInputWebSearchCall = {
+  const replayedSearch: ResponsesInputWebSearchCall = {
     type: 'web_search_call',
     id: 'ws_old_search',
     status: 'completed',
     action: { type: 'search', queries: ['hello world'] },
     results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
   };
-  const replayedOpen: ResponseInputWebSearchCall = {
+  const replayedOpen: ResponsesInputWebSearchCall = {
     type: 'web_search_call',
     id: 'ws_old_open',
     status: 'completed',
@@ -3344,7 +3138,7 @@ test('input preprocessor: each web_search_call item becomes one umbrella functio
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   // Original 2 messages + 2 expanded pairs (2 items each) = 6 items.
   assertEquals(input.length, 6);
   assertEquals(input.map(i => i.type), [
@@ -3353,16 +3147,18 @@ test('input preprocessor: each web_search_call item becomes one umbrella functio
   ]);
   // No web_search_call items remain after preprocessing.
   assertFalse(input.some(i => i.type === 'web_search_call'));
-  // The pair from the search reflects its action; the body carries the snippet.
+  // The pair from the search reflects its action.
   const searchFc = input[1] as { name: string; arguments: string };
   assertEquals(searchFc.name, SHIM_TOOL_NAME);
   assert(searchFc.arguments.includes('hello world'));
+  // No payload → output is the not-preserved placeholder, not the
+  // wire snippet. The model is told to re-search if it needs the data.
   const searchOut = input[2] as { output: string };
-  assert(searchOut.output.includes('Search results for "hello world"'));
-  assert(searchOut.output.includes('snippet body'));
+  assert(searchOut.output.includes('not preserved'));
+  assertFalse(searchOut.output.includes('snippet body'));
   const openOut = input[5] as { output: string };
-  // open_page IR's output text is the page body (its sole result snippet) verbatim.
-  assertEquals(openOut.output, 'page body');
+  assert(openOut.output.includes('not preserved'));
+  assertFalse(openOut.output.includes('page body'));
 });
 
 test('input preprocessor: replay-only activation leaves hosted tool_choice unchanged when no hosted tool is declared', async () => {
@@ -3389,7 +3185,7 @@ test('input preprocessor: replay-only activation leaves hosted tool_choice uncha
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
   assertEquals(inv.payload.tool_choice, { type: 'web_search_preview' });
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   assertEquals(input.map(i => i.type), ['message', 'function_call', 'function_call_output']);
 });
 
@@ -3398,10 +3194,10 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   // item entirely silently shortens conversation history, which can
   // mislead the model (e.g. its reasoning about "your last 3 tool
   // calls" no longer matches reality). Replace with a placeholder
-  // umbrella function_call (empty args, no logical ops) + a
+  // shim call (empty args, no logical ops) + a
   // function_call_output telling the model the prior contents
-  // weren't preserved. Same idea as the `resultsStripped` path for
-  // partial echoes.
+  // weren't preserved. Same idea as the no-payload-with-action path
+  // for partial echoes.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -3419,7 +3215,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   // user message + placeholder function_call + placeholder function_call_output.
   assertEquals(input.length, 3);
   assertEquals(input[0].type, 'message');
@@ -3457,7 +3253,7 @@ test('input preprocessor: web_search_call with empty id has its id synthesized a
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   // user message + function_call + function_call_output (paired from the
   // echoed web_search_call with synthesized id).
   assertEquals(input.length, 3);
@@ -3465,11 +3261,11 @@ test('input preprocessor: web_search_call with empty id has its id synthesized a
   assertEquals(input[2].type, 'function_call_output');
 });
 
-test('input preprocessor: web_search_call without results emits the stripped-notice function_call_output (not a "(no results)" zero-hit message)', async () => {
+test('input preprocessor: web_search_call without results emits the not-preserved placeholder function_call_output (not a "(no results)" zero-hit message)', async () => {
   // Clients like codex CLI 0.133 drop the results field when persisting
-  // sessions. We backfill an empty array AND set resultsStripped, so the
-  // model sees an explicit "not preserved" notice instead of being misled
-  // into thinking the prior search returned zero hits.
+  // sessions. We emit an explicit "not preserved" notice instead of
+  // synthesizing a phantom zero-hit response that would mislead the
+  // model into thinking the prior search returned nothing.
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -3487,13 +3283,13 @@ test('input preprocessor: web_search_call without results emits the stripped-not
   const script = scriptedRun([messageTurn('done')]);
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const input = inv.payload.input as ResponseInputItem[];
+  const input = inv.payload.input as ResponsesInputItem[];
   assertEquals(input.length, 2);
   const fco = input[1] as { output: string };
   assertEquals(fco.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
-// ── Umbrella tool name resolution / collision fallback ────────────────
+// ── Shim tool name resolution / collision fallback ────────────────
 
 test('client declaring web_search + hosted web_search: shim falls back to web_search_2', async () => {
   makeStubDeps();
@@ -3584,7 +3380,7 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
   assertEquals(script.callCount(), 2);
   const done = outputItemDoneEvents(frames)
     .map(e => e.item)
-    .filter((i): i is ResponseOutputWebSearchCall => i.type === 'web_search_call');
+    .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results?.[0]?.snippet ?? '';
   assert(snippet.includes('not configured'));
@@ -3604,7 +3400,7 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
   assertEquals(script.callCount(), 2);
   const done = outputItemDoneEvents(frames)
     .map(e => e.item)
-    .filter((i): i is ResponseOutputWebSearchCall => i.type === 'web_search_call');
+    .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results?.[0]?.snippet ?? '';
   assert(snippet.includes('tavily'));
@@ -3626,10 +3422,10 @@ test('shim yields first turn frames BEFORE later turns resolve', async () => {
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return {
@@ -3640,7 +3436,7 @@ test('shim yields first turn frames BEFORE later turns resolve', async () => {
     }
     if (runCalls === 2) {
       await turn2Gate;
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of messageTurn('summary', 0)) yield f;
       })();
       return {
@@ -3700,12 +3496,12 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   const terminalGate = new Promise<void>(resolve => {
     releaseTerminal = resolve;
   });
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
+    const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
       yield mkResponseCreated();
       yield mkResponseInProgress();
       yield mkMessageAdded(0);
-      yield eventFrame<ResponsesStreamEvent>({
+      yield eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -3751,10 +3547,10 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return {
@@ -3777,7 +3573,7 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
 
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.failed');
-  const failedEv = terminal as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failedEv = terminal as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failedEv.response.status, 'failed');
   assert(failedEv.response.error !== undefined);
   // Pass-through code: the shim quotes upstream's HTTP status
@@ -3791,7 +3587,7 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
 
 test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-enum normalization)', async () => {
   // The shim no longer normalizes upstream error codes to the
-  // OpenAPI `ResponseErrorCode` enum. A 429 with no OpenAI-shaped
+  // OpenAPI `ResponsesErrorCode` enum. A 429 with no OpenAI-shaped
   // body falls back to `upstream_429` — the HTTP status is the most
   // honest signal, and downstream clients pattern-matching on
   // upstream's actual code see it directly.
@@ -3800,10 +3596,10 @@ test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-e
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3819,7 +3615,7 @@ test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-e
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'upstream_429');
 });
 
@@ -3833,10 +3629,10 @@ test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no sp
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3852,7 +3648,7 @@ test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no sp
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'upstream_400');
   // The HTTP status is preserved in the diagnostic message so clients
   // pattern-matching for 4xx see it.
@@ -3870,10 +3666,10 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -3896,7 +3692,7 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
   const result = await shim(inv, makeRequest(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const failed = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const failed = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(failed.response.error?.code, 'insufficient_quota');
   assertEquals(failed.response.error?.type, 'insufficient_quota');
   assertEquals(failed.response.error?.message, 'You exceeded your current quota.');
@@ -3926,7 +3722,7 @@ test('upstream response.incomplete forwards as response.incomplete with the same
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
-  const terminal = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.incomplete' }>;
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.status, 'incomplete');
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
@@ -3960,7 +3756,7 @@ test('upstream response.incomplete WITHOUT incomplete_details forwards as respon
 
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.incomplete');
-  const incomplete = terminal as Extract<ResponseStreamEvent, { type: 'response.incomplete' }>;
+  const incomplete = terminal as Extract<ResponsesStreamEvent, { type: 'response.incomplete' }>;
   assertEquals(incomplete.response.incomplete_details, null);
   assertEquals(incomplete.response.output.map(item => item.type), ['message']);
 });
@@ -3985,7 +3781,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events.at(-1) as Extract<ResponseStreamEvent, { type: 'response.incomplete' }>;
+  const terminal = events.at(-1) as Extract<ResponsesStreamEvent, { type: 'response.incomplete' }>;
 
   assertEquals(terminal.type, 'response.incomplete');
   assertEquals(terminal.response.output.map(item => item.type), ['message', 'web_search_call']);
@@ -3995,7 +3791,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
 
 // ── function_call_output is plain text on every target ───────────────
 
-const lastFunctionCallOutput = (input: ResponseInputItem[]): string => {
+const lastFunctionCallOutput = (input: ResponsesInputItem[]): string => {
   const last = input[input.length - 1];
   assert(last.type === 'function_call_output');
   return (last as { output: string }).output;
@@ -4015,7 +3811,7 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as ResponseInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4030,7 +3826,7 @@ test('chat-completions target: function_call_output is plain-text formatted sear
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as ResponseInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4045,7 +3841,7 @@ test('messages target: function_call_output is plain-text formatted search resul
 
   await runShimAndDrain(shim, inv, makeRequest(), script.run);
 
-  const text = lastFunctionCallOutput(inv.payload.input as ResponseInputItem[]);
+  const text = lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
 });
 
@@ -4075,7 +3871,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
   assertEquals(seenToolChoices[1], 'auto');
 });
 
-test('tool_choice {type:"function", name:<umbrella>} demotes to "auto" after first intercepted turn', async () => {
+test('tool_choice {type:"function", name:<shim tool name>} demotes to "auto" after first intercepted turn', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation({
@@ -4221,10 +4017,10 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
   });
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const run = async (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
     runCalls += 1;
     if (runCalls === 1) {
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         for (const f of searchCallTurn(0, 'call_1', 'q1')) yield f;
       })();
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
@@ -4233,11 +4029,11 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
       // Emit message.added + first delta immediately, gate the rest. A
       // buffered implementation would hide the first delta until
       // response.completed.
-      const frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      const frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
         yield mkResponseCreated();
         yield mkResponseInProgress();
         yield mkMessageAdded(0);
-        yield eventFrame<ResponsesStreamEvent>({
+        yield eventFrame<RawResponsesStreamEvent>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4245,7 +4041,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
           delta: 'first',
         });
         await restOfTurn2Gate;
-        yield eventFrame<ResponsesStreamEvent>({
+        yield eventFrame<RawResponsesStreamEvent>({
           type: 'response.output_text.delta',
           item_id: 'msg_upstream',
           output_index: 0,
@@ -4270,7 +4066,7 @@ test('final-turn text deltas stream as they arrive, not buffered until response.
     const next = await iter.next();
     if (next.done) break;
     if (next.value.type === 'event' && next.value.event.type === 'response.output_text.delta') {
-      const deltaEv = next.value.event as Extract<ResponseStreamEvent, { type: 'response.output_text.delta' }>;
+      const deltaEv = next.value.event as Extract<ResponsesStreamEvent, { type: 'response.output_text.delta' }>;
       assertEquals(deltaEv.delta, 'first');
       sawFirstDelta = true;
       break;
@@ -4296,7 +4092,7 @@ test('mixed turn (reasoning + message_partial + function_call) preserves the mes
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkMessageAdded(1),
-    eventFrame<ResponsesStreamEvent>({
+    eventFrame<RawResponsesStreamEvent>({
       type: 'response.output_text.delta',
       item_id: 'msg_upstream',
       output_index: 1,
@@ -4398,154 +4194,6 @@ test('two consecutive tool-call turns each with a thinking-out-loud message pres
   assertEquals(wsCallAdded.length, 2);
 });
 
-// ── Umbrella-specific behaviors ──────────────────────────────────────────
-
-test('umbrella web_search with batched multi-action args dispatches all logical ops in one iteration', async () => {
-  // ONE upstream function_call populates search_query, open, and find
-  // simultaneously — one lifecycle per op + ONE combined
-  // function_call_output.
-  const url1 = 'https://example.com/a';
-  const url2 = 'https://example.com/b';
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    search_query: [{ q: 'first' }, { q: 'second' }],
-    open: [{ ref_id: url1 }],
-    find: [{ ref_id: url2, pattern: 'needle' }],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  const result = await shim(inv, makeRequest(), script.run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-
-  // Two searches + one fetchPage (batching url1 + url2).
-  assertEquals(backend.calls.filter(c => c.kind === 'search').length, 2);
-  assertEquals(backend.calls.filter(c => c.kind === 'fetchPage').length, 1);
-  // Cap budget consumed twice (once per turn), not 4x for the 4 ops.
-  assertEquals(script.callCount(), 2);
-
-  // Four lifecycles (one per logical op).
-  const wsCallAdded = events.filter(e =>
-    e.type === 'response.output_item.added'
-    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
-  assertEquals(wsCallAdded.length, 4);
-
-  // One function_call_output per logical op, in source order.
-  const input = inv.payload.input as ResponseInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 4);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  // Each section is the per-action formatted body (search results / page
-  // body / find matches) joined in source order. The exact text formats
-  // are unit-tested in ir_test.ts and format-search-results_test.ts.
-  assert(combined.includes('Search results for "first"'));
-  assert(combined.includes('Search results for "second"'));
-  assert(combined.includes(`body of ${url1}`));
-  assert(combined.includes('needle'));
-});
-
-test('non-URL ref_id produces error sentinel; supported call in same batch still works', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  // One umbrella call mixing a valid URL with a bogus opaque ref_id. The
-  // bogus one produces an error sentinel without hitting the backend.
-  const argsJson = JSON.stringify({
-    open: [
-      { ref_id: 'https://example.com/good' },
-      { ref_id: 'opaque-prior-id-not-a-url' },
-    ],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_umbrella', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_umbrella', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  // Only the valid URL hit fetchPage; the bogus ref short-circuited.
-  const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
-  assertEquals(fetchCalls.length, 1);
-  const req = fetchCalls[0].request as WebSearchFetchPageRequest;
-  assertEquals(req.urls, ['https://example.com/good']);
-
-  const input = inv.payload.input as ResponseInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  // One pair per op: the valid open and the bogus ref each get their own.
-  assertEquals(outputs.length, 2);
-  const combined = outputs.map(o => o.output).join('\n\n');
-  assert(combined.includes('body of https://example.com/good'));
-  assert(combined.includes('ref_id must be a fully-qualified URL'));
-  assert(combined.includes('opaque-prior-id-not-a-url'));
-});
-
-test('umbrella call with only unsupported sub-properties surfaces per-entry errors as web_search_call IR items', async () => {
-  // Each unsupported entry becomes one web_search_call IR with
-  // action.type='search' (neutral carrier) + a snippet explaining what
-  // sub-property the gateway does not support. The model sees them via
-  // both the downstream wire items (always-include results) and the
-  // upstream function_call_output text.
-  const { backend } = makeStubDeps();
-  const shim = withResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({
-    click: [{ ref_id: 'https://x', id: 1 }],
-    screenshot: [{ ref_id: 'https://x', pageno: 1 }],
-  });
-  const turn: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_bogus', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_bogus', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn, messageTurn('done', 0)]);
-
-  const { frames } = await runShimAndDrain(shim, inv, makeRequest(), script.run);
-
-  assertEquals(backend.calls.length, 0);
-  // Two web_search_call lifecycle items downstream (one per unsupported entry).
-  const events = eventPayloads(frames);
-  const wsAdded = events.filter(e =>
-    e.type === 'response.output_item.added'
-    && (e as { item?: { type?: string } }).item?.type === 'web_search_call');
-  assertEquals(wsAdded.length, 2);
-
-  const input = inv.payload.input as ResponseInputItem[];
-  const outputs = input.filter(i => i.type === 'function_call_output') as Array<{
-    type: 'function_call_output';
-    call_id: string;
-    output: string;
-  }>;
-  assertEquals(outputs.length, 2);
-  assert(outputs[0].output.includes('`click` sub-property is not supported'));
-  assert(outputs[1].output.includes('`screenshot` sub-property is not supported'));
-});
-
 test('lifecycle start frames yield BEFORE backend resolves, giving searching real wall-clock duration', async () => {
   // Gate provider.search() so the test can observe ordering: lifecycle
   // start frames must be drainable WHILE the backend is pending. If the
@@ -4583,7 +4231,7 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
   // searching must arrive but completed / done must NOT.
   let sawSearching = false;
   let sawCompleted = false;
-  const drainedSoFar: ResponsesStreamEvent[] = [];
+  const drainedSoFar: RawResponsesStreamEvent[] = [];
   for (let i = 0; i < 64 && !sawSearching; i++) {
     const next = await iter.next();
     if (next.done) break;
@@ -4613,13 +4261,13 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
   assert(types.includes('response.output_item.done'));
 });
 
-test('terminal response.completed.output is in output_index order, not completion order (umbrella backend resolves AFTER a later live item)', async () => {
-  // The umbrella reserves downstream index 0 at output_item.added time;
+test('terminal response.completed.output is in output_index order, not completion order (shim backend resolves AFTER a later live item)', async () => {
+  // The shim call reserves downstream index 0 at output_item.added time;
   // the mixed-tool client function_call gets downstream index 1.
-  // We gate the backend so the umbrella's output_item.done fires AFTER
+  // We gate the backend so the shim's output_item.done fires AFTER
   // the client function_call has already finalized into accumulatedOutput.
   // The sparse-index materialization at terminal time must still place
-  // the umbrella at output[0] and the client tool at output[1].
+  // the shim call at output[0] and the client tool at output[1].
   let releaseSearch: (() => void) | null = null;
   const searchGate = new Promise<void>(resolve => { releaseSearch = resolve; });
   makeStubDeps({
@@ -4640,7 +4288,7 @@ test('terminal response.completed.output is in output_index order, not completio
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
   const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
-  // Umbrella at upstream index 0, client tool at upstream index 1. The
+  // Shim call at upstream index 0, client tool at upstream index 1. The
   // upstream's response.completed arrives BEFORE the gated backend
   // resolves; the shim will release end frames lazily as the consumer
   // pulls (so we must release the gate to finish the stream).
@@ -4658,25 +4306,25 @@ test('terminal response.completed.output is in output_index order, not completio
   const script = scriptedRun([mixedTurn]);
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
-  // Release the gate so the umbrella end frames + terminal can resolve.
+  // Release the gate so the shim call end frames + terminal can resolve.
   releaseSearch!();
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
   assertEquals(terminal.type, 'response.completed');
   const output = (terminal as { response: { output: Array<{ type: string }> } }).response.output;
-  // Two items: umbrella web_search_call at slot 0, client function_call at slot 1.
+  // Two items: shim web_search_call at slot 0, client function_call at slot 1.
   // Reserved-slot ordering wins even though the client tool finalized
-  // first (no await on the .done path) and the umbrella finalized last.
+  // first (no await on the .done path) and the shim call finalized last.
   assertEquals(output.map(o => o.type), ['web_search_call', 'function_call']);
 });
 
 // ── End-to-end protocol-violation paths ──────────────────────────────
 
-test('umbrella function_call without output_item.done synthesizes response.failed (no backend dispatch)', async () => {
-  // Protocol violation: upstream emits the umbrella's added +
-  // arguments deltas but no `.done`. The unmatched-umbrella detector
+test('shim call without output_item.done synthesizes response.failed (no backend dispatch)', async () => {
+  // Protocol violation: upstream emits the shim's added +
+  // arguments deltas but no `.done`. The unmatched-shim-call detector
   // in consume-turn must promote the turn to `response.failed`; no
-  // backend search / fetchPage should fire (the umbrella never
+  // backend search / fetchPage should fire (the shim call never
   // dispatched).
   const { backend } = makeStubDeps();
   const shim = withResponsesWebSearchShim;
@@ -4694,10 +4342,10 @@ test('umbrella function_call without output_item.done synthesizes response.faile
   const result = await shim(inv, makeRequest(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events[events.length - 1] as Extract<ResponseStreamEvent, { type: 'response.failed' }>;
+  const terminal = events[events.length - 1] as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
   assertEquals(terminal.type, 'response.failed');
   assertEquals(terminal.response.error?.code, 'server_error');
-  assert(terminal.response.error?.message.includes('without closing umbrella function_call items'));
+  assert(terminal.response.error?.message.includes('without closing shim call items'));
   // Backend never invoked — dispatch only fires from output_item.done.
   assertEquals(backend.calls.length, 0);
 });
@@ -4724,7 +4372,7 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   const doneEvents = outputItemDoneEvents(frames);
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
   assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as ResponseOutputWebSearchCall;
+  const item = wsCallDone.item as ResponsesOutputWebSearchCall;
   // Schema-error IR rides action.type:'search' as the neutral carrier
   // and surfaces the violation in the results snippet.
   assertEquals(item.action?.type, 'search');
@@ -4763,7 +4411,8 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const inv = makeInvocation();
   const request: RequestContext = {
     requestStartedAt: 0,
-    responsesSyntheticItemIds: new Set(),    runtimeLocation: 'test',
+    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+    runtimeLocation: 'test',
     clientStream: true,
     apiKeyId: 'k1',
     downstreamAbortSignal: controller.signal,
@@ -4798,7 +4447,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
 
 // ── consumeTurnStreaming: single-turn stream consumption mechanics ──
 
-const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<ResponsesStreamEvent> =>
+const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `fc_${outputIndex}`): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.function_call_arguments.delta',
     item_id: itemId,
@@ -4806,7 +4455,7 @@ const mkFunctionCallArgsDelta = (outputIndex: number, delta: string, itemId = `f
     delta,
   });
 
-const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<ResponsesStreamEvent> =>
+const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId = `cti_${outputIndex}`): ProtocolFrame<RawResponsesStreamEvent> =>
   eventFrame({
     type: 'response.custom_tool_call_input.delta',
     item_id: itemId,
@@ -4814,18 +4463,18 @@ const mkCustomToolCallInputDelta = (outputIndex: number, delta: string, itemId =
     delta,
   });
 
-const framesOf = (...frames: ProtocolFrame<ResponsesStreamEvent>[]): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => (async function* () {
+const framesOf = (...frames: ProtocolFrame<RawResponsesStreamEvent>[]): AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> => (async function* () {
   yield* frames;
 })();
 
-const eventTypesOf = (frames: ProtocolFrame<ResponsesStreamEvent>[]): string[] =>
+const eventTypesOf = (frames: ProtocolFrame<RawResponsesStreamEvent>[]): string[] =>
   frames.flatMap(f => (f.type === 'event' ? [f.event.type] : []));
 
 interface DispatchRecord {
   intercepted: InterceptedFunctionCall;
 }
 
-// Records every umbrella call without producing IRs or start frames.
+// Records every shim call call without producing IRs or start frames.
 // Tests that care about dispatcher behavior pass a custom dispatcher.
 const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { intercepted: InterceptedFunctionCall }) => {
   records.push({ intercepted });
@@ -4833,16 +4482,16 @@ const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { i
 };
 
 type DrainResult = {
-  downstreamFrames: ProtocolFrame<ResponsesStreamEvent>[];
+  downstreamFrames: ProtocolFrame<RawResponsesStreamEvent>[];
   summary: TurnSummary;
   records: DispatchRecord[];
 };
 
 const drain = async (
-  iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>,
+  iter: AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>, TurnSummary>,
   records: DispatchRecord[],
 ): Promise<DrainResult> => {
-  const downstreamFrames: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  const downstreamFrames: ProtocolFrame<RawResponsesStreamEvent>[] = [];
   let summary: TurnSummary | undefined;
   while (true) {
     const next = await iter.next();
@@ -4873,7 +4522,7 @@ test('parseServerToolArguments returns empty object for empty args', () => {
 });
 
 const consumeTurn = async (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>,
   state: Parameters<typeof consumeTurnStreaming>[1],
   isFirstTurn: boolean,
 ): Promise<DrainResult> => {
@@ -4895,7 +4544,7 @@ test('consumeTurn first turn synthesizes response.created with the once-per-requ
   assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.in_progress']);
   const created = result.downstreamFrames[0];
   assert(created.type === 'event');
-  const createdEv = created.event as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const createdEv = created.event as Extract<RawResponsesStreamEvent, { type: 'response.created' }>;
   // Downstream id is the shim-synthesized value (stable cross-turn);
   // upstream's id is captured nowhere and never exposed downstream.
   assertEquals(createdEv.response.id, state.synthesizedResponseId);
@@ -4906,7 +4555,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', model: 'gpt-5.4-2025-01-20', output: [], output_text: '', status: 'in_progress',
@@ -4920,7 +4569,7 @@ test('consumeTurn synthesizes response.created with the upstream-reported model 
   );
   const created = result.downstreamFrames.find(f => f.type === 'event' && f.event.type === 'response.created');
   assert(created?.type === 'event');
-  const ev = created.event as Extract<ResponsesStreamEvent, { type: 'response.created' }>;
+  const ev = created.event as Extract<RawResponsesStreamEvent, { type: 'response.created' }>;
   assertEquals(ev.response.model, 'gpt-5.4-2025-01-20');
   assertEquals(state.lastSeenModel, 'gpt-5.4-2025-01-20');
 });
@@ -4929,7 +4578,7 @@ test('consumeTurn throws when upstream response.created has no model field (no c
   const state = createMergeState();
   const iter = consumeTurnStreaming(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', output: [], output_text: '', status: 'in_progress',
@@ -4958,7 +4607,7 @@ test('consumeTurn captures upstream-reported model and writes it into MergeState
   const state = createMergeState();
   await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'r', object: 'response', model: 'gpt-5.5-2025-09-01', output: [], output_text: '', status: 'in_progress',
@@ -4981,7 +4630,7 @@ test('consumeTurn re-captures upstream-reported model when later turns change it
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'r2', object: 'response', model: 'gpt-5.6-2025-12-01', output: [], output_text: '', status: 'in_progress',
@@ -5006,7 +4655,7 @@ test('consumeTurn does NOT capture upstream response.id (downstream uses the shi
   state.lastSeenModel = 'gpt-5';
   await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'resp_turn2_rotated', object: 'response', model: 'gpt-5', output: [], output_text: '', status: 'in_progress',
@@ -5029,7 +4678,7 @@ test('consumeTurn keeps previous upstream-reported model when a later turn omits
   state.lastSeenModel = 'gpt-5.5-2025-09-01';
   await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.created',
         response: {
           id: 'r2', object: 'response', output: [], output_text: '', status: 'in_progress',
@@ -5055,7 +4704,7 @@ test('consumeTurn second turn swallows upstream response.created and in_progress
   assertEquals(eventTypesOf(result.downstreamFrames), []);
 });
 
-test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 events', async () => {
+test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 events', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5076,7 +4725,6 @@ test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 e
   assertEquals(result.records[0].intercepted, {
     callId: 'cc_1',
     name: SHIM_TOOL_NAME,
-    argumentsJson: '{"search_query":[{"q":"hello"}]}',
     arguments: { search_query: [{ q: 'hello' }] },
   });
   assertEquals(result.summary.dispatched.length, 1);
@@ -5092,7 +4740,7 @@ test('consumeTurn intercepts the umbrella shim tool and does NOT forward its 4 e
   assertFalse(result.summary.sawClientToolCall);
 });
 
-test('consumeTurn intercepts two umbrella calls within one turn', async () => {
+test('consumeTurn intercepts two shim call calls within one turn', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5107,12 +4755,12 @@ test('consumeTurn intercepts two umbrella calls within one turn', async () => {
     true,
   );
   assertEquals(result.records.length, 2);
-  assertEquals(result.records[0].intercepted.argumentsJson, '{"open":[{"ref_id":"https://x"}]}');
-  assertEquals(result.records[1].intercepted.argumentsJson, '{"find":[{"ref_id":"https://x","pattern":"p"}]}');
+  assertEquals(result.records[0].intercepted.arguments, { open: [{ ref_id: 'https://x' }] });
+  assertEquals(result.records[1].intercepted.arguments, { find: [{ ref_id: 'https://x', pattern: 'p' }] });
 });
 
-test('consumeTurn synthesizes response.failed when upstream terminates without closing an umbrella function_call', async () => {
-  // An umbrella reservation that never receives `output_item.done` is
+test('consumeTurn synthesizes response.failed when upstream terminates without closing a shim call', async () => {
+  // A shim call reservation that never receives `output_item.done` is
   // an upstream protocol violation: the model intended a tool call,
   // the gateway accepted the reservation, but the close frame never
   // arrived. Without explicit detection here the reservation is
@@ -5142,7 +4790,7 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
   assertEquals(result.summary.dispatched.length, 0);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assert((ts.response.error?.message ?? '').includes('without closing umbrella function_call items'));
+  assert((ts.response.error?.message ?? '').includes('without closing shim call items'));
   assert((ts.response.error?.message ?? '').includes('response.completed'));
 });
 
@@ -5161,7 +4809,7 @@ test('consumeTurn dispatches at function_call.done with .done args canonical ove
     state,
     true,
   );
-  assertEquals(result.records[0].intercepted.argumentsJson, '{"search_query":[{"q":"x"}]}');
+  assertEquals(result.records[0].intercepted.arguments, { search_query: [{ q: 'x' }] });
 });
 
 test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCall', async () => {
@@ -5169,7 +4817,7 @@ test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCa
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5201,7 +4849,7 @@ test('consumeTurn live-forwards non-shim function_calls and sets sawClientToolCa
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const addedEv = added.event as Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const addedEv = added.event as Extract<RawResponsesStreamEvent, { type: 'response.output_item.added' }>;
   assertEquals(addedEv.output_index, 0);
   assertEquals(addedEv.item.type, 'function_call');
   const argsDone = result.downstreamFrames.find(f =>
@@ -5252,7 +4900,7 @@ test('consumeTurn forwards reasoning items with rewritten output_index', async (
   const added = result.downstreamFrames.find(f =>
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(added?.type === 'event');
-  const ev = added.event as Extract<ResponsesStreamEvent, { type: 'response.output_item.added' }>;
+  const ev = added.event as Extract<RawResponsesStreamEvent, { type: 'response.output_item.added' }>;
   assertEquals(ev.output_index, 0);
   assertEquals(ev.item.type, 'reasoning');
   assertEquals(state.accumulatedOutput.size, 1);
@@ -5286,7 +4934,7 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
-test('consumeTurn one umbrella call then message in same turn: FORWARDS the message live (umbrella is consumed)', async () => {
+test('consumeTurn one shim call call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5304,7 +4952,7 @@ test('consumeTurn one umbrella call then message in same turn: FORWARDS the mess
 
   assertEquals(result.records.length, 1);
   assertEquals(state.accumulatedOutput.size, 1);
-  // Recording dispatcher doesn't emit lifecycle frames so the umbrella's
+  // Recording dispatcher doesn't emit lifecycle frames so the shim's
   // reserved slot stays empty in accumulatedOutput, but outputIndex was
   // still bumped. The message therefore lands at index 1.
   assertEquals(state.accumulatedOutput.get(1)?.type, 'message');
@@ -5323,21 +4971,21 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
       mkResponseCreated(),
       mkResponseInProgress(),
       mkMessageAdded(0),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         part: { type: 'output_text', text: '' },
       }),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         delta: 'hello ',
       }),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.annotation.added',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5351,14 +4999,14 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
           end_index: 5,
         },
       }),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.done',
         item_id: 'msg_upstream',
         output_index: 0,
         content_index: 0,
         text: 'hello world',
       }),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.content_part.done',
         item_id: 'msg_upstream',
         output_index: 0,
@@ -5402,12 +5050,12 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     framesOf(
       mkResponseCreated(),
       mkMessageAdded(0),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.future_child.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         delta: 'future',
-      } as unknown as ResponsesStreamEvent),
+      } as unknown as RawResponsesStreamEvent),
       mkMessageDone(0, 'future'),
       mkResponseCompleted(),
     ),
@@ -5428,12 +5076,12 @@ test('consumeTurn swallows future indexed events attached to an intercepted serv
     framesOf(
       mkResponseCreated(),
       mkFunctionCallAdded(0, 'cc_1', SHIM_TOOL_NAME),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.future_function_call_arguments.delta',
         item_id: 'fc_hidden',
         output_index: 0,
         delta: 'hidden',
-      } as unknown as ResponsesStreamEvent),
+      } as unknown as RawResponsesStreamEvent),
       mkFunctionCallDone(0, 'cc_1', SHIM_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkResponseCompleted(),
     ),
@@ -5456,7 +5104,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_item.added',
         output_index: 0,
         item: {
@@ -5467,7 +5115,7 @@ test('consumeTurn preserves upstream message item.id (no fabrication) when upstr
           id: 'msg_xyz_real_id',
         } as never,
       }),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.delta',
         item_id: 'msg_xyz_real_id',
         output_index: 0,
@@ -5502,7 +5150,7 @@ test('consumeTurn forwards message text events live even when mixed with an inte
       mkFunctionCallAdded(0, 'cc_1', SHIM_TOOL_NAME),
       mkFunctionCallDone(0, 'cc_1', SHIM_TOOL_NAME, '{"search_query":[{"q":"q"}]}'),
       mkMessageAdded(1),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.output_text.delta',
         item_id: 'msg_upstream',
         output_index: 1,
@@ -5639,7 +5287,7 @@ test('consumeTurn surfaces upstream response.failed as terminalStatus.failed wit
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.failed',
         response: failedResponse,
       }),
@@ -5667,7 +5315,7 @@ test('consumeTurn surfaces upstream response.incomplete as terminalStatus.incomp
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'response.incomplete',
         response: incompleteResponse,
       }),
@@ -5683,7 +5331,7 @@ test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a sy
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'error',
         message: 'upstream blew up',
         code: 'server_error',
@@ -5704,18 +5352,18 @@ test('consumeTurn surfaces bare `error` event as terminalStatus.failed with a sy
 
 test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (no synthetic `unknown_upstream_error` literal)', async () => {
   // A bare upstream `{type: 'error'}` frame without a `code` field
-  // falls back to the OpenAPI `ResponseErrorCode` enum value
+  // falls back to the OpenAPI `ResponsesErrorCode` enum value
   // `'server_error'`. The previous `'unknown_upstream_error'`
   // synthetic literal is not in the enum and typed SDKs (openai-python
   // `Literal[...]` with strict Pydantic validation, openai-node
-  // literal union, openai-go `ResponseErrorCode string` named type)
+  // literal union, openai-go `ResponsesErrorCode string` named type)
   // reject unknown values at parse time. Reference:
   // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'error',
         message: 'upstream blew up without a code',
       }),
@@ -5725,7 +5373,7 @@ test('consumeTurn defaults missing `error.code` to spec-defined `server_error` (
   );
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assertEquals(ts.response.error?.code, 'server_error');
-  // No synthetic `type` — the spec's ResponseError schema defines
+  // No synthetic `type` — the spec's ResponsesError schema defines
   // only `{code, message}` and the upstream `error` frame doesn't
   // carry a `type` field on the wire either.
   assertFalse('type' in (ts.response.error as object));
@@ -5742,7 +5390,7 @@ test('consumeTurn treats empty-string `error.code` as missing (same fallback as 
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'error',
         message: 'upstream blew up with empty code',
         code: '',
@@ -5769,7 +5417,7 @@ test('consumeTurn surfaces bare `error` event arriving BEFORE response.created a
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
-      eventFrame<ResponsesStreamEvent>({
+      eventFrame<RawResponsesStreamEvent>({
         type: 'error',
         message: 'upstream dropped before response shell',
       }),
@@ -5782,7 +5430,7 @@ test('consumeTurn surfaces bare `error` event arriving BEFORE response.created a
   assertEquals(ts.error.message, 'upstream dropped before response shell');
   // Spec-defined fallback (no `code` on upstream's error frame). See
   // the matching test above for the in-shell path; both default to
-  // `server_error` from the `ResponseErrorCode` enum.
+  // `server_error` from the `ResponsesErrorCode` enum.
   assertEquals(ts.error.code, 'server_error');
 });
 
@@ -5790,13 +5438,13 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   const state = createMergeState();
 
   let upstreamPullCount = 0;
-  const upstream: ProtocolFrame<ResponsesStreamEvent>[] = [
+  const upstream: ProtocolFrame<RawResponsesStreamEvent>[] = [
     mkResponseCreated(),
     mkReasoningAdded(0, 'rs_1'),
     mkReasoningDone(0, 'rs_1'),
     mkResponseCompleted(),
   ];
-  const countedFrames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+  const countedFrames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>> = (async function* () {
     for (const f of upstream) {
       upstreamPullCount += 1;
       yield f;
@@ -5821,7 +5469,7 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
   while (!(await iter.next()).done) { /* drain */ }
 });
 
-test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot precedes later items)', async () => {
+test('dispatcher start frames yield IN-LINE at function_call.done (shim call slot precedes later items)', async () => {
   const state = createMergeState();
   let dispatchOrder = 0;
   const records: DispatchRecord[] = [];
@@ -5870,18 +5518,18 @@ test('dispatcher start frames yield IN-LINE at function_call.done (umbrella slot
   assert(syntheticIdx < messageAddedIdx, `expected dispatcher start frame BEFORE later live items (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
 });
 
-test('umbrella output_index is reserved at output_item.added so interleaved items get later indices', async () => {
-  // Reserving at `.added` (rather than `.done`) keeps a non-umbrella
-  // item arriving between added and done from stealing the umbrella's
-  // would-be downstream index.
+test('shim call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
+  // Reserving at `.added` (rather than `.done`) keeps a non-shim call
+  // item arriving between added and done from stealing the shim's
+  // would-be downstream index. See spec § Output-index allocation.
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
-  const interleaved = eventFrame<ResponsesStreamEvent>({
+  const interleaved = eventFrame<RawResponsesStreamEvent>({
     type: 'response.image_generation_call.in_progress',
     output_index: 5,
     item_id: 'ig_x',
-  } as unknown as ResponsesStreamEvent);
+  } as unknown as RawResponsesStreamEvent);
 
   const records: DispatchRecord[] = [];
   const result = await drain(
@@ -5909,12 +5557,12 @@ test('umbrella output_index is reserved at output_item.added so interleaved item
 
 test('consumeTurn live-forwards indexed progress events without hardcoded event-type lists', async () => {
   const state = createMergeState();
-  const inProgress = eventFrame<ResponsesStreamEvent>({
+  const inProgress = eventFrame<RawResponsesStreamEvent>({
     type: 'response.image_generation_call.in_progress',
     output_index: 0,
     item_id: 'ig_1',
   });
-  const completed = eventFrame<ResponsesStreamEvent>({
+  const completed = eventFrame<RawResponsesStreamEvent>({
     type: 'response.image_generation_call.completed',
     output_index: 0,
     item_id: 'ig_1',
@@ -5941,8 +5589,8 @@ test('consumeTurn keeps swallowing keepalive/ping-shape events that lack output_
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      eventFrame<ResponsesStreamEvent>({ type: 'keepalive' } as unknown as ResponsesStreamEvent),
-      eventFrame<ResponsesStreamEvent>({ type: 'ping' }),
+      eventFrame<RawResponsesStreamEvent>({ type: 'keepalive' } as unknown as RawResponsesStreamEvent),
+      eventFrame<RawResponsesStreamEvent>({ type: 'ping' }),
       mkResponseCompleted(),
     ),
     state,
@@ -5985,9 +5633,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: ResponseOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] };
-  const itemB: ResponseOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
-  const itemC: ResponseOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'C' }] };
+  const itemA: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'A' }] };
+  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
+  const itemC: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'C' }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6000,7 +5648,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: ResponseOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
+  const itemB: ResponsesOutputItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'B' }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);

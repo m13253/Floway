@@ -5,7 +5,7 @@ import { stripUnsupportedPartFieldsFromPayload } from './strip-unsupported-part-
 import { stripUnsupportedToolsFromPayload } from './strip-unsupported-tools.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { GeminiInvocation, RequestContext } from '../../../interceptors.ts';
-import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -14,7 +14,7 @@ const testTelemetryModelIdentity = {
   cost: null,
 };
 
-const invocation = (payload: GeminiGenerateContentRequest): GeminiInvocation => ({
+const invocation = (payload: GeminiPayload): GeminiInvocation => ({
   sourceApi: 'gemini',
   targetApi: 'chat-completions',
   model: 'gemini-test',
@@ -28,11 +28,11 @@ const invocation = (payload: GeminiGenerateContentRequest): GeminiInvocation => 
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: false,
 };
 
-const runStripSafetySettings = async (payload: GeminiGenerateContentRequest): Promise<void> => {
+const runStripSafetySettings = async (payload: GeminiPayload): Promise<void> => {
   await stripSafetySettings(invocation(payload), stubRequest, () =>
     Promise.resolve({
       type: 'events' as const,
@@ -41,14 +41,14 @@ const runStripSafetySettings = async (payload: GeminiGenerateContentRequest): Pr
     }));
 };
 
-const normalize = async (payload: GeminiGenerateContentRequest): Promise<void> => {
+const normalize = async (payload: GeminiPayload): Promise<void> => {
   stripUnsupportedPartFieldsFromPayload(payload);
   stripUnsupportedToolsFromPayload(payload);
   await runStripSafetySettings(payload);
 };
 
 test('gemini source interceptors strip unsupported part fields and preserve supported fields', async () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'user',
@@ -110,7 +110,7 @@ test('gemini source interceptors strip unsupported part fields and preserve supp
 });
 
 test('gemini source interceptors remove parts that only contain unsupported file or code fields', async () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     contents: [
       {
         role: 'user',
@@ -156,7 +156,7 @@ test('gemini source interceptors remove parts that only contain unsupported file
 });
 
 test('gemini source interceptors strip unsupported tool capabilities and remove empty tool groups', async () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     tools: [
       {
         functionDeclarations: [
@@ -208,7 +208,7 @@ test('gemini source interceptors strip unsupported tool capabilities and remove 
 });
 
 test('gemini source interceptors remove safety settings without inventing missing defaults', async () => {
-  const payload: GeminiGenerateContentRequest = {
+  const payload: GeminiPayload = {
     cachedContent: 'cachedContents/example',
     safetySettings: [
       {

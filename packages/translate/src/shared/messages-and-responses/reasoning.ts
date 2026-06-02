@@ -1,5 +1,5 @@
 import type { MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@floway-dev/protocols/messages';
-import type { ResponseInputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
 
 export type MessagesReasoningBlock = MessagesThinkingBlock | MessagesRedactedThinkingBlock;
 
@@ -69,7 +69,7 @@ export const unpackReasoningSignature = (signature: string): { id: string | null
  * blob. `rs_${index}` is the synthetic fallback id used when the carrier holds
  * a genuine (unpacked) upstream signature.
  */
-export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReasoningBlock, index: number): ResponseInputReasoning => {
+export const messagesReasoningBlockToResponsesReasoning = (block: MessagesReasoningBlock, index: number): ResponsesInputReasoning => {
   const carrier = block.type === 'thinking' ? block.signature : block.data;
   const { id, encryptedContent } = carrier !== undefined ? unpackReasoningSignature(carrier) : { id: null, encryptedContent: undefined };
   const summary = block.type === 'thinking' && block.thinking ? [{ type: 'summary_text' as const, text: block.thinking }] : [];

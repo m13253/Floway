@@ -9,7 +9,7 @@ import { assert, assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import { collectImageSources } from '../interceptors/server-tools/image-generation.ts';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_test';
@@ -52,11 +52,11 @@ test('a stored image_generation_call referenced by id is inline-expanded with it
   await repo.responsesItems.insertMany([row]);
 
   // The client echoes only the id back, with the bytes stripped.
-  const input: ResponseInputItem[] = [{ type: 'image_generation_call', id: storedId, status: 'completed' } as ResponseInputItem];
+  const input: ResponsesInputItem[] = [{ type: 'image_generation_call', id: storedId, status: 'completed' } as ResponsesInputItem];
 
   const prepared = await prepareStoredResponsesItemsForSource(input, API_KEY_ID, responsesItemsView);
   assertEquals(prepared.failures.length, 0);
-  const expanded = await rewriteStoredResponsesItemsForProvider(input, prepared, provider('up'), responsesItemsView) as ResponseInputItem[];
+  const expanded = await rewriteStoredResponsesItemsForProvider(input, prepared, provider('up'), responsesItemsView) as ResponsesInputItem[];
 
   // The bytes are restored on the expanded item...
   const igc = expanded[0] as { type: string; result?: string };

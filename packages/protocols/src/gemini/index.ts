@@ -1,4 +1,4 @@
-export interface GeminiGenerateContentRequest {
+export interface GeminiPayload {
   contents?: GeminiContent[];
   systemInstruction?: GeminiContent;
   tools?: GeminiToolGroup[];
@@ -74,7 +74,7 @@ export interface GeminiSafetySetting {
   threshold: string;
 }
 
-export interface GeminiGenerateContentResponse {
+export interface GeminiResult {
   candidates?: GeminiCandidate[];
   usageMetadata?: GeminiUsageMetadata;
   modelVersion?: string;
@@ -105,4 +105,4 @@ export interface GeminiErrorResponse {
   };
 }
 
-export type GeminiStreamEvent = GeminiGenerateContentResponse | GeminiErrorResponse;
+export type GeminiStreamEvent = GeminiResult | GeminiErrorResponse;

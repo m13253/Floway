@@ -7,15 +7,15 @@ import { parseSSEStream } from '../../../../shared/stream/parse-sse.ts';
 import { serverToolResultSlot, serverToolStreamingResultSlot } from '../server-tool-shim.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type {
-  ResponseFunctionCallOutputItem,
-  ResponseFunctionTool,
-  ResponseFunctionToolCallItem,
-  ResponseHostedTool,
-  ResponseInputContent,
-  ResponseInputImageGenerationCall,
-  ResponseInputItem,
-  ResponseOutputImageGenerationCall,
-  ResponseTool,
+  ResponsesFunctionCallOutputItem,
+  ResponsesFunctionTool,
+  ResponsesFunctionToolCallItem,
+  ResponsesHostedTool,
+  ResponsesInputContent,
+  ResponsesInputImageGenerationCall,
+  ResponsesInputItem,
+  ResponsesOutputImageGenerationCall,
+  ResponsesTool,
 } from '@floway-dev/protocols/responses';
 
 export const SHIM_TOOL_NAME = 'image_generation';
@@ -83,7 +83,7 @@ const KNOWN_TOOL_FIELDS = new Set([
   'input_image_mask', 'action',
 ]);
 
-export const isHostedImageGenerationTool = (tool: ResponseTool): tool is ResponseHostedTool =>
+export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
 // The orchestrator-visible tool config the shim layers onto the backend
@@ -145,7 +145,7 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
 // rather than masked by a later valid one — matching Azure's per-entry
 // strictness with concrete `tools[i].field` paths.
 const validateHostedImageGenerationEntry = (
-  tool: ResponseHostedTool,
+  tool: ResponsesHostedTool,
   index: number,
 ): { ok: true; config: ImageGenerationConfig } | { ok: false; error: PrepareConfigError } => {
   const path = (field: string): string => `tools[${index}].${field}`;
@@ -245,7 +245,7 @@ const validateHostedImageGenerationEntry = (
 // Validate every hosted `image_generation` entry; the LAST entry's config
 // wins (most-recent declaration), but any earlier entry's invalid field
 // still rejects the request.
-export const prepareImageGenerationConfig = (tools: readonly ResponseTool[]): PrepareConfigResult => {
+export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
     if (!isHostedImageGenerationTool(tool)) continue;
@@ -262,7 +262,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponseTool[]): Pr
 // NOT model-chosen; the shim layers them on from the client config, exactly
 // like Azure). A minimal description elicits native-quality refined prompts
 // while costing ~50 input tokens vs the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (name: string): ResponseFunctionTool => ({
+export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -341,7 +341,7 @@ const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageS
 export const collectImageSources = (input: ResponsesInvocation['payload']['input']): ImageSource[] => {
   if (!Array.isArray(input)) return [];
   const sources: ImageSource[] = [];
-  const collectFromContent = (content: string | ResponseInputContent[]): void => {
+  const collectFromContent = (content: string | ResponsesInputContent[]): void => {
     if (!Array.isArray(content)) return;
     for (const block of content) {
       if (block.type === 'input_image' && typeof block.image_url === 'string') {
@@ -667,7 +667,7 @@ export const imageTerminal = (
   outcome: ImageOutcome,
 ): ServerToolTerminal => {
   if (!outcome.ok) {
-    const item: ServerToolOutputItem & Omit<ResponseOutputImageGenerationCall, 'id'> = {
+    const item: ServerToolOutputItem & Omit<ResponsesOutputImageGenerationCall, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
       revised_prompt: prompt,
@@ -676,7 +676,7 @@ export const imageTerminal = (
     return { item, endEvents: [] };
   }
 
-  const item: ServerToolOutputItem & Omit<ResponseOutputImageGenerationCall, 'id'> = {
+  const item: ServerToolOutputItem & Omit<ResponsesOutputImageGenerationCall, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,
@@ -817,16 +817,16 @@ const streamImageGeneration = (
 // (`status` + `error{message,code,type}`), has a public home on the item, so
 // persisting the public item alone suffices.
 export const transformInputItemsForImageGeneration = (
-  input: ResponseInputItem[],
+  input: ResponsesInputItem[],
   toolName: string,
-): ResponseInputItem[] => {
-  const out: ResponseInputItem[] = [];
+): ResponsesInputItem[] => {
+  const out: ResponsesInputItem[] = [];
   for (const item of input) {
     if (item.type !== 'image_generation_call') {
       out.push(item);
       continue;
     }
-    const ig = item as ResponseInputImageGenerationCall;
+    const ig = item as ResponsesInputImageGenerationCall;
     const id = ig.id !== undefined && ig.id.length > 0 ? ig.id : synthesizeImageGenerationCallId();
     const callId = `cc_from_${id}`;
     // Replay the full failure detail (code/message/retryable) the orchestrator
@@ -844,14 +844,14 @@ export const transformInputItemsForImageGeneration = (
           },
         })
       : JSON.stringify({ ok: true, status: 'completed', id });
-    const functionCall: ResponseFunctionToolCallItem = {
+    const functionCall: ResponsesFunctionToolCallItem = {
       type: 'function_call',
       call_id: callId,
       name: toolName,
       arguments: JSON.stringify({ prompt: ig.revised_prompt ?? '' }),
       status: 'completed',
     };
-    const functionCallOutput: ResponseFunctionCallOutputItem = {
+    const functionCallOutput: ResponsesFunctionCallOutputItem = {
       type: 'function_call_output',
       call_id: callId,
       output,

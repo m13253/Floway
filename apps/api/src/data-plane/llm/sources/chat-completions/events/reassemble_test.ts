@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { reassembleChatCompletionChunks } from './reassemble.ts';
+import { reassembleChatCompletionsEvents } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 
-function makeEvents<T = ChatCompletionChunk>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
+function makeEvents<T = ChatCompletionsStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
     for (const chunk of chunks) {
       if (typeof chunk.data === 'string') continue;
@@ -15,7 +15,7 @@ function makeEvents<T = ChatCompletionChunk>(chunks: Array<{ event?: string; dat
   })();
 }
 
-test('reassembleChatCompletionChunks reassembles text response', async () => {
+test('reassembleChatCompletionsEvents reassembles text response', async () => {
   const body = makeEvents([
     {
       data: {
@@ -51,7 +51,7 @@ test('reassembleChatCompletionChunks reassembles text response', async () => {
     { data: '[DONE]' },
   ]);
 
-  const result: ChatCompletionResponse = await reassembleChatCompletionChunks(body);
+  const result: ChatCompletionsResult = await reassembleChatCompletionsEvents(body);
 
   assertEquals(result.id, 'cmpl_1');
   assertEquals(result.model, 'gpt-test');
@@ -64,7 +64,7 @@ test('reassembleChatCompletionChunks reassembles text response', async () => {
   assertEquals(result.usage?.prompt_tokens, 10);
 });
 
-test('reassembleChatCompletionChunks rejects upstream Chat error payloads', async () => {
+test('reassembleChatCompletionsEvents rejects upstream Chat error payloads', async () => {
   const body = makeEvents([
     {
       data: {
@@ -76,10 +76,10 @@ test('reassembleChatCompletionChunks rejects upstream Chat error payloads', asyn
     },
   ]);
 
-  await assertRejects(async () => await reassembleChatCompletionChunks(body), Error, 'Upstream Chat Completions SSE error: server_error: upstream chat failed');
+  await assertRejects(async () => await reassembleChatCompletionsEvents(body), Error, 'Upstream Chat Completions SSE error: server_error: upstream chat failed');
 });
 
-test('reassembleChatCompletionChunks reassembles tool calls', async () => {
+test('reassembleChatCompletionsEvents reassembles tool calls', async () => {
   const body = makeEvents([
     {
       data: {
@@ -132,7 +132,7 @@ test('reassembleChatCompletionChunks reassembles tool calls', async () => {
     { data: '[DONE]' },
   ]);
 
-  const result = await reassembleChatCompletionChunks(body);
+  const result = await reassembleChatCompletionsEvents(body);
 
   assertEquals(result.choices[0].finish_reason, 'tool_calls');
   assertEquals(result.choices[0].message.tool_calls?.length, 1);
@@ -141,7 +141,7 @@ test('reassembleChatCompletionChunks reassembles tool calls', async () => {
   assertEquals(result.choices[0].message.tool_calls![0].function.arguments, '{"city":"Tokyo"}');
 });
 
-test('reassembleChatCompletionChunks reassembles reasoning fields', async () => {
+test('reassembleChatCompletionsEvents reassembles reasoning fields', async () => {
   const body = makeEvents([
     {
       data: {
@@ -180,14 +180,14 @@ test('reassembleChatCompletionChunks reassembles reasoning fields', async () => 
     { data: '[DONE]' },
   ]);
 
-  const result = await reassembleChatCompletionChunks(body);
+  const result = await reassembleChatCompletionsEvents(body);
 
   assertEquals(result.choices[0].message.reasoning_text, 'think');
   assertEquals(result.choices[0].message.reasoning_opaque, 'enc');
   assertEquals(result.choices[0].message.content, 'reply');
 });
 
-test('reassembleChatCompletionChunks appends reasoning_items deltas in order', async () => {
+test('reassembleChatCompletionsEvents appends reasoning_items deltas in order', async () => {
   const body = makeEvents([
     {
       data: {
@@ -254,7 +254,7 @@ test('reassembleChatCompletionChunks appends reasoning_items deltas in order', a
     { data: '[DONE]' },
   ]);
 
-  const result = await reassembleChatCompletionChunks(body);
+  const result = await reassembleChatCompletionsEvents(body);
 
   assertEquals(result.choices[0].message.reasoning_items, [
     {

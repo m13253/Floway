@@ -1,12 +1,12 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
-import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/via-responses/responses-stream-order.ts';
-import { type ResponseEvent, responsePartKey } from '../shared/via-responses/responses-stream.ts';
+import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
+import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesAssistantContentBlock, MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponseOutputContentBlock, ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
+import type { MessagesAssistantContentBlock, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesOutputContentBlock, ResponsesOutputItem, ResponsesResult, RawResponsesStreamEvent, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const combineMessageTextContent = (content: ResponseOutputContentBlock[] | undefined): string => {
+const combineMessageTextContent = (content: ResponsesOutputContentBlock[] | undefined): string => {
   if (!Array.isArray(content)) return '';
 
   // Compromise: our local Messages/Chat shapes have no dedicated refusal block,
@@ -21,7 +21,7 @@ const combineMessageTextContent = (content: ResponseOutputContentBlock[] | undef
     .join('');
 };
 
-const mapOutputToMessagesContent = (output: ResponseOutputItem[]): MessagesAssistantContentBlock[] => {
+const mapOutputToMessagesContent = (output: ResponsesOutputItem[]): MessagesAssistantContentBlock[] => {
   const content: MessagesAssistantContentBlock[] = [];
 
   for (const item of output) {
@@ -50,7 +50,7 @@ const mapOutputToMessagesContent = (output: ResponseOutputItem[]): MessagesAssis
   return content;
 };
 
-const mapResponsesStopReason = (response: ResponsesResult): MessagesResponse['stop_reason'] => {
+const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop_reason'] => {
   if (response.status === 'completed') {
     return response.output.some(item => item.type === 'function_call') ? 'tool_use' : 'end_turn';
   }
@@ -65,7 +65,7 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResponse['st
 // Exported for the unit tests under `events_test.ts`; the only production
 // caller is `handleCompleted` below, which uses it for terminal Responses ->
 // Messages projection of usage and stop_reason at stream close.
-export const translateResponsesToMessagesResponse = (response: ResponsesResult): MessagesResponse => {
+export const translateResponsesToMessagesResult = (response: ResponsesResult): MessagesResult => {
   const content = mapOutputToMessagesContent(response.output);
   const finalContent = content.length > 0 ? content : response.output_text ? [{ type: 'text' as const, text: response.output_text }] : [];
 
@@ -90,7 +90,7 @@ export const translateResponsesToMessagesResponse = (response: ResponsesResult):
 
 const UPSTREAM_RESPONSES_MISSING_TERMINAL_MESSAGE = 'Upstream Responses stream ended without a terminal event.';
 
-const upstreamResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncGenerator<ResponsesStreamEvent> {
+const upstreamResponsesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>): AsyncGenerator<RawResponsesStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
@@ -133,7 +133,7 @@ interface ResponsesToMessagesStreamState {
 
 type ContentBlockInit = { type: 'text'; text: '' } | { type: 'thinking'; thinking: '' } | { type: 'redacted_thinking'; data: string };
 
-const openBlock = (state: ResponsesToMessagesStreamState, key: string, contentBlock: ContentBlockInit, events: MessagesStreamEventData[]): number => {
+const openBlock = (state: ResponsesToMessagesStreamState, key: string, contentBlock: ContentBlockInit, events: MessagesStreamEvent[]): number => {
   let blockIndex = state.blockIndexByKey.get(key);
 
   if (blockIndex === undefined) {
@@ -154,16 +154,16 @@ const openBlock = (state: ResponsesToMessagesStreamState, key: string, contentBl
   return blockIndex;
 };
 
-const openTextBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, contentIndex: number, events: MessagesStreamEventData[]): number =>
+const openTextBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, contentIndex: number, events: MessagesStreamEvent[]): number =>
   openBlock(state, `${outputIndex}:${contentIndex}`, { type: 'text', text: '' }, events);
 
-const openThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, events: MessagesStreamEventData[]): number =>
+const openThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, events: MessagesStreamEvent[]): number =>
   openBlock(state, `${outputIndex}:0`, { type: 'thinking', thinking: '' }, events);
 
-const openRedactedThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, data: string, events: MessagesStreamEventData[]): number =>
+const openRedactedThinkingBlock = (state: ResponsesToMessagesStreamState, outputIndex: number, data: string, events: MessagesStreamEvent[]): number =>
   openBlock(state, `${outputIndex}:0`, { type: 'redacted_thinking', data }, events);
 
-const closeOpenBlocks = (state: ResponsesToMessagesStreamState, events: MessagesStreamEventData[]): void => {
+const closeOpenBlocks = (state: ResponsesToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   for (const blockIndex of state.openBlocks) {
     events.push({ type: 'content_block_stop', index: blockIndex });
   }
@@ -171,12 +171,12 @@ const closeOpenBlocks = (state: ResponsesToMessagesStreamState, events: Messages
   state.openBlocks.clear();
 };
 
-const closeAllBlocks = (state: ResponsesToMessagesStreamState, events: MessagesStreamEventData[]): void => {
+const closeAllBlocks = (state: ResponsesToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   closeOpenBlocks(state, events);
   state.functionCallState.clear();
 };
 
-const handleResponseCreated = (response: ResponsesResult): MessagesStreamEventData[] => {
+const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[] => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
 
   return [
@@ -200,7 +200,7 @@ const handleResponseCreated = (response: ResponsesResult): MessagesStreamEventDa
   ];
 };
 
-const handleOutputItemAdded = (event: ResponseEvent<'response.output_item.added'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleOutputItemAdded = (event: ResponsesEvent<'response.output_item.added'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.item.type !== 'function_call') return [];
 
   const blockIndex = state.nextBlockIndex++;
@@ -213,7 +213,7 @@ const handleOutputItemAdded = (event: ResponseEvent<'response.output_item.added'
     name,
   });
 
-  const events: MessagesStreamEventData[] = [];
+  const events: MessagesStreamEvent[] = [];
   closeOpenBlocks(state, events);
   events.push({
     type: 'content_block_start',
@@ -234,7 +234,7 @@ const handleOutputItemAdded = (event: ResponseEvent<'response.output_item.added'
   return events;
 };
 
-const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleOutputItemDone = (event: ResponsesEvent<'response.output_item.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.item.type !== 'reasoning') return [];
 
   const hasEmittedSummary = hasResponsePartForOutput(state.emittedReasoningSummaryKeys, event.output_index);
@@ -249,17 +249,17 @@ const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>,
   // still round-trips to a downstream Messages client. Copilot rejects a
   // `thinking` block with empty text, hence the redacted shape here.
   if (!hasEmittedSummary && trimmedSummary === '') {
-    const events: MessagesStreamEventData[] = [];
+    const events: MessagesStreamEvent[] = [];
     openRedactedThinkingBlock(state, event.output_index, packed, events);
     state.emittedReasoningSignatureOutputIndexes.add(event.output_index);
     return events;
   }
 
-  const events: MessagesStreamEventData[] = [];
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
 
   for (const [summaryIndex, part] of event.item.summary.entries()) {
-    const key = responsePartKey(event.output_index, summaryIndex);
+    const key = responsesPartKey(event.output_index, summaryIndex);
     if (!part.text || state.emittedReasoningSummaryKeys.has(key)) continue;
 
     events.push({
@@ -287,22 +287,22 @@ const handleOutputItemDone = (event: ResponseEvent<'response.output_item.done'>,
   return events;
 };
 
-const handleThinkingDelta = (event: ResponseEvent<'response.reasoning_summary_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const handleThinkingDelta = (event: ResponsesEvent<'response.reasoning_summary_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
   events.push({
     type: 'content_block_delta',
     index: blockIndex,
     delta: { type: 'thinking_delta', thinking: event.delta },
   });
-  state.emittedReasoningSummaryKeys.add(responsePartKey(event.output_index, event.summary_index));
+  state.emittedReasoningSummaryKeys.add(responsesPartKey(event.output_index, event.summary_index));
   return events;
 };
 
-const handleThinkingDone = (event: ResponseEvent<'response.reasoning_summary_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const handleThinkingDone = (event: ResponsesEvent<'response.reasoning_summary_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openThinkingBlock(state, event.output_index, events);
-  const key = responsePartKey(event.output_index, event.summary_index);
+  const key = responsesPartKey(event.output_index, event.summary_index);
 
   if (event.text && !state.emittedReasoningSummaryKeys.has(key)) {
     events.push({
@@ -316,25 +316,25 @@ const handleThinkingDone = (event: ResponseEvent<'response.reasoning_summary_tex
   return events;
 };
 
-const handleTextDelta = (event: ResponseEvent<'response.output_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleTextDelta = (event: ResponsesEvent<'response.output_text.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (!event.delta) return [];
 
-  const events: MessagesStreamEventData[] = [];
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
   events.push({
     type: 'content_block_delta',
     index: blockIndex,
     delta: { type: 'text_delta', text: event.delta },
   });
-  state.emittedTextContentKeys.add(responsePartKey(event.output_index, event.content_index));
+  state.emittedTextContentKeys.add(responsesPartKey(event.output_index, event.content_index));
   return events;
 };
 
-const handleTextDone = (event: ResponseEvent<'response.output_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const handleTextDone = (event: ResponsesEvent<'response.output_text.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
 
-  const key = responsePartKey(event.output_index, event.content_index);
+  const key = responsesPartKey(event.output_index, event.content_index);
   if (event.text && !state.emittedTextContentKeys.has(key)) {
     events.push({
       type: 'content_block_delta',
@@ -347,13 +347,13 @@ const handleTextDone = (event: ResponseEvent<'response.output_text.done'>, state
   return events;
 };
 
-const handleContentPartDone = (event: ResponseEvent<'response.content_part.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleContentPartDone = (event: ResponsesEvent<'response.content_part.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.part.type !== 'refusal') return [];
 
-  const key = responsePartKey(event.output_index, event.content_index);
+  const key = responsesPartKey(event.output_index, event.content_index);
   if (!event.part.refusal || state.emittedTextContentKeys.has(key)) return [];
 
-  const events: MessagesStreamEventData[] = [];
+  const events: MessagesStreamEvent[] = [];
   const blockIndex = openTextBlock(state, event.output_index, event.content_index, events);
   events.push({
     type: 'content_block_delta',
@@ -364,7 +364,7 @@ const handleContentPartDone = (event: ResponseEvent<'response.content_part.done'
   return events;
 };
 
-const handleFunctionArgumentsDelta = (event: ResponseEvent<'response.function_call_arguments.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleFunctionArgumentsDelta = (event: ResponsesEvent<'response.function_call_arguments.delta'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (!event.delta) return [];
 
   const functionCallState = state.functionCallState.get(event.output_index);
@@ -381,7 +381,7 @@ const handleFunctionArgumentsDelta = (event: ResponseEvent<'response.function_ca
   ];
 };
 
-const handleFunctionArgumentsDone = (event: ResponseEvent<'response.function_call_arguments.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+const handleFunctionArgumentsDone = (event: ResponsesEvent<'response.function_call_arguments.done'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   const functionCallState = state.functionCallState.get(event.output_index);
   if (!functionCallState) return [];
 
@@ -402,19 +402,19 @@ const handleFunctionArgumentsDone = (event: ResponseEvent<'response.function_cal
   ];
 };
 
-const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   closeAllBlocks(state, events);
 
-  const messagesResponse = translateResponsesToMessagesResponse(response);
+  const messagesResult = translateResponsesToMessagesResult(response);
   events.push(
     {
       type: 'message_delta',
       delta: {
-        stop_reason: messagesResponse.stop_reason,
-        stop_sequence: messagesResponse.stop_sequence,
+        stop_reason: messagesResult.stop_reason,
+        stop_sequence: messagesResult.stop_sequence,
       },
-      usage: messagesResponse.usage,
+      usage: messagesResult.usage,
     },
     { type: 'message_stop' },
   );
@@ -422,8 +422,8 @@ const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesSt
   return events;
 };
 
-const handleStreamError = (state: ResponsesToMessagesStreamState, message: string): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const handleStreamError = (state: ResponsesToMessagesStreamState, message: string): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   closeAllBlocks(state, events);
   state.messageCompleted = true;
   events.push({
@@ -436,10 +436,10 @@ const handleStreamError = (state: ResponsesToMessagesStreamState, message: strin
   return events;
 };
 
-const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] =>
+const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
   handleStreamError(state, response.error?.message ?? 'Response failed due to unknown error.');
 
-const handleError = (event: ResponseEvent<'error'>, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] =>
+const handleError = (event: ResponsesEvent<'error'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
   handleStreamError(state, typeof event.message === 'string' ? event.message : 'An unexpected error occurred during streaming.');
 
 export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStreamState => ({
@@ -455,37 +455,37 @@ export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStrea
   functionCallState: new Map(),
 });
 
-const translateReadyResponseEvent = (event: ResponseStreamEvent, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  recordResponseOutputOrderEvent(event, state.outputOrder, () => true);
+const translateReadyResponsesEvent = (event: ResponsesStreamEvent, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  recordResponsesOutputOrderEvent(event, state.outputOrder, () => true);
 
   switch (event.type) {
   case 'response.created':
-    return handleResponseCreated((event as ResponseEvent<'response.created'>).response);
+    return handleResponseCreated((event as ResponsesEvent<'response.created'>).response);
   case 'response.output_item.added':
-    return handleOutputItemAdded(event as ResponseEvent<'response.output_item.added'>, state);
+    return handleOutputItemAdded(event as ResponsesEvent<'response.output_item.added'>, state);
   case 'response.output_item.done':
-    return handleOutputItemDone(event as ResponseEvent<'response.output_item.done'>, state);
+    return handleOutputItemDone(event as ResponsesEvent<'response.output_item.done'>, state);
   case 'response.reasoning_summary_text.delta':
-    return handleThinkingDelta(event as ResponseEvent<'response.reasoning_summary_text.delta'>, state);
+    return handleThinkingDelta(event as ResponsesEvent<'response.reasoning_summary_text.delta'>, state);
   case 'response.reasoning_summary_text.done':
-    return handleThinkingDone(event as ResponseEvent<'response.reasoning_summary_text.done'>, state);
+    return handleThinkingDone(event as ResponsesEvent<'response.reasoning_summary_text.done'>, state);
   case 'response.output_text.delta':
-    return handleTextDelta(event as ResponseEvent<'response.output_text.delta'>, state);
+    return handleTextDelta(event as ResponsesEvent<'response.output_text.delta'>, state);
   case 'response.output_text.done':
-    return handleTextDone(event as ResponseEvent<'response.output_text.done'>, state);
+    return handleTextDone(event as ResponsesEvent<'response.output_text.done'>, state);
   case 'response.content_part.done':
-    return handleContentPartDone(event as ResponseEvent<'response.content_part.done'>, state);
+    return handleContentPartDone(event as ResponsesEvent<'response.content_part.done'>, state);
   case 'response.function_call_arguments.delta':
-    return handleFunctionArgumentsDelta(event as ResponseEvent<'response.function_call_arguments.delta'>, state);
+    return handleFunctionArgumentsDelta(event as ResponsesEvent<'response.function_call_arguments.delta'>, state);
   case 'response.function_call_arguments.done':
-    return handleFunctionArgumentsDone(event as ResponseEvent<'response.function_call_arguments.done'>, state);
+    return handleFunctionArgumentsDone(event as ResponsesEvent<'response.function_call_arguments.done'>, state);
   case 'response.completed':
   case 'response.incomplete':
-    return handleCompleted((event as ResponseEvent<'response.completed' | 'response.incomplete'>).response, state);
+    return handleCompleted((event as ResponsesEvent<'response.completed' | 'response.incomplete'>).response, state);
   case 'response.failed':
-    return handleFailed((event as ResponseEvent<'response.failed'>).response, state);
+    return handleFailed((event as ResponsesEvent<'response.failed'>).response, state);
   case 'error':
-    return handleError(event as ResponseEvent<'error'>, state);
+    return handleError(event as ResponsesEvent<'error'>, state);
   case 'ping':
     return [{ type: 'ping' }];
   default:
@@ -493,39 +493,39 @@ const translateReadyResponseEvent = (event: ResponseStreamEvent, state: Response
   }
 };
 
-const takeNextReadyDeferredResponseEvent = (state: ResponsesToMessagesStreamState): ResponseStreamEvent | undefined => {
-  const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(event => !shouldDeferForEarlierResponseOutput(event, state.outputOrder));
+const takeNextReadyDeferredResponseEvent = (state: ResponsesToMessagesStreamState): ResponsesStreamEvent | undefined => {
+  const nextReadyIndex = state.outputOrder.deferredEvents.findIndex(event => !shouldDeferForEarlierResponsesOutput(event, state.outputOrder));
   if (nextReadyIndex === -1) return undefined;
 
   const [event] = state.outputOrder.deferredEvents.splice(nextReadyIndex, 1);
   return event;
 };
 
-const flushReadyDeferredMessagesEvents = (state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
-  const events: MessagesStreamEventData[] = [];
+const flushReadyDeferredMessagesEvents = (state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
+  const events: MessagesStreamEvent[] = [];
   while (!state.messageCompleted && state.outputOrder.deferredEvents.length > 0) {
     const event = takeNextReadyDeferredResponseEvent(state);
     if (!event) break;
-    events.push(...translateReadyResponseEvent(event, state));
+    events.push(...translateReadyResponsesEvent(event, state));
   }
   return events;
 };
 
-export const translateResponsesStreamEventToMessagesEvents = (event: ResponseStreamEvent, state: ResponsesToMessagesStreamState): MessagesStreamEventData[] => {
+export const translateResponsesStreamEventToMessagesEvents = (event: ResponsesStreamEvent, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (state.messageCompleted) return [];
-  if (shouldDeferForEarlierResponseOutput(event, state.outputOrder)) {
+  if (shouldDeferForEarlierResponsesOutput(event, state.outputOrder)) {
     state.outputOrder.deferredEvents.push(event);
     return [];
   }
 
-  const events = translateReadyResponseEvent(event, state);
+  const events = translateReadyResponsesEvent(event, state);
   if (event.type === 'response.output_item.done') {
     events.push(...flushReadyDeferredMessagesEvents(state));
   }
   return events;
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const state = createResponsesToMessagesStreamState();
 
   for await (const event of upstreamResponsesEventsUntilTerminal(frames)) {

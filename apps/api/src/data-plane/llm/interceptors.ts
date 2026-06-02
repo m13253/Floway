@@ -1,35 +1,50 @@
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemini';
 
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 /**
- * Per-HTTP-request invariants. Constructed once when the source serve handler
- * receives `c: Context` (in `createRequestContext`) and threaded through every
- * layer (source interceptors, target emits, target interceptors, telemetry).
+ * Per-attempt bag the Responses pipeline uses to thread server-tool shim
+ * state across layers (source serve → source interceptors → persistence)
+ * within a single provider-binding attempt. The whole bag is reassigned at
+ * the top of every attempt, so a failed attempt's writes don't leak forward.
  *
- * Fields that never change across provider-binding attempts or interceptor
- * passes belong here. Fields that depend on which binding the planner is
- * trying belong on `Invocation`.
+ * - `privatePayload`: wire item id → shim-defined opaque blob, round-tripped
+ *   verbatim by persistence as `payload.private`. The shape is shim-specific.
+ * - `newSyntheticIds`: gateway-minted item ids no upstream issued, persisted
+ *   as non_affinity.
+ */
+export interface StatefulResponsesContext {
+  readonly privatePayload: Map<string, unknown>;
+  readonly newSyntheticIds: Set<string>;
+}
+
+/**
+ * Per-HTTP-request scope. Constructed once in `createRequestContext` and
+ * threaded through every layer (source interceptors, target emits, target
+ * interceptors, telemetry). Holds both immutable identities/adapters and
+ * mutable per-request bags that cross-layer producers and consumers share.
  *
- * Pure data: identities and runtime adapters only. No method-like fields,
- * no closures captured over identities. Telemetry recording is done via
- * global helpers that accept `apiKeyId` (and `scheduleBackground` for
- * performance) explicitly so call sites stay visible about the no-op when
- * the request has no API key (ADMIN_KEY playground path).
+ * Anything that varies per provider-binding attempt belongs on `Invocation`,
+ * not here. `statefulResponsesContext` is the one exception: the serve loop
+ * reassigns it per attempt so cross-layer readers outside `Invocation`
+ * plumbing (output.ts:buildRow, source-interceptor `transformItems`) reach
+ * it via the only handle they have. Read it through
+ * `request.statefulResponsesContext` at access time; never capture the
+ * inner object in a closure or background task — that snapshot belongs to
+ * one attempt only.
  *
- * Mutable per-request state (last performance row, downstream abort
- * controller) is intentionally NOT here. It lives as local variables in the
- * source serve function. `RequestContext` is plain read-only data and is safe
- * to share with closures and background tasks.
+ * Telemetry recording is done via global helpers that accept `apiKeyId` (and
+ * `scheduleBackground` for performance) explicitly so call sites stay visible
+ * about the no-op when the request has no API key (ADMIN_KEY playground path).
  */
 export interface RequestContext {
   readonly requestStartedAt: number;
@@ -40,11 +55,7 @@ export interface RequestContext {
   readonly scheduleBackground?: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
-  // Ids of Responses output items the gateway itself synthesized this request
-  // (e.g. a server-tool shim's web_search_call), which carry a gateway-minted
-  // id no upstream issued. Persistence stores these with no upstream identity —
-  // non_affinity — even on a native Responses upstream.
-  readonly responsesSyntheticItemIds: Set<string>;
+  statefulResponsesContext: StatefulResponsesContext;
 }
 
 /**
@@ -92,7 +103,7 @@ export interface MessagesInvocation extends Invocation<MessagesPayload> {
 }
 export type ResponsesInvocation = Invocation<ResponsesPayload>;
 export type ChatCompletionsInvocation = Invocation<ChatCompletionsPayload>;
-export type GeminiInvocation = Invocation<GeminiGenerateContentRequest>;
+export type GeminiInvocation = Invocation<GeminiPayload>;
 
 export type InterceptorRun<TResult> = () => Promise<TResult>;
 
@@ -109,9 +120,9 @@ export const runInterceptors = async <TContext, TRequest, TResult>(
   return await run(0);
 };
 
-export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>;
-export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
-export type ChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, RequestContext, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>;
+export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>;
+export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
+export type ChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, RequestContext, ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>>;
 export type GeminiInterceptor = Interceptor<GeminiInvocation, RequestContext, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>;
 
 // count_tokens is a one-shot, non-streaming HTTP exchange — the terminal

@@ -3,7 +3,7 @@ import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import { throwLlmServeFailure, type LlmServeFailure } from '../../traits.ts';
-import type { ResponseInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -254,47 +254,66 @@ const classifyStoredResponsesAffinity = (
 };
 
 const rewriteStoredResponsesItemForProvider = (
-  item: ResponseInputItem,
+  item: ResponsesInputItem,
   rowById: ReadonlyMap<string, StoredResponsesItem>,
   rowByEncryptedContent: ReadonlyMap<string, StoredResponsesItem>,
   provider: ProviderModelRecord,
-): ResponseInputItem | null => {
+): ResponsesInputItem | null => {
   const id = responsesItemId(item);
   const encryptedContent = responsesItemEncryptedContent(item);
   const row = (id !== null ? rowById.get(id) : undefined)
     ?? (encryptedContent !== null ? rowByEncryptedContent.get(encryptedContent) : undefined);
   if (row === undefined) return item;
 
+  // An `item_reference` whose stored row has no inline payload can only
+  // travel as a reference on the wire; a provider that doesn't support
+  // `item_reference` input has no way to expand it.
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
     throwLlmServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
 
-  // Only upstream-owned reasoning is bound to the upstream that produced it and
-  // must be dropped when routing elsewhere. Synthetic rows have no owner, carry
-  // their full payload, and stay portable to any upstream regardless of type —
-  // they fall through to inline expansion below.
-  if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
-  if (item.type === 'item_reference' && row.upstreamId === provider.upstream && row.upstreamItemId && provider.supportsResponsesItemReference) return itemWithId(item, row.upstreamItemId);
+  if (!isUpstreamOwned(row)) {
+    // Synthetic rows have no owning upstream and stay portable to any
+    // provider. Inline-expand from the stored payload and preserve
+    // `payload.item.id` verbatim so the wire id matches what the per-attempt
+    // `privatePayload` seed reads — source interceptors look the payload up
+    // by whatever id the rewriter puts on the wire, no rewriter-side stash.
+    return storedItemReplacementBase(item, row);
+  }
 
+  // Owned reasoning is bound to the upstream that produced it; drop it when
+  // routing elsewhere.
+  if (row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
+
+  if (row.upstreamId === provider.upstream && row.upstreamItemId) {
+    // Same upstream: substitute the original upstream-issued id. A
+    // reference-capable provider keeps the wire item as `item_reference`;
+    // others inline-expand against the stored payload.
+    return item.type === 'item_reference' && provider.supportsResponsesItemReference
+      ? itemWithId(item, row.upstreamItemId)
+      : itemWithId(storedItemReplacementBase(item, row), row.upstreamItemId);
+  }
+
+  // Cross-upstream owned: mint a tmp id so the foreign upstream's id
+  // namespace can't bleed into the new upstream's view.
   const replacement = storedItemReplacementBase(item, row);
-  if (row.upstreamId === provider.upstream && row.upstreamItemId) return itemWithId(replacement, row.upstreamItemId);
   if (responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
   return replacement;
 };
 
 const storedItemReplacementBase = (
-  item: ResponseInputItem,
+  item: ResponsesInputItem,
   row: StoredResponsesItem,
-): ResponseInputItem => {
+): ResponsesInputItem => {
   // The caller hands us items it already owns (the per-attempt payload clone),
   // so the no-stored-payload branch may reuse `item` directly. The stored row,
   // by contrast, lives in the shared lookup cache and is cloned so downstream
   // interceptor mutation cannot corrupt it across the request.
   if (row.payload === null) return item;
-  return structuredClone(row.payload.item) as ResponseInputItem;
+  return structuredClone(row.payload.item) as ResponsesInputItem;
 };
 
-const itemWithId = (item: ResponseInputItem, id: string): ResponseInputItem => ({
+const itemWithId = (item: ResponsesInputItem, id: string): ResponsesInputItem => ({
   ...item,
   id,
-} as ResponseInputItem);
+} as ResponsesInputItem);

@@ -6,7 +6,7 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const invocation = (): ChatCompletionsInvocation => ({
@@ -23,11 +23,11 @@ const invocation = (): ChatCompletionsInvocation => ({
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: false,
 };
 
-const baseChunk = (overrides: Partial<ChatCompletionChunk>): ChatCompletionChunk => ({
+const baseChunk = (overrides: Partial<ChatCompletionsStreamEvent>): ChatCompletionsStreamEvent => ({
   id: 'chatcmpl_1',
   object: 'chat.completion.chunk',
   created: 0,
@@ -36,14 +36,14 @@ const baseChunk = (overrides: Partial<ChatCompletionChunk>): ChatCompletionChunk
   ...overrides,
 });
 
-const collect = async (result: ExecuteResult<ProtocolFrame<ChatCompletionChunk>>): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const collect = async (result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events');
-  const out: ProtocolFrame<ChatCompletionChunk>[] = [];
+  const out: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const runWith = async (frames: ProtocolFrame<ChatCompletionChunk>[]): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
+const runWith = async (frames: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
     Promise.resolve(
       eventResult(
@@ -56,7 +56,7 @@ const runWith = async (frames: ProtocolFrame<ChatCompletionChunk>[]): Promise<Pr
   return await collect(result);
 };
 
-const runExpectingThrow = async (frames: ProtocolFrame<ChatCompletionChunk>[]): Promise<Error> => {
+const runExpectingThrow = async (frames: ProtocolFrame<ChatCompletionsStreamEvent>[]): Promise<Error> => {
   try {
     await runWith(frames);
   } catch (err) {
@@ -67,7 +67,7 @@ const runExpectingThrow = async (frames: ProtocolFrame<ChatCompletionChunk>[]): 
 };
 
 test('passes a normal stream through unchanged', async () => {
-  const frames: ProtocolFrame<ChatCompletionChunk>[] = [
+  const frames: ProtocolFrame<ChatCompletionsStreamEvent>[] = [
     eventFrame(
       baseChunk({
         choices: [
@@ -89,7 +89,7 @@ test('passes a normal stream through unchanged', async () => {
 
 test('throws when whitespace exceeds the threshold', async () => {
   const args = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE + 1);
-  const frames: ProtocolFrame<ChatCompletionChunk>[] = [
+  const frames: ProtocolFrame<ChatCompletionsStreamEvent>[] = [
     eventFrame(
       baseChunk({
         id: 'chatcmpl_abort',
@@ -116,7 +116,7 @@ test('continues streaming when whitespace is broken by non-whitespace characters
   // Threshold + 1 line breaks split across two deltas with a non-whitespace
   // character in the middle resets the counter.
   const half = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<ChatCompletionChunk>[] = [
+  const frames: ProtocolFrame<ChatCompletionsStreamEvent>[] = [
     eventFrame(
       baseChunk({
         choices: [
@@ -150,7 +150,7 @@ test('tracks whitespace per tool-call index independently', async () => {
   // Two distinct tool calls in parallel; each near but below threshold.
   // Neither should trigger abort because the per-index counters are separate.
   const args = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<ChatCompletionChunk>[] = [
+  const frames: ProtocolFrame<ChatCompletionsStreamEvent>[] = [
     eventFrame(
       baseChunk({
         choices: [

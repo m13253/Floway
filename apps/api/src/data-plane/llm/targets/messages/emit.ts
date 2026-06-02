@@ -5,13 +5,13 @@ import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const targetApi = 'messages';
 
-export const messagesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> =>
+export const messagesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> =>
   (async function* () {
-    for await (const frame of parseTargetStreamFrames<MessagesStreamEventData>(frames, {
+    for await (const frame of parseTargetStreamFrames<MessagesStreamEvent>(frames, {
       protocol: 'Messages',
       malformedJsonEventName: 'message',
     })) {
@@ -23,7 +23,7 @@ export const messagesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): A
     }
   })();
 
-export const emitToMessages = async (invocation: MessagesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEventData>>> => {
+export const emitToMessages = async (invocation: MessagesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
   let modelIdentity: TelemetryModelIdentity | undefined;
 
   try {

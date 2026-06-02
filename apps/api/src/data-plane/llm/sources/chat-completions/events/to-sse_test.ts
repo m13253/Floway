@@ -1,18 +1,18 @@
 import { test } from 'vitest';
 
-import { chatProtocolFrameToSSEFrame } from './to-sse.ts';
+import { chatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const includeUsageChunk = { includeUsageChunk: true };
 
-test('chatProtocolFrameToSSEFrame passes through non-chunk JSON payloads', () => {
+test('chatCompletionsProtocolFrameToSSEFrame passes through non-chunk JSON payloads', () => {
   const payload = {
     error: { message: 'boom' },
-  } as unknown as ChatCompletionChunk;
+  } as unknown as ChatCompletionsStreamEvent;
 
-  const frame = chatProtocolFrameToSSEFrame(eventFrame(payload), includeUsageChunk);
+  const frame = chatCompletionsProtocolFrameToSSEFrame(eventFrame(payload), includeUsageChunk);
 
   assertEquals(frame, {
     type: 'sse',
@@ -21,7 +21,7 @@ test('chatProtocolFrameToSSEFrame passes through non-chunk JSON payloads', () =>
   });
 });
 
-test('chatProtocolFrameToSSEFrame serializes DONE without owning termination', () => {
+test('chatCompletionsProtocolFrameToSSEFrame serializes DONE without owning termination', () => {
   const chunk = {
     id: 'chatcmpl_done',
     object: 'chat.completion.chunk',
@@ -34,7 +34,7 @@ test('chatProtocolFrameToSSEFrame serializes DONE without owning termination', (
         finish_reason: null,
       },
     ],
-  } satisfies ChatCompletionChunk;
+  } satisfies ChatCompletionsStreamEvent;
 
   const frames = [
     eventFrame(chunk),
@@ -50,7 +50,7 @@ test('chatProtocolFrameToSSEFrame serializes DONE without owning termination', (
         },
       ],
     }),
-  ].map(frame => chatProtocolFrameToSSEFrame(frame, includeUsageChunk));
+  ].map(frame => chatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk));
 
   assertEquals(
     frames.map(frame => frame?.data),

@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { collectGeminiProtocolEventsToResponse } from './to-response.ts';
+import { collectGeminiProtocolEventsToResult } from './to-result.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentResponse, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
-test('collectGeminiProtocolEventsToResponse assembles candidate parts and final metadata', async () => {
+test('collectGeminiProtocolEventsToResult assembles candidate parts and final metadata', async () => {
   async function* events() {
     const payloads: GeminiStreamEvent[] = [
       {
@@ -65,7 +65,7 @@ test('collectGeminiProtocolEventsToResponse assembles candidate parts and final 
     for (const payload of payloads) yield eventFrame(payload);
   }
 
-  const expected: GeminiGenerateContentResponse = {
+  const expected: GeminiResult = {
     candidates: [
       {
         index: 0,
@@ -93,10 +93,10 @@ test('collectGeminiProtocolEventsToResponse assembles candidate parts and final 
     },
   };
 
-  assertEquals(await collectGeminiProtocolEventsToResponse(events()), expected);
+  assertEquals(await collectGeminiProtocolEventsToResult(events()), expected);
 });
 
-test('collectGeminiProtocolEventsToResponse throws Gemini error events', async () => {
+test('collectGeminiProtocolEventsToResult throws Gemini error events', async () => {
   const errorEvent = {
     error: {
       code: 429,
@@ -107,7 +107,7 @@ test('collectGeminiProtocolEventsToResponse throws Gemini error events', async (
 
   const error = await assertRejects(
     async () => {
-      await collectGeminiProtocolEventsToResponse(
+      await collectGeminiProtocolEventsToResult(
         (async function* () {
           yield eventFrame(errorEvent);
         })(),

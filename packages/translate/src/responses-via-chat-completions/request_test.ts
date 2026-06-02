@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import type { ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
@@ -1163,10 +1163,10 @@ test('translateResponsesToChatCompletions filters out builtin tools that have no
     max_output_tokens: null,
     tools: [
       // Builtin tools — no name, should be dropped
-      { type: 'web_search_preview' } as unknown as ResponseTool,
-      { type: 'file_search' } as unknown as ResponseTool,
-      { type: 'image_generation' } as unknown as ResponseTool,
-      { type: 'local_shell' } as unknown as ResponseTool,
+      { type: 'web_search_preview' } as unknown as ResponsesTool,
+      { type: 'file_search' } as unknown as ResponsesTool,
+      { type: 'image_generation' } as unknown as ResponsesTool,
+      { type: 'local_shell' } as unknown as ResponsesTool,
       // Normal function tool — should be kept
       {
         type: 'function' as const,
@@ -1211,7 +1211,7 @@ test('translateResponsesToChatCompletions returns undefined tools when only buil
     temperature: null,
     top_p: null,
     max_output_tokens: null,
-    tools: [{ type: 'web_search_preview' } as unknown as ResponseTool, { type: 'image_generation' } as unknown as ResponseTool],
+    tools: [{ type: 'web_search_preview' } as unknown as ResponsesTool, { type: 'image_generation' } as unknown as ResponsesTool],
     metadata: null,
     stream: null,
     store: null,
@@ -1235,7 +1235,7 @@ test('translateResponsesToChatCompletions drops forced builtin tool_choice but k
     tools: null,
     tool_choice: {
       type: 'web_search_preview',
-    } as unknown as ResponseToolChoice,
+    } as unknown as ResponsesToolChoice,
     metadata: null,
     stream: null,
     store: null,
@@ -1280,7 +1280,7 @@ test('translateResponsesToChatCompletions returns undefined tool_choice for stri
     top_p: null,
     max_output_tokens: null,
     tools: null,
-    tool_choice: 'auto' as ResponseToolChoice,
+    tool_choice: 'auto' as ResponsesToolChoice,
     metadata: null,
     stream: null,
     store: null,
@@ -1362,7 +1362,7 @@ test('translateResponsesToChatCompletions projects custom_tool_call history into
     top_p: null,
     max_output_tokens: null,
     tools: [{ type: 'custom', name: 'apply_patch' }],
-    tool_choice: 'auto' as ResponseToolChoice,
+    tool_choice: 'auto' as ResponsesToolChoice,
     metadata: null,
     stream: null,
     store: null,

@@ -10,7 +10,7 @@ import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesMessage, MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -105,13 +105,13 @@ export const messagesFailureEnvelope = (
   return { status, body: { type: 'error', error: { type, message } } };
 };
 
-const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<MessagesStreamEventData>> => {
-  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEventData>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
+const renderMessagesFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
+  if (failure.kind === 'internal') return sourceErrorResult<MessagesStreamEvent>(failure.error, { sourceApi: 'messages', internalStatus: 502 });
   const { status, body } = messagesFailureEnvelope(failure, '/messages');
   return jsonUpstreamErrorResult(status, body);
 };
 
-export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEventData> = {
+export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], MessagesStreamEvent> = {
   renderFailure: renderMessagesFailure,
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>
     await respondMessages(c, result, wantsStream, request, downstreamAbortController),
@@ -138,7 +138,7 @@ export const messagesTraits: LlmSourceTraits<readonly MessagesMessage[], Message
         attemptPayload.messages = await rewriteItems(attemptPayload.messages);
         const sharedHeaders: Record<string, string> = {};
         const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
-        const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
+        const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>> = {
           messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
           responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
             await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload, undefined, sharedHeaders), request)),

@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
-import { collectMessagesProtocolEventsToResponse } from './to-response.ts';
+import { collectMessagesProtocolEventsToResult } from './to-result.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
-test('collectMessagesProtocolEventsToResponse reassembles synthetic Messages events', async () => {
-  const expected: MessagesResponse = {
+test('collectMessagesProtocolEventsToResult reassembles synthetic Messages events', async () => {
+  const expected: MessagesResult = {
     id: 'msg_1',
     type: 'message',
     role: 'assistant',
@@ -18,7 +18,7 @@ test('collectMessagesProtocolEventsToResponse reassembles synthetic Messages eve
   };
 
   async function* events() {
-    const payloads: MessagesStreamEventData[] = [
+    const payloads: MessagesStreamEvent[] = [
       {
         type: 'message_start',
         message: { ...expected, content: [], stop_reason: null, stop_sequence: null, usage: { ...expected.usage, output_tokens: 0 } },
@@ -32,12 +32,12 @@ test('collectMessagesProtocolEventsToResponse reassembles synthetic Messages eve
     for (const event of payloads) yield eventFrame(event);
   }
 
-  assertEquals(await collectMessagesProtocolEventsToResponse(events()), expected);
+  assertEquals(await collectMessagesProtocolEventsToResult(events()), expected);
 });
 
-test('collectMessagesProtocolEventsToResponse preserves final message_delta input_tokens', async () => {
+test('collectMessagesProtocolEventsToResult preserves final message_delta input_tokens', async () => {
   async function* events() {
-    const payloads: MessagesStreamEventData[] = [
+    const payloads: MessagesStreamEvent[] = [
       {
         type: 'message_start',
         message: {
@@ -78,14 +78,14 @@ test('collectMessagesProtocolEventsToResponse preserves final message_delta inpu
     for (const event of payloads) yield eventFrame(event);
   }
 
-  const response = await collectMessagesProtocolEventsToResponse(events());
+  const response = await collectMessagesProtocolEventsToResult(events());
 
   assertEquals(response.usage, { input_tokens: 12, output_tokens: 4 });
 });
 
-test('collectMessagesProtocolEventsToResponse rejects streams without message_stop', async () => {
+test('collectMessagesProtocolEventsToResult rejects streams without message_stop', async () => {
   async function* events() {
-    const payloads: MessagesStreamEventData[] = [
+    const payloads: MessagesStreamEvent[] = [
       {
         type: 'message_start',
         message: {
@@ -123,10 +123,10 @@ test('collectMessagesProtocolEventsToResponse rejects streams without message_st
     for (const event of payloads) yield eventFrame(event);
   }
 
-  await assertRejects(async () => await collectMessagesProtocolEventsToResponse(events()), Error, 'Messages stream ended without a message_stop event.');
+  await assertRejects(async () => await collectMessagesProtocolEventsToResult(events()), Error, 'Messages stream ended without a message_stop event.');
 });
 
-test('collectMessagesProtocolEventsToResponse rejects Messages error events', async () => {
+test('collectMessagesProtocolEventsToResult rejects Messages error events', async () => {
   async function* events() {
     yield eventFrame({
       type: 'error',
@@ -134,8 +134,8 @@ test('collectMessagesProtocolEventsToResponse rejects Messages error events', as
         type: 'overloaded_error',
         message: 'upstream overloaded',
       },
-    } satisfies MessagesStreamEventData);
+    } satisfies MessagesStreamEvent);
   }
 
-  await assertRejects(async () => await collectMessagesProtocolEventsToResponse(events()), Error, 'Upstream SSE error: overloaded_error: upstream overloaded');
+  await assertRejects(async () => await collectMessagesProtocolEventsToResult(events()), Error, 'Upstream SSE error: overloaded_error: upstream overloaded');
 });

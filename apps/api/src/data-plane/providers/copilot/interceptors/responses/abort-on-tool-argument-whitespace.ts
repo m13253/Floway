@@ -1,7 +1,7 @@
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside
@@ -23,15 +23,15 @@ import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
  */
 const ABORT_MESSAGE = 'Tool call arguments contained excessive whitespace, indicating a degenerate response.';
 
-const isArgumentsDelta = (event: ResponsesStreamEvent): event is ResponsesStreamEvent & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
+const isArgumentsDelta = (event: RawResponsesStreamEvent): event is RawResponsesStreamEvent & { type: 'response.function_call_arguments.delta'; output_index: number; delta: string } =>
   event.type === 'response.function_call_arguments.delta';
 
-const errorEvent = (): ResponsesStreamEvent =>
+const errorEvent = (): RawResponsesStreamEvent =>
   ({
     type: 'error',
     message: ABORT_MESSAGE,
     code: 'api_error',
-  }) as ResponsesStreamEvent;
+  }) as RawResponsesStreamEvent;
 
 export const withToolArgumentWhitespaceAborted: ResponsesInterceptor = async (_invocation, _request, run) => {
   const result = await run();
@@ -39,7 +39,7 @@ export const withToolArgumentWhitespaceAborted: ResponsesInterceptor = async (_i
 
   return {
     ...result,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+    events: (async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {
       const whitespaceByIndex = new Map<number, number>();
 
       for await (const frame of result.events) {

@@ -22,8 +22,8 @@ import type {
   MessagesAssistantContentBlock,
   MessagesClientTool,
   MessagesPayload,
-  MessagesResponse,
-  MessagesStreamEventData,
+  MessagesResult,
+  MessagesStreamEvent,
   MessagesTextBlock,
   MessagesToolResultBlock,
   MessagesToolResultContentBlock,
@@ -51,7 +51,8 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
 
 const requestContext = (apiKeyId?: string): RequestContext => ({
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
+  runtimeLocation: 'test',
   clientStream: false,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -172,12 +173,12 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-// Local helper that projects a MessagesResponse into the canonical Messages SSE
+// Local helper that projects a MessagesResult into the canonical Messages SSE
 // event sequence used by the replay-only wiring tests below. Only handles text
 // blocks (with optional citations) because that is the shape these fixtures
 // exercise; extend if a future test needs other block kinds.
-const messagesResponseToUpstreamFrames = (response: MessagesResponse): ProtocolFrame<MessagesStreamEventData>[] => {
-  const frames: ProtocolFrame<MessagesStreamEventData>[] = [
+const messagesResponseToUpstreamFrames = (response: MessagesResult): ProtocolFrame<MessagesStreamEvent>[] => {
+  const frames: ProtocolFrame<MessagesStreamEvent>[] = [
     eventFrame({
       type: 'message_start',
       message: {
@@ -595,7 +596,7 @@ test('withMessagesWebSearchShim allows replay-only history when the search provi
   if (result.type !== 'events') throw new Error('expected events result');
 
   const events = (await collect(result.events)).flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
-  const citationsDelta = events.find((event): event is Extract<MessagesStreamEventData, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
+  const citationsDelta = events.find((event): event is Extract<MessagesStreamEvent, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -680,7 +681,7 @@ test('withMessagesWebSearchShim emits native-like citation deltas for replay-onl
 // upstream sends: each scenario exercises the streaming generator against the
 // minimal set of events needed for the rule it covers.
 
-const upstreamMessageStart = (id = 'msg_upstream'): MessagesStreamEventData => ({
+const upstreamMessageStart = (id = 'msg_upstream'): MessagesStreamEvent => ({
   type: 'message_start',
   message: {
     id,
@@ -694,7 +695,7 @@ const upstreamMessageStart = (id = 'msg_upstream'): MessagesStreamEventData => (
   },
 });
 
-const upstreamTextBlock = (index: number, text: string, citations?: MessagesStreamEventData[]): MessagesStreamEventData[] => [
+const upstreamTextBlock = (index: number, text: string, citations?: MessagesStreamEvent[]): MessagesStreamEvent[] => [
   {
     type: 'content_block_start',
     index,
@@ -711,7 +712,7 @@ const upstreamTextBlock = (index: number, text: string, citations?: MessagesStre
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlock = (index: number, id: string, query: string): MessagesStreamEventData[] => [
+const upstreamWebSearchBlock = (index: number, id: string, query: string): MessagesStreamEvent[] => [
   {
     type: 'content_block_start',
     index,
@@ -725,7 +726,7 @@ const upstreamWebSearchBlock = (index: number, id: string, query: string): Messa
   { type: 'content_block_stop', index },
 ];
 
-const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): MessagesStreamEventData[] => [
+const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: string): MessagesStreamEvent[] => [
   {
     type: 'content_block_start',
     index,
@@ -741,7 +742,7 @@ const upstreamWebSearchBlockRawJson = (index: number, id: string, rawJson: strin
   { type: 'content_block_stop', index },
 ];
 
-const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): MessagesStreamEventData[] => [
+const upstreamClientToolBlock = (index: number, id: string, name: string, input: Record<string, unknown>): MessagesStreamEvent[] => [
   {
     type: 'content_block_start',
     index,
@@ -755,7 +756,7 @@ const upstreamClientToolBlock = (index: number, id: string, name: string, input:
   { type: 'content_block_stop', index },
 ];
 
-const upstreamMessageEnd = (stopReason: NonNullable<MessagesResponse['stop_reason']> = 'tool_use'): MessagesStreamEventData[] => [
+const upstreamMessageEnd = (stopReason: NonNullable<MessagesResult['stop_reason']> = 'tool_use'): MessagesStreamEvent[] => [
   {
     type: 'message_delta',
     delta: { stop_reason: stopReason, stop_sequence: null },
@@ -765,9 +766,9 @@ const upstreamMessageEnd = (stopReason: NonNullable<MessagesResponse['stop_reaso
 ];
 
 const collectStreamEvents = async (
-  frames: AsyncIterable<ProtocolFrame<MessagesStreamEventData>>,
-): Promise<MessagesStreamEventData[]> => {
-  const events: MessagesStreamEventData[] = [];
+  frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
+): Promise<MessagesStreamEvent[]> => {
+  const events: MessagesStreamEvent[] = [];
   for await (const frame of frames) {
     if (frame.type === 'event') events.push(frame.event);
   }
@@ -775,7 +776,7 @@ const collectStreamEvents = async (
 };
 
 const runStreamingShim = (
-  events: MessagesStreamEventData[],
+  events: MessagesStreamEvent[],
   state: MessagesWebSearchShimState,
   provider?: ReturnType<typeof activeProvider>,
 ) =>
@@ -853,7 +854,7 @@ test('rewriteMessagesWebSearchEventsToNative renumbers indices across two interc
     }),
   );
 
-  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEventData, { type: 'content_block_start' }>>;
+  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
   assertEquals(blockIndexEvents.map(event => event.index), [0, 1, 2, 3, 4, 5, 6]);
   assertEquals(blockIndexEvents.map(event => event.content_block.type), [
     'text',
@@ -890,7 +891,7 @@ test('rewriteMessagesWebSearchEventsToNative surfaces unavailable when provider 
     }),
   );
 
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEventData, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   const secondResult = resultBlocks[1].content_block as { content: unknown };
   assertEquals(secondResult.content, { type: 'web_search_tool_result_error', error_code: 'unavailable' });
@@ -910,7 +911,7 @@ test('rewriteMessagesWebSearchEventsToNative maps provider error result codes th
     activeProvider(fakeProviderError('too_many_requests')),
   );
 
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEventData, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEvent, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'too_many_requests' });
 });
 
@@ -934,7 +935,7 @@ test('rewriteMessagesWebSearchEventsToNative emits max_uses_exceeded once limit 
   );
 
   assertEquals(providerCalls, 1);
-  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEventData, { type: 'content_block_start' }>>;
+  const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
   assertEquals(resultBlocks.length, 2);
   assertEquals((resultBlocks[1].content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'max_uses_exceeded' });
 
@@ -982,7 +983,7 @@ test('rewriteMessagesWebSearchEventsToNative routes blank query to invalid_tool_
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEventData, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEvent, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1005,7 +1006,7 @@ test('rewriteMessagesWebSearchEventsToNative routes oversized query to query_too
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEventData, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEvent, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'query_too_long' });
 });
 
@@ -1028,7 +1029,7 @@ test('rewriteMessagesWebSearchEventsToNative routes malformed input json to inva
   );
 
   assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEventData, { type: 'content_block_start' }> | undefined;
+  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<MessagesStreamEvent, { type: 'content_block_start' }> | undefined;
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
 });
 
@@ -1044,7 +1045,7 @@ test('rewriteMessagesWebSearchEventsToNative keeps client tool_use and reports t
     activeProvider(fakeProviderOk),
   );
 
-  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEventData, { type: 'content_block_start' }>>;
+  const blockStarts = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
   assertEquals(blockStarts.map(event => event.content_block.type), ['server_tool_use', 'web_search_tool_result', 'tool_use']);
   assertEquals(blockStarts.map(event => event.index), [0, 1, 2]);
 
@@ -1089,7 +1090,7 @@ test('rewriteMessagesWebSearchEventsToNative rewrites citations carried by text_
     },
   );
 
-  const textDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'text_delta') as Extract<MessagesStreamEventData, { type: 'content_block_delta' }> | undefined;
+  const textDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'text_delta') as Extract<MessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
   assertEquals(textDelta?.delta.type === 'text_delta' ? textDelta.delta.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
@@ -1127,7 +1128,7 @@ test('rewriteMessagesWebSearchEventsToNative rewrites citations_delta entries', 
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<MessagesStreamEventData, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<MessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
@@ -1163,7 +1164,7 @@ test('rewriteMessagesWebSearchEventsToNative rewrites pre-populated citations on
     },
   );
 
-  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<MessagesStreamEventData, { type: 'content_block_start' }> | undefined;
+  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<MessagesStreamEvent, { type: 'content_block_start' }> | undefined;
   assertEquals(blockStart?.content_block.type === 'text' ? blockStart.content_block.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
@@ -1201,7 +1202,7 @@ test('rewriteMessagesWebSearchEventsToNative leaves foreign citations untouched'
     },
   );
 
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<MessagesStreamEventData, { type: 'content_block_delta' }> | undefined;
+  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<MessagesStreamEvent, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'search_result_location');
 });
 

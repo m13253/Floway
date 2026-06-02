@@ -2,19 +2,19 @@ import { test } from 'vitest';
 
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { ChatCompletionChunk, Delta } from '@floway-dev/protocols/chat-completions';
-import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 // ── Helpers ──
 
-function process(events: MessagesStreamEventData[]): (ChatCompletionChunk[] | 'DONE')[] {
+function process(events: MessagesStreamEvent[]): (ChatCompletionsStreamEvent[] | 'DONE')[] {
   const state = createMessagesToChatCompletionsStreamState();
   return events.map(e => translateMessagesEventToChatCompletionsChunks(e, state));
 }
 
-function processFlat(events: MessagesStreamEventData[]): ChatCompletionChunk[] {
+function processFlat(events: MessagesStreamEvent[]): ChatCompletionsStreamEvent[] {
   const results = process(events);
-  const chunks: ChatCompletionChunk[] = [];
+  const chunks: ChatCompletionsStreamEvent[] = [];
   for (const r of results) {
     if (r === 'DONE') break;
     chunks.push(...r);
@@ -22,13 +22,13 @@ function processFlat(events: MessagesStreamEventData[]): ChatCompletionChunk[] {
   return chunks;
 }
 
-function deltas(events: MessagesStreamEventData[]): Delta[] {
+function deltas(events: MessagesStreamEvent[]): ChatCompletionsDelta[] {
   return processFlat(events)
     .filter(c => c.choices.length > 0)
     .map(c => c.choices[0].delta);
 }
 
-const MSG_START: MessagesStreamEventData = {
+const MSG_START: MessagesStreamEvent = {
   type: 'message_start',
   message: {
     id: 'msg_test',
@@ -60,7 +60,7 @@ test('message_start → chunk with role:assistant', () => {
   const state = createMessagesToChatCompletionsStreamState();
   const result = translateMessagesEventToChatCompletionsChunks(MSG_START, state);
   assertEquals(result !== 'DONE', true);
-  const chunks = result as ChatCompletionChunk[];
+  const chunks = result as ChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 1);
   assertEquals(chunks[0].choices[0].delta.role, 'assistant');
   assertEquals(chunks[0].id, 'msg_test');
@@ -94,7 +94,7 @@ test('message_start captures cache_read_input_tokens', () => {
           cache_read_input_tokens: 20,
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   assertEquals(state.promptTokens, 100);
@@ -146,7 +146,7 @@ test('redacted_thinking content_block_start → reasoning_opaque chunk', () => {
     },
     state,
   );
-  const chunks = result as ChatCompletionChunk[];
+  const chunks = result as ChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 1);
   assertEquals(chunks[0].choices[0].delta.reasoning_opaque, 'opaque_xyz');
 });
@@ -164,7 +164,7 @@ test('tool_use content_block_start → tool_calls init chunk', () => {
     },
     state,
   );
-  const chunks = result as ChatCompletionChunk[];
+  const chunks = result as ChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 1);
   const tc = chunks[0].choices[0].delta.tool_calls;
   assertEquals(tc!.length, 1);
@@ -197,7 +197,7 @@ test('multiple tool_use blocks increment index', () => {
     state,
   );
 
-  const tc = (result as ChatCompletionChunk[])[0].choices[0].delta.tool_calls;
+  const tc = (result as ChatCompletionsStreamEvent[])[0].choices[0].delta.tool_calls;
   assertEquals(tc![0].index, 1);
   assertEquals(tc![0].id, 'tu_2');
   assertEquals(tc![0].function!.name, 'f2');
@@ -353,7 +353,7 @@ test('message_delta with end_turn emits finish chunk plus usage-only chunk', () 
     },
     state,
   );
-  const chunks = result as ChatCompletionChunk[];
+  const chunks = result as ChatCompletionsStreamEvent[];
   assertEquals(chunks.length, 2);
   assertEquals(chunks[0].choices[0].finish_reason, 'stop');
   assertEquals(chunks[0].usage, undefined);
@@ -374,7 +374,7 @@ test('message_delta with tool_use → finish_reason tool_calls', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].choices[0].finish_reason, 'tool_calls');
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'tool_calls');
 });
 
 test('message_delta with max_tokens → finish_reason length', () => {
@@ -387,7 +387,7 @@ test('message_delta with max_tokens → finish_reason length', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].choices[0].finish_reason, 'length');
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'length');
 });
 
 test('message_delta with stop_sequence → finish_reason stop', () => {
@@ -400,7 +400,7 @@ test('message_delta with stop_sequence → finish_reason stop', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].choices[0].finish_reason, 'stop');
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
 });
 
 test('message_delta with pause_turn → finish_reason stop', () => {
@@ -413,7 +413,7 @@ test('message_delta with pause_turn → finish_reason stop', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].choices[0].finish_reason, 'stop');
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
 });
 
 test('message_delta with refusal → finish_reason stop', () => {
@@ -426,7 +426,7 @@ test('message_delta with refusal → finish_reason stop', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].choices[0].finish_reason, 'stop');
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].choices[0].finish_reason, 'stop');
 });
 
 test('message_delta without usage → no usage on chunk', () => {
@@ -439,7 +439,7 @@ test('message_delta without usage → no usage on chunk', () => {
     },
     state,
   );
-  assertEquals((result as ChatCompletionChunk[])[0].usage, undefined);
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].usage, undefined);
 });
 
 test('message_delta usage includes cache_read_input_tokens from message_start', () => {
@@ -461,7 +461,7 @@ test('message_delta usage includes cache_read_input_tokens from message_start', 
           cache_read_input_tokens: 20,
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -473,8 +473,8 @@ test('message_delta usage includes cache_read_input_tokens from message_start', 
     },
     state,
   );
-  const chunk = (result as ChatCompletionChunk[])[1];
-  assertEquals((result as ChatCompletionChunk[])[0].usage, undefined);
+  const chunk = (result as ChatCompletionsStreamEvent[])[1];
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].usage, undefined);
   assertEquals(chunk.choices, []);
   assertEquals(chunk.usage!.prompt_tokens, 100); // 80 + 20
   assertEquals(chunk.usage!.completion_tokens, 50);
@@ -893,7 +893,7 @@ test('message_start captures cache_creation_input_tokens', () => {
           cache_creation_input_tokens: 30,
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
   assertEquals(state.promptTokens, 130);
@@ -919,7 +919,7 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
           cache_creation_input_tokens: 30,
         },
       },
-    } as MessagesStreamEventData,
+    } as MessagesStreamEvent,
     state,
   );
 
@@ -931,8 +931,8 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
     },
     state,
   );
-  const chunk = (result as ChatCompletionChunk[])[1];
-  assertEquals((result as ChatCompletionChunk[])[0].usage, undefined);
+  const chunk = (result as ChatCompletionsStreamEvent[])[1];
+  assertEquals((result as ChatCompletionsStreamEvent[])[0].usage, undefined);
   assertEquals(chunk.choices, []);
   assertEquals(chunk.usage!.prompt_tokens, 130); // 80 + 20 + 30
   assertEquals(chunk.usage!.completion_tokens, 50);

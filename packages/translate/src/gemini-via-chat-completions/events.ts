@@ -1,12 +1,12 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
-import type { ChatCompletionChunk, Delta } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiCandidate, GeminiFinishReason, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { GeminiCandidate, GeminiFinishReason, GeminiResult, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
-type ChatStreamChoice = ChatCompletionChunk['choices'][0];
+type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
 
-const mapFinishReason = (finishReason: ChatStreamChoice['finish_reason']): GeminiFinishReason | undefined => {
+const mapFinishReason = (finishReason: ChatCompletionsStreamChoice['finish_reason']): GeminiFinishReason | undefined => {
   switch (finishReason) {
   case 'stop':
   case 'tool_calls':
@@ -20,7 +20,7 @@ const mapFinishReason = (finishReason: ChatStreamChoice['finish_reason']): Gemin
   }
 };
 
-const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionChunk['usage']>): number | undefined => {
+const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): number | undefined => {
   const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
 
   return typeof reasoningTokens === 'number' ? reasoningTokens : undefined;
@@ -30,7 +30,7 @@ const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionChunk['usage'
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (usage?: ChatCompletionChunk['usage']): GeminiUsageMetadata | undefined => {
+const mapUsage = (usage?: ChatCompletionsStreamEvent['usage']): GeminiUsageMetadata | undefined => {
   if (!usage) return undefined;
 
   const metadata: GeminiUsageMetadata = {
@@ -54,7 +54,7 @@ const mapUsage = (usage?: ChatCompletionChunk['usage']): GeminiUsageMetadata | u
 
 const UPSTREAM_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream Chat Completions stream ended without a DONE sentinel.';
 
-const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>): AsyncGenerator<ChatCompletionChunk> {
+const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>): AsyncGenerator<ChatCompletionsStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') return;
     yield frame.event;
@@ -63,24 +63,24 @@ const upstreamChatCompletionEventsUntilDone = async function* (frames: AsyncIter
   throw new Error(UPSTREAM_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE);
 };
 
-type ChatToolCallDelta = NonNullable<Delta['tool_calls']>[0];
+type ChatCompletionsToolCallDelta = NonNullable<ChatCompletionsDelta['tool_calls']>[0];
 
-interface ChatToolCallDraft {
+interface ChatCompletionsToolCallDraft {
   id?: string;
   name?: string;
   argsJson: string;
 }
 
-interface ChoiceState extends GeminiThoughtSignatureState {
-  toolCalls: Record<number, ChatToolCallDraft>;
+interface ChatCompletionsToGeminiStreamState extends GeminiThoughtSignatureState {
+  toolCalls: Record<number, ChatCompletionsToolCallDraft>;
 }
 
-const getChoiceState = (states: Record<number, ChoiceState>, index: number): ChoiceState => {
+const getChatCompletionsToGeminiStreamState = (states: Record<number, ChatCompletionsToGeminiStreamState>, index: number): ChatCompletionsToGeminiStreamState => {
   states[index] ??= { toolCalls: {} };
   return states[index];
 };
 
-const accumulateToolCalls = (toolCalls: ChatToolCallDelta[], state: ChoiceState): void => {
+const accumulateToolCalls = (toolCalls: ChatCompletionsToolCallDelta[], state: ChatCompletionsToGeminiStreamState): void => {
   for (const toolCall of toolCalls) {
     const current = (state.toolCalls[toolCall.index] ??= { argsJson: '' });
     if (toolCall.id !== undefined) current.id = toolCall.id;
@@ -93,7 +93,7 @@ const accumulateToolCalls = (toolCalls: ChatToolCallDelta[], state: ChoiceState)
   }
 };
 
-const flushToolCallParts = (state: ChoiceState): GeminiPart[] => {
+const flushToolCallParts = (state: ChatCompletionsToGeminiStreamState): GeminiPart[] => {
   const parts: GeminiPart[] = [];
 
   for (const [_index, toolCall] of Object.entries(state.toolCalls).sort(([left], [right]) => Number(left) - Number(right))) {
@@ -114,7 +114,7 @@ const flushToolCallParts = (state: ChoiceState): GeminiPart[] => {
   return parts;
 };
 
-const buildCandidate = (choice: ChatStreamChoice, state: ChoiceState): GeminiCandidate | null => {
+const buildCandidate = (choice: ChatCompletionsStreamChoice, state: ChatCompletionsToGeminiStreamState): GeminiCandidate | null => {
   const parts: GeminiPart[] = [];
   const { delta } = choice;
 
@@ -147,11 +147,11 @@ const buildCandidate = (choice: ChatStreamChoice, state: ChoiceState): GeminiCan
   };
 };
 
-const translateChunk = (chunk: ChatCompletionChunk, states: Record<number, ChoiceState>): GeminiGenerateContentResponse | null => {
+const translateChunk = (chunk: ChatCompletionsStreamEvent, states: Record<number, ChatCompletionsToGeminiStreamState>): GeminiResult | null => {
   const candidates: GeminiCandidate[] = [];
 
   for (const choice of chunk.choices) {
-    const candidate = buildCandidate(choice, getChoiceState(states, choice.index));
+    const candidate = buildCandidate(choice, getChatCompletionsToGeminiStreamState(states, choice.index));
 
     if (candidate) candidates.push(candidate);
   }
@@ -166,7 +166,7 @@ const translateChunk = (chunk: ChatCompletionChunk, states: Record<number, Choic
   };
 };
 
-const throwOnChatErrorPayload = (chunk: ChatCompletionChunk): void => {
+const throwOnChatCompletionsErrorPayload = (chunk: ChatCompletionsStreamEvent): void => {
   const message = chatCompletionsErrorPayloadMessage(chunk);
   if (!message) return;
 
@@ -175,22 +175,22 @@ const throwOnChatErrorPayload = (chunk: ChatCompletionChunk): void => {
   });
 };
 
-export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
-  const states: Record<number, ChoiceState> = {};
+export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
+  const states: Record<number, ChatCompletionsToGeminiStreamState> = {};
   let pendingUsageMetadata: GeminiUsageMetadata | undefined;
   const deferredFinalCandidates: GeminiCandidate[] = [];
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
-    throwOnChatErrorPayload(chunk);
+    throwOnChatCompletionsErrorPayload(chunk);
 
-    const response = translateChunk(chunk, states);
-    if (!response) continue;
+    const result = translateChunk(chunk, states);
+    if (!result) continue;
 
-    if (response.usageMetadata) {
-      pendingUsageMetadata = response.usageMetadata;
+    if (result.usageMetadata) {
+      pendingUsageMetadata = result.usageMetadata;
     }
 
-    const candidates = response.candidates ?? [];
+    const candidates = result.candidates ?? [];
     const finishedCandidates = candidates.filter(candidate => candidate.finishReason !== undefined);
     const nonFinalCandidates = candidates.filter(candidate => candidate.finishReason === undefined);
 
