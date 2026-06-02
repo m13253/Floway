@@ -13,5 +13,4 @@ END;
 UPDATE responses_items SET origin = CASE WHEN upstream_id IS NULL THEN 'synthetic' ELSE 'upstream' END;
 UPDATE responses_items SET refreshed_at = created_at;
 
-DROP INDEX idx_responses_items_created_at;
 CREATE INDEX idx_responses_items_refreshed_at ON responses_items (refreshed_at);

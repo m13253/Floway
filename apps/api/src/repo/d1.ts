@@ -743,8 +743,8 @@ class D1ResponsesItemsRepo implements ResponsesItemsRepo {
     return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
   }
 
-  async clearPayloadOlderThan(refreshedBefore: number): Promise<number> {
-    const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND refreshed_at < ?').bind(refreshedBefore).run();
+  async clearPayloadOlderThan(createdBefore: number): Promise<number> {
+    const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < ?').bind(createdBefore).run();
     return (result.meta.changes as number | undefined) ?? 0;
   }
 

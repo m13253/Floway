@@ -449,10 +449,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve(changes);
   }
 
-  clearPayloadOlderThan(refreshedBefore: number): Promise<number> {
+  clearPayloadOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const row of this.store.values()) {
-      if (row.refreshedAt < refreshedBefore && row.payload !== null) {
+      if (row.createdAt < createdBefore && row.payload !== null) {
         row.payload = null;
         changes += 1;
       }

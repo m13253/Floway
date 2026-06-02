@@ -64,8 +64,8 @@ const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
   assertEquals(await repo.refreshMany(null, [adminScoped.id], 5_000), 1);
   const refreshedAdminScoped = { ...adminScoped, refreshedAt: 5_000 };
 
-  assertEquals(await repo.clearPayloadOlderThan(2_500), 0);
-  assertEquals(await repo.clearPayloadOlderThan(4_500), 2);
+  assertEquals(await repo.clearPayloadOlderThan(500), 0);
+  assertEquals(await repo.clearPayloadOlderThan(2_500), 2);
   assertEquals(
     await repo.lookupMany('key_a', [first.id, second.id]),
     [
@@ -278,7 +278,7 @@ test('migration 0025 adds responses item metadata and refresh index', async () =
     );
     assertEquals(
       sqlJsRows<{ name: string }>(db, "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'responses_items' ORDER BY name").map(row => row.name),
-      ['idx_responses_items_api_key_id', 'idx_responses_items_enc_hash', 'idx_responses_items_id_scope', 'idx_responses_items_refreshed_at'],
+      ['idx_responses_items_api_key_id', 'idx_responses_items_created_at', 'idx_responses_items_enc_hash', 'idx_responses_items_id_scope', 'idx_responses_items_refreshed_at'],
     );
     db.run("INSERT INTO responses_items (id, item_type, created_at) VALUES ('ws_WGRXTA_sVlhxg6BAV0BUzj0KkWSqA', 'web_search_call', 3)");
     assertEquals(
@@ -288,6 +288,10 @@ test('migration 0025 adds responses item metadata and refresh index', async () =
     assert(
       sqlJsRows<{ detail: string }>(db, 'EXPLAIN QUERY PLAN DELETE FROM responses_items WHERE refreshed_at < 10')
         .some(row => row.detail.includes('idx_responses_items_refreshed_at')),
+    );
+    assert(
+      sqlJsRows<{ detail: string }>(db, 'EXPLAIN QUERY PLAN UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < 10')
+        .some(row => row.detail.includes('idx_responses_items_created_at')),
     );
     assert(
       sqlJsRows<{ detail: string }>(
@@ -445,7 +449,7 @@ class FakeResponsesItemsD1Database implements D1Database {
   clearPayloadOlderThan(createdBefore: number): number {
     let changes = 0;
     for (const row of this.rows) {
-      if (row.refreshed_at < createdBefore && row.payload_json !== null) {
+      if (row.created_at < createdBefore && row.payload_json !== null) {
         row.payload_json = null;
         changes += 1;
       }
