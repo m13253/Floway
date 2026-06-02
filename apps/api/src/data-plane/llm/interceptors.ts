@@ -1,6 +1,7 @@
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
+import type { StatefulResponsesStore } from './sources/responses/stateful-store.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -56,6 +57,7 @@ export interface RequestContext {
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
   statefulResponsesContext: StatefulResponsesContext;
+  statefulResponsesStore?: StatefulResponsesStore;
 }
 
 /**

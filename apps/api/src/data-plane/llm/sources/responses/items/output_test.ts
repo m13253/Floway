@@ -7,6 +7,7 @@ import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../repo/types.ts';
 import { assert, assertEquals } from '../../../../../test-assert.ts';
 import type { RequestContext } from '../../../../llm/interceptors.ts';
+import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesOutputItem, ResponsesResult, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -26,14 +27,19 @@ const makeContext = (overrides: Partial<StoreResponsesContext> = {}): StoreRespo
 const makeRequest = (
   syntheticItemIds: Iterable<string> = [],
   privatePayloads: Iterable<readonly [string, unknown]> = [],
-): RequestContext => ({
-  requestStartedAt: 0,
-  apiKeyUpstreamIds: null,
-  apiKeyId,
-  runtimeLocation: 'test',
-  clientStream: true,
-  statefulResponsesContext: { privatePayload: new Map(privatePayloads), newSyntheticIds: new Set(syntheticItemIds) },
-});
+): RequestContext => {
+  const statefulResponsesStore = createHttpStatefulResponsesStore(apiKeyId, undefined);
+  for (const id of syntheticItemIds) statefulResponsesStore.addSyntheticItem(id);
+  for (const [id, payload] of privatePayloads) statefulResponsesStore.attemptContext.privatePayload.set(id, payload);
+  return {
+    requestStartedAt: 0,
+    apiKeyId,
+    runtimeLocation: 'test',
+    clientStream: true,
+    statefulResponsesContext: statefulResponsesStore.attemptContext,
+    statefulResponsesStore,
+  };
+};
 
 const messageItem = (id: string, text: string): Extract<ResponsesOutputItem, { type: 'message' }> => ({
   type: 'message',
@@ -98,6 +104,14 @@ const promiseStateAfterMicrotasks = async (promise: IteratorResultPromise): Prom
   return state;
 };
 
+const waitForInsertCall = async (repo: ControlledResponsesItemsRepo): Promise<void> => {
+  for (let i = 0; i < 50; i += 1) {
+    if (repo.calls.length > 0) return;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  throw new Error('timed out waiting for insertMany');
+};
+
 class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
   calls: StoredResponsesItem[][] = [];
   resolveInsert: (() => void) | undefined;
@@ -108,6 +122,10 @@ class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   lookupManyByEncryptedContentHash(): Promise<StoredResponsesItem[]> {
+    return Promise.resolve([]);
+  }
+
+  lookupManyByContentHash(): Promise<StoredResponsesItem[]> {
     return Promise.resolve([]);
   }
 
@@ -183,6 +201,7 @@ test('persists each row before yielding the item-done frame', async () => {
   // `done` can reference the row on its next turn.
   const doneFrame = iterator.next();
   assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
+  await waitForInsertCall(controlled);
   assertEquals(controlled.calls.length, 1);
   controlled.resolveInsert?.();
   assertEquals(((await doneFrame).value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
@@ -208,6 +227,7 @@ test('insert failure does not sink the stream', async () => {
     // the frame still flows, so storage can never sink the stream.
     const doneFrame = iterator.next();
     assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
+    await waitForInsertCall(controlled);
     controlled.rejectInsert?.(new Error('insert failed'));
     assertEquals(((await doneFrame).value as ProtocolFrame<RawResponsesStreamEvent>).type, 'event');
 

@@ -1,8 +1,8 @@
 import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
-import { getRepo } from '../../../../../repo/index.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import { throwLlmServeFailure, type LlmServeFailure } from '../../traits.ts';
+import type { StatefulResponsesStore } from '../stateful-store.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -49,8 +49,8 @@ const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem &
 
 export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
   sourceItems: TSourceItems,
-  apiKeyId: string | null,
   view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>,
+  store: StatefulResponsesStore,
 ): Promise<PreparedStoredResponsesItems> => {
   const references = await collectStoredResponsesItemRefs(sourceItems, view);
 
@@ -62,23 +62,10 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
       .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),
   ));
-  const [byId, byHash] = await Promise.all([
-    getRepo().responsesItems.lookupMany(apiKeyId, [...queryableIds]),
-    getRepo().responsesItems.lookupManyByEncryptedContentHash(apiKeyId, [...new Set(hashByContent.values())]),
-  ]);
-  const rowById = new Map(byId.map(row => [row.id, row]));
-  const rowByHash = new Map<string, StoredResponsesItem>();
-  for (const row of byHash) {
-    if (row.encryptedContentHash !== null && !rowByHash.has(row.encryptedContentHash)) {
-      rowByHash.set(row.encryptedContentHash, row);
-    }
-  }
-
   const failures: StoredResponsesItemsFailure[] = [];
-  const touchedIds = new Set<string>();
   for (const ref of references) {
-    const row = (ref.id !== undefined ? rowById.get(ref.id) : undefined)
-      ?? (ref.encryptedContent !== undefined ? rowByHash.get(hashByContent.get(ref.encryptedContent)!) : undefined);
+    const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
+      ?? (ref.encryptedContent !== undefined ? store.getItemByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!) : undefined);
     if (row === undefined) {
       // `item_reference` asserts a stored row, and a parseable gateway id names
       // one too, so either resolving to nothing is a hard not-found. An id-less
@@ -90,7 +77,6 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
     }
 
     ref.row = row;
-    touchedIds.add(row.id);
     if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
       continue;
@@ -107,7 +93,6 @@ export const prepareStoredResponsesItemsForSource = async <TSourceItems>(
       failures.push({ kind: 'item-not-found', itemId: row.id });
     }
   }
-  if (touchedIds.size > 0) await getRepo().responsesItems.refreshMany(apiKeyId, [...touchedIds], Date.now());
 
   return {
     references,

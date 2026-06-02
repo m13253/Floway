@@ -12,6 +12,7 @@ import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
+import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -46,8 +47,11 @@ const insertRows = async (rows: readonly StoredResponsesItem[]) => {
   return repo;
 };
 
-const prepareResponsesItems = async (sourceItems: string | readonly ResponsesInputItem[]) =>
-  await prepareStoredResponsesItemsForSource(sourceItems, API_KEY_ID, responsesItemsView);
+const prepareResponsesItems = async (sourceItems: string | readonly ResponsesInputItem[]) => {
+  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  await store.loadInputItems({ sourceItems, view: responsesItemsView });
+  return await prepareStoredResponsesItemsForSource(sourceItems, responsesItemsView, store);
+};
 
 const rewriteResponsesItems = async (
   sourceItems: string | readonly ResponsesInputItem[],
@@ -55,8 +59,11 @@ const rewriteResponsesItems = async (
   binding: ProviderModelRecord,
 ) => await rewriteStoredResponsesItemsForProvider(sourceItems, prepared, binding, responsesItemsView);
 
-const prepareChatItems = async (messages: ChatCompletionsPayload['messages']) =>
-  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, chatCompletionsViaResponsesItemsView);
+const prepareChatItems = async (messages: ChatCompletionsPayload['messages']) => {
+  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  await store.loadInputItems({ sourceItems: messages, view: chatCompletionsViaResponsesItemsView });
+  return await prepareStoredResponsesItemsForSource(messages, chatCompletionsViaResponsesItemsView, store);
+};
 
 const rewriteChatItems = async (
   messages: ChatCompletionsPayload['messages'],
@@ -64,8 +71,11 @@ const rewriteChatItems = async (
   binding: ProviderModelRecord,
 ) => await rewriteStoredResponsesItemsForProvider(messages, prepared, binding, chatCompletionsViaResponsesItemsView);
 
-const prepareMessagesItems = async (messages: MessagesPayload['messages']) =>
-  await prepareStoredResponsesItemsForSource(messages, API_KEY_ID, messagesViaResponsesItemsView);
+const prepareMessagesItems = async (messages: MessagesPayload['messages']) => {
+  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  await store.loadInputItems({ sourceItems: messages, view: messagesViaResponsesItemsView });
+  return await prepareStoredResponsesItemsForSource(messages, messagesViaResponsesItemsView, store);
+};
 
 const rewriteMessagesItems = async (
   messages: MessagesPayload['messages'],
@@ -82,6 +92,7 @@ const storedRow = (
     upstreamId: null,
     upstreamItemId: null,
     origin: overrides.origin ?? (overrides.upstreamId === undefined || overrides.upstreamId === null ? 'synthetic' : 'upstream'),
+    contentHash: null,
     encryptedContentHash: null,
     payload: payload === undefined || payload === null
       ? null

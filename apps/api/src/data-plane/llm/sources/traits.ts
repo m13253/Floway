@@ -8,6 +8,7 @@ import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type PlainResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;
@@ -100,6 +101,8 @@ export interface LlmEndpointPlan<TItems, TEvent> extends LlmSourceRuntime {
   // `store: false` requests persist null payloads; sources that have no
   // `store` concept (Messages, Gemini) pass `undefined`.
   readonly store: boolean | null | undefined;
+  readonly statefulResponsesInputItems?: readonly ResponsesInputItem[];
+  readonly commitStatefulResponsesSnapshot?: boolean;
   // The model id the planner resolves against. Most sources read it off the
   // parsed payload; Gemini carries it on the request path instead of the body.
   readonly model: string;
