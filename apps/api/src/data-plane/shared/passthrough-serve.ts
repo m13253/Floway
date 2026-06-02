@@ -129,7 +129,7 @@ export interface PassthroughServeContext {
   readonly model: string;
   // Selects which provider binding can serve this endpoint family. For
   // embeddings this is `kind === 'embedding'`; for images it gates on the
-  // specific `upstreamEndpoints` entry.
+  // specific `endpoints` entry.
   readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —

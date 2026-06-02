@@ -12,7 +12,7 @@ import { createRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -42,10 +42,10 @@ const geminiInvocation = <TPayload>(
 
 // Gemini has no native upstream target in the provider API; prefer Chat
 // Completions, then Messages, then Responses.
-const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-  if (endpoints.includes('chat_completions')) return 'chat-completions';
-  if (endpoints.includes('messages')) return 'messages';
-  if (endpoints.includes('responses')) return 'responses';
+const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
+  if (endpoints.chatCompletions) return 'chat-completions';
+  if (endpoints.messages) return 'messages';
+  if (endpoints.responses) return 'responses';
   return null;
 };
 
@@ -144,8 +144,8 @@ const totalTokensFromUpstream = (value: unknown): number | null => {
   return null;
 };
 
-const pickCountTokensTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
-  endpoints.includes('messages_count_tokens') ? 'messages' : null;
+const pickCountTokensTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
+  endpoints.messages?.countTokens ? 'messages' : null;
 
 const geminiCountTokens: LlmEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>

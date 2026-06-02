@@ -426,7 +426,7 @@ export const listUpstreamModels = async (c: Context) => {
       upstreamModelId: model.id,
       publicModelId: model.id,
       kind: model.kind,
-      supportedEndpoints: modelEndpointsToPublicPaths(model.upstreamEndpoints),
+      supportedEndpoints: modelEndpointsToPublicPaths(model.endpoints),
       ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.cost ? { cost: model.cost } : {}),

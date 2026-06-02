@@ -32,7 +32,7 @@ const makeCtx = (
     ...(thinking ? { thinking } : {}),
   },
   provider: stubProvider(),
-  upstreamModel: stubUpstreamModel({ upstreamEndpoints: ['messages'] }),
+  upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }),
   enabledFlags: new Set<string>(),
   headers: {},
 });

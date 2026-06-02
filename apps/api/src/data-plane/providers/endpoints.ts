@@ -1,16 +1,16 @@
 import type { UpstreamModelConfig } from '../../shared/upstream/model-config.ts';
 import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
-import type { ModelEndpoint, ModelKind } from '@floway-dev/protocols/common';
+import type { ModelEndpointKey, ModelEndpoints, ModelKind } from '@floway-dev/protocols/common';
 
-export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint => {
+export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpointKey => {
   switch (target) {
   case 'messages':
     return 'messages';
   case 'responses':
     return 'responses';
   case 'chat-completions':
-    return 'chat_completions';
+    return 'chatCompletions';
   }
 };
 
@@ -21,86 +21,75 @@ export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint
 export const isStreamingEndpoint = (endpoint: EndpointKey): boolean =>
   endpoint === 'chat_completions' || endpoint === 'responses' || endpoint === 'messages';
 
-const ENDPOINT_TO_PUBLIC_PATH: Record<ModelEndpoint, string> = {
-  chat_completions: '/chat/completions',
+const ENDPOINT_TO_PUBLIC_PATH: Record<ModelEndpointKey, string> = {
+  chatCompletions: '/chat/completions',
   responses: '/responses',
-  responses_compact: '/v1/responses/compact',
   messages: '/v1/messages',
-  messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/embeddings',
-  images_generations: '/images/generations',
-  images_edits: '/images/edits',
+  imagesGenerations: '/images/generations',
+  imagesEdits: '/images/edits',
 };
 
-export const modelEndpointToPublicPath = (endpoint: ModelEndpoint): string => ENDPOINT_TO_PUBLIC_PATH[endpoint];
+export const modelEndpointToPublicPath = (endpoint: ModelEndpointKey): string => ENDPOINT_TO_PUBLIC_PATH[endpoint];
 
-export const publicPathToModelEndpoint = (path: string): ModelEndpoint | undefined => {
+export const publicPathToModelEndpoint = (path: string): ModelEndpointKey | undefined => {
   switch (path) {
   case '/chat/completions':
   case '/v1/chat/completions':
-    return 'chat_completions';
+    return 'chatCompletions';
   case '/responses':
   case '/v1/responses':
     return 'responses';
   case '/v1/messages':
   case '/messages':
     return 'messages';
-  case '/v1/messages/count_tokens':
-  case '/messages/count_tokens':
-    return 'messages_count_tokens';
   case '/embeddings':
   case '/v1/embeddings':
     return 'embeddings';
   case '/images/generations':
   case '/v1/images/generations':
-    return 'images_generations';
+    return 'imagesGenerations';
   case '/images/edits':
   case '/v1/images/edits':
-    return 'images_edits';
+    return 'imagesEdits';
   default:
     return undefined;
   }
 };
 
-export const publicPathsToModelEndpoints = (paths: readonly string[]): ModelEndpoint[] => {
-  const endpoints: ModelEndpoint[] = [];
+export const publicPathsToModelEndpoints = (paths: readonly string[]): ModelEndpoints => {
+  const endpoints: ModelEndpoints = {};
   for (const path of paths) {
     const endpoint = publicPathToModelEndpoint(path);
-    if (endpoint && !endpoints.includes(endpoint)) endpoints.push(endpoint);
+    if (endpoint) endpoints[endpoint] ??= {};
   }
   return endpoints;
 };
 
-export const modelEndpointsToPublicPaths = (endpoints: readonly ModelEndpoint[]): string[] => {
-  const paths: string[] = [];
-  for (const endpoint of endpoints) {
-    // Auxiliary endpoints share a primary endpoint's input and are not
-    // advertised as standalone model paths.
-    if (endpoint === 'messages_count_tokens' || endpoint === 'responses_compact') continue;
-    const path = modelEndpointToPublicPath(endpoint);
-    if (!paths.includes(path)) paths.push(path);
-  }
-  return paths;
-};
+// Lists the public paths for the present endpoint keys. Auxiliary sub-caps
+// (compact / contextManagement / countTokens) share a primary endpoint's input
+// and are not advertised as standalone model paths.
+export const modelEndpointsToPublicPaths = (endpoints: ModelEndpoints): string[] =>
+  (Object.keys(endpoints) as ModelEndpointKey[]).map(modelEndpointToPublicPath);
 
-// Derive the high-level model kind from the upstreamEndpoints list. Each
-// model belongs to exactly one kind. `embeddings` implies embedding,
-// `images_generations` or `images_edits` implies image, everything else
-// is chat. Mixed lists (e.g. an upstream incorrectly tagging a model with
-// both `embeddings` and `chat_completions`) are configuration errors;
-// the first matching branch wins.
-export const kindForEndpoints = (endpoints: readonly ModelEndpoint[]): ModelKind => {
-  if (endpoints.includes('embeddings')) return 'embedding';
-  if (endpoints.includes('images_generations') || endpoints.includes('images_edits')) return 'image';
+// Derive the high-level model kind from the supported endpoints. Each model
+// belongs to exactly one kind. `embeddings` implies embedding,
+// `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
+// Mixed endpoint sets (e.g. an upstream incorrectly tagging a model with both
+// `embeddings` and `chatCompletions`) are configuration errors; the first
+// matching branch wins.
+export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
+  if (endpoints.embeddings) return 'embedding';
+  if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';
   return 'chat';
 };
 
 // A manually configured model declares only its chat-protocol availability via
-// `supportedEndpoints`. We augment with `messages_count_tokens` whenever
+// `supportedEndpoints`. We augment with `messages.countTokens` whenever
 // `messages` is present so the count-tokens endpoint routes alongside it without
 // the operator having to list it explicitly.
-export const withMessagesCountTokens = (endpoints: readonly ModelEndpoint[]): ModelEndpoint[] =>
-  endpoints.includes('messages') && !endpoints.includes('messages_count_tokens') ? [...endpoints, 'messages_count_tokens'] : [...endpoints];
+export const withMessagesCountTokens = (endpoints: ModelEndpoints): ModelEndpoints =>
+  endpoints.messages ? { ...endpoints, messages: { ...endpoints.messages, countTokens: true } } : { ...endpoints };
 
-export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoint[] =>
+export const modelConfigEndpoints = (model: UpstreamModelConfig): ModelEndpoints =>
   withMessagesCountTokens(publicPathsToModelEndpoints(model.supportedEndpoints));

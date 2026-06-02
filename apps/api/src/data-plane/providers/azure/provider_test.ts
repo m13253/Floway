@@ -50,18 +50,18 @@ test('createAzureProvider projects configured models into upstream models', asyn
   assertEquals(instance.supportsResponsesItemReference, true);
   assertEquals(models[0]?.enabledFlags.has('vendor-kimi'), true);
   assertEquals(
-    models.map(model => ({ id: model.id, displayName: model.display_name, endpoints: model.upstreamEndpoints, providerData: model.providerData })),
+    models.map(model => ({ id: model.id, displayName: model.display_name, endpoints: model.endpoints, providerData: model.providerData })),
     [
       {
         id: 'gpt-public',
         displayName: 'GPT Public',
-        endpoints: ['chat_completions', 'responses', 'embeddings'],
+        endpoints: { chatCompletions: {}, responses: {}, embeddings: {} },
         providerData: { upstreamModelId: 'gpt-prod' },
       },
       {
         id: 'gpt-small',
         displayName: undefined,
-        endpoints: ['chat_completions'],
+        endpoints: { chatCompletions: {} },
         providerData: { upstreamModelId: 'gpt-small' },
       },
     ],
@@ -131,9 +131,9 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
   const seen: Array<{ url: string; apiKey: string | null; body: Record<string, unknown> }> = [];
 
   assertEquals(chatModel.id, 'deepseek-v4-pro');
-  assertEquals(chatModel.upstreamEndpoints, ['chat_completions']);
+  assertEquals(chatModel.endpoints, { chatCompletions: {} });
   assertEquals(responsesModel.id, 'gpt-5.4-pro');
-  assertEquals(responsesModel.upstreamEndpoints, ['responses']);
+  assertEquals(responsesModel.endpoints, { responses: {} });
 
   await withMockedFetch(
     async request => {
@@ -194,7 +194,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
   const seen: Array<{ url: string; xApiKey: string | null; body: Record<string, unknown>; beta: string | null }> = [];
 
   assertEquals(model.id, 'claude-public');
-  assertEquals(model.upstreamEndpoints, ['messages', 'messages_count_tokens']);
+  assertEquals(model.endpoints, { messages: { countTokens: true } });
 
   await withMockedFetch(
     async request => {
@@ -401,7 +401,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       const provider = createAzureProvider(record).provider;
       const models = await provider.getProvidedModels();
       assertEquals(models[0].kind, 'image');
-      assertEquals([...models[0].upstreamEndpoints].sort(), ['images_edits', 'images_generations']);
+      assertEquals(models[0].endpoints, { imagesGenerations: {}, imagesEdits: {} });
       const result = await provider.callImagesGenerations(models[0], { prompt: 'hello' });
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);

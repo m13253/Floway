@@ -6,7 +6,7 @@ import { copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch 
 import { clearModelsStore } from '../../../providers/models-store.ts';
 
 // Compaction is a registered endpoint, but no upstream advertises
-// `responses_compact` yet (its upstream realization is a separate effort), so a
+// `responses.compact` yet (its upstream realization is a separate effort), so a
 // known model resolves and then reports the endpoint as unsupported. This locks
 // the route wiring and the gating contract.
 test('/v1/responses/compact reports not-supported until an upstream realizes it', async () => {

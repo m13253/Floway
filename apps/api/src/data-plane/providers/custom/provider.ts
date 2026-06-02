@@ -10,7 +10,7 @@ import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
-import type { ModelEndpoint, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -28,13 +28,13 @@ const providerData = (model: UpstreamModel): CustomProviderData => model.provide
 
 // Endpoint routing for auto-fetched custom models is decided per-model:
 // `kind` comes from a tiered detector (Tier 1: upstream /models published
-// `kind`; Tier 2: id heuristic; default: 'chat'), and `upstreamEndpoints` is
-// then derived from kind + the per-upstream `supportedEndpoints` config (which
-// only declares chat-protocol availability). Display metadata (display_name /
+// `kind`; Tier 2: id heuristic; default: 'chat'), and `endpoints` is then
+// derived from kind + the per-upstream `supportedEndpoints` config (which only
+// declares chat-protocol availability). Display metadata (display_name /
 // created) and `cost` are surfaced through to the public catalog when the
 // upstream chose to publish them.
-const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> => {
-  const internal: Omit<UpstreamModel, 'kind' | 'upstreamEndpoints' | 'providerData' | 'enabledFlags'> = {
+const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
+  const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
     limits: model.limits ? { ...model.limits } : {},
   };
@@ -60,21 +60,21 @@ const resolveModelKind = (model: CustomRawModel): ModelKind => model.kind ?? inf
 
 const finalizeCustomModels = (
   response: CustomModelsResponse,
-  configuredChatEndpoints: readonly ModelEndpoint[],
+  configuredChatEndpoints: ModelEndpoints,
   enabledFlags: ReadonlySet<string>,
 ): UpstreamModel[] => {
   const models: UpstreamModel[] = [];
   for (const rawModel of response.data) {
     if (!rawModel.id) continue;
     const kind = resolveModelKind(rawModel);
-    const upstreamEndpoints: readonly ModelEndpoint[] =
-      kind === 'embedding' ? ['embeddings']
-        : kind === 'image' ? ['images_generations', 'images_edits']
+    const endpoints: ModelEndpoints =
+      kind === 'embedding' ? { embeddings: {} }
+        : kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} }
           : configuredChatEndpoints;
     models.push({
       ...customInternalModel(rawModel),
       kind,
-      upstreamEndpoints,
+      endpoints,
       providerData: { rawModelId: rawModel.id } satisfies CustomProviderData,
       enabledFlags,
     });
@@ -108,12 +108,12 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     // `resolveEffectiveFlags` for layer semantics.
     const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
     const enabledFlags = resolveEffectiveFlags(defaultsForProvider('custom'), [record.flagOverrides, modelLayer]);
-    const upstreamEndpoints = modelConfigEndpoints(model);
+    const endpoints = modelConfigEndpoints(model);
     const internal: UpstreamModel = {
       id: publicModelId(model),
       limits: { ...(model.limits ?? {}) },
-      kind: kindForEndpoints(upstreamEndpoints),
-      upstreamEndpoints,
+      kind: kindForEndpoints(endpoints),
+      endpoints,
       providerData: { rawModelId: model.upstreamModelId } satisfies CustomProviderData,
       enabledFlags,
     };

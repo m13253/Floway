@@ -9,7 +9,7 @@ import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { jsonUpstreamErrorResult, sourceErrorResult, type LlmEndpoint, type LlmEndpointName, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
@@ -79,10 +79,10 @@ const responsesInvocation = <TPayload extends { model: string }>(
   headers: {} as Record<string, string>,
 });
 
-const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-  if (endpoints.includes('responses')) return 'responses';
-  if (endpoints.includes('messages')) return 'messages';
-  if (endpoints.includes('chat_completions')) return 'chat-completions';
+const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
+  if (endpoints.responses) return 'responses';
+  if (endpoints.messages) return 'messages';
+  if (endpoints.chatCompletions) return 'chat-completions';
   return null;
 };
 
@@ -148,14 +148,14 @@ const responsesGenerate: LlmEndpoint<string | readonly ResponsesInputItem[], Raw
 
 // Compaction shares the Responses input and the LLM-output path — its
 // compaction items persist like any generated output — differing only in the
-// upstream call and the response envelope. It gates on the `responses_compact`
+// upstream call and the response envelope. It gates on the `responses.compact`
 // upstream capability; HOW compaction reaches the upstream (the native
 // `/responses/compact` endpoint, or the `context_management` parameter on
 // `/responses`) is realized behind the responses target and is a separate
-// effort. Until then no upstream advertises `responses_compact`, so the
+// effort. Until then no upstream advertises `responses.compact`, so the
 // endpoint answers the not-supported failure.
-const compactPickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
-  endpoints.includes('responses_compact') ? 'responses' : null;
+const compactPickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
+  endpoints.responses?.compact ? 'responses' : null;
 
 const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawResponsesStreamEvent> = {
   // TODO(compaction realization): render the `response.compaction` envelope

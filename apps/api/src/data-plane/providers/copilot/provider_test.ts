@@ -51,7 +51,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
         models.map(model => model.id),
         ['gpt-dual'],
       );
-      assertEquals(models[0].upstreamEndpoints, ['responses']);
+      assertEquals(models[0].endpoints, { responses: {} });
     },
   );
 });
@@ -99,7 +99,7 @@ test('Copilot provider exposes only Responses for Claude when available', async 
 
       assertEquals(model.id, 'claude-opus-4-7');
       assertEquals(model.display_name, 'Claude Opus 4.7');
-      assertEquals(model.upstreamEndpoints, ['responses']);
+      assertEquals(model.endpoints, { responses: {} });
     },
   );
 });
@@ -154,7 +154,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
       const [model] = await provider.getProvidedModels();
 
       assertEquals(model.id, 'claude-haiku-chat-listed');
-      assertEquals(model.upstreamEndpoints, ['messages', 'messages_count_tokens']);
+      assertEquals(model.endpoints, { messages: { countTokens: true } });
 
       await provider.callMessages(model, {
         max_tokens: 100,

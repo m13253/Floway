@@ -345,7 +345,7 @@ export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): Upstr
   id: 'test-model',
   limits: {},
   kind: 'chat',
-  upstreamEndpoints: ['chat_completions', 'responses', 'messages'],
+  endpoints: { chatCompletions: {}, responses: {}, messages: {} },
   enabledFlags: new Set<string>(),
   ...overrides,
 });

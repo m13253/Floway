@@ -9,7 +9,7 @@ import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext } from '../request-context.ts';
 import { type LlmEndpoint, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@floway-dev/translate';
@@ -33,10 +33,10 @@ const chatCompletionsInvocation = <TPayload extends { model: string }>(
   headers: {} as Record<string, string>,
 });
 
-const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-  if (endpoints.includes('chat_completions')) return 'chat-completions';
-  if (endpoints.includes('messages')) return 'messages';
-  if (endpoints.includes('responses')) return 'responses';
+const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
+  if (endpoints.chatCompletions) return 'chat-completions';
+  if (endpoints.messages) return 'messages';
+  if (endpoints.responses) return 'responses';
   return null;
 };
 

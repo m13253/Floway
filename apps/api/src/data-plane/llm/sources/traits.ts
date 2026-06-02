@@ -7,7 +7,7 @@ import type { LlmTargetApi, RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type PlainResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;
@@ -100,7 +100,7 @@ export interface LlmEndpointPlan<TItems, TEvent> {
   // parsed payload; Gemini carries it on the request path instead of the body.
   readonly model: string;
   readonly downstreamAbortController: AbortController | undefined;
-  pickTarget(endpoints: readonly ModelEndpoint[]): LlmTargetApi | null;
+  pickTarget(endpoints: ModelEndpoints): LlmTargetApi | null;
   // Clones the captured payload once, rewrites that clone's items in place via
   // `rewriteItems`, builds the fully protocol-typed invocation / emit table /
   // interceptor chain, and runs. The single per-attempt clone is the sole

@@ -208,7 +208,7 @@ test('Custom provider uses configured supportedEndpoints regardless of per-model
         },
       })).provider;
       const [model] = await provider.getProvidedModels();
-      assertEquals([...model.upstreamEndpoints], ['chat_completions']);
+      assertEquals(model.endpoints, { chatCompletions: {} });
       assertEquals(model.kind, 'chat');
     },
   );
@@ -284,7 +284,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
       assertEquals(models[0].kind, 'image');
-      assertEquals([...models[0].upstreamEndpoints], ['images_generations', 'images_edits']);
+      assertEquals(models[0].endpoints, { imagesGenerations: {}, imagesEdits: {} });
     },
   );
 });
@@ -384,7 +384,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'pinned');
       assertEquals(models[0].kind, 'chat');
-      assertEquals([...models[0].upstreamEndpoints], ['chat_completions']);
+      assertEquals(models[0].endpoints, { chatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
       assertEquals(models[0].cost?.input, 1);

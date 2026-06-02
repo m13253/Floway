@@ -48,7 +48,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     c,
     sourceApi: 'images_generations',
     model: request.model,
-    bindingServesEndpoint: binding => binding.upstreamModel.upstreamEndpoints.includes('images_generations'),
+    bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
     call: binding => {
       const { model: _model, ...body } = request.body;
       return binding.provider.callImagesGenerations(binding.upstreamModel, body);
@@ -78,7 +78,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     c,
     sourceApi: 'images_edits',
     model: modelRaw,
-    bindingServesEndpoint: binding => binding.upstreamModel.upstreamEndpoints.includes('images_edits'),
+    bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
     call: binding => {
       // ModelProvider.callImagesEdits takes ownership of the FormData and
       // appends the upstream-specific model/deployment id; allocate a fresh

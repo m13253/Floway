@@ -1,7 +1,7 @@
 import type { UpstreamProviderKind } from '../../repo/types.ts';
 import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesCountTokensInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoint, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -14,12 +14,12 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 // raw fields stay inside that provider's own types and projections; nothing
 // upstream-shaped leaks onto this neutral type.
 //
-// `kind` is the high-level endpoint-family discriminator; `upstreamEndpoints`
-// (on UpstreamModel) is the precise per-protocol availability list used by
+// `kind` is the high-level endpoint-family discriminator; `endpoints`
+// (on UpstreamModel) is the precise per-protocol availability map used by
 // the planner. They are linked invariants enforced at the producer boundary:
-//   `kind === 'embedding'` ⇔ `upstreamEndpoints === ['embeddings']`
-//   `kind === 'image'`     ⇔ `upstreamEndpoints ⊂ {images_generations, images_edits}`
-//   `kind === 'chat'`      ⇒ `upstreamEndpoints ⊂ generation endpoints`.
+//   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
+//   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
+//   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 export interface InternalModel {
   id: string;
   display_name?: string;
@@ -35,7 +35,7 @@ export interface InternalModel {
 }
 
 export interface UpstreamModel extends InternalModel {
-  upstreamEndpoints: readonly ModelEndpoint[];
+  endpoints: ModelEndpoints;
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
 }
@@ -52,13 +52,13 @@ export interface ProviderModelRecord {
   targetInterceptors?: ProviderTargetInterceptors;
 }
 
-// upstreamEndpoints describes which endpoints this model is served by on its
+// endpoints describes which endpoints this model is served by on its
 // upstream side; it lives on ResolvedModel for planner-only use. The public
 // catalog does not expose upstream endpoint identity — the gateway always
 // translates between protocols on the data plane, so downstream clients see
 // all source endpoints as available for any generation-capable model.
 export interface ResolvedModel extends InternalModel {
-  upstreamEndpoints: readonly ModelEndpoint[];
+  endpoints: ModelEndpoints;
   providers: readonly ProviderModelRecord[];
 }
 

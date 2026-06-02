@@ -5,7 +5,7 @@ import { kindForEndpoints } from './endpoints.ts';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel } from './types.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
-import type { ModelEndpoint } from '@floway-dev/protocols/common';
+import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
 
 interface ProviderModelsResult {
   models: ResolvedModel[];
@@ -46,19 +46,23 @@ export const listModelProviders = async (upstreamFilter?: readonly string[] | nu
   return providers;
 };
 
-const unionEndpoints = (a: readonly ModelEndpoint[], b: readonly ModelEndpoint[]): ModelEndpoint[] => {
-  const result = [...a];
-  for (const endpoint of b) {
-    if (!result.includes(endpoint)) result.push(endpoint);
+// Merge two capability maps: a key present in either side is present in the
+// result, and its sub-capability flags are OR-ed so a sub-cap advertised by
+// either provider survives.
+const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
+  const result: ModelEndpoints = { ...a };
+  for (const key of Object.keys(b) as ModelEndpointKey[]) {
+    const merged = { ...(result[key] ?? {}), ...b[key] };
+    (result as Record<ModelEndpointKey, object>)[key] = merged;
   }
   return result;
 };
 
 const resolvedFromUpstreamModel = (upstreamModel: UpstreamModel, record: ProviderModelRecord): ResolvedModel => {
-  const { providerData: _providerData, upstreamEndpoints, ...internal } = upstreamModel;
+  const { providerData: _providerData, endpoints, ...internal } = upstreamModel;
   return {
     ...internal,
-    upstreamEndpoints: [...upstreamEndpoints],
+    endpoints: { ...endpoints },
     providers: [record],
   };
 };
@@ -92,11 +96,11 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
         // execution still uses the selected provider's own UpstreamModel, so
         // capability-sensitive calls do not depend on this merged view being
         // perfectly representative.
-        const upstreamEndpoints = unionEndpoints(existing.upstreamEndpoints, upstreamModel.upstreamEndpoints);
+        const endpoints = unionEndpoints(existing.endpoints, upstreamModel.endpoints);
         byId.set(upstreamModel.id, {
           ...existing,
-          upstreamEndpoints,
-          kind: kindForEndpoints(upstreamEndpoints),
+          endpoints,
+          kind: kindForEndpoints(endpoints),
           providers: [...existing.providers, record],
         });
       }
@@ -111,12 +115,12 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
 const modelWithProviderInstances = (model: ResolvedModel, providers: ReadonlySet<ModelProviderInstance>): ResolvedModel => {
   const providerInstances = [...providers];
   const bindings = model.providers.filter(binding => providerInstances.some(instance => instance.upstream === binding.upstream && instance.provider === binding.provider));
-  const upstreamEndpoints = bindings.reduce<ModelEndpoint[]>((endpoints, binding) => unionEndpoints(endpoints, binding.upstreamModel.upstreamEndpoints), []);
+  const endpoints = bindings.reduce<ModelEndpoints>((acc, binding) => unionEndpoints(acc, binding.upstreamModel.endpoints), {});
 
   return {
     ...model,
-    upstreamEndpoints,
-    kind: kindForEndpoints(upstreamEndpoints),
+    endpoints,
+    kind: kindForEndpoints(endpoints),
     providers: bindings,
   };
 };
@@ -171,7 +175,7 @@ export const getModels = async (upstreamFilter?: readonly string[] | null): Prom
 // Strips planner-only and provider-binding fields, leaving the InternalModel
 // shape consumed by the public /models DTO projection and the dashboard.
 export const getInternalModels = async (upstreamFilter?: readonly string[] | null): Promise<InternalModel[]> =>
-  (await getModels(upstreamFilter)).map(({ providers: _providers, upstreamEndpoints: _upstreamEndpoints, ...model }) => model);
+  (await getModels(upstreamFilter)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 export interface ModelResolution {
   id: string;

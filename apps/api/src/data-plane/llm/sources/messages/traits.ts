@@ -10,7 +10,7 @@ import { createRequestContext } from '../request-context.ts';
 import { plainResultFromResponse } from '../respond.ts';
 import { type LlmEndpoint, type LlmEndpointName, jsonUpstreamErrorResult, sourceErrorResult, type LlmServeFailure, type LlmSourceTraits } from '../traits.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
@@ -80,10 +80,10 @@ const messagesInvocation = <TPayload extends { model: string }>(
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });
 
-const pickTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null => {
-  if (endpoints.includes('messages')) return 'messages';
-  if (endpoints.includes('responses')) return 'responses';
-  if (endpoints.includes('chat_completions')) return 'chat-completions';
+const pickTarget = (endpoints: ModelEndpoints): LlmTargetApi | null => {
+  if (endpoints.messages) return 'messages';
+  if (endpoints.responses) return 'responses';
+  if (endpoints.chatCompletions) return 'chat-completions';
   return null;
 };
 
@@ -154,11 +154,11 @@ const messagesGenerate: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEv
 };
 
 // count_tokens shares the Messages input and provider walk but produces a
-// measurement, not a stream: it gates on the `messages_count_tokens` upstream
+// measurement, not a stream: it gates on the `messages.countTokens` upstream
 // capability, calls that endpoint through the same count_tokens interceptors,
 // and proxies the upstream body back as a plain result.
-const pickCountTokensTarget = (endpoints: readonly ModelEndpoint[]): LlmTargetApi | null =>
-  endpoints.includes('messages_count_tokens') ? 'messages' : null;
+const pickCountTokensTarget = (endpoints: ModelEndpoints): LlmTargetApi | null =>
+  endpoints.messages?.countTokens ? 'messages' : null;
 
 const messagesCountTokens: LlmEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
   respond: async ({ c, result, request, wantsStream, downstreamAbortController }) =>

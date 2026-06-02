@@ -92,7 +92,7 @@ const attemptProviders = async <TItems, TEvent>(
     resolvedModelId = resolved.id;
 
     const { binding } = resolved;
-    const target = plan.pickTarget(binding.upstreamModel.upstreamEndpoints);
+    const target = plan.pickTarget(binding.upstreamModel.endpoints);
     if (!target) continue;
 
     const rawResult = await plan.attempt({

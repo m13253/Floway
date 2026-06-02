@@ -84,7 +84,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           providerKind?: unknown;
           providers?: unknown;
           providerData?: unknown;
-          upstreamEndpoints?: unknown;
+          endpoints?: unknown;
           supportedEndpoints?: unknown;
           upstream?: unknown;
           upstreamModel?: unknown;
@@ -120,7 +120,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
-        assertEquals(model.upstreamEndpoints, undefined);
+        assertEquals(model.endpoints, undefined);
         assertEquals(model.supportedEndpoints, undefined);
         assertEquals(model.upstream, undefined);
         assertEquals(model.upstreamModel, undefined);
