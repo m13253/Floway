@@ -20,6 +20,7 @@ interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StatefulResponsesItemLookupResult[]>;
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
   fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<number>;
+  markDurable?(apiKeyId: string | null, id: string): void;
   refreshItems(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string | null, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
@@ -358,7 +359,7 @@ class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }),
       ]);
       if (write.durable) {
-        for (const row of writable) this.durableItemIds.add(row.id);
+        for (const row of writable) this.markDurable(row.apiKeyId, row.id);
       }
     }));
     for (const row of pending) this.committedItemIds.add(row.id);
@@ -370,6 +371,13 @@ class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       || this.stagedInputItems.has(row.id)
       || this.stagedOutputItems.has(row.id)
       || this.payloadUpgradeIds.has(row.id);
+  }
+
+  private markDurable(apiKeyId: string | null, id: string): void {
+    this.durableItemIds.add(id);
+    for (const write of this.options.itemWrites) {
+      if (!write.durable) write.backing.markDurable?.(apiKeyId, id);
+    }
   }
 
   async refreshTouchedItems(): Promise<void> {
@@ -480,6 +488,11 @@ class MemoryStatefulResponsesBacking implements StatefulResponsesBacking {
       changes += 1;
     }
     return Promise.resolve(changes);
+  }
+
+  markDurable(apiKeyId: string | null, id: string): void {
+    const existing = this.items.get(scopedKey(apiKeyId, id));
+    if (existing) existing.durable = true;
   }
 
   refreshItems(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<void> {

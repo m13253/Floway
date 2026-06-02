@@ -394,6 +394,58 @@ test('Responses WebSocket store:false keeps previous_response_id state in the se
   ]);
 });
 
+test('Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  let turn = 0;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        turn += 1;
+        return sseResponsesResponse({
+          id: `resp_ws_durable_${turn}`,
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output_text: `answer ${turn}`,
+          output: [{
+            id: `assistant_ws_durable_${turn}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: `answer ${turn}` }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
+      await firstDone;
+
+      const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: 'resp_ws_durable_1', input: 'second' } }));
+      await secondDone;
+    }),
+  );
+
+  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_durable_1');
+  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_durable_2');
+  assertExists(firstSnapshot);
+  assertExists(secondSnapshot);
+  assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
+});
+
 test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
   const { apiKey } = await setupAppTest();
   let resolveResponsesStarted: (() => void) | undefined;
