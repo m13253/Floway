@@ -1,11 +1,11 @@
 import type { ProviderChatCompletionsInterceptor, ProviderGeminiInterceptor, ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor, ProviderResponsesInterceptor } from './invocation.ts';
 import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export interface ProviderModelRecord {
   upstream: string;
@@ -69,6 +69,17 @@ export interface ProviderCallResult {
   modelKey: string;
 }
 
+// Streaming endpoints (Messages / Responses / ChatCompletions) return decoded
+// protocol frames directly — the provider drives the upstream fetch, parses
+// the SSE wire via @floway-dev/protocols, and emits the typed event stream.
+// `ok: false` carries the raw upstream Response verbatim so the gateway
+// boundary can relay status + body unchanged. Non-2xx-but-not-SSE responses
+// throw from the provider as a contract violation (provider always forces
+// stream=true on streaming endpoints).
+export type ProviderStreamResult<TEvent> =
+  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
+
 // `/responses/compact` is non-streaming: the provider produces the
 // `response.compaction` envelope as a value — Azure/custom parse it from the
 // native endpoint, Copilot reshapes it from a `compaction_trigger` turn — so
@@ -91,8 +102,8 @@ export interface ModelProvider {
   // shape is uniform across protocols so provider implementations never branch
   // on which protocol they are serving. Image endpoints have no target
   // interceptor stack today, but the parameter stays for interface uniformity.
-  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire
   // headers. Copilot uses it to pick a raw upstream model variant
@@ -100,7 +111,9 @@ export interface ModelProvider {
   // anthropic-beta target interceptor filters the wire header down to the
   // Copilot allow-list. Variant selection must see the caller's full intent
   // even when the beta value itself is dropped before hitting the wire.
-  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
+  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  // count_tokens is non-streaming JSON; the gateway relays the upstream
+  // Response verbatim.
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
   callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;

@@ -10,11 +10,11 @@ import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import type { CopilotRawModel } from './types.ts';
-import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { parseChatCompletionsStream, type ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import { isStreamingEndpoint, inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags } from '@floway-dev/provider';
+import { parseMessagesStream, type MessagesPayload } from '@floway-dev/protocols/messages';
+import { parseResponsesStream, type ResponsesPayload } from '@floway-dev/protocols/responses';
+import { isStreamingEndpoint, inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
@@ -201,16 +201,37 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     return { response, modelKey: rawModel.id };
   };
 
-  const callMessagesEndpoint =
-    (endpoint: 'messages' | 'messages_count_tokens') => (model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => {
-      // Both the native Messages call and count_tokens select the same raw
-      // `messages` variant; they differ only in the upstream endpoint path.
-      const rawModel = rawModelFor(model, 'messages', {
-        context1m: hasContext1mBeta(anthropicBeta),
-        reasoningEffort: messagesReasoningEffort(body),
-      });
-      return call(endpoint, body, signal, rawModel, headers);
-    };
+  const callStreaming = <TEvent>(
+    endpoint: 'chat_completions' | 'responses' | 'messages',
+    body: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    rawModel: CopilotRawModel,
+    headers: Record<string, string> | undefined,
+    parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
+  ) =>
+    streamingProviderCall(
+      copilotFetch(
+        upstreamConfig,
+        endpoint,
+        {
+          method: 'POST',
+          body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
+          signal,
+        },
+        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+      ),
+      parser,
+      rawModel.id,
+      signal,
+    );
+
+  const messagesRawModel = (model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, anthropicBeta: readonly string[] | undefined) =>
+    // Both the native Messages call and count_tokens select the same raw
+    // `messages` variant; they differ only in the upstream endpoint path.
+    rawModelFor(model, 'messages', {
+      context1m: hasContext1mBeta(anthropicBeta),
+      reasoningEffort: messagesReasoningEffort(body),
+    });
 
   const provider: ModelProvider = {
     getProvidedModels: () =>
@@ -232,20 +253,14 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         }
       }),
     getPricingForModelKey: pricingForCopilotModelKey,
-    callChatCompletions: (model, body, signal, headers) => {
-      const rawModel = rawModelFor(model, 'chatCompletions', {
-        reasoningEffort: chatReasoningEffort(body),
-      });
-      return call('chat_completions', body, signal, rawModel, headers);
-    },
-    callResponses: (model, body, signal, headers) => {
-      const rawModel = rawModelFor(model, 'responses', {
-        reasoningEffort: responsesReasoningEffort(body),
-      });
-      return call('responses', body, signal, rawModel, headers);
-    },
-    callMessages: callMessagesEndpoint('messages'),
-    callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),
+    callChatCompletions: (model, body, signal, headers) =>
+      callStreaming('chat_completions', body, signal, rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) }), headers, parseChatCompletionsStream),
+    callResponses: (model, body, signal, headers) =>
+      callStreaming('responses', body, signal, rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) }), headers, parseResponsesStream),
+    callMessages: (model, body, signal, headers, anthropicBeta) =>
+      callStreaming('messages', body, signal, messagesRawModel(model, body, anthropicBeta), headers, parseMessagesStream),
+    callMessagesCountTokens: (model, body, signal, headers, anthropicBeta) =>
+      call('messages_count_tokens', body, signal, messagesRawModel(model, body, anthropicBeta), headers),
     callEmbeddings: (model, body, signal, headers) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers),
     // Copilot has no /images/... upstream. getProvidedModels never emits a
     // kind='image' model for Copilot bindings, so the source-side dispatcher

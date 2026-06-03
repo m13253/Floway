@@ -1,7 +1,10 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { azureFetch } from './fetch.ts';
+import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags } from '@floway-dev/provider';
+import { parseMessagesStream } from '@floway-dev/protocols/messages';
+import { parseResponsesStream } from '@floway-dev/protocols/responses';
+import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;
@@ -33,6 +36,28 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       }));
   };
 
+  const callStreaming = <TEvent>(
+    endpoint: 'chat_completions' | 'responses' | 'messages',
+    model: UpstreamModel,
+    body: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    headers: Record<string, string> | undefined,
+    parser: ProviderStreamParser<TEvent>,
+  ) => {
+    const upstreamModelId = providerData(model).upstreamModelId;
+    return streamingProviderCall(
+      azureFetch(
+        azure.config,
+        endpoint,
+        { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
+        { extraHeaders: headers },
+      ),
+      parser,
+      upstreamModelId,
+      signal,
+    );
+  };
+
   const provider: ModelProvider = {
     async getProvidedModels() {
       return azure.config.models.map(model => {
@@ -58,9 +83,9 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     getPricingForModelKey(modelKey) {
       return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
     },
-    callChatCompletions: (model, body, signal, headers) => call('chat_completions', model, body, signal, headers),
-    callResponses: (model, body, signal, headers) => call('responses', model, body, signal, headers),
-    callMessages: (model, body, signal, headers, anthropicBeta) => call('messages', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
+    callChatCompletions: (model, body, signal, headers) => callStreaming('chat_completions', model, body, signal, headers, parseChatCompletionsStream),
+    callResponses: (model, body, signal, headers) => callStreaming('responses', model, body, signal, headers, parseResponsesStream),
+    callMessages: (model, body, signal, headers, anthropicBeta) => callStreaming('messages', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta), parseMessagesStream),
     callMessagesCountTokens: (model, body, signal, headers, anthropicBeta) => call('messages_count_tokens', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
     callEmbeddings: (model, body, signal, headers) => call('embeddings', model, body, signal, headers),
     callImagesGenerations: (model, body, signal, headers) => call('images_generations', model, body, signal, headers),
