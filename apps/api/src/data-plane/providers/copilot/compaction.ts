@@ -58,6 +58,13 @@ const compactionItem = (generated: ResponsesResult): ResponsesCompactionItem => 
 // echoes: an id (so the store can mint a stored id and persist it), an explicit
 // `status`, and array content. The client resends `output` verbatim as the next
 // turn's `input`, so the items must be self-contained.
+//
+// A message the client sent without an id gets a synthetic one. Unlike the
+// native path — where retained ids are the upstream's own echoed ids — these
+// persist as upstream-owned with an id the upstream never issued, giving them
+// `portable` affinity. That is benign: the compaction blob carries the real
+// `forcing` affinity, and retained messages are resent as full content rather
+// than `item_reference`s, so the synthetic id is never replayed to the upstream.
 const retainedOutputMessage = (message: ResponsesInputMessage): ResponsesInputMessage => ({
   type: 'message',
   id: message.id ?? `msg_${crypto.randomUUID().replace(/-/g, '')}`,
