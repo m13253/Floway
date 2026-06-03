@@ -24,9 +24,8 @@ import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { httpResponseToResponse, ProviderModelsUnavailableError } from '../providers/models-store.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream JSON response.

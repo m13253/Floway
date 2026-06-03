@@ -14,8 +14,8 @@
 // heuristic; the chat default takes the per-upstream `endpoints` config).
 
 import type { Upstream } from '../../../shared/upstream/types.ts';
-import { ProviderModelsUnavailableError } from '../models-store.ts';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;

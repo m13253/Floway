@@ -5,7 +5,7 @@ import { clearCopilotTokenCache } from '../../../shared/copilot.ts';
 import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
-import { ProviderModelsUnavailableError } from '../models-store.ts';
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 const copilotTokenResponse = (request: Request): Response | null => {
   const url = new URL(request.url);

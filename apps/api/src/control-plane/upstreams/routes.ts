@@ -2,8 +2,6 @@ import type { Context } from 'hono';
 
 import { upstreamRecordToJson } from './serialize.ts';
 import { fetchCustomModels } from '../../data-plane/providers/custom/fetch-models.ts';
-import { getFlagCatalog } from '../../data-plane/providers/flags.ts';
-import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError } from '../../data-plane/providers/models-store.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -15,6 +13,7 @@ import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
+import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotUpstreamUser {

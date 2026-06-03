@@ -1,5 +1,6 @@
-import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
-import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
+import { isKnownFlagId } from './flags.ts';
+import type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;

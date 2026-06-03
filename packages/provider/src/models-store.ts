@@ -6,7 +6,7 @@
 // `invalidateModelsStore(upstream.id)` clears both tiers). L2 row keys are
 // prefixed internally so the repo cache namespace stays isolated.
 
-import { getRepo } from '../../repo/index.ts';
+import { getProviderRepo } from './repo.ts';
 
 const CACHE_KEY_PREFIX = 'models_store:';
 
@@ -41,7 +41,7 @@ const cacheKey = (upstreamId: string): string => `${CACHE_KEY_PREFIX}${upstreamI
 
 export const readModelsStore = async <T>(upstreamId: string): Promise<T | null> => {
   try {
-    const raw = await getRepo().cache.get(cacheKey(upstreamId));
+    const raw = await getProviderRepo().cache.get(cacheKey(upstreamId));
     if (!raw) return null;
     return JSON.parse(raw) as T;
   } catch {
@@ -51,7 +51,7 @@ export const readModelsStore = async <T>(upstreamId: string): Promise<T | null> 
 
 export const writeModelsStore = async <T>(upstreamId: string, value: T): Promise<void> => {
   try {
-    await getRepo().cache.set(cacheKey(upstreamId), JSON.stringify(value));
+    await getProviderRepo().cache.set(cacheKey(upstreamId), JSON.stringify(value));
   } catch {
     // Best-effort persistence; loss only means the next isolate re-fetches.
   }
@@ -60,7 +60,7 @@ export const writeModelsStore = async <T>(upstreamId: string, value: T): Promise
 export const invalidateModelsStore = async (upstreamId: string): Promise<void> => {
   memos.delete(upstreamId);
   try {
-    await getRepo().cache.delete(cacheKey(upstreamId));
+    await getProviderRepo().cache.delete(cacheKey(upstreamId));
   } catch {
     // In-process drop alone still forces a refresh on this isolate.
   }

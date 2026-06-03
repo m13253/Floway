@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists, assertStringIncludes } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseChatCompletionsResponse, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
-import { clearModelsStore } from '../../../providers/models-store.ts';
 import { createStoredResponsesItemId } from '../responses/items/format.ts';
+import { clearModelsStore } from '@floway-dev/provider';
 
 const getUsageOnlyChatChunks = (events: Array<{ event: string; data: string }>): Array<Record<string, unknown>> =>
   events.flatMap(event => {

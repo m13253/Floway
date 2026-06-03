@@ -4,7 +4,7 @@ import { fetchCustomModels } from './fetch-models.ts';
 import { createCustomUpstream } from '../../../shared/upstream/custom.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../../../test-helpers.ts';
-import { isProviderModelsHttpStatus, ProviderModelsUnavailableError } from '../models-store.ts';
+import { isProviderModelsHttpStatus, ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 const upstreamRecord = () => ({
   id: 'up_custom',

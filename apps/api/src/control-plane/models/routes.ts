@@ -1,9 +1,9 @@
 import type { Context } from 'hono';
 
 import { toPublicModel } from '../../data-plane/models/load.ts';
-import { ProviderModelsUnavailableError } from '../../data-plane/providers/models-store.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:

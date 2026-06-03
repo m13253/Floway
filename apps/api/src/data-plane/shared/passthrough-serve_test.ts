@@ -19,7 +19,7 @@ import { test, vi } from 'vitest';
 import { clearCopilotTokenCache } from '../../shared/copilot.ts';
 import { assertEquals, assertExists } from '../../test-assert.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
-import { clearModelsStore } from '../providers/models-store.ts';
+import { clearModelsStore } from '@floway-dev/provider';
 
 const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();

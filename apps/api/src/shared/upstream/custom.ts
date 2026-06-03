@@ -20,10 +20,9 @@
 // path override, because it only matters when fetching is enabled.
 
 import { joinBaseAndPath, validateUpstreamPath } from './join.ts';
-import { endpointsField, modelsField, type UpstreamModelConfig } from './model-config.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord, endpointsField, modelsField, type UpstreamModelConfig  } from '@floway-dev/provider';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic';
 

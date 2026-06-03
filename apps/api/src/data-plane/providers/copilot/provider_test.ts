@@ -6,9 +6,9 @@ import { assertEquals, assertRejects } from '../../../test-assert.ts';
 import { copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { runInterceptors, type MessagesInvocation, type RequestContext } from '../../llm/interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../llm/sources/responses/stateful-store.ts';
-import { clearModelsStore, ProviderModelsUnavailableError } from '../models-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {

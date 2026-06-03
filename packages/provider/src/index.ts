@@ -57,3 +57,44 @@ export type {
   ProviderTargetInterceptors,
   ResolvedModel,
 } from './provider.ts';
+
+export type { CacheRepo, ProviderRepo } from './repo.ts';
+export { getProviderRepo, initProviderRepo } from './repo.ts';
+
+export {
+  ProviderModelsUnavailableError,
+  clearModelsStore,
+  httpResponseToResponse,
+  inProcessMemo,
+  invalidateModelsStore,
+  isProviderModelsHttpStatus,
+  readModelsStore,
+  writeModelsStore,
+} from './models-store.ts';
+
+export type { Flag, FlagOverrides, OptionalFlagId } from './flags.ts';
+export {
+  OPTIONAL_FLAGS,
+  defaultsForProvider,
+  getFlagCatalog,
+  isKnownFlagId,
+  parseFlagOverridesWire,
+  resolveEffectiveFlags,
+} from './flags.ts';
+
+export type {
+  UpstreamModelConfig,
+  UpstreamModelFlagOverrides,
+  UpstreamModelLimits,
+} from './model-config.ts';
+export {
+  endpointsField,
+  flagOverridesField,
+  isRecord,
+  limitsField,
+  modelsField,
+  nonEmptyStringField,
+  optionalStringField,
+  pricingField,
+  publicModelId,
+} from './model-config.ts';

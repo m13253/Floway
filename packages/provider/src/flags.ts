@@ -8,15 +8,15 @@
 // and keeps the catalog free of runtime closures.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) each
-// own a dedicated last-running interceptor under
-// `apps/api/src/data-plane/llm/targets/<api>/interceptors/vendor-<vendor>-normalize.ts`.
-// That interceptor translates the gateway's OpenAI-canonical request and
-// response shape into the vendor's wire dialect. With no vendor flag set,
-// behavior defaults to the OpenAI standard and no vendor rewrite runs.
-// Vendor flags are mutually exclusive per binding — the dashboard surfaces
-// them as a single radio rather than three independent toggles.
+// own a dedicated last-running interceptor under the api's targets/<api>/
+// interceptors/ directory. That interceptor translates the gateway's
+// OpenAI-canonical request and response shape into the vendor's wire
+// dialect. With no vendor flag set, behavior defaults to the OpenAI standard
+// and no vendor rewrite runs. Vendor flags are mutually exclusive per
+// binding — the dashboard surfaces them as a single radio rather than three
+// independent toggles.
 
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { UpstreamProviderKind } from './model.ts';
 
 export interface Flag {
   id: string;
@@ -125,4 +125,24 @@ export const parseFlagOverridesWire = (value: unknown): Record<string, boolean> 
   const sorted: Record<string, boolean> = {};
   for (const id of Object.keys(result).sort()) sorted[id] = result[id];
   return sorted;
+};
+
+// Tri-state override map. Absent key = inherit from the parent layer.
+// `true` = force-on at this layer. `false` = force-off at this layer (including
+// flags seeded by provider defaults — admins explicitly toggled Off to opt out).
+export type FlagOverrides = Record<string, boolean>;
+
+export const resolveEffectiveFlags = (
+  providerDefaults: ReadonlySet<string>,
+  layers: readonly (FlagOverrides | undefined)[],
+): ReadonlySet<string> => {
+  const effective = new Set<string>(providerDefaults);
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const [id, on] of Object.entries(layer)) {
+      if (on) effective.add(id);
+      else effective.delete(id);
+    }
+  }
+  return effective;
 };

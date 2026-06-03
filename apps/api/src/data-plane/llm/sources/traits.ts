@@ -1,12 +1,11 @@
 import type { Context } from 'hono';
 
-import { ProviderModelsUnavailableError } from '../../providers/models-store.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { LlmTargetApi, RequestContext } from '../interceptors.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { PerformanceApiName, ProviderModelRecord, internalErrorResult, type ExecuteResult, type PlainResult, type UpstreamErrorResult } from '@floway-dev/provider';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { Mutable, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type Frame<TEvent> = ProtocolFrame<TEvent>;

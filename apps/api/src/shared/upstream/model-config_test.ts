@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { modelsField } from './model-config.ts';
 import { assertEquals, assertThrows } from '../../test-assert.ts';
+import { modelsField } from '@floway-dev/provider';
 
 test('modelsField parses a full model entry', () => {
   const models = modelsField(
