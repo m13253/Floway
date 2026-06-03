@@ -2,6 +2,7 @@ import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
 import type { StatefulResponsesStore } from './sources/responses/stateful-store.ts';
+import { type Interceptor, type InterceptorRun, runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -81,20 +82,7 @@ export type ResponsesInvocation = Invocation<ResponsesPayload>;
 export type ChatCompletionsInvocation = Invocation<ChatCompletionsPayload>;
 export type GeminiInvocation = Invocation<GeminiPayload>;
 
-export type InterceptorRun<TResult> = () => Promise<TResult>;
-
-export type Interceptor<TContext, TRequest, TResult> = (ctx: TContext, request: TRequest, run: InterceptorRun<TResult>) => Promise<TResult>;
-
-export const runInterceptors = async <TContext, TRequest, TResult>(
-  ctx: TContext,
-  request: TRequest,
-  interceptors: readonly Interceptor<TContext, TRequest, TResult>[],
-  terminal: InterceptorRun<TResult>,
-): Promise<TResult> => {
-  const run = (index: number): Promise<TResult> => (index < interceptors.length ? interceptors[index](ctx, request, () => run(index + 1)) : terminal());
-
-  return await run(0);
-};
+export { type Interceptor, type InterceptorRun, runInterceptors };
 
 export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>;
 export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
