@@ -1,7 +1,7 @@
 import { recordUpstreamHttpFailure, targetPerformanceContext, withUpstreamTelemetry } from './telemetry.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
-import { parseSSEStream } from '../shared/stream/parse-sse.ts';
+import { parseSSEStream } from '@floway-dev/protocols/common';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import { type PerformanceApiName, type TelemetryModelIdentity, type ProviderCallResult, type ExecuteResult, type InternalErrorResult, eventResult, internalErrorResult } from '@floway-dev/provider';
 import { toInternalDebugError, readUpstreamError } from '@floway-dev/provider';

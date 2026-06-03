@@ -6,7 +6,7 @@ import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { RawResponsesStreamEvent, ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent, ResponsesPayload } from '@floway-dev/protocols/responses';
 
 export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemini';
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
@@ -69,7 +69,7 @@ export type GeminiInvocation = Invocation<GeminiPayload>;
 // interceptors are assignable to those rich slots, so spread composition
 // (`[...baseInterceptors, ...providerInterceptors]`) just works.
 export type ProviderMessagesInterceptor = Interceptor<MessagesInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>;
-export type ProviderResponsesInterceptor = Interceptor<ResponsesInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>>;
+export type ProviderResponsesInterceptor = Interceptor<ResponsesInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 export type ProviderChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>>;
 export type ProviderGeminiInterceptor = Interceptor<GeminiInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>;
 

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -35,22 +35,22 @@ const invocation = (): ResponsesInvocation => ({
 
 const stubRequest: InterceptorRequest = {};
 
-const argsDelta = (outputIndex: number, delta: string): RawResponsesStreamEvent =>
+const argsDelta = (outputIndex: number, delta: string): ResponsesStreamEvent =>
   ({
     type: 'response.function_call_arguments.delta',
     item_id: `fc_${outputIndex}`,
     output_index: outputIndex,
     delta,
-  }) as RawResponsesStreamEvent;
+  }) as ResponsesStreamEvent;
 
-const collect = async (result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>): Promise<ProtocolFrame<RawResponsesStreamEvent>[]> => {
+const collect = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events');
-  const out: ProtocolFrame<RawResponsesStreamEvent>[] = [];
+  const out: ProtocolFrame<ResponsesStreamEvent>[] = [];
   for await (const frame of result.events) out.push(frame);
   return out;
 };
 
-const runWith = async (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Promise<ProtocolFrame<RawResponsesStreamEvent>[]> => {
+const runWith = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
   const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
     Promise.resolve(
       eventResult(
@@ -64,10 +64,10 @@ const runWith = async (frames: ProtocolFrame<RawResponsesStreamEvent>[]): Promis
 };
 
 test('passes a normal Responses stream through unchanged', async () => {
-  const frames: ProtocolFrame<RawResponsesStreamEvent>[] = [
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [
     eventFrame(argsDelta(0, '{"k":')),
     eventFrame(argsDelta(0, '"v"}')),
-    eventFrame(({ type: 'response.function_call_arguments.done', item_id: 'fc_0', output_index: 0, arguments: '{"k":"v"}' }) as RawResponsesStreamEvent),
+    eventFrame(({ type: 'response.function_call_arguments.done', item_id: 'fc_0', output_index: 0, arguments: '{"k":"v"}' }) as ResponsesStreamEvent),
     doneFrame(),
   ];
 
@@ -77,7 +77,7 @@ test('passes a normal Responses stream through unchanged', async () => {
 
 test('aborts and emits an error event + done when whitespace exceeds the threshold', async () => {
   const wsDelta = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE + 1);
-  const frames: ProtocolFrame<RawResponsesStreamEvent>[] = [
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [
     eventFrame(argsDelta(0, wsDelta)),
     // Should not be observed: interceptor aborts on the first offending delta.
     eventFrame(argsDelta(0, '\n\n\n')),
@@ -97,7 +97,7 @@ test('aborts and emits an error event + done when whitespace exceeds the thresho
 
 test('continues streaming when whitespace is broken by non-whitespace characters', async () => {
   const half = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<RawResponsesStreamEvent>[] = [
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [
     eventFrame(argsDelta(0, half)),
     eventFrame(argsDelta(0, 'x')),
     eventFrame(argsDelta(0, half)),
@@ -110,7 +110,7 @@ test('continues streaming when whitespace is broken by non-whitespace characters
 
 test('tracks whitespace per output index independently', async () => {
   const args = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<RawResponsesStreamEvent>[] = [
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [
     eventFrame(argsDelta(0, args)),
     eventFrame(argsDelta(1, args)),
     doneFrame(),

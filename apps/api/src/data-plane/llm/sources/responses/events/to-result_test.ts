@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { collectResponsesProtocolEventsToResult } from './to-result.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type ResponsesResult, type RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectResponsesProtocolEventsToResult reassembles synthetic Responses events', async () => {
@@ -46,7 +46,7 @@ test('collectResponsesProtocolEventsToResult rejects streams without terminal ev
         error: null,
         incomplete_details: null,
       },
-    } satisfies RawResponsesStreamEvent);
+    } satisfies ResponsesStreamEvent);
   }
 
   await assertRejects(async () => await collectResponsesProtocolEventsToResult(events()), Error, 'Responses stream ended without a terminal event.');

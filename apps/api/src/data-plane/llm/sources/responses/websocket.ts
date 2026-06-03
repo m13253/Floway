@@ -9,7 +9,7 @@ import type { StreamCompletion } from '../../shared/stream/proxy-sse.ts';
 import { executeLlmSourcePlan } from '../execution.ts';
 import { eventResultMetadata, recordSourcePerformance, recordSourceUsage, SourceStreamState } from '../respond.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type RawResponsesStreamEvent, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesStreamEvent, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 
@@ -187,7 +187,7 @@ const respondResponsesWebSocket = async (input: {
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
-  readonly result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> | PlainResult;
+  readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult;
   readonly request: RequestContext;
 }): Promise<boolean> => {
   const { socket, eventId, signal, isClosed, result, request } = input;
@@ -276,7 +276,7 @@ const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
   }
 };
 
-const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
+const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
   type: error.type,
   code: error.type,
   name: error.name,

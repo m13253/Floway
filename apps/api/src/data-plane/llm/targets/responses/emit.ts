@@ -3,12 +3,12 @@ import { responsesStreamFramesToEvents } from './events/from-stream.ts';
 import { responsesBaseInterceptors } from './interceptors/index.ts';
 import { type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type TelemetryModelIdentity, type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const targetApi = 'responses';
 
-export const emitToResponses = async (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> => {
+export const emitToResponses = async (invocation: ResponsesInvocation, request: RequestContext): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   let modelIdentity: TelemetryModelIdentity | undefined;
 
   try {

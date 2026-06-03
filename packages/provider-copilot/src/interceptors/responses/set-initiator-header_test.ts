@@ -2,15 +2,15 @@ import { test } from 'vitest';
 
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   sourceApi: 'responses',

@@ -1,6 +1,6 @@
 import { parseTargetStreamFrames } from '../../events/from-stream.ts';
 import { doneFrame, type EventFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponsesStreamEvent, type SequencedResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Deny-list: anything that is not a wrapper (`response.created` /
 // `response.in_progress` / `ping`) and not terminal is treated as content-
@@ -17,13 +17,13 @@ const isStructuredResponsesEvent = (event: { type: string }): boolean =>
 // Some Responses upstreams emit the event type only via the SSE `event:`
 // header and leave it off the JSON body; re-attach it so downstream sees a
 // consistent shape.
-const projectSseJsonEvent = (event: ResponsesStreamEvent, eventName: string | undefined): SequencedResponsesStreamEvent =>
-  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as SequencedResponsesStreamEvent) : (event as SequencedResponsesStreamEvent);
+const projectSseJsonEvent = (event: ResponsesStreamEvent, eventName: string | undefined): ResponsesStreamEvent =>
+  eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as ResponsesStreamEvent) : (event as ResponsesStreamEvent);
 
 const isResponsesWrapperEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
   event.type === 'response.created' || event.type === 'response.in_progress';
 
-const remainingFastPathEvents = (response: ResponsesResult, sentWrapperTypes: ReadonlySet<ResponsesStreamEvent['type']>): EventFrame<SequencedResponsesStreamEvent>[] => {
+const remainingFastPathEvents = (response: ResponsesResult, sentWrapperTypes: ReadonlySet<ResponsesStreamEvent['type']>): EventFrame<ResponsesStreamEvent>[] => {
   const expanded = responsesResultToEvents(response);
   return sentWrapperTypes.size > 0 ? expanded.filter(frame => !sentWrapperTypes.has(frame.event.type)) : expanded;
 };
@@ -37,7 +37,7 @@ const remainingFastPathEvents = (response: ResponsesResult, sentWrapperTypes: Re
 // so downstream consumers always observe one canonical full event sequence.
 // `error` terminals carry no `response` payload, so we cannot expand them;
 // they continue to surface as their original frame for downstream handlers.
-export const responsesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<SequencedResponsesStreamEvent>> =>
+export const responsesStreamFramesToEvents = (frames: AsyncIterable<SseFrame>): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> =>
   (async function* () {
     let sawStructured = false;
     const sentWrapperTypes = new Set<ResponsesStreamEvent['type']>();

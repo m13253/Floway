@@ -8,7 +8,7 @@ import type { RequestContext } from '../../interceptors.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
@@ -22,7 +22,7 @@ type RR = ResponsesResult;
 // produced, so the orchestrator knows whether to flush stored items.
 export const respondResponses = async (
   c: Context,
-  result: ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>> | PlainResult,
+  result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   request: RequestContext,
   downstreamAbortController: AbortController | undefined,
@@ -124,9 +124,9 @@ const internalResponsesStreamErrorFrame = (error: unknown) => {
 
 // --- frame observation ---
 
-const isResponsesTerminalFrame = (frame: ProtocolFrame<RawResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
+const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
-const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
+const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
   const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
   for await (const frame of frames) {
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
@@ -141,7 +141,7 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
   throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
 };
 
-const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>, state: SourceStreamState) {
+const responsesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState) {
   try {
     for await (const frame of frames) {
       const sse = responsesProtocolFrameToSSEFrame(frame);

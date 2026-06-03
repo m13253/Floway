@@ -1,4 +1,4 @@
-import type { ResponsesStreamEvent, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 /**
@@ -45,14 +45,14 @@ const synthesizeItemId = (outputIndex: number): string => {
 // `ResponsesStreamEvent` union.
 type ItemIdEvent = ResponsesStreamEvent & { item_id?: string; output_index?: number };
 
-const fixResponsesStreamIds = (event: RawResponsesStreamEvent, tracker: StreamIdTracker): RawResponsesStreamEvent => {
+const fixResponsesStreamIds = (event: ResponsesStreamEvent, tracker: StreamIdTracker): ResponsesStreamEvent => {
   if (event.type === 'response.output_item.added') {
     if (typeof event.output_index !== 'number') return event;
     const item = event.item as { id?: unknown };
     const pinnedId = typeof item.id === 'string' && item.id.length > 0 ? item.id : synthesizeItemId(event.output_index);
     tracker.outputItemIds.set(event.output_index, pinnedId);
     if (item.id === pinnedId) return event;
-    return { ...event, item: { ...item, id: pinnedId } } as RawResponsesStreamEvent;
+    return { ...event, item: { ...item, id: pinnedId } } as ResponsesStreamEvent;
   }
 
   if (event.type === 'response.output_item.done') {
@@ -61,7 +61,7 @@ const fixResponsesStreamIds = (event: RawResponsesStreamEvent, tracker: StreamId
     if (!pinnedId) return event;
     const item = event.item as { id?: unknown };
     if (item.id === pinnedId) return event;
-    return { ...event, item: { ...item, id: pinnedId } } as RawResponsesStreamEvent;
+    return { ...event, item: { ...item, id: pinnedId } } as ResponsesStreamEvent;
   }
 
   // Any other event that names an output_index AND already declares an
@@ -72,7 +72,7 @@ const fixResponsesStreamIds = (event: RawResponsesStreamEvent, tracker: StreamId
   if (typeof carrier.output_index !== 'number' || typeof carrier.item_id !== 'string') return event;
   const pinnedId = tracker.outputItemIds.get(carrier.output_index);
   if (!pinnedId || carrier.item_id === pinnedId) return event;
-  return { ...carrier, item_id: pinnedId } as RawResponsesStreamEvent;
+  return { ...carrier, item_id: pinnedId } as ResponsesStreamEvent;
 };
 
 export const withOutputItemIdsSynchronized: ProviderResponsesInterceptor = async (_ctx, _request, run) => {

@@ -4,7 +4,7 @@ import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encry
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../../sources/responses/stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
@@ -28,7 +28,7 @@ const invocation = (): ResponsesInvocation => ({
   headers: {},
 });
 
-const result = (response: { status: 'completed'; output: unknown[] }) => (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
+const result = (response: { status: 'completed'; output: unknown[] }) => (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult(
     (async function* () {
       yield eventFrame({ type: 'response.output_item.done' as const, output_index: 0, item: { type: 'reasoning' as const, id: 'rs_alpha', summary: [], encrypted_content: 'ENC_DONE' } });
@@ -40,8 +40,8 @@ const result = (response: { status: 'completed'; output: unknown[] }) => (): Pro
     testTelemetryModelIdentity,
   ));
 
-const collect = async (events: AsyncIterable<ProtocolFrame<RawResponsesStreamEvent>>) => {
-  const out: RawResponsesStreamEvent[] = [];
+const collect = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>) => {
+  const out: ResponsesStreamEvent[] = [];
   for await (const frame of events) if (frame.type === 'event') out.push(frame.event);
   return out;
 };

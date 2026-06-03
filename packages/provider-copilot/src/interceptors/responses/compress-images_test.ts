@@ -2,15 +2,15 @@ import { test } from 'vitest';
 
 import { withInlineImagesCompressed } from './compress-images.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { InterceptorRequest, ResponsesInvocation, ImageProcessor, ExecuteResult } from '@floway-dev/provider';
 import { eventResult, initImageProcessor } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<RawResponsesStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<RawResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),

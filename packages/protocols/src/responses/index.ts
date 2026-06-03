@@ -501,7 +501,16 @@ export interface ResponsesOutputImageGenerationCall {
 
 // ── Stream event types ──
 
-export type ResponsesStreamEvent =
+// Sequence number is REQUIRED in the OpenAI Responses streaming spec, but
+// some upstreams (notably probes / fast-path completions on Copilot) omit
+// it on the wire. The protocol's stream parser fills it in when missing
+// (monotonic counter); synthesizers (`responsesResultToEvents`) always set
+// it. Consumers that only read a few field slots may tolerate the optional
+// shape directly; anything that requires sequenced delivery can narrow with
+// `Required<Pick<ResponsesStreamEvent, 'sequence_number'>>`.
+export type ResponsesStreamEvent = ResponsesStreamEventVariant & { sequence_number?: number };
+
+type ResponsesStreamEventVariant =
   | { type: 'response.created'; response: ResponsesResult }
   | { type: 'response.in_progress'; response: ResponsesResult }
   | {
@@ -667,19 +676,6 @@ export type ResponsesStreamEvent =
     target_api?: string;
   }
   | { type: 'ping' };
-
-// Gateway-side extension: upstream Responses streams may omit `sequence_number`
-// when probing, so the gateway-internal shape leaves it optional.
-export type RawResponsesStreamEvent = ResponsesStreamEvent & {
-  sequence_number?: number;
-};
-
-// Sibling of RawResponsesStreamEvent for sequences synthesized inside the
-// gateway (from-result expansion, from-stream projection), where the
-// sequence number is always present.
-export type SequencedResponsesStreamEvent = ResponsesStreamEvent & {
-  sequence_number: number;
-};
 
 // Either side of the Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape
