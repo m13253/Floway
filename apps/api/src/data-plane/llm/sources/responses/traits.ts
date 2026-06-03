@@ -163,11 +163,11 @@ const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawR
       model: payload.model,
       downstreamAbortController: undefined,
       pickTarget: endpoints => (endpoints.responses ? 'responses' : null),
-      attempt: async ({ binding, target, model, rewriteItems }) => {
+      attempt: async ({ binding, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;
         attemptPayload.input = await rewriteItems(attemptPayload.input);
-        const invocation: ResponsesInvocation = responsesInvocation(binding, target, model, attemptPayload);
+        const invocation: ResponsesInvocation = responsesInvocation(binding, 'responses', model, attemptPayload);
         const interceptors = [...responsesSourceInterceptors, ...(binding.sourceInterceptors?.responses ?? [])];
         return await runInterceptors(invocation, request, interceptors, () => emitToResponsesCompact(invocation, request));
       },
