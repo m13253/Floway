@@ -28,9 +28,9 @@ export const parseChatCompletionsStream = (
   })) {
     if (frame.type === 'done') {
       yield doneFrame();
-    } else {
-      guardChatCompletionsError(frame.data);
-      yield eventFrame(frame.data);
+      return;
     }
+    guardChatCompletionsError(frame.data);
+    yield eventFrame(frame.data);
   }
 })();

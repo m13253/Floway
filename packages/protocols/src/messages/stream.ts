@@ -21,8 +21,8 @@ export const parseMessagesStream = (
   })) {
     if (frame.type === 'done') {
       yield doneFrame();
-    } else {
-      yield eventFrame(frame.data);
+      return;
     }
+    yield eventFrame(frame.data);
   }
 })();
