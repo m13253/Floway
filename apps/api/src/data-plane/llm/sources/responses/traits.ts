@@ -162,7 +162,7 @@ const responsesCompact: LlmEndpoint<string | readonly ResponsesInputItem[], RawR
       store: payload.store,
       model: payload.model,
       downstreamAbortController: undefined,
-      pickTarget: endpoints => (endpoints.responses ? 'responses' : null),
+      pickTarget: endpoints => endpoints.responses ? 'responses' : null,
       attempt: async ({ binding, model, rewriteItems }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = model;
