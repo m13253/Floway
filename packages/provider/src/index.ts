@@ -104,7 +104,7 @@ export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
 
-export type { EndpointKey, UpstreamFetchOptions, UpstreamKind } from './upstream.ts';
+export type { EndpointKey, UpstreamFetchOptions } from './upstream.ts';
 export { isStreamingEndpoint } from './upstream.ts';
 
 export type { ImageDimensions, ImageProcessor, ImageSizeCalculator, SizeCaps } from './image-processor.ts';

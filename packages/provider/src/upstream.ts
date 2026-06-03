@@ -7,8 +7,6 @@
 // exposes it as a separate configurable endpoint.
 export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'images_generations' | 'images_edits' | 'models';
 
-export type UpstreamKind = 'copilot' | 'custom' | 'azure';
-
 export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
 }
