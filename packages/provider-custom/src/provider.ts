@@ -7,7 +7,7 @@ import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@flowa
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall } from '@floway-dev/provider';
-import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, ProviderStreamParser, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, ProviderStreamParser, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -158,7 +158,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   };
 
   const callStreaming = <TEvent>(
-    endpoint: 'chat_completions' | 'responses' | 'messages',
+    endpoint: StreamingEndpointKey,
     model: UpstreamModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,

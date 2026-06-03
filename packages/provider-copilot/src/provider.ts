@@ -15,7 +15,7 @@ import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@f
 import { parseMessagesStream, type MessagesPayload } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesPayload } from '@floway-dev/protocols/responses';
 import { isStreamingEndpoint, inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
-import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -202,7 +202,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   };
 
   const callStreaming = <TEvent>(
-    endpoint: 'chat_completions' | 'responses' | 'messages',
+    endpoint: StreamingEndpointKey,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,

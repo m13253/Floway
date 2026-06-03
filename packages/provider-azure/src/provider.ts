@@ -4,7 +4,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type StreamingEndpointKey, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;
@@ -37,7 +37,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
   };
 
   const callStreaming = <TEvent>(
-    endpoint: 'chat_completions' | 'responses' | 'messages',
+    endpoint: StreamingEndpointKey,
     model: UpstreamModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,

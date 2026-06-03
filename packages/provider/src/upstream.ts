@@ -7,6 +7,11 @@
 // exposes it as a separate configurable endpoint.
 export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'images_generations' | 'images_edits' | 'models';
 
+// Subset of EndpointKey whose calls go over SSE. Provider implementations
+// type their callStreaming helpers with this so the literal union stays in
+// sync with `isStreamingEndpoint` below.
+export type StreamingEndpointKey = 'chat_completions' | 'responses' | 'messages';
+
 export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
 }
@@ -15,5 +20,5 @@ export interface UpstreamFetchOptions {
 // plane treats SSE as the only upstream transport for these endpoints; providers
 // inject `stream: true` so middle layers never observe a non-streaming variant.
 // `messages_count_tokens` and `embeddings` remain non-streaming JSON.
-export const isStreamingEndpoint = (endpoint: EndpointKey): boolean =>
+export const isStreamingEndpoint = (endpoint: EndpointKey): endpoint is StreamingEndpointKey =>
   endpoint === 'chat_completions' || endpoint === 'responses' || endpoint === 'messages';
