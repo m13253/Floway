@@ -668,31 +668,6 @@ export type ResponsesStreamEvent =
   }
   | { type: 'ping' };
 
-// Forward-compatibility escape hatch for unknown event types. Earlier
-// versions of `ResponsesStreamEvent` ended with a permissive
-// `{ type: string; [key: string]: unknown }` catch-all in the union;
-// because that branch matches any object with a `type` field and any
-// extra keys, it silently let test fixtures compile against
-// `ResponsesStreamEvent` while missing required fields on the
-// `response` member (e.g. spec-required `error: null` /
-// `incomplete_details: null` on `response.created.response`). Splitting
-// the catch-all into a separate exported type means callers that need
-// to accept unknown future events must opt in explicitly (and assume
-// the responsibility of asserting field shapes themselves) instead of
-// letting every malformed fixture compile through silently.
-export interface UnknownResponsesStreamEvent {
-  type: string;
-  [key: string]: unknown;
-}
-
-// Union for consumers that explicitly need to accept future / unknown
-// event types alongside the strongly-typed ones. Use this when reading
-// from an upstream wire we do not fully control. Producers (test
-// fixtures, gateway synthesizers) should keep using
-// `ResponsesStreamEvent` so missing required fields are caught at
-// compile time.
-export type ResponsesStreamEventOrUnknown = ResponsesStreamEvent | UnknownResponsesStreamEvent;
-
 // Gateway-side extension: upstream Responses streams may omit `sequence_number`
 // when probing, so the gateway-internal shape leaves it optional.
 export type RawResponsesStreamEvent = ResponsesStreamEvent & {
