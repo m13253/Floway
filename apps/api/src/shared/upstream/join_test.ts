@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { assertEquals, assertFalse } from '../../test-assert.ts';
 import { joinBaseAndPath, validateUpstreamPath } from '@floway-dev/provider';
+import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 test('validateUpstreamPath accepts a leading-slash absolute path', () => {
   const result = validateUpstreamPath('/v1/messages', 'messages');

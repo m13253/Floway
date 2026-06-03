@@ -1,10 +1,9 @@
 import { test } from 'vitest';
 
 import { targetProviderResultToFrames } from './emit.ts';
-import { assertEquals, assertStringIncludes } from '../../../test-assert.ts';
-import { stubProvider, stubUpstreamModel } from '../../../test-helpers.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../sources/responses/stateful-store.ts';
+import { assertEquals, assertStringIncludes, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const baseInvocation = (): Invocation<{ model: string; stream?: boolean }> => ({
   sourceApi: 'messages',

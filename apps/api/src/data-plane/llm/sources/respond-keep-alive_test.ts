@@ -7,7 +7,6 @@ import { respondGemini } from './gemini/respond.ts';
 import { respondMessages } from './messages/respond.ts';
 import { respondResponses } from './responses/respond.ts';
 import { createHttpStatefulResponsesStore } from './responses/stateful-store.ts';
-import { assertEquals } from '../../../test-assert.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/proxy-sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -16,6 +15,7 @@ import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
+import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
   promise: Promise<T>;

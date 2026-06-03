@@ -5,12 +5,12 @@ import { storeResponsesOutputItems, type StoreResponsesContext } from './output.
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../../repo/types.ts';
-import { assert, assertEquals } from '../../../../../test-assert.ts';
 import type { RequestContext } from '../../../../llm/interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesOutputItem, ResponsesResult, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 import { translateResponsesViaMessages } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

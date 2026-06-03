@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { parseSSEStream } from './parse-sse.ts';
-import { assertEquals } from '../../../../test-assert.ts';
+import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
   promise: Promise<T>;

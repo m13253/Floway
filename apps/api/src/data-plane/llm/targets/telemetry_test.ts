@@ -3,10 +3,9 @@ import { test } from 'vitest';
 import { recordUpstreamHttpFailure, withUpstreamTelemetry } from './telemetry.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { assertEquals } from '../../../test-assert.ts';
-import { stubProvider, stubUpstreamModel } from '../../../test-helpers.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../sources/responses/stateful-store.ts';
+import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 interface TelemetryHarness {
   repo: InMemoryRepo;

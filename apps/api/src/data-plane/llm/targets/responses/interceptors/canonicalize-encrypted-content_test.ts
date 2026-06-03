@@ -1,13 +1,12 @@
 import { test } from 'vitest';
 
 import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
-import { assertEquals } from '../../../../../test-assert.ts';
-import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../../sources/responses/stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

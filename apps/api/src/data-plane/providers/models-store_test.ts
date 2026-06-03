@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { assertEquals } from '../../test-assert.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import {
   clearModelsStore,
@@ -10,6 +9,7 @@ import {
   readModelsStore,
   writeModelsStore,
 } from '@floway-dev/provider';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('inProcessMemo returns the cached value within TTL', async () => {
   clearModelsStore();

@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { responsesProtocolFrameToSSEFrame } from './to-sse.ts';
-import { assertEquals } from '../../../../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('responsesProtocolFrameToSSEFrame serializes events without owning termination', () => {
   const frames = [

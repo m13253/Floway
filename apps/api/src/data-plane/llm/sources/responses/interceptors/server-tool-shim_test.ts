@@ -16,7 +16,6 @@ import {
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -43,6 +42,7 @@ import type {
   ResponsesWebSearchAction,
 } from '@floway-dev/protocols/responses';
 import type { EventResult, ExecuteResult } from '@floway-dev/provider';
+import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
 

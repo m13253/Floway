@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { responsesStreamFramesToEvents } from './from-stream.ts';
-import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
 import { eventFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

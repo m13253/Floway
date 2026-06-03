@@ -7,7 +7,7 @@ import type { ApiKey } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
 import { initImageProcessor, clearModelsStore } from '@floway-dev/provider';
-import type { TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
@@ -17,9 +17,6 @@ interface SetupOptions {
   copilotUpstream?: UpstreamRecord;
   searchConfig?: SearchConfig;
 }
-
-type FetchInput = Parameters<typeof fetch>[0];
-type FetchInit = Parameters<typeof fetch>[1];
 
 interface AppTestContext {
   repo: InMemoryRepo;
@@ -44,8 +41,6 @@ interface SSEChunk {
   event?: string;
   data: string | Record<string, unknown>;
 }
-
-let fetchLock: Promise<void> = Promise.resolve();
 
 const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 
@@ -134,35 +129,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   }
 
   return { repo, adminKey, apiKey, githubAccount, copilotUpstream };
-}
-
-export async function withMockedFetch<T>(handler: (request: Request) => Promise<Response> | Response, run: () => Promise<T>): Promise<T> {
-  let release: (() => void) | undefined;
-  const previousLock = fetchLock;
-  fetchLock = new Promise<void>(resolve => {
-    release = resolve;
-  });
-  await previousLock;
-
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (input: FetchInput, init?: FetchInit) => {
-    const request = input instanceof Request && init === undefined ? input : new Request(input, init);
-    return Promise.resolve(handler(request));
-  };
-
-  try {
-    return await run();
-  } finally {
-    globalThis.fetch = originalFetch;
-    release?.();
-  }
-}
-
-export function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
 }
 
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {
@@ -327,31 +293,3 @@ export function copilotModels(
     })),
   };
 }
-
-export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({
-  id: 'test-model',
-  limits: {},
-  kind: 'chat',
-  endpoints: { chatCompletions: {}, responses: {}, messages: {} },
-  enabledFlags: new Set<string>(),
-  ...overrides,
-});
-
-export const testTelemetryModelIdentity: TelemetryModelIdentity = {
-  model: 'test-model',
-  upstream: 'test-upstream',
-  modelKey: 'test-model-key', cost: null,
-};
-
-export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvider => ({
-  getProvidedModels: () => Promise.resolve([]),
-  getPricingForModelKey: () => null,
-  callChatCompletions: () => Promise.reject(new Error('stubProvider.callChatCompletions was called')),
-  callResponses: () => Promise.reject(new Error('stubProvider.callResponses was called')),
-  callMessages: () => Promise.reject(new Error('stubProvider.callMessages was called')),
-  callMessagesCountTokens: () => Promise.reject(new Error('stubProvider.callMessagesCountTokens was called')),
-  callEmbeddings: () => Promise.reject(new Error('stubProvider.callEmbeddings was called')),
-  callImagesGenerations: () => Promise.reject(new Error('stubProvider.callImagesGenerations was called')),
-  callImagesEdits: () => Promise.reject(new Error('stubProvider.callImagesEdits was called')),
-  ...overrides,
-});
