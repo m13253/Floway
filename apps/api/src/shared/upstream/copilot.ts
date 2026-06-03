@@ -14,8 +14,8 @@ export interface CopilotUpstream extends Upstream {
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
 // `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
 // paths are not admin-configurable: they reflect Copilot's own contract, not
-// a deployment choice. There is no native `/responses/compact`; the provider
-// replicates compaction over `/responses` itself, so that key is absent here.
+// a deployment choice. Copilot has no native `/responses/compact` (compaction
+// is replicated over `/responses`), so that key is omitted.
 const COPILOT_PATHS: Partial<Record<EndpointKey, string>> = {
   chat_completions: '/chat/completions',
   responses: '/responses',

@@ -8,8 +8,7 @@ import { responsesResultToEvents, type ResponsesResult } from '@floway-dev/proto
 // compaction envelope onto SSE here, serializing the canonical event sequence
 // `responsesResultToEvents` builds. Items expand generically (opaque
 // `output_item.added`/`.done`) so the input-shaped retained messages keep their
-// role and content; the source-serve store path still mints stored ids and
-// persists each one (the compaction blob with forced upstream affinity).
+// role and content rather than being rewritten as assistant output.
 export const compactionResultToSse = (result: ResponsesResult): Response => {
   const body = responsesResultToEvents(result, { genericOutputItems: true })
     .map(frame => `event: ${frame.event.type}\ndata: ${JSON.stringify(frame.event)}`)
