@@ -1,8 +1,6 @@
-import { assertAzureUpstreamRecord, createAzureUpstream } from '../../../shared/upstream/azure.ts';
-import { isStreamingEndpoint } from '../endpoints.ts';
+import { assertAzureUpstreamRecord, createAzureUpstream } from './upstream.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
-import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamModel, type UpstreamRecord, type UpstreamModelConfig, publicModelId } from '@floway-dev/provider';
-import { mergeAnthropicBetaHeader, resolveEffectiveFlags, defaultsForProvider } from '@floway-dev/provider';
+import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;

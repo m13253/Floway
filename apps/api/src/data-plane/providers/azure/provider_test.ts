@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { createAzureProvider } from './provider.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { withMockedFetch } from '../../../test-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { createAzureProvider } from '@floway-dev/provider-azure';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {

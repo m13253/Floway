@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { assertAzureUpstreamRecord, createAzureUpstream } from './azure.ts';
 import { assertEquals, assertThrows } from '../../test-assert.ts';
 import { withMockedFetch } from '../../test-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord, createAzureUpstream } from '@floway-dev/provider-azure';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_azure',

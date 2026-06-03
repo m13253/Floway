@@ -1,8 +1,8 @@
-import { createAzureProvider } from './azure/provider.ts';
 import { createCopilotProvider } from './copilot/provider.ts';
 import { getRepo } from '../../repo/index.ts';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createCustomProvider } from '@floway-dev/provider-custom';
 
 interface ProviderModelsResult {

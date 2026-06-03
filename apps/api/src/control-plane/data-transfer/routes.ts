@@ -9,7 +9,6 @@ import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-mode
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
 import { isCopilotAccountType } from '../../shared/copilot.ts';
-import { assertAzureUpstreamRecord } from '../../shared/upstream/azure.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import type { exportQuery, importBody } from '../schemas.ts';
@@ -17,6 +16,7 @@ import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upst
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceApiName, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
 interface ExportPayload {
