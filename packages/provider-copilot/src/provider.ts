@@ -1,5 +1,6 @@
-import { isCopilotAccountType, type CopilotAccountType } from './auth.ts';
+import { assertCopilotUpstreamRecord } from './config.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
+import { copilotFetch } from './fetch.ts';
 import { chatCompletionsCopilotInterceptors } from './interceptors/chat-completions/index.ts';
 import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors, messagesCountTokensCopilotInterceptors } from './interceptors/messages/index.ts';
 import { responsesCopilotInterceptors } from './interceptors/responses/index.ts';
@@ -9,7 +10,6 @@ import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import type { CopilotRawModel } from './types.ts';
-import { copilotFetch } from './upstream.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -20,24 +20,6 @@ import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallRes
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
 }
-
-interface CopilotUpstreamUser {
-  login: string;
-  avatar_url: string;
-  name: string | null;
-  id: number;
-}
-
-interface CopilotUpstreamConfig {
-  githubToken: string;
-  accountType: CopilotAccountType;
-  user: CopilotUpstreamUser;
-}
-
-type CopilotUpstreamRecord = UpstreamRecord & {
-  provider: 'copilot';
-  config: CopilotUpstreamConfig;
-};
 
 const SOFT_MS = 10 * 60 * 1000;
 const L1_TTL_MS = 120_000;
@@ -63,54 +45,6 @@ const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'kind
   const displayName = model.display_name ?? model.name;
   if (displayName !== undefined) internal.display_name = displayName;
   return internal;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const stringField = (value: unknown, field: string): string => {
-  if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
-  return value;
-};
-
-const accountTypeField = (value: unknown): CopilotAccountType => {
-  if (!isCopilotAccountType(value)) {
-    throw new Error('Malformed copilot upstream config: accountType must be one of individual, business, enterprise');
-  }
-  return value;
-};
-
-const nullableStringField = (value: unknown, field: string): string | null => {
-  if (value !== null && typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string or null`);
-  return value;
-};
-
-const numberField = (value: unknown, field: string): number => {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error(`Malformed copilot upstream config: ${field} must be an integer`);
-  return value;
-};
-
-const copilotUserField = (value: unknown): CopilotUpstreamUser => {
-  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: user must be an object');
-  return {
-    login: stringField(value.login, 'user.login'),
-    avatar_url: stringField(value.avatar_url, 'user.avatar_url'),
-    name: nullableStringField(value.name, 'user.name'),
-    id: numberField(value.id, 'user.id'),
-  };
-};
-
-const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
-  if (record.provider !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.provider}`);
-  if (!isRecord(record.config)) throw new Error('Malformed copilot upstream config: config must be an object');
-  return {
-    ...record,
-    provider: 'copilot',
-    config: {
-      githubToken: stringField(record.config.githubToken, 'githubToken'),
-      accountType: accountTypeField(record.config.accountType),
-      user: copilotUserField(record.config.user),
-    },
-  };
 };
 
 const inferredChatCompletionsSupport = (model: CopilotRawModel): boolean => model.supported_endpoints === undefined && model.capabilities?.type === 'chat';

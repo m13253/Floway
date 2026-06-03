@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { assertCustomUpstreamRecord, customFetch } from './index.ts';
+import { customFetch, assertCustomUpstreamRecord } from './index.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertThrows, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -21,7 +21,7 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
 };
 
-test('createCustomUpstream uses default /v1/* paths', async () => {
+test('customFetch uses default /v1/* paths', async () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
 
   const seen: string[] = [];
@@ -34,10 +34,7 @@ test('createCustomUpstream uses default /v1/* paths', async () => {
       await customFetch(config, 'chat_completions', { method: 'POST', body: '{}' });
       await customFetch(config, 'responses', { method: 'POST', body: '{}' });
       await customFetch(config, 'messages', { method: 'POST', body: '{}' });
-      await customFetch(config, 'messages_count_tokens', {
-        method: 'POST',
-        body: '{}',
-      });
+      await customFetch(config, 'messages_count_tokens', { method: 'POST', body: '{}' });
       await customFetch(config, 'embeddings', { method: 'POST', body: '{}' });
       await customFetch(config, 'models', { method: 'GET' });
     },
@@ -53,7 +50,7 @@ test('createCustomUpstream uses default /v1/* paths', async () => {
   ]);
 });
 
-test('createCustomUpstream applies path overrides without an automatic /v1 prefix', async () => {
+test('customFetch applies path overrides without an automatic /v1 prefix', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -71,10 +68,7 @@ test('createCustomUpstream applies path overrides without an automatic /v1 prefi
     },
     async () => {
       await customFetch(config, 'messages', { method: 'POST', body: '{}' });
-      await customFetch(config, 'messages_count_tokens', {
-        method: 'POST',
-        body: '{}',
-      });
+      await customFetch(config, 'messages_count_tokens', { method: 'POST', body: '{}' });
       await customFetch(config, 'chat_completions', { method: 'POST', body: '{}' });
     },
   );
@@ -88,7 +82,7 @@ test('createCustomUpstream applies path overrides without an automatic /v1 prefi
   ]);
 });
 
-test('createCustomUpstream resolves the /models path from modelsFetch.endpoint', async () => {
+test('customFetch resolves the /models path from modelsFetch.endpoint', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -110,7 +104,7 @@ test('createCustomUpstream resolves the /models path from modelsFetch.endpoint',
   assertEquals(seen, 'https://custom.example.com/models');
 });
 
-test('createCustomUpstream falls back to the default /models path when modelsFetch.endpoint is absent', async () => {
+test('customFetch falls back to the default /models path when modelsFetch.endpoint is absent', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -132,42 +126,7 @@ test('createCustomUpstream falls back to the default /models path when modelsFet
   assertEquals(seen, 'https://custom.example.com/v1/models');
 });
 
-test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: false },
-      models: [
-        { upstreamModelId: 'pinned', endpoints: { chatCompletions: {} }, display_name: 'Pinned' },
-      ],
-    },
-  });
-
-  assertEquals(config.modelsFetch, { enabled: false });
-  assertEquals(config.models.length, 1);
-  assertEquals(config.models[0].upstreamModelId, 'pinned');
-  assertEquals(config.models[0].display_name, 'Pinned');
-});
-
-test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {
-  const { config } = assertCustomUpstreamRecord(baseRecord);
-  assertEquals(config.modelsFetch, { enabled: true });
-  assertEquals(config.models, []);
-});
-
-test('assertCustomUpstreamRecord treats a null modelsFetch.endpoint as no override', () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, endpoint: null },
-    },
-  });
-  assertEquals(config.modelsFetch, { enabled: true });
-});
-
-test('createCustomUpstream sends the configured bearer token', async () => {
+test('customFetch sends the configured bearer token', async () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
   let authHeader: string | null = null;
   await withMockedFetch(
@@ -183,7 +142,7 @@ test('createCustomUpstream sends the configured bearer token', async () => {
   assertEquals(authHeader, 'Bearer sk-test');
 });
 
-test('createCustomUpstream defaults authStyle to bearer when omitted', async () => {
+test('customFetch defaults authStyle to bearer when omitted', async () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
   let authHeader: string | null = null;
   let xApiKey: string | null = null;
@@ -202,7 +161,7 @@ test('createCustomUpstream defaults authStyle to bearer when omitted', async () 
   assertEquals(xApiKey, null);
 });
 
-test('createCustomUpstream with authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
+test('customFetch with authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -230,7 +189,7 @@ test('createCustomUpstream with authStyle "anthropic" sends x-api-key + anthropi
   assertEquals(anthropicVersion, '2023-06-01');
 });
 
-test('createCustomUpstream with authStyle "anthropic" preserves a caller-supplied anthropic-version', async () => {
+test('customFetch with authStyle "anthropic" preserves a caller-supplied anthropic-version', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
@@ -245,65 +204,13 @@ test('createCustomUpstream with authStyle "anthropic" preserves a caller-supplie
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetch(config,
+      await customFetch(
+        config,
         'messages',
-        { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } });
+        { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
+      );
     },
   );
 
   assertEquals(anthropicVersion, '2024-01-01');
-});
-
-test('createCustomUpstream rejects malformed opaque config instead of dropping endpoints', () => {
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          endpoints: { bogus: {} },
-        },
-      }),
-    Error,
-    'unsupported endpoint bogus',
-  );
-
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          pathOverrides: { models: '/models' },
-        },
-      }),
-    Error,
-    'unsupported pathOverrides key models',
-  );
-
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          baseUrl: 'ftp://custom.example.com',
-        },
-      }),
-    Error,
-    'baseUrl must be an http(s) URL',
-  );
-
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          authStyle: 'apiKey',
-        },
-      }),
-    Error,
-    'authStyle must be "bearer" or "anthropic"',
-  );
 });

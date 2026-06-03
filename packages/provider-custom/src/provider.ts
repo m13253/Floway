@@ -1,6 +1,7 @@
+import { assertCustomUpstreamRecord } from './config.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
+import { customFetch } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
-import { assertCustomUpstreamRecord, customFetch } from './upstream.ts';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '@floway-dev/provider';
 import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';

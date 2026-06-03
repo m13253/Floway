@@ -12,8 +12,10 @@ export {
 } from './auth.ts';
 export {
   copilotFetch,
+} from './fetch.ts';
+export {
   type CopilotUpstreamConfig,
-} from './upstream.ts';
+} from './config.ts';
 export { fetchCopilotModels } from './fetch-models.ts';
 export type { CopilotRawModel } from './types.ts';
 export {

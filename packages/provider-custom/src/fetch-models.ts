@@ -13,7 +13,8 @@
 // the published `kind` here if the upstream emits it; Tier 2 falls back to an id
 // heuristic; the chat default takes the per-upstream `endpoints` config).
 
-import { type CustomUpstreamConfig, customFetch } from './upstream.ts';
+import type { CustomUpstreamConfig } from './config.ts';
+import { customFetch } from './fetch.ts';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 

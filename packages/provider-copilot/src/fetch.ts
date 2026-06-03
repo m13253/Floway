@@ -3,7 +3,8 @@
 // endpoint to the path Copilot serves it on, then dispatches through that
 // authed fetch.
 
-import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAccountType } from './auth.ts';
+import { copilotAuthedFetch, isCopilotTokenFetchError } from './auth.ts';
+import type { CopilotUpstreamConfig } from './config.ts';
 import type { EndpointKey, UpstreamFetchOptions } from '@floway-dev/provider';
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
@@ -22,20 +23,17 @@ const COPILOT_PATHS: Record<EndpointKey, string> = {
   models: '/models',
 };
 
-// Subset of the persisted copilot upstream record's config the transport needs.
-// The full config (with the user profile) is parsed by the provider; only the
-// auth-relevant fields cross this boundary.
-export interface CopilotUpstreamConfig {
-  githubToken: string;
-  accountType: CopilotAccountType;
-}
+// Subset of the persisted copilot upstream record's config the transport needs;
+// `user` is irrelevant to the wire, so the parameter type names only the auth
+// fields. Any CopilotUpstreamConfig satisfies it structurally.
+type CopilotFetchConfig = Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>;
 
 // Issue an HTTP call against Copilot's upstream for a named endpoint. Wraps
 // `copilotAuthedFetch` (which owns the token exchange + KV cache) with the
 // endpoint→path mapping above and converts a CopilotTokenFetchError into a
 // regular Response so callers can treat token-exchange failures the same as
 // any other 4xx/5xx.
-export const copilotFetch = async (config: CopilotUpstreamConfig, endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> => {
+export const copilotFetch = async (config: CopilotFetchConfig, endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> => {
   try {
     return await copilotAuthedFetch(COPILOT_PATHS[endpoint], init, config.githubToken, config.accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
   } catch (error) {

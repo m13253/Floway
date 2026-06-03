@@ -1,4 +1,5 @@
-import { assertAzureUpstreamRecord, azureFetch } from './upstream.ts';
+import { assertAzureUpstreamRecord } from './config.ts';
+import { azureFetch } from './fetch.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags } from '@floway-dev/provider';
 
