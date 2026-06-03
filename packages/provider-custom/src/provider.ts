@@ -146,10 +146,8 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // models so their pinned ids win.
   const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
-  // Non-streaming endpoints only — count_tokens / embeddings /
-  // images_generations. Streaming endpoints (chat_completions / responses /
-  // messages) go through `callStreaming` below, which injects `stream: true`
-  // and pipes the SSE body through the protocol parser.
+  // Non-streaming endpoints (count_tokens / embeddings / images_generations).
+  // Streaming endpoints go through `callStreaming` below.
   const call = (endpoint: 'messages_count_tokens' | 'embeddings' | 'images_generations', model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     return customFetch(config, endpoint, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers })
       .then(response => ({

@@ -180,10 +180,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
-  // Non-streaming endpoints only — count_tokens / embeddings. Streaming
-  // endpoints (chat_completions / responses / messages) go through
-  // `callStreaming` below, which injects `stream: true` and pipes the SSE
-  // body through the protocol parser.
+  // Non-streaming endpoints (count_tokens / embeddings). Streaming endpoints
+  // go through `callStreaming` below.
   const call = async (
     endpoint: 'messages_count_tokens' | 'embeddings',
     body: Record<string, unknown>,

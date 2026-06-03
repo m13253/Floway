@@ -26,10 +26,8 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
 export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const azure = assertAzureUpstreamRecord(record);
 
-  // Non-streaming endpoints only — count_tokens / embeddings /
-  // images_generations. Streaming endpoints (chat_completions / responses /
-  // messages) go through `callStreaming` below, which injects `stream: true`
-  // and pipes the SSE body through the protocol parser.
+  // Non-streaming endpoints (count_tokens / embeddings / images_generations).
+  // Streaming endpoints go through `callStreaming` below.
   const call = (endpoint: 'messages_count_tokens' | 'embeddings' | 'images_generations', model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     const upstreamModelId = providerData(model).upstreamModelId;
     return azureFetch(azure.config, endpoint, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers })
