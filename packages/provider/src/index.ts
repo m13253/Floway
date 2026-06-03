@@ -98,3 +98,8 @@ export {
   pricingField,
   publicModelId,
 } from './model-config.ts';
+
+export type { ValidatePathErr, ValidatePathOk } from './join.ts';
+export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
+
+export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
