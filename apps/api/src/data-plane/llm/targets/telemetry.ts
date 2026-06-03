@@ -1,6 +1,5 @@
 import { type PerformanceTelemetryContext, recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
-import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { PerformanceApiName, TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -99,7 +98,10 @@ function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: Performanc
     if (event.status === 'failed') return 'failure';
     return null;
   }
-  if (chatCompletionsErrorPayloadMessage(event)) return 'failure';
+  // chat-completions's mid-stream `{error: {...}}` envelope is thrown by
+  // parseChatCompletionsStream before any frame reaches downstream, so the
+  // upstream-thrown path in withUpstreamTelemetry handles it. Nothing else
+  // marks chat-completions as a failure terminal until [DONE] arrives.
   return null;
 }
 
