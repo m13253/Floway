@@ -41,7 +41,7 @@ export const targetProviderResultToFrames = async (
   // Provider layer forces stream=true on every LLM endpoint, so any non-SSE
   // 200 response is a provider-contract violation: convert it to a 502 with
   // diagnostic context rather than silently parsing JSON. See
-  // providers/endpoints.ts::isStreamingEndpoint.
+  // @floway-dev/provider's isStreamingEndpoint.
   const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.includes('text/event-stream')) {
     recordUpstreamHttpFailure(invocation, request, targetApi, modelIdentity);
