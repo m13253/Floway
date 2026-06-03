@@ -1,21 +1,14 @@
 import type { ProviderStreamResult } from './provider.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
-export interface ProviderStreamParserOptions {
-  signal?: AbortSignal;
-}
-
 export type ProviderStreamParser<TEvent> = (
   body: ReadableStream<Uint8Array>,
-  options?: ProviderStreamParserOptions,
+  options?: { signal?: AbortSignal },
 ) => AsyncIterable<ProtocolFrame<TEvent>>;
 
-// Provider-side helper: await the upstream fetch, decide the response shape,
-// and either relay it verbatim (`ok: false`) or pipe the SSE body through the
-// protocol-specific parser to produce typed `ProtocolFrame<TEvent>`. A 2xx
-// non-SSE upstream is a provider-contract violation (every streaming endpoint
-// is called with `stream: true`); the throw bubbles to the target boundary,
-// which turns it into a 502.
+// A 2xx non-SSE upstream is a provider-contract violation: every streaming
+// endpoint is called with stream=true. The throw bubbles to the target
+// boundary, which turns it into a 502.
 export const streamingProviderCall = async <TEvent>(
   upstreamFetch: Promise<Response>,
   parser: ProviderStreamParser<TEvent>,

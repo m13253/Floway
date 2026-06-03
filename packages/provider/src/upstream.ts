@@ -7,9 +7,7 @@
 // exposes it as a separate configurable endpoint.
 export type EndpointKey = 'chat_completions' | 'responses' | 'messages' | 'messages_count_tokens' | 'embeddings' | 'images_generations' | 'images_edits' | 'models';
 
-// Subset of EndpointKey whose calls go over SSE. Provider implementations
-// type their callStreaming helpers with this so the streaming-vs-not split
-// is named in one place.
+// Subset of EndpointKey whose calls go over SSE.
 export type StreamingEndpointKey = 'chat_completions' | 'responses' | 'messages';
 
 export interface UpstreamFetchOptions {

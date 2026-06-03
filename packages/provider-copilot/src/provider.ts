@@ -24,8 +24,6 @@ interface CopilotProviderData {
 const SOFT_MS = 10 * 60 * 1000;
 const L1_TTL_MS = 120_000;
 
-const providerData = (model: UpstreamModel): CopilotProviderData => model.providerData as CopilotProviderData;
-
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields
 // shared by every provider. kind/endpoints/providerData/enabledFlags are added
 // by the caller because they depend on Copilot's endpoint knowledge and the
@@ -46,10 +44,6 @@ const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'kind
   if (displayName !== undefined) internal.display_name = displayName;
   return internal;
 };
-
-const inferredChatCompletionsSupport = (model: CopilotRawModel): boolean => model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
-
-const inferredEmbeddingSupport = (model: CopilotRawModel): boolean => model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
 
 // Copilot's `/models` reports each model's served endpoints as public paths; map
 // one onto our structured endpoint key. Both `/x` and `/v1/x` spellings appear.
@@ -88,9 +82,9 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
   // supported endpoints.
   if (endpoint === 'messages' && model.id.startsWith('claude-')) return true;
   if (endpoint === 'chatCompletions') {
-    return inferredChatCompletionsSupport(model);
+    return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
   }
-  if (endpoint === 'embeddings') return inferredEmbeddingSupport(model);
+  if (endpoint === 'embeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
   return false;
 };
 
@@ -120,7 +114,7 @@ const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: Mo
   // Copilot exposes one canonical public Claude model id per family. Raw
   // variant selection is derived from request fields such as reasoning effort
   // and anthropic-beta, not from the client's original model alias string.
-  const rawModels = providerData(model).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
+  const rawModels = (model.providerData as CopilotProviderData).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
   if (rawModels.length === 0) {
     throw new Error(`Copilot provider exposed ${endpoint} for ${model.id}, but no raw variant supports that endpoint`);
   }
@@ -180,8 +174,6 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
-  // Non-streaming endpoints (count_tokens / embeddings). Streaming endpoints
-  // go through `callStreaming` below.
   const call = async (
     endpoint: 'messages_count_tokens' | 'embeddings',
     body: Record<string, unknown>,

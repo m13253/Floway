@@ -501,13 +501,8 @@ export interface ResponsesOutputImageGenerationCall {
 
 // ── Stream event types ──
 
-// Sequence number is REQUIRED in the OpenAI Responses streaming spec, but
-// some upstreams (notably probes / fast-path completions on Copilot) omit
-// it on the wire. The protocol's stream parser fills it in when missing
-// (monotonic counter); synthesizers (`responsesResultToEvents`) always set
-// it. Consumers that only read a few field slots may tolerate the optional
-// shape directly; anything that requires sequenced delivery can narrow with
-// `Required<Pick<ResponsesStreamEvent, 'sequence_number'>>`.
+// Spec marks sequence_number required, but some Copilot upstreams omit it
+// on the wire; the stream parser backfills a monotonic counter when missing.
 export type ResponsesStreamEvent = ResponsesStreamEventVariant & { sequence_number?: number };
 
 type ResponsesStreamEventVariant =

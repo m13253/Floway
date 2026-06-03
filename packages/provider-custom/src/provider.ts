@@ -84,14 +84,6 @@ const finalizeCustomModels = (
   return models;
 };
 
-const pricingByRawIdFromResponse = (response: CustomModelsResponse): Map<string, ModelPricing> => {
-  const pricing = new Map<string, ModelPricing>();
-  for (const raw of response.data) {
-    if (raw.id && raw.cost) pricing.set(raw.id, raw.cost);
-  }
-  return pricing;
-};
-
 export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
   const configuredEndpoints = config.endpoints;
@@ -132,7 +124,11 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // empty until the first list call lands.
   let pricingByRawId: ReadonlyMap<string, ModelPricing> = new Map();
   const rememberPricing = (response: CustomModelsResponse): void => {
-    pricingByRawId = pricingByRawIdFromResponse(response);
+    const next = new Map<string, ModelPricing>();
+    for (const raw of response.data) {
+      if (raw.id && raw.cost) next.set(raw.id, raw.cost);
+    }
+    pricingByRawId = next;
   };
 
   // Drop any auto-fetched model whose id is pinned by a manual override so the
@@ -146,8 +142,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // models so their pinned ids win.
   const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
-  // Non-streaming endpoints (count_tokens / embeddings / images_generations).
-  // Streaming endpoints go through `callStreaming` below.
   const call = (endpoint: 'messages_count_tokens' | 'embeddings' | 'images_generations', model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     return customFetch(config, endpoint, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers })
       .then(response => ({

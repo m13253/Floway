@@ -26,9 +26,6 @@ const isStructuredResponsesEvent = (event: { type: string }): boolean =>
 const projectSseJsonEvent = (event: ResponsesStreamEvent, eventName: string | undefined): ResponsesStreamEvent =>
   eventName && !(event as { type?: string }).type ? ({ ...event, type: eventName } as ResponsesStreamEvent) : event;
 
-const isResponsesWrapperEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
-  event.type === 'response.created' || event.type === 'response.in_progress';
-
 // Per OpenAI Responses spec every stream event carries a monotonic
 // `sequence_number`, but probes / fast-path completions on Copilot omit it
 // on the wire. This parser fills in the missing values with a per-stream
@@ -99,7 +96,7 @@ export const parseResponsesStream = (
       sawStructured = true;
     }
 
-    if (!sawStructured && isResponsesWrapperEvent(event)) sentWrapperTypes.add(event.type);
+    if (!sawStructured && (event.type === 'response.created' || event.type === 'response.in_progress')) sentWrapperTypes.add(event.type);
     yield eventFrame(stamp(event));
   }
 })();

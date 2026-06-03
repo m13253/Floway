@@ -14,11 +14,8 @@ export const targetModelIdentity = (invocation: Invocation<unknown>, modelKey: s
   cost: invocation.provider.getPricingForModelKey(modelKey),
 });
 
-// Wraps a provider's ProviderStreamResult with telemetry + ExecuteResult
-// boundary semantics: 2xx becomes an EventResult with upstream-success/error
-// classification; non-2xx becomes an UpstreamErrorResult relayed verbatim.
-// The provider has already decoded the SSE wire into ProtocolFrame<TEvent>,
-// so this layer does not touch frame contents.
+// The provider has already decoded the SSE wire into ProtocolFrame<TEvent>;
+// this layer adds telemetry + the ExecuteResult boundary semantics.
 export const targetStreamResultToExecuteResult = async <TEvent>(
   invocation: Invocation<unknown>,
   request: RequestContext,

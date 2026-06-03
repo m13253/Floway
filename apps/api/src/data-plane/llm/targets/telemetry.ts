@@ -18,7 +18,7 @@ export function withUpstreamTelemetry<T>(
     const recordOnce = (kind: TerminalKind, durationMs: number) => {
       if (recorded || !request.apiKeyId) return;
       recorded = true;
-      const context = upstreamContext(invocation, request, targetApi, modelIdentity);
+      const context = targetPerformanceContext(invocation, request, targetApi, modelIdentity);
       const promise = kind === 'success' ? recordPerformanceLatency(context, 'upstream_success', durationMs) : recordPerformanceError(context, 'upstream_success');
       request.scheduleBackground ? request.scheduleBackground(promise) : void promise;
     };
@@ -63,17 +63,8 @@ export function withUpstreamTelemetry<T>(
 
 export function recordUpstreamHttpFailure(invocation: Invocation<unknown>, request: RequestContext, targetApi: PerformanceApiName, modelIdentity: TelemetryModelIdentity): void {
   if (!request.apiKeyId) return;
-  const promise = recordPerformanceError(upstreamContext(invocation, request, targetApi, modelIdentity), 'upstream_success');
+  const promise = recordPerformanceError(targetPerformanceContext(invocation, request, targetApi, modelIdentity), 'upstream_success');
   request.scheduleBackground ? request.scheduleBackground(promise) : void promise;
-}
-
-export function targetPerformanceContext(
-  invocation: Invocation<unknown>,
-  request: RequestContext,
-  targetApi: PerformanceApiName,
-  modelIdentity: TelemetryModelIdentity,
-): PerformanceTelemetryContext {
-  return upstreamContext(invocation, request, targetApi, modelIdentity);
 }
 
 function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: PerformanceApiName): TerminalKind | null {
@@ -105,7 +96,7 @@ function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: Performanc
   return null;
 }
 
-function upstreamContext(invocation: Invocation<unknown>, request: RequestContext, targetApi: PerformanceApiName, modelIdentity: TelemetryModelIdentity): PerformanceTelemetryContext {
+export function targetPerformanceContext(invocation: Invocation<unknown>, request: RequestContext, targetApi: PerformanceApiName, modelIdentity: TelemetryModelIdentity): PerformanceTelemetryContext {
   return {
     keyId: request.apiKeyId ?? 'unknown',
     model: modelIdentity.model,

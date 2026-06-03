@@ -8,17 +8,6 @@ export interface ParseChatCompletionsStreamOptions {
   signal?: AbortSignal;
 }
 
-// Probes for OpenAI-style streamed error payloads on the raw JSON before it is
-// committed to the ChatCompletionsStreamEvent shape. Some upstreams report
-// mid-stream failures via `{ error: { message, type } }` instead of an HTTP
-// failure; bubble that as a thrown Error so the target boundary 502s.
-const guardChatCompletionsError = (parsed: unknown): void => {
-  const errorMessage = chatCompletionsErrorPayloadMessage(parsed);
-  if (errorMessage) {
-    throw new Error(`Upstream Chat Completions SSE error: ${errorMessage}`);
-  }
-};
-
 export const parseChatCompletionsStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseChatCompletionsStreamOptions = {},
@@ -30,7 +19,11 @@ export const parseChatCompletionsStream = (
       yield doneFrame();
       return;
     }
-    guardChatCompletionsError(frame.data);
+    // Some upstreams report mid-stream failures via `{error: {message, type}}`
+    // instead of an HTTP failure; bubble as a thrown Error so the target
+    // boundary 502s.
+    const errorMessage = chatCompletionsErrorPayloadMessage(frame.data);
+    if (errorMessage) throw new Error(`Upstream Chat Completions SSE error: ${errorMessage}`);
     yield eventFrame(frame.data);
   }
 })();

@@ -7,10 +7,6 @@ export interface ParseMessagesStreamOptions {
   signal?: AbortSignal;
 }
 
-// Wire→typed pipeline for the Messages SSE protocol. Each provider's
-// `callMessages` hands its `Response.body` to this helper to get back the
-// decoded `ProtocolFrame<MessagesStreamEvent>` stream that interceptors and
-// the target boundary consume.
 export const parseMessagesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseMessagesStreamOptions = {},

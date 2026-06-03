@@ -58,7 +58,7 @@ export type {
   ProviderTargetInterceptors,
   ResolvedModel,
 } from './provider.ts';
-export { streamingProviderCall, type ProviderStreamParser, type ProviderStreamParserOptions } from './streaming.ts';
+export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';
 
 export type { CacheRepo, ProviderRepo } from './repo.ts';
 export { getProviderRepo, initProviderRepo } from './repo.ts';
