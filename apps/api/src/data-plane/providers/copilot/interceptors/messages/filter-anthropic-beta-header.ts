@@ -1,4 +1,4 @@
-import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
+import type { MessagesInvocation, InterceptorRequest } from '@floway-dev/provider';
 
 /**
  * Copilot's Messages upstream is strict about the `anthropic-beta` header:
@@ -42,7 +42,7 @@ const ALLOWED_ANTHROPIC_BETAS = new Set([
 ]);
 const INTERLEAVED_THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
-export const withAnthropicBetaHeaderFiltered = async <TResult>(ctx: MessagesInvocation, _request: RequestContext, run: () => Promise<TResult>): Promise<TResult> => {
+export const withAnthropicBetaHeaderFiltered = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
   const inbound = ctx.anthropicBeta;
   const hasInbound = inbound !== undefined && inbound.length > 0;
 

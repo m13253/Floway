@@ -28,7 +28,6 @@ import type {
   WebSearchProviderResult,
 } from '../../../../tools/web-search/types.ts';
 import type { RequestContext, ResponsesInterceptor, ResponsesInvocation } from '../../../interceptors.ts';
-import type { EventResult, ExecuteResult } from '../../../shared/errors/result.ts';
 import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -43,6 +42,7 @@ import type {
   ResponsesStreamEvent,
   ResponsesWebSearchAction,
 } from '@floway-dev/protocols/responses';
+import type { EventResult, ExecuteResult } from '@floway-dev/provider';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
 

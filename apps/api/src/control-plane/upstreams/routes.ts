@@ -7,7 +7,6 @@ import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
 import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '../../shared/copilot.ts';
 import { assertAzureUpstreamRecord, createAzureUpstream } from '../../shared/upstream/azure.ts';
 import { createCopilotUpstream } from '../../shared/upstream/copilot.ts';
@@ -16,6 +15,7 @@ import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
+import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotUpstreamUser {
   login: string;

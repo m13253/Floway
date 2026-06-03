@@ -4,10 +4,10 @@ import { resolveMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted }
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
-import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

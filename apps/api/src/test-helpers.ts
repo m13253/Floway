@@ -1,16 +1,16 @@
 import { app } from './app.ts';
 import { clearModelsStore } from './data-plane/providers/models-store.ts';
-import type { ModelProvider, UpstreamModel } from './data-plane/providers/types.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
 import { initImageProcessor } from './image/index.ts';
 import { createInMemoryImageProcessor } from './image/memory.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
-import type { ApiKey, TelemetryModelIdentity, UpstreamRecord } from './repo/types.ts';
+import type { ApiKey } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
 import { clearCopilotTokenCache } from './shared/copilot.ts';
 import type { Upstream } from './shared/upstream/types.ts';
+import type { TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
 
 interface SetupOptions {
   adminKey?: string;

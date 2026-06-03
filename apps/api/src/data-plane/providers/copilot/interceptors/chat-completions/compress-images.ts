@@ -1,11 +1,11 @@
 import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '../../../../../image/inline.ts';
-import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
+import type { ProviderChatCompletionsInterceptor } from '@floway-dev/provider';
 
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an
 // `image_url` part) in the outgoing Chat Completions payload to WebP before
 // the Copilot upstream call. Remote https image references are left untouched.
-export const withInlineImagesCompressed: ChatCompletionsInterceptor = async (ctx, _request, run) => {
+export const withInlineImagesCompressed: ProviderChatCompletionsInterceptor = async (ctx, _request, run) => {
   const targets: { url: string }[] = [];
   for (const message of ctx.payload.messages) {
     if (!Array.isArray(message.content)) continue;

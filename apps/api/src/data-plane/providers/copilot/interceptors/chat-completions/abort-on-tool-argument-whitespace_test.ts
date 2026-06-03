@@ -4,11 +4,11 @@ import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whit
 import { assert, assertEquals, assertStringIncludes } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
-import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 
 const invocation = (): ChatCompletionsInvocation => ({
   sourceApi: 'chat-completions',

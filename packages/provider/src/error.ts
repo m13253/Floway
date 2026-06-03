@@ -1,9 +1,9 @@
-import type { NonLlmServeApiName } from '../../../shared/api-names.ts';
-import type { LlmSourceApi, LlmTargetApi } from '../../interceptors.ts';
-
-// Embeddings and images are not part of the LLM source-routing graph but use
-// the same debug envelope when their handlers fail; widen at this boundary only.
-export type DebugSourceApi = LlmSourceApi | NonLlmServeApiName;
+// Errors that bubble out of source/target emit or interceptors and need a
+// structured envelope for the api debug response. Provider/source api lanes
+// are typed as a free string here so the package stays decoupled from the
+// api-internal `LlmSourceApi` / `NonLlmServeApiName` unions — the api always
+// passes the narrowed values it owns.
+export type DebugSourceApi = string;
 
 export interface InternalDebugError {
   type: 'internal_error';
@@ -12,7 +12,7 @@ export interface InternalDebugError {
   stack?: string;
   cause?: unknown;
   source_api: DebugSourceApi;
-  target_api?: LlmTargetApi;
+  target_api?: string;
 }
 
 const serializeCause = (cause: unknown): unknown => {
@@ -26,7 +26,7 @@ const serializeCause = (cause: unknown): unknown => {
   };
 };
 
-export const toInternalDebugError = (error: unknown, sourceApi: DebugSourceApi, targetApi?: LlmTargetApi): InternalDebugError => {
+export const toInternalDebugError = (error: unknown, sourceApi: DebugSourceApi, targetApi?: string): InternalDebugError => {
   const known = error instanceof Error ? error : new Error(String(error));
 
   return {

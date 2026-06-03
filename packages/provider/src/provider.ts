@@ -1,44 +1,11 @@
-import type { UpstreamProviderKind } from '../../repo/types.ts';
-import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesCountTokensInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
+import type { ProviderChatCompletionsInterceptor, ProviderGeminiInterceptor, ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor, ProviderResponsesInterceptor } from './invocation.ts';
+import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-
-// The internal model shape: what providers produce and what the registry
-// stores. Only fields the data plane actually consumes — to expose downstream
-// (id, display_name, owned_by, created, limits) or to drive request-time
-// decisions (max_output_tokens as the translation fallback). Provider-internal
-// raw fields stay inside that provider's own types and projections; nothing
-// upstream-shaped leaks onto this neutral type.
-//
-// `kind` is the high-level endpoint-family discriminator; `endpoints`
-// (on UpstreamModel) is the precise per-protocol availability map used by
-// the planner. They are linked invariants enforced at the producer boundary:
-//   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
-//   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
-//   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
-export interface InternalModel {
-  id: string;
-  display_name?: string;
-  owned_by?: string;
-  created?: number;
-  limits: {
-    max_output_tokens?: number;
-    max_context_window_tokens?: number;
-    max_prompt_tokens?: number;
-  };
-  kind: ModelKind;
-  cost?: ModelPricing;
-}
-
-export interface UpstreamModel extends InternalModel {
-  endpoints: ModelEndpoints;
-  providerData?: unknown;
-  enabledFlags: ReadonlySet<string>;
-}
+import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
 
 export interface ProviderModelRecord {
   upstream: string;
@@ -63,23 +30,23 @@ export interface ResolvedModel extends InternalModel {
 }
 
 export interface ProviderSourceInterceptors {
-  messages?: readonly MessagesInterceptor[];
-  responses?: readonly ResponsesInterceptor[];
-  chatCompletions?: readonly ChatCompletionsInterceptor[];
-  gemini?: readonly GeminiInterceptor[];
+  messages?: readonly ProviderMessagesInterceptor[];
+  responses?: readonly ProviderResponsesInterceptor[];
+  chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
+  gemini?: readonly ProviderGeminiInterceptor[];
 }
 
 export interface ProviderTargetInterceptors {
-  messages?: readonly MessagesInterceptor[];
+  messages?: readonly ProviderMessagesInterceptor[];
   // Separate from `messages` because count_tokens returns a raw upstream
   // Response (no protocol-frame translation), and only the header/payload
   // mutators that pre-Path A applied to count_tokens (vision, initiator,
   // anthropic-beta) belong here. Chat-only mutators like thinking-display
   // promotion and cache_control.scope stripping never ran on count_tokens
   // and stay on `messages`.
-  messagesCountTokens?: readonly MessagesCountTokensInterceptor[];
-  responses?: readonly ResponsesInterceptor[];
-  chatCompletions?: readonly ChatCompletionsInterceptor[];
+  messagesCountTokens?: readonly ProviderMessagesCountTokensInterceptor[];
+  responses?: readonly ProviderResponsesInterceptor[];
+  chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
 }
 
 export interface ModelProviderInstance {
@@ -101,6 +68,16 @@ export interface ProviderCallResult {
   response: Response;
   modelKey: string;
 }
+
+// `/responses/compact` is non-streaming: the provider produces the
+// `response.compaction` envelope as a value — Azure/custom parse it from the
+// native endpoint, Copilot reshapes it from a `compaction_trigger` turn — so
+// the target builds the event frames itself rather than re-parsing a
+// synthesized SSE body. An upstream failure carries the raw Response so the
+// boundary reports it verbatim.
+export type ProviderCompactionResult =
+  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
 
 export interface ModelProvider {
   getProvidedModels(): Promise<readonly UpstreamModel[]>;

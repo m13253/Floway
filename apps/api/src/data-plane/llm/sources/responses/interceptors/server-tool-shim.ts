@@ -1,7 +1,6 @@
 import { jsonrepair } from 'jsonrepair';
 
 import type { InterceptorRun, RequestContext, ResponsesInterceptor, ResponsesInvocation } from '../../../interceptors.ts';
-import type { EventResultMetadata, ExecuteResult } from '../../../shared/errors/result.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { StatefulResponsesStore } from '../stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -15,6 +14,7 @@ import type {
   ResponsesTool,
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
+import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
 
 export interface MergeUsage {
   input_tokens: number;

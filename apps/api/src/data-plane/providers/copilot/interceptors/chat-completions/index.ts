@@ -7,7 +7,7 @@ import { withCacheControlMarkersAttached } from './attach-cache-control-markers.
 import { withInlineImagesCompressed } from './compress-images.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
-import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderChatCompletionsInterceptor } from '@floway-dev/provider';
 
 // Order matters: payload-mutating interceptors run first so the header
 // interceptors see the final outgoing payload, then header interceptors
@@ -20,4 +20,4 @@ export const chatCompletionsCopilotInterceptors = [
   withCacheControlMarkersAttached,
   withInitiatorHeaderSet,
   withVisionHeaderSet,
-] as const satisfies readonly ChatCompletionsInterceptor[];
+] as const satisfies readonly ProviderChatCompletionsInterceptor[];

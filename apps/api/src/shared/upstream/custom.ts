@@ -22,8 +22,8 @@
 import { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 import { endpointsField, modelsField, type UpstreamModelConfig } from './model-config.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
-import type { UpstreamRecord } from '../../repo/types.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic';
 

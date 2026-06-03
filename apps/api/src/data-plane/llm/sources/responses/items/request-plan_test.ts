@@ -11,11 +11,11 @@ import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../../repo/types.ts';
 import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel } from '../../../../../test-helpers.ts';
-import type { ModelProviderInstance, ProviderModelRecord } from '../../../../providers/types.ts';
 import { createHttpStatefulResponsesStore } from '../stateful-store.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ModelProviderInstance, ProviderModelRecord } from '@floway-dev/provider';
 import { chatCompletionsViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const packReasoningSignature = (id: string): string => `@${id}`;

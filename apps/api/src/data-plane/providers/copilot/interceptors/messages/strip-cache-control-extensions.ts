@@ -1,4 +1,4 @@
-import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 /**
  * Two `cache_control` sub-fields are beta extensions to the base
@@ -42,7 +42,7 @@ const stripExtensions = (block: Record<string, unknown>): void => {
   else delete block.cache_control;
 };
 
-export const withCacheControlExtensionsStripped: MessagesInterceptor = async (ctx, _request, run) => {
+export const withCacheControlExtensionsStripped: ProviderMessagesInterceptor = async (ctx, _request, run) => {
   if (Array.isArray(ctx.payload.system)) {
     for (const block of ctx.payload.system as unknown as Record<string, unknown>[]) {
       stripExtensions(block);

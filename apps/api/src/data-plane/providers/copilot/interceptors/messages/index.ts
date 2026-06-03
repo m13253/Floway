@@ -17,7 +17,7 @@ import { withCacheControlExtensionsStripped } from './strip-cache-control-extens
 import { withEagerInputStreamingStripped } from './strip-eager-input-streaming.ts';
 import { withStructuredOutputFormatStripped } from './strip-structured-output-format.ts';
 import { withToolStrictStripped } from './strip-tool-strict.ts';
-import type { MessagesCountTokensInterceptor, MessagesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 // `withMessagesWebSearchShim` is intentionally NOT registered here. It runs
 // via the unified source-side optional table (filtered by enabled flags); the
@@ -37,7 +37,7 @@ export const messagesCopilotSourceInterceptors = [
   withCompactHeadersSet,
   withClaudeAgentHeadersSet,
   withInteractionIdHeaderSet,
-] as const satisfies readonly MessagesInterceptor[];
+] as const satisfies readonly ProviderMessagesInterceptor[];
 
 // Order matters: payload-mutating interceptors run first so the header
 // interceptors see the final outgoing payload, then header interceptors
@@ -57,7 +57,7 @@ export const messagesCopilotInterceptors = [
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaHeaderFiltered,
-] as const satisfies readonly MessagesInterceptor[];
+] as const satisfies readonly ProviderMessagesInterceptor[];
 
 // /v1/messages/count_tokens is a one-shot HTTP exchange that returns the raw
 // upstream Response. Pre-Path A the Copilot provider's call helper applied
@@ -81,4 +81,4 @@ export const messagesCountTokensCopilotInterceptors = [
   withVisionHeaderSet,
   withInitiatorHeaderSet,
   withAnthropicBetaHeaderFiltered,
-] as const satisfies readonly MessagesCountTokensInterceptor[];
+] as const satisfies readonly ProviderMessagesCountTokensInterceptor[];

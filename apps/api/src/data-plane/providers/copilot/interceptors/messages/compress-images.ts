@@ -1,8 +1,8 @@
 import { compressBase64ImageToWebp } from '../../../../../image/inline.ts';
 import { fitWithin, type SizeCaps } from '../../../../../image/size.ts';
 import type { ImageSizeCalculator } from '../../../../../image/types.ts';
-import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/messages';
+import type { MessagesInvocation, InterceptorRequest } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here):
@@ -48,7 +48,7 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
 // same definition serves both the streaming Messages target chain and the
 // count_tokens chain, so count_tokens sizes the same recompressed payload the
 // chat path sends.
-export const withInlineImagesCompressed = async <TResult>(ctx: MessagesInvocation, _request: RequestContext, run: () => Promise<TResult>): Promise<TResult> => {
+export const withInlineImagesCompressed = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
   const blocks = collectImageBlocks(ctx.payload.messages);
   if (blocks.length > 0) {
     const caps = claudeImageCaps(ctx.upstreamModel.id);

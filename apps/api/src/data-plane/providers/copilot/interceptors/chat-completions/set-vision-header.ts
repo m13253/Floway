@@ -1,4 +1,4 @@
-import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderChatCompletionsInterceptor } from '@floway-dev/provider';
 
 /**
  * Copilot's Chat Completions endpoint requires the private
@@ -9,7 +9,7 @@ import type { ChatCompletionsInterceptor } from '../../../../llm/interceptors.ts
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/main/src/services/copilot/create-chat-completions.ts#L20-L24
  */
-export const withVisionHeaderSet: ChatCompletionsInterceptor = async (ctx, _request, run) => {
+export const withVisionHeaderSet: ProviderChatCompletionsInterceptor = async (ctx, _request, run) => {
   const hasImage = ctx.payload.messages.some(
     message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'),
   );

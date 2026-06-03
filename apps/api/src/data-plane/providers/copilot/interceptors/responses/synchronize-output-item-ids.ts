@@ -1,5 +1,5 @@
-import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 import type { ResponsesStreamEvent, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 /**
  * Copilot's `/responses` stream is inconsistent about per-output-item ids:
@@ -75,7 +75,7 @@ const fixResponsesStreamIds = (event: RawResponsesStreamEvent, tracker: StreamId
   return { ...carrier, item_id: pinnedId } as RawResponsesStreamEvent;
 };
 
-export const withOutputItemIdsSynchronized: ResponsesInterceptor = async (_ctx, _request, run) => {
+export const withOutputItemIdsSynchronized: ProviderResponsesInterceptor = async (_ctx, _request, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
 

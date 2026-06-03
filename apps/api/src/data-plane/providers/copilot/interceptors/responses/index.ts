@@ -11,7 +11,7 @@ import { withImageGenerationStripped } from './strip-image-generation.ts';
 import { withSafetyIdentifierStripped } from './strip-safety-identifier.ts';
 import { withServiceTierStripped } from './strip-service-tier.ts';
 import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
-import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 // Order matters: payload-mutating interceptors run first so the header
 // interceptors see the final outgoing payload, then header interceptors
@@ -28,4 +28,4 @@ export const responsesCopilotInterceptors = [
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
-] as const satisfies readonly ResponsesInterceptor[];
+] as const satisfies readonly ProviderResponsesInterceptor[];

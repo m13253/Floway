@@ -1,4 +1,4 @@
-import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 /**
  * Anthropic's structured outputs (beta `structured-outputs-2025-12-15`)
@@ -29,7 +29,7 @@ import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
  * - https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/messages/messages.ts (OutputConfig, JSONOutputFormat)
  * - https://github.com/imbuxiangnan-cyber/copilot-api-plus/blob/0350e8805456b2c14e12358db66ae0584a5cc4ac/src/routes/messages/handler.ts#L260-L285 (prior art: transparent retry)
  */
-export const withStructuredOutputFormatStripped: MessagesInterceptor = async (ctx, _request, run) => {
+export const withStructuredOutputFormatStripped: ProviderMessagesInterceptor = async (ctx, _request, run) => {
   const config = ctx.payload.output_config as Record<string, unknown> | undefined;
   if (config && 'format' in config) {
     delete config.format;

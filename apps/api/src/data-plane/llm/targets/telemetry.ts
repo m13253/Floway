@@ -1,8 +1,8 @@
-import type { PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
 import { type PerformanceTelemetryContext, recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { SseFrame } from '@floway-dev/protocols/common';
+import type { PerformanceApiName, TelemetryModelIdentity } from '@floway-dev/provider';
 
 type TerminalKind = 'success' | 'failure';
 

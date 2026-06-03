@@ -1,8 +1,8 @@
 import { isObjectLike } from '../../../../../shared/json-helpers.ts';
 import type { RequestContext, ResponsesInterceptor } from '../../../interceptors.ts';
-import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ExecuteResult } from '@floway-dev/provider';
 
 const CYBER_POLICY_ERROR_CODE = 'cyber_policy';
 const MAX_CYBER_POLICY_RETRIES = 10;

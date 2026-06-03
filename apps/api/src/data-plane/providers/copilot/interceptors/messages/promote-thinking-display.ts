@@ -1,7 +1,7 @@
-import type { MessagesInterceptor, MessagesInvocation } from '../../../../llm/interceptors.ts';
 import { copilotRawModelId } from '../../model-name.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
+import type { ProviderMessagesInterceptor, MessagesInvocation } from '@floway-dev/provider';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 
@@ -91,7 +91,7 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
  * - https://github.com/anthropics/claude-code/issues/46987
  * - https://github.com/anthropics/claude-code/issues/50477
  */
-export const withThinkingDisplayPromoted: MessagesInterceptor = async (ctx, _request, run) => {
+export const withThinkingDisplayPromoted: ProviderMessagesInterceptor = async (ctx, _request, run) => {
   const downstreamDisplay = resolveMessagesDownstreamThinkingDisplay(ctx);
   const thinking = ctx.payload.thinking;
   const hasActiveThinking = !!thinking && thinking.type !== 'disabled';

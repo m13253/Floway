@@ -1,11 +1,10 @@
+import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { responsesStreamFramesToEvents } from './events/from-stream.ts';
 import { responsesBaseInterceptors } from './interceptors/index.ts';
-import type { TelemetryModelIdentity } from '../../../../repo/types.ts';
 import { type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
-import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
-import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { TelemetryModelIdentity, eventResult, type ExecuteResult  } from '@floway-dev/provider';
 
 const targetApi = 'responses';
 

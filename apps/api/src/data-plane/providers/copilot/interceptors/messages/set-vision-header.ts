@@ -1,5 +1,5 @@
-import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import type { MessagesAssistantMessage, MessagesUserMessage } from '@floway-dev/protocols/messages';
+import type { MessagesInvocation, InterceptorRequest } from '@floway-dev/provider';
 
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
@@ -28,7 +28,7 @@ const contentHasImage = (content: MessagesUserMessage['content'] | MessagesAssis
   });
 };
 
-export const withVisionHeaderSet = async <TResult>(ctx: MessagesInvocation, _request: RequestContext, run: () => Promise<TResult>): Promise<TResult> => {
+export const withVisionHeaderSet = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
   if (ctx.payload.messages.some(message => contentHasImage(message.content))) {
     ctx.headers['copilot-vision-request'] = 'true';
   }

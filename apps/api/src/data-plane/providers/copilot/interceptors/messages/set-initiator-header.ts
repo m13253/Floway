@@ -1,4 +1,4 @@
-import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
+import type { MessagesInvocation, InterceptorRequest } from '@floway-dev/provider';
 
 /**
  * Copilot's `x-initiator` header distinguishes turns that the human user just
@@ -21,7 +21,7 @@ import type { MessagesInvocation, RequestContext } from '../../../../llm/interce
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/master/src/services/copilot/create-chat-completions.ts
  */
-export const withInitiatorHeaderSet = async <TResult>(ctx: MessagesInvocation, _request: RequestContext, run: () => Promise<TResult>): Promise<TResult> => {
+export const withInitiatorHeaderSet = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
   const lastMessage = ctx.payload.messages[ctx.payload.messages.length - 1];
   let initiator: 'user' | 'agent';
   if (lastMessage?.role !== 'user') {

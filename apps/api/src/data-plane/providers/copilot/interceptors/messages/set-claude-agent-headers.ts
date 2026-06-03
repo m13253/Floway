@@ -1,6 +1,6 @@
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import { CLAUDE_AGENT_USER_AGENT } from '../../../../../shared/copilot.ts';
-import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 /**
  * When Anthropic Messages traffic comes from the Claude Code SDK proxy, VSCode
@@ -42,7 +42,7 @@ import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
  */
 const UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY = new Set(['claude-opus-4-8']);
 
-export const withClaudeAgentHeadersSet: MessagesInterceptor = async (ctx, _request, run) => {
+export const withClaudeAgentHeadersSet: ProviderMessagesInterceptor = async (ctx, _request, run) => {
   if (ctx.targetApi !== 'messages') {
     return await run();
   }

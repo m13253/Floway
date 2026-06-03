@@ -5,13 +5,12 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToRes
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
-import { type InternalDebugError, toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
-import type { ExecuteResult, PlainResult } from '../../shared/errors/result.ts';
-import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ExecuteResult, PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type RE = ResponsesStreamEvent;
 type RR = ResponsesResult;

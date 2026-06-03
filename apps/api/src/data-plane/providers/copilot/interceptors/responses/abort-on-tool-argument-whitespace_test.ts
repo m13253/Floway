@@ -4,11 +4,11 @@ import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whit
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
-import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 
 const invocation = (): ResponsesInvocation => ({
   sourceApi: 'responses',

@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
-import type { UpstreamRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 const timestamp = '2026-04-29T00:00:00.000Z';
 

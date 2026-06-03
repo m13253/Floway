@@ -1,4 +1,4 @@
-import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 /**
  * Copilot's Responses endpoint requires the private
@@ -27,7 +27,7 @@ const containsVisionContent = (value: unknown): boolean => {
   return false;
 };
 
-export const withVisionHeaderSet: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withVisionHeaderSet: ProviderResponsesInterceptor = async (ctx, _request, run) => {
   const input = ctx.payload.input;
   if (!Array.isArray(input)) return await run();
 

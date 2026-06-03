@@ -1,4 +1,4 @@
-import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 /**
  * VSCode Copilot Chat does not insert `safety_identifier` on its `/responses`
@@ -16,7 +16,7 @@ import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
  * - https://github.com/caozhiyuan/copilot-api/commit/1678c44bd083e7c3efa774c2952aadf977b4d528
  * - https://platform.openai.com/docs/api-reference/responses/create
  */
-export const withSafetyIdentifierStripped: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withSafetyIdentifierStripped: ProviderResponsesInterceptor = async (ctx, _request, run) => {
   if (ctx.sourceApi !== 'responses') {
     delete ctx.payload.safety_identifier;
   }

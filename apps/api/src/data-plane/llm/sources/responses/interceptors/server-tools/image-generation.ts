@@ -1,6 +1,5 @@
 import { sleep } from '../../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../../providers/registry.ts';
-import type { ProviderModelRecord } from '../../../../../providers/types.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../../shared/telemetry/usage.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../interceptors.ts';
 import { parseSSEStream } from '../../../../shared/stream/parse-sse.ts';
@@ -17,6 +16,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
+import type { ProviderModelRecord } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 

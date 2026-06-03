@@ -1,5 +1,5 @@
-import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool
@@ -49,7 +49,7 @@ export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void
   }
 };
 
-export const withImageGenerationStripped: ResponsesInterceptor = async (ctx, _request, run) => {
+export const withImageGenerationStripped: ProviderResponsesInterceptor = async (ctx, _request, run) => {
   stripImageGenerationFromPayload(ctx.payload);
   return await run();
 };

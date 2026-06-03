@@ -16,7 +16,7 @@
 // Vendor flags are mutually exclusive per binding — the dashboard surfaces
 // them as a single radio rather than three independent toggles.
 
-import type { UpstreamProviderKind } from '../../repo/types.ts';
+import type { UpstreamProviderKind } from '@floway-dev/provider';
 
 export interface Flag {
   id: string;

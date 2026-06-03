@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { chatCompletionsInvocation, stubRequestContext, testTelemetryModelIdentity } from './test-helpers.ts';
 import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import { eventResult } from '../../../shared/errors/result.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { eventResult } from '@floway-dev/provider';
 
 const okEvents = () => Promise.resolve(eventResult((async function* () { yield* []; })(), testTelemetryModelIdentity));
 

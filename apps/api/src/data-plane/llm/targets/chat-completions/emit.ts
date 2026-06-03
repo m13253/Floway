@@ -1,12 +1,11 @@
 import { chatCompletionsBaseInterceptors } from './interceptors/index.ts';
-import type { TelemetryModelIdentity } from '../../../../repo/types.ts';
 import { type ChatCompletionsInvocation, type RequestContext, runInterceptors } from '../../interceptors.ts';
-import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { TelemetryModelIdentity, eventResult, type ExecuteResult  } from '@floway-dev/provider';
 
 const targetApi = 'chat-completions';
 

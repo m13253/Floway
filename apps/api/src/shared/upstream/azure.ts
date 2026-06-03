@@ -1,8 +1,8 @@
 import { joinBaseAndPath } from './join.ts';
 import { isRecord, modelsField, nonEmptyStringField, type UpstreamModelConfig } from './model-config.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
-import type { UpstreamRecord } from '../../repo/types.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
   endpoint: string;

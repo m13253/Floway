@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { chatCompletionsInvocation, stubRequestContext, testTelemetryModelIdentity } from './test-helpers.ts';
 import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import type { ExecuteResult } from '../../../shared/errors/result.ts';
-import { eventResult } from '../../../shared/errors/result.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ExecuteResult } from '@floway-dev/provider';
+import { eventResult } from '@floway-dev/provider';
 
 type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
   reasoning_content?: string;

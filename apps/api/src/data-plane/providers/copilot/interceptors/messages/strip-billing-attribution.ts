@@ -1,4 +1,4 @@
-import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
+import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 /**
  * Claude Code injects `x-anthropic-billing-header` lines containing a per-turn
@@ -14,7 +14,7 @@ const CCH_HASH_RE = /cch=[0-9a-f]{5,};?/gi;
 
 const stripText = (text: string): string => text.replace(BILLING_HEADER_LINE_RE, '').replace(CCH_HASH_RE, '').trim();
 
-export const stripBillingAttribution: MessagesInterceptor = (ctx, _request, run) => {
+export const stripBillingAttribution: ProviderMessagesInterceptor = (ctx, _request, run) => {
   const { payload } = ctx;
 
   if (typeof payload.system === 'string') {
