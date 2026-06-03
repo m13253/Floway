@@ -20,6 +20,7 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
     limits: { ...(model.limits ?? {}) },
   };
   if (model.display_name !== undefined) internal.display_name = model.display_name;
+  if (model.cost) internal.cost = model.cost;
   return internal;
 };
 
@@ -74,7 +75,6 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
           providerData: {
             upstreamModelId: model.upstreamModelId,
           } satisfies AzureProviderData,
-          ...(model.cost ? { cost: model.cost } : {}),
           enabledFlags: effective,
         };
       });
