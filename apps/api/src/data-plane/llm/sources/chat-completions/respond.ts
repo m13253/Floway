@@ -10,7 +10,7 @@ import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSo
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult, PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type CC = ChatCompletionsStreamEvent;

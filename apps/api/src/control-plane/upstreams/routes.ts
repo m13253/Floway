@@ -1,20 +1,18 @@
 import type { Context } from 'hono';
 
 import { upstreamRecordToJson } from './serialize.ts';
-import { fetchCustomModels } from '../../data-plane/providers/custom/fetch-models.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '../../shared/copilot.ts';
 import { assertAzureUpstreamRecord, createAzureUpstream } from '../../shared/upstream/azure.ts';
 import { createCopilotUpstream } from '../../shared/upstream/copilot.ts';
-import { assertCustomUpstreamRecord, createCustomUpstream } from '../../shared/upstream/custom.ts';
-import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
 import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { EndpointKey, Upstream, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { assertCustomUpstreamRecord, createCustomUpstream, fetchCustomModels } from '@floway-dev/provider-custom';
 
 interface CopilotUpstreamUser {
   login: string;

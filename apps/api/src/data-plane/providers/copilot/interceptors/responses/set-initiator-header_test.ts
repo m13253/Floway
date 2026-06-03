@@ -7,7 +7,7 @@ import type { RequestContext, ResponsesInvocation } from '../../../../llm/interc
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

@@ -13,8 +13,8 @@
 // the published `kind` here if the upstream emits it; Tier 2 falls back to an id
 // heuristic; the chat default takes the per-upstream `endpoints` config).
 
-import type { Upstream } from '../../../shared/upstream/types.ts';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { Upstream } from '@floway-dev/provider';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 export interface CustomRawModel {

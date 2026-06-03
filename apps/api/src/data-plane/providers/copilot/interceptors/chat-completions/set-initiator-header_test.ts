@@ -7,7 +7,7 @@ import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

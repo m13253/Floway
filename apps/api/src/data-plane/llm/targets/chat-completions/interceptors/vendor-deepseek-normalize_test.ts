@@ -5,8 +5,7 @@ import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-no
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
   reasoning_content?: string;

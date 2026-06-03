@@ -8,7 +8,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const invocation = (): ResponsesInvocation => ({
   sourceApi: 'responses',

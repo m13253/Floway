@@ -103,3 +103,6 @@ export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
+
+export type { EndpointKey, Upstream, UpstreamFetchOptions, UpstreamKind } from './upstream.ts';
+export { isStreamingEndpoint } from './upstream.ts';

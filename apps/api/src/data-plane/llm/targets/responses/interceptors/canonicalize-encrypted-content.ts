@@ -1,7 +1,7 @@
 import type { ResponsesInterceptor } from '../../../interceptors.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 // Some upstreams (e.g. Azure) re-encrypt `encrypted_content` on every
 // serialization, so an item's `output_item.done` blob differs byte-wise from

@@ -9,7 +9,7 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
-import type { ExecuteResult, PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { assertEquals } from '../../../test-assert.ts';
+import { inferEndpointsFromModelId } from '@floway-dev/provider-custom';
 
 const EMBEDDINGS = { embeddings: {} };
 const IMAGES = { imagesGenerations: {}, imagesEdits: {} };

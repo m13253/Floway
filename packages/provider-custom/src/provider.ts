@@ -1,11 +1,9 @@
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
-import { assertCustomUpstreamRecord, createCustomUpstream } from '../../../shared/upstream/custom.ts';
-import type { EndpointKey } from '../../../shared/upstream/types.ts';
-import { isStreamingEndpoint } from '../endpoints.ts';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
-import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '@floway-dev/provider';
-import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import { isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '@floway-dev/provider';
+import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import { assertCustomUpstreamRecord, createCustomUpstream } from '@floway-dev/provider-custom';
 
 interface CustomProviderData {
   rawModelId: string;

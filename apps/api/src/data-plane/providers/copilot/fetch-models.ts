@@ -1,6 +1,5 @@
 import type { CopilotModelsResponse } from './types.ts';
-import type { Upstream } from '../../../shared/upstream/types.ts';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { type Upstream, ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;

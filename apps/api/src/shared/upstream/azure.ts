@@ -1,7 +1,5 @@
-import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { UpstreamRecord, isRecord, modelsField, nonEmptyStringField, type UpstreamModelConfig  } from '@floway-dev/provider';
-import { joinBaseAndPath } from '@floway-dev/provider';
+import { type EndpointKey, type Upstream, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord, isRecord, joinBaseAndPath, modelsField, nonEmptyStringField } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
   endpoint: string;

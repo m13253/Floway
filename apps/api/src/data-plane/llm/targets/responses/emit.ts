@@ -4,7 +4,7 @@ import { responsesBaseInterceptors } from './interceptors/index.ts';
 import { type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { TelemetryModelIdentity, eventResult, type ExecuteResult  } from '@floway-dev/provider';
+import { type TelemetryModelIdentity, type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const targetApi = 'responses';
 

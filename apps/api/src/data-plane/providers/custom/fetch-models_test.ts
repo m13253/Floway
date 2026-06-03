@@ -1,10 +1,9 @@
 import { test } from 'vitest';
 
-import { fetchCustomModels } from './fetch-models.ts';
-import { createCustomUpstream } from '../../../shared/upstream/custom.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../../../test-helpers.ts';
 import { isProviderModelsHttpStatus, ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { createCustomUpstream, fetchCustomModels } from '@floway-dev/provider-custom';
 
 const upstreamRecord = () => ({
   id: 'up_custom',

@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { createCustomProvider } from './provider.ts';
 import { assertEquals, assertExists } from '../../../test-assert.ts';
 import { buildCustomUpstreamRecord, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { createCustomProvider } from '@floway-dev/provider-custom';
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',

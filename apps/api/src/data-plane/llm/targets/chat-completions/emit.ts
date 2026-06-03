@@ -5,7 +5,7 @@ import { parseTargetStreamFrames } from '../events/from-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity, eventResult, type ExecuteResult  } from '@floway-dev/provider';
+import { type TelemetryModelIdentity, type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const targetApi = 'chat-completions';
 

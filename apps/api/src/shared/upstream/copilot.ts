@@ -3,8 +3,8 @@
 // cache (in-process + KV) stays shared across all callers.
 
 import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from '../copilot.ts';
-import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import type { EndpointKey, Upstream, UpstreamFetchOptions } from '@floway-dev/provider';
 
 export interface CopilotUpstream extends Upstream {
   fetch(endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response>;

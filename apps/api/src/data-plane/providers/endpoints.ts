@@ -1,6 +1,6 @@
-import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
 import type { ModelEndpointKey } from '@floway-dev/protocols/common';
+import type { EndpointKey } from '@floway-dev/provider';
 
 export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpointKey => {
   switch (target) {

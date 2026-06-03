@@ -9,7 +9,7 @@ import { createHttpStatefulResponsesStore } from '../../llm/sources/responses/st
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
   const { copilotUpstream } = await setupAppTest();

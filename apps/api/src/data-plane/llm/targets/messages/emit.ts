@@ -4,7 +4,7 @@ import { targetInternalError, targetModelIdentity, targetProviderResultToFrames 
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { TelemetryModelIdentity, eventResult, type ExecuteResult  } from '@floway-dev/provider';
+import { type TelemetryModelIdentity, type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const targetApi = 'messages';
 

@@ -3,7 +3,7 @@ import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { parseSSEStream } from '../shared/stream/parse-sse.ts';
 import type { SseFrame } from '@floway-dev/protocols/common';
-import type { PerformanceApiName, TelemetryModelIdentity, ProviderCallResult, eventResult, type ExecuteResult, type InternalErrorResult, internalErrorResult } from '@floway-dev/provider';
+import { type PerformanceApiName, type TelemetryModelIdentity, type ProviderCallResult, type ExecuteResult, type InternalErrorResult, eventResult, internalErrorResult } from '@floway-dev/provider';
 import { toInternalDebugError, readUpstreamError } from '@floway-dev/provider';
 
 export type TargetEmitApiName = Exclude<PerformanceApiName, NonLlmServeApiName | 'gemini'>;

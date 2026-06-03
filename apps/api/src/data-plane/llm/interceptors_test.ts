@@ -4,7 +4,7 @@ import { type Interceptor, runInterceptors } from './interceptors.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const collectFrames = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const frames: T[] = [];

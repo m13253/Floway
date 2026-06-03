@@ -8,7 +8,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const invocation = (): ChatCompletionsInvocation => ({
   sourceApi: 'chat-completions',

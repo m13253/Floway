@@ -9,7 +9,7 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type RawResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult, PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type RE = ResponsesStreamEvent;

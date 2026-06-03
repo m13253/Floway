@@ -8,9 +8,8 @@ import type { ApiKey } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
 import { clearCopilotTokenCache } from './shared/copilot.ts';
-import type { Upstream } from './shared/upstream/types.ts';
 import { clearModelsStore } from '@floway-dev/provider';
-import type { TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
+import type { Upstream, TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
 
 interface SetupOptions {
   adminKey?: string;

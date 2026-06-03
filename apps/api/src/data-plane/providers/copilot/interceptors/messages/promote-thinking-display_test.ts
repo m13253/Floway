@@ -7,7 +7,7 @@ import type { MessagesInvocation, RequestContext } from '../../../../llm/interce
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

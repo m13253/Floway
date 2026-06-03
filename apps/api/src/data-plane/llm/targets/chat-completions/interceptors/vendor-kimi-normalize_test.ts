@@ -5,8 +5,7 @@ import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const collectFrames = async (result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>): Promise<ProtocolFrame<ChatCompletionsStreamEvent>[]> => {
   if (result.type !== 'events') throw new Error('expected events result');

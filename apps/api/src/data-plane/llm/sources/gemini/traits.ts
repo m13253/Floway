@@ -14,7 +14,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiContent, GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import type { ProviderModelRecord, type ExecuteResult, plainResult  } from '@floway-dev/provider';
+import { type ProviderModelRecord, type ExecuteResult, plainResult } from '@floway-dev/provider';
 import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
 import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

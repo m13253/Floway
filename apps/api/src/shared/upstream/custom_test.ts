@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { assertCustomUpstreamRecord, createCustomUpstream } from './custom.ts';
 import { assertEquals, assertThrows } from '../../test-assert.ts';
 import { withMockedFetch } from '../../test-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { assertCustomUpstreamRecord, createCustomUpstream } from '@floway-dev/provider-custom';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',

@@ -7,7 +7,7 @@ import type { RequestContext, ResponsesInvocation } from '../../../interceptors.
 import { createHttpStatefulResponsesStore } from '../../../sources/responses/stateful-store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 
 const makePayload = (): ResponsesPayload => ({
   model: 'gpt-test',
