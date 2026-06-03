@@ -1,4 +1,4 @@
-import { type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import { type SseFrame, sseFrame } from '../sse.ts';
 
 interface ParseSSEStreamOptions {
   signal?: AbortSignal;

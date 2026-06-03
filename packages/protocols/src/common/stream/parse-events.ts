@@ -1,4 +1,4 @@
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { SseFrame } from '../sse.ts';
 
 export interface ParseTargetStreamFramesOptions {
   protocol: string;
@@ -10,7 +10,7 @@ export type ParsedTargetStreamFrame<TEvent> = { type: 'done' } | { type: 'sse-js
 // The unknown JSON payload becomes the target protocol's event type at this
 // boundary; each protocol's stream parser names its event type when calling
 // in. Runtime narrowing happens upstream (parse error -> Error with cause)
-// and downstream (per-event handling in target events/from-stream.ts).
+// and downstream in each protocol-specific stream parser.
 export const parseTargetStreamFrames = async function* <TEvent>(frames: AsyncIterable<SseFrame>, options: ParseTargetStreamFramesOptions): AsyncGenerator<ParsedTargetStreamFrame<TEvent>> {
   for await (const frame of frames) {
     const data = frame.data.trim();
