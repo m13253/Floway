@@ -4,7 +4,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type StreamingEndpointKey, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type StreamingEndpointKey, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;
@@ -26,10 +26,13 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
 export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const azure = assertAzureUpstreamRecord(record);
 
-  const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
+  // Non-streaming endpoints only — count_tokens / embeddings /
+  // images_generations. Streaming endpoints (chat_completions / responses /
+  // messages) go through `callStreaming` below, which injects `stream: true`
+  // and pipes the SSE body through the protocol parser.
+  const call = (endpoint: 'messages_count_tokens' | 'embeddings' | 'images_generations', model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     const upstreamModelId = providerData(model).upstreamModelId;
-    const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: upstreamModelId } : { ...body, model: upstreamModelId };
-    return azureFetch(azure.config, endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
+    return azureFetch(azure.config, endpoint, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: upstreamModelId,

@@ -14,8 +14,8 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload } from '@floway
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesPayload } from '@floway-dev/protocols/responses';
-import { isStreamingEndpoint, inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
-import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import { inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import type { ModelProvider, ModelProviderInstance, ProviderCallResult, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -180,20 +180,23 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
+  // Non-streaming endpoints only — count_tokens / embeddings. Streaming
+  // endpoints (chat_completions / responses / messages) go through
+  // `callStreaming` below, which injects `stream: true` and pipes the SSE
+  // body through the protocol parser.
   const call = async (
-    endpoint: EndpointKey,
+    endpoint: 'messages_count_tokens' | 'embeddings',
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
   ): Promise<ProviderCallResult> => {
-    const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: rawModel.id } : { ...body, model: rawModel.id };
     const response = await copilotFetch(
       upstreamConfig,
       endpoint,
       {
         method: 'POST',
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
       headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,

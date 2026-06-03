@@ -6,8 +6,8 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall } from '@floway-dev/provider';
-import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, ProviderStreamParser, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall } from '@floway-dev/provider';
+import type { ModelProvider, ModelProviderInstance, ProviderCallResult, ProviderStreamParser, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -146,11 +146,12 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // models so their pinned ids win.
   const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
-  const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
-    const requestBody = isStreamingEndpoint(endpoint)
-      ? { ...body, stream: true, model: providerData(model).rawModelId }
-      : { ...body, model: providerData(model).rawModelId };
-    return customFetch(config, endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
+  // Non-streaming endpoints only — count_tokens / embeddings /
+  // images_generations. Streaming endpoints (chat_completions / responses /
+  // messages) go through `callStreaming` below, which injects `stream: true`
+  // and pipes the SSE body through the protocol parser.
+  const call = (endpoint: 'messages_count_tokens' | 'embeddings' | 'images_generations', model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
+    return customFetch(config, endpoint, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: providerData(model).rawModelId,
