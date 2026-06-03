@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { mergeClaudeVariants } from './merge-claude-variants.ts';
-import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '../../../test-assert.ts';
+import { mergeClaudeVariants } from '@floway-dev/provider-copilot';
+import type { CopilotModelsResponse, CopilotRawModel } from '@floway-dev/provider-copilot/types';
 
 const assertSameSet = <T>(actual: readonly T[] | undefined, expected: T[]) => {
   // Union order follows the input variant order, which is an implementation

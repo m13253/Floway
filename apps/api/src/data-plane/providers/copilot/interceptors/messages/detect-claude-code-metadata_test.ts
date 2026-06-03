@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
+import { parseUserIdMetadata } from '@floway-dev/provider-copilot/interceptors/messages/detect-claude-code-metadata';
 
 test('parseUserIdMetadata returns nulls for undefined input', () => {
   assertEquals(parseUserIdMetadata(undefined), { safetyIdentifier: null, sessionId: null });

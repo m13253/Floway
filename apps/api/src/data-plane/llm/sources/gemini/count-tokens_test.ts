@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals, assertExists } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '@floway-dev/provider';
+import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 test('/v1beta/models/:model:countTokens translates Gemini request to Messages count_tokens', async () => {
   const { apiKey } = await setupAppTest();

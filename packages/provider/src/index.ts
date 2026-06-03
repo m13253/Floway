@@ -106,3 +106,13 @@ export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
 
 export type { EndpointKey, Upstream, UpstreamFetchOptions, UpstreamKind } from './upstream.ts';
 export { isStreamingEndpoint } from './upstream.ts';
+
+export type { ImageDimensions, ImageProcessor, ImageSizeCalculator, SizeCaps } from './image-processor.ts';
+export {
+  compressBase64ImageToWebp,
+  compressImageDataUrlToWebp,
+  fitWithin,
+  getImageProcessor,
+  initImageProcessor,
+  isBase64ImageDataUrl,
+} from './image-processor.ts';

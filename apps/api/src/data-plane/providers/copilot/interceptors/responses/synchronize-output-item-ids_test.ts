@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
@@ -8,6 +7,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { withOutputItemIdsSynchronized } from '@floway-dev/provider-copilot/interceptors/responses/synchronize-output-item-ids';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

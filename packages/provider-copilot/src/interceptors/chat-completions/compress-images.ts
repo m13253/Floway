@@ -1,5 +1,5 @@
-import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '../../../../../image/inline.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
+import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '@floway-dev/provider';
 import type { ProviderChatCompletionsInterceptor } from '@floway-dev/provider';
 
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an

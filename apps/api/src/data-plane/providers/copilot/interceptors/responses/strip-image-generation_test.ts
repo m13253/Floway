@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { stripImageGenerationFromPayload } from './strip-image-generation.ts';
 import { assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { stripImageGenerationFromPayload } from '@floway-dev/provider-copilot/interceptors/responses/strip-image-generation';
 
 test('stripImageGenerationFromPayload removes image_generation tools', () => {
   const payload = {

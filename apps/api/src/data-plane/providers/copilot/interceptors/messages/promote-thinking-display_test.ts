@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { resolveMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted } from './promote-thinking-display.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
@@ -8,6 +7,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { resolveMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted } from '@floway-dev/provider-copilot/interceptors/messages/promote-thinking-display';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

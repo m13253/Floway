@@ -1,15 +1,14 @@
 import { app } from './app.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
-import { initImageProcessor } from './image/index.ts';
 import { createInMemoryImageProcessor } from './image/memory.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
-import { clearCopilotTokenCache } from './shared/copilot.ts';
-import { clearModelsStore } from '@floway-dev/provider';
+import { initImageProcessor, clearModelsStore } from '@floway-dev/provider';
 import type { Upstream, TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
+import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
   adminKey?: string;

@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache, copilotFetch } from './copilot.ts';
 import { initRepo } from '../repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { assertEquals } from '../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../test-helpers.ts';
+import { clearCopilotTokenCache, copilotFetch } from '@floway-dev/provider-copilot';
 
 // We tag the test repo so getRepo() does not error during clearCopilotTokenCache;
 // the cache KV writes go through this in-memory repo.

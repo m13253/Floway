@@ -1,5 +1,5 @@
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
-import { CLAUDE_AGENT_USER_AGENT } from '../../../../../shared/copilot.ts';
+import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
 import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 
 /**

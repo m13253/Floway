@@ -1,4 +1,4 @@
-import { getRepo } from '../repo/index.ts';
+import { getProviderRepo as getRepo } from '@floway-dev/provider';
 
 const COPILOT_BASE_URLS = {
   individual: 'https://api.githubcopilot.com',

@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
-import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
-import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { withToolArgumentWhitespaceAborted } from '@floway-dev/provider-copilot/interceptors/responses/abort-on-tool-argument-whitespace';
+import { MAX_CONSECUTIVE_WHITESPACE } from '@floway-dev/provider-copilot/interceptors/shared/whitespace-overflow';
 
 const invocation = (): ResponsesInvocation => ({
   sourceApi: 'responses',

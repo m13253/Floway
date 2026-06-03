@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache } from '../../../../shared/copilot.ts';
 import { assertEquals } from '../../../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../../../test-helpers.ts';
 import { createStoredResponsesItemId } from '../responses/items/format.ts';
 import { clearModelsStore } from '@floway-dev/provider';
+import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 const packReasoningSignature = (id: string): string => `@${id}`;
 

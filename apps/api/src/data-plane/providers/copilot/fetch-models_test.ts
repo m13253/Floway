@@ -1,11 +1,9 @@
 import { test } from 'vitest';
 
-import { fetchCopilotModels } from './fetch-models.ts';
-import { clearCopilotTokenCache } from '../../../shared/copilot.ts';
-import { createCopilotUpstream } from '../../../shared/upstream/copilot.ts';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { fetchCopilotModels, clearCopilotTokenCache, createCopilotUpstream } from '@floway-dev/provider-copilot';
 
 const copilotTokenResponse = (request: Request): Response | null => {
   const url = new URL(request.url);

@@ -1,15 +1,14 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from './compress-images.ts';
-import { initImageProcessor } from '../../../../../image/index.ts';
-import type { ImageProcessor, ImageSizeCalculator } from '../../../../../image/types.ts';
 import { assert, assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { type ImageProcessor, type ImageSizeCalculator, type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { initImageProcessor } from '@floway-dev/provider';
+import { withInlineImagesCompressed } from '@floway-dev/provider-copilot/interceptors/messages/compress-images';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

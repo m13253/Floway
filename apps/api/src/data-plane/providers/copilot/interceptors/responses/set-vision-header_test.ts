@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { withVisionHeaderSet } from './set-vision-header.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
@@ -8,6 +7,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { withVisionHeaderSet } from '@floway-dev/provider-copilot/interceptors/responses/set-vision-header';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

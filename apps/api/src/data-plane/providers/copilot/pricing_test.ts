@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import { assertEquals } from '../../../test-assert.ts';
+import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
 
 test('pricingForCopilotPublicModelId resolves Claude family by regex', () => {
   assertEquals(pricingForCopilotPublicModelId('claude-opus-4-8'), { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 });

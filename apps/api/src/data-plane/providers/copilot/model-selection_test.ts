@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { resolveCopilotRawModel } from './model-selection.ts';
-import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '../../../test-assert.ts';
+import { resolveCopilotRawModel } from '@floway-dev/provider-copilot';
+import type { CopilotModelsResponse, CopilotRawModel } from '@floway-dev/provider-copilot/types';
 
 const model = (
   id: string,

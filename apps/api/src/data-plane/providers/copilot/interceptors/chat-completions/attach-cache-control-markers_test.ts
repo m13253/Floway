@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { type CopilotCacheableMessage, withCacheControlMarkersAttached } from './attach-cache-control-markers.ts';
 import { assert, assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
@@ -8,6 +7,7 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import type { ChatCompletionsStreamEvent, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { type CopilotCacheableMessage, withCacheControlMarkersAttached } from '@floway-dev/provider-copilot/interceptors/chat-completions/attach-cache-control-markers';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,

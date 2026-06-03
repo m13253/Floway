@@ -2,7 +2,7 @@
 // behind the generic Upstream interface. Reuses shared/copilot.ts so the token
 // cache (in-process + KV) stays shared across all callers.
 
-import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from '../copilot.ts';
+import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from './auth.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from '@floway-dev/provider';
 

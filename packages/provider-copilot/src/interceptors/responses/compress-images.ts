@@ -1,6 +1,6 @@
-import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '../../../../../image/inline.ts';
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponsesInputImage } from '@floway-dev/protocols/responses';
+import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '@floway-dev/provider';
 import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
 
 // Recompresses every inline base64 image in the outgoing Responses payload to

@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
-import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '../../../test-assert.ts';
+import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from '@floway-dev/provider-copilot';
+import type { CopilotModelsResponse, CopilotRawModel } from '@floway-dev/provider-copilot/types';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;

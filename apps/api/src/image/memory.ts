@@ -1,4 +1,4 @@
-import type { ImageProcessor, ImageSizeCalculator } from './types.ts';
+import type { ImageProcessor, ImageSizeCalculator } from '@floway-dev/provider';
 
 // In-memory image processor for tests, mirroring InMemoryRepo. There is no
 // WebP codec available under the test runtime, so this stub returns the input

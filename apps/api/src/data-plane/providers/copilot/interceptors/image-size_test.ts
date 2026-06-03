@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { targetSizeForResponsesChat } from './image-size.ts';
 import { assertEquals } from '../../../../test-assert.ts';
+import { targetSizeForResponsesChat } from '@floway-dev/provider-copilot/interceptors/image-size';
 
 test('gpt-4o / gpt-4.1 use the 2048 box + 768 short edge', () => {
   for (const id of ['gpt-4o', 'gpt-4o-2026', 'gpt-4.1']) {

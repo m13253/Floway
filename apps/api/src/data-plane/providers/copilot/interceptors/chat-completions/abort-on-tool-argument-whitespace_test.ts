@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
-import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { assert, assertEquals, assertStringIncludes } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { createHttpStatefulResponsesStore } from '../../../../llm/sources/responses/stateful-store.ts';
-import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { withToolArgumentWhitespaceAborted } from '@floway-dev/provider-copilot/interceptors/chat-completions/abort-on-tool-argument-whitespace';
+import { MAX_CONSECUTIVE_WHITESPACE } from '@floway-dev/provider-copilot/interceptors/shared/whitespace-overflow';
 
 const invocation = (): ChatCompletionsInvocation => ({
   sourceApi: 'chat-completions',

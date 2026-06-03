@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
-import { createCopilotProvider } from './copilot/provider.ts';
+import { createCopilotProvider } from '@floway-dev/provider-copilot';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 

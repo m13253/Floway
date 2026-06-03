@@ -1,8 +1,6 @@
-import { compressBase64ImageToWebp } from '../../../../../image/inline.ts';
-import { fitWithin, type SizeCaps } from '../../../../../image/size.ts';
-import type { ImageSizeCalculator } from '../../../../../image/types.ts';
 import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/messages';
-import type { MessagesInvocation, InterceptorRequest } from '@floway-dev/provider';
+import { type ImageSizeCalculator, type MessagesInvocation, type InterceptorRequest, fitWithin, type SizeCaps } from '@floway-dev/provider';
+import { compressBase64ImageToWebp } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here):

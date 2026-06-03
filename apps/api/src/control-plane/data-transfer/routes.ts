@@ -8,7 +8,6 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
-import { isCopilotAccountType } from '../../shared/copilot.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import type { exportQuery, importBody } from '../schemas.ts';
@@ -17,6 +16,7 @@ import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/commo
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceApiName, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
 interface ExportPayload {

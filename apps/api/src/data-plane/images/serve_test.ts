@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache } from '../../shared/copilot.ts';
 import { assertEquals, assertExists } from '../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { clearModelsStore } from '@floway-dev/provider';
+import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 test('/v1/images/generations rejects malformed JSON body with 400', async () => {
   const { apiKey } = await setupAppTest();

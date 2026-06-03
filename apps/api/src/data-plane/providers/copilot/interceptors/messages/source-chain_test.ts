@@ -1,7 +1,5 @@
 import { test } from 'vitest';
 
-import { messagesCopilotSourceInterceptors } from './index.ts';
-import { CLAUDE_AGENT_USER_AGENT } from '../../../../../shared/copilot.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import { runInterceptors, type MessagesInvocation, type RequestContext } from '../../../../llm/interceptors.ts';
@@ -9,6 +7,8 @@ import { createHttpStatefulResponsesStore } from '../../../../llm/sources/respon
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { CLAUDE_AGENT_USER_AGENT } from '@floway-dev/provider-copilot';
+import { messagesCopilotSourceInterceptors } from '@floway-dev/provider-copilot/interceptors/messages/index';
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
