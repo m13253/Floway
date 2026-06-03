@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { assertEquals, assertThrows } from '../../test-assert.ts';
 import { withMockedFetch } from '../../test-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord, createAzureUpstream } from '@floway-dev/provider-azure';
+import { assertAzureUpstreamRecord, azureFetch } from '@floway-dev/provider-azure';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_azure',
@@ -27,8 +27,8 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
 };
 
-test('createAzureUpstream uses Azure OpenAI v1 paths with api-key auth', async () => {
-  const upstream = createAzureUpstream(baseRecord);
+test('azureFetch uses Azure OpenAI v1 paths with api-key auth', async () => {
+  const { config } = assertAzureUpstreamRecord(baseRecord);
   const seen: Array<{ url: string; apiKey: string | null; contentType: string | null; beta: string | null; body: unknown }> = [];
 
   await withMockedFetch(
@@ -43,16 +43,13 @@ test('createAzureUpstream uses Azure OpenAI v1 paths with api-key auth', async (
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('chat_completions', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
-      await upstream.fetch('responses', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
-      await upstream.fetch('embeddings', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
-      await upstream.fetch('models', { method: 'GET' });
+      await azureFetch(config, 'chat_completions', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
+      await azureFetch(config, 'responses', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
+      await azureFetch(config, 'embeddings', { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) });
+      await azureFetch(config, 'models', { method: 'GET' });
     },
   );
 
-  assertEquals(upstream.kind, 'azure');
-  assertEquals(upstream.id, 'up_azure');
-  assertEquals(upstream.name, 'Azure Resource');
   assertEquals(
     seen.map(item => item.url),
     [
@@ -73,8 +70,8 @@ test('createAzureUpstream uses Azure OpenAI v1 paths with api-key auth', async (
   assertEquals(seen[0].body, { model: 'set-by-provider' });
 });
 
-test('createAzureUpstream accepts an endpoint that already includes /openai/v1', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch accepts an endpoint that already includes /openai/v1', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
@@ -89,15 +86,15 @@ test('createAzureUpstream accepts an endpoint that already includes /openai/v1',
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('responses', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'responses', { method: 'POST', body: '{}' });
     },
   );
 
   assertEquals(seenUrl, 'https://example.openai.azure.com/openai/v1/responses');
 });
 
-test('createAzureUpstream accepts Foundry project endpoints for OpenAI v1 calls', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch accepts Foundry project endpoints for OpenAI v1 calls', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod/',
@@ -118,15 +115,15 @@ test('createAzureUpstream accepts Foundry project endpoints for OpenAI v1 calls'
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('responses', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'responses', { method: 'POST', body: '{}' });
     },
   );
 
   assertEquals(seenUrl, 'https://example.services.ai.azure.com/api/projects/prod/openai/v1/responses');
 });
 
-test('createAzureUpstream accepts Foundry project OpenAI v1 base URLs', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch accepts Foundry project OpenAI v1 base URLs', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod/openai/v1',
@@ -147,8 +144,8 @@ test('createAzureUpstream accepts Foundry project OpenAI v1 base URLs', async ()
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('responses', { method: 'POST', body: '{}' });
-      await upstream.fetch('messages', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'responses', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'messages', { method: 'POST', body: '{}' });
     },
   );
 
@@ -158,8 +155,8 @@ test('createAzureUpstream accepts Foundry project OpenAI v1 base URLs', async ()
   ]);
 });
 
-test('createAzureUpstream keeps native Anthropic calls on the resource Anthropic base when a project endpoint is entered', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch keeps native Anthropic calls on the resource Anthropic base when a project endpoint is entered', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
@@ -180,15 +177,15 @@ test('createAzureUpstream keeps native Anthropic calls on the resource Anthropic
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('messages', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'messages', { method: 'POST', body: '{}' });
     },
   );
 
   assertEquals(seenUrl, 'https://example.services.ai.azure.com/anthropic/v1/messages');
 });
 
-test('createAzureUpstream supports Azure Foundry Anthropic Messages with x-api-key auth', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch supports Azure Foundry Anthropic Messages with x-api-key auth', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
@@ -215,8 +212,8 @@ test('createAzureUpstream supports Azure Foundry Anthropic Messages with x-api-k
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('messages', { method: 'POST', body: '{}' }, { extraHeaders: { 'anthropic-beta': 'context-1m' } });
-      await upstream.fetch('messages_count_tokens', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'messages', { method: 'POST', body: '{}' }, { extraHeaders: { 'anthropic-beta': 'context-1m' } });
+      await azureFetch(config, 'messages_count_tokens', { method: 'POST', body: '{}' });
     },
   );
 
@@ -238,8 +235,8 @@ test('createAzureUpstream supports Azure Foundry Anthropic Messages with x-api-k
   ]);
 });
 
-test('createAzureUpstream accepts an Azure Foundry Anthropic messages target URI', async () => {
-  const upstream = createAzureUpstream({
+test('azureFetch accepts an Azure Foundry Anthropic messages target URI', async () => {
+  const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       endpoint: 'https://example.services.ai.azure.com/anthropic/v1/messages',
@@ -260,8 +257,8 @@ test('createAzureUpstream accepts an Azure Foundry Anthropic messages target URI
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await upstream.fetch('messages', { method: 'POST', body: '{}' });
-      await upstream.fetch('models', { method: 'GET' });
+      await azureFetch(config, 'messages', { method: 'POST', body: '{}' });
+      await azureFetch(config, 'models', { method: 'GET' });
     },
   );
 
@@ -271,10 +268,10 @@ test('createAzureUpstream accepts an Azure Foundry Anthropic messages target URI
   ]);
 });
 
-test('createAzureUpstream validates Azure opaque config strictly', () => {
+test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         provider: 'custom',
       }),
@@ -284,7 +281,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -297,7 +294,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -310,7 +307,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -323,7 +320,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -336,7 +333,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -349,7 +346,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -362,7 +359,7 @@ test('createAzureUpstream validates Azure opaque config strictly', () => {
 
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -502,8 +499,8 @@ test('assertAzureUpstreamRecord round-trips model.cost with full pricing fields'
   });
 });
 
-test('createAzureUpstream accepts model without cost field', () => {
-  const upstream = createAzureUpstream({
+test('assertAzureUpstreamRecord accepts model without cost field', () => {
+  assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
@@ -515,11 +512,10 @@ test('createAzureUpstream accepts model without cost field', () => {
       ],
     },
   });
-  assertEquals(upstream.kind, 'azure');
 });
 
-test('createAzureUpstream accepts model.cost with only input set', () => {
-  const upstream = createAzureUpstream({
+test('assertAzureUpstreamRecord accepts model.cost with only input set', () => {
+  assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
@@ -532,13 +528,12 @@ test('createAzureUpstream accepts model.cost with only input set', () => {
       ],
     },
   });
-  assertEquals(upstream.kind, 'azure');
 });
 
-test('createAzureUpstream rejects model.cost with negative input', () => {
+test('assertAzureUpstreamRecord rejects model.cost with negative input', () => {
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),
@@ -556,10 +551,10 @@ test('createAzureUpstream rejects model.cost with negative input', () => {
   );
 });
 
-test('createAzureUpstream rejects model.cost with non-number input_cache_read', () => {
+test('assertAzureUpstreamRecord rejects model.cost with non-number input_cache_read', () => {
   assertThrows(
     () =>
-      createAzureUpstream({
+      assertAzureUpstreamRecord({
         ...baseRecord,
         config: {
           ...(baseRecord.config as Record<string, unknown>),

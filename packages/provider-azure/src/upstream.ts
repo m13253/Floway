@@ -1,5 +1,5 @@
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import { type EndpointKey, type Upstream, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord, isRecord, joinBaseAndPath, modelsField, nonEmptyStringField } from '@floway-dev/provider';
+import { type EndpointKey, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord, isRecord, joinBaseAndPath, modelsField, nonEmptyStringField } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
   endpoint: string;
@@ -7,7 +7,7 @@ export interface AzureUpstreamConfig {
   models: UpstreamModelConfig[];
 }
 
-type AzureUpstreamRecord = UpstreamRecord & {
+export type AzureUpstreamRecord = UpstreamRecord & {
   provider: 'azure';
   config: AzureUpstreamConfig;
 };
@@ -109,7 +109,7 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
 // per-model endpoints, so this upstream-level map is informational only (the
 // per-model fallback never fires); sub-capabilities are dropped since only
 // presence matters here.
-const configuredEndpoints = (config: AzureUpstreamConfig): ModelEndpoints =>
+export const configuredEndpoints = (config: AzureUpstreamConfig): ModelEndpoints =>
   config.models.reduce<ModelEndpoints>((acc, model) => ({ ...acc, ...model.endpoints }), {});
 
 const azureOpenAiV1BaseUrl = (endpoint: string): string => {
@@ -179,32 +179,25 @@ const requestUrl = (openAiBaseUrl: string | undefined, anthropicBaseUrl: string 
 
 const isAnthropicEndpoint = (endpoint: EndpointKey): boolean => endpoint === 'messages' || endpoint === 'messages_count_tokens';
 
-export const createAzureUpstream = (record: UpstreamRecord): Upstream => {
-  const { config } = assertAzureUpstreamRecord(record);
+// Issue an HTTP call against the Azure upstream described by `config`. Applies
+// the right credential header per surface (api-key for OpenAI v1, x-api-key +
+// anthropic-version for /anthropic), default JSON Content-Type, any extra
+// headers, and resolves the URL through the per-surface base/path logic above.
+export const azureFetch = async (config: AzureUpstreamConfig, endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> => {
   const openAiBaseUrl = azureOpenAiV1BaseUrl(config.endpoint);
   const anthropicBaseUrl = azureAnthropicBaseUrl(config.endpoint);
-  return {
-    id: record.id,
-    name: record.name,
-    kind: 'azure',
-    endpoints: configuredEndpoints(config),
-    fetch: async (endpoint, init: RequestInit, options?: UpstreamFetchOptions) => {
-      const headers = new Headers(init.headers);
-      if (isAnthropicEndpoint(endpoint)) {
-        headers.set('x-api-key', config.apiKey);
-        headers.set('anthropic-version', '2023-06-01');
-      } else {
-        headers.set('api-key', config.apiKey);
-      }
-      if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
-        headers.set('Content-Type', 'application/json');
-      }
-      if (options?.extraHeaders) {
-        for (const [key, value] of Object.entries(options.extraHeaders)) {
-          headers.set(key, value);
-        }
-      }
-      return await fetch(requestUrl(openAiBaseUrl, anthropicBaseUrl, endpoint), { ...init, headers });
-    },
-  };
+  const headers = new Headers(init.headers);
+  if (isAnthropicEndpoint(endpoint)) {
+    headers.set('x-api-key', config.apiKey);
+    headers.set('anthropic-version', '2023-06-01');
+  } else {
+    headers.set('api-key', config.apiKey);
+  }
+  if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (options?.extraHeaders) {
+    for (const [key, value] of Object.entries(options.extraHeaders)) headers.set(key, value);
+  }
+  return await fetch(requestUrl(openAiBaseUrl, anthropicBaseUrl, endpoint), { ...init, headers });
 };

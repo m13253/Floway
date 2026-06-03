@@ -9,7 +9,7 @@ import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import type { CopilotRawModel } from './types.ts';
-import { createCopilotUpstream } from './upstream.ts';
+import { copilotFetch } from './upstream.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -241,7 +241,7 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
 
 export const createCopilotProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const upstream = createCopilotUpstream(copilot.id, copilot.name, copilot.config.githubToken, copilot.config.accountType);
+  const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
@@ -254,7 +254,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     headers: Record<string, string> | undefined,
   ): Promise<ProviderCallResult> => {
     const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: rawModel.id } : { ...body, model: rawModel.id };
-    const response = await upstream.fetch(
+    const response = await copilotFetch(
+      upstreamConfig,
       endpoint,
       {
         method: 'POST',
@@ -287,7 +288,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
           return finalizeCopilotModels(initial, upstreamFlags);
         }
         try {
-          const response = await fetchCopilotModels(upstream);
+          const response = await fetchCopilotModels(upstreamConfig);
           const merged = mergeLedger(ledger, response, now);
           await writeModelsStore<CopilotLedger>(copilot.id, merged);
           return finalizeCopilotModels(projectLedger(merged, now), upstreamFlags);

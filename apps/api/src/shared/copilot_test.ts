@@ -4,7 +4,7 @@ import { initRepo } from '../repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { assertEquals } from '../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../test-helpers.ts';
-import { clearCopilotTokenCache, copilotFetch } from '@floway-dev/provider-copilot';
+import { clearCopilotTokenCache, copilotAuthedFetch } from '@floway-dev/provider-copilot';
 
 // We tag the test repo so getRepo() does not error during clearCopilotTokenCache;
 // the cache KV writes go through this in-memory repo.
@@ -31,7 +31,7 @@ const mockTokenAndCapture = async (
       return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
     },
     async () => {
-      await copilotFetch(
+      await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
         'ghu_test',
@@ -45,7 +45,7 @@ const mockTokenAndCapture = async (
   assert(captured);
 };
 
-test('copilotFetch overlays interceptor headers on the pinned base set', async () => {
+test('copilotAuthedFetch overlays interceptor headers on the pinned base set', async () => {
   await mockTokenAndCapture({ 'x-initiator': 'agent', 'copilot-vision-request': 'true' }, headers => {
     assertEquals(headers.get('x-initiator'), 'agent');
     assertEquals(headers.get('copilot-vision-request'), 'true');
@@ -55,7 +55,7 @@ test('copilotFetch overlays interceptor headers on the pinned base set', async (
   });
 });
 
-test('copilotFetch deletes a base header when the interceptor passes an empty-string value', async () => {
+test('copilotAuthedFetch deletes a base header when the interceptor passes an empty-string value', async () => {
   // Sentinel contract: empty string means "drop this base header". This is
   // the deletion convention later workaround interceptors rely on; future
   // commits will add concrete callers (e.g. clearing copilot-integration-id

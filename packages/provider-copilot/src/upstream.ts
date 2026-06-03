@@ -1,14 +1,10 @@
-// Copilot upstream adapter — wraps the existing copilotFetch + token exchange
-// behind the generic Upstream interface. Reuses shared/copilot.ts so the token
-// cache (in-process + KV) stays shared across all callers.
+// Copilot upstream transport. The auth.ts layer owns the GitHub-token → short
+// lived Copilot-token exchange and KV cache; this module maps a logical
+// endpoint to the path Copilot serves it on, then dispatches through that
+// authed fetch.
 
-import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from './auth.ts';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { EndpointKey, Upstream, UpstreamFetchOptions } from '@floway-dev/provider';
-
-export interface CopilotUpstream extends Upstream {
-  fetch(endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response>;
-}
+import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAccountType } from './auth.ts';
+import type { EndpointKey, UpstreamFetchOptions } from '@floway-dev/provider';
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
@@ -26,24 +22,27 @@ const COPILOT_PATHS: Record<EndpointKey, string> = {
   models: '/models',
 };
 
-export const COPILOT_ENDPOINTS: ModelEndpoints = { chatCompletions: {}, responses: {}, messages: {}, embeddings: {} };
+// Subset of the persisted copilot upstream record's config the transport needs.
+// The full config (with the user profile) is parsed by the provider; only the
+// auth-relevant fields cross this boundary.
+export interface CopilotUpstreamConfig {
+  githubToken: string;
+  accountType: CopilotAccountType;
+}
 
-export const createCopilotUpstream = (id: string, name: string, githubToken: string, accountType: CopilotAccountType): CopilotUpstream => {
-  return {
-    id,
-    name,
-    kind: 'copilot',
-    endpoints: COPILOT_ENDPOINTS,
-    fetch: async (endpoint, init, options) => {
-      try {
-        return await copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
-      } catch (error) {
-        if (!isCopilotTokenFetchError(error)) throw error;
-        return new Response(error.body, {
-          status: error.status,
-          headers: new Headers(error.headers),
-        });
-      }
-    },
-  };
+// Issue an HTTP call against Copilot's upstream for a named endpoint. Wraps
+// `copilotAuthedFetch` (which owns the token exchange + KV cache) with the
+// endpoint→path mapping above and converts a CopilotTokenFetchError into a
+// regular Response so callers can treat token-exchange failures the same as
+// any other 4xx/5xx.
+export const copilotFetch = async (config: CopilotUpstreamConfig, endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> => {
+  try {
+    return await copilotAuthedFetch(COPILOT_PATHS[endpoint], init, config.githubToken, config.accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
+  } catch (error) {
+    if (!isCopilotTokenFetchError(error)) throw error;
+    return new Response(error.body, {
+      status: error.status,
+      headers: new Headers(error.headers),
+    });
+  }
 };

@@ -7,7 +7,7 @@ import type { ApiKey } from './repo/types.ts';
 import { initEnv } from './runtime/env.ts';
 import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts';
 import { initImageProcessor, clearModelsStore } from '@floway-dev/provider';
-import type { Upstream, TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
+import type { TelemetryModelIdentity, UpstreamRecord, ModelProvider, UpstreamModel } from '@floway-dev/provider';
 import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
@@ -327,17 +327,6 @@ export function copilotModels(
     })),
   };
 }
-
-// A throwaway upstream stub for unit tests that exercise the low-level upstream
-// adapter cache without depending on a real network target.
-export const stubUpstream = (overrides: Partial<Upstream> = {}): Upstream => ({
-  id: 'test-upstream',
-  name: 'Test Upstream',
-  kind: 'custom',
-  endpoints: { chatCompletions: {}, responses: {}, messages: {} },
-  fetch: () => Promise.reject(new Error('stubUpstream.fetch was called')),
-  ...overrides,
-});
 
 export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({
   id: 'test-model',

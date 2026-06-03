@@ -1,8 +1,7 @@
 // Generic custom upstream — any third-party LLM provider that speaks an
 // OpenAI-shaped or Anthropic-shaped HTTP API under a single base URL with a
 // static credential. `authStyle` decides the credential header:
-//   - 'bearer'    -> Authorization: Bearer <token>   (OpenAI, OpenRouter,
-//                                                     floway, ...)
+//   - 'bearer'    -> Authorization: Bearer <token>   (OpenAI, OpenRouter, ...)
 //   - 'anthropic' -> x-api-key: <token> + anthropic-version: 2023-06-01
 //                                                    (api.anthropic.com)
 //
@@ -20,7 +19,7 @@
 // path override, because it only matters when fetching is enabled.
 
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { EndpointKey, Upstream, UpstreamFetchOptions, UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { EndpointKey, UpstreamFetchOptions, UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { endpointsField, joinBaseAndPath, modelsField, validateUpstreamPath } from '@floway-dev/provider';
 
 export type CustomAuthStyle = 'bearer' | 'anthropic';
@@ -54,7 +53,7 @@ const authStyleField = (value: unknown): CustomAuthStyle => {
   return value as CustomAuthStyle;
 };
 
-type CustomUpstreamRecord = UpstreamRecord & {
+export type CustomUpstreamRecord = UpstreamRecord & {
   provider: 'custom';
   config: CustomUpstreamConfig;
 };
@@ -161,32 +160,23 @@ const resolveCustomPath = (config: CustomUpstreamConfig, endpoint: EndpointKey):
   return config.pathOverrides?.[endpoint] ?? CUSTOM_DEFAULT_PATHS[endpoint];
 };
 
-export const createCustomUpstream = (record: UpstreamRecord): Upstream => {
-  const { config } = assertCustomUpstreamRecord(record);
-  const baseUrl = trimTrailingSlash(config.baseUrl);
-  return {
-    id: record.id,
-    name: record.name,
-    kind: 'custom',
-    endpoints: config.endpoints,
-    fetch: async (endpoint, init: RequestInit, options?: UpstreamFetchOptions) => {
-      const headers = new Headers(init.headers);
-      if (config.authStyle === 'anthropic') {
-        headers.set('x-api-key', config.bearerToken);
-        if (!headers.has('anthropic-version')) headers.set('anthropic-version', ANTHROPIC_VERSION);
-      } else {
-        headers.set('Authorization', `Bearer ${config.bearerToken}`);
-      }
-      if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
-        headers.set('Content-Type', 'application/json');
-      }
-      if (options?.extraHeaders) {
-        for (const [k, v] of Object.entries(options.extraHeaders)) {
-          headers.set(k, v);
-        }
-      }
-      const url = joinBaseAndPath(baseUrl, resolveCustomPath(config, endpoint));
-      return await fetch(url, { ...init, headers });
-    },
-  };
+// Issue an HTTP call against the custom upstream described by `config`. Applies
+// the configured auth header, default Content-Type for JSON bodies, and any
+// extra headers, then dispatches to the resolved per-endpoint URL.
+export const customFetch = async (config: CustomUpstreamConfig, endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> => {
+  const headers = new Headers(init.headers);
+  if (config.authStyle === 'anthropic') {
+    headers.set('x-api-key', config.bearerToken);
+    if (!headers.has('anthropic-version')) headers.set('anthropic-version', ANTHROPIC_VERSION);
+  } else {
+    headers.set('Authorization', `Bearer ${config.bearerToken}`);
+  }
+  if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (options?.extraHeaders) {
+    for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
+  }
+  const url = joinBaseAndPath(trimTrailingSlash(config.baseUrl), resolveCustomPath(config, endpoint));
+  return await fetch(url, { ...init, headers });
 };

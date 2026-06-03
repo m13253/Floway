@@ -3,7 +3,6 @@ import type { Context } from 'hono';
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { respondResponses } from './respond.ts';
 import type { StatefulResponsesStore } from './stateful-store.ts';
-import type { ProviderModelRecord } from '@floway-dev/provider';
 import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';

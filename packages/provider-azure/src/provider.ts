@@ -1,4 +1,4 @@
-import { assertAzureUpstreamRecord, createAzureUpstream } from './upstream.ts';
+import { assertAzureUpstreamRecord, azureFetch } from './upstream.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { type EndpointKey, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags } from '@floway-dev/provider';
 
@@ -21,13 +21,11 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
 
 export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const azure = assertAzureUpstreamRecord(record);
-  const upstream = createAzureUpstream(azure);
 
   const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     const upstreamModelId = providerData(model).upstreamModelId;
     const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: upstreamModelId } : { ...body, model: upstreamModelId };
-    return upstream
-      .fetch(endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
+    return azureFetch(azure.config, endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: upstreamModelId,
@@ -71,7 +69,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       // Content-Type itself.
       const upstreamModelId = providerData(model).upstreamModelId;
       body.append('model', upstreamModelId);
-      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
+      const response = await azureFetch(azure.config, 'images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
       return { response, modelKey: upstreamModelId };
     },
   };

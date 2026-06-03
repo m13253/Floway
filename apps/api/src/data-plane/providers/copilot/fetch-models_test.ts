@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { fetchCopilotModels, clearCopilotTokenCache, createCopilotUpstream } from '@floway-dev/provider-copilot';
+import { clearCopilotTokenCache, fetchCopilotModels } from '@floway-dev/provider-copilot';
 
 const copilotTokenResponse = (request: Request): Response | null => {
   const url = new URL(request.url);
@@ -17,7 +17,7 @@ const copilotTokenResponse = (request: Request): Response | null => {
 test('fetchCopilotModels returns the parsed response on 2xx', async () => {
   const { githubAccount } = await setupAppTest();
   await clearCopilotTokenCache();
-  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
+  const config = { githubToken: githubAccount.token, accountType: 'individual' as const };
 
   await withMockedFetch(
     request => {
@@ -28,7 +28,7 @@ test('fetchCopilotModels returns the parsed response on 2xx', async () => {
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const result = await fetchCopilotModels(upstream);
+      const result = await fetchCopilotModels(config);
       assertEquals(result.data[0].id, 'cm-1');
     },
   );
@@ -37,7 +37,7 @@ test('fetchCopilotModels returns the parsed response on 2xx', async () => {
 test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const { githubAccount } = await setupAppTest();
   await clearCopilotTokenCache();
-  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
+  const config = { githubToken: githubAccount.token, accountType: 'individual' as const };
 
   let thrown: unknown;
   await withMockedFetch(
@@ -49,7 +49,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      try { await fetchCopilotModels(upstream); } catch (e) { thrown = e; }
+      try { await fetchCopilotModels(config); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -60,7 +60,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse
 test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
   const { githubAccount } = await setupAppTest();
   await clearCopilotTokenCache();
-  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
+  const config = { githubToken: githubAccount.token, accountType: 'individual' as const };
 
   let thrown: unknown;
   await withMockedFetch(
@@ -72,7 +72,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      try { await fetchCopilotModels(upstream); } catch (e) { thrown = e; }
+      try { await fetchCopilotModels(config); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -82,7 +82,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
 test('fetchCopilotModels tags the request with the model-access intent and omits content-type', async () => {
   const { githubAccount } = await setupAppTest();
   await clearCopilotTokenCache();
-  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
+  const config = { githubToken: githubAccount.token, accountType: 'individual' as const };
 
   let observed: Headers | undefined;
   await withMockedFetch(
@@ -97,7 +97,7 @@ test('fetchCopilotModels tags the request with the model-access intent and omits
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      await fetchCopilotModels(upstream);
+      await fetchCopilotModels(config);
     },
   );
 

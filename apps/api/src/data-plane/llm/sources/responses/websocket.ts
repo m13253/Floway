@@ -5,13 +5,13 @@ import { createWebSocketStatefulResponsesSession } from './stateful-store.ts';
 import { responsesTraits, setupResponsesSource } from './traits.ts';
 import { tokenUsage } from '../../../shared/telemetry/usage.ts';
 import type { RequestContext } from '../../interceptors.ts';
-import { toInternalDebugError } from '../../shared/errors/internal-debug-error.ts';
-import type { ExecuteResult, PlainResult } from '../../shared/errors/result.ts';
 import type { StreamCompletion } from '../../shared/stream/proxy-sse.ts';
 import { executeLlmSourcePlan } from '../execution.ts';
 import { eventResultMetadata, recordSourcePerformance, recordSourceUsage, SourceStreamState } from '../respond.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type RawResponsesStreamEvent, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
+import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;

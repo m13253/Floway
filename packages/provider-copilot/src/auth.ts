@@ -173,7 +173,7 @@ export interface CopilotFetchOptions {
   headers?: Record<string, string>;
 }
 
-export async function copilotFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options?: CopilotFetchOptions): Promise<Response> {
+export async function copilotAuthedFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options?: CopilotFetchOptions): Promise<Response> {
   const token = await getCopilotToken(githubToken);
   const baseUrl = copilotBaseUrl(accountType);
 

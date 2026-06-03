@@ -1,9 +1,9 @@
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
+import { assertCustomUpstreamRecord, customFetch } from './upstream.ts';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { isStreamingEndpoint, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '@floway-dev/provider';
 import type { EndpointKey, ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, createCustomUpstream } from '@floway-dev/provider-custom';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -90,8 +90,7 @@ const pricingByRawIdFromResponse = (response: CustomModelsResponse): Map<string,
 
 export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
-  const upstream = createCustomUpstream(record);
-  const configuredEndpoints = upstream.endpoints;
+  const configuredEndpoints = config.endpoints;
   // Computed once for the auto-fetch layer: only the upstream layer applies to
   // auto models (no per-model override layer). Manual models layer their own
   // flag overrides on top, resolved per-model below.
@@ -147,8 +146,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     const requestBody = isStreamingEndpoint(endpoint)
       ? { ...body, stream: true, model: providerData(model).rawModelId }
       : { ...body, model: providerData(model).rawModelId };
-    return upstream
-      .fetch(endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
+    return customFetch(config, endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: providerData(model).rawModelId,
@@ -169,7 +167,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
           return withManual(autoFromResponse(stored.response));
         }
         try {
-          const response = await fetchCustomModels(upstream);
+          const response = await fetchCustomModels(config);
           await writeModelsStore<CustomModelsBlob>(record.id, { response, fetchedAt: now });
           rememberPricing(response);
           return withManual(autoFromResponse(response));
@@ -194,7 +192,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       // Custom forwards the resolved upstream model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', providerData(model).rawModelId);
-      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
+      const response = await customFetch(config, 'images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
       return { response, modelKey: providerData(model).rawModelId };
     },
   };

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { assertEquals } from '../../../test-assert.ts';
 import { jsonResponse, withMockedFetch } from '../../../test-helpers.ts';
 import { isProviderModelsHttpStatus, ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { createCustomUpstream, fetchCustomModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
 const upstreamRecord = () => ({
   id: 'up_custom',
@@ -23,18 +23,18 @@ const upstreamRecord = () => ({
 });
 
 test('fetchCustomModels returns the parsed response on 2xx', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1' }] }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       assertEquals(result.data[0].id, 'm-1');
     },
   );
 });
 
 test('fetchCustomModels accepts an Anthropic-shape response with no top-level `object`', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({
       data: [{ type: 'model', id: 'claude-opus-4-5', display_name: 'Claude Opus 4.5', created_at: '2026-01-01T00:00:00Z' }],
@@ -43,7 +43,7 @@ test('fetchCustomModels accepts an Anthropic-shape response with no top-level `o
       last_id: 'claude-opus-4-5',
     }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       assertEquals(result.data.length, 1);
       assertEquals(result.data[0].id, 'claude-opus-4-5');
       assertEquals(result.data[0].display_name, 'Claude Opus 4.5');
@@ -53,7 +53,7 @@ test('fetchCustomModels accepts an Anthropic-shape response with no top-level `o
 });
 
 test('fetchCustomModels reads superset fields (display_name, limits, cost) from our own /models', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -76,7 +76,7 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
       ],
     }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       const model = result.data[0];
       assertEquals(model.id, 'm-1');
       assertEquals(model.display_name, 'Model One');
@@ -94,33 +94,33 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
 });
 
 test('fetchCustomModels keeps a `cost` block with any subset of billing dimensions', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { input: 1 } }] }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       assertEquals(result.data[0].cost, { input: 1 });
     },
   );
 });
 
 test('fetchCustomModels drops a `cost` block with no recognized dimensions', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { reasoning: 5 } }] }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       assertEquals(result.data[0].cost, undefined);
     },
   );
 });
 
 test('fetchCustomModels skips entries whose id is not a non-empty string', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'ok' }, { id: '' }, { id: 123 }, { display_name: 'no id' }] }),
     async () => {
-      const result = await fetchCustomModels(upstream);
+      const result = await fetchCustomModels(config);
       assertEquals(result.data.length, 1);
       assertEquals(result.data[0].id, 'ok');
     },
@@ -128,12 +128,12 @@ test('fetchCustomModels skips entries whose id is not a non-empty string', async
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;
   await withMockedFetch(
     () => new Response('rate limit', { status: 429, headers: { 'retry-after': '5' } }),
     async () => {
-      try { await fetchCustomModels(upstream); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -145,12 +145,12 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse 
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on network error', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;
   await withMockedFetch(
     () => { throw new TypeError('network down'); },
     async () => {
-      try { await fetchCustomModels(upstream); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -159,12 +159,12 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
-  const upstream = createCustomUpstream(upstreamRecord());
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
   let thrown: unknown;
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: 'oops' }),
     async () => {
-      try { await fetchCustomModels(upstream); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');

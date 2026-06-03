@@ -2,7 +2,7 @@ export { createCopilotProvider } from './provider.ts';
 export {
   CLAUDE_AGENT_USER_AGENT,
   clearCopilotTokenCache,
-  copilotFetch,
+  copilotAuthedFetch,
   CopilotTokenFetchError,
   githubHeaders,
   isCopilotAccountType,
@@ -11,8 +11,8 @@ export {
   type CopilotFetchOptions,
 } from './auth.ts';
 export {
-  createCopilotUpstream,
-  type CopilotUpstream,
+  copilotFetch,
+  type CopilotUpstreamConfig,
 } from './upstream.ts';
 export { fetchCopilotModels } from './fetch-models.ts';
 export type { CopilotRawModel } from './types.ts';

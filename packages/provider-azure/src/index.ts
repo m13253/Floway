@@ -1,6 +1,8 @@
 export { createAzureProvider } from './provider.ts';
 export {
   assertAzureUpstreamRecord,
-  createAzureUpstream,
+  azureFetch,
+  configuredEndpoints,
   type AzureUpstreamConfig,
+  type AzureUpstreamRecord,
 } from './upstream.ts';
