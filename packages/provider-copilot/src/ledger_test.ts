@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './index.ts';
+import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

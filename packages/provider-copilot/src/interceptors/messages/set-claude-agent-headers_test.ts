@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { withClaudeAgentHeadersSet } from './set-claude-agent-headers.ts';
-import { CLAUDE_AGENT_USER_AGENT } from '../../index.ts';
+import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { InterceptorRequest, MessagesInvocation, ExecuteResult } from '@floway-dev/provider';

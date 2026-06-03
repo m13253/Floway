@@ -1,11 +1,13 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache, fetchCopilotModels } from './index.ts';
+import { fetchCopilotModels } from './fetch-models.ts';
+import { clearCopilotTokenCache } from './index.ts';
 import { ProviderModelsUnavailableError, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
 
 const installRepoAndConfig = async () => {
-  initProviderRepo(() => ({ cache: memoryCacheRepo() }));
+  const cache = memoryCacheRepo();
+  initProviderRepo(() => ({ cache }));
   await clearCopilotTokenCache();
   return { githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`, accountType: 'individual' as const };
 };

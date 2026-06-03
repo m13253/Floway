@@ -1,18 +1,77 @@
 import { test } from 'vitest';
 
-import { copilotModels, setupAppTest } from '../../../test-helpers.ts';
-import { runInterceptors, type MessagesInvocation, type RequestContext } from '../../llm/interceptors.ts';
-import { createHttpStatefulResponsesStore } from '../../llm/sources/responses/stateful-store.ts';
+import { clearCopilotTokenCache } from './auth.ts';
+import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
+import { createCopilotProvider } from './provider.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import { createCopilotProvider } from '@floway-dev/provider-copilot';
-import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors } from '@floway-dev/provider-copilot/interceptors/messages';
-import { jsonResponse, withMockedFetch, assertEquals, assertRejects } from '@floway-dev/test-utils';
+import type { ExecuteResult, InterceptorRequest, MessagesInvocation, UpstreamRecord } from '@floway-dev/provider';
+import { clearModelsStore, initImageProcessor, initProviderRepo, ProviderModelsUnavailableError, eventResult } from '@floway-dev/provider';
+import { assertEquals, assertRejects, createInMemoryImageProcessor, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
+
+const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
+  const { config: overrideConfig, ...rest } = overrides;
+  return {
+    id: 'up_copilot',
+    provider: 'copilot',
+    name: 'GitHub Copilot (tester)',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    updatedAt: '2026-03-15T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    ...rest,
+    config: overrideConfig ?? {
+      githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,
+      accountType: 'individual',
+      user: { id: 1, login: 'tester', name: 'Test User', avatar_url: 'https://example.com/avatar.png' },
+    },
+  };
+};
+
+const setupCopilotTest = async (): Promise<{ copilotUpstream: UpstreamRecord }> => {
+  const cache = memoryCacheRepo();
+  initProviderRepo(() => ({ cache }));
+  initImageProcessor(createInMemoryImageProcessor());
+  await clearCopilotTokenCache();
+  clearModelsStore();
+  return { copilotUpstream: buildCopilotUpstream() };
+};
+
+interface CopilotModelFixture {
+  id: string;
+  display_name?: string;
+  supported_endpoints?: string[];
+  reasoningEfforts?: string[];
+  maxContextWindowTokens?: number;
+  maxPromptTokens?: number;
+  maxOutputTokens?: number;
+}
+
+const copilotModels = (models: CopilotModelFixture[]) => ({
+  object: 'list',
+  data: models.map(model => ({
+    id: model.id,
+    name: model.id,
+    ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+    version: '1',
+    supported_endpoints: model.supported_endpoints ?? [],
+    capabilities: {
+      type: 'chat',
+      limits: {
+        ...(model.maxContextWindowTokens !== undefined ? { max_context_window_tokens: model.maxContextWindowTokens } : {}),
+        ...(model.maxPromptTokens !== undefined ? { max_prompt_tokens: model.maxPromptTokens } : {}),
+        ...(model.maxOutputTokens !== undefined ? { max_output_tokens: model.maxOutputTokens } : {}),
+      },
+      ...(model.reasoningEfforts !== undefined ? { supports: { reasoning_effort: model.reasoningEfforts } } : {}),
+    },
+  })),
+});
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
@@ -58,7 +117,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
 });
 
 test('Copilot provider exposes only Responses for Claude when available', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
 
@@ -106,7 +165,7 @@ test('Copilot provider exposes only Responses for Claude when available', async 
 });
 
 test('Copilot provider owns the claude-* Messages capability workaround', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   let upstreamBody: Record<string, unknown> | undefined;
@@ -168,7 +227,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
 });
 
 test('Copilot provider selects raw variants that support the target endpoint', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   let responsesBody: Record<string, unknown> | undefined;
@@ -229,7 +288,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
 });
 
 test('Copilot provider exposes its default flag set via UpstreamModel.enabledFlags', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider({
     ...copilotUpstream,
     flagOverrides: { 'messages-web-search-shim': true },
@@ -268,14 +327,14 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
 });
 
 test('Copilot provider enables Copilot-owned Messages source interceptors by default', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
 
   assertEquals(instance.sourceInterceptors?.messages, messagesCopilotSourceInterceptors);
 });
 
 test('Copilot provider rejects malformed account type instead of falling back', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
 
   await assertRejects(
     () =>
@@ -292,7 +351,7 @@ test('Copilot provider rejects malformed account type instead of falling back', 
 });
 
 test('Copilot provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
@@ -363,18 +422,12 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
 });
 
 test('Copilot provider sets copilot-vision-request when an image is nested inside tool_result.content', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   const visionHeaders: string[] = [];
 
-  const stubRequest: RequestContext = {
-    requestStartedAt: 0,
-    apiKeyUpstreamIds: null,
-    runtimeLocation: 'test',
-    clientStream: false,
-    statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
-  };
+  const stubRequest: InterceptorRequest = {};
 
   const testTelemetryModelIdentity = {
     model: 'claude-msg',
@@ -401,7 +454,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       headers: {},
     };
 
-    await runInterceptors<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
+    await runInterceptors<MessagesInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
       invocation,
       stubRequest,
       messagesCopilotInterceptors,
@@ -517,7 +570,7 @@ const copilotPreflight = (request: Request): Response | null => {
 };
 
 test('Copilot provider keeps a model in the ledger for 24 h even when the next fetch omits it', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
   let fetches = 0;
@@ -551,7 +604,7 @@ test('Copilot provider keeps a model in the ledger for 24 h even when the next f
 });
 
 test('Copilot provider drops a model after 24 h of continuous absence', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
   let fetches = 0;
@@ -584,7 +637,7 @@ test('Copilot provider drops a model after 24 h of continuous absence', async ()
 });
 
 test('Copilot provider returns ledger projection when fetch fails but ledger is non-empty', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
   let fetches = 0;
@@ -614,7 +667,7 @@ test('Copilot provider returns ledger projection when fetch fails but ledger is 
 });
 
 test('Copilot provider throws ProviderModelsUnavailableError when ledger is empty and fetch fails', async () => {
-  const { copilotUpstream } = await setupAppTest();
+  const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
   let thrown: unknown;

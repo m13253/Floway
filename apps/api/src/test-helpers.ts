@@ -1,6 +1,5 @@
 import { app } from './app.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
-import { createInMemoryImageProcessor } from './image/memory.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
@@ -9,6 +8,7 @@ import { initFileProvider, MemoryFileProvider } from './runtime/file-provider.ts
 import { initImageProcessor, clearModelsStore } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { createInMemoryImageProcessor } from '@floway-dev/test-utils';
 
 interface SetupOptions {
   adminKey?: string;

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { messagesCopilotSourceInterceptors } from './index.ts';
-import { CLAUDE_AGENT_USER_AGENT } from '../../index.ts';
+import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';

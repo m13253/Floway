@@ -4,12 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
-    "./interceptors/chat-completions": { "import": "./src/interceptors/chat-completions/index.ts", "types": "./src/interceptors/chat-completions/index.ts" },
-    "./interceptors/messages": { "import": "./src/interceptors/messages/index.ts", "types": "./src/interceptors/messages/index.ts" },
-    "./interceptors/responses": { "import": "./src/interceptors/responses/index.ts", "types": "./src/interceptors/responses/index.ts" },
-    "./interceptors/*": { "import": "./src/interceptors/*.ts", "types": "./src/interceptors/*.ts" },
-    "./*": { "import": "./src/*.ts", "types": "./src/*.ts" }
+    ".": { "import": "./src/index.ts", "types": "./src/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

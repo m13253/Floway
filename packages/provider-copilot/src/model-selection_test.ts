@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { resolveCopilotRawModel } from './index.ts';
+import { resolveCopilotRawModel } from './model-selection.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

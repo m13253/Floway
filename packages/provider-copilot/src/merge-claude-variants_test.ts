@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { mergeClaudeVariants } from './index.ts';
+import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

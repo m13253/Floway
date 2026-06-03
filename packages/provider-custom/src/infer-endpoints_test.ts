@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { inferEndpointsFromModelId } from './index.ts';
+import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const EMBEDDINGS = { embeddings: {} };

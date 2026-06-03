@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache, copilotAuthedFetch } from './index.ts';
+import { copilotAuthedFetch } from './auth.ts';
+import { clearCopilotTokenCache } from './index.ts';
 import { initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
 
