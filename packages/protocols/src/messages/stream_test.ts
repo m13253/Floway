@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { parseMessagesStream } from './stream.ts';
-import { mkSseFrame, sseFrameBody } from '../common/test-utils.ts';
+import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -12,8 +12,8 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 
 test('parseMessagesStream parses Messages SSE frames into protocol events', async () => {
   const frames = await collect(parseMessagesStream(sseFrameBody(
-    mkSseFrame('', 'ping'),
-    mkSseFrame(
+    sseFrame('', 'ping'),
+    sseFrame(
       JSON.stringify({
         type: 'message_start',
         message: {
@@ -29,7 +29,7 @@ test('parseMessagesStream parses Messages SSE frames into protocol events', asyn
       }),
       'message_start',
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   )));
 
   assertEquals(
@@ -58,7 +58,7 @@ test('parseMessagesStream rejects malformed Messages SSE JSON', async () => {
   await assertRejects(
     async () => {
       await collect(parseMessagesStream(sseFrameBody(
-        mkSseFrame('not json', 'message_delta'),
+        sseFrame('not json', 'message_delta'),
       )));
     },
     Error,

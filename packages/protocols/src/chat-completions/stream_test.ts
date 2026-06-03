@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { parseChatCompletionsStream } from './stream.ts';
-import { mkSseFrame, sseFrameBody } from '../common/test-utils.ts';
+import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -12,7 +12,7 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 
 test('parseChatCompletionsStream parses Chat SSE chunks and done sentinel', async () => {
   const frames = await collect(parseChatCompletionsStream(sseFrameBody(
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         id: 'chatcmpl_1',
         object: 'chat.completion.chunk',
@@ -27,7 +27,7 @@ test('parseChatCompletionsStream parses Chat SSE chunks and done sentinel', asyn
         ],
       }),
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   )));
 
   assertEquals(frames, [
@@ -55,7 +55,7 @@ test('parseChatCompletionsStream rejects malformed Chat SSE JSON', async () => {
   await assertRejects(
     async () => {
       await collect(parseChatCompletionsStream(sseFrameBody(
-        mkSseFrame('not json'),
+        sseFrame('not json'),
       )));
     },
     Error,
@@ -67,7 +67,7 @@ test('parseChatCompletionsStream rejects upstream Chat SSE error payloads', asyn
   await assertRejects(
     async () => {
       await collect(parseChatCompletionsStream(sseFrameBody(
-        mkSseFrame(
+        sseFrame(
           JSON.stringify({
             error: {
               type: 'server_error',

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import type { ResponsesResult } from './index.ts';
 import { parseResponsesStream } from './stream.ts';
 import { type SseFrame } from '../common/sse.ts';
-import { mkSseFrame, sseFrameBody } from '../common/test-utils.ts';
+import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -40,7 +40,7 @@ const makeResponse = (status: ResponsesResult['status'], overrides: Partial<Resp
 
 test('parseResponsesStream parses Responses SSE frames into protocol events', async () => {
   const frames = await collect(parse(
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         response: {
           id: 'resp_1',
@@ -54,7 +54,7 @@ test('parseResponsesStream parses Responses SSE frames into protocol events', as
       }),
       'response.created',
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_item.added',
         output_index: 0,
@@ -62,7 +62,7 @@ test('parseResponsesStream parses Responses SSE frames into protocol events', as
         sequence_number: 1,
       }),
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   ));
 
   assertEquals(
@@ -90,7 +90,7 @@ test('parseResponsesStream rejects malformed Responses SSE JSON', async () => {
   await assertRejects(
     async () => {
       await collect(parse(
-        mkSseFrame('not json', 'response.output_text.delta'),
+        sseFrame('not json', 'response.output_text.delta'),
       ));
     },
     Error,
@@ -101,10 +101,10 @@ test('parseResponsesStream rejects malformed Responses SSE JSON', async () => {
 test('parseResponsesStream expands upstream fast-path (created+in_progress+completed) into the full structured sequence', async () => {
   const response = makeResponse('completed');
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response, sequence_number: 1 }), 'response.in_progress'),
-    mkSseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response, sequence_number: 1 }), 'response.in_progress'),
+    sseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed'),
+    sseFrame('[DONE]'),
   ));
 
   // The terminal must arrive only at the end, with no intermediate `response.completed`,
@@ -127,10 +127,10 @@ test('parseResponsesStream expands upstream fast-path (created+in_progress+compl
 test('parseResponsesStream passes wrapper frames through before fast-path expansion synthesises the structured events', async () => {
   const response = makeResponse('completed');
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress'),
-    mkSseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress'),
+    sseFrame(JSON.stringify({ response, sequence_number: 2 }), 'response.completed'),
+    sseFrame('[DONE]'),
   ));
 
   // Wrappers are emitted before fast-path expansion (they are not buffered):
@@ -159,14 +159,14 @@ test('parseResponsesStream passes wrapper frames through before fast-path expans
 
 test('parseResponsesStream passes structured upstream events through unchanged when upstream already streams them', async () => {
   const frames = await collect(parse(
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         response: { ...makeResponse('in_progress'), output: [], output_text: '' },
         sequence_number: 0,
       }),
       'response.created',
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_item.added',
         output_index: 0,
@@ -174,7 +174,7 @@ test('parseResponsesStream passes structured upstream events through unchanged w
         sequence_number: 1,
       }),
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_text.delta',
         item_id: 'msg_1',
@@ -184,14 +184,14 @@ test('parseResponsesStream passes structured upstream events through unchanged w
         sequence_number: 2,
       }),
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         response: makeResponse('completed'),
         sequence_number: 3,
       }),
       'response.completed',
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   ));
 
   // All four event sequence numbers from upstream survive verbatim — no fast-path expansion.
@@ -203,10 +203,10 @@ test('parseResponsesStream does not duplicate wrappers when fast-path expansion 
   // Wrappers have already been forwarded downstream, so fast-path expansion
   // synthesizes only the remaining content and terminal events.
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: makeResponse('in_progress'), sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response: makeResponse('in_progress'), sequence_number: 1 }), 'response.in_progress'),
-    mkSseFrame(JSON.stringify({ response: makeResponse('completed'), sequence_number: 2 }), 'response.completed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: makeResponse('in_progress'), sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: makeResponse('in_progress'), sequence_number: 1 }), 'response.in_progress'),
+    sseFrame(JSON.stringify({ response: makeResponse('completed'), sequence_number: 2 }), 'response.completed'),
+    sseFrame('[DONE]'),
   ));
 
   // The upstream wrapper sequence numbers are kept and the synthesized content
@@ -220,20 +220,20 @@ test('parseResponsesStream fills in sequence_number when upstream omits it (mono
   // without `sequence_number`. The parser must assign one so downstream
   // consumers can rely on the field being present and increasing.
   const frames = await collect(parse(
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         response: { ...makeResponse('in_progress'), output: [], output_text: '' },
       }),
       'response.created',
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_item.added',
         output_index: 0,
         item: { type: 'message', role: 'assistant', content: [] },
       }),
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_text.delta',
         item_id: 'msg_1',
@@ -242,7 +242,7 @@ test('parseResponsesStream fills in sequence_number when upstream omits it (mono
         delta: 'hello',
       }),
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   ));
 
   const sequenceNumbers = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? (frame.event as { sequence_number?: number }).sequence_number : undefined));
@@ -253,21 +253,21 @@ test('parseResponsesStream advances its counter past upstream-provided sequence 
   // Upstream sets sequence_number=5 mid-stream; subsequent omitted ones must
   // continue from 6, not collide with the upstream's prior numbering.
   const frames = await collect(parse(
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         response: { ...makeResponse('in_progress'), output: [], output_text: '' },
         sequence_number: 5,
       }),
       'response.created',
     ),
-    mkSseFrame(
+    sseFrame(
       JSON.stringify({
         type: 'response.output_item.added',
         output_index: 0,
         item: { type: 'message', role: 'assistant', content: [] },
       }),
     ),
-    mkSseFrame('[DONE]'),
+    sseFrame('[DONE]'),
   ));
 
   const sequenceNumbers = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? (frame.event as { sequence_number?: number }).sequence_number : undefined));
@@ -289,9 +289,9 @@ test('parseResponsesStream fast-paths response.failed terminal with error preser
   const { error: _error, ...rest } = failed;
   const created = { ...rest, status: 'in_progress' as const, error: null };
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: created, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response: failed, sequence_number: 1 }), 'response.failed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: created, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: failed, sequence_number: 1 }), 'response.failed'),
+    sseFrame('[DONE]'),
   ));
 
   const events = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event : undefined));
@@ -304,10 +304,10 @@ test('parseResponsesStream fast-paths response.failed terminal with error preser
   assertEquals((events[2] as { response: ResponsesResult }).response.error?.message, 'upstream failed');
 });
 
-// Locks in the deliberate behavior change: when response.failed carries partial output,
-// the fast-path expansion synthesises content_block events for that partial output before
-// the terminal failed event, so downstream clients can observe the partial work instead of
-// losing it. Translate previously dropped any partial content on failed terminals.
+// Asserts that when `response.failed` carries partial output, the fast-path
+// expansion synthesises content_block events for that partial output before
+// the terminal failed event so downstream clients can observe the partial
+// work rather than losing it.
 test('parseResponsesStream fast-paths response.failed terminal with partial output synthesised before the error', async () => {
   const failed = makeResponse('failed', {
     output_text: 'partial',
@@ -322,9 +322,9 @@ test('parseResponsesStream fast-paths response.failed terminal with partial outp
     error: { type: 'server_error', code: 'server_error', message: 'upstream failed mid-stream' },
   });
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: { ...failed, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response: failed, sequence_number: 1 }), 'response.failed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: { ...failed, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: failed, sequence_number: 1 }), 'response.failed'),
+    sseFrame('[DONE]'),
   ));
 
   const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
@@ -337,9 +337,9 @@ test('parseResponsesStream fast-paths response.incomplete terminal', async () =>
     incomplete_details: { reason: 'max_output_tokens' } as ResponsesResult['incomplete_details'],
   });
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: { ...incomplete, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({ response: incomplete, sequence_number: 1 }), 'response.incomplete'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: { ...incomplete, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ response: incomplete, sequence_number: 1 }), 'response.incomplete'),
+    sseFrame('[DONE]'),
   ));
 
   const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
@@ -349,8 +349,8 @@ test('parseResponsesStream fast-paths response.incomplete terminal', async () =>
 
 test('parseResponsesStream passes raw error terminal through (no .response to expand)', async () => {
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ message: 'connection reset', code: 'ECONNRESET' }), 'error'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ message: 'connection reset', code: 'ECONNRESET' }), 'error'),
+    sseFrame('[DONE]'),
   ));
 
   const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
@@ -362,12 +362,12 @@ test('parseResponsesStream passes raw error terminal through (no .response to ex
 test('parseResponsesStream fast-paths when ping interleaves the wrappers', async () => {
   const completed = makeResponse('completed');
   const frames = await collect(parse(
-    mkSseFrame(JSON.stringify({ response: { ...completed, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
-    mkSseFrame(JSON.stringify({}), 'ping'),
-    mkSseFrame(JSON.stringify({ response: { ...completed, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress'),
-    mkSseFrame(JSON.stringify({}), 'ping'),
-    mkSseFrame(JSON.stringify({ response: completed, sequence_number: 2 }), 'response.completed'),
-    mkSseFrame('[DONE]'),
+    sseFrame(JSON.stringify({ response: { ...completed, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({}), 'ping'),
+    sseFrame(JSON.stringify({ response: { ...completed, status: 'in_progress' }, sequence_number: 1 }), 'response.in_progress'),
+    sseFrame(JSON.stringify({}), 'ping'),
+    sseFrame(JSON.stringify({ response: completed, sequence_number: 2 }), 'response.completed'),
+    sseFrame('[DONE]'),
   ));
 
   const eventTypes = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? frame.event.type : ''));
