@@ -17,7 +17,6 @@ import { isStreamingEndpoint, withMessagesCountTokens } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
-import { compactionResultToSse } from '../responses-compaction.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
@@ -328,9 +327,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       // flows the same target pipeline as a native compact.
       const triggered = { ...body, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
       const response = await upstream.fetch('responses', { method: 'POST', body: JSON.stringify(triggered), signal }, extraHeaderOptions(headers));
-      if (!response.ok) return { response, modelKey: rawModel.id };
+      if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
       const generated = (await response.json()) as ResponsesResult;
-      return { response: compactionResultToSse(compactionResponse(input, generated)), modelKey: rawModel.id };
+      return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
     },
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),

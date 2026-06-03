@@ -6,7 +6,7 @@ import { mergeAnthropicBetaHeader } from '../anthropic-beta.ts';
 import { isStreamingEndpoint, modelConfigEndpoints } from '../endpoints.ts';
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
-import { nativeCompactToSse } from '../responses-compaction.ts';
+import { nativeCompactionResult } from '../responses-compaction.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
@@ -69,7 +69,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     },
     callChatCompletions: (model, body, signal, headers) => call('chat_completions', model, body, signal, headers),
     callResponses: (model, body, signal, headers) => call('responses', model, body, signal, headers),
-    callResponsesCompact: (model, body, signal, headers) => nativeCompactToSse(call('responses_compact', model, body, signal, headers)),
+    callResponsesCompact: (model, body, signal, headers) => nativeCompactionResult(call('responses_compact', model, body, signal, headers)),
     callMessages: (model, body, signal, headers, anthropicBeta) => call('messages', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
     callMessagesCountTokens: (model, body, signal, headers, anthropicBeta) => call('messages_count_tokens', model, body, signal, mergeAnthropicBetaHeader(headers, anthropicBeta)),
     callEmbeddings: (model, body, signal, headers) => call('embeddings', model, body, signal, headers),

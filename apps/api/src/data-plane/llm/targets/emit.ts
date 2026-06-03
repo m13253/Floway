@@ -4,7 +4,7 @@ import type { ProviderCallResult } from '../../providers/types.ts';
 import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
-import { eventResult, type ExecuteResult, type InternalErrorResult, internalErrorResult } from '../shared/errors/result.ts';
+import { eventResult, type ExecuteResult, type InternalErrorResult, internalErrorResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { readUpstreamError } from '../shared/errors/upstream-error.ts';
 import { parseSSEStream } from '../shared/stream/parse-sse.ts';
 import type { SseFrame } from '@floway-dev/protocols/common';
@@ -18,6 +18,20 @@ export const targetModelIdentity = (invocation: Invocation<unknown>, modelKey: s
   cost: invocation.provider.getPricingForModelKey(modelKey),
 });
 
+// Records an upstream HTTP failure and produces the verbatim error result.
+// Shared by the streaming SSE boundary below and the non-streaming compaction
+// path, which surface upstream errors identically.
+export const targetUpstreamErrorResult = async (
+  response: Response,
+  invocation: Invocation<unknown>,
+  request: RequestContext,
+  targetApi: TargetEmitApiName,
+  modelIdentity: TelemetryModelIdentity,
+): Promise<UpstreamErrorResult> => {
+  recordUpstreamHttpFailure(invocation, request, targetApi, modelIdentity);
+  return { ...(await readUpstreamError(response)), performance: targetPerformanceContext(invocation, request, targetApi, modelIdentity) };
+};
+
 export const targetProviderResultToFrames = async (
   invocation: Invocation<unknown>,
   request: RequestContext,
@@ -26,17 +40,11 @@ export const targetProviderResultToFrames = async (
   modelIdentity: TelemetryModelIdentity,
   upstreamStartedAt: number,
 ): Promise<ExecuteResult<SseFrame>> => {
-  const perfContext = targetPerformanceContext(invocation, request, targetApi, modelIdentity);
   const { response } = providerResult;
 
-  if (!response.ok) {
-    recordUpstreamHttpFailure(invocation, request, targetApi, modelIdentity);
-    return {
-      ...(await readUpstreamError(response)),
-      performance: perfContext,
-    };
-  }
+  if (!response.ok) return await targetUpstreamErrorResult(response, invocation, request, targetApi, modelIdentity);
 
+  const perfContext = targetPerformanceContext(invocation, request, targetApi, modelIdentity);
   if (!response.body) {
     return internalErrorResult(502, toInternalDebugError(new Error('No response body from upstream'), invocation.sourceApi, targetApi), perfContext);
   }

@@ -5,7 +5,7 @@ import type { ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protoc
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
 
 // The internal model shape: what providers produce and what the registry
 // stores. Only fields the data plane actually consumes — to expose downstream
@@ -102,6 +102,16 @@ export interface ProviderCallResult {
   modelKey: string;
 }
 
+// `/responses/compact` is non-streaming: the provider produces the
+// `response.compaction` envelope as a value — Azure/custom parse it from the
+// native endpoint, Copilot reshapes it from a `compaction_trigger` turn — so the
+// target builds the event frames itself rather than re-parsing a synthesized SSE
+// body. An upstream failure carries the raw Response so the boundary reports it
+// verbatim.
+export type ProviderCompactionResult =
+  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
+
 export interface ModelProvider {
   getProvidedModels(): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model
@@ -116,12 +126,11 @@ export interface ModelProvider {
   // interceptor stack today, but the parameter stays for interface uniformity.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
-  // Realizes `/responses/compact`: returns a non-streaming `response.compaction`
-  // body. Azure/custom pass the native `/responses/compact` endpoint through;
-  // Copilot has no native endpoint, so it drives `/responses` with a
-  // `compaction_trigger` input item and reshapes the result into the same
-  // envelope. A model whose upstream cannot compact surfaces the upstream error.
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  // Realizes `/responses/compact`. Azure/custom parse the native endpoint's
+  // `response.compaction` body; Copilot has no native endpoint, so it drives
+  // `/responses` with a `compaction_trigger` input item and reshapes the result
+  // into the same envelope. See ProviderCompactionResult.
+  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCompactionResult>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire
   // headers. Copilot uses it to pick a raw upstream model variant
