@@ -1,5 +1,5 @@
 import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponsesStreamEvent } from './index.ts';
-import { doneFrame, type EventFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
+import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 import { parseTargetStreamFrames } from '../common/stream/parse-events.ts';
 import { parseSSEStream } from '../common/stream/parse-sse.ts';
 
@@ -29,25 +29,41 @@ const projectSseJsonEvent = (event: ResponsesStreamEvent, eventName: string | un
 const isResponsesWrapperEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
   event.type === 'response.created' || event.type === 'response.in_progress';
 
-const remainingFastPathEvents = (response: ResponsesResult, sentWrapperTypes: ReadonlySet<ResponsesStreamEvent['type']>): EventFrame<ResponsesStreamEvent>[] => {
-  const expanded = responsesResultToEvents(response);
-  return sentWrapperTypes.size > 0 ? expanded.filter(frame => !sentWrapperTypes.has(frame.event.type)) : expanded;
+// Per OpenAI Responses spec every stream event carries a monotonic
+// `sequence_number`, but probes / fast-path completions on Copilot omit it
+// on the wire. This parser fills in the missing values with a per-stream
+// counter so downstream consumers can always rely on the field being present
+// and increasing. When upstream does provide a number we adopt it and advance
+// the counter past it, so synthesized fill-ins continue the same sequence
+// without colliding.
+const sequencer = () => {
+  let next = 0;
+  return (event: ResponsesStreamEvent): ResponsesStreamEvent => {
+    if (event.sequence_number !== undefined) {
+      if (event.sequence_number >= next) next = event.sequence_number + 1;
+      return event;
+    }
+    const stamped: ResponsesStreamEvent = { ...event, sequence_number: next };
+    next++;
+    return stamped;
+  };
 };
 
 // Some Responses upstreams (notably Copilot for short prompts) take a
 // "fast-path": they only emit `response.created` / `response.in_progress` and
 // a terminal `response.completed` / `response.incomplete` / `response.failed`,
-// skipping every content-bearing structured event. The target boundary
-// expands the terminal in place via responsesResultToEvents so downstream
-// consumers always observe one canonical full event sequence. `error`
-// terminals carry no `response` payload, so we cannot expand them; they
-// continue to surface as their original frame for downstream handlers.
+// skipping every content-bearing structured event. This parser expands the
+// terminal in place via `responsesResultToEvents` so downstream consumers
+// always observe one canonical full event sequence. `error` terminals carry
+// no `response` payload, so we cannot expand them; they continue to surface
+// as their original frame for downstream handlers.
 export const parseResponsesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseResponsesStreamOptions = {},
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> => (async function* () {
   let sawStructured = false;
   const sentWrapperTypes = new Set<ResponsesStreamEvent['type']>();
+  const stamp = sequencer();
 
   for await (const frame of parseTargetStreamFrames<ResponsesStreamEvent>(parseSSEStream(body, options), {
     protocol: 'Responses',
@@ -63,13 +79,18 @@ export const parseResponsesStream = (
 
     const structured = isStructuredResponsesEvent(event);
     const terminal = isResponsesTerminalEvent(event);
-    const projected = eventFrame(event);
 
     if (!sawStructured && terminal && !structured && 'response' in event) {
       // Fast-path: terminal arrived before any content-bearing structured
       // event. If wrappers were already sent downstream, keep them and
       // synthesize only the missing item/content events plus terminal.
-      for (const expanded of remainingFastPathEvents((event as { response: ResponsesResult }).response, sentWrapperTypes)) yield expanded;
+      // `responsesResultToEvents` numbers from 0; re-stamp each frame
+      // through the per-stream sequencer so they continue the same sequence.
+      for (const expanded of responsesResultToEvents((event as { response: ResponsesResult }).response)) {
+        if (sentWrapperTypes.has(expanded.event.type)) continue;
+        const restamped = { ...expanded.event, sequence_number: undefined } as ResponsesStreamEvent;
+        yield eventFrame(stamp(restamped));
+      }
       sawStructured = true;
       continue;
     }
@@ -79,6 +100,6 @@ export const parseResponsesStream = (
     }
 
     if (!sawStructured && isResponsesWrapperEvent(event)) sentWrapperTypes.add(event.type);
-    yield projected;
+    yield eventFrame(stamp(event));
   }
 })();

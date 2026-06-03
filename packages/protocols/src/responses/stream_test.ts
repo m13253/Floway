@@ -223,6 +223,65 @@ test('parseResponsesStream does not duplicate wrappers when fast-path expansion 
   assertEquals(sequenceNumbers, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 });
 
+test('parseResponsesStream fills in sequence_number when upstream omits it (monotonic counter)', async () => {
+  // Some upstreams (probes, fast-path completions) ship structured events
+  // without `sequence_number`. The parser must assign one so downstream
+  // consumers can rely on the field being present and increasing.
+  const frames = await collect(parse(
+    sseFrame(
+      JSON.stringify({
+        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+      }),
+      'response.created',
+    ),
+    sseFrame(
+      JSON.stringify({
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'message', role: 'assistant', content: [] },
+      }),
+    ),
+    sseFrame(
+      JSON.stringify({
+        type: 'response.output_text.delta',
+        item_id: 'msg_1',
+        output_index: 0,
+        content_index: 0,
+        delta: 'hello',
+      }),
+    ),
+    sseFrame('[DONE]'),
+  ));
+
+  const sequenceNumbers = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? (frame.event as { sequence_number?: number }).sequence_number : undefined));
+  assertEquals(sequenceNumbers, [0, 1, 2]);
+});
+
+test('parseResponsesStream advances its counter past upstream-provided sequence numbers (no collisions)', async () => {
+  // Upstream sets sequence_number=5 mid-stream; subsequent omitted ones must
+  // continue from 6, not collide with the upstream's prior numbering.
+  const frames = await collect(parse(
+    sseFrame(
+      JSON.stringify({
+        response: { ...makeResponse('in_progress'), output: [], output_text: '' },
+        sequence_number: 5,
+      }),
+      'response.created',
+    ),
+    sseFrame(
+      JSON.stringify({
+        type: 'response.output_item.added',
+        output_index: 0,
+        item: { type: 'message', role: 'assistant', content: [] },
+      }),
+    ),
+    sseFrame('[DONE]'),
+  ));
+
+  const sequenceNumbers = frames.filter(frame => frame.type === 'event').map(frame => (frame.type === 'event' ? (frame.event as { sequence_number?: number }).sequence_number : undefined));
+  assertEquals(sequenceNumbers, [5, 6]);
+});
+
 test('parseResponsesStream fast-paths response.failed terminal with error preserved on terminal only', async () => {
   const failed = makeResponse('failed', {
     output: [],
