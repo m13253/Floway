@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { parseChatCompletionsStream } from './stream.ts';
-import { type SseFrame } from '../common/sse.ts';
+import { mkSseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -10,13 +10,9 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-const sseLine = (frame: SseFrame): string => `${frame.event ? `event: ${frame.event}\n` : ''}data: ${frame.data}\n\n`;
-const sseBody = (...frames: SseFrame[]): ReadableStream<Uint8Array> => new Response(frames.map(sseLine).join('')).body!;
-const sseFrame = (data: string, event?: string): SseFrame => ({ type: 'sse', event, data });
-
 test('parseChatCompletionsStream parses Chat SSE chunks and done sentinel', async () => {
-  const frames = await collect(parseChatCompletionsStream(sseBody(
-    sseFrame(
+  const frames = await collect(parseChatCompletionsStream(sseFrameBody(
+    mkSseFrame(
       JSON.stringify({
         id: 'chatcmpl_1',
         object: 'chat.completion.chunk',
@@ -31,7 +27,7 @@ test('parseChatCompletionsStream parses Chat SSE chunks and done sentinel', asyn
         ],
       }),
     ),
-    sseFrame('[DONE]'),
+    mkSseFrame('[DONE]'),
   )));
 
   assertEquals(frames, [
@@ -58,8 +54,8 @@ test('parseChatCompletionsStream parses Chat SSE chunks and done sentinel', asyn
 test('parseChatCompletionsStream rejects malformed Chat SSE JSON', async () => {
   await assertRejects(
     async () => {
-      await collect(parseChatCompletionsStream(sseBody(
-        sseFrame('not json'),
+      await collect(parseChatCompletionsStream(sseFrameBody(
+        mkSseFrame('not json'),
       )));
     },
     Error,
@@ -70,8 +66,8 @@ test('parseChatCompletionsStream rejects malformed Chat SSE JSON', async () => {
 test('parseChatCompletionsStream rejects upstream Chat SSE error payloads', async () => {
   await assertRejects(
     async () => {
-      await collect(parseChatCompletionsStream(sseBody(
-        sseFrame(
+      await collect(parseChatCompletionsStream(sseFrameBody(
+        mkSseFrame(
           JSON.stringify({
             error: {
               type: 'server_error',

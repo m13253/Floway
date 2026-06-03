@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { parseMessagesStream } from './stream.ts';
-import { type SseFrame } from '../common/sse.ts';
+import { mkSseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -10,14 +10,10 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-const sseLine = (frame: SseFrame): string => `${frame.event ? `event: ${frame.event}\n` : ''}data: ${frame.data}\n\n`;
-const sseBody = (...frames: SseFrame[]): ReadableStream<Uint8Array> => new Response(frames.map(sseLine).join('')).body!;
-const sseFrame = (data: string, event?: string): SseFrame => ({ type: 'sse', event, data });
-
 test('parseMessagesStream parses Messages SSE frames into protocol events', async () => {
-  const frames = await collect(parseMessagesStream(sseBody(
-    sseFrame('', 'ping'),
-    sseFrame(
+  const frames = await collect(parseMessagesStream(sseFrameBody(
+    mkSseFrame('', 'ping'),
+    mkSseFrame(
       JSON.stringify({
         type: 'message_start',
         message: {
@@ -33,7 +29,7 @@ test('parseMessagesStream parses Messages SSE frames into protocol events', asyn
       }),
       'message_start',
     ),
-    sseFrame('[DONE]'),
+    mkSseFrame('[DONE]'),
   )));
 
   assertEquals(
@@ -61,8 +57,8 @@ test('parseMessagesStream parses Messages SSE frames into protocol events', asyn
 test('parseMessagesStream rejects malformed Messages SSE JSON', async () => {
   await assertRejects(
     async () => {
-      await collect(parseMessagesStream(sseBody(
-        sseFrame('not json', 'message_delta'),
+      await collect(parseMessagesStream(sseFrameBody(
+        mkSseFrame('not json', 'message_delta'),
       )));
     },
     Error,
