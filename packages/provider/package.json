@@ -12,5 +12,8 @@
   "dependencies": {
     "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/protocols": "workspace:*"
+  },
+  "devDependencies": {
+    "@floway-dev/test-utils": "workspace:*"
   }
 }

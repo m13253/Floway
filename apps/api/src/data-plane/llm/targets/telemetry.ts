@@ -1,19 +1,19 @@
 import { type PerformanceTelemetryContext, recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { PerformanceApiName, TelemetryModelIdentity } from '@floway-dev/provider';
 
 type TerminalKind = 'success' | 'failure';
 
 export function withUpstreamTelemetry<T>(
-  events: AsyncIterable<T>,
+  events: AsyncIterable<ProtocolFrame<T>>,
   invocation: Invocation<unknown>,
   request: RequestContext,
   targetApi: PerformanceApiName,
   startedAt: number,
   modelIdentity: TelemetryModelIdentity,
-): AsyncIterable<T> {
+): AsyncIterable<ProtocolFrame<T>> {
   return (async function* () {
     let recorded = false;
     const recordOnce = (kind: TerminalKind, durationMs: number) => {
@@ -33,11 +33,11 @@ export function withUpstreamTelemetry<T>(
     let upstreamEnded = false;
     try {
       try {
-        for await (const event of events) {
-          const terminal = classifyTerminalFrame(event, targetApi);
+        for await (const frame of events) {
+          const terminal = classifyTerminalFrame(frame, targetApi);
           const terminalDurationMs = terminal ? performance.now() - startedAt : 0;
           try {
-            yield event;
+            yield frame;
           } finally {
             // Source protocol collectors stop at terminal events and may never
             // pull the upstream iterator to EOF, so record once a target-owned
@@ -77,32 +77,16 @@ export function targetPerformanceContext(
   return upstreamContext(invocation, request, targetApi, modelIdentity);
 }
 
-function classifyTerminalFrame(value: unknown, targetApi: PerformanceApiName): TerminalKind | null {
-  if (!isSseFrame(value)) return null;
-  return classifySseTerminal(value, targetApi);
-}
-
-function isSseFrame(value: unknown): value is SseFrame {
-  if (!value || typeof value !== 'object') return false;
-  const type = (value as { type?: unknown }).type;
-  return type === 'sse' && typeof (value as { data?: unknown }).data === 'string';
-}
-
-function classifySseTerminal(frame: SseFrame, targetApi: PerformanceApiName): TerminalKind | null {
-  const data = frame.data.trim();
-  if (data === '[DONE]') {
+function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: PerformanceApiName): TerminalKind | null {
+  if (frame.type === 'done') {
+    // Chat Completions's terminal signal IS the `[DONE]` sentinel; Messages
+    // and Responses have explicit terminal events (message_stop /
+    // response.completed family) and never use `[DONE]` for health
+    // classification.
     return targetApi === 'chat-completions' ? 'success' : null;
   }
-
-  let parsed: { type?: unknown; status?: unknown } | null = null;
-  try {
-    parsed = JSON.parse(data) as { type?: unknown; status?: unknown };
-  } catch {
-    return null;
-  }
-
-  let eventType = frame.event;
-  if (typeof parsed.type === 'string') eventType = parsed.type;
+  const event = frame.event as { type?: unknown; status?: unknown };
+  const eventType = typeof event.type === 'string' ? event.type : undefined;
 
   if (targetApi === 'messages') {
     if (eventType === 'message_stop') return 'success';
@@ -112,10 +96,10 @@ function classifySseTerminal(frame: SseFrame, targetApi: PerformanceApiName): Te
   if (targetApi === 'responses') {
     if (eventType === 'response.completed' || eventType === 'response.incomplete') return 'success';
     if (eventType === 'response.failed') return 'failure';
-    if (parsed.status === 'failed') return 'failure';
+    if (event.status === 'failed') return 'failure';
     return null;
   }
-  if (chatCompletionsErrorPayloadMessage(parsed)) return 'failure';
+  if (chatCompletionsErrorPayloadMessage(event)) return 'failure';
   return null;
 }
 

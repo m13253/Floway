@@ -4,7 +4,7 @@ import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.t
 import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { createCustomProvider } from '@floway-dev/provider-custom';
-import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { jsonResponse, sseResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',
@@ -46,13 +46,13 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       bodies[path] = (await request.json()) as Record<string, unknown>;
 
       if (path === '/v1/chat/completions') {
-        return jsonResponse({ id: 'cc', object: 'chat.completion', model: 'echo', choices: [], usage: {} });
+        return sseResponse();
       }
       if (path === '/v1/responses') {
-        return jsonResponse({ id: 'r', object: 'response', model: 'echo', output: [], usage: {} });
+        return sseResponse();
       }
       if (path === '/v1/messages') {
-        return jsonResponse({ id: 'm', type: 'message', role: 'assistant', content: [], model: 'echo', stop_reason: 'end_turn', stop_sequence: null, usage: {} });
+        return sseResponse();
       }
       if (path === '/v1/messages/count_tokens') {
         return jsonResponse({ input_tokens: 1 });
@@ -462,7 +462,7 @@ test('Custom provider forwards the source-derived anthropicBeta slice as the ant
       const path = new URL(request.url).pathname;
       if (path === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'echo', object: 'model' }] });
       seen.push(request.headers.get('anthropic-beta'));
-      if (path === '/v1/messages') return jsonResponse({ id: 'm', type: 'message', role: 'assistant', content: [], model: 'echo', stop_reason: 'end_turn', stop_sequence: null, usage: {} });
+      if (path === '/v1/messages') return sseResponse();
       if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
       throw new Error(`Unhandled fetch ${request.url}`);
     },

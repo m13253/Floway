@@ -8,7 +8,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, InterceptorRequest, MessagesInvocation, UpstreamRecord } from '@floway-dev/provider';
 import { clearModelsStore, initImageProcessor, initProviderRepo, ProviderModelsUnavailableError, eventResult } from '@floway-dev/provider';
-import { assertEquals, assertRejects, createInMemoryImageProcessor, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, createInMemoryImageProcessor, jsonResponse, memoryCacheRepo, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -196,16 +196,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
       }
       if (url.pathname === '/v1/messages') {
         upstreamBody = (await request.json()) as Record<string, unknown>;
-        return jsonResponse({
-          id: 'msg_claude_workaround',
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'text', text: 'ok' }],
-          model: 'claude-haiku-chat-listed',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 1, output_tokens: 1 },
-        });
+        return sseResponse();
       }
 
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -264,13 +255,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
       }
       if (url.pathname === '/responses') {
         responsesBody = (await request.json()) as Record<string, unknown>;
-        return jsonResponse({
-          id: 'resp_endpoint_variant',
-          object: 'response',
-          model: 'claude-opus-4.7',
-          output: [],
-          usage: { input_tokens: 1, output_tokens: 1 },
-        });
+        return sseResponse();
       }
 
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -385,13 +370,13 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       bodies[path] = (await request.json()) as Record<string, unknown>;
 
       if (path === '/chat/completions') {
-        return jsonResponse({ id: 'cc', object: 'chat.completion', model: 'gpt-chat', choices: [], usage: {} });
+        return sseResponse();
       }
       if (path === '/responses') {
-        return jsonResponse({ id: 'r', object: 'response', model: 'gpt-resp', output: [], usage: {} });
+        return sseResponse();
       }
       if (path === '/v1/messages') {
-        return jsonResponse({ id: 'm', type: 'message', role: 'assistant', content: [], model: 'claude-msg', stop_reason: 'end_turn', stop_sequence: null, usage: {} });
+        return sseResponse();
       }
       if (path === '/v1/messages/count_tokens') {
         return jsonResponse({ input_tokens: 1 });
@@ -486,16 +471,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       if (url.pathname === '/v1/messages') {
         visionHeaders.push(request.headers.get('copilot-vision-request') ?? '');
         await request.text();
-        return jsonResponse({
-          id: 'm',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-msg',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: {},
-        });
+        return sseResponse();
       }
 
       throw new Error(`Unhandled fetch ${request.url}`);

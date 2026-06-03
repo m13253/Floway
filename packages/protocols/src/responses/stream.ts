@@ -1,7 +1,7 @@
 import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponsesStreamEvent } from './index.ts';
 import { doneFrame, type EventFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
-import { parseSSEStream } from '../common/stream/parse-sse.ts';
 import { parseTargetStreamFrames } from '../common/stream/parse-events.ts';
+import { parseSSEStream } from '../common/stream/parse-sse.ts';
 
 export interface ParseResponsesStreamOptions {
   signal?: AbortSignal;

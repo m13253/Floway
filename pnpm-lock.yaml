@@ -215,6 +215,10 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
 
   packages/provider-azure:
     dependencies:

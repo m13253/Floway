@@ -34,3 +34,15 @@ export function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'content-type': 'application/json' },
   });
 }
+
+// Minimal SSE 200 response for stubbing streaming endpoints in tests. The
+// default body is the OpenAI-style `[DONE]` sentinel; pass arbitrary SSE
+// text when a test cares about the upstream's emitted frames. The provider
+// rejects 200 responses that are not text/event-stream as a contract
+// violation, so streaming-endpoint stubs must use this helper.
+export function sseResponse(body = 'data: [DONE]\n\n', status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+  });
+}

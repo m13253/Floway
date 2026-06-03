@@ -1,8 +1,8 @@
 import { chatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { ChatCompletionsStreamEvent } from './index.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
-import { parseSSEStream } from '../common/stream/parse-sse.ts';
 import { parseTargetStreamFrames } from '../common/stream/parse-events.ts';
+import { parseSSEStream } from '../common/stream/parse-sse.ts';
 
 export interface ParseChatCompletionsStreamOptions {
   signal?: AbortSignal;

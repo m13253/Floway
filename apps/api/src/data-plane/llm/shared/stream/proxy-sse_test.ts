@@ -2,9 +2,9 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
-import { parseSSEStream } from '@floway-dev/protocols/common';
 import { writeSSEFrames } from './proxy-sse.ts';
 import { FakeTime } from '../../../../test-time.ts';
+import { parseSSEStream } from '@floway-dev/protocols/common';
 import { sseCommentFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 

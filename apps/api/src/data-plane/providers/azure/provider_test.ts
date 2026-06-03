@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -79,7 +79,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
         url: request.url,
         body: (await request.json()) as Record<string, unknown>,
       });
-      return new Response('{}', { status: 200 });
+      return sseResponse();
     },
     async () => {
       const chat = await instance.provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hello' }] });
@@ -141,7 +141,7 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
         apiKey: request.headers.get('api-key'),
         body: (await request.json()) as Record<string, unknown>,
       });
-      return new Response('{}', { status: 200 });
+      return sseResponse();
     },
     async () => {
       const chat = await instance.provider.callChatCompletions(chatModel, { messages: [{ role: 'user', content: 'hello' }] });
@@ -203,7 +203,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
         body: (await request.json()) as Record<string, unknown>,
         beta: request.headers.get('anthropic-beta'),
       });
-      return new Response('{}', { status: 200 });
+      return sseResponse();
     },
     async () => {
       const messages = await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { 'anthropic-beta': 'context-1m' });
@@ -245,7 +245,7 @@ test('createAzureProvider forwards the source-derived anthropicBeta slice as the
   await withMockedFetch(
     request => {
       seen.push(request.headers.get('anthropic-beta'));
-      return Promise.resolve(new Response('{}', { status: 200 }));
+      return Promise.resolve(sseResponse());
     },
     async () => {
       // The data plane passes the parsed beta slice as the 5th argument, not

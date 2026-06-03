@@ -1,10 +1,9 @@
-import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
-import { responsesStreamFramesToEvents } from './events/from-stream.ts';
+import { targetInternalError, targetModelIdentity, targetStreamResultToExecuteResult } from '../emit.ts';
 import { responsesBaseInterceptors } from './interceptors/index.ts';
 import { type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type TelemetryModelIdentity, type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { type TelemetryModelIdentity, type ExecuteResult } from '@floway-dev/provider';
 
 const targetApi = 'responses';
 
@@ -17,9 +16,7 @@ export const emitToResponses = async (invocation: ResponsesInvocation, request: 
       const { model: _model, ...body }: ResponsesPayload = invocation.payload;
       const providerResult = await invocation.provider.callResponses(invocation.upstreamModel, body, request.downstreamAbortSignal, invocation.headers);
       modelIdentity = targetModelIdentity(invocation, providerResult.modelKey);
-      const result = await targetProviderResultToFrames(invocation, request, targetApi, providerResult, modelIdentity, upstreamStartedAt);
-
-      return result.type === 'events' ? eventResult(responsesStreamFramesToEvents(result.events), result.modelIdentity, result.performance, result.finalMetadata) : result;
+      return await targetStreamResultToExecuteResult(invocation, request, targetApi, providerResult, modelIdentity, upstreamStartedAt);
     });
   } catch (error) {
     return targetInternalError(invocation, request, targetApi, error, modelIdentity);
