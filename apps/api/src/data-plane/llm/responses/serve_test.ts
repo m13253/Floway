@@ -525,3 +525,43 @@ test('generate falls through translate-out to chat-completions target', async ()
   await collectEvents(result.events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
+
+test('generate reuses an existing input row when a later turn echoes the same user message', async () => {
+  const repo = installRepo();
+  let turn = 0;
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+    turn += 1;
+    return {
+      ok: true,
+      events: makeProviderEvents([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: makeResponsesResult(`resp_turn_${turn}`),
+      }]),
+      modelKey: 'test-model-key',
+    };
+  });
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const payload = makePayload({ input: [{ type: 'message', role: 'user', content: 'hello' }] });
+
+  queueCandidates([makeCandidate({ callResponses })]);
+  const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store });
+  if (turn1.type !== 'events') throw new Error('turn 1: expected events');
+  await collectEvents(turn1.events);
+
+  queueCandidates([makeCandidate({ callResponses })]);
+  const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store });
+  if (turn2.type !== 'events') throw new Error('turn 2: expected events');
+  await collectEvents(turn2.events);
+
+  // Both snapshots' first item id is the staged user message; a working
+  // content-hash preload makes turn 2 reuse turn 1's row instead of minting
+  // a fresh one.
+  const snap1 = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_turn_1');
+  const snap2 = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_turn_2');
+  if (snap1 === null || snap2 === null) throw new Error('expected both snapshots to be persisted');
+  const turn1InputId = snap1.itemIds[0];
+  const turn2InputId = snap2.itemIds[0];
+  if (turn1InputId === undefined || turn2InputId === undefined) throw new Error('expected each snapshot to start with a staged input item');
+  assertEquals(turn2InputId, turn1InputId);
+});
