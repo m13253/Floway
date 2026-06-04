@@ -25,6 +25,10 @@ export interface ResponsesAttemptGenerateArgs {
   // path (another protocol's attempt translating into Responses) passes
   // 'none' so the outer source owns snapshot persistence.
   readonly snapshotMode: ResponsesSnapshotMode;
+  // Optional invocation-headers inheritance from a source attempt that
+  // translated INTO responses. Source-side interceptors write trace headers
+  // into the source invocation; passing them in here keeps them on the wire.
+  readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
 export interface ResponsesAttemptCompactArgs {
@@ -36,8 +40,13 @@ export interface ResponsesAttemptCompactArgs {
 
 export const responsesAttempt = {
   generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, snapshotMode } = args;
-    const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
+    const { payload, ctx, store, candidate, snapshotMode, inheritedInvocationHeaders } = args;
+    const invocation: ResponsesInvocation = {
+      payload,
+      candidate,
+      store,
+      headers: { ...(inheritedInvocationHeaders ?? {}) },
+    };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       // Rewrite runs inside the chain runner so an interceptor can mutate
       // the payload (server-tool shim, vendor normalizers) before stored

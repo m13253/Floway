@@ -20,14 +20,24 @@ export interface ChatCompletionsAttemptArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  // Optional invocation-headers inheritance from a source attempt that
+  // translated INTO chat-completions. Source-side interceptors (e.g. Messages
+  // claude-agent / interaction-id setters) write trace headers into the
+  // source `MessagesInvocation.headers` bag; passing them in here keeps them
+  // on the wire for the translated upstream call.
+  readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
-    const { payload, ctx, store, candidate } = args;
+    const { payload, ctx, store, candidate, inheritedInvocationHeaders } = args;
     const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
-    const invocation: ChatCompletionsInvocation = { payload: rewritten.payload, candidate, headers: {} };
+    const invocation: ChatCompletionsInvocation = {
+      payload: rewritten.payload,
+      candidate,
+      headers: { ...(inheritedInvocationHeaders ?? {}) },
+    };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       if (candidate.targetApi === 'chat-completions') {
         return await callChatCompletionsAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers);

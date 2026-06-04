@@ -43,16 +43,23 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: {},
     };
-    return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, sourceChainInterceptors(candidate), async () => {
       if (candidate.targetApi === 'messages') {
-        return await callMessagesAsExecuteResult(invocation.payload, ctx, candidate, invocation.anthropicBeta, invocation.headers);
+        // Target-side Messages interceptors (anthropic-beta filter, vision
+        // header, tool-strict stripper for Copilot Vertex, etc.) only apply
+        // when the wire actually carries a Messages payload — running them
+        // for translated targets would mutate fields the translator hasn't
+        // produced yet (or shouldn't strip from the translation source).
+        return await runInterceptors(invocation, ctx, targetChainInterceptors(candidate), () =>
+          callMessagesAsExecuteResult(invocation.payload, ctx, candidate, invocation.anthropicBeta, invocation.headers),
+        );
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, snapshotMode: 'none',
+            payload: translated, ctx, store, candidate, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -61,7 +68,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate,
+            payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -138,19 +145,29 @@ const rewriteOrRenderMessagesFailure = async (
   }
 };
 
-// Provider-side `interceptors.messages` / `interceptors.messagesCountTokens`
-// are still typed against the wide pre-redesign `Invocation`. The runtime
-// instances satisfy the slim shape (they only read `candidate.binding` fields
-// the wide shape also carries) and write into `invocation.headers`; cast at
-// the join until the provider-package migration lands.
-const chainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
+// Source-side interceptors apply regardless of target — they shape the
+// Messages payload before either calling Messages directly or translating to
+// another protocol. Target-side interceptors (`targetInterceptors.messages`)
+// only apply when the wire actually carries Messages: they run as an inner
+// chain inside the targetApi==='messages' branch.
+const sourceChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
   ...messagesInterceptors,
-  ...((candidate.binding.interceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[]),
+  // Provider-side `sourceInterceptors.messages` is still typed against the
+  // wide pre-redesign `Invocation`. The runtime instances satisfy the slim
+  // shape (they only read `candidate.binding` fields the wide shape also
+  // carries) and write into `invocation.headers`; cast at the join until
+  // the provider-package migration lands.
+  ...((candidate.binding.sourceInterceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[]),
 ];
+
+const targetChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] =>
+  (candidate.binding.targetInterceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[];
 
 const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly MessagesCountTokensInterceptor[] => [
   ...messagesCountTokensInterceptors,
-  ...((candidate.binding.interceptors?.messagesCountTokens ?? []) as readonly unknown[] as readonly MessagesCountTokensInterceptor[]),
+  // count_tokens has no source/target split today; the provider-side list
+  // is the only contribution beyond the shared base chain.
+  ...((candidate.binding.targetInterceptors?.messagesCountTokens ?? []) as readonly unknown[] as readonly MessagesCountTokensInterceptor[]),
 ];
 
 const callMessagesAsExecuteResult = async (
