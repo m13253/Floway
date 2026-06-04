@@ -1,22 +1,5 @@
-import { reassembleMessagesEvents } from './reassemble.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-
-export const MESSAGES_MISSING_TERMINAL_MESSAGE = 'Messages stream ended without a message_stop event.';
-
-const isMessagesTerminalEvent = (event: Pick<MessagesStreamEvent, 'type'>): boolean => event.type === 'message_stop' || event.type === 'error';
-
-const messagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
-  for await (const frame of frames) {
-    if (frame.type === 'done') continue;
-
-    yield frame.event;
-    if (isMessagesTerminalEvent(frame.event)) return;
-  }
-
-  throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);
-};
-
-export const collectMessagesProtocolEventsToResult = async (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): Promise<MessagesResult> => {
-  return await reassembleMessagesEvents(messagesEventsUntilTerminal(frames));
-};
+// Re-export stub: events helpers have been relocated to
+// `data-plane/llm/messages/events/`. Kept here so the legacy
+// `sources/messages/` modules continue to resolve; remove the stub once
+// those modules move alongside.
+export * from '../../../messages/events/to-result.ts';
