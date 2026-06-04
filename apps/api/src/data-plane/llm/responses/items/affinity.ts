@@ -90,6 +90,13 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
     // id, or an `item_reference` asserting one) or an `encrypted_content` blob.
     // Items that carry their own inline content with neither pass through.
     if (id === null && encryptedContent === null) return;
+    if (item.type === 'item_reference') {
+      // `ResponsesItemReference` requires `id` at the protocol level, so an
+      // `item_reference` source item without one is a visitor bug.
+      if (id === null) throw new Error('item_reference without an id reached collectStoredResponsesItemRefs');
+      references.push({ type: 'item_reference', id });
+      return;
+    }
     references.push({
       type: item.type,
       ...(id !== null ? { id } : {}),
@@ -145,8 +152,14 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined ? selectEncryptedContentRow(ref, store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!)) : undefined);
     if (row === undefined) {
-      if (ref.type === 'item_reference' || (ref.id !== undefined && queryableIds.has(ref.id))) {
-        failures.push({ kind: 'item-not-found', itemId: ref.id ?? '' });
+      if (ref.type === 'item_reference') {
+        // `item_reference` is enforced by collectStoredResponsesItemRefs to
+        // carry a non-null id (matching ResponsesItemReference). The
+        // assertion narrows the optional field for the failure push.
+        if (ref.id === undefined) throw new Error('item_reference ref reached affinity walk without an id');
+        failures.push({ kind: 'item-not-found', itemId: ref.id });
+      } else if (ref.id !== undefined && queryableIds.has(ref.id)) {
+        failures.push({ kind: 'item-not-found', itemId: ref.id });
       }
       continue;
     }
