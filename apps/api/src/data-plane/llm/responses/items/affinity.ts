@@ -4,6 +4,7 @@ import type { LlmServeFailure } from '../../shared/errors.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { ResponsesItemsView } from './view.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
@@ -124,9 +125,18 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;
   candidates: readonly ProviderCandidate[];
+  // Items the caller will stage as inputs after the affinity walk; passed
+  // here so `loadInputItems` can pre-load any stored row whose content hash
+  // matches one of them. Without this, a duplicate user message resent on
+  // a later turn cannot be reused — it would mint a fresh row each time.
+  inputItemsToStage?: readonly ResponsesInputItem[];
 }): Promise<ResponsesItemAffinityResult> => {
-  const { sourceItems, view, store, candidates } = input;
-  await store.loadInputItems({ sourceItems, view });
+  const { sourceItems, view, store, candidates, inputItemsToStage } = input;
+  await store.loadInputItems({
+    sourceItems,
+    view,
+    ...(inputItemsToStage !== undefined ? { inputItemsToStage } : {}),
+  });
   const references = await collectStoredResponsesItemRefs(sourceItems, view);
 
   const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && isStoredResponsesItemId(ref.id) ? [ref.id] : []));
