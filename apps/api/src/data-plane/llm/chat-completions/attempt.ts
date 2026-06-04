@@ -52,14 +52,14 @@ export const chatCompletionsAttempt = {
             model: candidate.binding.upstreamModel.id,
             fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
           }),
-          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi }),
+          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocation.headers }),
         );
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.binding.upstreamModel.id }),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi, snapshotMode: 'none' }),
+          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers }),
         );
       }
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
