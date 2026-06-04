@@ -6,10 +6,11 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ProviderCallResult, ProviderStreamResult } from '@floway-dev/provider';
+import type { ProviderCallResult, ProviderInterceptors, ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_messages_attempt_test';
@@ -61,7 +62,9 @@ const makeCandidate = (overrides: {
   targetApi?: ProviderCandidate['targetApi'];
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  interceptors?: ProviderInterceptors;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'messages';
@@ -69,6 +72,7 @@ const makeCandidate = (overrides: {
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
+    callChatCompletions: overrides.callChatCompletions,
     callMessagesCountTokens: overrides.callMessagesCountTokens,
   });
   return {
@@ -88,6 +92,7 @@ const makeCandidate = (overrides: {
       upstreamModel,
       enabledFlags: upstreamModel.enabledFlags,
       supportsResponsesItemReference: true,
+      ...(overrides.interceptors !== undefined ? { interceptors: overrides.interceptors } : {}),
     },
     targetApi,
   };
@@ -196,4 +201,70 @@ test('countTokens refuses a non-messages candidate', async () => {
   }
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
   assertEquals(thrown.message.includes("targetApi='messages'"), true);
+});
+
+test('messagesTarget interceptors run only when the wire target is messages', async () => {
+  installRepo();
+  const respResp: ResponsesResult = {
+    id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
+    output: [{
+      type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: 'hi' }],
+    }],
+    output_text: 'hi', error: null, incomplete_details: null,
+  };
+  const callResponses = async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProtocolFrames<ResponsesStreamEvent>([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
+    modelKey: 'k',
+  });
+  const callChatCompletions = async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true,
+    events: makeProtocolFrames<ChatCompletionsStreamEvent>([
+      {
+        id: 'chatcmpl_x', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+      },
+      {
+        id: 'chatcmpl_x', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+      },
+      {
+        id: 'chatcmpl_x', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      },
+      {
+        id: 'chatcmpl_x', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [], usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+      },
+    ]),
+    modelKey: 'k',
+  });
+  const callMessages = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+  });
+
+  const runWithTarget = async (targetApi: ProviderCandidate['targetApi']): Promise<number> => {
+    const spy = vi.fn(async (_invocation, _ctx, run) => await run());
+    const result = await messagesAttempt.generate({
+      payload: makePayload(),
+      ctx: makeGatewayCtx(),
+      store: createNonResponsesSourceStore(API_KEY_ID),
+      candidate: makeCandidate({
+        targetApi,
+        callMessages,
+        callResponses,
+        callChatCompletions,
+        interceptors: { messagesTarget: [spy] },
+      }),
+      sourceApi: 'messages',
+    });
+    if (result.type !== 'events') throw new Error('unreachable');
+    await collectEvents(result.events);
+    return spy.mock.calls.length;
+  };
+
+  assertEquals(await runWithTarget('messages'), 1);
+  assertEquals(await runWithTarget('responses'), 0);
+  assertEquals(await runWithTarget('chat-completions'), 0);
 });
