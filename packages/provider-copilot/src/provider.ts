@@ -1,6 +1,6 @@
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetch } from './fetch.ts';
+import { copilotFetchChatCompletions, copilotFetchEmbeddings, copilotFetchMessages, copilotFetchMessagesCountTokens, copilotFetchResponses } from './fetch.ts';
 import { chatCompletionsCopilotInterceptors } from './interceptors/chat-completions/index.ts';
 import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors, messagesCountTokensCopilotInterceptors } from './interceptors/messages/index.ts';
 import { responsesCopilotInterceptors } from './interceptors/responses/index.ts';
@@ -14,8 +14,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload } from '@floway
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesPayload } from '@floway-dev/protocols/responses';
-import { inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
-import type { ModelProvider, ModelProviderInstance, ProviderCallResult, StreamingEndpointKey, UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import { inProcessMemo, readModelsStore, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -175,15 +174,14 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
   const call = async (
-    endpoint: 'messages_count_tokens' | 'embeddings',
+    transport: (config: typeof upstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
   ): Promise<ProviderCallResult> => {
-    const response = await copilotFetch(
+    const response = await transport(
       upstreamConfig,
-      endpoint,
       {
         method: 'POST',
         body: JSON.stringify({ ...body, model: rawModel.id }),
@@ -195,7 +193,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   };
 
   const callStreaming = <TEvent>(
-    endpoint: StreamingEndpointKey,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -203,9 +201,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
   ) =>
     streamingProviderCall(
-      copilotFetch(
+      transport(
         upstreamConfig,
-        endpoint,
         {
           method: 'POST',
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
@@ -247,14 +244,14 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       }),
     getPricingForModelKey: pricingForCopilotModelKey,
     callChatCompletions: (model, body, signal, headers) =>
-      callStreaming('chat_completions', body, signal, rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) }), headers, parseChatCompletionsStream),
+      callStreaming(copilotFetchChatCompletions, body, signal, rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) }), headers, parseChatCompletionsStream),
     callResponses: (model, body, signal, headers) =>
-      callStreaming('responses', body, signal, rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) }), headers, parseResponsesStream),
+      callStreaming(copilotFetchResponses, body, signal, rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) }), headers, parseResponsesStream),
     callMessages: (model, body, signal, headers, anthropicBeta) =>
-      callStreaming('messages', body, signal, messagesRawModel(model, body, anthropicBeta), headers, parseMessagesStream),
+      callStreaming(copilotFetchMessages, body, signal, messagesRawModel(model, body, anthropicBeta), headers, parseMessagesStream),
     callMessagesCountTokens: (model, body, signal, headers, anthropicBeta) =>
-      call('messages_count_tokens', body, signal, messagesRawModel(model, body, anthropicBeta), headers),
-    callEmbeddings: (model, body, signal, headers) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers),
+      call(copilotFetchMessagesCountTokens, body, signal, messagesRawModel(model, body, anthropicBeta), headers),
+    callEmbeddings: (model, body, signal, headers) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers),
     // Copilot has no /images/... upstream. getProvidedModels never emits a
     // kind='image' model for Copilot bindings, so the source-side dispatcher
     // in apps/api/src/data-plane/images/serve.ts never selects this provider
