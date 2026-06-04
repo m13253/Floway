@@ -4,6 +4,7 @@ import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
+import { mergeInvocationHeaders, providerStreamResultToExecuteResult } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -11,7 +12,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { type ExecuteResult, type LlmSourceApi } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -119,35 +120,4 @@ const callChatCompletionsAsExecuteResult = async (
     mergeInvocationHeaders(ctx.headers, invocationHeaders),
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate);
-};
-
-const providerStreamResultToExecuteResult = async <TEvent>(
-  providerResult: ProviderStreamResult<TEvent>,
-  candidate: ProviderCandidate,
-): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
-  if (!providerResult.ok) return await readUpstreamError(providerResult.response);
-  return eventResult(
-    providerResult.events as AsyncIterable<ProtocolFrame<TEvent>>,
-    telemetryModelIdentity(candidate, providerResult.modelKey),
-  );
-};
-
-const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: string): TelemetryModelIdentity => ({
-  model: candidate.binding.upstreamModel.id,
-  upstream: candidate.binding.upstream,
-  modelKey,
-  cost: candidate.binding.provider.getPricingForModelKey(modelKey),
-});
-
-// `ctx.headers` is the shared Headers bag every protocol crosses; the per-
-// invocation `Record<string, string>` is where provider-side interceptors
-// still write. Merge with invocation-set values winning so a provider
-// interceptor can override a header the ctx already carried.
-const mergeInvocationHeaders = (ctxHeaders: Headers, invocationHeaders: Record<string, string>): Record<string, string> => {
-  const merged: Record<string, string> = {};
-  ctxHeaders.forEach((value, key) => {
-    merged[key] = value;
-  });
-  for (const [key, value] of Object.entries(invocationHeaders)) merged[key] = value;
-  return merged;
 };

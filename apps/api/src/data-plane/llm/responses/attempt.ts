@@ -5,6 +5,7 @@ import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
+import { mergeInvocationHeaders, providerStreamResultToExecuteResult, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure, type LlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -13,7 +14,7 @@ import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -230,40 +231,4 @@ const callResponsesCompactAsExecuteResult = async (
 const compactionFrames = async function* (result: ResponsesResult): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
-};
-
-const providerStreamResultToExecuteResult = async <TEvent>(
-  providerResult: ProviderStreamResult<TEvent>,
-  candidate: ProviderCandidate,
-): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
-  if (!providerResult.ok) return await readUpstreamError(providerResult.response);
-  return eventResult(
-    providerResult.events as AsyncIterable<ProtocolFrame<TEvent>>,
-    telemetryModelIdentity(candidate, providerResult.modelKey),
-  );
-};
-
-const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: string): TelemetryModelIdentity => ({
-  model: candidate.binding.upstreamModel.id,
-  upstream: candidate.binding.upstream,
-  modelKey,
-  cost: candidate.binding.provider.getPricingForModelKey(modelKey),
-});
-
-const headersToRecord = (headers: Headers): Record<string, string> => {
-  const record: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    record[key] = value;
-  });
-  return record;
-};
-
-// `ctx.headers` is the shared Headers bag every protocol crosses; the per-
-// invocation `Record<string, string>` is where provider-side interceptors
-// still write. Merge with invocation-set values winning so a provider
-// interceptor can override a header the ctx already carried.
-const mergeInvocationHeaders = (ctxHeaders: Headers, invocationHeaders: Record<string, string>): Record<string, string> => {
-  const merged = headersToRecord(ctxHeaders);
-  for (const [key, value] of Object.entries(invocationHeaders)) merged[key] = value;
-  return merged;
 };
