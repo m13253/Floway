@@ -1,5 +1,5 @@
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-export const responsesProtocolFrameToSSEFrame = (frame: ProtocolFrame<ResponsesStreamEvent>): SseFrame | null =>
-  frame.type === 'event' ? sseFrame(JSON.stringify(frame.event), frame.event.type) : null;
+// Re-export stub: events helpers have been relocated to
+// `data-plane/llm/responses/events/`. Kept here so the legacy
+// `sources/responses/` modules and any in-flight callers continue to
+// resolve; remove the stub once those modules move alongside.
+export * from '../../../responses/events/to-sse.ts';
