@@ -29,10 +29,21 @@ const commonConfig: Linter.Config = {
     'import/no-duplicates': 'error',
 
     'no-restricted-imports': ['error', {
-      patterns: [{
-        group: ['@floway-dev/*/src/**'],
-        message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
-      }],
+      patterns: [
+        {
+          group: ['@floway-dev/*/src/**'],
+          message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
+        },
+        {
+          group: [
+            '@floway-dev/platform-cloudflare',
+            '@floway-dev/platform-cloudflare/*',
+            '@floway-dev/platform-node',
+            '@floway-dev/platform-node/*',
+          ],
+          message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
+        },
+      ],
     }],
 
     '@typescript-eslint/no-unused-vars': ['error', {
@@ -114,7 +125,7 @@ const commonConfig: Linter.Config = {
     'import/internal-regex': '^@floway-dev/',
     'import/resolver': {
       typescript: {
-        project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
+        project: ['./apps/platform-cloudflare/tsconfig.json', './apps/web/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/platform/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/proxy/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
         noWarnOnMultipleProjects: true,
       },
     },
@@ -125,7 +136,7 @@ const parserOptions: Linter.ParserOptions = {
   parser: tsParser,
   ecmaVersion: 'latest',
   sourceType: 'module',
-  project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
+  project: ['./apps/platform-cloudflare/tsconfig.json', './apps/web/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/platform/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/proxy/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
   noWarnOnMultipleProjects: true,
 };
 
