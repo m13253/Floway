@@ -2,8 +2,8 @@ import type { ExecutionContext } from 'hono';
 import { test } from 'vitest';
 
 import { hashResponsesItemContent } from './items/format.ts';
-import { app } from '../../../../app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../../test-helpers.ts';
+import { app } from '../../../app.ts';
+import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
@@ -110,7 +110,7 @@ const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebS
   assertEquals(response.status, 101);
 
   const runtime = activeRuntime();
-  const pair = runtime.pairs[0];
+  const pair = runtime.pairs.at(-1);
   assertExists(pair);
   return pair.client;
 };
@@ -292,9 +292,13 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
   );
 });
 
-test('Responses WebSocket store:false keeps previous_response_id state in the session only', async () => {
+// Spec change vs the legacy WS entry: store=false now passes snapshotMode='none'
+// to responsesServe, so the turn writes neither a snapshot nor item rows
+// anywhere (not even the per-session MemoryStatefulResponsesBacking). A
+// follow-up message that names the previous response must therefore fail
+// verbatim with the OpenAI previous_response_not_found envelope.
+test('Responses WebSocket store:false writes no items/snapshot and follow-ups cannot resolve it', async () => {
   const { apiKey, repo } = await setupAppTest();
-  const upstreamBodies: unknown[] = [];
 
   await withMockedFetch(
     async request => {
@@ -307,21 +311,18 @@ test('Responses WebSocket store:false keeps previous_response_id state in the se
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
-        upstreamBodies.push(JSON.parse(await request.text()));
-        const turn = upstreamBodies.length;
-        const label = turn === 1 ? 'first' : turn === 2 ? 'second' : 'third';
         return sseResponsesResponse({
-          id: `resp_ws_${label}`,
+          id: 'resp_ws_first',
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: `${label} answer`,
+          output_text: 'first answer',
           output: [{
-            id: `assistant_ws_${turn}`,
+            id: 'assistant_ws_1',
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: `${label} answer` }],
+            content: [{ type: 'output_text', text: 'first answer' }],
           }],
         });
       }
@@ -349,49 +350,30 @@ test('Responses WebSocket store:false keeps previous_response_id state in the se
         [],
       );
 
-      const secondDone = waitForMessages(client, messages => messages.filter(message => message.type === 'response.done').length === 1);
+      const followupError = waitForMessages(client, messages => messages.length === 1);
       client.send(JSON.stringify({
         type: 'response.create',
+        event_id: 'evt_followup',
         response: {
           model: 'gpt-direct-responses',
           previous_response_id: 'resp_ws_first',
-          input: 'second question',
+          input: 'follow-up',
           store: false,
         },
       }));
-      await secondDone;
-
-      const thirdDone = waitForMessages(client, messages => messages.filter(message => message.type === 'response.done').length === 1);
-      client.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          model: 'gpt-direct-responses',
-          previous_response_id: 'resp_ws_second',
-          input: 'third question',
+      assertEquals(await followupError, [{
+        type: 'error',
+        event_id: 'evt_followup',
+        status_code: 400,
+        error: {
+          message: "Previous response with id 'resp_ws_first' not found.",
+          type: 'invalid_request_error',
+          param: 'previous_response_id',
+          code: 'previous_response_not_found',
         },
-      }));
-      await thirdDone;
+      }]);
     }),
   );
-
-  assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_second'), null);
-  assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_third'), null);
-  const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
-  assertEquals(secondBody.previous_response_id, undefined);
-  assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
-    ['message', 'user', 'first question'],
-    ['message', 'assistant', [{ type: 'output_text', text: 'first answer' }]],
-    ['message', 'user', 'second question'],
-  ]);
-  const thirdBody = upstreamBodies[2] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
-  assertEquals(thirdBody.previous_response_id, undefined);
-  assertEquals(thirdBody.input.map(item => [item.type, item.role, item.content]), [
-    ['message', 'user', 'first question'],
-    ['message', 'assistant', [{ type: 'output_text', text: 'first answer' }]],
-    ['message', 'user', 'second question'],
-    ['message', 'assistant', [{ type: 'output_text', text: 'second answer' }]],
-    ['message', 'user', 'third question'],
-  ]);
 });
 
 test('Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
@@ -444,6 +426,112 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
   assertExists(firstSnapshot);
   assertExists(secondSnapshot);
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
+});
+
+// Exercises the session-level item cache directly: createResponsesWsSession
+// builds a per-session MemoryStatefulResponsesBacking that mirrors every
+// durable write. Wiping the D1-backed repo between turns proves the second
+// message resolves the prior snapshot purely from in-RAM session cache.
+// A fresh WS session after the repo wipe MUST NOT see it (the cache is
+// per-session, not per-api-key).
+test('Responses WebSocket session-level store: second message resolves prior items via session cache', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const upstreamBodies: unknown[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()));
+        const turn = upstreamBodies.length;
+        return sseResponsesResponse({
+          id: `resp_session_${turn}`,
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output_text: `turn ${turn}`,
+          output: [{
+            id: `assistant_session_${turn}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: `turn ${turn}` }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const sessionA = await connectResponsesWebSocket(apiKey.key);
+      const firstDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      sessionA.send(JSON.stringify({
+        type: 'response.create',
+        response: { model: 'gpt-direct-responses', input: 'turn one input' },
+      }));
+      await firstDone;
+
+      // The first turn wrote to both the durable repo and the session-local
+      // cache. Wipe the repo to prove the next lookup comes from the cache
+      // alone.
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_session_1'));
+      await repo.responsesSnapshots.deleteAll();
+      await repo.responsesItems.deleteAll();
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_session_1'), null);
+
+      const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
+      sessionA.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: 'resp_session_1',
+          input: 'turn two input',
+        },
+      }));
+      await secondDone;
+
+      const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
+      assertEquals(secondBody.previous_response_id, undefined);
+      // The snapshot resolved via the session cache contains the prior
+      // assistant message item; the new user input is appended verbatim.
+      assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
+        ['message', 'user', 'turn two input'],
+      ]);
+
+      // A fresh WS session for the same api key has its own empty cache; with
+      // the repo wiped, the snapshot is unreachable.
+      const sessionB = await connectResponsesWebSocket(apiKey.key);
+      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      sessionB.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_b',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: 'resp_session_1',
+          input: 'cross-session attempt',
+        },
+      }));
+
+      assertEquals(await missingDone, [{
+        type: 'error',
+        event_id: 'evt_b',
+        status_code: 400,
+        error: {
+          message: "Previous response with id 'resp_session_1' not found.",
+          type: 'invalid_request_error',
+          param: 'previous_response_id',
+          code: 'previous_response_not_found',
+        },
+      }]);
+    }),
+  );
 });
 
 test('Responses WebSocket aborts the in-flight Responses request when the client closes', async () => {
