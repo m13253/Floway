@@ -42,16 +42,17 @@ export const geminiServe = {
     // Any non-throwing attempt result — events, upstream-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
-    // upstream. Iteration only loops if the candidate list is empty.
-    for (const candidate of decision.candidates) {
-      return await geminiAttempt.generate({ payload, ctx, store, candidate });
+    // upstream.
+    const [candidate] = decision.candidates;
+    if (candidate === undefined) {
+      return renderGeminiFailure(
+        sawModel
+          ? { kind: 'model-unsupported', model }
+          : { kind: 'model-missing', model },
+        'generate',
+      );
     }
-    return renderGeminiFailure(
-      sawModel
-        ? { kind: 'model-unsupported', model }
-        : { kind: 'model-missing', model },
-      'generate',
-    );
+    return await geminiAttempt.generate({ payload, ctx, store, candidate });
   },
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
@@ -69,16 +70,17 @@ export const geminiServe = {
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
-    // errors come back as a `plain` envelope, so iteration stops on the first
-    // candidate. Provider-level transport errors throw and propagate.
-    for (const candidate of decision.candidates) {
-      return await geminiAttempt.countTokens({ payload, ctx, store, candidate });
+    // errors come back as a `plain` envelope, so the first candidate's result
+    // is the answer. Provider-level transport errors throw and propagate.
+    const [candidate] = decision.candidates;
+    if (candidate === undefined) {
+      return renderGeminiFailure(
+        sawModel
+          ? { kind: 'model-unsupported', model }
+          : { kind: 'model-missing', model },
+        'countTokens',
+      );
     }
-    return renderGeminiFailure(
-      sawModel
-        ? { kind: 'model-unsupported', model }
-        : { kind: 'model-missing', model },
-      'countTokens',
-    );
+    return await geminiAttempt.countTokens({ payload, ctx, store, candidate });
   },
 };

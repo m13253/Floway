@@ -52,16 +52,17 @@ export const responsesServe = {
     // Any non-throwing attempt result — events, upstream-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
-    // upstream. Iteration only loops if the candidate list is empty.
-    for (const candidate of decision.candidates) {
-      return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, sourceApi: 'responses', snapshotMode });
+    // upstream.
+    const [candidate] = decision.candidates;
+    if (candidate === undefined) {
+      return renderResponsesFailure(
+        sawModel
+          ? { kind: 'model-unsupported', model: prepared.model }
+          : { kind: 'model-missing', model: prepared.model },
+        'generate',
+      );
     }
-    return renderResponsesFailure(
-      sawModel
-        ? { kind: 'model-unsupported', model: prepared.model }
-        : { kind: 'model-missing', model: prepared.model },
-      'generate',
-    );
+    return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, sourceApi: 'responses', snapshotMode });
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -82,16 +83,17 @@ export const responsesServe = {
 
     // The first candidate's result IS the answer — upstream-error and
     // internal-error envelopes are final, not a hint to try another
-    // upstream. Iteration only loops if the candidate list is empty.
-    for (const candidate of decision.candidates) {
-      return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate, sourceApi: 'responses' });
+    // upstream.
+    const [candidate] = decision.candidates;
+    if (candidate === undefined) {
+      return renderResponsesFailure(
+        sawModel
+          ? { kind: 'model-unsupported', model: prepared.model }
+          : { kind: 'model-missing', model: prepared.model },
+        'compact',
+      );
     }
-    return renderResponsesFailure(
-      sawModel
-        ? { kind: 'model-unsupported', model: prepared.model }
-        : { kind: 'model-missing', model: prepared.model },
-      'compact',
-    );
+    return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate, sourceApi: 'responses' });
   },
 };
 

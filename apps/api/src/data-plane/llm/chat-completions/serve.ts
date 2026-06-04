@@ -33,14 +33,15 @@ export const chatCompletionsServe = {
     // Any non-throwing attempt result — events, upstream-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
-    // upstream. Iteration only loops if the candidate list is empty.
-    for (const candidate of decision.candidates) {
-      return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'chat-completions' });
+    // upstream.
+    const [candidate] = decision.candidates;
+    if (candidate === undefined) {
+      return renderChatCompletionsFailure(
+        sawModel
+          ? { kind: 'model-unsupported', model: payload.model }
+          : { kind: 'model-missing', model: payload.model },
+      );
     }
-    return renderChatCompletionsFailure(
-      sawModel
-        ? { kind: 'model-unsupported', model: payload.model }
-        : { kind: 'model-missing', model: payload.model },
-    );
+    return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'chat-completions' });
   },
 };
