@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
@@ -16,6 +17,7 @@ const stubCtx: GatewayCtx = {
   apiKeyUpstreamIds: null,
   headers: new Headers(),
   wantsStream: false,
+  scheduleBackground: () => {},
 };
 
 const okEvents = () =>
@@ -43,6 +45,13 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
     },
     targetApi: 'responses',
   },
+  store: new LayeredStatefulResponsesStore({
+    apiKeyId: null,
+    reads: [new MemoryStatefulResponsesBacking()],
+    itemWrites: [],
+    snapshotWrites: [],
+    stageInputs: false,
+  }),
 });
 
 test("vendor-qwen translates canonical reasoning.effort: 'none' into top-level enable_thinking:false", async () => {

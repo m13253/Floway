@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
@@ -41,6 +42,13 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
     },
     targetApi: 'responses',
   },
+  store: new LayeredStatefulResponsesStore({
+    apiKeyId: null,
+    reads: [new MemoryStatefulResponsesBacking()],
+    itemWrites: [],
+    snapshotWrites: [],
+    stageInputs: false,
+  }),
 });
 
 const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => ({
@@ -48,6 +56,7 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   apiKeyUpstreamIds: null,
   headers: new Headers(),
   wantsStream: true,
+  scheduleBackground: () => {},
   ...overrides,
 });
 

@@ -1,3 +1,6 @@
+import { withResponsesServerToolShim } from './server-tool-shim.ts';
+import { imageGenerationServerTool } from './server-tools/image-generation.ts';
+import { webSearchServerTool } from './server-tools/web-search.ts';
 import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
@@ -11,23 +14,21 @@ export type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 // binding; each interceptor's body decides whether to act (flag-gated entries
 // early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
 //
-// Order follows today's source-then-target semantics now collapsed into a
-// single chain:
-//   - withReasoningEncryptedContentCanonicalized: registered first so it pins
-//     the final (post-retry) event stream's encrypted_content.
+// Order follows source-then-target semantics collapsed into a single chain:
+//   - withResponsesServerToolShim: runs outermost so it wraps the full
+//     multi-turn ReAct loop around the rest of the chain.
+//   - withReasoningEncryptedContentCanonicalized: registered first after the
+//     shim so it pins the final (post-retry) event stream's encrypted_content.
 //   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered LAST
 //     so each gets the final say on the outbound wire body.
-//
-// NOTE: The source-side server-tool interceptors (web-search shim and
-// image-generation shim) are not yet included here. Those interceptors depend
-// on `StatefulResponsesStore` and `scheduleBackground`, which are not exposed
-// on `GatewayCtx`. They will be ported once `GatewayCtx` or
-// `ResponsesInvocation` is extended to carry those dependencies, or an
-// alternative mechanism is designed for them.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
+  withResponsesServerToolShim([
+    webSearchServerTool,
+    imageGenerationServerTool,
+  ]),
   withReasoningEncryptedContentCanonicalized,
   withCyberPolicyRetried,
   withReasoningDisabledOnForcedToolChoice,

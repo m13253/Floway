@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
@@ -16,6 +17,7 @@ const stubCtx: GatewayCtx = {
   apiKeyUpstreamIds: null,
   headers: new Headers(),
   wantsStream: false,
+  scheduleBackground: () => {},
 };
 
 const okEvents = () =>
@@ -46,6 +48,13 @@ const invocation = (
     },
     targetApi: 'responses',
   },
+  store: new LayeredStatefulResponsesStore({
+    apiKeyId: null,
+    reads: [new MemoryStatefulResponsesBacking()],
+    itemWrites: [],
+    snapshotWrites: [],
+    stageInputs: false,
+  }),
 });
 
 test('responses required tool_choice sets reasoning.effort to none', async () => {

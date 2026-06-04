@@ -4,10 +4,12 @@ import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protoco
 import type { ExecuteResult } from '@floway-dev/provider';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
+import type { StatefulResponsesStore } from '../items/store.ts';
 
 export interface ResponsesInvocation {
   payload: ResponsesPayload;
   readonly candidate: ProviderCandidate;
+  readonly store: StatefulResponsesStore;
 }
 
 export type ResponsesInterceptor = Interceptor<

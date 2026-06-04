@@ -96,6 +96,25 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.downstreamAbortController, undefined);
     assertEquals(ctx.abortSignal, undefined);
   });
+
+  test('scheduleBackground is present and callable without throwing', async () => {
+    const app = new Hono();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    app.get('/test', c => {
+      ctx = createGatewayCtxFromHono(c, false);
+      return c.text('ok');
+    });
+    await app.request('/test');
+    assertExists(ctx);
+    assertExists(ctx.scheduleBackground);
+    let nothingThrown = true;
+    try {
+      ctx.scheduleBackground(() => Promise.resolve());
+    } catch {
+      nothingThrown = false;
+    }
+    assertEquals(nothingThrown, true);
+  });
 });
 
 describe('createGatewayCtxForWs', () => {
@@ -185,5 +204,25 @@ describe('createGatewayCtxForWs', () => {
     assertExists(ctx);
     assertExists(controller);
     assertEquals(ctx.downstreamAbortController, controller);
+  });
+
+  test('scheduleBackground is present and callable without throwing', async () => {
+    const app = new Hono();
+    let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
+    app.get('/test', c => {
+      const controller = new AbortController();
+      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      return c.text('ok');
+    });
+    await app.request('/test');
+    assertExists(ctx);
+    assertExists(ctx.scheduleBackground);
+    let nothingThrown = true;
+    try {
+      ctx.scheduleBackground(() => Promise.resolve());
+    } catch {
+      nothingThrown = false;
+    }
+    assertEquals(nothingThrown, true);
   });
 });

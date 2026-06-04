@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
@@ -16,6 +17,7 @@ const stubCtx: GatewayCtx = {
   apiKeyUpstreamIds: null,
   headers: new Headers(),
   wantsStream: false,
+  scheduleBackground: () => {},
 };
 
 const invocation = (): ResponsesInvocation => ({
@@ -33,6 +35,13 @@ const invocation = (): ResponsesInvocation => ({
     },
     targetApi: 'responses',
   },
+  store: new LayeredStatefulResponsesStore({
+    apiKeyId: null,
+    reads: [new MemoryStatefulResponsesBacking()],
+    itemWrites: [],
+    snapshotWrites: [],
+    stageInputs: false,
+  }),
 });
 
 const result = (response: { status: 'completed'; output: unknown[] }) => (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
