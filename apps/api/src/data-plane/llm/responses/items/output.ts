@@ -1,9 +1,9 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore, ResponsesSnapshotMode } from './store.ts';
+import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { LlmTargetApi } from '@floway-dev/provider';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesItemIdMapper, ResponsesItemFinalizedHandler } from '@floway-dev/translate/via-responses/responses-items';
 
 // Wraps a Responses event stream to mint gateway-owned stored ids for every
@@ -205,4 +205,3 @@ export const syntheticEventsFromResult = async function* (result: ResponsesResul
 export const drainAsync = async (events: AsyncIterable<unknown>): Promise<void> => {
   for await (const _ of events);
 };
-

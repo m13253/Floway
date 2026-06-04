@@ -6,8 +6,7 @@ import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import type { ModelProviderInstance } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult, type ModelProviderInstance } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubProviderInstance = (): ModelProviderInstance => ({ provider: stubProvider() } as unknown as ModelProviderInstance);

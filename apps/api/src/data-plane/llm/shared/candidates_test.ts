@@ -1,9 +1,10 @@
 import { describe, test } from 'vitest';
-import { assertEquals } from '@floway-dev/test-utils';
+
 import { enumerateProviderCandidates } from './candidates.ts';
 import { setupAppTest } from '../../../test-helpers.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals } from '@floway-dev/test-utils';
 
 // Azure provider resolves its model catalog from config without HTTP calls,
 // making it the right choice for tests that need a predictable in-memory catalog.

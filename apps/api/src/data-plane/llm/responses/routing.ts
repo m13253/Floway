@@ -1,9 +1,9 @@
 import { classifyResponsesItemAffinity } from './items/affinity.ts';
 import { responsesItemsView } from './items/view.ts';
-import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { RoutingDecision } from '../shared/routing.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
+import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 
 export type ResponsesRoutingDecision = RoutingDecision;
 

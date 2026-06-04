@@ -51,8 +51,7 @@ export const messagesAttempt = {
         // for translated targets would mutate fields the translator hasn't
         // produced yet (or shouldn't strip from the translation source).
         return await runInterceptors(invocation, ctx, targetChainInterceptors(candidate), () =>
-          callMessagesAsExecuteResult(invocation.payload, ctx, candidate, invocation.anthropicBeta, invocation.headers),
-        );
+          callMessagesAsExecuteResult(invocation.payload, ctx, candidate, invocation.anthropicBeta, invocation.headers));
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
