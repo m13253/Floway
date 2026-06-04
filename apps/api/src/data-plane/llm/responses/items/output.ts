@@ -4,7 +4,17 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { LlmTargetApi } from '@floway-dev/provider';
-import type { ResponsesItemIdMapper, ResponsesItemFinalizedHandler } from '@floway-dev/translate/via-responses/responses-items';
+
+// Stream-side helpers split id-rewrite from persistence. The id rewrite is a
+// sync, per-frame transform; persistence sits behind `onItemFinalized`, which
+// is awaited once per upstream id at the carrier's terminal frame before the
+// rewritten frame flows on.
+type ResponsesItemIdMapper = (upstreamId: string, itemType: string) => string;
+
+type ResponsesItemFinalizedHandler = (
+  originalItem: ResponsesInputItem,
+  newId: string,
+) => void | Promise<void>;
 
 // Wraps a Responses event stream to mint gateway-owned stored ids for every
 // output item and persist the matching rows. Runs inside `responsesAttempt`
