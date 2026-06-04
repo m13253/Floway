@@ -15,8 +15,6 @@ export interface ProviderModelRecord {
   upstreamModel: UpstreamModel;
   enabledFlags: ReadonlySet<string>;
   supportsResponsesItemReference: boolean;
-  sourceInterceptors?: ProviderSourceInterceptors;
-  targetInterceptors?: ProviderTargetInterceptors;
   interceptors?: ProviderInterceptors;
 }
 
@@ -30,32 +28,27 @@ export interface ResolvedModel extends InternalModel {
   providers: readonly ProviderModelRecord[];
 }
 
-export interface ProviderSourceInterceptors {
-  messages?: readonly ProviderMessagesInterceptor[];
-  responses?: readonly ProviderResponsesInterceptor[];
-  chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
-  gemini?: readonly ProviderGeminiInterceptor[];
-}
-
-export interface ProviderTargetInterceptors {
-  messages?: readonly ProviderMessagesInterceptor[];
-  // Separate from `messages` because count_tokens returns a raw upstream
-  // Response (no protocol-frame translation), and only the header/payload
-  // mutators that pre-Path A applied to count_tokens (vision, initiator,
-  // anthropic-beta) belong here. Chat-only mutators like thinking-display
-  // promotion and cache_control.scope stripping never ran on count_tokens
-  // and stay on `messages`.
-  messagesCountTokens?: readonly ProviderMessagesCountTokensInterceptor[];
-  responses?: readonly ProviderResponsesInterceptor[];
-  chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
-}
-
-// Merged per-protocol interceptor table — source-side first, then target-side,
-// matching the execution order of the split lists. New code reads this field;
-// the split sourceInterceptors / targetInterceptors fields remain for old code
-// during the transition.
+// Per-protocol interceptor table the provider registers once per upstream.
+// The api side extends each list with its own protocol-shared interceptors
+// before running the chain.
+//
+// `messages` runs for any target: source-side Messages interceptors (trace
+// headers, payload normalizers) shape the source payload before either the
+// native Messages call or a translation to another protocol. `messagesTarget`
+// runs only when the wire actually carries Messages (target === 'messages')
+// — target-only mutators that strip translator-relevant fields (e.g.
+// `tool.strict` for Vertex-backed Copilot) belong here so translated paths
+// see the unmodified source.
+//
+// `messagesCountTokens` is separate from `messages` because count_tokens
+// returns a raw upstream Response (no protocol-frame translation). Only the
+// header/payload mutators that pre-translation applied to count_tokens
+// (vision, initiator, anthropic-beta) belong on count_tokens; chat-only
+// mutators like thinking-display promotion and cache_control.scope
+// stripping never ran on count_tokens and stay on `messagesTarget`.
 export interface ProviderInterceptors {
   readonly messages?: readonly ProviderMessagesInterceptor[];
+  readonly messagesTarget?: readonly ProviderMessagesInterceptor[];
   readonly chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
   readonly responses?: readonly ProviderResponsesInterceptor[];
   readonly gemini?: readonly ProviderGeminiInterceptor[];
@@ -73,8 +66,6 @@ export interface ModelProviderInstance {
   disabledPublicModelIds: readonly string[];
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
-  sourceInterceptors?: ProviderSourceInterceptors;
-  targetInterceptors?: ProviderTargetInterceptors;
   interceptors?: ProviderInterceptors;
   resolveRequestedModelId?(modelId: string): string | undefined;
 }

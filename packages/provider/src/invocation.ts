@@ -1,5 +1,4 @@
 import type { UpstreamModel } from './model.ts';
-import type { ProviderTargetInterceptors } from './provider.ts';
 import type { ExecuteResult } from './result.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -27,7 +26,6 @@ export interface InterceptorRequest {}
 // - model: the resolved public model id.
 // - upstream / upstreamModel / provider: the planner's binding choice.
 // - enabledFlags: the effective flag set for this binding.
-// - targetInterceptors: the provider-registered target interceptor table.
 // - payload: the source-shape request body, mutable so source interceptors
 //   can clean it.
 // - headers: mutable HTTP-header bag the source serve seeds empty and target
@@ -48,7 +46,6 @@ export interface Invocation<TPayload> {
   readonly upstreamModel: UpstreamModel;
   readonly provider: import('./provider.ts').ModelProvider;
   readonly enabledFlags: ReadonlySet<string>;
-  readonly targetInterceptors?: ProviderTargetInterceptors;
   payload: TPayload;
   headers: Record<string, string>;
 }

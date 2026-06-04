@@ -54,9 +54,7 @@ export type {
   ProviderCompactionResult,
   ProviderInterceptors,
   ProviderModelRecord,
-  ProviderSourceInterceptors,
   ProviderStreamResult,
-  ProviderTargetInterceptors,
   ResolvedModel,
 } from './provider.ts';
 export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';

@@ -315,7 +315,7 @@ test('Copilot provider enables Copilot-owned Messages source interceptors by def
   const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
 
-  assertEquals(instance.sourceInterceptors?.messages, messagesCopilotSourceInterceptors);
+  assertEquals(instance.interceptors?.messages, messagesCopilotSourceInterceptors);
 });
 
 test('Copilot provider rejects malformed account type instead of falling back', async () => {

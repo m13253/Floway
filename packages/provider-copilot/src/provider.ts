@@ -294,17 +294,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     disabledPublicModelIds: copilot.disabledPublicModelIds,
     provider,
     supportsResponsesItemReference: false,
-    sourceInterceptors: {
-      messages: messagesCopilotSourceInterceptors,
-    },
-    targetInterceptors: {
-      messages: messagesCopilotInterceptors,
-      messagesCountTokens: messagesCountTokensCopilotInterceptors,
-      responses: responsesCopilotInterceptors,
-      chatCompletions: chatCompletionsCopilotInterceptors,
-    },
     interceptors: {
-      messages: [...messagesCopilotSourceInterceptors, ...messagesCopilotInterceptors],
+      messages: messagesCopilotSourceInterceptors,
+      messagesTarget: messagesCopilotInterceptors,
       messagesCountTokens: messagesCountTokensCopilotInterceptors,
       responses: responsesCopilotInterceptors,
       chatCompletions: chatCompletionsCopilotInterceptors,

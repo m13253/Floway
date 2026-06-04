@@ -144,29 +144,29 @@ const rewriteOrRenderMessagesFailure = async (
   }
 };
 
+// Provider-side `interceptors.messages` / `interceptors.messagesTarget` /
+// `interceptors.messagesCountTokens` are still typed against the wide
+// pre-redesign `Invocation`. The runtime instances satisfy the slim shape
+// (they only read `candidate.binding` fields the wide shape also carries)
+// and write into `invocation.headers`; cast at the join until the
+// provider-package migration lands.
+//
 // Source-side interceptors apply regardless of target — they shape the
 // Messages payload before either calling Messages directly or translating to
-// another protocol. Target-side interceptors (`targetInterceptors.messages`)
-// only apply when the wire actually carries Messages: they run as an inner
-// chain inside the targetApi==='messages' branch.
+// another protocol. Target-side interceptors only apply when the wire
+// actually carries Messages: they run as an inner chain inside the
+// targetApi==='messages' branch.
 const sourceChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
   ...messagesInterceptors,
-  // Provider-side `sourceInterceptors.messages` is still typed against the
-  // wide pre-redesign `Invocation`. The runtime instances satisfy the slim
-  // shape (they only read `candidate.binding` fields the wide shape also
-  // carries) and write into `invocation.headers`; cast at the join until
-  // the provider-package migration lands.
-  ...((candidate.binding.sourceInterceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[]),
+  ...((candidate.binding.interceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[]),
 ];
 
 const targetChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] =>
-  (candidate.binding.targetInterceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[];
+  (candidate.binding.interceptors?.messagesTarget ?? []) as readonly unknown[] as readonly MessagesInterceptor[];
 
 const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly MessagesCountTokensInterceptor[] => [
   ...messagesCountTokensInterceptors,
-  // count_tokens has no source/target split today; the provider-side list
-  // is the only contribution beyond the shared base chain.
-  ...((candidate.binding.targetInterceptors?.messagesCountTokens ?? []) as readonly unknown[] as readonly MessagesCountTokensInterceptor[]),
+  ...((candidate.binding.interceptors?.messagesCountTokens ?? []) as readonly unknown[] as readonly MessagesCountTokensInterceptor[]),
 ];
 
 const callMessagesAsExecuteResult = async (
