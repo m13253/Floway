@@ -20,7 +20,6 @@ export const chatCompletionsServe = {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: payload.model,
-      sourceApi: 'chat-completions',
       pickTarget: endpoints =>
         endpoints.chatCompletions ? 'chat-completions'
           : endpoints.messages ? 'messages'

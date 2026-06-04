@@ -33,7 +33,6 @@ export const responsesServe = {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: prepared.model,
-      sourceApi: 'responses',
       pickTarget: endpoints =>
         endpoints.responses ? 'responses'
           : endpoints.messages ? 'messages'
@@ -73,7 +72,6 @@ export const responsesServe = {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: prepared.model,
-      sourceApi: 'responses',
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
     const decision = await planResponsesRouting({ payload: prepared, candidates, store });

@@ -31,7 +31,6 @@ export const geminiServe = {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model,
-      sourceApi: 'gemini',
       // Gemini has no native upstream target in the provider API; prefer
       // Chat Completions, then Messages, then Responses.
       pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
@@ -60,7 +59,6 @@ export const geminiServe = {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model,
-      sourceApi: 'gemini',
       // Gemini countTokens has no native upstream support; only providers
       // exposing the Messages endpoint qualify because we translate Gemini
       // → Messages and call Messages count_tokens upstream.

@@ -1,6 +1,6 @@
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { LlmSourceApi, LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
+import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
 
 export type { ProviderCandidate };
 
@@ -18,11 +18,9 @@ export interface ProviderCandidateEnumeration {
 
 export const enumerateProviderCandidates = async ({
   apiKeyUpstreamIds, model, pickTarget,
-  sourceApi: _sourceApi,
 }: {
   apiKeyUpstreamIds: readonly string[] | null;
   model: string;
-  sourceApi: LlmSourceApi;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
 }): Promise<ProviderCandidateEnumeration> => {
   const providers = await listModelProviders(apiKeyUpstreamIds);

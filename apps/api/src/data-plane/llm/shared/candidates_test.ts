@@ -47,7 +47,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -67,7 +66,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -86,7 +84,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -105,7 +102,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -124,7 +120,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -145,7 +140,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
 
@@ -163,7 +157,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates: msgCandidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessagesOrResponses,
     });
     assertEquals(msgCandidates.length, 1);
@@ -173,7 +166,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates: resCandidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'responses',
       pickTarget: pickResponses,
     });
     assertEquals(resCandidates.length, 1);
@@ -189,7 +181,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates: anyCandidates } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'chat-completions',
       pickTarget: pickAny,
     });
     assertEquals(anyCandidates.length, 1);
@@ -198,7 +189,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates: msgCandidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: null,
       model: 'test-model',
-      sourceApi: 'messages',
       pickTarget: pickMessages,
     });
     assertEquals(msgCandidates.length, 0);
