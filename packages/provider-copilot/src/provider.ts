@@ -303,6 +303,12 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       responses: responsesCopilotInterceptors,
       chatCompletions: chatCompletionsCopilotInterceptors,
     },
+    interceptors: {
+      messages: [...messagesCopilotSourceInterceptors, ...messagesCopilotInterceptors],
+      messagesCountTokens: messagesCountTokensCopilotInterceptors,
+      responses: responsesCopilotInterceptors,
+      chatCompletions: chatCompletionsCopilotInterceptors,
+    },
     resolveRequestedModelId: copilotRequestedModelAliasTarget,
   };
 };

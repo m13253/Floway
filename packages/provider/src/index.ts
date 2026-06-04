@@ -52,6 +52,7 @@ export type {
   ModelProviderInstance,
   ProviderCallResult,
   ProviderCompactionResult,
+  ProviderInterceptors,
   ProviderModelRecord,
   ProviderSourceInterceptors,
   ProviderStreamResult,

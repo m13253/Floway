@@ -17,6 +17,7 @@ export interface ProviderModelRecord {
   supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
+  interceptors?: ProviderInterceptors;
 }
 
 // endpoints describes which endpoints this model is served by on its
@@ -49,6 +50,19 @@ export interface ProviderTargetInterceptors {
   chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
 }
 
+// Merged per-protocol interceptor table — source-side first, then target-side,
+// matching the execution order of the split lists. New code reads this field;
+// the split sourceInterceptors / targetInterceptors fields remain for old code
+// during the transition.
+export interface ProviderInterceptors {
+  readonly messages?: readonly ProviderMessagesInterceptor[];
+  readonly chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
+  readonly responses?: readonly ProviderResponsesInterceptor[];
+  readonly gemini?: readonly ProviderGeminiInterceptor[];
+  readonly messagesCountTokens?: readonly ProviderMessagesCountTokensInterceptor[];
+  readonly geminiCountTokens?: readonly ProviderGeminiInterceptor[];
+}
+
 export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
@@ -61,6 +75,7 @@ export interface ModelProviderInstance {
   supportsResponsesItemReference: boolean;
   sourceInterceptors?: ProviderSourceInterceptors;
   targetInterceptors?: ProviderTargetInterceptors;
+  interceptors?: ProviderInterceptors;
   resolveRequestedModelId?(modelId: string): string | undefined;
 }
 
