@@ -6,6 +6,7 @@ import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const CODEX_AUTO_REVIEW_ALIAS = 'codex-auto-review';
 const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
@@ -47,40 +48,49 @@ const previousResponseNotFoundResponse = (id: string): Response =>
     { status: 400 },
   );
 
+// Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
+// etc.) as a Responses-shaped 502 with the same internal-error envelope the
+// in-flow `internal-error` ExecuteResult produces.
+const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+  const ctx = createGatewayCtxFromHono(c, false);
+  const result = internalErrorResult(502, toInternalDebugError(error, 'responses'));
+  const { response } = await respondResponses(c, result, false, ctx);
+  return response;
+};
+
 export const responsesHttp = {
   generate: async (c: Context): Promise<Response> => {
-    const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
-    const wantsStream = payload.stream === true;
-    const ctx = createGatewayCtxFromHono(c, wantsStream);
-    const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-    let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append' });
+      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
+      const wantsStream = payload.stream === true;
+      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
+      const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append' });
+      const { response } = await respondResponses(c, result, wantsStream, ctx);
+      return response;
     } catch (error) {
-      // Only the verbatim previous_response_not_found envelope is rendered
-      // here; every other error propagates up to the Hono onError handler.
+      // The verbatim previous_response_not_found envelope is the only
+      // thrown-error case rendered with a non-internal-error body — codex
+      // compares it byte-for-byte against upstream OpenAI.
       if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      throw error;
+      return await respondWithInternalError(c, error);
     }
-    const { response } = await respondResponses(c, result, wantsStream, ctx);
-    return response;
   },
 
   compact: async (c: Context): Promise<Response> => {
-    const payload = rewriteResponsesCompactEntryModelAlias(await c.req.json<ResponsesPayload>());
-    const ctx = createGatewayCtxFromHono(c, false);
-    const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-    let result;
     try {
-      result = await responsesServe.compact({ payload, ctx, store });
+      const payload = rewriteResponsesCompactEntryModelAlias(await c.req.json<ResponsesPayload>());
+      const ctx = createGatewayCtxFromHono(c, false);
+      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
+      const result = await responsesServe.compact({ payload, ctx, store });
+      // Compact always renders a non-streaming body; respondResponses already
+      // handles the result-vs-events split internally.
+      if (result.type === 'result') return Response.json(result.result);
+      const { response } = await respondResponses(c, result, false, ctx);
+      return response;
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      throw error;
+      return await respondWithInternalError(c, error);
     }
-    // Compact always renders a non-streaming body; respondResponses already
-    // handles the result-vs-events split internally.
-    if (result.type === 'result') return Response.json(result.result);
-    const { response } = await respondResponses(c, result, false, ctx);
-    return response;
   },
 };

@@ -5,6 +5,7 @@ import { messagesServe } from './serve.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const parseAnthropicBeta = (raw: string | undefined): readonly string[] | undefined => {
   if (!raw) return undefined;
@@ -37,31 +38,51 @@ const bodyAnthropicBetaResponse = (param: string): Response =>
     { status: 400 },
   );
 
+// Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
+// etc.) as a Messages-shaped 502 with the same internal-error envelope the
+// in-flow `internal-error` ExecuteResult produces. Anything that escapes
+// the data plane through Hono's onError is a programmer error, not a user-
+// visible failure mode.
+const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+  const ctx = createGatewayCtxFromHono(c, false);
+  const result = internalErrorResult(502, toInternalDebugError(error, 'messages'));
+  const { response } = await respondMessages(c, result, false, ctx);
+  return response;
+};
+
 export const messagesHttp = {
   generate: async (c: Context): Promise<Response> => {
-    const payload = await c.req.json<MessagesPayload>();
-    const rejectedBetaParam = bodyBetaParam(payload);
-    if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+    try {
+      const payload = await c.req.json<MessagesPayload>();
+      const rejectedBetaParam = bodyBetaParam(payload);
+      if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
 
-    const wantsStream = payload.stream === true;
-    const ctx = createGatewayCtxFromHono(c, wantsStream);
-    const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-    const result = await messagesServe.generate({ payload, ctx, store, anthropicBeta });
-    const { response } = await respondMessages(c, result, wantsStream, ctx);
-    return response;
+      const wantsStream = payload.stream === true;
+      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const store = createNonResponsesSourceStore(ctx.apiKeyId);
+      const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
+      const result = await messagesServe.generate({ payload, ctx, store, anthropicBeta });
+      const { response } = await respondMessages(c, result, wantsStream, ctx);
+      return response;
+    } catch (error) {
+      return await respondWithInternalError(c, error);
+    }
   },
 
   countTokens: async (c: Context): Promise<Response> => {
-    const payload = await c.req.json<MessagesPayload>();
-    const rejectedBetaParam = bodyBetaParam(payload);
-    if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+    try {
+      const payload = await c.req.json<MessagesPayload>();
+      const rejectedBetaParam = bodyBetaParam(payload);
+      if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
 
-    const ctx = createGatewayCtxFromHono(c, false);
-    const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-    const result = await messagesServe.countTokens({ payload, ctx, store, anthropicBeta });
-    const { response } = await respondMessages(c, result, false, ctx);
-    return response;
+      const ctx = createGatewayCtxFromHono(c, false);
+      const store = createNonResponsesSourceStore(ctx.apiKeyId);
+      const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
+      const result = await messagesServe.countTokens({ payload, ctx, store, anthropicBeta });
+      const { response } = await respondMessages(c, result, false, ctx);
+      return response;
+    } catch (error) {
+      return await respondWithInternalError(c, error);
+    }
   },
 };
