@@ -4,13 +4,18 @@ import { respondChatCompletions } from './respond.ts';
 import { chatCompletionsServe } from './serve.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as a Chat Completions-shaped 502 with the same internal-error
-// envelope the in-flow `internal-error` ExecuteResult produces.
+// envelope the in-flow `internal-error` ExecuteResult produces. A
+// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
+// that body verbatim — the upstream's `/models` 401 IS the diagnostic.
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+  const verbatim = providerModelsUnavailableResponse(error);
+  if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, false);
   const result = internalErrorResult(502, toInternalDebugError(error, 'chat-completions'));
   const { response } = await respondChatCompletions(c, result, false, false, ctx);

@@ -5,6 +5,7 @@ import { responsesServe } from './serve.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
@@ -50,8 +51,12 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as a Responses-shaped 502 with the same internal-error envelope the
-// in-flow `internal-error` ExecuteResult produces.
+// in-flow `internal-error` ExecuteResult produces. A
+// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
+// that body verbatim — the upstream's `/models` 401 IS the diagnostic.
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+  const verbatim = providerModelsUnavailableResponse(error);
+  if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, false);
   const result = internalErrorResult(502, toInternalDebugError(error, 'responses'));
   const { response } = await respondResponses(c, result, false, ctx);

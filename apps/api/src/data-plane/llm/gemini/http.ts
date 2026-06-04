@@ -4,6 +4,7 @@ import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini }
 import { geminiServe } from './serve.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 // The Gemini wire API encodes both the model id and the action in one path
@@ -42,9 +43,13 @@ export const geminiHttp = {
 
     const ctx = createGatewayCtxFromHono(c, wantsStream);
     const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    const result = await geminiServe.generate({ payload, ctx, store, model });
-    const { response } = await respondGemini(c, result, wantsStream, ctx);
-    return response;
+    try {
+      const result = await geminiServe.generate({ payload, ctx, store, model });
+      const { response } = await respondGemini(c, result, wantsStream, ctx);
+      return response;
+    } catch (error) {
+      return providerModelsUnavailableResponse(error) ?? geminiInternalRpcErrorResponse(500, error);
+    }
   },
 
   countTokens: async (c: Context): Promise<Response> => {
@@ -56,9 +61,13 @@ export const geminiHttp = {
 
     const ctx = createGatewayCtxFromHono(c, false);
     const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    const result = await geminiServe.countTokens({ payload, ctx, store, model });
-    const { response } = await respondGemini(c, result, false, ctx);
-    return response;
+    try {
+      const result = await geminiServe.countTokens({ payload, ctx, store, model });
+      const { response } = await respondGemini(c, result, false, ctx);
+      return response;
+    } catch (error) {
+      return providerModelsUnavailableResponse(error) ?? geminiInternalRpcErrorResponse(500, error);
+    }
   },
 
   // Entry-point selector — the Hono route binds to a single

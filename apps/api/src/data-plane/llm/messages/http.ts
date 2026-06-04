@@ -4,6 +4,7 @@ import { respondMessages } from './respond.ts';
 import { messagesServe } from './serve.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
@@ -44,6 +45,8 @@ const bodyAnthropicBetaResponse = (param: string): Response =>
 // the data plane through Hono's onError is a programmer error, not a user-
 // visible failure mode.
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+  const verbatim = providerModelsUnavailableResponse(error);
+  if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, false);
   const result = internalErrorResult(502, toInternalDebugError(error, 'messages'));
   const { response } = await respondMessages(c, result, false, ctx);
