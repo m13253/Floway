@@ -4,14 +4,12 @@ import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/
 
 export const MESSAGES_MISSING_TERMINAL_MESSAGE = 'Messages stream ended without a message_stop event.';
 
-const isMessagesTerminalEvent = (event: Pick<MessagesStreamEvent, 'type'>): boolean => event.type === 'message_stop' || event.type === 'error';
-
 const messagesEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>): AsyncGenerator<MessagesStreamEvent> {
   for await (const frame of frames) {
     if (frame.type === 'done') continue;
 
     yield frame.event;
-    if (isMessagesTerminalEvent(frame.event)) return;
+    if (frame.event.type === 'message_stop' || frame.event.type === 'error') return;
   }
 
   throw new Error(MESSAGES_MISSING_TERMINAL_MESSAGE);

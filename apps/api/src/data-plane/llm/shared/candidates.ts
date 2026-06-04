@@ -4,25 +4,18 @@ import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
 
 export type { ProviderCandidate };
 
-export interface ProviderCandidateEnumeration {
-  // Candidates that satisfy both the model resolution and the target-endpoint
-  // pick. The serve loop iterates this list.
-  readonly candidates: readonly ProviderCandidate[];
-  // True when at least one provider resolved the requested model id, even if
-  // its endpoint set didn't satisfy `pickTarget`. Distinguishes "model is
-  // missing entirely" (false → `model-missing` 404) from "model exists but
-  // doesn't expose the endpoint this source needs" (true → `model-unsupported`
-  // 400).
-  readonly sawModel: boolean;
-}
-
+// Returns the candidates that satisfy both the model resolution and the
+// target-endpoint pick, plus a `sawModel` flag that distinguishes "model is
+// missing entirely" (false → `model-missing` 404) from "model exists but
+// doesn't expose the endpoint this source needs" (true → `model-unsupported`
+// 400).
 export const enumerateProviderCandidates = async ({
   apiKeyUpstreamIds, model, pickTarget,
 }: {
   apiKeyUpstreamIds: readonly string[] | null;
   model: string;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
-}): Promise<ProviderCandidateEnumeration> => {
+}): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }> => {
   const providers = await listModelProviders(apiKeyUpstreamIds);
   const candidates: ProviderCandidate[] = [];
   let sawModel = false;

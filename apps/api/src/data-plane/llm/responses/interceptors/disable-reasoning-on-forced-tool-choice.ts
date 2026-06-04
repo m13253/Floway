@@ -15,11 +15,9 @@ const hasForcedToolChoice = (payload: ResponsesPayload): boolean => {
   return true;
 };
 
-const disableResponsesReasoning = (payload: ResponsesPayload): ResponsesPayload => ({ ...payload, reasoning: { effort: 'none' } });
-
 export const withReasoningDisabledOnForcedToolChoice: ResponsesInterceptor = async (ctx, _request, run) => {
   if (!ctx.candidate.binding.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
-  ctx.payload = disableResponsesReasoning(ctx.payload);
+  ctx.payload = { ...ctx.payload, reasoning: { effort: 'none' } };
   return await run();
 };

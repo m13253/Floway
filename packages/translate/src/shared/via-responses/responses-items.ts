@@ -26,7 +26,7 @@ export type ResponsesItemVisitor = (item: ResponsesInputItem) => void | Promise<
 // rather than carried as a second generic. Distributing over unions keeps
 // `Mutable<string | readonly ResponsesInputItem[]>` equal to
 // `string | ResponsesInputItem[]`.
-export type Mutable<T> = T extends readonly (infer E)[] ? E[] : T;
+type Mutable<T> = T extends readonly (infer E)[] ? E[] : T;
 
 export interface ResponsesItemsView<TSourceItems> {
   visitAsResponsesItems(sourceItems: TSourceItems, visitor: ResponsesItemVisitor): Promise<void>;

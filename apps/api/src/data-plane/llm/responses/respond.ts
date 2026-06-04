@@ -12,9 +12,6 @@ import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEve
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
-type RE = ResponsesStreamEvent;
-type RR = ResponsesResult;
-
 // Renders an upstream Responses result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
 // events result drains to one JSON body (non-streaming) or is proxied frame by
@@ -78,7 +75,7 @@ export const respondResponses = async (
 
 // OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
 // the cached split to recover the disjoint bare input.
-const tokenUsageFromResponsesResult = (r: RR) => {
+const tokenUsageFromResponsesResult = (r: ResponsesResult) => {
   const u = r.usage;
   if (!u) return null;
   const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
@@ -126,12 +123,11 @@ const internalResponsesStreamErrorFrame = (error: unknown) => {
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
 const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
-  const tokenUsageFromResponsesFrame = (f: ProtocolFrame<RE>) => (f.type === 'event' && 'response' in f.event ? tokenUsageFromResponsesResult((f.event as { response: RR }).response) : null);
   for await (const frame of frames) {
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(tokenUsageFromResponsesFrame(frame));
+      state.rememberUsage(frame.type === 'event' && 'response' in frame.event ? tokenUsageFromResponsesResult((frame.event as { response: ResponsesResult }).response) : null);
     }
     if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;

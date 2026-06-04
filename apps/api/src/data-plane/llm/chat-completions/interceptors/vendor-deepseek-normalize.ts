@@ -131,8 +131,6 @@ const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletions
   return { ...chunk, usage: next as unknown as ChatCompletionsStreamEvent['usage'] };
 };
 
-const rewriteInboundChunk = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => rewriteInboundUsage(rewriteInboundDeltas(chunk));
-
 export const withVendorDeepseekChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!ctx.candidate.binding.enabledFlags.has('vendor-deepseek')) return await run();
 
@@ -149,7 +147,7 @@ export const withVendorDeepseekChatCompletionsNormalize: ChatCompletionsIntercep
           yield frame;
           continue;
         }
-        const event = rewriteInboundChunk(frame.event);
+        const event = rewriteInboundUsage(rewriteInboundDeltas(frame.event));
         yield event === frame.event ? frame : eventFrame(event);
       }
     })(),

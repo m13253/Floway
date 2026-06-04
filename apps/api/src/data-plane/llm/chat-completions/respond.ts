@@ -13,9 +13,6 @@ import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/proto
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
-type CC = ChatCompletionsStreamEvent;
-type CU = NonNullable<ChatCompletionsResult['usage']>;
-
 // Renders an upstream Chat Completions result into the client HTTP/SSE
 // response. An error-typed result is a pre-stream failure and always answers as
 // HTTP; an events result drains to one JSON body (non-streaming) or is proxied
@@ -81,7 +78,7 @@ export const respondChatCompletions = async (
 
 // OpenAI Chat usage reports prompt_tokens inclusive of cached and
 // cache-creation tokens; subtract them to recover the disjoint bare input.
-const tokenUsageFromChatCompletionsUsage = (u: CU) => {
+const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>) => {
   const cacheRead = u.prompt_tokens_details?.cached_tokens ?? 0;
   const cacheWrite = u.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
   return tokenUsage({
@@ -115,13 +112,11 @@ const isChatCompletionsFailureFrame = (frame: ProtocolFrame<ChatCompletionsStrea
 const isChatCompletionsTerminalFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>) => frame.type === 'done' || isChatCompletionsFailureFrame(frame);
 
 const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
-  const tokenUsageFromChatCompletionsFrame = (f: ProtocolFrame<CC>) =>
-    f.type === 'event' && Array.isArray(f.event.choices) && f.event.choices.length === 0 && f.event.usage ? tokenUsageFromChatCompletionsUsage(f.event.usage) : null;
   for await (const frame of frames) {
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(tokenUsageFromChatCompletionsFrame(frame));
+      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage) : null);
     }
     if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;

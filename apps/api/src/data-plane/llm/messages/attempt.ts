@@ -60,7 +60,7 @@ export const messagesAttempt = {
         // when the wire actually carries a Messages payload — running them
         // for translated targets would mutate fields the translator hasn't
         // produced yet (or shouldn't strip from the translation source).
-        return await runInterceptors(invocation, ctx, targetChainInterceptors(candidate), () =>
+        return await runInterceptors(invocation, ctx, candidate.binding.interceptors?.messagesTarget ?? [], () =>
           callMessagesAsExecuteResult(invocation.payload, ctx, candidate, invocation.anthropicBeta, invocation.headers));
       }
       if (candidate.targetApi === 'responses') {
@@ -164,9 +164,6 @@ const sourceChainInterceptors = (candidate: ProviderCandidate): readonly Message
   ...messagesInterceptors,
   ...(candidate.binding.interceptors?.messages ?? []),
 ];
-
-const targetChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] =>
-  candidate.binding.interceptors?.messagesTarget ?? [];
 
 const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly MessagesCountTokensInterceptor[] => [
   ...messagesCountTokensInterceptors,

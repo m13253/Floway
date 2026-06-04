@@ -1,6 +1,5 @@
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { geminiCountTokensInterceptors, geminiInterceptors } from './interceptors/index.ts';
-import type { GeminiCountTokensInterceptor, GeminiInterceptor, GeminiInvocation } from './interceptors/types.ts';
 import { translateGeminiToMessagesForCountTokens } from './translate.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
@@ -12,7 +11,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import { plainResult, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult } from '@floway-dev/provider';
 import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
 
 export interface GeminiAttemptGenerateArgs {
@@ -33,7 +32,7 @@ export const geminiAttempt = {
   generate: async (args: GeminiAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, candidate } = args;
     const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
-    return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, [...geminiInterceptors, ...(candidate.binding.interceptors?.gemini ?? [])], async () => {
       // Gemini has no native upstream target today — every targetApi we
       // pickTarget for is reached via translation. The dispatch threads each
       // branch through `traverseTranslation` so each inner attempt owns its
@@ -79,7 +78,7 @@ export const geminiAttempt = {
       throw new Error(`geminiAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
     const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
-    return await runInterceptors(invocation, ctx, countTokensChainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, [...geminiCountTokensInterceptors, ...(candidate.binding.interceptors?.geminiCountTokens ?? [])], async () => {
       // Gemini countTokens has no native upstream; translate to Messages and
       // delegate to `messagesAttempt.countTokens`, then reshape the Messages
       // count_tokens reply into the Gemini `{ totalTokens }` envelope. The
@@ -90,7 +89,7 @@ export const geminiAttempt = {
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       };
-      const { target } = await translateGeminiToMessagesForCountTokens(invocation.payload, transCtx);
+      const target = await translateGeminiToMessagesForCountTokens(invocation.payload, transCtx);
       const messagesResult = await messagesAttempt.countTokens({
         payload: target, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
       });
@@ -98,16 +97,6 @@ export const geminiAttempt = {
     });
   },
 };
-
-const chainInterceptors = (candidate: ProviderCandidate): readonly GeminiInterceptor[] => [
-  ...geminiInterceptors,
-  ...(candidate.binding.interceptors?.gemini ?? []),
-];
-
-const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly GeminiCountTokensInterceptor[] => [
-  ...geminiCountTokensInterceptors,
-  ...(candidate.binding.interceptors?.geminiCountTokens ?? []),
-];
 
 // Reshape the Messages count_tokens body into the Gemini `{ totalTokens }`
 // envelope. The upstream body shape is provider-specific: Anthropic emits
@@ -123,7 +112,8 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
     const text = new TextDecoder().decode(messagesResult.body);
     return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.');
   }
-  const decoded = safeJsonParse(messagesResult.body);
+  let decoded: unknown;
+  try { decoded = JSON.parse(new TextDecoder().decode(messagesResult.body)); } catch {}
   const upstreamTokenCounts = decoded && typeof decoded === 'object'
     ? decoded as { input_tokens?: unknown; total_tokens?: unknown }
     : {};
@@ -140,14 +130,6 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
     new Headers({ 'content-type': 'application/json' }),
     new TextEncoder().encode(JSON.stringify({ totalTokens })),
   );
-};
-
-const safeJsonParse = (bytes: Uint8Array): unknown => {
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return undefined;
-  }
 };
 
 const geminiErrorPlainResult = (status: number, message: string): PlainResult => plainResult(

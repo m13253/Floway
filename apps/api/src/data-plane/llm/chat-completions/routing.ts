@@ -5,13 +5,11 @@ import type { RoutingDecision } from '../shared/routing.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export type ChatCompletionsRoutingDecision = RoutingDecision;
-
 export const planChatCompletionsRouting = async (input: {
   readonly payload: ChatCompletionsPayload;
   readonly candidates: readonly ProviderCandidate[];
   readonly store: StatefulResponsesStore;
-}): Promise<ChatCompletionsRoutingDecision> =>
+}): Promise<RoutingDecision> =>
   await classifyResponsesItemAffinity({
     sourceItems: input.payload.messages,
     view: chatCompletionsViaResponsesItemsView,

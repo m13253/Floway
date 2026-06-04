@@ -688,15 +688,6 @@ export const imageTerminal = (
   return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
 };
 
-// A native progressive-preview frame carrying the backend's server-resolved
-// echo fields, matching Azure's native partial_image payload.
-const partialImageFrame = (index: number, b64: string, echo: EchoFields): ServerToolLifecycleEvent => ({
-  type: 'response.image_generation_call.partial_image',
-  partial_image_index: index,
-  partial_image_b64: b64,
-  ...echo,
-});
-
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
 // The generations and edits endpoints use distinct event prefixes
 // (`image_generation.*` vs `image_edit.*`); only the suffix is matched here.
@@ -780,7 +771,7 @@ const streamImageGeneration = (
     const signal = parseImageStreamEvent(frame.data);
     if (signal === null) continue;
     if (signal.kind === 'partial') {
-      yield partialImageFrame(signal.index, signal.b64, signal.echo);
+      yield { type: 'response.image_generation_call.partial_image', partial_image_index: signal.index, partial_image_b64: signal.b64, ...signal.echo };
     } else if (signal.kind === 'completed') {
       finalB64 = signal.b64;
       finalEcho = signal.echo;
@@ -890,7 +881,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return {
       type: 'active',
       baseToolName: SHIM_TOOL_NAME,
-      transformItems: (items, toolName) => transformInputItemsForImageGeneration(items, toolName),
+      transformItems: transformInputItemsForImageGeneration,
     };
   }
 
@@ -956,10 +947,10 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForImageGeneration(items, toolName),
+    transformItems: transformInputItemsForImageGeneration,
     hosted: {
       isHostedTool: isHostedImageGenerationTool,
-      buildFunctionTool: toolName => buildImageGenerationFunctionTool(toolName),
+      buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'
           ? intercepted.arguments.prompt

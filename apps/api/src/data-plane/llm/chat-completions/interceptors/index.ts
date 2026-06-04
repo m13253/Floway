@@ -13,7 +13,6 @@ export type { ChatCompletionsInterceptor, ChatCompletionsInvocation } from './ty
 // entries early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
 //
 // Order follows source-then-target semantics collapsed into a single chain.
-// No source-side entries today — the original source list shipped empty.
 //
 //   - withUsageStreamOptionsIncluded, withUsageNormalized: unconditional.
 //     Both gate the gateway's usage-tracking pipeline. Turning either off

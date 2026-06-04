@@ -74,9 +74,6 @@ export const responsesHttp = {
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return response;
     } catch (error) {
-      // The verbatim previous_response_not_found envelope is the only
-      // thrown-error case rendered with a non-internal-error body — codex
-      // compares it byte-for-byte against upstream OpenAI.
       if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
       return await respondWithInternalError(c, error);
     }
@@ -88,8 +85,6 @@ export const responsesHttp = {
       const ctx = createGatewayCtxFromHono(c, false);
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store });
-      // Compact always renders a non-streaming body; respondResponses already
-      // handles the result-vs-events split internally.
       if (result.type === 'result') return Response.json(result.result);
       const { response } = await respondResponses(c, result, false, ctx);
       return response;

@@ -18,15 +18,11 @@ import { eventFrame } from '@floway-dev/protocols/common';
 // the chunk reaches us its `usage.prompt_tokens_details.cached_tokens` is
 // already in the OpenAI standard shape.
 
-const isCarrierChunk = (chunk: ChatCompletionsStreamEvent): boolean => chunk.choices.length === 0;
-
 const relocateUsageChunk = (chunk: ChatCompletionsStreamEvent): readonly ChatCompletionsStreamEvent[] => {
   const usage = asJsonObject(chunk.usage);
   if (!usage) return [chunk];
-  if (isCarrierChunk(chunk)) return [chunk];
+  if (chunk.choices.length === 0) return [chunk];
 
-  // Relocate: original chunk loses its `usage`; carrier chunk gets it so
-  // downstream readers see usage only on the spec-compliant `choices: []` shape.
   const { usage: chunkUsage, ...withoutUsage } = chunk;
   return [withoutUsage, { ...withoutUsage, choices: [], usage: chunkUsage }];
 };

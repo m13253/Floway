@@ -7,15 +7,15 @@ import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
+type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
-export interface StoredResponsesItemRef {
+interface StoredResponsesItemRef {
   type: string;
   id?: string;
   encryptedContent?: string;
 }
 
-export interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
+interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
   row?: StoredResponsesItem;
   affinity?: StoredResponsesAffinity;
 }
@@ -137,7 +137,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   await store.loadInputItems({
     sourceItems,
     view,
-    ...(inputItemsToStage !== undefined ? { inputItemsToStage } : {}),
+    inputItemsToStage,
   });
   const references = await collectStoredResponsesItemRefs(sourceItems, view);
 

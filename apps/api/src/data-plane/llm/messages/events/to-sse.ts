@@ -6,7 +6,7 @@ import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, Me
 // inherits) but keeps `web_search_result_location` exactly as the SDK shapes
 // it. The SSE wire-shape union captures both variants so the to-sse builder
 // type-checks against the protocol's serialized form, not the SDK input.
-export interface MessagesSearchResultLocationSsePayload {
+interface MessagesSearchResultLocationSsePayload {
   type: 'search_result_location';
   source: string;
   title: string;
@@ -16,7 +16,7 @@ export interface MessagesSearchResultLocationSsePayload {
   cited_text?: string;
 }
 
-export type MessagesSseCitation = MessagesSearchResultLocationSsePayload | MessagesWebSearchResultLocation;
+type MessagesSseCitation = MessagesSearchResultLocationSsePayload | MessagesWebSearchResultLocation;
 
 type MessagesSseTextContentBlock = Extract<MessagesContentBlockStartEvent['content_block'], { type: 'text' }>;
 type MessagesSseNonTextContentBlock = Exclude<MessagesContentBlockStartEvent['content_block'], { type: 'text' }>;
@@ -36,7 +36,7 @@ interface MessagesSseContentBlockDeltaEvent {
   delta: MessagesSseOtherDelta | (Omit<MessagesSseTextDelta, 'citations'> & { citations?: MessagesSseCitation[] }) | (Omit<MessagesSseCitationsDelta, 'citation'> & { citation: MessagesSseCitation });
 }
 
-export type MessagesSseEventPayload = Exclude<MessagesStreamEvent, { type: 'content_block_start' } | { type: 'content_block_delta' }> | MessagesSseContentBlockStartEvent | MessagesSseContentBlockDeltaEvent;
+type MessagesSseEventPayload = Exclude<MessagesStreamEvent, { type: 'content_block_start' } | { type: 'content_block_delta' }> | MessagesSseContentBlockStartEvent | MessagesSseContentBlockDeltaEvent;
 
 const citationToSsePayload = (citation: MessagesTextCitation): MessagesSseCitation =>
   citation.type === 'search_result_location'
@@ -51,8 +51,6 @@ const citationToSsePayload = (citation: MessagesTextCitation): MessagesSseCitati
       }
     : citation;
 
-const citationsToSsePayload = (citations?: MessagesTextCitation[]): MessagesSseCitation[] | undefined => citations?.map(citationToSsePayload);
-
 const messagesEventToSsePayload = (event: MessagesStreamEvent): MessagesSseEventPayload => {
   if (event.type === 'content_block_start') {
     const { content_block } = event;
@@ -61,7 +59,7 @@ const messagesEventToSsePayload = (event: MessagesStreamEvent): MessagesSseEvent
       ...event,
       content_block: {
         ...content_block,
-        citations: citationsToSsePayload(content_block.citations),
+        citations: content_block.citations.map(citationToSsePayload),
       },
     };
   }
@@ -84,7 +82,7 @@ const messagesEventToSsePayload = (event: MessagesStreamEvent): MessagesSseEvent
       ...event,
       delta: {
         ...delta,
-        citations: citationsToSsePayload(delta.citations),
+        citations: delta.citations.map(citationToSsePayload),
       },
     };
   }

@@ -4,8 +4,6 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult, GeminiInvocation, PlainResult } from '@floway-dev/provider';
 
-export type { GeminiInvocation };
-
 export type GeminiInterceptor = Interceptor<
   GeminiInvocation,
   GatewayCtx,

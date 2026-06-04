@@ -54,12 +54,6 @@ export interface LayeredStatefulResponsesStoreOptions {
 //                 the encrypted compaction blob, not the original full history.
 export type ResponsesSnapshotMode = 'none' | 'append' | 'replace';
 
-export interface WebSocketStatefulResponsesStoragePolicy {
-  readonly statefulResponsesStore: StatefulResponsesStore;
-  readonly outputStore: boolean | null | undefined;
-  readonly snapshotMode: ResponsesSnapshotMode;
-}
-
 export interface StatefulResponsesStore {
   readonly apiKeyId: string | null;
   // False when the user requested store=false; output item rows are written with
@@ -223,12 +217,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   async commitSnapshot(responseId: string, mode: 'append' | 'replace'): Promise<void> {
     if (this.options.snapshotWrites.length === 0 || this.committedSnapshotIds.has(responseId)) return;
     await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
-    // 'append' is the conversation continuation default: previous snapshot +
-    // this turn's input + this turn's output. 'replace' (used by
-    // /responses/compact) drops the prior history and the stitched-in input
-    // — the upstream's compact output already echoes the retained messages
-    // and carries the encrypted blob, which is the entire context the next
-    // turn should see.
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];
@@ -427,10 +415,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 }
 
 export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
-  constructor(private readonly repoProvider: Repo | (() => Repo)) {}
+  constructor(private readonly getRepo: () => Repo) {}
 
   private get repo(): Repo {
-    return typeof this.repoProvider === 'function' ? this.repoProvider() : this.repoProvider;
+    return this.getRepo();
   }
 
   async lookupItems(query: StatefulResponsesItemLookup): Promise<StatefulResponsesItemLookupResult[]> {
@@ -592,7 +580,7 @@ export const createResponsesWsSession = (apiKeyId: string | null): {
     createStore(store: boolean | undefined): StatefulResponsesStore {
       return store === false
         ? wsSessionOnlyStore(apiKeyId, localBacking, repoBacking)
-        : wsDurableStore(apiKeyId, store, localBacking, repoBacking);
+        : wsDurableStore(apiKeyId, localBacking, repoBacking);
     },
   };
 };
@@ -611,7 +599,6 @@ const wsSessionOnlyStore = (
 
 const wsDurableStore = (
   apiKeyId: string | null,
-  store: boolean | null | undefined,
   localBacking: StatefulResponsesBacking,
   repoBacking: StatefulResponsesBacking,
 ): StatefulResponsesStore => {

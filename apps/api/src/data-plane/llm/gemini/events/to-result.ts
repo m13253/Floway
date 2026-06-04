@@ -80,13 +80,9 @@ export const collectGeminiProtocolEventsToResult = async (frames: AsyncIterable<
       mergeCandidate(candidates, candidate);
     }
 
-    if (event.modelVersion !== undefined) {
-      result.modelVersion = event.modelVersion;
-    }
+    if (event.modelVersion !== undefined) result.modelVersion = event.modelVersion;
     if (event.responseId !== undefined) result.responseId = event.responseId;
-    if (event.usageMetadata !== undefined) {
-      result.usageMetadata = event.usageMetadata;
-    }
+    if (event.usageMetadata !== undefined) result.usageMetadata = event.usageMetadata;
 
     if (isGeminiTerminalEvent(event)) {
       completed = true;

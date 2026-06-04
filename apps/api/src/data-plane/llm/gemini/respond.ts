@@ -10,11 +10,7 @@ import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPe
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/proxy-sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import { type ExecuteResult, type PlainResult, type UpstreamErrorResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { decodeUpstreamErrorBody } from '@floway-dev/provider';
-
-type GE = GeminiStreamEvent;
-type GR = GeminiResult;
+import { type ExecuteResult, type PlainResult, type UpstreamErrorResult, type InternalDebugError, toInternalDebugError, decodeUpstreamErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
@@ -90,7 +86,7 @@ const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
   });
 };
 
-const tokenUsageFromGeminiResponse = (r: GR) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
+const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
 
 // --- error rendering: Google-RPC envelope ---
 
@@ -108,7 +104,7 @@ const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatu
 
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
-export const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
+const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
   const code = googleRpcHttpStatusCode(status);
   return {
     error: { code, message, status: geminiStatusForHttpStatus(code), ...debug },
@@ -199,12 +195,11 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
-  const tokenUsageFromGeminiFrame = (f: ProtocolFrame<GE>) => (f.type === 'event' && !('error' in f.event) ? tokenUsageFromGeminiResponse(f.event) : null);
   for await (const frame of frames) {
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(tokenUsageFromGeminiFrame(frame));
+      state.rememberUsage(frame.type === 'event' && !('error' in frame.event) ? tokenUsageFromGeminiResponse(frame.event) : null);
     }
     if (isGeminiTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;

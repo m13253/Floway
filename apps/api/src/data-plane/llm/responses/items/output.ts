@@ -63,49 +63,40 @@ export const wrapResponsesOutputForStorage = (
   };
 
   const onItemFinalized: ResponsesItemFinalizedHandler = async (originalItem, newId) => {
-    const row = await buildRow(newId, originalItem, { store, upstream, targetApi });
+    const upstreamId = responsesItemId(originalItem);
+    if (upstreamId === null) {
+      throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
+    }
+    // A native Responses upstream owns its items — except those a source
+    // interceptor synthesized this request, whose gateway-minted ids the
+    // upstream never issued. Those persist with no upstream identity so they
+    // stay non_affinity.
+    const upstreamOwned = targetApi === 'responses' && !store.isSyntheticItem(upstreamId);
+    const encryptedContent = responsesItemEncryptedContent(originalItem);
+    // Interceptors register per-item server-only payloads under the wire id.
+    // Attaching it lets a later turn restore the real success/failure state
+    // even when the client stripped fields from the echoed wire item.
+    const privatePayload = store.getPrivatePayload(upstreamId);
+    const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
+    const now = Date.now();
+    const row: StoredResponsesItem = {
+      id: newId,
+      apiKeyId: store.apiKeyId,
+      upstreamId: upstreamOwned ? upstream : null,
+      upstreamItemId: upstreamOwned ? upstreamId : null,
+      itemType: originalItem.type,
+      origin: upstreamOwned ? 'upstream' : 'synthetic',
+      payload: store.shouldStorePayload ? persistedPayload : null,
+      contentHash: await hashResponsesItemContent(originalItem),
+      encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
+      createdAt: now,
+      refreshedAt: now,
+    };
     store.stageOutputItem(row);
     await commitStoredItems();
   };
 
   return streamWithStorageAndSnapshot(frames, idMapper, onItemFinalized, snapshotMode, commitSnapshot);
-};
-
-const buildRow = async (
-  newId: string,
-  originalItem: ResponsesInputItem,
-  context: { store: StatefulResponsesStore; upstream: string; targetApi: LlmTargetApi },
-): Promise<StoredResponsesItem> => {
-  const { store, upstream, targetApi } = context;
-  const upstreamId = responsesItemId(originalItem);
-  if (upstreamId === null) {
-    throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
-  }
-  // A native Responses upstream owns its items — except those a source
-  // interceptor synthesized this request, whose gateway-minted ids the
-  // upstream never issued. Those persist with no upstream identity so they
-  // stay non_affinity.
-  const upstreamOwned = targetApi === 'responses' && !store.isSyntheticItem(upstreamId);
-  const encryptedContent = responsesItemEncryptedContent(originalItem);
-  // Interceptors register per-item server-only payloads under the wire id.
-  // Attaching it lets a later turn restore the real success/failure state
-  // even when the client stripped fields from the echoed wire item.
-  const privatePayload = store.getPrivatePayload(upstreamId);
-  const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
-  const now = Date.now();
-  return {
-    id: newId,
-    apiKeyId: store.apiKeyId,
-    upstreamId: upstreamOwned ? upstream : null,
-    upstreamItemId: upstreamOwned ? upstreamId : null,
-    itemType: originalItem.type,
-    origin: upstreamOwned ? 'upstream' : 'synthetic',
-    payload: store.shouldStorePayload ? persistedPayload : null,
-    contentHash: await hashResponsesItemContent(originalItem),
-    encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
-    createdAt: now,
-    refreshedAt: now,
-  };
 };
 
 const streamWithStorageAndSnapshot = async function* (
@@ -200,18 +191,16 @@ const itemId = (item: { id?: unknown }): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-// Turns a non-streaming compact result into the same frame sequence that
-// `emitToResponsesCompact` would produce when called with a live upstream:
-// `responsesResultToEvents` with genericOutputItems expands every output item
-// as bare added/done pairs (no inner content delta events), followed by a done
-// sentinel frame. This lets `wrapResponsesOutputForStorage` consume the
-// result without a real provider call.
+// Expands a non-streaming compact result into the same frame sequence a live
+// upstream would emit: every output item as bare added/done pairs (no inner
+// content delta events) via `responsesResultToEvents` with genericOutputItems,
+// terminated by a done sentinel frame. Lets `wrapResponsesOutputForStorage`
+// consume the result without a real provider call.
 export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
 };
 
-// Drains an async iterable to completion, discarding values.
 export const drainAsync = async (events: AsyncIterable<unknown>): Promise<void> => {
   for await (const _ of events);
 };

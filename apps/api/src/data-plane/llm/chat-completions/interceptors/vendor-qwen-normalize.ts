@@ -19,23 +19,13 @@
 import type { ChatCompletionsInterceptor } from './types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
-interface QwenDisableField {
-  enable_thinking?: false;
-}
-
-type ChatCompletionsPayloadWithQwenDisable = Omit<ChatCompletionsPayload, 'reasoning_effort'> & QwenDisableField;
-
-const stripCanonicalReasoningSentinel = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
-  if (payload.reasoning_effort !== 'none') return payload;
-  const { reasoning_effort: _stripped, ...rest } = payload;
-  const out: ChatCompletionsPayloadWithQwenDisable = { ...rest, enable_thinking: false };
-  return out as ChatCompletionsPayload;
-};
-
 export const withVendorQwenChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!ctx.candidate.binding.enabledFlags.has('vendor-qwen')) return await run();
 
-  ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);
+  if (ctx.payload.reasoning_effort === 'none') {
+    const { reasoning_effort: _stripped, ...rest } = ctx.payload;
+    ctx.payload = { ...rest, enable_thinking: false } as ChatCompletionsPayload;
+  }
 
   return await run();
 };

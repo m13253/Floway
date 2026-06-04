@@ -19,15 +19,15 @@ const parseAnthropicBeta = (raw: string | undefined): readonly string[] | undefi
 
 // Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
-const bodyBetaParam = (payload: MessagesPayload): string | undefined => {
+const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
   const record = payload as unknown as Record<string, unknown>;
-  if (Object.hasOwn(record, 'anthropic_beta')) return 'anthropic_beta';
-  if (Object.hasOwn(record, 'betas')) return 'betas';
-  return undefined;
-};
-
-const bodyAnthropicBetaResponse = (param: string): Response =>
-  Response.json(
+  const param = Object.hasOwn(record, 'anthropic_beta')
+    ? 'anthropic_beta'
+    : Object.hasOwn(record, 'betas')
+      ? 'betas'
+      : null;
+  if (!param) return null;
+  return Response.json(
     {
       error: {
         message: `${param} in the Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
@@ -37,6 +37,7 @@ const bodyAnthropicBetaResponse = (param: string): Response =>
     },
     { status: 400 },
   );
+};
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as a Messages-shaped 502 with the same internal-error envelope the
@@ -56,8 +57,8 @@ export const messagesHttp = {
   generate: async (c: Context): Promise<Response> => {
     try {
       const payload = await c.req.json<MessagesPayload>();
-      const rejectedBetaParam = bodyBetaParam(payload);
-      if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+      const rejected = rejectBodyBetaResponse(payload);
+      if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
       const ctx = createGatewayCtxFromHono(c, wantsStream);
@@ -74,8 +75,8 @@ export const messagesHttp = {
   countTokens: async (c: Context): Promise<Response> => {
     try {
       const payload = await c.req.json<MessagesPayload>();
-      const rejectedBetaParam = bodyBetaParam(payload);
-      if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+      const rejected = rejectBodyBetaResponse(payload);
+      if (rejected) return rejected;
 
       const ctx = createGatewayCtxFromHono(c, false);
       const store = createNonResponsesSourceStore(ctx.apiKeyId);

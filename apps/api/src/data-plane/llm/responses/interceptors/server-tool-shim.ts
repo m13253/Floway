@@ -174,7 +174,7 @@ export const materializeAccumulatedOutput = (state: MergeState): ResponsesOutput
   return sorted.map(k => state.accumulatedOutput.get(k)!);
 };
 
-export const rebuildOutputText = (items: readonly ResponsesOutputItem[]): string => {
+const rebuildOutputText = (items: readonly ResponsesOutputItem[]): string => {
   let out = '';
   for (const item of items) {
     if (item.type !== 'message') continue;
@@ -206,7 +206,7 @@ export const sumUsage = (a: Partial<MergeUsage>, b: Partial<MergeUsage>): Partia
   return out;
 };
 
-export const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
+const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
   const u = state.accumulatedUsage;
   if (
     u.input_tokens === undefined
@@ -226,7 +226,7 @@ export const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
   };
 };
 
-export const usageOf = (usage: ResponsesResult['usage']): Partial<MergeUsage> => {
+const usageOf = (usage: ResponsesResult['usage']): Partial<MergeUsage> => {
   if (usage === undefined) return {};
   const out: Partial<MergeUsage> = {};
   if (usage.input_tokens !== undefined) out.input_tokens = usage.input_tokens;
@@ -705,7 +705,7 @@ export const consumeTurnStreaming = async function* (
 
 const MAX_BODY_EXCERPT_CHARS = 512;
 
-export const buildErrorFromResult = (
+const buildErrorFromResult = (
   result: Exclude<ExecuteResult<unknown>, { type: 'events' }>,
 ): NonNullable<ResponsesResult['error']> => {
   if (result.type === 'internal-error') return { message: result.error.message, code: 'server_error' };
@@ -734,7 +734,7 @@ export const buildErrorFromResult = (
   };
 };
 
-export const invalidRequestEnvelope = (
+const invalidRequestEnvelope = (
   message: string,
   param: string,
   code = 'invalid_request_error',
@@ -755,7 +755,7 @@ export const invalidRequestEnvelope = (
   };
 };
 
-export const overlayOnSnapshot = (
+const overlayOnSnapshot = (
   state: MergeState,
   overlay: Partial<ResponsesResult> & Pick<ResponsesResult, 'id' | 'object' | 'model' | 'status' | 'output'>,
 ): ResponsesResult => {
@@ -781,7 +781,7 @@ const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'r
   incomplete: { type: 'response.incomplete', status: 'incomplete' },
 };
 
-export const synthesizeTerminalEnvelope = (
+const synthesizeTerminalEnvelope = (
   state: MergeState,
   kind: SynthesizedTerminal,
 ): ProtocolFrame<ResponsesStreamEvent> => {

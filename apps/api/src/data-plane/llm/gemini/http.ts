@@ -28,8 +28,41 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
   return shape.generateContentRequest ?? { contents: shape.contents };
 };
 
-// Single Hono handler that fans the `/v1beta/models/:modelAction` route into
-// the three Gemini sub-endpoints by inspecting the parsed action.
+// JSON parse failures collapse to the Gemini internal-error 500 envelope.
+const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Promise<T | Response> => {
+  try {
+    const raw = await c.req.json<unknown>();
+    return project(raw);
+  } catch (error) {
+    return geminiInternalRpcErrorResponse(500, error);
+  }
+};
+
+// Surfaces a pre-stream throw as a Gemini-RPC envelope. A
+// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
+// that body through `respondGemini`'s `upstream-error` path so it gets
+// wrapped in the Google-RPC envelope (status, code, message). Other
+// failures collapse to the Gemini internal-error envelope.
+const respondWithGeminiError = async (
+  c: Context,
+  error: unknown,
+  ctx: ReturnType<typeof createGatewayCtxFromHono>,
+  wantsStream: boolean,
+): Promise<Response> => {
+  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
+    const { status, headers, body } = error.httpResponse;
+    const upstreamErrorResult = {
+      type: 'upstream-error' as const,
+      status,
+      headers: new Headers(headers),
+      body: new TextEncoder().encode(body),
+    };
+    const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
+    return response;
+  }
+  return geminiInternalRpcErrorResponse(500, error);
+};
+
 export const geminiHttp = {
   generate: async (c: Context): Promise<Response> => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
@@ -68,58 +101,11 @@ export const geminiHttp = {
     }
   },
 
-  // Entry-point selector — the Hono route binds to a single
-  // `/v1beta/models/:modelAction{.+}` glob, then this dispatches to the right
-  // sub-endpoint by suffix. Unknown actions are reported as Google-RPC 404.
   dispatch: async (c: Context): Promise<Response> => {
-    const modelAction = c.req.param('modelAction');
-    const action = lastActionSegment(modelAction);
-    if (action === 'countTokens') return await geminiHttp.countTokens(c);
-    if (action === 'generateContent' || action === 'streamGenerateContent') return await geminiHttp.generate(c);
-    return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${action ?? modelAction ?? ''}`);
+    const parsed = parseGeminiModelAction(c.req.param('modelAction'));
+    if (parsed instanceof Response) return parsed;
+    if (parsed.action === 'countTokens') return await geminiHttp.countTokens(c);
+    if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') return await geminiHttp.generate(c);
+    return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
   },
-};
-
-const lastActionSegment = (modelAction: string | undefined): string | null => {
-  if (!modelAction) return null;
-  const colon = modelAction.lastIndexOf(':');
-  if (colon <= 0 || colon === modelAction.length - 1) return null;
-  return modelAction.slice(colon + 1);
-};
-
-// Body-parsing wrapper that lets each endpoint shape its own destructuring
-// over the raw JSON while sharing the same Google-RPC 500 error envelope on
-// parse failure.
-const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Promise<T | Response> => {
-  try {
-    const raw = await c.req.json<unknown>();
-    return project(raw);
-  } catch (error) {
-    return geminiInternalRpcErrorResponse(500, error);
-  }
-};
-
-// Surfaces a pre-stream throw as a Gemini-RPC envelope. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body through `respondGemini`'s `upstream-error` path so it gets
-// wrapped in the Google-RPC envelope (status, code, message). Other
-// failures collapse to the Gemini internal-error envelope.
-const respondWithGeminiError = async (
-  c: Context,
-  error: unknown,
-  ctx: ReturnType<typeof createGatewayCtxFromHono>,
-  wantsStream: boolean,
-): Promise<Response> => {
-  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
-    const { status, headers, body } = error.httpResponse;
-    const upstreamErrorResult = {
-      type: 'upstream-error' as const,
-      status,
-      headers: new Headers(headers),
-      body: new TextEncoder().encode(body),
-    };
-    const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
-    return response;
-  }
-  return geminiInternalRpcErrorResponse(500, error);
 };

@@ -137,7 +137,7 @@ const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>) => f
 const observeMessagesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   state: SourceStreamState,
-  usageState: ReturnType<typeof createMessagesStreamUsageState>,
+  usageState: MessagesStreamUsageState,
   observeUsage: boolean,
 ) {
   for await (const frame of frames) {

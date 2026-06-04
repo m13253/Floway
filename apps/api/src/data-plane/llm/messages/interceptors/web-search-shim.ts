@@ -30,8 +30,6 @@ const WEB_SEARCH_TOOL_NAME = 'web_search';
 
 type SearchResultOwnership = 'owned' | 'foreign';
 
-type NativeWebSearchToolVersion = MessagesNativeWebSearchTool['type'];
-
 interface ShimWebSearchResultPayload {
   content: Array<{ type: 'text'; text: string }>;
 }
@@ -67,7 +65,7 @@ export type MessagesWebSearchShimState =
   } & ReplayAwareMessagesWebSearchShimState)
   | ({
     mode: 'active';
-    toolVersion: NativeWebSearchToolVersion;
+    toolVersion: MessagesNativeWebSearchTool['type'];
     maxUses?: number;
     allowedDomains?: string[];
     blockedDomains?: string[];
@@ -89,10 +87,6 @@ export type PrepareMessagesWebSearchShimRequestResult =
     type: 'invalid-request';
     message: string;
   };
-
-const inactiveMessagesWebSearchShimState = (): MessagesWebSearchShimState => ({
-  mode: 'inactive',
-});
 
 // Official Anthropic API exposes native web_search to the model with this
 // description and query-only input schema, and requires the native tool name to
@@ -241,20 +235,10 @@ const buildUpstreamSearchResultBlock = (result: MessagesWebSearchResultBlock, de
   citations: { enabled: true },
 });
 
-const buildUserToolResultMessage = (toolResults: MessagesToolResultBlock[]): Extract<MessagesMessage, { role: 'user' }> => ({
-  role: 'user',
-  content: toolResults,
-});
-
-const buildNativeWebSearchErrorPayload = (errorCode: MessagesWebSearchErrorCode): MessagesWebSearchToolResultError => ({
-  type: 'web_search_tool_result_error',
-  error_code: errorCode,
-});
-
 const buildNativeWebSearchErrorResultBlock = (toolUseId: string, errorCode: MessagesWebSearchErrorCode): Extract<MessagesAssistantContentBlock, { type: 'web_search_tool_result' }> => ({
   type: 'web_search_tool_result',
   tool_use_id: toNativeServerToolUseId(toolUseId),
-  content: buildNativeWebSearchErrorPayload(errorCode),
+  content: { type: 'web_search_tool_result_error', error_code: errorCode },
   caller: { type: 'direct' },
 });
 
@@ -383,14 +367,6 @@ const collectForeignSearchResultOwnership = (content: string | MessagesUserConte
   });
 };
 
-const prependToolResultsToUserMessage = (message: Extract<MessagesMessage, { role: 'user' }>, toolResults: MessagesToolResultBlock[]): Extract<MessagesMessage, { role: 'user' }> => ({
-  role: 'user',
-  content: [...toolResults, ...toUserContentBlocks(message.content)],
-});
-
-const canPrependToolResultsToUserMessage = (message: Extract<MessagesMessage, { role: 'user' }>): boolean =>
-  Array.isArray(message.content) && message.content.some(block => block.type === 'tool_result');
-
 interface PreparedMessagesWebSearchReplay {
   hasOwnedReplay: boolean;
   messages: MessagesMessage[];
@@ -410,7 +386,7 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
       return;
     }
 
-    rewrittenMessages.push(buildUserToolResultMessage(pendingOwnedReplayToolResults.map(({ upstreamToolResult }) => upstreamToolResult)));
+    rewrittenMessages.push({ role: 'user' as const, content: pendingOwnedReplayToolResults.map(({ upstreamToolResult }) => upstreamToolResult) });
     requestSearchResultOwnership.push(...pendingOwnedReplayToolResults.flatMap(({ searchResultOwnership }) => searchResultOwnership));
     pendingOwnedReplayToolResults = [];
   };
@@ -423,13 +399,9 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
     if (message.role === 'user') {
       const foreignSearchResultOwnership = collectForeignSearchResultOwnership(message.content);
 
-      if (pendingOwnedReplayToolResults.length > 0 && canPrependToolResultsToUserMessage(message)) {
-        rewrittenMessages.push(
-          prependToolResultsToUserMessage(
-            message,
-            pendingOwnedReplayToolResults.map(({ upstreamToolResult }) => upstreamToolResult),
-          ),
-        );
+      if (pendingOwnedReplayToolResults.length > 0 && Array.isArray(message.content) && message.content.some(block => block.type === 'tool_result')) {
+        const toolResults = pendingOwnedReplayToolResults.map(({ upstreamToolResult }) => upstreamToolResult);
+        rewrittenMessages.push({ role: 'user', content: [...toolResults, ...toUserContentBlocks(message.content)] });
         requestSearchResultOwnership.push(...pendingOwnedReplayToolResults.flatMap(({ searchResultOwnership }) => searchResultOwnership), ...foreignSearchResultOwnership);
         pendingOwnedReplayToolResults = [];
         continue;
@@ -492,9 +464,7 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
   };
 };
 
-type ValidateNativeWebSearchToolDefinitionsResult = { type: 'ok'; nativeTool?: MessagesNativeWebSearchTool } | { type: 'invalid-request'; message: string };
-
-const validateNativeWebSearchToolDefinitions = (payload: MessagesPayload): ValidateNativeWebSearchToolDefinitionsResult => {
+const validateNativeWebSearchToolDefinitions = (payload: MessagesPayload): { type: 'ok'; nativeTool?: MessagesNativeWebSearchTool } | { type: 'invalid-request'; message: string } => {
   const nativeToolEntries = (payload.tools ?? []).flatMap((tool, index) => (isNativeWebSearchToolDefinition(tool) ? [{ tool, index }] : []));
 
   if (nativeToolEntries.length > 1) {
@@ -530,7 +500,7 @@ const rewriteMessagesWebSearchToolDefinitions = (tools: MessagesPayload['tools']
 
 const buildMessagesWebSearchShimState = (nativeTool: MessagesNativeWebSearchTool | undefined, replay: PreparedMessagesWebSearchReplay): MessagesWebSearchShimState => {
   if (!nativeTool && !replay.hasOwnedReplay) {
-    return inactiveMessagesWebSearchShimState();
+    return { mode: 'inactive' };
   }
 
   if (!nativeTool) {
@@ -613,8 +583,6 @@ const rewriteResponseCitationToNative = (citation: MessagesTextCitation, state: 
     ...(citation.cited_text ? { cited_text: citation.cited_text } : {}),
   };
 };
-
-const normalizeWebSearchQuery = (input: Record<string, unknown>): string | null => (typeof input.query === 'string' ? input.query.trim() : null);
 
 const buildNativeWebSearchResultBlockFromProviderResult = (result: WebSearchProviderResult, toolUseId: string): Extract<MessagesAssistantContentBlock, { type: 'web_search_tool_result' }> => {
   if (result.type === 'error') {
@@ -731,7 +699,7 @@ const runWebSearchStopHandler = async function* (
     }
   })();
 
-  const query = parsedInput ? normalizeWebSearchQuery(parsedInput) : null;
+  const query = parsedInput ? (typeof parsedInput.query === 'string' ? parsedInput.query.trim() : null) : null;
 
   shimState.interceptedSearches += 1;
 

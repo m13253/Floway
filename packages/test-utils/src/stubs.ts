@@ -87,9 +87,7 @@ export const stubProviderModelRecord = (overrides: Partial<ProviderModelRecord> 
   };
 };
 
-// Builds a slim ProviderCandidate for interceptor tests. `targetApi` defaults
-// to `'messages'`; pass overrides for `binding` / `provider` to swap in
-// upstream-model variants or stub providers.
+// ProviderCandidate stub for interceptor tests.
 export const stubProviderCandidate = (overrides: { targetApi?: LlmTargetApi; binding?: Partial<ProviderModelRecord>; provider?: ModelProviderInstance } = {}): ProviderCandidate => {
   const provider = overrides.provider ?? stubProviderInstance();
   return {

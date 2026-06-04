@@ -1,5 +1,5 @@
 import type { ModelProviderInstance, ProviderModelRecord } from './provider.ts';
-import type { ExecuteResult } from './result.ts';
+import type { ExecuteResult, PlainResult } from './result.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -88,4 +88,4 @@ export type ProviderMessagesCountTokensInterceptor = Interceptor<MessagesInvocat
 // Gemini count_tokens reshapes its upstream into a `PlainResult` rather than
 // the raw Response that Messages count_tokens returns. Interceptors share the
 // same payload-mutator contract — no post-`run()` event-stream inspection.
-export type ProviderGeminiCountTokensInterceptor = Interceptor<GeminiInvocation, InterceptorRequest, import('./result.ts').PlainResult>;
+export type ProviderGeminiCountTokensInterceptor = Interceptor<GeminiInvocation, InterceptorRequest, PlainResult>;

@@ -14,11 +14,6 @@ const itemId = (item: { id?: unknown }): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-const itemEncryptedContent = (item: { encrypted_content?: unknown }): string | null => {
-  const value = item.encrypted_content;
-  return typeof value === 'string' && value.length > 0 ? value : null;
-};
-
 const canonicalizeEncryptedContent = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
@@ -33,7 +28,8 @@ const canonicalizeEncryptedContent = async function* (
 
     if (event.type === 'response.output_item.done') {
       const id = itemId(event.item);
-      const encryptedContent = itemEncryptedContent(event.item as { encrypted_content?: unknown });
+      const value = (event.item as { encrypted_content?: unknown }).encrypted_content;
+      const encryptedContent = typeof value === 'string' && value.length > 0 ? value : null;
       if (id !== null && encryptedContent !== null) canonical.set(id, encryptedContent);
       yield frame;
       continue;

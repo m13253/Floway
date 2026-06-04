@@ -4,7 +4,8 @@ import { stripUnsupportedTools } from './strip-unsupported-tools.ts';
 import { suppressThoughtParts } from './suppress-thought-parts.ts';
 import type { GeminiCountTokensInterceptor, GeminiInterceptor } from './types.ts';
 
-export type { GeminiCountTokensInterceptor, GeminiInterceptor, GeminiInvocation } from './types.ts';
+export type { GeminiCountTokensInterceptor, GeminiInterceptor } from './types.ts';
+export type { GeminiInvocation } from '@floway-dev/provider';
 
 // Unified Gemini interceptor list for `generate`. All four entries below are
 // unconditional protocol-shape cleanups required because Gemini-shape requests

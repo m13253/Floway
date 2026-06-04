@@ -16,23 +16,13 @@
 import type { ResponsesInterceptor } from './types.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
-interface QwenDisableField {
-  enable_thinking?: false;
-}
-
-type ResponsesPayloadWithQwenDisable = Omit<ResponsesPayload, 'reasoning'> & QwenDisableField;
-
-const stripCanonicalReasoningSentinel = (payload: ResponsesPayload): ResponsesPayload => {
-  if (payload.reasoning?.effort !== 'none') return payload;
-  const { reasoning: _stripped, ...rest } = payload;
-  const out: ResponsesPayloadWithQwenDisable = { ...rest, enable_thinking: false };
-  return out as ResponsesPayload;
-};
-
 export const withVendorQwenResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
   if (!ctx.candidate.binding.enabledFlags.has('vendor-qwen')) return await run();
 
-  ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);
+  if (ctx.payload.reasoning?.effort === 'none') {
+    const { reasoning: _stripped, ...rest } = ctx.payload;
+    ctx.payload = { ...rest, enable_thinking: false } as ResponsesPayload;
+  }
 
   return await run();
 };

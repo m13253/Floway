@@ -81,7 +81,7 @@ export const hashResponsesItemEncryptedContent = async (encryptedContent: string
 };
 
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stableJson(item)));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(sortJson(item))));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
@@ -109,8 +109,6 @@ const crc32Checksum = (input: string): string => {
   const crc = crc32(new TextEncoder().encode(input)) >>> 0;
   return base64UrlEncode(new Uint8Array([(crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff]));
 };
-
-const stableJson = (value: unknown): string => JSON.stringify(sortJson(value));
 
 const sortJson = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(sortJson);

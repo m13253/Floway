@@ -5,13 +5,11 @@ import type { StatefulResponsesStore } from './items/store.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export type ResponsesRoutingDecision = RoutingDecision;
-
 export const planResponsesRouting = async (input: {
   readonly payload: ResponsesPayload;
   readonly candidates: readonly ProviderCandidate[];
   readonly store: StatefulResponsesStore;
-}): Promise<ResponsesRoutingDecision> => {
+}): Promise<RoutingDecision> => {
   // `payload.input` is `string | ResponsesInputItem[]`. A bare string has no
   // item references to look up, so the affinity walk has nothing to do — the
   // native view's `visitAsResponsesItems` only accepts item arrays, so we

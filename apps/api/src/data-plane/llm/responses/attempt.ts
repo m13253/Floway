@@ -134,26 +134,24 @@ const rewriteOrRenderFailure = async (
 // `compact`); from inside an attempt, only `item-not-found` is reachable.
 const renderResponsesAttemptFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
   if (failure.kind === 'item-not-found') {
-    return jsonUpstreamErrorResult(404, {
-      error: {
-        message: `Item with id '${failure.itemId}' not found.`,
-        type: 'invalid_request_error',
-        param: 'input',
-        code: null,
-      },
-    });
+    return {
+      type: 'upstream-error',
+      status: 404,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: new TextEncoder().encode(JSON.stringify({
+        error: {
+          message: `Item with id '${failure.itemId}' not found.`,
+          type: 'invalid_request_error',
+          param: 'input',
+          code: null,
+        },
+      })),
+    };
   }
   // `routing-unavailable` originates in the routing layer (not rewrite);
   // `model-*` is produced by the serve layer. Reaching here is a bug.
   throw new Error(`responsesAttempt cannot render failure kind '${failure.kind}' — rewrite only produces 'item-not-found'.`);
 };
-
-const jsonUpstreamErrorResult = (status: number, body: unknown): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({
-  type: 'upstream-error',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
-  body: new TextEncoder().encode(JSON.stringify(body)),
-});
 
 const dispatchResponses = async (
   payload: ResponsesPayload,
