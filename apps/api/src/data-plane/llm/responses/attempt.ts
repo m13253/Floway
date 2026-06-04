@@ -52,9 +52,10 @@ export const responsesAttempt = {
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
-      // Rewrite runs inside the chain runner so an interceptor can mutate
-      // the payload (server-tool shim, vendor normalizers) before stored
-      // items are resolved against the chosen candidate.
+      // Rewriting stored items happens inside the chain runner so interceptors
+      // (server-tool shim, vendor normalizers) can adjust the payload first;
+      // the rewrite then resolves item references against the chosen
+      // candidate's upstream.
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
 
