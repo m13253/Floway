@@ -3,15 +3,13 @@ import { streamSSE } from 'hono/streaming';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import type { TokenUsage } from '../../../repo/types.ts';
-import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/performance.ts';
-import { hasTokenUsage, recordTokenUsageForApiKey, tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/proxy-sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, type EventResultMetadata, type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type RE = ResponsesStreamEvent;
@@ -74,23 +72,6 @@ export const respondResponses = async (
   });
 
   return { success: true, response };
-};
-
-// --- telemetry ---
-
-// `GatewayCtx.apiKeyId` is `string | null`; the telemetry helpers accept
-// `string | undefined` and skip on falsy. Coerce here to satisfy the signature
-// without losing the no-op-on-missing-key behavior.
-const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(ctx.apiKeyId ?? undefined, modelIdentity, usage);
-};
-
-const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
-  // `GatewayCtx.scheduleBackground` takes a thunk returning Promise<void> | void;
-  // the telemetry helper hands us a promise — adapt by returning it from the thunk
-  // (the `Promise<unknown>` cast keeps TypeScript happy without inserting an await).
-  const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
-  recordRequestPerformanceForApiKey(ctx.apiKeyId ?? undefined, scheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
 // --- token usage ---

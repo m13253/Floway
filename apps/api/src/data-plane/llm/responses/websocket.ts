@@ -4,15 +4,13 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
-import type { TokenUsage } from '../../../repo/types.ts';
-import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/performance.ts';
-import { hasTokenUsage, recordTokenUsageForApiKey, tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import { createGatewayCtxForWs, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import type { StreamCompletion } from '../shared/stream/proxy-sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { EventResultMetadata, ExecuteResult, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
 
 interface WorkerWebSocket extends WebSocket {
@@ -267,17 +265,6 @@ const respondResponsesWebSocket = async (input: {
       recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
     }
   }
-};
-
-// `GatewayCtx.apiKeyId` is `string | null`; the telemetry helpers accept
-// `string | undefined` and skip on falsy. Coerce to match the signature.
-const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(ctx.apiKeyId ?? undefined, modelIdentity, usage);
-};
-
-const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
-  const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
-  recordRequestPerformanceForApiKey(ctx.apiKeyId ?? undefined, scheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
 const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {

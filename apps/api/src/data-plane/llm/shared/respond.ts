@@ -1,9 +1,11 @@
 import type { StreamCompletion } from './stream/proxy-sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
+import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/performance.ts';
+import { hasTokenUsage, recordTokenUsageForApiKey } from '../../shared/telemetry/usage.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
-import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Emits a measurement endpoint's already-shaped body verbatim. The endpoint's
 // `attempt` owns all shaping — the success body and any source-specific error
@@ -50,3 +52,19 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
   });
+
+// `GatewayCtx.apiKeyId` is `string | null`; the telemetry helpers accept
+// `string | undefined` and skip on falsy. Coerce here to satisfy the signature
+// without losing the no-op-on-missing-key behavior.
+export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+  if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(ctx.apiKeyId ?? undefined, modelIdentity, usage);
+};
+
+// `GatewayCtx.scheduleBackground` takes a thunk returning Promise<void> | void;
+// the telemetry helper hands us a promise — adapt by returning it from the
+// thunk (the `Promise<unknown>` cast keeps TypeScript happy without inserting
+// an await).
+export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
+  const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
+  recordRequestPerformanceForApiKey(ctx.apiKeyId ?? undefined, scheduler, context, failed, performance.now() - ctx.requestStartedAt);
+};
