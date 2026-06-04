@@ -343,7 +343,6 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
 const makeGatewayCtx = (apiKeyId: string | null = 'k1'): GatewayCtx => ({
   apiKeyId,
   apiKeyUpstreamIds: null,
-  headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,
@@ -4485,7 +4484,6 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const gatewayCtx: GatewayCtx = {
     apiKeyId: 'k1',
     apiKeyUpstreamIds: null,
-    headers: new Headers(),
     wantsStream: true,
     scheduleBackground: () => {},
     requestStartedAt: 0,

@@ -5,7 +5,6 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 export interface GatewayCtx {
   readonly apiKeyId: string | null;
   readonly apiKeyUpstreamIds: readonly string[] | null;
-  readonly headers: Headers;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
@@ -26,7 +25,6 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
   return {
     apiKeyId,
     apiKeyUpstreamIds,
-    headers: new Headers(),
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
     scheduleBackground,
@@ -48,7 +46,6 @@ export const createGatewayCtxForWs = (
   return {
     apiKeyId,
     apiKeyUpstreamIds,
-    headers: new Headers(),
     abortSignal: downstreamAbortController.signal,
     wantsStream: true,
     downstreamAbortController,

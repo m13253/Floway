@@ -33,20 +33,6 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.apiKeyUpstreamIds, null);
   });
 
-  test('assembles a mutable Headers instance', async () => {
-    const app = new Hono();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, false);
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertExists(ctx.headers);
-    ctx.headers.append('x-test', 'value');
-    assertEquals(ctx.headers.get('x-test'), 'value');
-  });
-
   test('respects wantsStream=true', async () => {
     const app = new Hono();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
@@ -162,21 +148,6 @@ describe('createGatewayCtxForWs', () => {
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, null);
     assertEquals(ctx.apiKeyUpstreamIds, null);
-  });
-
-  test('assembles a mutable Headers instance', async () => {
-    const app = new Hono();
-    let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
-    app.get('/test', c => {
-      const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertExists(ctx.headers);
-    ctx.headers.append('x-ws-test', 'value');
-    assertEquals(ctx.headers.get('x-ws-test'), 'value');
   });
 
   test('forces wantsStream=true', async () => {

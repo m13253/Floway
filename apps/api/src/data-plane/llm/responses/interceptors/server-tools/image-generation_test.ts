@@ -52,7 +52,6 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: null,
   apiKeyUpstreamIds: null,
-  headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,

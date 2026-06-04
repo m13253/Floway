@@ -5,7 +5,7 @@ import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import { mergeInvocationHeaders, providerStreamResultToExecuteResult, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
+import { providerStreamResultToExecuteResult, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure, type LlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -201,7 +201,7 @@ const callResponsesAsExecuteResult = async (
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    mergeInvocationHeaders(ctx.headers, invocationHeaders),
+    invocationHeaders,
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate);
 };
@@ -224,7 +224,7 @@ const callResponsesCompactAsExecuteResult = async (
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    mergeInvocationHeaders(ctx.headers, invocationHeaders),
+    invocationHeaders,
   );
   if (!providerResult.ok) return await readUpstreamError(providerResult.response);
   return eventResult(

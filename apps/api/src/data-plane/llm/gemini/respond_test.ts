@@ -21,7 +21,6 @@ const testTelemetryModelIdentity = {
 const ctx = (): GatewayCtx => ({
   apiKeyId: null,
   apiKeyUpstreamIds: null,
-  headers: new Headers(),
   wantsStream: false,
   scheduleBackground: () => {},
   requestStartedAt: 0,

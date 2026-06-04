@@ -4,7 +4,7 @@ import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { mergeInvocationHeaders, providerStreamResultToExecuteResult } from '../shared/attempt-helpers.ts';
+import { providerStreamResultToExecuteResult } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -117,7 +117,7 @@ const callChatCompletionsAsExecuteResult = async (
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    mergeInvocationHeaders(ctx.headers, invocationHeaders),
+    invocationHeaders,
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate);
 };

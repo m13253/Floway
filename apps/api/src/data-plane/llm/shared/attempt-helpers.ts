@@ -26,16 +26,3 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     telemetryModelIdentity(candidate, providerResult.modelKey),
   );
 };
-
-// `ctx.headers` is the shared Headers bag every protocol crosses; the per-
-// invocation `Record<string, string>` is where provider-side interceptors
-// still write. Merge with invocation-set values winning so a provider
-// interceptor can override a header the ctx already carried.
-export const mergeInvocationHeaders = (ctxHeaders: Headers, invocationHeaders: Record<string, string>): Record<string, string> => {
-  const merged: Record<string, string> = {};
-  ctxHeaders.forEach((value, key) => {
-    merged[key] = value;
-  });
-  for (const [key, value] of Object.entries(invocationHeaders)) merged[key] = value;
-  return merged;
-};
