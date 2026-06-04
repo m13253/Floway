@@ -12,12 +12,12 @@ export interface GatewayCtx {
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
   const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
   const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
-  const abortSignal = c.req.raw.signal;
+  const downstreamAbortController = wantsStream ? new AbortController() : undefined;
   return {
     apiKeyId,
     apiKeyUpstreamIds,
     headers: new Headers(),
-    ...(abortSignal !== undefined ? { abortSignal } : {}),
+    ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
   };
 };

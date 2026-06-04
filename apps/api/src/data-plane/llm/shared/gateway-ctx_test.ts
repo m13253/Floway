@@ -83,7 +83,7 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.wantsStream, false);
   });
 
-  test('does not set downstreamAbortController', async () => {
+  test('wantsStream=true: downstreamAbortController is defined and abortSignal matches its signal', async () => {
     const app = new Hono();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -92,7 +92,21 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
+    assertExists(ctx.downstreamAbortController);
+    assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
+  });
+
+  test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
+    const app = new Hono();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    app.get('/test', c => {
+      ctx = createGatewayCtxFromHono(c, false);
+      return c.text('ok');
+    });
+    await app.request('/test');
+    assertExists(ctx);
     assertEquals(ctx.downstreamAbortController, undefined);
+    assertEquals(ctx.abortSignal, undefined);
   });
 });
 
