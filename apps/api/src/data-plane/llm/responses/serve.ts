@@ -41,7 +41,7 @@ export const responsesServe = {
               : null,
     });
     const decision = await planResponsesRouting({ payload: prepared, candidates, store });
-    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'generate');
+    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure);
     // Stage the user-supplied input from the original payload — not the
     // expansion's `item_reference` prefix — so the next-turn snapshot picks
     // up the new user items in addition to the prior snapshot history.
@@ -59,7 +59,6 @@ export const responsesServe = {
         sawModel
           ? { kind: 'model-unsupported', model: prepared.model }
           : { kind: 'model-missing', model: prepared.model },
-        'generate',
       );
     }
     return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, sourceApi: 'responses', snapshotMode });
@@ -78,7 +77,7 @@ export const responsesServe = {
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
     const decision = await planResponsesRouting({ payload: prepared, candidates, store });
-    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'compact');
+    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure);
     await stageUserInputItems(payload.input, store);
 
     // The first candidate's result IS the answer — upstream-error and
@@ -90,7 +89,6 @@ export const responsesServe = {
         sawModel
           ? { kind: 'model-unsupported', model: prepared.model }
           : { kind: 'model-missing', model: prepared.model },
-        'compact',
       );
     }
     return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate, sourceApi: 'responses' });
