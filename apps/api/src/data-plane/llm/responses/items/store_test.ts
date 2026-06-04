@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './items/format.ts';
-import { prepareStoredResponsesItemsForSource } from './items/request-plan.ts';
-import { createHttpStatefulResponsesStore, createWebSocketStatefulResponsesSession } from './stateful-store.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from '../../sources/responses/items/format.ts';
+import { prepareStoredResponsesItemsForSource } from '../../sources/responses/items/request-plan.ts';
+import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
@@ -51,7 +51,7 @@ test('encrypted-content lookup refreshes only the selected compatible candidate'
   await repo.responsesItems.insertMany([compatible, incompatible]);
 
   const input = [{ type: 'reasoning', encrypted_content: encryptedContent, summary: [] }] as unknown as ResponsesInputItem[];
-  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  const store = createResponsesHttpStore(API_KEY_ID, undefined);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   await prepareStoredResponsesItemsForSource(input, responsesItemsView, store);
   await store.refreshTouchedItems();
@@ -87,13 +87,13 @@ test('websocket local incompatible encrypted-content candidates do not mask dura
     refreshedAt: 2_000,
   });
   await repo.responsesItems.insertMany([durableCompatible]);
-  const session = createWebSocketStatefulResponsesSession();
-  const localStore = session.createStore(API_KEY_ID, false).statefulResponsesStore;
+  const session = createResponsesWsSession(API_KEY_ID);
+  const localStore = session.createStore(false);
   localStore.stageOutputItem(localIncompatible);
   await localStore.commitOutputItems();
 
   const input = [{ type: 'reasoning', encrypted_content: encryptedContent, summary: [] }] as unknown as ResponsesInputItem[];
-  const store = session.createStore(API_KEY_ID, undefined).statefulResponsesStore;
+  const store = session.createStore(undefined);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   const prepared = await prepareStoredResponsesItemsForSource(input, responsesItemsView, store);
 
@@ -120,7 +120,7 @@ test('snapshots with non-replayable metadata-only rows load as missing', async (
     refreshedAt: 1_000,
   });
 
-  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  const store = createResponsesHttpStore(API_KEY_ID, undefined);
 
   assertEquals(await store.loadSnapshot('resp_expired'), null);
 });
@@ -146,9 +146,86 @@ test('snapshots with upstream-owned metadata-only rows remain replayable', async
     refreshedAt: 1_000,
   });
 
-  const store = createHttpStatefulResponsesStore(API_KEY_ID, undefined);
+  const store = createResponsesHttpStore(API_KEY_ID, undefined);
   const snapshot = await store.loadSnapshot('resp_metadata');
 
   assertExists(snapshot);
   assertEquals(snapshot.itemIds, [upstreamOwned.id]);
+});
+
+test('createNonResponsesSourceStore reads items for affinity but does not write snapshots', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const item = storedRow({
+    id: createStoredResponsesItemId('message'),
+    itemType: 'message',
+    upstreamId: 'up_a',
+    upstreamItemId: 'raw_msg_a',
+    createdAt: 1_000,
+    refreshedAt: 1_000,
+  });
+  await repo.responsesItems.insertMany([item]);
+
+  const store = createNonResponsesSourceStore(API_KEY_ID);
+
+  // Items are still readable for affinity lookups.
+  const input = [{ type: 'message', id: item.id, role: 'assistant', content: [] }] as unknown as ResponsesInputItem[];
+  await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
+  assertExists(store.getItemById(item.id));
+
+  // commitSnapshot is a no-op when snapshotWrites is empty.
+  const outputItem: StoredResponsesItem = {
+    ...item,
+    id: createStoredResponsesItemId('message'),
+    origin: 'upstream',
+    payload: { item: { type: 'message', id: 'out_1', role: 'assistant', content: [] } },
+  };
+  store.beginAttempt([]);
+  store.stageOutputItem(outputItem);
+  await store.commitOutputItems();
+  await store.commitSnapshot('resp_new', 'append');
+
+  // No snapshot was written because snapshotWrites is empty for non-Responses sources.
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_new'), null);
+});
+
+test('createResponsesHttpStore with store=false does not write snapshots', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+
+  const store = createResponsesHttpStore(API_KEY_ID, false);
+  const outputItem: StoredResponsesItem = storedRow({
+    id: createStoredResponsesItemId('message'),
+    itemType: 'message',
+    origin: 'upstream',
+  });
+  store.beginAttempt([]);
+  store.stageOutputItem(outputItem);
+  await store.commitOutputItems();
+  await store.commitSnapshot('resp_no_store', 'append');
+
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_no_store'), null);
+});
+
+test('createResponsesHttpStore with store=true writes snapshots', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const outputItem: StoredResponsesItem = storedRow({
+    id: createStoredResponsesItemId('message'),
+    itemType: 'message',
+    origin: 'upstream',
+    upstreamId: 'up_snap',
+    upstreamItemId: 'raw_snap',
+    payload: { item: { type: 'message', id: 'snap_1', role: 'assistant', content: [] } },
+  });
+  store.beginAttempt([]);
+  store.stageOutputItem(outputItem);
+  await store.commitOutputItems();
+  await store.commitSnapshot('resp_with_store', 'append');
+
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_with_store');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds, [outputItem.id]);
 });
