@@ -57,7 +57,7 @@ test('mid-migration failure rolls back and leaves no partial schema', () => with
   );
 
   const db = createNodeSqliteDatabase(join(dir, 'rollback.db'));
-  await assertRejects(() => applyMigrations(db, { dir: migrationsDir }));
+  await assertRejects(() => applyMigrations(db, migrationsDir));
 
   const tables = await db.prepare(
     'SELECT name FROM sqlite_master WHERE type = \'table\' AND name = ?',
@@ -76,12 +76,12 @@ test('skips already-applied migrations on partial state', () => withTemp(async d
   await writeFile(join(migrationsDir, '0002_b.sql'), 'CREATE TABLE b (id INTEGER);');
 
   const db = createNodeSqliteDatabase(join(dir, 'partial.db'));
-  await applyMigrations(db, { dir: migrationsDir });
+  await applyMigrations(db, migrationsDir);
 
   // Add a third migration; rerun. Only the new one should execute — the first
   // two would error if re-run because the tables already exist.
   await writeFile(join(migrationsDir, '0003_c.sql'), 'CREATE TABLE c (id INTEGER);');
-  await applyMigrations(db, { dir: migrationsDir });
+  await applyMigrations(db, migrationsDir);
 
   const recorded = await db.prepare('SELECT name FROM _migrations ORDER BY name').all<{ name: string }>();
   assertEquals(recorded.results.map(r => r.name), ['0001_a.sql', '0002_b.sql', '0003_c.sql']);

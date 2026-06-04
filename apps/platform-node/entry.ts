@@ -28,15 +28,18 @@ const { db } = bootstrapNodePlatform({ dbPath, filesDir });
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-// CF triggers scheduled maintenance via cron; on Node we run the same job on
-// a wall-clock interval. unref() lets the process exit cleanly on SIGINT
-// even though the timer is still pending.
-setInterval(
-  () => {
-    runScheduledMaintenance().catch(err => console.error('[scheduled]', err));
-  },
-  SCHEDULED_INTERVAL_MS,
-).unref();
+// Run the scheduled maintenance job once after a short startup delay and
+// then every hour. Without the startup run, a process that restarts more
+// often than the interval (crash loop, frequent deploys) would never run
+// maintenance and the responses-items expiry sweep would silently lag. The
+// 30s delay keeps the very first request after boot from racing the sweep.
+// unref() on both timers lets the process exit cleanly on SIGINT.
+const STARTUP_DELAY_MS = 30 * 1000;
+const sweep = (): void => {
+  runScheduledMaintenance().catch(err => console.error('[scheduled]', err));
+};
+setTimeout(sweep, STARTUP_DELAY_MS).unref();
+setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
 
 serve({ fetch: app.fetch, port }, info => {
   console.log(`floway listening on http://localhost:${info.port}`);

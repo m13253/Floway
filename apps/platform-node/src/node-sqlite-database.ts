@@ -1,19 +1,23 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
 // node:sqlite's prepared statement is synchronous and returns plain rows.
-// We adapt it to the platform's async, enveloped contract: bind() captures
-// values for the next call (matching D1's chained shape), run() reports
-// `meta.changes` from the underlying result.
+// We adapt it to the platform's async, enveloped contract. bind() returns a
+// fresh statement object so repeated bind calls on the same prepared statement
+// each produce an independent bound view — matching D1's immutable bind shape
+// (mutating self would cause two awaited binds on the same statement to
+// share state under load).
 class NodeSqlitePreparedStatement implements SqlPreparedStatement {
-  private bound: unknown[] = [];
-
-  constructor(private readonly stmt: StatementSync) {}
+  constructor(
+    private readonly stmt: StatementSync,
+    private readonly bound: readonly unknown[] = [],
+  ) {}
 
   bind(...values: unknown[]): SqlPreparedStatement {
-    this.bound = values;
-    return this;
+    return new NodeSqlitePreparedStatement(this.stmt, values);
   }
 
   first<T = Record<string, unknown>>(): Promise<T | null> {
@@ -37,10 +41,10 @@ class NodeSqlitePreparedStatement implements SqlPreparedStatement {
 }
 
 class NodeSqliteDatabase implements SqlDatabase {
-  constructor(readonly raw: DatabaseSync) {}
+  constructor(private readonly db: DatabaseSync) {}
 
   prepare(query: string): SqlPreparedStatement {
-    return new NodeSqlitePreparedStatement(this.raw.prepare(query));
+    return new NodeSqlitePreparedStatement(this.db.prepare(query));
   }
 
   // batch() runs the supplied statements inside one transaction so the
@@ -48,27 +52,28 @@ class NodeSqliteDatabase implements SqlDatabase {
   // batch semantics.
   async batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
     const results: SqlResult[] = [];
-    this.raw.exec('BEGIN');
+    this.db.exec('BEGIN');
     try {
       for (const stmt of statements) results.push(await stmt.run());
-      this.raw.exec('COMMIT');
+      this.db.exec('COMMIT');
     } catch (e) {
-      this.raw.exec('ROLLBACK');
+      this.db.exec('ROLLBACK');
       throw e;
     }
     return results;
   }
+
+  exec(sql: string): Promise<unknown> {
+    this.db.exec(sql);
+    return Promise.resolve(undefined);
+  }
 }
 
-// `raw` exposes the underlying DatabaseSync to bootstrap-time helpers in this
-// package (the migration runner, which needs `exec()` to handle hand-authored
-// migration files containing comments and trigger BEGIN/END blocks that
-// statement-level prepare/run cannot parse).
-export interface NodeSqliteDatabaseHandle extends SqlDatabase {
-  readonly raw: DatabaseSync;
-}
-
-export const createNodeSqliteDatabase = (path: string): NodeSqliteDatabaseHandle => {
+export const createNodeSqliteDatabase = (path: string): SqlDatabase => {
+  // node:sqlite throws ERR_SQLITE_ERROR ("unable to open database file") when
+  // the parent directory is missing — unhelpful on a fresh deploy. Each
+  // component owns its own root.
+  mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   // Match the schema's relational expectations; node:sqlite leaves foreign
   // key enforcement off by default while D1 keeps it on, so without this the

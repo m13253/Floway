@@ -1,6 +1,7 @@
 import type { Dirent } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import type { FileProvider } from '@floway-dev/platform';
 
@@ -10,7 +11,15 @@ import type { FileProvider } from '@floway-dev/platform';
 // surface) and are translated to native path segments on the way in/out so
 // the same key reads identically on Windows and POSIX hosts.
 export class FsFileProvider implements FileProvider {
-  constructor(private readonly root: string) {}
+  private readonly root: string;
+
+  constructor(root: string) {
+    // Resolve once so `pathFor` can verify resolved paths still live under it.
+    this.root = resolve(root);
+    // Ensure the root exists so the first put() doesn't race against a missing
+    // directory and so tests / fresh deploys see a consistent structure.
+    mkdirSync(this.root, { recursive: true });
+  }
 
   async put(key: string, body: Uint8Array): Promise<void> {
     const path = this.pathFor(key);
@@ -28,6 +37,11 @@ export class FsFileProvider implements FileProvider {
   }
 
   async deletePrefix(prefix: string): Promise<void> {
+    // Refuse to delete the entire root: a stray empty-string prefix would
+    // otherwise wipe every spilled payload, including ones from concurrent
+    // requests. Callers that genuinely want to clear everything should call
+    // deleteAllResponsesItemPayloadFiles or the equivalent at a higher layer.
+    if (prefix === '') throw new Error('FsFileProvider.deletePrefix: refusing empty prefix');
     await rm(this.pathFor(prefix), { recursive: true, force: true });
   }
 
@@ -37,7 +51,11 @@ export class FsFileProvider implements FileProvider {
     try {
       entries = await readdir(dir, { withFileTypes: true, recursive: true });
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      const code = (e as NodeJS.ErrnoException).code;
+      // ENOENT is "the prefix has nothing under it"; ENOTDIR is "the prefix
+      // points at a file, not a directory" — both should yield an empty list,
+      // matching R2's "list of zero objects" semantics for a missing prefix.
+      if (code === 'ENOENT' || code === 'ENOTDIR') return [];
       throw e;
     }
     const keys: string[] = [];
@@ -49,7 +67,16 @@ export class FsFileProvider implements FileProvider {
     return keys;
   }
 
+  // Resolve a key against `root` and reject paths that escape it. Even though
+  // the FileProvider contract treats keys as opaque, callers are not required
+  // to scrub user-controlled segments and a `..`-laden key would otherwise
+  // walk to arbitrary host paths under R2 it would simply be a strange key.
   private pathFor(key: string): string {
-    return join(this.root, ...key.split('/'));
+    if (isAbsolute(key)) throw new Error(`FsFileProvider: absolute keys are not supported (${key})`);
+    const path = resolve(this.root, ...key.split('/'));
+    if (path !== this.root && !path.startsWith(this.root + sep)) {
+      throw new Error(`FsFileProvider: key escapes root (${key})`);
+    }
+    return path;
   }
 }
