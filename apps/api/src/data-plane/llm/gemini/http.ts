@@ -11,8 +11,8 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
 // captures everything after `/v1beta/models/` in a single `modelAction` param;
 // we split on the trailing `:` here so each entry sees just the action and
-// the resolved model id (with a leading `models/` prefix tolerated, matching
-// the legacy entry).
+// the resolved model id (with a leading `models/` prefix tolerated, as Google
+// SDKs send it).
 const parseGeminiModelAction = (modelAction: string | undefined): { model: string; action: string } | Response => {
   if (!modelAction) return geminiRpcErrorResponse(404, 'Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
@@ -29,9 +29,7 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
 };
 
 // Single Hono handler that fans the `/v1beta/models/:modelAction` route into
-// the three Gemini sub-endpoints by inspecting the parsed action. Mirrors the
-// legacy switch in `routes.ts`/`traits.ts` but lives next to the Gemini code
-// it dispatches to.
+// the three Gemini sub-endpoints by inspecting the parsed action.
 export const geminiHttp = {
   generate: async (c: Context): Promise<Response> => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));

@@ -4,9 +4,7 @@ import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
-// (HTTP body, SSE-tunnelled error event). Renders pre-stream `LlmServeFailure`s
-// the same way the legacy traits renderer did, so client-visible status, body
-// shape, and message text stay byte-identical across the migration.
+// (HTTP body, SSE-tunnelled error event).
 export const geminiStatusForHttpStatus = (status: number): string => {
   switch (status) {
   case 400:
@@ -39,7 +37,7 @@ const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<Pr
 });
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
-// the `model-unsupported` message string, matching the legacy renderer.
+// the `model-unsupported` message string.
 export const renderGeminiFailure = (
   failure: LlmServeFailure,
   endpoint: 'generate' | 'countTokens',

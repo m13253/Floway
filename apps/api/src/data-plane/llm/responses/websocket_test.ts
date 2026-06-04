@@ -292,11 +292,11 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
   );
 });
 
-// Spec change vs the legacy WS entry: store=false now passes snapshotMode='none'
-// to responsesServe, so the turn writes neither a snapshot nor item rows
-// anywhere (not even the per-session MemoryStatefulResponsesBacking). A
-// follow-up message that names the previous response must therefore fail
-// verbatim with the OpenAI previous_response_not_found envelope.
+// store=false passes snapshotMode='none' to responsesServe, so the turn
+// writes neither a snapshot nor item rows anywhere (not even the per-session
+// MemoryStatefulResponsesBacking). A follow-up message that names the
+// previous response must therefore fail verbatim with the OpenAI
+// previous_response_not_found envelope.
 test('Responses WebSocket store:false writes no items/snapshot and follow-ups cannot resolve it', async () => {
   const { apiKey, repo } = await setupAppTest();
 

@@ -35,9 +35,9 @@ export const geminiAttempt = {
     const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       // Gemini has no native upstream target today — every targetApi we
-      // pickTarget for is reached via translation. The dispatch mirrors the
-      // legacy traits.ts emit map, threaded through `traverseTranslation` so
-      // each inner attempt owns its own interceptor chain and rewrite.
+      // pickTarget for is reached via translation. The dispatch threads each
+      // branch through `traverseTranslation` so each inner attempt owns its
+      // own interceptor chain and rewrite.
       const transCtx = {
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,

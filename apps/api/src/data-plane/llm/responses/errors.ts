@@ -21,7 +21,7 @@ const openAiErrorResult = (
 
 // `endpoint` is in the signature so future divergence (e.g. a compact-only
 // error message) has a place to live. Today both endpoints render the same
-// envelope per failure kind, matching the previous traits-era renderer.
+// envelope per failure kind.
 export const renderResponsesFailure = (
   failure: LlmServeFailure,
   _endpoint: 'generate' | 'compact',

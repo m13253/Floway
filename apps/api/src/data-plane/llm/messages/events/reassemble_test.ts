@@ -130,7 +130,7 @@ test('MessagesTool supports both client and native web search shapes', () => {
   }
 });
 
-test('Anthropic native web search shared shapes match Task 1 contracts', () => {
+test('Anthropic native web search shared shapes pass through reassembly unchanged', () => {
   const searchCitation: MessagesSearchResultLocationCitation = {
     type: 'search_result_location',
     url: 'https://docs.example.com/api-guide',

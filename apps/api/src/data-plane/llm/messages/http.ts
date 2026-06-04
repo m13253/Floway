@@ -18,8 +18,7 @@ const parseAnthropicBeta = (raw: string | undefined): readonly string[] | undefi
 };
 
 // Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
-// them via the `anthropic-beta` HTTP header. Matches the legacy entry's
-// pre-flight check.
+// them via the `anthropic-beta` HTTP header.
 const bodyBetaParam = (payload: MessagesPayload): string | undefined => {
   const record = payload as unknown as Record<string, unknown>;
   if (Object.hasOwn(record, 'anthropic_beta')) return 'anthropic_beta';

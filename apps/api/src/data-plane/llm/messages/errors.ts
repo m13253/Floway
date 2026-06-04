@@ -3,9 +3,8 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 
-// Anthropic Messages error envelope. Renders pre-stream `LlmServeFailure`s the
-// same way the legacy traits renderer did, so client-visible status, body
-// shape, and message text stay byte-identical across the migration.
+// Anthropic Messages error envelope used to render pre-stream
+// `LlmServeFailure`s.
 const anthropicErrorResult = (
   status: number,
   type: string,
@@ -21,7 +20,7 @@ const anthropicErrorResult = (
 });
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
-// the `model-unsupported` message string, matching the legacy renderer.
+// the `model-unsupported` message string.
 export const renderMessagesFailure = (
   failure: LlmServeFailure,
   endpoint: 'generate' | 'countTokens',

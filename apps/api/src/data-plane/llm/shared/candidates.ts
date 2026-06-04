@@ -12,7 +12,7 @@ export interface ProviderCandidateEnumeration {
   // its endpoint set didn't satisfy `pickTarget`. Distinguishes "model is
   // missing entirely" (false → `model-missing` 404) from "model exists but
   // doesn't expose the endpoint this source needs" (true → `model-unsupported`
-  // 400). Matches the legacy `sawModel` flag in `executeLlmSourcePlan`.
+  // 400).
   readonly sawModel: boolean;
 }
 

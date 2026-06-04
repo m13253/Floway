@@ -302,10 +302,9 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
 
 test('countTokens renders a Google RPC INVALID_ARGUMENT when no Messages-capable candidate exists', async () => {
   installRepo();
-  // Candidate enumeration is what filters by pickTarget; a routing planner with
-  // no candidates surfaces as model-missing here. The legacy entry reported a
-  // 400 INVALID_ARGUMENT for unsupported, which we keep for countTokens by way
-  // of the renderer in errors.ts.
+  // Candidate enumeration is what filters by pickTarget; a routing planner
+  // with no candidates surfaces as model-missing here, which the renderer in
+  // errors.ts maps to a 400 INVALID_ARGUMENT envelope for countTokens.
   queueCandidates([]);
 
   const result = await geminiServe.countTokens({
