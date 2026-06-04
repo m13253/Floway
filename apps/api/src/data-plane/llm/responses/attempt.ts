@@ -12,8 +12,8 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { responsesResultToEvents, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
@@ -228,12 +228,7 @@ const callResponsesCompactAsExecuteResult = async (
   );
   if (!providerResult.ok) return await readUpstreamError(providerResult.response);
   return eventResult(
-    compactionFrames(providerResult.result),
+    syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),
   );
-};
-
-const compactionFrames = async function* (result: ResponsesResult): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  yield* responsesResultToEvents(result, { genericOutputItems: true });
-  yield doneFrame();
 };
