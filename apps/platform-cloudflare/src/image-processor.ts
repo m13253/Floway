@@ -1,4 +1,5 @@
 import type { ImageCache, ImageDimensions, ImageProcessor } from '@floway-dev/platform';
+import { sha256Hex } from '@floway-dev/platform';
 
 // Fixed WebP quality for every recompressed inline image. 82 sits above the
 // cwebp / photographic default of 75 so screenshots and text-heavy UI images —
@@ -66,13 +67,6 @@ const streamFrom = (bytes: Uint8Array): ReadableStream =>
       controller.close();
     },
   });
-
-const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
-  // Copy into a fresh ArrayBuffer-backed view so the digest argument is a
-  // concrete BufferSource regardless of the input's ArrayBufferLike type param.
-  const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-};
 
 class CloudflareImageProcessor implements ImageProcessor {
   constructor(

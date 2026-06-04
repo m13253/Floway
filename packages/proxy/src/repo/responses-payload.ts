@@ -1,5 +1,5 @@
 import type { StoredResponsesItemPayload } from './types.ts';
-import { getFileProvider } from '@floway-dev/platform';
+import { getFileProvider, sha256Hex } from '@floway-dev/platform';
 
 type StoredResponsesPayloadJson =
   | {
@@ -158,12 +158,6 @@ const responsesItemsExpiryBucketPrefix = (hourTimestamp: number): string => {
 };
 
 export const startOfUtcHour = (timestamp: number): number => Math.floor(timestamp / HOUR_MS) * HOUR_MS;
-
-const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
-  const digestInput = new Uint8Array(bytes).buffer;
-  const digest = await crypto.subtle.digest('SHA-256', digestInput);
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
