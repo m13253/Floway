@@ -271,10 +271,12 @@ test('generate inherits Gemini source-side invocation headers across translation
     ...candidate,
     binding: {
       ...candidate.binding,
-      interceptors: { gemini: [(invocation, _gctx, run) => {
-        invocation.headers['x-test'] = 'abc';
-        return run();
-      }] },
+      interceptors: {
+        gemini: [(invocation, _gctx, run) => {
+          invocation.headers['x-test'] = 'abc';
+          return run();
+        }],
+      },
     },
   };
   const result = await geminiAttempt.generate({

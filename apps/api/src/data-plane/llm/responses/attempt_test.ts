@@ -208,7 +208,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     sourceItems: [{ type: 'item_reference' as const, id: missingId }],
     view: {
       visitAsResponsesItems: async (items, visit) => {
-        for (const item of items as readonly { id: string }[]) visit({ type: 'item_reference', id: item.id });
+        for (const item of items as readonly { id: string }[]) await visit({ type: 'item_reference', id: item.id });
       },
     },
   });
@@ -353,10 +353,12 @@ test('generate inherits Responses source-side invocation headers across translat
       upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',
       provider: messagesProvider, upstreamModel,
       enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-      interceptors: { responses: [(invocation, _gctx, run) => {
-        invocation.headers['x-test'] = 'abc';
-        return run();
-      }] },
+      interceptors: {
+        responses: [(invocation, _gctx, run) => {
+          invocation.headers['x-test'] = 'abc';
+          return run();
+        }],
+      },
     },
     targetApi: 'messages',
   };
@@ -374,4 +376,3 @@ test('generate inherits Responses source-side invocation headers across translat
   await collectEvents(result.events);
   assertEquals(observedHeaders?.['x-test'], 'abc');
 });
-
