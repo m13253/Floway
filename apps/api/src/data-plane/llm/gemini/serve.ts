@@ -28,7 +28,7 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, model } = args;
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model,
       sourceApi: 'gemini',
@@ -48,7 +48,7 @@ export const geminiServe = {
       return await geminiAttempt.generate({ payload, ctx, store, candidate });
     }
     return renderGeminiFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model }
         : { kind: 'model-missing', model },
       'generate',
@@ -57,7 +57,7 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, model } = args;
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model,
       sourceApi: 'gemini',
@@ -76,7 +76,7 @@ export const geminiServe = {
       return await geminiAttempt.countTokens({ payload, ctx, store, candidate });
     }
     return renderGeminiFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model }
         : { kind: 'model-missing', model },
       'countTokens',

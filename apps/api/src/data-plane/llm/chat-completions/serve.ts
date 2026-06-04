@@ -17,7 +17,7 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store } = args;
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: payload.model,
       sourceApi: 'chat-completions',
@@ -38,7 +38,7 @@ export const chatCompletionsServe = {
       return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate });
     }
     return renderChatCompletionsFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model: payload.model }
         : { kind: 'model-missing', model: payload.model },
     );

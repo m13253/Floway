@@ -25,7 +25,7 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, anthropicBeta } = args;
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: payload.model,
       sourceApi: 'messages',
@@ -46,7 +46,7 @@ export const messagesServe = {
       return await messagesAttempt.generate({ payload, ctx, store, candidate, anthropicBeta });
     }
     return renderMessagesFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model: payload.model }
         : { kind: 'model-missing', model: payload.model },
       'generate',
@@ -55,7 +55,7 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, anthropicBeta } = args;
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: payload.model,
       sourceApi: 'messages',
@@ -71,7 +71,7 @@ export const messagesServe = {
       return await messagesAttempt.countTokens({ payload, ctx, store, candidate, anthropicBeta });
     }
     return renderMessagesFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model: payload.model }
         : { kind: 'model-missing', model: payload.model },
       'countTokens',

@@ -30,7 +30,7 @@ export const responsesServe = {
   generate: async (args: ResponsesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const { payload, ctx, store, snapshotMode = 'append' } = args;
     const prepared = await expandPreviousResponseId(payload, store);
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: prepared.model,
       sourceApi: 'responses',
@@ -57,7 +57,7 @@ export const responsesServe = {
       return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, snapshotMode });
     }
     return renderResponsesFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model: prepared.model }
         : { kind: 'model-missing', model: prepared.model },
       'generate',
@@ -70,7 +70,7 @@ export const responsesServe = {
     // it). When present we expand it the same way generate does so the
     // upstream sees the same item_reference + current input shape.
     const prepared = await expandPreviousResponseId(payload, store);
-    const candidates = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
       model: prepared.model,
       sourceApi: 'responses',
@@ -87,7 +87,7 @@ export const responsesServe = {
       return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate });
     }
     return renderResponsesFailure(
-      candidates.length > 0
+      sawModel
         ? { kind: 'model-unsupported', model: prepared.model }
         : { kind: 'model-missing', model: prepared.model },
       'compact',

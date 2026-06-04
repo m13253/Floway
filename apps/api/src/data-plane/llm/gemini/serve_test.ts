@@ -13,7 +13,7 @@ import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocol
 import type { ProviderCallResult, ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[] }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
@@ -21,7 +21,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
     enumerateProviderCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return next.candidates;
+      return next;
     }),
   };
 });
@@ -30,8 +30,8 @@ const { geminiServe } = await import('./serve.ts');
 
 const API_KEY_ID = 'key_gemini_serve_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[]): void => {
-  candidatesQueue.push({ candidates });
+const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
+  candidatesQueue.push({ candidates, sawModel });
 };
 
 const installRepo = (): InMemoryRepo => {

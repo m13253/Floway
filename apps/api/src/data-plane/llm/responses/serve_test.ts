@@ -18,7 +18,10 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // provider registry — mocking it directly keeps the serve tests narrow
 // (no fake fetch, no repo upstream rows for provider catalogs) and lets
 // each test hand the serve exactly the candidates it wants to exercise.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[] }[] = [];
+// `sawModel` defaults to true when at least one candidate was queued; the
+// `model-missing` failure tests queue an empty list and expect `sawModel:
+// false` so the serve renders 404 rather than 400.
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
@@ -26,7 +29,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
     enumerateProviderCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return next.candidates;
+      return next;
     }),
   };
 });
@@ -36,8 +39,8 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 
 const API_KEY_ID = 'key_serve_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[]): void => {
-  candidatesQueue.push({ candidates });
+const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
+  candidatesQueue.push({ candidates, sawModel });
 };
 
 const installRepo = (): InMemoryRepo => {
