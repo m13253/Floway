@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
-import { isStoredResponsesItemId } from '../../sources/responses/items/format.ts';
-import { wrapResponsesOutputForStorage } from './output.ts';
+import { isStoredResponsesItemId } from './format.ts';
+import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './output.ts';
 import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking, type StatefulResponsesBacking } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -487,4 +487,52 @@ test('end-of-stream items in terminal frame are stored and rewritten', async () 
   assert(isStoredResponsesItemId(storedId));
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
   assertEquals(row.payload, { item: original });
+});
+
+// --- syntheticEventsFromResult / drainAsync ---
+
+test('syntheticEventsFromResult emits the same frame sequence as emitToResponsesCompact', async () => {
+  const item = messageItem('compact_msg_01', 'hello');
+  const result: ResponsesResult = {
+    id: 'resp_compact_test',
+    object: 'response',
+    model: 'gpt-test',
+    status: 'completed',
+    output: [item],
+    output_text: 'hello',
+    error: null,
+    incomplete_details: null,
+  };
+
+  const frames: ProtocolFrame<ResponsesStreamEvent>[] = [];
+  for await (const frame of syntheticEventsFromResult(result)) frames.push(frame);
+
+  // responsesResultToEvents with genericOutputItems produces:
+  //   response.created, response.in_progress,
+  //   response.output_item.added, response.output_item.done (generic pair),
+  //   response.completed
+  // then a done sentinel frame.
+  const eventTypes = frames.filter(f => f.type === 'event').map(f => (f as { event: ResponsesStreamEvent }).event.type);
+  assertEquals(eventTypes, [
+    'response.created',
+    'response.in_progress',
+    'response.output_item.added',
+    'response.output_item.done',
+    'response.completed',
+  ]);
+  assertEquals(frames.at(-1)?.type, 'done');
+});
+
+test('drainAsync iterates to completion and returns void', async () => {
+  let count = 0;
+  const iter = async function* () {
+    count += 1;
+    yield 'a';
+    count += 1;
+    yield 'b';
+    count += 1;
+  };
+  const result = await drainAsync(iter());
+  assertEquals(result, undefined);
+  assertEquals(count, 3);
 });

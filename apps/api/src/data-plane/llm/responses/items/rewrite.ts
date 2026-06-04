@@ -1,4 +1,4 @@
-import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from '../../sources/responses/items/format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import { throwLlmServeFailure } from '../../shared/errors.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';

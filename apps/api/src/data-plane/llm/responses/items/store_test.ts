@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from '../../sources/responses/items/format.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
 import { prepareStoredResponsesItemsForSource } from '../../sources/responses/items/request-plan.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';

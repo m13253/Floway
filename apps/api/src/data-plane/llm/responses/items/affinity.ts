@@ -1,4 +1,4 @@
-import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from '../../sources/responses/items/format.ts';
+import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { LlmServeFailure } from '../../shared/errors.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';

@@ -1,7 +1,7 @@
-import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from '../../sources/responses/items/format.ts';
+import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore, ResponsesSnapshotMode } from './store.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { LlmTargetApi } from '@floway-dev/provider';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesItemIdMapper, ResponsesItemFinalizedHandler } from '@floway-dev/translate/via-responses/responses-items';
@@ -184,3 +184,20 @@ const itemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
+
+// Turns a non-streaming compact result into the same frame sequence that
+// `emitToResponsesCompact` would produce when called with a live upstream:
+// `responsesResultToEvents` with genericOutputItems expands every output item
+// as bare added/done pairs (no inner content delta events), followed by a done
+// sentinel frame. This lets `wrapResponsesOutputForStorage` consume the
+// result without a real provider call.
+export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+  yield* responsesResultToEvents(result, { genericOutputItems: true });
+  yield doneFrame();
+};
+
+// Drains an async iterable to completion, discarding values.
+export const drainAsync = async (events: AsyncIterable<unknown>): Promise<void> => {
+  for await (const _ of events);
+};
+

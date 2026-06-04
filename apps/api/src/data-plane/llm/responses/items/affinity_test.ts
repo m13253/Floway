@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from '../../sources/responses/items/format.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
 import { classifyResponsesItemAffinity } from './affinity.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
