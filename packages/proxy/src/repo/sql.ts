@@ -33,6 +33,17 @@ const SEARCH_CONFIG_KEY = 'search_config';
 
 const serializeStoredConfig = (value: unknown): string => JSON.stringify(value === undefined ? null : value);
 
+// Apply a list of prepared statements, using `db.batch` when available
+// (D1 ships it; SqlDatabase models it as optional) and falling back to a
+// sequential `run()` per statement otherwise. Empty input is a no-op.
+const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
+  if (statements.length === 0) return [];
+  if (db.batch) return await db.batch(statements);
+  const results: SqlResult[] = [];
+  for (const statement of statements) results.push(await statement.run());
+  return results;
+};
+
 class SqlApiKeyRepo implements ApiKeyRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -138,7 +149,7 @@ class SqlUsageRepo implements UsageRepo {
         )
         .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.requests),
     );
-    await this.runStatements(statements);
+    await runStatements(this.db, statements);
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
@@ -186,20 +197,11 @@ class SqlUsageRepo implements UsageRepo {
         )
         .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.requests),
     );
-    await this.runStatements(statements);
+    await runStatements(this.db, statements);
   }
 
   async deleteAll(): Promise<void> {
-    await this.runStatements([this.db.prepare('DELETE FROM usage'), this.db.prepare('DELETE FROM usage_requests')]);
-  }
-
-  private async runStatements(statements: SqlPreparedStatement[]): Promise<void> {
-    if (statements.length === 0) return;
-    if (this.db.batch) {
-      await this.db.batch(statements);
-      return;
-    }
-    for (const statement of statements) await statement.run();
+    await runStatements(this.db, [this.db.prepare('DELETE FROM usage'), this.db.prepare('DELETE FROM usage_requests')]);
   }
 }
 
@@ -343,7 +345,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   async recordLatency(sample: PerformanceLatencySample): Promise<void> {
     const durationMs = Math.max(0, Math.round(sample.durationMs));
     const bucket = latencyBucketForMs(durationMs);
-    await this.runStatements([this.addSummaryStatement(sample, 1, 0, durationMs), this.addBucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1)]);
+    await runStatements(this.db, [this.addSummaryStatement(sample, 1, 0, durationMs), this.addBucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1)]);
   }
 
   async recordError(sample: PerformanceErrorSample): Promise<void> {
@@ -369,7 +371,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
-    await this.runStatements([
+    await runStatements(this.db, [
       this.setSummaryStatement(record),
       this.deleteBucketsStatement(record),
       ...record.buckets.map(bucket => this.setBucketStatement(record, bucket.lowerMs, bucket.upperMs, bucket.count)),
@@ -431,14 +433,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
     }
 
     return [...records.values()].sort(comparePerformanceTelemetryRecords);
-  }
-
-  private async runStatements(statements: SqlPreparedStatement[]): Promise<void> {
-    if (this.db.batch) {
-      await this.db.batch(statements);
-      return;
-    }
-    for (const statement of statements) await statement.run();
   }
 
   private addSummaryStatement(sample: PerformanceDimensions, requests: number, errors: number, totalMsSum: number): SqlPreparedStatement {
@@ -700,7 +694,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         )
         .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, item.origin, payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt);
     }));
-    await this.runStatements(statements);
+    await runStatements(this.db, statements);
   }
 
   async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
@@ -715,7 +709,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           )
           .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
     }));
-    const results = await this.runStatements(statements);
+    const results = await runStatements(this.db, statements);
     return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
   }
 
@@ -749,16 +743,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM responses_items').run();
     await deleteAllResponsesItemPayloadFiles();
-  }
-
-  private async runStatements(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
-    if (statements.length === 0) return [];
-    if (this.db.batch) {
-      return await this.db.batch(statements);
-    }
-    const results: SqlResult[] = [];
-    for (const statement of statements) results.push(await statement.run());
-    return results;
   }
 }
 
