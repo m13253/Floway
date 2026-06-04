@@ -336,6 +336,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
     include: ['web_search_call.results'],
     ...overrides.payload,
   } as ResponsesPayload,
+  headers: {},
 });
 
 const makeGatewayCtx = (apiKeyId: string | null = 'k1'): GatewayCtx => ({

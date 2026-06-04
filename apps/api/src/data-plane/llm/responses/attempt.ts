@@ -38,7 +38,7 @@ export interface ResponsesAttemptCompactArgs {
 export const responsesAttempt = {
   generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const { payload, ctx, store, candidate, snapshotMode } = args;
-    const invocation: ResponsesInvocation = { payload, candidate, store };
+    const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       // Rewrite runs inside the chain runner so an interceptor can mutate
       // the payload (server-tool shim, vendor normalizers) before stored
@@ -46,7 +46,7 @@ export const responsesAttempt = {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
 
-      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate);
+      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
       if (inner.type !== 'events') return inner;
       return eventResult(
         wrapResponsesOutputForStorage(inner.events, {
@@ -67,7 +67,7 @@ export const responsesAttempt = {
     if (candidate.targetApi !== 'responses') {
       throw new Error(`responsesAttempt.compact requires targetApi='responses', got '${candidate.targetApi}'`);
     }
-    const invocation: ResponsesInvocation = { payload, candidate, store };
+    const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
 
     // Capture the rewritten input from the chain's last invocation so the
     // post-chain compaction reshape sees the same items the upstream did.
@@ -79,7 +79,7 @@ export const responsesAttempt = {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
       rewrittenInput = inputAsItems(rewritten.payload.input);
-      return await callResponsesAsExecuteResult(rewritten.payload, ctx, candidate);
+      return await callResponsesAsExecuteResult(rewritten.payload, ctx, candidate, invocation.headers);
     });
 
     if (chainResult.type !== 'events') return chainResult;
@@ -163,9 +163,10 @@ const dispatchResponses = async (
   ctx: GatewayCtx,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
+  invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (candidate.targetApi === 'responses') {
-    return await callResponsesAsExecuteResult(payload, ctx, candidate);
+    return await callResponsesAsExecuteResult(payload, ctx, candidate, invocationHeaders);
   }
   if (candidate.targetApi === 'messages') {
     return await traverseTranslation(
@@ -191,13 +192,14 @@ const callResponsesAsExecuteResult = async (
   payload: ResponsesPayload,
   ctx: GatewayCtx,
   candidate: ProviderCandidate,
+  invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const { model: _model, ...body } = payload;
   const providerResult = await candidate.binding.provider.callResponses(
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    headersToRecord(ctx.headers),
+    mergeInvocationHeaders(ctx.headers, invocationHeaders),
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate);
 };
@@ -226,6 +228,16 @@ const headersToRecord = (headers: Headers): Record<string, string> => {
     record[key] = value;
   });
   return record;
+};
+
+// `ctx.headers` is the shared Headers bag every protocol crosses; the per-
+// invocation `Record<string, string>` is where provider-side interceptors
+// still write. Merge with invocation-set values winning so a provider
+// interceptor can override a header the ctx already carried.
+const mergeInvocationHeaders = (ctxHeaders: Headers, invocationHeaders: Record<string, string>): Record<string, string> => {
+  const merged = headersToRecord(ctxHeaders);
+  for (const [key, value] of Object.entries(invocationHeaders)) merged[key] = value;
+  return merged;
 };
 
 const inputAsItems = (input: ResponsesPayload['input']): ResponsesInputItem[] =>

@@ -10,6 +10,12 @@ export interface ResponsesInvocation {
   payload: ResponsesPayload;
   readonly candidate: ProviderCandidate;
   readonly store: StatefulResponsesStore;
+  // `headers` is the mutable HTTP-header bag the source serve seeds empty and
+  // target-portable interceptors populate; the provider's upstream call passes
+  // it through to the wire fetch unchanged. Shared by reference across
+  // translated emit closures so a single source-side mutation lands on the
+  // upstream HTTP call regardless of which target the planner picked.
+  readonly headers: Record<string, string>;
 }
 
 // Compact post-processes the chain's event stream into a single
