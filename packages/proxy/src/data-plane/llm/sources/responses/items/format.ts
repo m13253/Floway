@@ -1,6 +1,12 @@
-import { buf as crc32 } from 'crc-32';
+// crc-32 ships pure CommonJS without an `exports` map. Cloudflare's bundler
+// does CJS named-import interop, but raw Node ESM (and tsx, used by the Node
+// platform target) rejects `import { buf } from 'crc-32'` with
+// "Named export 'buf' not found". Default-import the namespace and destructure.
+import crc32Mod from 'crc-32';
 
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+
+const { buf: crc32 } = crc32Mod;
 
 const itemTypePrefixes = {
   message: 'msg',
