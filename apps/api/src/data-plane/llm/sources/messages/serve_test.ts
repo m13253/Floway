@@ -560,7 +560,10 @@ test('/v1/messages rewrites upstream context-window errors to Messages compact f
   );
 });
 
-test('/messages uses the same data-plane handler as /v1/messages', async () => {
+// TODO: legacy alias removed; delete in Task 27.
+// The bare `/messages` path was an undocumented alias for `/v1/messages`;
+// only `/v1/...` is mounted now.
+test.skip('/messages uses the same data-plane handler as /v1/messages', async () => {
   const { apiKey } = await setupAppTest();
 
   await withMockedFetch(

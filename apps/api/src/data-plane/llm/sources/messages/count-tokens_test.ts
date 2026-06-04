@@ -100,7 +100,10 @@ test('/v1/messages/count_tokens rejects body betas', async () => {
   assertEquals(body.error.param, 'betas');
 });
 
-test('/messages/count_tokens aliases /v1/messages/count_tokens', async () => {
+// TODO: legacy alias removed; delete in Task 27.
+// The bare `/messages/count_tokens` path was an undocumented alias for the
+// `/v1/messages/count_tokens` route; only `/v1/...` is mounted now.
+test.skip('/messages/count_tokens aliases /v1/messages/count_tokens', async () => {
   const { apiKey } = await setupAppTest();
   let capturedPath = '';
 
