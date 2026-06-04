@@ -2,8 +2,7 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import type { RequestContext } from '../../interceptors.ts';
-import { createHttpStatefulResponsesStore } from '../responses/stateful-store.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';
@@ -18,17 +17,19 @@ const testTelemetryModelIdentity = {
   modelKey: 'test-model-key',
   cost: null,
 };
-const request = (): RequestContext => ({
-  requestStartedAt: performance.now(),
+
+const ctx = (): GatewayCtx => ({
+  apiKeyId: null,
   apiKeyUpstreamIds: null,
-  runtimeLocation: 'test',
-  clientStream: false,
-  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
+  headers: new Headers(),
+  wantsStream: false,
+  scheduleBackground: () => {},
+  requestStartedAt: 0,
 });
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();
-  app.get('/', async c => (await respondGemini(c, result, false, request(), undefined)).response);
+  app.get('/', async c => (await respondGemini(c, result, false, ctx())).response);
   return await app.request('/');
 };
 

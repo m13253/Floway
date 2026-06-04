@@ -2,7 +2,8 @@ import { geminiSourceInterceptors } from './interceptors/index.ts';
 import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
 import { respondGemini, geminiInternalRpcErrorResponse, geminiRpcErrorPayload, geminiRpcErrorResponse } from './respond.ts';
-import { type GeminiInvocation, type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type GeminiInvocation, type LlmTargetApi, type MessagesInvocation, type RequestContext, runInterceptors } from '../../interceptors.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
@@ -20,6 +21,22 @@ import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses
 
 const geminiErrorResult = (status: number, message: string) =>
   jsonUpstreamErrorResult(status, geminiRpcErrorPayload(status, message));
+
+// Thin adapter for the legacy traits glue: respondGemini now takes
+// GatewayCtx (per the new per-protocol entry shape), so the RequestContext
+// threaded through the legacy serveLlm runtime is mapped onto the same fields.
+// This helper exists only here — Task 27 removes the entire legacy entry layer.
+const requestContextToGatewayCtx = (request: RequestContext, downstreamAbortController: AbortController | undefined): GatewayCtx => ({
+  apiKeyId: request.apiKeyId ?? null,
+  apiKeyUpstreamIds: request.apiKeyUpstreamIds,
+  headers: new Headers(),
+  ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
+  wantsStream: request.clientStream,
+  scheduleBackground: request.scheduleBackground !== undefined
+    ? (fn: () => Promise<void> | void) => request.scheduleBackground!(Promise.resolve(fn()))
+    : () => {},
+  requestStartedAt: request.requestStartedAt,
+});
 
 const geminiInvocation = <TPayload>(
   binding: ProviderModelRecord,
@@ -67,7 +84,7 @@ const parseGeminiModelAction = (modelAction: string | undefined): { model: strin
 
 const geminiGenerate: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondGemini(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+    await respondGemini(c, result, runtime.wantsStream, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
@@ -115,7 +132,7 @@ const geminiGenerate: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEven
 
 const geminiCountTokens: LlmHttpEndpoint<readonly GeminiContent[], GeminiStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondGemini(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+    await respondGemini(c, result, runtime.wantsStream, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;

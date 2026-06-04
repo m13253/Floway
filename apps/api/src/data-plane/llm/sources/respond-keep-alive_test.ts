@@ -1,12 +1,10 @@
 import { type Context, Hono } from 'hono';
 import { test } from 'vitest';
 
-import type { RequestContext } from '../interceptors.ts';
 import { respondChatCompletions } from './chat-completions/respond.ts';
 import { respondGemini } from './gemini/respond.ts';
 import { respondMessages } from './messages/respond.ts';
 import { respondResponses } from './responses/respond.ts';
-import { createHttpStatefulResponsesStore } from './responses/stateful-store.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/proxy-sse.ts';
@@ -121,17 +119,9 @@ const testTelemetryModelIdentity = {
 };
 
 const requestStartedAt = performance.now();
-const request = (): RequestContext => ({
-  requestStartedAt,
-  apiKeyUpstreamIds: null,
-  runtimeLocation: 'test',
-  clientStream: true,
-  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
-});
 
-// respondResponses and respondMessages now consume GatewayCtx directly. The
-// other respondX functions still take RequestContext until their migration
-// tasks land.
+// Every respondX function now consumes GatewayCtx; the helper below builds a
+// minimal one shared across the per-protocol keepalive checks.
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: null,
   apiKeyUpstreamIds: null,
@@ -150,9 +140,9 @@ test('Responses streaming keepalive uses SSE comments', async () => {
 });
 
 test('Chat Completions streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<ChatCompletionsStreamEvent>(async (c, events) => (await respondChatCompletions(c, eventResult(events, testTelemetryModelIdentity), true, true, request(), undefined)).response, ': keepalive\n\n');
+  await assertSourceKeepAlive<ChatCompletionsStreamEvent>(async (c, events) => (await respondChatCompletions(c, eventResult(events, testTelemetryModelIdentity), true, true, gatewayCtx())).response, ': keepalive\n\n');
 });
 
 test('Gemini streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<GeminiStreamEvent>(async (c, events) => (await respondGemini(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, ': keepalive\n\n');
+  await assertSourceKeepAlive<GeminiStreamEvent>(async (c, events) => (await respondGemini(c, eventResult(events, testTelemetryModelIdentity), true, gatewayCtx())).response, ': keepalive\n\n');
 });
