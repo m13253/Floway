@@ -158,8 +158,13 @@ const streamWithStorageAndSnapshot = async function* (
         ...event,
         response: { ...event.response, output: output as typeof event.response.output },
       });
-      yield rewritten;
+      // Commit BEFORE yielding the terminal frame: a consumer that
+      // breaks the for-await on the terminal yield never gives this
+      // generator another tick, so any post-yield work would be lost.
+      // The downstream HTTP entry has nothing to observe pre-snapshot —
+      // ordering matches a synchronous emit.
       if (snapshotMode !== 'none' && responseId) await commitSnapshot(responseId, snapshotMode);
+      yield rewritten;
       return;
     }
 
