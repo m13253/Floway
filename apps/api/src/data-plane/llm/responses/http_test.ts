@@ -14,11 +14,13 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // Mock the candidates seam so each test hands the http entry exactly the
 // provider candidates it wants. Mirrors the pattern from serve_test.ts.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const seenModels: string[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateProviderCandidates: vi.fn(async (args: { model: string }) => {
+      seenModels.push(args.model);
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return next;
@@ -247,4 +249,63 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(response.status, 400);
   const body = await response.json() as { error: { code: string } };
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
+});
+
+test('POST /v1/responses rewrites the codex-auto-review alias before routing', async () => {
+  installRepo();
+  seenModels.length = 0;
+  const observedBodies: { reasoning?: { effort?: string } }[] = [];
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+    observedBodies.push(body as { reasoning?: { effort?: string } });
+    return {
+      ok: true,
+      events: makeProviderEvents([completedEvent()]),
+      modelKey: 'test-model-key',
+    };
+  });
+  queueCandidates([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'codex-auto-review', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(seenModels, ['gpt-5.4']);
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callResponses to receive a body');
+  assertEquals(observed.reasoning?.effort, 'low');
+});
+
+test('POST /v1/responses/compact rewrites the codex-auto-review alias to gpt-5.4 with no reasoning field', async () => {
+  installRepo();
+  seenModels.length = 0;
+  const observedBodies: { reasoning?: unknown }[] = [];
+  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
+  };
+  const callResponsesCompact = vi.fn(async (_model: unknown, body: unknown) => {
+    observedBodies.push(body as { reasoning?: unknown });
+    return { ok: true as const, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  queueCandidates([makeCandidate({ callResponsesCompact })]);
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'codex-auto-review',
+      input: [{ type: 'message', role: 'user', content: 'kept' }],
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(seenModels, ['gpt-5.4']);
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callResponsesCompact to receive a body');
+  assertEquals(observed.reasoning, undefined);
 });
