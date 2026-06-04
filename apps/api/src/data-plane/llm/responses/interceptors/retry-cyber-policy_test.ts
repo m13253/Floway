@@ -6,10 +6,8 @@ import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ExecuteResult, eventResult, type ModelProviderInstance } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
-
-const stubProviderInstance = (): ModelProviderInstance => ({ provider: stubProvider() } as unknown as ModelProviderInstance);
+import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const makePayload = (): ResponsesPayload => ({
   model: 'gpt-test',
@@ -28,19 +26,8 @@ const makePayload = (): ResponsesPayload => ({
 
 const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   payload,
-  candidate: {
-    provider: stubProviderInstance(),
-    binding: {
-      upstream: 'test-upstream',
-      upstreamName: 'test-upstream',
-      providerKind: 'custom',
-      provider: stubProvider(),
-      upstreamModel: stubUpstreamModel(),
-      enabledFlags: new Set(['retry-cyber-policy']),
-      supportsResponsesItemReference: false,
-    },
-    targetApi: 'responses',
-  },
+  candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags: new Set(['retry-cyber-policy']) } }),
+  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],

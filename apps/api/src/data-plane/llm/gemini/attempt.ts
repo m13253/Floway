@@ -31,7 +31,7 @@ export interface GeminiAttemptCountTokensArgs {
 export const geminiAttempt = {
   generate: async (args: GeminiAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, candidate } = args;
-    const invocation: GeminiInvocation = { payload, candidate, headers: {} };
+    const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       // Gemini has no native upstream target today — every targetApi we
       // pickTarget for is reached via translation. The dispatch mirrors the
@@ -45,24 +45,21 @@ export const geminiAttempt = {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaMessages(p, transCtx),
-          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate }),
+          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini' }),
         );
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, snapshotMode: 'none' }),
+          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini', snapshotMode: 'none' }),
         );
       }
       if (candidate.targetApi === 'chat-completions') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaChatCompletions(p, transCtx),
-          // chatCompletionsAttempt.generate is a stub until Task 24 lands;
-          // this branch typechecks against the stub and starts working as
-          // soon as the real implementation arrives.
-          translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate }),
+          translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini' }),
         );
       }
       throw new Error(`geminiAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
@@ -74,7 +71,7 @@ export const geminiAttempt = {
     if (candidate.targetApi !== 'messages') {
       throw new Error(`geminiAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
-    const invocation: GeminiInvocation = { payload, candidate, headers: {} };
+    const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
     return await runInterceptors(invocation, ctx, countTokensChainInterceptors(candidate), async () => {
       // Gemini countTokens has no native upstream; translate to Messages and
       // delegate to `messagesAttempt.countTokens`, then reshape the Messages
@@ -87,7 +84,7 @@ export const geminiAttempt = {
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       };
       const { target } = await translateGeminiToMessagesForCountTokens(invocation.payload, transCtx);
-      const messagesResult = await messagesAttempt.countTokens({ payload: target, ctx, store, candidate });
+      const messagesResult = await messagesAttempt.countTokens({ payload: target, ctx, store, candidate, sourceApi: 'gemini' });
       return reshapeMessagesCountAsGemini(messagesResult);
     });
   },
@@ -95,15 +92,12 @@ export const geminiAttempt = {
 
 const chainInterceptors = (candidate: ProviderCandidate): readonly GeminiInterceptor[] => [
   ...geminiInterceptors,
-  // Provider-side `interceptors.gemini` is still typed against the wide
-  // pre-redesign `Invocation`. Cast at the join — see `messages/attempt.ts`
-  // for the same rationale.
-  ...((candidate.binding.interceptors?.gemini ?? []) as readonly unknown[] as readonly GeminiInterceptor[]),
+  ...(candidate.binding.interceptors?.gemini ?? []),
 ];
 
 const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly GeminiCountTokensInterceptor[] => [
   ...geminiCountTokensInterceptors,
-  ...((candidate.binding.interceptors?.geminiCountTokens ?? []) as readonly unknown[] as readonly GeminiCountTokensInterceptor[]),
+  ...(candidate.binding.interceptors?.geminiCountTokens ?? []),
 ];
 
 // Reshape the Messages count_tokens body into the Gemini `{ totalTokens }`

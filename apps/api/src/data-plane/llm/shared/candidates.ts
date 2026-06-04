@@ -1,12 +1,8 @@
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { LlmSourceApi, LlmTargetApi, ModelProviderInstance, ProviderModelRecord } from '@floway-dev/provider';
+import type { LlmSourceApi, LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
 
-export interface ProviderCandidate {
-  readonly provider: ModelProviderInstance;
-  readonly binding: ProviderModelRecord;
-  readonly targetApi: LlmTargetApi;
-}
+export type { ProviderCandidate };
 
 export interface ProviderCandidateEnumeration {
   // Candidates that satisfy both the model resolution and the target-endpoint

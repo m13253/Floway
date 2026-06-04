@@ -13,7 +13,7 @@ import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -21,6 +21,7 @@ export interface ResponsesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly sourceApi: LlmSourceApi;
   // Native HTTP/WS entry passes 'append'; the cross-protocol translation-in
   // path (another protocol's attempt translating into Responses) passes
   // 'none' so the outer source owns snapshot persistence.
@@ -36,14 +37,16 @@ export interface ResponsesAttemptCompactArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly sourceApi: LlmSourceApi;
 }
 
 export const responsesAttempt = {
   generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, snapshotMode, inheritedInvocationHeaders } = args;
+    const { payload, ctx, store, candidate, snapshotMode, inheritedInvocationHeaders, sourceApi } = args;
     const invocation: ResponsesInvocation = {
       payload,
       candidate,
+      sourceApi,
       store,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
@@ -54,7 +57,7 @@ export const responsesAttempt = {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
 
-      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
+      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, sourceApi, invocation.headers);
       if (inner.type !== 'events') return inner;
       return eventResult(
         wrapResponsesOutputForStorage(inner.events, {
@@ -71,11 +74,11 @@ export const responsesAttempt = {
   },
 
   compact: async (args: ResponsesAttemptCompactArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, ctx, store, candidate } = args;
+    const { payload, ctx, store, candidate, sourceApi } = args;
     if (candidate.targetApi !== 'responses') {
       throw new Error(`responsesAttempt.compact requires targetApi='responses', got '${candidate.targetApi}'`);
     }
-    const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
+    const invocation: ResponsesInvocation = { payload, candidate, sourceApi, store, headers: {} };
 
     const chainResult = await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
@@ -99,14 +102,9 @@ export const responsesAttempt = {
   },
 };
 
-// Provider-side `interceptors.responses` is still typed against the wide
-// pre-redesign `Invocation`. The runtime instances satisfy the slim shape
-// (they only read `candidate.binding` fields the wide shape also carries),
-// and the provider-package migration to the slim type is later in this
-// refactor. Until then, cast at the join.
 const chainInterceptors = (candidate: ProviderCandidate): readonly ResponsesInterceptor[] => [
   ...responsesInterceptors,
-  ...((candidate.binding.interceptors?.responses ?? []) as readonly unknown[] as readonly ResponsesInterceptor[]),
+  ...(candidate.binding.interceptors?.responses ?? []),
 ];
 
 type RewriteOutcome =
@@ -160,6 +158,7 @@ const dispatchResponses = async (
   ctx: GatewayCtx,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
+  sourceApi: LlmSourceApi,
   invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (candidate.targetApi === 'responses') {
@@ -172,14 +171,14 @@ const dispatchResponses = async (
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       }),
-      translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate }),
+      translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi }),
     );
   }
   if (candidate.targetApi === 'chat-completions') {
     return await traverseTranslation(
       payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
-      translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate }),
+      translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi }),
     );
   }
   throw new Error(`responsesAttempt: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);

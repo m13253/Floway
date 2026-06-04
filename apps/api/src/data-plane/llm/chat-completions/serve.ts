@@ -35,7 +35,7 @@ export const chatCompletionsServe = {
     // from the first viable candidate is final, not a hint to try another
     // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate });
+      return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'chat-completions' });
     }
     return renderChatCompletionsFailure(
       sawModel

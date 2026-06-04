@@ -1,4 +1,4 @@
-import type { ProviderChatCompletionsInterceptor, ProviderGeminiInterceptor, ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor, ProviderResponsesInterceptor } from './invocation.ts';
+import type { ProviderChatCompletionsInterceptor, ProviderGeminiCountTokensInterceptor, ProviderGeminiInterceptor, ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor, ProviderResponsesInterceptor } from './invocation.ts';
 import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -53,7 +53,7 @@ export interface ProviderInterceptors {
   readonly responses?: readonly ProviderResponsesInterceptor[];
   readonly gemini?: readonly ProviderGeminiInterceptor[];
   readonly messagesCountTokens?: readonly ProviderMessagesCountTokensInterceptor[];
-  readonly geminiCountTokens?: readonly ProviderGeminiInterceptor[];
+  readonly geminiCountTokens?: readonly ProviderGeminiCountTokensInterceptor[];
 }
 
 export interface ModelProviderInstance {

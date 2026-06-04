@@ -5,7 +5,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { InterceptorRequest, MessagesInvocation, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -20,19 +20,14 @@ const makeCtx = (
     sourceApi?: MessagesInvocation['sourceApi'];
   } = {},
 ): MessagesInvocation => ({
-  sourceApi: overrides.sourceApi ?? 'messages',
-  targetApi: 'messages',
-  model: overrides.model ?? 'claude-opus-4.7-1m-internal',
-  upstream: 'test-upstream',
   payload: {
     model: overrides.model ?? 'claude-opus-4.7-1m-internal',
     messages: [{ role: 'user', content: 'hi' }],
     max_tokens: 128,
     ...(thinking ? { thinking } : {}),
   },
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'messages', binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }) } }),
+  sourceApi: overrides.sourceApi ?? 'messages',
   headers: {},
 });
 

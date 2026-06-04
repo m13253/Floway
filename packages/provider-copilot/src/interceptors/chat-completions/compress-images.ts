@@ -15,7 +15,7 @@ export const withInlineImagesCompressed: ProviderChatCompletionsInterceptor = as
   }
 
   if (targets.length > 0) {
-    const targetSize = targetSizeForResponsesChat(ctx.upstreamModel.id);
+    const targetSize = targetSizeForResponsesChat(ctx.candidate.binding.upstreamModel.id);
     await Promise.all(
       targets.map(async target => {
         target.url = await compressImageDataUrlToWebp(target.url, targetSize);

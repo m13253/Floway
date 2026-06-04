@@ -43,10 +43,10 @@ import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
 const UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY = new Set(['claude-opus-4-8']);
 
 export const withClaudeAgentHeadersSet: ProviderMessagesInterceptor = async (ctx, _request, run) => {
-  if (ctx.targetApi !== 'messages') {
+  if (ctx.candidate.targetApi !== 'messages') {
     return await run();
   }
-  if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(ctx.model)) {
+  if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(ctx.payload.model)) {
     return await run();
   }
 

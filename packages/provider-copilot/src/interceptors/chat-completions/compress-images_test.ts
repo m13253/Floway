@@ -5,7 +5,7 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatCompletionsInvocation, InterceptorRequest, ImageProcessor, ExecuteResult } from '@floway-dev/provider';
 import { eventResult, initImageProcessor } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
@@ -17,14 +17,9 @@ const fixedProcessor: ImageProcessor = {
 };
 
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
-  sourceApi: 'chat-completions',
-  targetApi: 'chat-completions',
-  model: payload.model,
-  upstream: 'test-upstream',
   payload,
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
+  sourceApi: 'chat-completions',
   headers: {},
 });
 

@@ -54,7 +54,7 @@ export const responsesServe = {
     // from the first viable candidate is final, not a hint to try another
     // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, snapshotMode });
+      return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, sourceApi: 'responses', snapshotMode });
     }
     return renderResponsesFailure(
       sawModel
@@ -84,7 +84,7 @@ export const responsesServe = {
     // internal-error envelopes are final, not a hint to try another
     // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate });
+      return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate, sourceApi: 'responses' });
     }
     return renderResponsesFailure(
       sawModel

@@ -12,7 +12,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { eventResult, readUpstreamError, type ExecuteResult, type PlainResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi, type PlainResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -21,6 +21,7 @@ export interface MessagesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
 }
 
@@ -29,17 +30,19 @@ export interface MessagesAttemptCountTokensArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, anthropicBeta } = args;
+    const { payload, ctx, store, candidate, sourceApi, anthropicBeta } = args;
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
+      sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: {},
     };
@@ -58,7 +61,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, sourceApi, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -67,7 +70,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -76,7 +79,7 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, anthropicBeta } = args;
+    const { payload, ctx, store, candidate, sourceApi, anthropicBeta } = args;
     if (candidate.targetApi !== 'messages') {
       throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
@@ -89,6 +92,7 @@ export const messagesAttempt = {
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
+      sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: {},
     };
@@ -144,13 +148,6 @@ const rewriteOrRenderMessagesFailure = async (
   }
 };
 
-// Provider-side `interceptors.messages` / `interceptors.messagesTarget` /
-// `interceptors.messagesCountTokens` are still typed against the wide
-// pre-redesign `Invocation`. The runtime instances satisfy the slim shape
-// (they only read `candidate.binding` fields the wide shape also carries)
-// and write into `invocation.headers`; cast at the join until the
-// provider-package migration lands.
-//
 // Source-side interceptors apply regardless of target — they shape the
 // Messages payload before either calling Messages directly or translating to
 // another protocol. Target-side interceptors only apply when the wire
@@ -158,15 +155,15 @@ const rewriteOrRenderMessagesFailure = async (
 // targetApi==='messages' branch.
 const sourceChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
   ...messagesInterceptors,
-  ...((candidate.binding.interceptors?.messages ?? []) as readonly unknown[] as readonly MessagesInterceptor[]),
+  ...(candidate.binding.interceptors?.messages ?? []),
 ];
 
 const targetChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] =>
-  (candidate.binding.interceptors?.messagesTarget ?? []) as readonly unknown[] as readonly MessagesInterceptor[];
+  candidate.binding.interceptors?.messagesTarget ?? [];
 
 const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly MessagesCountTokensInterceptor[] => [
   ...messagesCountTokensInterceptors,
-  ...((candidate.binding.interceptors?.messagesCountTokens ?? []) as readonly unknown[] as readonly MessagesCountTokensInterceptor[]),
+  ...(candidate.binding.interceptors?.messagesCountTokens ?? []),
 ];
 
 const callMessagesAsExecuteResult = async (

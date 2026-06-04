@@ -1,4 +1,4 @@
-import type { CacheRepo, ImageProcessor, ImageSizeCalculator, ModelProvider, TelemetryModelIdentity, UpstreamModel } from '@floway-dev/provider';
+import type { CacheRepo, ImageProcessor, ImageSizeCalculator, LlmTargetApi, ModelProvider, ModelProviderInstance, ProviderCandidate, ProviderModelRecord, TelemetryModelIdentity, UpstreamModel } from '@floway-dev/provider';
 
 // In-memory image processor for tests. There is no WebP codec available under
 // the test runtime, so this stub returns the input bytes unchanged; it exists
@@ -62,3 +62,39 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callImagesEdits: () => Promise.reject(new Error('stubProvider.callImagesEdits was called')),
   ...overrides,
 });
+
+export const stubProviderInstance = (overrides: Partial<ModelProviderInstance> = {}): ModelProviderInstance => ({
+  upstream: 'test-upstream',
+  providerKind: 'custom',
+  name: 'Test Upstream',
+  disabledPublicModelIds: [],
+  provider: stubProvider(),
+  supportsResponsesItemReference: false,
+  ...overrides,
+});
+
+export const stubProviderModelRecord = (overrides: Partial<ProviderModelRecord> = {}): ProviderModelRecord => {
+  const provider = overrides.provider ?? stubProvider();
+  return {
+    upstream: 'test-upstream',
+    upstreamName: 'Test Upstream',
+    providerKind: 'custom',
+    provider,
+    upstreamModel: stubUpstreamModel(),
+    enabledFlags: new Set<string>(),
+    supportsResponsesItemReference: false,
+    ...overrides,
+  };
+};
+
+// Builds a slim ProviderCandidate for interceptor tests. `targetApi` defaults
+// to `'messages'`; pass overrides for `binding` / `provider` to swap in
+// upstream-model variants or stub providers.
+export const stubProviderCandidate = (overrides: { targetApi?: LlmTargetApi; binding?: Partial<ProviderModelRecord>; provider?: ModelProviderInstance } = {}): ProviderCandidate => {
+  const provider = overrides.provider ?? stubProviderInstance();
+  return {
+    provider,
+    binding: stubProviderModelRecord({ provider: provider.provider, ...(overrides.binding ?? {}) }),
+    targetApi: overrides.targetApi ?? 'messages',
+  };
+};

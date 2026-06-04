@@ -5,7 +5,7 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsMessage } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatCompletionsInvocation, InterceptorRequest, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
@@ -13,14 +13,9 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEv
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (messages: ChatCompletionsMessage[]): ChatCompletionsInvocation => ({
-  sourceApi: 'chat-completions',
-  targetApi: 'chat-completions',
-  model: 'gpt-test',
-  upstream: 'test-upstream',
   payload: { model: 'gpt-test', messages },
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
+  sourceApi: 'chat-completions',
   headers: {},
 });
 

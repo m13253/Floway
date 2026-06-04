@@ -1,21 +1,16 @@
-import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ExecuteResult, ResponsesInvocation as ProviderResponsesInvocation } from '@floway-dev/provider';
 
-export interface ResponsesInvocation {
-  payload: ResponsesPayload;
-  readonly candidate: ProviderCandidate;
+// App-side ResponsesInvocation extends the provider-package slim shape with
+// the per-request stateful store. Provider interceptors only see the slim
+// fields (parameter contravariance lets app-side richer instances flow in),
+// while api-internal interceptors that need stored-item lookups read `store`.
+export interface ResponsesInvocation extends ProviderResponsesInvocation {
   readonly store: StatefulResponsesStore;
-  // `headers` is the mutable HTTP-header bag the source serve seeds empty and
-  // target-portable interceptors populate; the provider's upstream call passes
-  // it through to the wire fetch unchanged. Shared by reference across
-  // translated emit closures so a single source-side mutation lands on the
-  // upstream HTTP call regardless of which target the planner picked.
-  readonly headers: Record<string, string>;
 }
 
 // Compact post-processes the chain's event stream into a single

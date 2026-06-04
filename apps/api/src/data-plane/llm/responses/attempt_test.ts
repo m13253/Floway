@@ -163,6 +163,7 @@ test('generate native success wraps the upstream event stream once', async () =>
     store,
     candidate,
     snapshotMode: 'append',
+    sourceApi: 'responses',
   });
 
   assertEquals(result.type, 'events');
@@ -217,6 +218,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     store,
     candidate,
     snapshotMode: 'append',
+    sourceApi: 'responses',
   });
 
   assertEquals(result.type, 'upstream-error');
@@ -246,6 +248,7 @@ test('generate passes non-events provider result through unchanged', async () =>
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
     snapshotMode: 'append',
+    sourceApi: 'responses',
   });
 
   assertEquals(result.type, 'upstream-error');
@@ -294,6 +297,7 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
+    sourceApi: 'responses',
   });
 
   assertEquals(result.type, 'result');

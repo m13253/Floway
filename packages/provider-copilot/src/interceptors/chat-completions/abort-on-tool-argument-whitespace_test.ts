@@ -6,17 +6,12 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatCompletionsInvocation, InterceptorRequest, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const invocation = (): ChatCompletionsInvocation => ({
-  sourceApi: 'chat-completions',
-  targetApi: 'chat-completions',
-  model: 'test-model',
-  upstream: 'test-upstream',
   payload: { model: 'test-model', messages: [] },
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
+  sourceApi: 'chat-completions',
   headers: {},
 });
 

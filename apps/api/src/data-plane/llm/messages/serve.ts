@@ -43,7 +43,7 @@ export const messagesServe = {
     // from the first viable candidate is final, not a hint to try another
     // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      return await messagesAttempt.generate({ payload, ctx, store, candidate, anthropicBeta });
+      return await messagesAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'messages', anthropicBeta });
     }
     return renderMessagesFailure(
       sawModel
@@ -68,7 +68,7 @@ export const messagesServe = {
     // errors come back as a `plain` envelope, so iteration stops on the first
     // candidate. Provider-level transport errors throw and propagate.
     for (const candidate of decision.candidates) {
-      return await messagesAttempt.countTokens({ payload, ctx, store, candidate, anthropicBeta });
+      return await messagesAttempt.countTokens({ payload, ctx, store, candidate, sourceApi: 'messages', anthropicBeta });
     }
     return renderMessagesFailure(
       sawModel

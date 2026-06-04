@@ -7,10 +7,7 @@ import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '.
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
-import type { ModelProviderInstance } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
-
-const stubProviderInstance = (): ModelProviderInstance => ({ provider: stubProvider() } as unknown as ModelProviderInstance);
+import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
   apiKeyId: null,
@@ -33,19 +30,8 @@ const okEvents = () =>
 
 const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
   payload,
-  candidate: {
-    provider: stubProviderInstance(),
-    binding: {
-      upstream: 'test-upstream',
-      upstreamName: 'test-upstream',
-      providerKind: 'custom',
-      provider: stubProvider(),
-      upstreamModel: stubUpstreamModel(),
-      enabledFlags,
-      supportsResponsesItemReference: false,
-    },
-    targetApi: 'responses',
-  },
+  candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
+  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],

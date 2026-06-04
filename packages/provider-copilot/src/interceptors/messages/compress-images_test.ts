@@ -5,7 +5,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { InterceptorRequest, MessagesInvocation, ImageProcessor, ImageSizeCalculator, ExecuteResult } from '@floway-dev/provider';
 import { eventResult, initImageProcessor } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
@@ -28,14 +28,9 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; calc
 };
 
 const invocation = (payload: MessagesPayload, upstreamModelId = 'claude-test'): MessagesInvocation => ({
-  sourceApi: 'messages',
-  targetApi: 'messages',
-  model: payload.model,
-  upstream: 'test-upstream',
   payload,
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel({ id: upstreamModelId }),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'messages', binding: { upstreamModel: stubUpstreamModel({ id: upstreamModelId }) } }),
+  sourceApi: 'messages',
   headers: {},
 });
 

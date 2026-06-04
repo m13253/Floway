@@ -119,6 +119,7 @@ test('generate native chat-completions target calls provider.callChatCompletions
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
+    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');
@@ -137,6 +138,7 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');
@@ -167,6 +169,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');

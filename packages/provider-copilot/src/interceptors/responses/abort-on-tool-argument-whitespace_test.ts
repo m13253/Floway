@@ -6,13 +6,9 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const invocation = (): ResponsesInvocation => ({
-  sourceApi: 'responses',
-  targetApi: 'responses',
-  model: 'test-model',
-  upstream: 'test-upstream',
   payload: {
     model: 'test-model',
     input: [] as unknown as ResponsesPayload['input'],
@@ -27,9 +23,8 @@ const invocation = (): ResponsesInvocation => ({
     store: false,
     parallel_tool_calls: true,
   },
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'responses' }),
+  sourceApi: 'responses',
   headers: {},
 });
 

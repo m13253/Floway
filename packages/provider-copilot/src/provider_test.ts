@@ -8,7 +8,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, InterceptorRequest, MessagesInvocation, UpstreamRecord } from '@floway-dev/provider';
 import { clearModelsStore, initImageProcessor, initProviderRepo, ProviderModelsUnavailableError, eventResult } from '@floway-dev/provider';
-import { assertEquals, assertRejects, createInMemoryImageProcessor, jsonResponse, memoryCacheRepo, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, createInMemoryImageProcessor, jsonResponse, memoryCacheRepo, sseResponse, stubProviderCandidate, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -428,14 +428,13 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   // emit passes it to `provider.callMessages`, and the upstream sees it.
   const driveMessages = async (model: typeof instance.provider extends never ? never : Awaited<ReturnType<typeof instance.provider.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
     const invocation: MessagesInvocation = {
-      sourceApi: 'messages',
-      targetApi: 'messages',
-      model: model.id,
-      upstream: 'up_copilot',
-      upstreamModel: model,
-      provider,
-      enabledFlags: model.enabledFlags,
       payload: { ...body, model: model.id },
+      candidate: stubProviderCandidate({
+        targetApi: 'messages',
+        provider: instance,
+        binding: { upstream: 'up_copilot', upstreamModel: model, enabledFlags: model.enabledFlags },
+      }),
+      sourceApi: 'messages',
       headers: {},
     };
 
@@ -445,7 +444,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
       messagesCopilotInterceptors,
       async () => {
         const { model: _model, ...callBody } = invocation.payload;
-        await provider.callMessages(invocation.upstreamModel, callBody, undefined, invocation.headers);
+        await provider.callMessages(invocation.candidate.binding.upstreamModel, callBody, undefined, invocation.headers);
         return eventResult((async function* () {})(), testTelemetryModelIdentity);
       },
     );

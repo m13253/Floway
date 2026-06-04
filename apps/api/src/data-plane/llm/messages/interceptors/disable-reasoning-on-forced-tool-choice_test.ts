@@ -5,10 +5,8 @@ import type { MessagesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, eventResult, type ModelProviderInstance } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
-
-const stubProviderInstance = (): ModelProviderInstance => ({ provider: stubProvider() } as unknown as ModelProviderInstance);
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
   apiKeyId: null,
@@ -27,19 +25,11 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): MessagesInvocation => ({
   payload,
-  candidate: {
-    provider: stubProviderInstance(),
-    binding: {
-      upstream: 'test-upstream',
-      upstreamName: 'test-upstream',
-      providerKind: 'custom',
-      provider: stubProvider(),
-      upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }),
-      enabledFlags,
-      supportsResponsesItemReference: false,
-    },
+  candidate: stubProviderCandidate({
     targetApi: 'messages',
-  },
+    binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }), enabledFlags },
+  }),
+  sourceApi: 'messages',
   headers: {},
 });
 

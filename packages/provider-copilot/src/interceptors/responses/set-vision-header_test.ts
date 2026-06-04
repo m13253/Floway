@@ -5,7 +5,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest: InterceptorRequest = {};
 
@@ -13,14 +13,9 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
-  sourceApi: 'responses',
-  targetApi: 'responses',
-  model: payload.model,
-  upstream: 'test-upstream',
   payload,
-  provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
-  enabledFlags: new Set<string>(),
+  candidate: stubProviderCandidate({ targetApi: 'responses' }),
+  sourceApi: 'responses',
   headers: {},
 });
 

@@ -1,5 +1,5 @@
 import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/messages';
-import { type ImageSizeCalculator, type MessagesInvocation, type InterceptorRequest, fitWithin, type SizeCaps } from '@floway-dev/provider';
+import { type ImageSizeCalculator, type InterceptorRequest, type MessagesInvocation, fitWithin, type SizeCaps } from '@floway-dev/provider';
 import { compressBase64ImageToWebp } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
@@ -49,7 +49,7 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
 export const withInlineImagesCompressed = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
   const blocks = collectImageBlocks(ctx.payload.messages);
   if (blocks.length > 0) {
-    const caps = claudeImageCaps(ctx.upstreamModel.id);
+    const caps = claudeImageCaps(ctx.candidate.binding.upstreamModel.id);
     const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
     await Promise.all(
       blocks.map(async block => {
