@@ -52,13 +52,21 @@ interface ImageTransformationResult {
   image(): ReadableStream;
 }
 
-// Raw Cloudflare KV binding shape (its `put` takes an options object). The
-// platform-cloudflare bootstrap adapts this into the platform's
-// `ImageCache` contract, which requires an explicit positional TTL.
+// Raw Cloudflare KV binding shape (its `put` takes an options object). We
+// adapt it to the platform's `ImageCache` contract — which uses Uint8Array
+// and a positional TTL — via `cloudflareKvImageCache` below.
 export interface KvNamespace {
   get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>;
   put(key: string, value: ArrayBuffer | ArrayBufferView, options?: { expirationTtl?: number }): Promise<void>;
 }
+
+export const cloudflareKvImageCache = (kv: KvNamespace): ImageCache => ({
+  get: async key => {
+    const buf = await kv.get(key, 'arrayBuffer');
+    return buf ? new Uint8Array(buf) : null;
+  },
+  put: (key, value, ttlSeconds) => kv.put(key, value, { expirationTtl: ttlSeconds }),
+});
 
 const streamFrom = (bytes: Uint8Array): ReadableStream =>
   new ReadableStream({
