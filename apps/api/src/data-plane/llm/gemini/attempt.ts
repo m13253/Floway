@@ -46,21 +46,27 @@ export const geminiAttempt = {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaMessages(p, transCtx),
-          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini' }),
+          translated => messagesAttempt.generate({
+            payload: translated, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+          }),
         );
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini', snapshotMode: 'none' }),
+          translated => responsesAttempt.generate({
+            payload: translated, ctx, store, candidate, sourceApi: 'gemini', snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
+          }),
         );
       }
       if (candidate.targetApi === 'chat-completions') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaChatCompletions(p, transCtx),
-          translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi: 'gemini' }),
+          translated => chatCompletionsAttempt.generate({
+            payload: translated, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+          }),
         );
       }
       throw new Error(`geminiAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
@@ -85,7 +91,9 @@ export const geminiAttempt = {
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       };
       const { target } = await translateGeminiToMessagesForCountTokens(invocation.payload, transCtx);
-      const messagesResult = await messagesAttempt.countTokens({ payload: target, ctx, store, candidate, sourceApi: 'gemini' });
+      const messagesResult = await messagesAttempt.countTokens({
+        payload: target, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+      });
       return reshapeMessagesCountAsGemini(messagesResult);
     });
   },

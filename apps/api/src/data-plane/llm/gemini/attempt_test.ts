@@ -258,3 +258,33 @@ test('countTokens refuses a non-messages candidate', async () => {
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
   assertEquals(thrown.message.includes("targetApi='messages'"), true);
 });
+
+test('generate inherits Gemini source-side invocation headers across translation to Messages', async () => {
+  installRepo();
+  let observedHeaders: Record<string, string> | undefined;
+  const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedHeaders = headers;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k' };
+  });
+  const candidate = makeCandidate({ targetApi: 'messages', callMessages });
+  const candidateWithInterceptor: ProviderCandidate = {
+    ...candidate,
+    binding: {
+      ...candidate.binding,
+      interceptors: { gemini: [(invocation, _gctx, run) => {
+        invocation.headers['x-test'] = 'abc';
+        return run();
+      }] },
+    },
+  };
+  const result = await geminiAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    candidate: candidateWithInterceptor,
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedHeaders?.['x-test'], 'abc');
+});

@@ -24,6 +24,11 @@ export interface MessagesAttemptGenerateArgs {
   readonly candidate: ProviderCandidate;
   readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
+  // Optional invocation-headers inheritance from a source attempt that
+  // translated INTO messages. Source-side interceptors write trace headers
+  // into the source invocation; passing them in here keeps them on the wire
+  // for the translated upstream call.
+  readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
 export interface MessagesAttemptCountTokensArgs {
@@ -33,11 +38,12 @@ export interface MessagesAttemptCountTokensArgs {
   readonly candidate: ProviderCandidate;
   readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
+  readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, sourceApi, anthropicBeta } = args;
+    const { payload, ctx, store, candidate, sourceApi, anthropicBeta, inheritedInvocationHeaders } = args;
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
@@ -45,7 +51,7 @@ export const messagesAttempt = {
       candidate,
       sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: {},
+      headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
     return await runInterceptors(invocation, ctx, sourceChainInterceptors(candidate), async () => {
       if (candidate.targetApi === 'messages') {
@@ -80,7 +86,7 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, sourceApi, anthropicBeta } = args;
+    const { payload, ctx, store, candidate, sourceApi, anthropicBeta, inheritedInvocationHeaders } = args;
     if (candidate.targetApi !== 'messages') {
       throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
@@ -95,7 +101,7 @@ export const messagesAttempt = {
       candidate,
       sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: {},
+      headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
     const response = await runInterceptors(invocation, ctx, countTokensChainInterceptors(candidate), async () => {
       const { model: _model, ...body } = invocation.payload;

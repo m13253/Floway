@@ -10,6 +10,7 @@ import type { StoredResponsesItem } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
@@ -319,3 +320,63 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
 // are exercised by serve-level tests once those land; here the messages and
 // chat-completions attempts are still stubs.
 // covered in serve_test.ts
+
+// In-attempt test asserting the narrow header-inheritance contract: when a
+// Responses-source interceptor stamps `invocation.headers['x-test']`, the
+// translated Messages call sees it on the wire.
+test('generate inherits Responses source-side invocation headers across translation to Messages', async () => {
+  installRepo();
+  let observedHeaders: Record<string, string> | undefined;
+  const upstreamModel = stubUpstreamModel();
+  const messagesProvider = stubProvider({
+    callMessages: async (_model, _body, _signal, headers): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+      observedHeaders = headers;
+      return {
+        ok: true,
+        events: (async function* () {
+          yield eventFrame<MessagesStreamEvent>({
+            type: 'message_start',
+            message: {
+              id: 'msg_1', type: 'message', role: 'assistant', content: [],
+              model: 'test-model', stop_reason: null, stop_sequence: null,
+              usage: { input_tokens: 1, output_tokens: 0 },
+            },
+          });
+          yield eventFrame<MessagesStreamEvent>({ type: 'message_stop' });
+          yield doneFrame();
+        })(),
+        modelKey: 'k',
+      };
+    },
+  });
+  const candidate: ProviderCandidate = {
+    provider: {
+      upstream: 'up_test', providerKind: 'custom', name: 'up_test',
+      disabledPublicModelIds: [], provider: messagesProvider, supportsResponsesItemReference: true,
+    },
+    binding: {
+      upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',
+      provider: messagesProvider, upstreamModel,
+      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
+      interceptors: { responses: [(invocation, _gctx, run) => {
+        invocation.headers['x-test'] = 'abc';
+        return run();
+      }] },
+    },
+    targetApi: 'messages',
+  };
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    candidate,
+    snapshotMode: 'append',
+    sourceApi: 'responses',
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedHeaders?.['x-test'], 'abc');
+});
+

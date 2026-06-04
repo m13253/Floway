@@ -172,14 +172,18 @@ const dispatchResponses = async (
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       }),
-      translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi }),
+      translated => messagesAttempt.generate({
+        payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocationHeaders,
+      }),
     );
   }
   if (candidate.targetApi === 'chat-completions') {
     return await traverseTranslation(
       payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
-      translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate, sourceApi }),
+      translated => chatCompletionsAttempt.generate({
+        payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocationHeaders,
+      }),
     );
   }
   throw new Error(`responsesAttempt: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
