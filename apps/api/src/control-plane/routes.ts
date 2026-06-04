@@ -10,7 +10,7 @@ import { authLoginBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, 
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, testUpstream, updateUpstream } from './upstreams/routes.ts';
+import { copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const adminOnlyMiddleware = async (c: Context, next: Next) => {
@@ -59,7 +59,6 @@ export const controlPlaneRoutes = new Hono()
     .get('/upstreams/:id/models', listUpstreamModels)
     .patch('/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
     .delete('/upstreams/:id', deleteUpstream)
-    .post('/upstreams/:id/test', testUpstream)
     .get('/search-config', getSearchConfigRoute)
     .put('/search-config', zValidator('json', searchConfigSchema), putSearchConfigRoute)
     .post('/search-config/test', zValidator('json', searchConfigSchema), testSearchConfigRoute)

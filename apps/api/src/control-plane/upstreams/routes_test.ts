@@ -196,68 +196,6 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   });
 });
 
-test('POST /api/upstreams/:id/test probes custom, Azure, and Copilot models', async () => {
-  const { repo, adminKey } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  const createdCustom = await requestApp('/api/upstreams', authed(adminKey, createBody()));
-  const custom = (await createdCustom.json()) as Record<string, string>;
-  const createdAzure = await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'azure', name: 'Azure', config: azureConfig })));
-  const azure = (await createdAzure.json()) as Record<string, string>;
-  const createdCopilot = await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
-  const copilot = (await createdCopilot.json()) as Record<string, string>;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'custom-model' }] });
-      if (url.hostname === 'example.openai.azure.com' && url.pathname === '/openai/v1/models' && url.search === '') {
-        return jsonResponse({ object: 'list', data: [{ id: 'azure-model' }] });
-      }
-      if (url.hostname === 'example.openai.azure.com' && url.pathname === '/openai/v1/chat/completions') {
-        const body = (await request.json()) as Record<string, unknown>;
-        assertEquals(body.model, 'gpt-prod');
-        return jsonResponse({ id: 'chat_probe', choices: [{ message: { content: 'ok' } }] });
-      }
-      if (url.hostname === 'example.openai.azure.com' && url.pathname === '/openai/v1/responses') {
-        const body = (await request.json()) as Record<string, unknown>;
-        assertEquals(body.model, 'gpt-prod');
-        assertEquals(body.max_output_tokens, 16);
-        return jsonResponse({ id: 'resp_probe', output_text: 'ok' });
-      }
-      if (url.hostname === 'update.code.visualstudio.com' && url.pathname === '/api/releases/stable') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
-        assertEquals(request.headers.get('authorization'), 'token ghu_secret');
-        return jsonResponse({ token: 'copilot-token', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800 });
-      }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
-        assertEquals(request.headers.get('authorization'), 'Bearer copilot-token');
-        return jsonResponse({ object: 'list', data: [{ id: 'copilot-model' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const customProbe = await requestApp(`/api/upstreams/${custom.id}/test`, authed(adminKey, {}));
-      assertEquals(customProbe.status, 200);
-      assertEquals((await customProbe.json()).models, ['custom-model']);
-
-      const azureProbe = await requestApp(`/api/upstreams/${azure.id}/test`, authed(adminKey, {}));
-      assertEquals(azureProbe.status, 200);
-      const azureProbeBody = await azureProbe.json();
-      assertEquals(azureProbeBody.models, ['azure-model']);
-      assertEquals(azureProbeBody.probes.map((probe: any) => ({ endpoint: probe.endpoint, ok: probe.ok, status: probe.status })), [
-        { endpoint: 'chatCompletions', ok: true, status: 200 },
-        { endpoint: 'responses', ok: true, status: 200 },
-      ]);
-
-      const copilotProbe = await requestApp(`/api/upstreams/${copilot.id}/test`, authed(adminKey, {}));
-      assertEquals(copilotProbe.status, 200);
-      assertEquals((await copilotProbe.json()).models, ['copilot-model']);
-    },
-  );
-});
-
 test('GET /api/upstream-flags returns the flag catalog and requires admin auth', async () => {
   const { adminKey, apiKey } = await setupAppTest();
 
