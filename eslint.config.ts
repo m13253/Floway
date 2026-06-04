@@ -46,6 +46,17 @@ const commonConfig: Linter.Config = {
       ],
     }],
 
+    // Belt-and-suspenders for the package-name ban above: relative imports
+    // bypass `no-restricted-imports`, so a file inside one platform-target app
+    // could still reach into another via `../../platform-X/...`. Forbid that
+    // sibling crossing here.
+    'import/no-restricted-paths': ['error', {
+      zones: [
+        { target: './apps/platform-cloudflare', from: './apps/platform-node', message: 'Platform-target apps cannot import each other; share via packages/.' },
+        { target: './apps/platform-node', from: './apps/platform-cloudflare', message: 'Platform-target apps cannot import each other; share via packages/.' },
+      ],
+    }],
+
     '@typescript-eslint/no-unused-vars': ['error', {
       argsIgnorePattern: '^_',
       caughtErrorsIgnorePattern: '^_',
