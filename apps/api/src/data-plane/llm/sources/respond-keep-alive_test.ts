@@ -129,8 +129,9 @@ const request = (): RequestContext => ({
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 });
 
-// respondResponses now consumes GatewayCtx directly. The other respondX
-// functions still take RequestContext until their migration tasks land.
+// respondResponses and respondMessages now consume GatewayCtx directly. The
+// other respondX functions still take RequestContext until their migration
+// tasks land.
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: null,
   apiKeyUpstreamIds: null,
@@ -141,7 +142,7 @@ const gatewayCtx = (): GatewayCtx => ({
 });
 
 test('Messages streaming keepalive uses Anthropic ping events', async () => {
-  await assertSourceKeepAlive<MessagesStreamEvent>(async (c, events) => (await respondMessages(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, 'event: ping\ndata: {"type":"ping"}\n\n');
+  await assertSourceKeepAlive<MessagesStreamEvent>(async (c, events) => (await respondMessages(c, eventResult(events, testTelemetryModelIdentity), true, gatewayCtx())).response, 'event: ping\ndata: {"type":"ping"}\n\n');
 });
 
 test('Responses streaming keepalive uses SSE comments', async () => {

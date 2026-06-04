@@ -8,6 +8,7 @@ import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
@@ -390,9 +391,70 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
   assertEquals(expanded.input[0], { type: 'item_reference', id });
 });
 
-// Multi-target dispatch through the translate branches (target=messages /
-// chat-completions) lives in this file too, but messagesAttempt /
-// chatCompletionsAttempt remain stubs until Tasks 23 and 24 land; the
-// translated tests below are skipped until those tasks complete.
-test.skip('generate falls through translate-out to messages target', () => {});
+// chatCompletionsAttempt remains a stub until Task 24 lands; the
+// chat-completions translate-out test stays skipped until then.
+const makeMessagesProtocolFrames = async function* (events: readonly MessagesStreamEvent[]): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+  for (const event of events) yield eventFrame(event);
+  yield doneFrame();
+};
+
+test('generate falls through translate-out to messages target', async () => {
+  installRepo();
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true,
+    events: makeMessagesProtocolFrames([
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_translated',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'test-model',
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 4, output_tokens: 0 },
+        },
+      },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+      { type: 'message_stop' },
+    ]),
+    modelKey: 'messages-key',
+  }));
+  // Build a candidate with targetApi='messages' whose provider answers
+  // callMessages — the translate-out branch routes through messagesAttempt
+  // and calls provider.callMessages instead of provider.callResponses.
+  const upstreamModel = stubUpstreamModel();
+  const provider = stubProvider({ callMessages });
+  const candidate: ProviderCandidate = {
+    provider: {
+      upstream: 'up_m', providerKind: 'custom', name: 'up_m',
+      disabledPublicModelIds: [], provider, supportsResponsesItemReference: true,
+    },
+    binding: {
+      upstream: 'up_m', upstreamName: 'up_m', providerKind: 'custom',
+      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
+      supportsResponsesItemReference: true,
+    },
+    targetApi: 'messages',
+  };
+  queueCandidates([candidate]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  // The translate trip wraps the upstream Messages events back into Responses
+  // events; draining proves the cross-protocol path composes without throwing.
+  await collectEvents(result.events);
+  assertEquals(callMessages.mock.calls.length, 1);
+});
+
 test.skip('generate falls through translate-out to chat-completions target', () => {});

@@ -1,6 +1,7 @@
 import { messagesSourceInterceptors } from './interceptors/index.ts';
 import { respondMessages } from './respond.ts';
-import { type LlmTargetApi, type MessagesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type LlmTargetApi, type MessagesInvocation, type RequestContext, runInterceptors } from '../../interceptors.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
@@ -14,6 +15,22 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ExecuteResult, ProviderModelRecord } from '@floway-dev/provider';
 import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+
+// Thin adapter for the legacy traits glue: respondMessages now takes
+// GatewayCtx (per the new per-protocol entry shape), so the RequestContext
+// threaded through the legacy serveLlm runtime is mapped onto the same fields.
+// This helper exists only here — Task 27 removes the entire legacy entry layer.
+const requestContextToGatewayCtx = (request: RequestContext, downstreamAbortController: AbortController | undefined): GatewayCtx => ({
+  apiKeyId: request.apiKeyId ?? null,
+  apiKeyUpstreamIds: request.apiKeyUpstreamIds,
+  headers: new Headers(),
+  ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
+  wantsStream: request.clientStream,
+  scheduleBackground: request.scheduleBackground !== undefined
+    ? (fn: () => Promise<void> | void) => request.scheduleBackground!(Promise.resolve(fn()))
+    : () => {},
+  requestStartedAt: request.requestStartedAt,
+});
 
 const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;
@@ -96,7 +113,7 @@ const renderMessagesFailure = (failure: LlmServeFailure, endpoint: LlmEndpointNa
 
 const messagesGenerate: LlmHttpEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondMessages(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+    await respondMessages(c, result, runtime.wantsStream, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);
@@ -143,7 +160,7 @@ const messagesGenerate: LlmHttpEndpoint<readonly MessagesMessage[], MessagesStre
 // upstream body back as a plain result.
 const messagesCountTokens: LlmHttpEndpoint<readonly MessagesMessage[], MessagesStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondMessages(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+    await respondMessages(c, result, runtime.wantsStream, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => {
     const payload = await c.req.json<MessagesPayload>();
     const rejectedBetaParam = bodyBetaParam(payload);

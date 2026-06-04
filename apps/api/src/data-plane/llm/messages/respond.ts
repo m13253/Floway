@@ -3,13 +3,15 @@ import { streamSSE } from 'hono/streaming';
 
 import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { RequestContext } from '../interceptors.ts';
+import type { TokenUsage } from '../../../repo/types.ts';
+import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/performance.ts';
+import { hasTokenUsage, recordTokenUsageForApiKey, tokenUsage } from '../../shared/telemetry/usage.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/proxy-sse.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordSourcePerformance, recordSourceUsage } from '../sources/respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../sources/respond.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, type EventResultMetadata, type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
 type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
@@ -23,16 +25,15 @@ export const respondMessages = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult,
   wantsStream: boolean,
-  request: RequestContext,
-  downstreamAbortController: AbortController | undefined,
+  ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
-    recordSourcePerformance(request, result.performance, true);
+    recordPerformance(ctx, result.performance, true);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordSourcePerformance(request, result.performance, true);
+    recordPerformance(ctx, result.performance, true);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
@@ -46,11 +47,11 @@ export const respondMessages = async (
     try {
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      await recordSourceUsage(request, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
-      recordSourcePerformance(request, metadata.performance, state.failed);
+      await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
+      recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response) };
     } catch (error) {
-      recordSourcePerformance(request, result.performance, true);
+      recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
@@ -60,19 +61,33 @@ export const respondMessages = async (
     try {
       completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
         keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
-        downstreamAbortController,
+        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
       });
     } finally {
       const metadata = await eventResultMetadata(result);
       try {
-        await recordSourceUsage(request, metadata.modelIdentity, state.usage);
+        await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } finally {
-        recordSourcePerformance(request, metadata.performance, state.failedAfter(completion));
+        recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
       }
     }
   });
 
   return { success: true, response };
+};
+
+// --- telemetry ---
+
+// `GatewayCtx.apiKeyId` is `string | null`; the telemetry helpers accept
+// `string | undefined` and skip on falsy. Coerce here to satisfy the signature
+// without losing the no-op-on-missing-key behavior.
+const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
+  if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(ctx.apiKeyId ?? undefined, modelIdentity, usage);
+};
+
+const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
+  const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
+  recordRequestPerformanceForApiKey(ctx.apiKeyId ?? undefined, scheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
 // --- token usage ---
