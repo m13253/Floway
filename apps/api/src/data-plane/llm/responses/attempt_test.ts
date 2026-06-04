@@ -316,11 +316,6 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   wrapSpy.mockRestore();
 });
 
-// Translation branches (responses-via-messages, responses-via-chat-completions)
-// are exercised by serve-level tests once those land; here the messages and
-// chat-completions attempts are still stubs.
-// covered in serve_test.ts
-
 // In-attempt test asserting the narrow header-inheritance contract: when a
 // Responses-source interceptor stamps `invocation.headers['x-test']`, the
 // translated Messages call sees it on the wire.
