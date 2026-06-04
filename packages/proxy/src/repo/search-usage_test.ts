@@ -300,7 +300,7 @@ class FakeSqlDatabase implements SqlDatabase {
       }));
     }
 
-    // Predicate combinations matched by D1SearchUsageRepo.query():
+    // Predicate combinations matched by SqlSearchUsageRepo.query():
     // - hour bounds always present (start, end)
     // - provider may be prepended (unshifted)
     // - keyId may be appended

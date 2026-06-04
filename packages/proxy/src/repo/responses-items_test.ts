@@ -409,12 +409,12 @@ type FakeResponsesItemRow = {
   refreshed_at: number;
 };
 
-class FakeResponsesItemsD1PreparedStatement {
+class FakeResponsesItemsSqlPreparedStatement {
   private binds: unknown[] = [];
 
   constructor(private db: FakeResponsesItemsSqlDatabase, private query: string) {}
 
-  bind(...values: unknown[]): FakeResponsesItemsD1PreparedStatement {
+  bind(...values: unknown[]): FakeResponsesItemsSqlPreparedStatement {
     this.binds = values;
     return this;
   }
@@ -469,11 +469,11 @@ class FakeResponsesItemsD1PreparedStatement {
 class FakeResponsesItemsSqlDatabase implements SqlDatabase {
   rows: FakeResponsesItemRow[] = [];
 
-  prepare(query: string): FakeResponsesItemsD1PreparedStatement {
-    return new FakeResponsesItemsD1PreparedStatement(this, query);
+  prepare(query: string): FakeResponsesItemsSqlPreparedStatement {
+    return new FakeResponsesItemsSqlPreparedStatement(this, query);
   }
 
-  async batch(statements: FakeResponsesItemsD1PreparedStatement[]): Promise<Array<{ results: never[]; success: true; meta: Record<string, unknown> }>> {
+  async batch(statements: FakeResponsesItemsSqlPreparedStatement[]): Promise<Array<{ results: never[]; success: true; meta: Record<string, unknown> }>> {
     const results = [];
     for (const statement of statements) results.push(await statement.run());
     return results;
@@ -494,7 +494,7 @@ class FakeResponsesItemsSqlDatabase implements SqlDatabase {
       number,
     ];
     const existing = this.rows.find(row => row.id === id && row.api_key_id === apiKeyId);
-    if (existing) return;  // mirrors d1.ts `ON CONFLICT DO NOTHING`
+    if (existing) return;  // mirrors sql.ts `ON CONFLICT DO NOTHING`
     this.rows.push({
       id,
       api_key_id: apiKeyId,
