@@ -861,11 +861,9 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
       return null;
     }
 
-    // Surface stored-JSON corruption rather than masking it as "no row" —
-    // a malformed value column means the database holds bytes the gateway
-    // can never interpret, and silently returning null would hide that
-    // from operators behind the load helper's default-fallback path. The
-    // project policy is to expose errors over fabricating recovery.
+    // Surface stored-JSON corruption — silently returning null would hide a
+    // corrupt config row from operators behind the load helper's default
+    // fallback.
     try {
       return JSON.parse(row.value);
     } catch (cause) {

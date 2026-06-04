@@ -53,8 +53,8 @@ interface ImageTransformationResult {
 }
 
 // Raw Cloudflare KV binding shape (its `put` takes an options object). We
-// adapt it to the platform's `ImageCache` contract — which uses Uint8Array
-// and a positional TTL — via `cloudflareKvImageCache` below.
+// adapt it to the platform's `ImageCache` contract via `cloudflareKvImageCache`
+// below.
 export interface KvNamespace {
   get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>;
   put(key: string, value: ArrayBuffer | ArrayBufferView, options?: { expirationTtl?: number }): Promise<void>;

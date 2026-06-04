@@ -1,4 +1,3 @@
-
 import type { ExecutionContext } from 'hono';
 
 import { bootstrapCloudflarePlatform, type CloudflareEnv } from './src/bootstrap.ts';

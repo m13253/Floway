@@ -19,8 +19,6 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 
 const BASE64_DATA_URL = /^data:([^;,]+);base64,(.*)$/s;
 
-// Recompresses a raw base64 image payload (no data: prefix) to a base64 WebP
-// payload via the platform image processor.
 export const compressBase64ImageToWebp = async (
   base64: string,
   calculator: ImageSizeCalculator,

@@ -18,11 +18,10 @@ export interface SizeCaps {
 // in here (see `fitWithin`) without the processor learning any model specifics.
 export type ImageSizeCalculator = (source: ImageDimensions) => ImageDimensions;
 
-// A global image-recompression service, structured like the data Repo: one
-// abstract surface with a per-platform implementation chosen at the entry
-// point (Cloudflare Images binding in production, sharp under Node, an
-// in-memory passthrough in tests). Callers reach it through
-// getImageProcessor() and pass an already-resolved target box; the
+// Global image-recompression service: one abstract surface with a
+// per-platform implementation chosen at the entry point (Cloudflare Images
+// binding in production, in-memory passthrough in tests). Callers reach it
+// through getImageProcessor() and pass an already-resolved target box; the
 // "read source dimensions" step lives in compressBytesToWebp below.
 export interface ImageProcessor {
   // Re-encodes arbitrary raster image bytes to WebP at a fixed internal

@@ -42,7 +42,7 @@ export const createHttpRequestContext = (
   const statefulResponsesStore = options.statefulResponsesStore ?? createHttpStatefulResponsesStore(apiKeyId ?? null, options.store);
   return createRequestContext({
     ...(apiKeyId !== undefined ? { apiKeyId } : {}),
-    ...(apiKeyUpstreamIds !== undefined ? { apiKeyUpstreamIds } : {}),
+    apiKeyUpstreamIds,
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     scheduleBackground,
     clientStream,
