@@ -2,15 +2,18 @@ import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInterceptor, ChatCompletionsInvocation } from './interceptors/types.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
+import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
+import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
+import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
@@ -22,7 +25,9 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, candidate } = args;
-    const invocation: ChatCompletionsInvocation = { payload, candidate, headers: {} };
+    const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, store, candidate);
+    if (rewritten.failure) return rewritten.failure;
+    const invocation: ChatCompletionsInvocation = { payload: rewritten.payload, candidate, headers: {} };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       if (candidate.targetApi === 'chat-completions') {
         return await callChatCompletionsAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers);
@@ -47,6 +52,40 @@ export const chatCompletionsAttempt = {
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
     });
   },
+};
+
+// Mirror of `messagesAttempt` rewrite — Chat Completions carries stored
+// Responses reasoning ids on `assistant.reasoning_items`, which the
+// translate-package view exposes as Responses items so this same rewrite
+// pass works across protocols.
+const rewriteOrRenderChatCompletionsFailure = async (
+  payload: ChatCompletionsPayload,
+  store: StatefulResponsesStore,
+  candidate: ProviderCandidate,
+): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'upstream-error' } }> => {
+  try {
+    const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
+      payload.messages as readonly ChatCompletionsMessage[],
+      chatCompletionsViaResponsesItemsView,
+      store,
+      candidate,
+    );
+    return { payload: { ...payload, messages: rewrittenMessages as ChatCompletionsMessage[] } };
+  } catch (error) {
+    const failure = tryCatchLlmServeFailure(error);
+    if (failure === null) throw error;
+    if (failure.kind !== 'item-not-found') throw error;
+    return {
+      failure: {
+        type: 'upstream-error',
+        status: 400,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: new TextEncoder().encode(JSON.stringify({
+          error: { type: 'invalid_request_error', message: `Item with id '${failure.itemId}' not found.` },
+        })),
+      },
+    };
+  }
 };
 
 // Provider-side `interceptors.chatCompletions` is still typed against the

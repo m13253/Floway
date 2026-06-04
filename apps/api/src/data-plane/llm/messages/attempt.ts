@@ -2,16 +2,19 @@ import { messagesInterceptors, messagesCountTokensInterceptors } from './interce
 import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesInvocation } from './interceptors/types.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
+import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
+import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { plainResultFromResponse } from '../sources/respond.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { eventResult, readUpstreamError, type ExecuteResult, type PlainResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
@@ -32,8 +35,10 @@ export interface MessagesAttemptCountTokensArgs {
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, candidate, anthropicBeta } = args;
+    const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
+    if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
-      payload,
+      payload: rewritten.payload,
       candidate,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: {},
@@ -65,12 +70,18 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, candidate, anthropicBeta } = args;
+    const { payload, ctx, store, candidate, anthropicBeta } = args;
     if (candidate.targetApi !== 'messages') {
       throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
+    const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
+    if (rewritten.failure) {
+      // count_tokens has no streaming envelope; surface the rewrite-time
+      // failure as a synthetic PlainResult carrying the same body.
+      return { type: 'plain', status: rewritten.failure.status, headers: rewritten.failure.headers, body: rewritten.failure.body };
+    }
     const invocation: MessagesInvocation = {
-      payload,
+      payload: rewritten.payload,
       candidate,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: {},
@@ -88,6 +99,43 @@ export const messagesAttempt = {
     });
     return await plainResultFromResponse(response);
   },
+};
+
+// Rewrites stored Responses item carriers (assistant thinking blocks whose
+// signature packs a gateway-stored reasoning id) to the upstream-owned id
+// the chosen candidate's wire requires. Failures only originate from
+// `item_reference` against a candidate without item_reference support, which
+// the affinity walk already excluded — but defensive rewrite is cheap and
+// keeps the attempt closed-loop.
+const rewriteOrRenderMessagesFailure = async (
+  payload: MessagesPayload,
+  store: StatefulResponsesStore,
+  candidate: ProviderCandidate,
+): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'upstream-error' } }> => {
+  try {
+    const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
+      payload.messages as readonly MessagesMessage[],
+      messagesViaResponsesItemsView,
+      store,
+      candidate,
+    );
+    return { payload: { ...payload, messages: rewrittenMessages as MessagesMessage[] } };
+  } catch (error) {
+    const failure = tryCatchLlmServeFailure(error);
+    if (failure === null) throw error;
+    if (failure.kind !== 'item-not-found') throw error;
+    return {
+      failure: {
+        type: 'upstream-error',
+        status: 400,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: new TextEncoder().encode(JSON.stringify({
+          type: 'error',
+          error: { type: 'invalid_request_error', message: `Item with id '${failure.itemId}' not found.` },
+        })),
+      },
+    };
+  }
 };
 
 // Provider-side `interceptors.messages` / `interceptors.messagesCountTokens`
