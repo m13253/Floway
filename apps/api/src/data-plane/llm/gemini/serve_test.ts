@@ -200,7 +200,7 @@ test('generate translates through Responses when only that endpoint is exposed',
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate falls back to the next candidate when the first yields an upstream error', async () => {
+test('generate stops at the first candidate even when it yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: { 'content-type': 'application/json' },
@@ -223,11 +223,12 @@ test('generate falls back to the next candidate when the first yields an upstrea
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  // An upstream error from the first candidate IS the final answer — the
+  // gateway does not retry on a different upstream just because the first one
+  // produced an HTTP error.
+  assertEquals(result.type, 'upstream-error');
   assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 0);
 });
 
 test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {

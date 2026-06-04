@@ -69,9 +69,6 @@ export const geminiServe = {
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
 
-    const decision = await planGeminiRouting({ payload, candidates, store });
-    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
-
     // PlainResult always represents a final response — both 2xx and upstream
     // errors come back as a `plain` envelope, so iteration stops on the first
     // candidate. Provider-level transport errors throw and propagate.
