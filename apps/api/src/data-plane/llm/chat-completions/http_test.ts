@@ -182,14 +182,10 @@ test('POST /v1/chat/completions emits the usage-only chunk when stream_options.i
   assert(body.includes('"prompt_tokens":4'));
 });
 
-// Regression guard for the deleted INCLUDE_USAGE_CHUNK_KEY Hono context slot.
-// The legacy entry layer stashed the caller's `stream_options.include_usage`
-// intent on a Hono context slot in `chatCompletionsGenerate.prepare` so the
-// `respond` function could read it back after the request finished. The new
-// http entry captures the same intent in a local before invoking serve, so it
-// MUST NOT call `c.set(...)` for anything other than the auth fields the
-// outer middleware already wrote. This test fails the moment any
-// chat-completions component reintroduces a context-slot smuggling scheme.
+// The http entry MUST NOT mutate any non-auth Hono context slot — caller
+// intent (stream_options.include_usage, etc.) belongs in the request-scoped
+// locals the entry threads through serve, never in middleware-visible
+// context-slot smuggling.
 test('POST /v1/chat/completions does not write any non-auth Hono context slot', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
