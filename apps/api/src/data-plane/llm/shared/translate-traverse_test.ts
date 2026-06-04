@@ -8,10 +8,10 @@ import { traverseTranslation } from './translate-traverse.ts';
 type SrcEvent = { kind: 'src'; value: string };
 type TgtEvent = { kind: 'tgt'; value: string };
 
-const translate = (payload: string): {
+const translate = async (payload: string): Promise<{
   target: string;
   events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
-} => ({
+}> => ({
   target: `translated(${payload})`,
   events: async function* (frames) {
     for await (const frame of frames) {

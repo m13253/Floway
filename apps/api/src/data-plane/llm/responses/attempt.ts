@@ -8,6 +8,7 @@ import { messagesAttempt } from '../messages/attempt.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure, type LlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -167,19 +168,21 @@ const dispatchResponses = async (
     return await callResponsesAsExecuteResult(payload, ctx, candidate);
   }
   if (candidate.targetApi === 'messages') {
-    const trip = await translateResponsesViaMessages(payload, {
-      model: candidate.binding.upstreamModel.id,
-      fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
-    });
-    const inner = await messagesAttempt.generate({ payload: trip.target, ctx, store, candidate });
-    if (inner.type !== 'events') return inner;
-    return { ...inner, events: trip.events(inner.events) };
+    return await traverseTranslation(
+      payload,
+      p => translateResponsesViaMessages(p, {
+        model: candidate.binding.upstreamModel.id,
+        fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
+      }),
+      translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate }),
+    );
   }
   if (candidate.targetApi === 'chat-completions') {
-    const trip = await translateResponsesViaChatCompletions(payload, { model: candidate.binding.upstreamModel.id });
-    const inner = await chatCompletionsAttempt.generate({ payload: trip.target, ctx, store, candidate });
-    if (inner.type !== 'events') return inner;
-    return { ...inner, events: trip.events(inner.events) };
+    return await traverseTranslation(
+      payload,
+      p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
+      translated => chatCompletionsAttempt.generate({ payload: translated, ctx, store, candidate }),
+    );
   }
   throw new Error(`responsesAttempt: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
 };
