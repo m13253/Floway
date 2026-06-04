@@ -39,6 +39,7 @@ const stubRequest = (overrides: { downstreamAbortSignal?: AbortSignal } = {}): R
   requestStartedAt: 0,
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
+  scheduleBackground: () => {},
   clientStream: true,
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
   ...(overrides.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: overrides.downstreamAbortSignal } : {}),

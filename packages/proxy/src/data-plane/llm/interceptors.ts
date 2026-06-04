@@ -37,9 +37,9 @@ export type {
  * interceptors, telemetry). Holds immutable identities/adapters plus the
  * Responses state store that owns mutable request and provider-attempt state.
  *
- * Telemetry recording is done via global helpers that accept `apiKeyId` (and
- * `scheduleBackground` for performance) explicitly so call sites stay visible
- * about the no-op when the request has no API key (ADMIN_KEY playground path).
+ * Telemetry recording is done via global helpers that accept `apiKeyId`
+ * explicitly so call sites stay visible about the no-op when the request has
+ * no API key (ADMIN_KEY playground path).
  *
  * Structurally satisfies the provider package's empty `InterceptorRequest`
  * marker, so provider-package interceptors typed against the marker remain
@@ -53,7 +53,7 @@ export interface RequestContext {
   // null = Default mode (inherit global upstream order).
   readonly apiKeyUpstreamIds: readonly string[] | null;
   readonly runtimeLocation: string;
-  readonly scheduleBackground?: BackgroundScheduler;
+  readonly scheduleBackground: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
   statefulResponsesStore: StatefulResponsesStore;

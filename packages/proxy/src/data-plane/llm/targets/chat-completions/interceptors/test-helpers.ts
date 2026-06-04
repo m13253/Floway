@@ -21,6 +21,7 @@ export const stubRequestContext: RequestContext = {
   requestStartedAt: 0,
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
+  scheduleBackground: () => {},
   clientStream: false,
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 };

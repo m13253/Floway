@@ -64,24 +64,22 @@ const proxyUpstreamResponse = (resp: Response): Response =>
   });
 
 const recordUpstreamPerformance = (
-  scheduler: BackgroundScheduler | undefined,
+  scheduler: BackgroundScheduler,
   context: PerformanceTelemetryContext | undefined,
   failed: boolean,
   durationMs: number,
 ): void => {
   if (!context) return;
-  const promise = failed ? recordPerformanceError(context, 'upstream_success') : recordPerformanceLatency(context, 'upstream_success', durationMs);
-  scheduler ? scheduler(promise) : void promise;
+  scheduler(failed ? recordPerformanceError(context, 'upstream_success') : recordPerformanceLatency(context, 'upstream_success', durationMs));
 };
 
 // Fire-and-forget the usage record. A transient D1/KV failure here must not
 // surface as a 502 to a client whose upstream call already succeeded with a
 // 200 response body in hand. We log so the failure is still observable.
-const scheduleUsageRecord = (scheduler: BackgroundScheduler | undefined, promise: Promise<void>): void => {
-  const guarded = promise.catch(error => {
+const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<void>): void => {
+  scheduler(promise.catch(error => {
     console.error('Failed to record token usage:', error);
-  });
-  scheduler ? scheduler(guarded) : void guarded;
+  }));
 };
 
 // Defensive JSON parse: a successful 200 with a non-JSON or unexpected body

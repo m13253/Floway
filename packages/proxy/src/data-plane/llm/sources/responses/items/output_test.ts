@@ -37,6 +37,7 @@ const makeRequest = (
     apiKeyId,
     apiKeyUpstreamIds: null,
     runtimeLocation: 'test',
+    scheduleBackground: () => {},
     clientStream: true,
     statefulResponsesStore,
   };

@@ -48,13 +48,12 @@ export async function recordPerformanceError(context: PerformanceTelemetryContex
 
 export const recordRequestPerformanceForApiKey = (
   apiKeyId: string | undefined,
-  scheduler: BackgroundScheduler | undefined,
+  scheduler: BackgroundScheduler,
   context: PerformanceTelemetryContext | undefined,
   failed: boolean,
   durationMs: number,
 ): void => {
   if (!apiKeyId || !context) return;
   const keyed = { ...context, keyId: apiKeyId };
-  const promise = failed ? recordPerformanceError(keyed, 'request_total') : recordPerformanceLatency(keyed, 'request_total', durationMs);
-  scheduler ? scheduler(promise) : void promise;
+  scheduler(failed ? recordPerformanceError(keyed, 'request_total') : recordPerformanceLatency(keyed, 'request_total', durationMs));
 };

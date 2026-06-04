@@ -9,7 +9,7 @@ export interface CreateRequestContextInput {
   apiKeyId?: string;
   apiKeyUpstreamIds?: readonly string[] | null;
   runtimeLocation: string;
-  scheduleBackground?: BackgroundScheduler;
+  scheduleBackground: BackgroundScheduler;
   downstreamAbortSignal?: AbortSignal;
   clientStream: boolean;
   statefulResponsesStore?: StatefulResponsesStore;
@@ -22,7 +22,7 @@ export const createRequestContext = (input: CreateRequestContextInput): RequestC
     ...(input.apiKeyId !== undefined ? { apiKeyId: input.apiKeyId } : {}),
     apiKeyUpstreamIds: input.apiKeyUpstreamIds ?? null,
     runtimeLocation: input.runtimeLocation,
-    ...(input.scheduleBackground !== undefined ? { scheduleBackground: input.scheduleBackground } : {}),
+    scheduleBackground: input.scheduleBackground,
     clientStream: input.clientStream,
     statefulResponsesStore,
     ...(input.downstreamAbortSignal !== undefined ? { downstreamAbortSignal: input.downstreamAbortSignal } : {}),

@@ -22,6 +22,7 @@ const request = (): RequestContext => ({
   requestStartedAt: performance.now(),
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
+  scheduleBackground: () => {},
   clientStream: false,
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 });

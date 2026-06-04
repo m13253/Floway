@@ -124,6 +124,7 @@ const request = (): RequestContext => ({
   requestStartedAt,
   apiKeyUpstreamIds: null,
   runtimeLocation: 'test',
+  scheduleBackground: () => {},
   clientStream: true,
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 });
