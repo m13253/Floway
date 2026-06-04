@@ -6,13 +6,11 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
-import type { ModelEndpointKey, ModelEndpoints } from '@floway-dev/protocols/common';
 import { clearModelsStore, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
-import type { EndpointKey, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord, azureFetch } from '@floway-dev/provider-azure';
-import { copilotFetch } from '@floway-dev/provider-copilot';
+import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord, customFetch, fetchCustomModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
 interface CopilotUpstreamUser {
   login: string;
@@ -106,86 +104,6 @@ const newId = (): string => `up_${crypto.randomUUID().replace(/-/g, '').slice(0,
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
 
-const azureProbeRequest = (upstreamModelId: string, endpoint: ModelEndpointKey): { endpoint: EndpointKey; body: Record<string, unknown> } => {
-  switch (endpoint) {
-  case 'chatCompletions':
-    return {
-      endpoint: 'chat_completions',
-      body: {
-        model: upstreamModelId,
-        messages: [{ role: 'user', content: 'Reply with ok only.' }],
-        max_tokens: 16,
-      },
-    };
-  case 'responses':
-    return {
-      endpoint: 'responses',
-      body: {
-        model: upstreamModelId,
-        input: 'Reply with ok only.',
-        max_output_tokens: 16,
-      },
-    };
-  case 'messages':
-    return {
-      endpoint: 'messages',
-      body: {
-        model: upstreamModelId,
-        max_tokens: 16,
-        messages: [{ role: 'user', content: 'Reply with ok only.' }],
-      },
-    };
-  case 'embeddings':
-    return {
-      endpoint: 'embeddings',
-      body: {
-        model: upstreamModelId,
-        input: 'test',
-      },
-    };
-  case 'imagesGenerations':
-  case 'imagesEdits':
-    // Both image endpoints probe via /v1/images/generations: synthesizing a
-    // valid multipart edits body would require a real PNG and mask, which is
-    // disproportionate for a connectivity test. If the model's credentials
-    // and name are valid, the generations call succeeds; edits-specific
-    // failures only matter when a real client request submits real bytes.
-    // The body is intentionally minimal — we omit gpt-image-2-only fields
-    // like output_format that would 400 against a misconfigured dall-e model.
-    return {
-      endpoint: 'images_generations',
-      body: {
-        model: upstreamModelId,
-        prompt: 'probe',
-        n: 1,
-        size: '1024x1024',
-      },
-    };
-  }
-};
-
-// A model touches Azure's OpenAI v1 surface (which gates the /models probe)
-// when it serves any endpoint other than Messages.
-const azureModelUsesOpenAi = (model: { endpoints: ModelEndpoints }): boolean =>
-  Object.keys(model.endpoints).some(endpoint => endpoint !== 'messages');
-
-type ModelsProbeResult = { ok: boolean; status?: number; models?: string[]; body?: string; error?: string };
-
-const probeModelsFetch = async (fetcher: () => Promise<Response>): Promise<ModelsProbeResult> => {
-  try {
-    const resp = await fetcher();
-    if (!resp.ok) {
-      const text = await resp.text();
-      return { ok: false, status: resp.status, body: text.slice(0, 1000) };
-    }
-    const data = (await resp.json()) as { data?: Array<{ id: string }> };
-    const ids = Array.isArray(data?.data) ? data.data.map(m => m.id).filter((v): v is string => typeof v === 'string') : [];
-    return { ok: true, status: resp.status, models: ids.slice(0, 50) };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-};
-
 export const listUpstreams = async (c: Context) => {
   const items = await getRepo().upstreams.list();
   return c.json(items.map(upstreamRecordToJson));
@@ -260,91 +178,6 @@ export const deleteUpstream = async (c: Context) => {
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
   await invalidateModelsStore(id);
   return c.json({ ok: true });
-};
-
-export const testUpstream = async (c: Context) => {
-  const id = c.req.param('id') ?? '';
-  const config = await getRepo().upstreams.getById(id);
-  if (!config) return c.json({ error: 'Upstream not found' }, 404);
-
-  const normalized = normalizeConfig(config);
-  if (!normalized.ok) return c.json({ error: normalized.error }, 400);
-  const record = { ...config, config: normalized.value };
-
-  await invalidateModelsStore(id);
-
-  if (record.provider === 'azure') {
-    const azure = assertAzureUpstreamRecord(record);
-    const modelsProbe = azure.config.models.some(azureModelUsesOpenAi)
-      ? await probeModelsFetch(() => azureFetch(azure.config, 'models', { method: 'GET' }))
-      : undefined;
-    const modelProbes = [];
-
-    for (const model of azure.config.models) {
-      for (const endpoint of Object.keys(model.endpoints) as ModelEndpointKey[]) {
-        try {
-          const probe = azureProbeRequest(model.upstreamModelId, endpoint);
-          const resp = await azureFetch(azure.config, probe.endpoint, {
-            method: 'POST',
-            body: JSON.stringify(probe.body),
-          });
-          modelProbes.push({
-            upstreamModelId: model.upstreamModelId,
-            endpoint,
-            ok: resp.ok,
-            status: resp.status,
-            ...(resp.ok ? {} : { body: (await resp.text()).slice(0, 1000) }),
-          });
-        } catch (e) {
-          modelProbes.push({
-            upstreamModelId: model.upstreamModelId,
-            endpoint,
-            ok: false,
-            error: e instanceof Error ? e.message : String(e),
-          });
-        }
-      }
-    }
-
-    const ok = (modelsProbe?.ok ?? true) && modelProbes.every(probe => probe.ok);
-    return c.json({
-      ok,
-      ...(modelsProbe ? { model_count: modelsProbe.models?.length ?? 0, models: modelsProbe.models ?? [], models_probe: modelsProbe } : {}),
-      probes: modelProbes,
-    });
-  }
-
-  try {
-    const probe = record.provider === 'copilot'
-      ? await probeModelsFetch(() => copilotFetch(
-          { githubToken: (record.config as CopilotUpstreamConfig).githubToken, accountType: (record.config as CopilotUpstreamConfig).accountType },
-          'models',
-          { method: 'GET' },
-        ))
-      : await probeModelsFetch(() => customFetch(assertCustomUpstreamRecord(record).config, 'models', { method: 'GET' }));
-    if (!probe.ok) {
-      return c.json(
-        {
-          ...probe,
-        },
-        200,
-      );
-    }
-    return c.json({
-      ok: true,
-      status: probe.status,
-      model_count: probe.models?.length ?? 0,
-      models: probe.models ?? [],
-    });
-  } catch (e) {
-    return c.json(
-      {
-        ok: false,
-        error: e instanceof Error ? e.message : String(e),
-      },
-      200,
-    );
-  }
 };
 
 // Browse the live `/models` list of a DRAFT (possibly unsaved) custom

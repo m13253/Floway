@@ -145,16 +145,6 @@ export interface SearchConfig {
   microsoftGrounding: { apiKey: string };
 }
 
-export interface UpstreamTestResult {
-  ok: boolean;
-  status?: number;
-  models?: string[];
-  body?: string;
-  error?: string;
-  model_count?: number;
-  probes?: Array<{ upstreamModelId: string; endpoint: string; ok: boolean; status?: number; error?: string }>;
-}
-
 export interface CopilotQuotaSnapshot {
   quota_snapshots?: {
     premium_interactions?: {
