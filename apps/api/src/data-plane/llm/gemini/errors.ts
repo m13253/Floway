@@ -7,7 +7,7 @@ import type { ExecuteResult } from '@floway-dev/provider';
 // (HTTP body, SSE-tunnelled error event). Renders pre-stream `LlmServeFailure`s
 // the same way the legacy traits renderer did, so client-visible status, body
 // shape, and message text stay byte-identical across the migration.
-const geminiStatusForHttpStatus = (status: number): string => {
+export const geminiStatusForHttpStatus = (status: number): string => {
   switch (status) {
   case 400:
     return 'INVALID_ARGUMENT';

@@ -1,3 +1,4 @@
+import { geminiStatusForHttpStatus } from './errors.ts';
 import { geminiCountTokensInterceptors, geminiInterceptors } from './interceptors/index.ts';
 import type { GeminiCountTokensInterceptor, GeminiInterceptor, GeminiInvocation } from './interceptors/types.ts';
 import { translateGeminiToMessagesForCountTokens } from './translate.ts';
@@ -138,20 +139,6 @@ const safeJsonParse = (bytes: Uint8Array): unknown => {
     return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     return undefined;
-  }
-};
-
-const geminiStatusForHttpStatus = (status: number): string => {
-  switch (status) {
-  case 400: return 'INVALID_ARGUMENT';
-  case 401: return 'UNAUTHENTICATED';
-  case 403: return 'PERMISSION_DENIED';
-  case 404: return 'NOT_FOUND';
-  case 429: return 'RESOURCE_EXHAUSTED';
-  case 500: return 'INTERNAL';
-  case 502:
-  case 503: return 'UNAVAILABLE';
-  default: return 'INTERNAL';
   }
 };
 

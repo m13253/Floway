@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { geminiStatusForHttpStatus } from './errors.ts';
 import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './events/to-result.ts';
 import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
@@ -99,32 +100,10 @@ type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
 };
 
-// HTTP status -> Google RPC status string, plus the two ways we coerce an
-// out-of-range code: `googleRpcHttpStatusCode` for passthrough/native errors
-// (anything insane becomes 500), `synthesizedGeminiHttpStatusCode` for errors
-// we mint (a non-500 that maps to INTERNAL becomes 500).
-const geminiStatusForHttpStatus = (status: number): string => {
-  switch (status) {
-  case 400:
-    return 'INVALID_ARGUMENT';
-  case 401:
-    return 'UNAUTHENTICATED';
-  case 403:
-    return 'PERMISSION_DENIED';
-  case 404:
-    return 'NOT_FOUND';
-  case 429:
-    return 'RESOURCE_EXHAUSTED';
-  case 500:
-    return 'INTERNAL';
-  case 502:
-  case 503:
-    return 'UNAVAILABLE';
-  default:
-    return 'INTERNAL';
-  }
-};
-
+// HTTP status -> Google RPC status string mapping plus the two ways we coerce
+// an out-of-range code: `googleRpcHttpStatusCode` for passthrough/native
+// errors (anything insane becomes 500), `synthesizedGeminiHttpStatusCode` for
+// errors we mint (a non-500 that maps to INTERNAL becomes 500).
 const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status);
 
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
