@@ -118,11 +118,6 @@ export const rewriteResponsesItemsForCandidate = async (
 // project back into the source protocol. Stored ids that resolve to a row
 // for this candidate get rewritten to the upstream-owned id; rows owned by
 // a different upstream are dropped (reasoning is bound to its producer).
-//
-// `view.mapAsResponsesItems` is required by the translate-package views
-// (each protocol's `*ViaResponsesItemsView`); the slimmed read-only view in
-// `responses/items/view.ts` satisfies only the affinity walk's read needs
-// and is not accepted here.
 export const rewriteStoredResponsesItemsForCandidate = async <TSourceItems>(
   sourceItems: TSourceItems,
   view: ResponsesItemsView<TSourceItems>,

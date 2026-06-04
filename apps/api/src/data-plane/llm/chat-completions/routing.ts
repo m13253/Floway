@@ -1,9 +1,9 @@
-import { chatCompletionsViaResponsesItemsView } from './view.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { RoutingDecision } from '../shared/routing.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type ChatCompletionsRoutingDecision = RoutingDecision;
 

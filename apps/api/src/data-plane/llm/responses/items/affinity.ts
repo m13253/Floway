@@ -1,11 +1,11 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
-import type { ResponsesItemsView } from './view.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { LlmServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
