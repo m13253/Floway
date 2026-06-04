@@ -4,17 +4,6 @@ import { Hono } from 'hono';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.ts';
 
-const makeHonoContext = (vars: Record<string, unknown> = {}) => {
-  const app = new Hono();
-  let capturedCtx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-  app.get('/test', c => {
-    for (const [k, v] of Object.entries(vars)) c.set(k, v);
-    capturedCtx = createGatewayCtxFromHono(c, false);
-    return c.text('ok');
-  });
-  return { app, getCaptured: () => capturedCtx! };
-};
-
 describe('createGatewayCtxFromHono', () => {
   test('copies auth fields when both are set', async () => {
     const app = new Hono();
@@ -54,7 +43,6 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertExists(ctx.headers);
-    // Must be mutable: can append without throwing
     ctx.headers.append('x-test', 'value');
     assertEquals(ctx.headers.get('x-test'), 'value');
   });
