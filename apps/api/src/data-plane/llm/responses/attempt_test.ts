@@ -80,6 +80,33 @@ const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: A
   };
 };
 
+const makeCompactCandidate = (callResponsesCompact: (...args: unknown[]) => Promise<unknown>): ProviderCandidate => {
+  const upstreamModel = stubUpstreamModel();
+  const provider = stubProvider({
+    callResponsesCompact: callResponsesCompact as never,
+  });
+  return {
+    provider: {
+      upstream: 'up_test',
+      providerKind: 'custom',
+      name: 'up_test',
+      disabledPublicModelIds: [],
+      provider,
+      supportsResponsesItemReference: true,
+    },
+    binding: {
+      upstream: 'up_test',
+      upstreamName: 'up_test',
+      providerKind: 'custom',
+      provider,
+      upstreamModel,
+      enabledFlags: upstreamModel.enabledFlags,
+      supportsResponsesItemReference: true,
+    },
+    targetApi: 'responses',
+  };
+};
+
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   const out: ResponsesStreamEvent[] = [];
   for await (const frame of events) {
@@ -233,31 +260,31 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
-  // The compact reshape needs a `compaction` item on the trigger turn's
-  // output; `compactionResponse` errors out otherwise.
+  // Native /responses/compact returns a fully-shaped compaction envelope —
+  // `provider.callResponsesCompact` already does the Copilot
+  // compaction_trigger reshape internally — so the attempt receives a
+  // ResponsesResult, expands it into synthetic frames, and wraps the
+  // output for storage.
   const compactionItem = {
     type: 'compaction' as const,
     id: 'cmp_1',
     encrypted_content: 'ENC',
   };
-  const completedEvent: ResponsesStreamEvent = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: {
-      ...makeResponsesResult(),
-      // Cast: `compaction` is an input-shaped item type that
-      // `compactionResponse` extracts from the output array.
-      output: [compactionItem] as unknown as ResponsesResult['output'],
-    },
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    // Cast: `compaction` is an input-shaped item type the protocol's
+    // ResponsesResult.output type does not include but the runtime accepts.
+    output: [compactionItem] as unknown as ResponsesResult['output'],
   };
 
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
-    events: makeProviderEvents([completedEvent]),
+  const callResponsesCompact = vi.fn(async () => ({
+    ok: true as const,
+    result: compactionResult,
     modelKey: 'test-model-key',
   }));
 
-  const candidate = makeCandidate(callResponses);
+  const candidate = makeCompactCandidate(callResponsesCompact);
   const result = await responsesAttempt.compact({
     payload: makePayload({
       input: [
@@ -272,9 +299,8 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   assertEquals(result.type, 'result');
   if (result.type !== 'result') throw new Error('unreachable');
   assertEquals(result.result.object, 'response.compaction');
-  // The kept user message + the compaction item.
-  assertEquals(result.result.output.length, 2);
-  assertEquals((result.result.output[1] as { id: string }).id, 'cmp_1');
+  assertEquals(result.result.output.length, 1);
+  assertEquals((result.result.output[0] as { id: string }).id, 'cmp_1');
 
   // wrap-output-storage runs exactly once on the synthesized compaction
   // events, with snapshotMode='replace'.

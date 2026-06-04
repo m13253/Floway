@@ -79,11 +79,15 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
   callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
-  const provider = stubProvider({ callResponses: overrides.callResponses });
+  const provider = stubProvider({
+    callResponses: overrides.callResponses,
+    ...(overrides.callResponsesCompact !== undefined ? { callResponsesCompact: overrides.callResponsesCompact as never } : {}),
+  });
   return {
     provider: {
       upstream,
@@ -160,17 +164,17 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
   installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const compactionResult: ResponsesStreamEvent = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: { ...makeResponsesResult(), output: [compactionItem] as unknown as ResponsesResult['output'] },
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
-    events: makeProviderEvents([compactionResult]),
+  const callResponsesCompact = vi.fn(async () => ({
+    ok: true as const,
+    result: compactionResult,
     modelKey: 'test-model-key',
   }));
-  queueCandidates([makeCandidate({ callResponses })]);
+  queueCandidates([makeCandidate({ callResponsesCompact })]);
 
   const response = await makeApp().request('/v1/responses/compact', {
     method: 'POST',

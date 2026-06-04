@@ -87,12 +87,14 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
   callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
+    ...(overrides.callResponsesCompact !== undefined ? { callResponsesCompact: overrides.callResponsesCompact as never } : {}),
   });
   return {
     provider: {
@@ -155,17 +157,17 @@ test('generate routes a native Responses candidate end to end', async () => {
 test('compact returns a result envelope from the wrapped attempt', async () => {
   installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const completed: ResponsesStreamEvent = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: { ...makeResponsesResult(), output: [compactionItem] as unknown as ResponsesResult['output'] },
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
-    events: makeProviderEvents([completed]),
+  const callResponsesCompact = vi.fn(async () => ({
+    ok: true as const,
+    result: compactionResult,
     modelKey: 'test-model-key',
   }));
-  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
+  const candidate = makeCandidate({ upstream: 'up_a', callResponsesCompact });
   queueCandidates([candidate]);
 
   const result = await responsesServe.compact({
@@ -177,7 +179,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   assertEquals(result.type, 'result');
   if (result.type !== 'result') throw new Error('unreachable');
   assertEquals(result.result.object, 'response.compaction');
-  assertEquals(callResponses.mock.calls.length, 1);
+  assertEquals(callResponsesCompact.mock.calls.length, 1);
 });
 
 test('generate stops at the first candidate even when it yields an upstream error', async () => {
