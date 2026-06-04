@@ -4,8 +4,8 @@ import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini }
 import { geminiServe } from './serve.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
-import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 // The Gemini wire API encodes both the model id and the action in one path
 // segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
@@ -48,7 +48,7 @@ export const geminiHttp = {
       const { response } = await respondGemini(c, result, wantsStream, ctx);
       return response;
     } catch (error) {
-      return providerModelsUnavailableResponse(error) ?? geminiInternalRpcErrorResponse(500, error);
+      return await respondWithGeminiError(c, error, ctx, wantsStream);
     }
   },
 
@@ -66,7 +66,7 @@ export const geminiHttp = {
       const { response } = await respondGemini(c, result, false, ctx);
       return response;
     } catch (error) {
-      return providerModelsUnavailableResponse(error) ?? geminiInternalRpcErrorResponse(500, error);
+      return await respondWithGeminiError(c, error, ctx, false);
     }
   },
 
@@ -99,4 +99,29 @@ const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Pr
   } catch (error) {
     return geminiInternalRpcErrorResponse(500, error);
   }
+};
+
+// Surfaces a pre-stream throw as a Gemini-RPC envelope. A
+// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
+// that body through `respondGemini`'s `upstream-error` path so it gets
+// wrapped in the Google-RPC envelope (status, code, message). Other
+// failures collapse to the Gemini internal-error envelope.
+const respondWithGeminiError = async (
+  c: Context,
+  error: unknown,
+  ctx: ReturnType<typeof createGatewayCtxFromHono>,
+  wantsStream: boolean,
+): Promise<Response> => {
+  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
+    const { status, headers, body } = error.httpResponse;
+    const upstreamErrorResult = {
+      type: 'upstream-error' as const,
+      status,
+      headers: new Headers(headers),
+      body: new TextEncoder().encode(body),
+    };
+    const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
+    return response;
+  }
+  return geminiInternalRpcErrorResponse(500, error);
 };
