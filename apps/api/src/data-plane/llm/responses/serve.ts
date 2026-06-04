@@ -7,7 +7,7 @@ import { expandPreviousResponseId } from './serve-prep.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 export interface ResponsesServeGenerateArgs {
@@ -42,6 +42,12 @@ export const responsesServe = {
     });
     const decision = await planResponsesRouting({ payload: prepared, candidates, store });
     if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'generate');
+    // Stage the user-supplied input from the original payload — not the
+    // expansion's `item_reference` prefix — so the next-turn snapshot picks
+    // up the new user items in addition to the prior snapshot history.
+    // Runs after routing so any `item_reference` in user-supplied input has
+    // its target row loaded by the affinity walk.
+    await stageUserInputItems(payload.input, store);
 
     let sawAny = false;
     for (const candidate of decision.candidates) {
@@ -67,6 +73,7 @@ export const responsesServe = {
     });
     const decision = await planResponsesRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'compact');
+    await stageUserInputItems(payload.input, store);
 
     let sawAny = false;
     for (const candidate of decision.candidates) {
@@ -79,4 +86,16 @@ export const responsesServe = {
       'compact',
     );
   },
+};
+
+// Materializes the user-supplied input (string or array) into Responses items
+// and stages them so the snapshot picks them up alongside the prior history
+// and this turn's output. Mirrors the contract the routing/affinity walk
+// already honors via `loadInputItems` — staging is the write-side companion.
+const stageUserInputItems = async (input: ResponsesPayload['input'], store: StatefulResponsesStore): Promise<void> => {
+  const items: ResponsesInputItem[] = typeof input === 'string'
+    ? [{ type: 'message', role: 'user', content: input }]
+    : [...input];
+  await store.stageInputItems(items);
+  await store.refreshTouchedItems();
 };

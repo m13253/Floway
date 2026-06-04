@@ -498,9 +498,11 @@ test('Responses WebSocket session-level store: second message resolves prior ite
 
       const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
       assertEquals(secondBody.previous_response_id, undefined);
-      // The snapshot resolved via the session cache contains the prior
-      // assistant message item; the new user input is appended verbatim.
+      // The snapshot resolved via the session cache contains turn 1's staged
+      // user input and the prior assistant message; the new user input is
+      // appended verbatim.
       assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'user', 'turn one input'],
         ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
         ['message', 'user', 'turn two input'],
       ]);
