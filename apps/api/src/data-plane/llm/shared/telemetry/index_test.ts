@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { recordUpstreamHttpFailure, withUpstreamTelemetry } from './telemetry.ts';
-import { initRepo } from '../../../repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { Invocation, RequestContext } from '../interceptors.ts';
-import { createHttpStatefulResponsesStore } from '../sources/responses/stateful-store.ts';
+import { recordUpstreamHttpFailure, withUpstreamTelemetry } from './index.ts';
+import { initRepo } from '../../../../repo/index.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
+import type { Invocation, RequestContext } from '../../interceptors.ts';
+import { createHttpStatefulResponsesStore } from '../../sources/responses/stateful-store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
