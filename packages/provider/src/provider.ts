@@ -32,13 +32,9 @@ export interface ResolvedModel extends InternalModel {
 // The api side extends each list with its own protocol-shared interceptors
 // before running the chain.
 //
-// `messages` runs for any target: source-side Messages interceptors (trace
-// headers, payload normalizers) shape the source payload before either the
-// native Messages call or a translation to another protocol. `messagesTarget`
-// runs only when the wire actually carries Messages (target === 'messages')
-// — target-only mutators that strip translator-relevant fields (e.g.
-// `tool.strict` for Vertex-backed Copilot) belong here so translated paths
-// see the unmodified source.
+// `messagesTarget` runs only when the wire actually carries Messages —
+// translated payloads must not see target-only mutators that strip fields
+// the translator forwards (e.g., tool.strict).
 //
 // `messagesCountTokens` is separate from `messages` because count_tokens
 // returns a raw upstream Response (no protocol-frame translation). Only the
