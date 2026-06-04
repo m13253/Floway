@@ -1,0 +1,82 @@
+import { responsesAttempt } from './attempt.ts';
+import { renderResponsesFailure } from './errors.ts';
+import type { ResponsesAttemptResult } from './interceptors/types.ts';
+import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import { planResponsesRouting } from './routing.ts';
+import { expandPreviousResponseId } from './serve-prep.ts';
+import { enumerateProviderCandidates } from '../shared/candidates.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ExecuteResult } from '@floway-dev/provider';
+
+export interface ResponsesServeGenerateArgs {
+  readonly payload: ResponsesPayload;
+  readonly ctx: GatewayCtx;
+  readonly store: StatefulResponsesStore;
+  // HTTP defaults to 'append'; WS overrides per-message based on `payload.store`.
+  // The cross-protocol translation-in path never reaches this entry — it goes
+  // straight into `responsesAttempt.generate`.
+  readonly snapshotMode?: ResponsesSnapshotMode;
+}
+
+export interface ResponsesServeCompactArgs {
+  readonly payload: ResponsesPayload;
+  readonly ctx: GatewayCtx;
+  readonly store: StatefulResponsesStore;
+}
+
+export const responsesServe = {
+  generate: async (args: ResponsesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+    const { payload, ctx, store, snapshotMode = 'append' } = args;
+    const prepared = await expandPreviousResponseId(payload, store);
+    const candidates = await enumerateProviderCandidates({
+      apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
+      model: prepared.model,
+      sourceApi: 'responses',
+      pickTarget: endpoints =>
+        endpoints.responses ? 'responses'
+          : endpoints.messages ? 'messages'
+            : endpoints.chatCompletions ? 'chat-completions'
+              : null,
+    });
+    const decision = await planResponsesRouting({ payload: prepared, candidates, store });
+    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'generate');
+
+    let sawAny = false;
+    for (const candidate of decision.candidates) {
+      sawAny = true;
+      const result = await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, snapshotMode });
+      if (result.type === 'events') return result;
+    }
+    return renderResponsesFailure(
+      sawAny ? { kind: 'model-unsupported', model: prepared.model } : { kind: 'model-missing', model: prepared.model },
+      'generate',
+    );
+  },
+
+  compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
+    const { payload, ctx, store } = args;
+    // Compact has no `previous_response_id` semantics — the request narrows to
+    // a single retain+compaction turn on the input present in the body.
+    const candidates = await enumerateProviderCandidates({
+      apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
+      model: payload.model,
+      sourceApi: 'responses',
+      pickTarget: endpoints => endpoints.responses ? 'responses' : null,
+    });
+    const decision = await planResponsesRouting({ payload, candidates, store });
+    if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'compact');
+
+    let sawAny = false;
+    for (const candidate of decision.candidates) {
+      sawAny = true;
+      const result = await responsesAttempt.compact({ payload, ctx, store, candidate });
+      if (result.type !== 'upstream-error' && result.type !== 'internal-error') return result;
+    }
+    return renderResponsesFailure(
+      sawAny ? { kind: 'model-unsupported', model: payload.model } : { kind: 'model-missing', model: payload.model },
+      'compact',
+    );
+  },
+};
