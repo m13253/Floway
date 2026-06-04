@@ -30,14 +30,17 @@ export const chatCompletionsServe = {
     const decision = await planChatCompletionsRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderChatCompletionsFailure(decision.failure);
 
-    let sawAny = false;
+    // Any non-throwing attempt result — events, upstream-error, or
+    // internal-error — IS the answer for this request: an upstream 4xx/5xx
+    // from the first viable candidate is final, not a hint to try another
+    // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      sawAny = true;
-      const result = await chatCompletionsAttempt.generate({ payload, ctx, store, candidate });
-      if (result.type === 'events') return result;
+      return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate });
     }
     return renderChatCompletionsFailure(
-      sawAny ? { kind: 'model-unsupported', model: payload.model } : { kind: 'model-missing', model: payload.model },
+      candidates.length > 0
+        ? { kind: 'model-unsupported', model: payload.model }
+        : { kind: 'model-missing', model: payload.model },
     );
   },
 };

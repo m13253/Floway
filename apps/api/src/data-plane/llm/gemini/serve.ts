@@ -40,14 +40,17 @@ export const geminiServe = {
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
 
-    let sawAny = false;
+    // Any non-throwing attempt result — events, upstream-error, or
+    // internal-error — IS the answer for this request: an upstream 4xx/5xx
+    // from the first viable candidate is final, not a hint to try another
+    // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      sawAny = true;
-      const result = await geminiAttempt.generate({ payload, ctx, store, candidate });
-      if (result.type === 'events') return result;
+      return await geminiAttempt.generate({ payload, ctx, store, candidate });
     }
     return renderGeminiFailure(
-      sawAny ? { kind: 'model-unsupported', model } : { kind: 'model-missing', model },
+      candidates.length > 0
+        ? { kind: 'model-unsupported', model }
+        : { kind: 'model-missing', model },
       'generate',
     );
   },
@@ -66,17 +69,19 @@ export const geminiServe = {
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
 
-    let sawAny = false;
+    const decision = await planGeminiRouting({ payload, candidates, store });
+    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
+
+    // PlainResult always represents a final response — both 2xx and upstream
+    // errors come back as a `plain` envelope, so iteration stops on the first
+    // candidate. Provider-level transport errors throw and propagate.
     for (const candidate of decision.candidates) {
-      sawAny = true;
-      const result = await geminiAttempt.countTokens({ payload, ctx, store, candidate });
-      // PlainResult always represents a final response — both 2xx and upstream
-      // errors come back as a `plain` envelope, so iteration stops on the first
-      // candidate. Provider-level transport errors would throw and propagate.
-      return result;
+      return await geminiAttempt.countTokens({ payload, ctx, store, candidate });
     }
     return renderGeminiFailure(
-      sawAny ? { kind: 'model-unsupported', model } : { kind: 'model-missing', model },
+      candidates.length > 0
+        ? { kind: 'model-unsupported', model }
+        : { kind: 'model-missing', model },
       'countTokens',
     );
   },

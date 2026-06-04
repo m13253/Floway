@@ -49,14 +49,17 @@ export const responsesServe = {
     // its target row loaded by the affinity walk.
     await stageUserInputItems(payload.input, store);
 
-    let sawAny = false;
+    // Any non-throwing attempt result — events, upstream-error, or
+    // internal-error — IS the answer for this request: an upstream 4xx/5xx
+    // from the first viable candidate is final, not a hint to try another
+    // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      sawAny = true;
-      const result = await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, snapshotMode });
-      if (result.type === 'events') return result;
+      return await responsesAttempt.generate({ payload: prepared, ctx, store, candidate, snapshotMode });
     }
     return renderResponsesFailure(
-      sawAny ? { kind: 'model-unsupported', model: prepared.model } : { kind: 'model-missing', model: prepared.model },
+      candidates.length > 0
+        ? { kind: 'model-unsupported', model: prepared.model }
+        : { kind: 'model-missing', model: prepared.model },
       'generate',
     );
   },
@@ -75,14 +78,16 @@ export const responsesServe = {
     if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'compact');
     await stageUserInputItems(payload.input, store);
 
-    let sawAny = false;
+    // The first candidate's result IS the answer — upstream-error and
+    // internal-error envelopes are final, not a hint to try another
+    // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      sawAny = true;
-      const result = await responsesAttempt.compact({ payload, ctx, store, candidate });
-      if (result.type !== 'upstream-error' && result.type !== 'internal-error') return result;
+      return await responsesAttempt.compact({ payload, ctx, store, candidate });
     }
     return renderResponsesFailure(
-      sawAny ? { kind: 'model-unsupported', model: payload.model } : { kind: 'model-missing', model: payload.model },
+      candidates.length > 0
+        ? { kind: 'model-unsupported', model: payload.model }
+        : { kind: 'model-missing', model: payload.model },
       'compact',
     );
   },
