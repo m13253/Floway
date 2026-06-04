@@ -22,6 +22,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
+  requestStartedAt: 0,
 });
 
 const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({

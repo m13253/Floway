@@ -115,6 +115,22 @@ describe('createGatewayCtxFromHono', () => {
     }
     assertEquals(nothingThrown, true);
   });
+
+  test('stamps requestStartedAt from performance.now() at construction', async () => {
+    const app = new Hono();
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    const before = performance.now();
+    app.get('/test', c => {
+      ctx = createGatewayCtxFromHono(c, false);
+      return c.text('ok');
+    });
+    await app.request('/test');
+    const after = performance.now();
+    assertExists(ctx);
+    if (!(ctx.requestStartedAt >= before && ctx.requestStartedAt <= after)) {
+      throw new Error(`requestStartedAt ${ctx.requestStartedAt} not in [${before}, ${after}]`);
+    }
+  });
 });
 
 describe('createGatewayCtxForWs', () => {
@@ -224,5 +240,22 @@ describe('createGatewayCtxForWs', () => {
       nothingThrown = false;
     }
     assertEquals(nothingThrown, true);
+  });
+
+  test('stamps requestStartedAt from performance.now() at construction', async () => {
+    const app = new Hono();
+    let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
+    const before = performance.now();
+    app.get('/test', c => {
+      const controller = new AbortController();
+      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      return c.text('ok');
+    });
+    await app.request('/test');
+    const after = performance.now();
+    assertExists(ctx);
+    if (!(ctx.requestStartedAt >= before && ctx.requestStartedAt <= after)) {
+      throw new Error(`requestStartedAt ${ctx.requestStartedAt} not in [${before}, ${after}]`);
+    }
   });
 });

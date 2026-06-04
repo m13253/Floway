@@ -3,7 +3,8 @@ import type { Context } from 'hono';
 import { responsesSourceInterceptors } from './interceptors/index.ts';
 import { respondResponses } from './respond.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './stateful-store.ts';
-import { type LlmTargetApi, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
+import { type LlmTargetApi, type RequestContext, type ResponsesInvocation, runInterceptors } from '../../interceptors.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses, emitToResponsesCompact } from '../../targets/responses/emit.ts';
@@ -16,6 +17,22 @@ import type { ResponsesCompactPayload, ResponsesInputItem, ResponsesPayload, Res
 import type { ExecuteResult, ProviderModelRecord } from '@floway-dev/provider';
 import { type SourceEmit, translateResponsesViaChatCompletions, translateResponsesViaMessages, viaTranslation } from '@floway-dev/translate';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+
+// Thin adapter for the legacy traits glue: respondResponses now takes
+// GatewayCtx (per the new per-protocol entry shape), so the RequestContext
+// threaded through the legacy serveLlm runtime is mapped onto the same fields.
+// This helper exists only here — Task 27 removes the entire legacy entry layer.
+const requestContextToGatewayCtx = (request: RequestContext, downstreamAbortController: AbortController | undefined): GatewayCtx => ({
+  apiKeyId: request.apiKeyId ?? null,
+  apiKeyUpstreamIds: request.apiKeyUpstreamIds,
+  headers: new Headers(),
+  ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
+  wantsStream: request.clientStream,
+  scheduleBackground: request.scheduleBackground !== undefined
+    ? (fn: () => Promise<void> | void) => request.scheduleBackground!(Promise.resolve(fn()))
+    : () => {},
+  requestStartedAt: request.requestStartedAt,
+});
 
 const CODEX_AUTO_REVIEW_ALIAS = 'codex-auto-review';
 const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
@@ -169,7 +186,7 @@ export const setupResponsesSource = async (
 
 const responsesGenerate: LlmHttpEndpoint<string | readonly ResponsesInputItem[], ResponsesStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondResponses(c, result, runtime.wantsStream, runtime.request, runtime.downstreamAbortController),
+    await respondResponses(c, result, runtime.wantsStream, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => await setupResponsesSource(c, await c.req.json<ResponsesPayload>()),
 };
 
@@ -230,7 +247,7 @@ const setupResponsesCompactSource = async (
 };
 
 const responsesCompact: LlmHttpEndpoint<string | readonly ResponsesInputItem[], ResponsesStreamEvent> = {
-  respond: async ({ c, result, runtime }) => await respondResponses(c, result, false, runtime.request, undefined),
+  respond: async ({ c, result, runtime }) => await respondResponses(c, result, false, requestContextToGatewayCtx(runtime.request, undefined)),
   prepare: async c => await setupResponsesCompactSource(c, await c.req.json<ResponsesCompactPayload>()),
 };
 

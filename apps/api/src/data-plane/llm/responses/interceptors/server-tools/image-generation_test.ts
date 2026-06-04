@@ -53,6 +53,7 @@ const gatewayCtx = (): GatewayCtx => ({
   headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
+  requestStartedAt: 0,
 });
 
 beforeEach(() => {

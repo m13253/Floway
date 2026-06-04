@@ -18,6 +18,7 @@ const stubCtx: GatewayCtx = {
   headers: new Headers(),
   wantsStream: false,
   scheduleBackground: () => {},
+  requestStartedAt: 0,
 };
 
 const invocation = (): ResponsesInvocation => ({

@@ -137,6 +137,7 @@ const gatewayCtx = (): GatewayCtx => ({
   headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
+  requestStartedAt: 0,
 });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {

@@ -344,6 +344,7 @@ const makeGatewayCtx = (apiKeyId: string | null = 'k1'): GatewayCtx => ({
   headers: new Headers(),
   wantsStream: true,
   scheduleBackground: () => {},
+  requestStartedAt: 0,
 });
 
 const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
@@ -4485,6 +4486,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     headers: new Headers(),
     wantsStream: true,
     scheduleBackground: () => {},
+    requestStartedAt: 0,
     abortSignal: controller.signal,
   };
   const script = scriptedRun([

@@ -7,6 +7,7 @@ import { respondGemini } from './gemini/respond.ts';
 import { respondMessages } from './messages/respond.ts';
 import { respondResponses } from './responses/respond.ts';
 import { createHttpStatefulResponsesStore } from './responses/stateful-store.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/proxy-sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -128,12 +129,23 @@ const request = (): RequestContext => ({
   statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
 });
 
+// respondResponses now consumes GatewayCtx directly. The other respondX
+// functions still take RequestContext until their migration tasks land.
+const gatewayCtx = (): GatewayCtx => ({
+  apiKeyId: null,
+  apiKeyUpstreamIds: null,
+  headers: new Headers(),
+  wantsStream: true,
+  scheduleBackground: () => {},
+  requestStartedAt,
+});
+
 test('Messages streaming keepalive uses Anthropic ping events', async () => {
   await assertSourceKeepAlive<MessagesStreamEvent>(async (c, events) => (await respondMessages(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, 'event: ping\ndata: {"type":"ping"}\n\n');
 });
 
 test('Responses streaming keepalive uses SSE comments', async () => {
-  await assertSourceKeepAlive<ResponsesStreamEvent>(async (c, events) => (await respondResponses(c, eventResult(events, testTelemetryModelIdentity), true, request(), undefined)).response, ': keepalive\n\n');
+  await assertSourceKeepAlive<ResponsesStreamEvent>(async (c, events) => (await respondResponses(c, eventResult(events, testTelemetryModelIdentity), true, gatewayCtx())).response, ': keepalive\n\n');
 });
 
 test('Chat Completions streaming keepalive uses SSE comments', async () => {

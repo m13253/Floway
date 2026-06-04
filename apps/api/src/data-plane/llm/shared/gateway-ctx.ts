@@ -9,6 +9,9 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly scheduleBackground: (fn: () => Promise<void> | void) => void;
+  // Stamped at ctx construction so request-total latency telemetry can subtract
+  // from `performance.now()` at response completion.
+  readonly requestStartedAt: number;
 }
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
@@ -26,6 +29,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
     scheduleBackground,
+    requestStartedAt: performance.now(),
   };
 };
 
@@ -48,5 +52,6 @@ export const createGatewayCtxForWs = (
     wantsStream: true,
     downstreamAbortController,
     scheduleBackground,
+    requestStartedAt: performance.now(),
   };
 };
