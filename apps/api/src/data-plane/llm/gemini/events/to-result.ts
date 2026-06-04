@@ -9,15 +9,16 @@ const isGeminiFinishedEvent = (event: GeminiStreamEvent): boolean => 'candidates
 
 export const isGeminiTerminalEvent = (event: GeminiStreamEvent): boolean => isGeminiErrorEvent(event) || isGeminiFinishedEvent(event);
 
-const hasOnlyTextShape = (part: GeminiPart): boolean =>
-  part.inlineData === undefined &&
-  part.functionCall === undefined &&
-  part.functionResponse === undefined &&
-  part.fileData === undefined &&
-  part.executableCode === undefined &&
-  part.codeExecutionResult === undefined;
-
-const isMergeableTextPart = (part: GeminiPart): boolean => part.text !== undefined && part.thought !== true && part.thoughtSignature === undefined && hasOnlyTextShape(part);
+const isMergeableTextPart = (part: GeminiPart): boolean =>
+  part.text !== undefined
+  && part.thought !== true
+  && part.thoughtSignature === undefined
+  && part.inlineData === undefined
+  && part.functionCall === undefined
+  && part.functionResponse === undefined
+  && part.fileData === undefined
+  && part.executableCode === undefined
+  && part.codeExecutionResult === undefined;
 
 const appendPart = (parts: GeminiPart[], part: GeminiPart): void => {
   const previous = parts.at(-1);

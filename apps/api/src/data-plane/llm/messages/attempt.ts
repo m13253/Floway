@@ -157,9 +157,7 @@ const rewriteOrRenderMessagesFailure = async (
 
 // Source-side interceptors apply regardless of target — they shape the
 // Messages payload before either calling Messages directly or translating to
-// another protocol. Target-side interceptors only apply when the wire
-// actually carries Messages: they run as an inner chain inside the
-// targetApi==='messages' branch.
+// another protocol.
 const sourceChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
   ...messagesInterceptors,
   ...(candidate.binding.interceptors?.messages ?? []),

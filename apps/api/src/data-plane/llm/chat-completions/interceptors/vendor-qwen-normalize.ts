@@ -10,8 +10,7 @@
 //   sentinel and emit the Qwen form.
 //
 // Inbound: nothing today — Qwen's response shape already matches OpenAI's
-// for the fields the gateway reads. Add hooks here if vendor-specific
-// inbound rewrites surface.
+// for the fields the gateway reads.
 //
 // Reference:
 // - https://www.alibabacloud.com/help/en/model-studio/deep-thinking

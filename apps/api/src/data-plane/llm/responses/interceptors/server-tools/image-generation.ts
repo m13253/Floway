@@ -87,6 +87,46 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
+// A base64-data-URL or bare-base64 image source bound for an edit call.
+// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob
+// without TS narrowing complaints about SharedArrayBuffer.
+interface ImageSource {
+  bytes: ArrayBuffer;
+  mimeType: string;
+}
+
+const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
+  const binary = atob(b64);
+  const buffer = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return buffer;
+};
+
+// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string into
+// raw bytes. Returns null for non-data URLs (e.g. http(s)): fetching remote
+// images for edit binding is deferred — only inline image bytes are bound.
+const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
+  const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
+  if (dataUrlMatch === null) {
+    if (/^https?:\/\//i.test(imageUrl)) return null;
+    // Bare base64 (e.g. an image_generation_call.result).
+    try {
+      return { bytes: base64ToArrayBuffer(imageUrl), mimeType: fallbackMime };
+    } catch {
+      return null;
+    }
+  }
+  const isBase64 = dataUrlMatch[2] !== undefined;
+  const payload = dataUrlMatch[3];
+  if (!isBase64) return null;
+  try {
+    return { bytes: base64ToArrayBuffer(payload), mimeType: dataUrlMatch[1] ?? fallbackMime };
+  } catch {
+    return null;
+  }
+};
+
 // The orchestrator-visible tool config the shim layers onto the backend
 // call. Mirrors Azure: the orchestrator only chooses `prompt`; everything
 // here is read from the client's hosted-tool entry and applied by the shim.
@@ -288,46 +328,6 @@ export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctio
 
 export const synthesizeImageGenerationCallId = (): string =>
   `ig_gw_${crypto.randomUUID().replace(/-/g, '')}`;
-
-// A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob
-// without TS narrowing complaints about SharedArrayBuffer.
-interface ImageSource {
-  bytes: ArrayBuffer;
-  mimeType: string;
-}
-
-const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
-  const binary = atob(b64);
-  const buffer = new ArrayBuffer(binary.length);
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return buffer;
-};
-
-// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string into
-// raw bytes. Returns null for non-data URLs (e.g. http(s)): fetching remote
-// images for edit binding is deferred — only inline image bytes are bound.
-const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
-  const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
-  if (dataUrlMatch === null) {
-    if (/^https?:\/\//i.test(imageUrl)) return null;
-    // Bare base64 (e.g. an image_generation_call.result).
-    try {
-      return { bytes: base64ToArrayBuffer(imageUrl), mimeType: fallbackMime };
-    } catch {
-      return null;
-    }
-  }
-  const isBase64 = dataUrlMatch[2] !== undefined;
-  const payload = dataUrlMatch[3];
-  if (!isBase64) return null;
-  try {
-    return { bytes: base64ToArrayBuffer(payload), mimeType: dataUrlMatch[1] ?? fallbackMime };
-  } catch {
-    return null;
-  }
-};
 
 // Collect all inline image sources from the request input in forward
 // declaration order: `input_image` blocks in messages, `input_image` blocks in

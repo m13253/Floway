@@ -160,16 +160,15 @@ const hasExactKeys = (value: Record<string, unknown>, keys: string[]): boolean =
 const isNonNegativeInteger = (value: unknown): value is number => Number.isInteger(value) && typeof value === 'number' && value >= 0;
 
 const isShimWebSearchResultPayload = (value: unknown): value is ShimWebSearchResultPayload => {
-  if (!(value && typeof value === 'object' && 'content' in value)) {
+  if (!isJsonObject(value)) {
     return false;
   }
 
-  const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, ['content'])) {
+  if (!hasExactKeys(value, ['content'])) {
     return false;
   }
 
-  const content = record.content;
+  const content = value.content;
   return Array.isArray(content) && content.every(block => block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string');
 };
 
@@ -187,19 +186,14 @@ const isShimWebSearchCitationPayload = (value: unknown): value is ShimWebSearchC
   );
 };
 
-export const encodeWebSearchResultPayload = (payload: ShimWebSearchResultPayload): string => encodePayload({ content: payload.content });
+export const encodeWebSearchResultPayload = (payload: ShimWebSearchResultPayload): string => encodePayload(payload);
 
 export const decodeWebSearchResultPayload = (value: string): ShimWebSearchResultPayload | null => {
   const decoded = decodePayload(value);
   return isShimWebSearchResultPayload(decoded) ? decoded : null;
 };
 
-export const encodeWebSearchCitationPayload = (payload: ShimWebSearchCitationPayload): string =>
-  encodePayload({
-    search_result_index: payload.search_result_index,
-    start_block_index: payload.start_block_index,
-    end_block_index: payload.end_block_index,
-  });
+export const encodeWebSearchCitationPayload = (payload: ShimWebSearchCitationPayload): string => encodePayload(payload);
 
 export const decodeWebSearchCitationPayload = (value: string): ShimWebSearchCitationPayload | null => {
   const decoded = decodePayload(value);

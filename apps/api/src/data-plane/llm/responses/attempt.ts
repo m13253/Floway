@@ -162,7 +162,14 @@ const dispatchResponses = async (
   invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (candidate.targetApi === 'responses') {
-    return await callResponsesAsExecuteResult(payload, ctx, candidate, invocationHeaders);
+    const { model: _model, ...body } = payload;
+    const providerResult = await candidate.binding.provider.callResponses(
+      candidate.binding.upstreamModel,
+      body,
+      ctx.abortSignal,
+      invocationHeaders,
+    );
+    return await providerStreamResultToExecuteResult(providerResult, candidate);
   }
   if (candidate.targetApi === 'messages') {
     return await traverseTranslation(
@@ -186,22 +193,6 @@ const dispatchResponses = async (
     );
   }
   throw new Error(`responsesAttempt: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
-};
-
-const callResponsesAsExecuteResult = async (
-  payload: ResponsesPayload,
-  ctx: GatewayCtx,
-  candidate: ProviderCandidate,
-  invocationHeaders: Record<string, string>,
-): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const { model: _model, ...body } = payload;
-  const providerResult = await candidate.binding.provider.callResponses(
-    candidate.binding.upstreamModel,
-    body,
-    ctx.abortSignal,
-    invocationHeaders,
-  );
-  return await providerStreamResultToExecuteResult(providerResult, candidate);
 };
 
 // `/responses/compact` is non-streaming: the provider returns the compaction

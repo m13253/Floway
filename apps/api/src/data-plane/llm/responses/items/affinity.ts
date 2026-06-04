@@ -154,8 +154,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     if (row === undefined) {
       if (ref.type === 'item_reference') {
         // `item_reference` is enforced by collectStoredResponsesItemRefs to
-        // carry a non-null id (matching ResponsesItemReference). The
-        // assertion narrows the optional field for the failure push.
+        // carry a non-null id (matching ResponsesItemReference).
         if (ref.id === undefined) throw new Error('item_reference ref reached affinity walk without an id');
         failures.push({ kind: 'item-not-found', itemId: ref.id });
       } else if (ref.id !== undefined && queryableIds.has(ref.id)) {

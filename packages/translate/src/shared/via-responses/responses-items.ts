@@ -149,7 +149,9 @@ const responsesItemToMessagesAssistantBlock = (item: ResponsesInputItem): Messag
     return responsesReasoningToMessagesBlock(item);
   case 'message': {
     if (item.role !== 'assistant') return null;
-    const text = responsesMessageOutputText(item);
+    const text = typeof item.content === 'string'
+      ? item.content
+      : item.content.filter((part): part is Extract<typeof part, { text: string }> => 'text' in part).map(part => part.text).join('');
     return text ? { type: 'text', text } : null;
   }
   case 'function_call':
@@ -159,14 +161,6 @@ const responsesItemToMessagesAssistantBlock = (item: ResponsesInputItem): Messag
   default:
     throw new Error(`Cannot project Responses ${item.type} item into a Messages assistant content block`);
   }
-};
-
-const responsesMessageOutputText = (item: Extract<ResponsesInputItem, { type: 'message' }>): string => {
-  if (typeof item.content === 'string') return item.content;
-  return item.content
-    .filter((part): part is Extract<typeof part, { text: string }> => 'text' in part)
-    .map(part => part.text)
-    .join('');
 };
 
 // ---------------------------------------------------------------------------

@@ -15,9 +15,6 @@ export const planResponsesRouting = async (input: {
   // native view's `visitAsResponsesItems` only accepts item arrays, so we
   // hand it an empty array in that case.
   const sourceItems = Array.isArray(input.payload.input) ? input.payload.input : [];
-  // Pre-load stored rows whose content hash matches a payload input item so a
-  // duplicate user message resent on a later turn reuses the existing row
-  // instead of minting a fresh one.
   const inputItemsToStage: readonly ResponsesInputItem[] = typeof input.payload.input === 'string'
     ? [{ type: 'message', role: 'user', content: input.payload.input }]
     : input.payload.input;

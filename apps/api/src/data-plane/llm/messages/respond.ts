@@ -74,8 +74,6 @@ export const respondMessages = async (
   return { success: true, response };
 };
 
-// --- token usage ---
-
 // Anthropic already reports disjoint token counts: input_tokens excludes the
 // cache figures. Map them straight onto the billing dimensions without summing.
 const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) =>
@@ -92,28 +90,25 @@ export const createMessagesStreamUsageState = () => ({
 });
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
-const mergeMessagesUsage = (state: MessagesStreamUsageState, u: MessagesUsageLike) => (state.current = tokenUsageFromMessagesUsage(u));
 
 export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEvent>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
-    const usage = mergeMessagesUsage(state, event.message.usage);
+    state.current = tokenUsageFromMessagesUsage(event.message.usage);
     // A fully cache-hit prompt reports message_start with input=0 but non-zero
     // cache reads; the input accounting still arrived, so the flag must reflect
     // every input-side dimension, not bare input alone — otherwise a later
     // delta carrying input_tokens re-merges and drops the cache counts.
-    state.gotInputFromStart ||= (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) > 0;
+    state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) > 0;
   }
   if (event.type === 'message_delta' && event.usage) {
     if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
-      mergeMessagesUsage(state, event.usage);
+      state.current = tokenUsageFromMessagesUsage(event.usage);
     } else state.current.output = event.usage.output_tokens;
   }
   return event.type === 'message_stop' ? state.current : null;
 };
-
-// --- error rendering ---
 
 const internalMessagesErrorPayload = (error: InternalDebugError) => ({
   type: 'error',
@@ -129,8 +124,6 @@ const internalMessagesErrorPayload = (error: InternalDebugError) => ({
 });
 
 const internalMessagesErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalMessagesErrorPayload(error), { status });
-
-// --- frame observation ---
 
 const isMessagesTerminalFrame = (frame: ProtocolFrame<MessagesStreamEvent>) => frame.type === 'event' && (frame.event.type === 'message_stop' || frame.event.type === 'error');
 

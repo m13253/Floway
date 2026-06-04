@@ -255,7 +255,6 @@ const rewriteHostedToolChoice = (
   return toolChoice;
 };
 
-// Cap on the suffix search; resolveServerToolName throws if exhausted.
 const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
 
 export const resolveServerToolName = (baseName: string, tools: readonly ResponsesTool[]): string => {

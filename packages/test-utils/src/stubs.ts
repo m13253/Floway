@@ -87,7 +87,6 @@ export const stubProviderModelRecord = (overrides: Partial<ProviderModelRecord> 
   };
 };
 
-// ProviderCandidate stub for interceptor tests.
 export const stubProviderCandidate = (overrides: { targetApi?: LlmTargetApi; binding?: Partial<ProviderModelRecord>; provider?: ModelProviderInstance } = {}): ProviderCandidate => {
   const provider = overrides.provider ?? stubProviderInstance();
   return {

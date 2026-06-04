@@ -28,7 +28,6 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
   return shape.generateContentRequest ?? { contents: shape.contents };
 };
 
-// JSON parse failures collapse to the Gemini internal-error 500 envelope.
 const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Promise<T | Response> => {
   try {
     const raw = await c.req.json<unknown>();

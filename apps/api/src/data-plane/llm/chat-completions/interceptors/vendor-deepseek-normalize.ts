@@ -42,18 +42,6 @@ import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../share
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsReasoningItem, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
-// DeepSeek's `thinking: { type: 'disabled' }` rides alongside the typed
-// payload as a vendor-only field.
-interface DeepseekDisableField {
-  thinking?: { type: 'disabled' };
-}
-
-type ChatCompletionsPayloadWithDeepseekDisable = Omit<ChatCompletionsPayload, 'reasoning_effort'> & DeepseekDisableField;
-
-type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['delta'] & {
-  reasoning_content?: unknown;
-};
-
 const synthesizeFromItems = (items: ChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
   if (!items?.length) return undefined;
   const parts = items.flatMap(item => item.summary?.map(s => s.text) ?? []);
@@ -73,8 +61,7 @@ const rewriteOutboundMessage = (message: ChatCompletionsMessage): ChatCompletion
 const stripCanonicalReasoningSentinel = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
   if (payload.reasoning_effort !== 'none') return payload;
   const { reasoning_effort: _stripped, ...rest } = payload;
-  const out: ChatCompletionsPayloadWithDeepseekDisable = { ...rest, thinking: { type: 'disabled' } };
-  return out as ChatCompletionsPayload;
+  return { ...rest, thinking: { type: 'disabled' as const } } as ChatCompletionsPayload;
 };
 
 const downgradeJsonSchemaResponseFormat = (payload: ChatCompletionsPayload): ChatCompletionsPayload => {
@@ -95,7 +82,7 @@ const rewriteOutboundPayload = (payload: ChatCompletionsPayload): ChatCompletion
 const rewriteInboundDeltas = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
   let changed = false;
   const choices = chunk.choices.map(choice => {
-    const delta = choice.delta as DeepseekReasoningDelta;
+    const delta = choice.delta as ChatCompletionsStreamEvent['choices'][number]['delta'] & { reasoning_content?: unknown };
     if (typeof delta.reasoning_content !== 'string') return choice;
 
     const { reasoning_content, ...rest } = delta;

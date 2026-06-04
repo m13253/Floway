@@ -5,17 +5,6 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { LlmTargetApi } from '@floway-dev/provider';
 
-// Stream-side helpers split id-rewrite from persistence. The id rewrite is a
-// sync, per-frame transform; persistence sits behind `onItemFinalized`, which
-// is awaited once per upstream id at the carrier's terminal frame before the
-// rewritten frame flows on.
-type ResponsesItemIdMapper = (upstreamId: string, itemType: string) => string;
-
-type ResponsesItemFinalizedHandler = (
-  originalItem: ResponsesInputItem,
-  newId: string,
-) => void | Promise<void>;
-
 // Wraps a Responses event stream to mint gateway-owned stored ids for every
 // output item and persist the matching rows. Runs inside `responsesAttempt`
 // after any cross-protocol translation, so the stream is always
@@ -25,7 +14,7 @@ type ResponsesItemFinalizedHandler = (
 // at the terminal `response.completed` / `response.incomplete` frame.
 // `onItemFinalized` is awaited before the terminal frame is yielded, so a
 // client that has seen the frame can reference the row on its next turn.
-export const wrapResponsesOutputForStorage = (
+export const wrapResponsesOutputForStorage = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
@@ -33,25 +22,17 @@ export const wrapResponsesOutputForStorage = (
     readonly snapshotMode: ResponsesSnapshotMode;
     readonly targetApi: LlmTargetApi;
   },
-): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
+): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const { store, upstream, snapshotMode, targetApi } = args;
   const upstreamToStored = new Map<string, string>();
 
-  const idMapper: ResponsesItemIdMapper = (upstreamId, itemType) => {
+  const idMapper = (upstreamId: string, itemType: string): string => {
     let storedId = upstreamToStored.get(upstreamId);
     if (storedId === undefined) {
       storedId = createStoredResponsesItemId(itemType);
       upstreamToStored.set(upstreamId, storedId);
     }
     return storedId;
-  };
-
-  const commitStoredItems = async (): Promise<void> => {
-    try {
-      await store.commitOutputItems();
-    } catch (error) {
-      console.error('Failed to persist stored Responses items:', error);
-    }
   };
 
   const commitSnapshot = async (responseId: string, mode: 'append' | 'replace'): Promise<void> => {
@@ -62,7 +43,7 @@ export const wrapResponsesOutputForStorage = (
     }
   };
 
-  const onItemFinalized: ResponsesItemFinalizedHandler = async (originalItem, newId) => {
+  const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
     const upstreamId = responsesItemId(originalItem);
     if (upstreamId === null) {
       throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
@@ -93,19 +74,13 @@ export const wrapResponsesOutputForStorage = (
       refreshedAt: now,
     };
     store.stageOutputItem(row);
-    await commitStoredItems();
+    try {
+      await store.commitOutputItems();
+    } catch (error) {
+      console.error('Failed to persist stored Responses items:', error);
+    }
   };
 
-  return streamWithStorageAndSnapshot(frames, idMapper, onItemFinalized, snapshotMode, commitSnapshot);
-};
-
-const streamWithStorageAndSnapshot = async function* (
-  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-  idMapper: ResponsesItemIdMapper,
-  onItemFinalized: ResponsesItemFinalizedHandler,
-  snapshotMode: ResponsesSnapshotMode,
-  commitSnapshot: (id: string, mode: 'append' | 'replace') => Promise<void>,
-): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   // `seenItemTypes` records item type for every upstream id we have mapped
   // via an item-bearing frame. Delta events carry only `item_id` with no
   // type, so we look the type up before re-invoking idMapper.
