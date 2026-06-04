@@ -1,15 +1,4 @@
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-
-interface ChatCompletionsSseFrameOptions {
-  includeUsageChunk: boolean;
-}
-
-const isUsageOnlyChunk = (frame: ProtocolFrame<ChatCompletionsStreamEvent>): boolean =>
-  frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
-
-export const chatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>, options: ChatCompletionsSseFrameOptions): SseFrame | null => {
-  if (frame.type === 'done') return sseFrame('[DONE]');
-  if (!options.includeUsageChunk && isUsageOnlyChunk(frame)) return null;
-  return sseFrame(JSON.stringify(frame.event));
-};
+// Re-export stub: events/to-sse.ts has been relocated to the per-protocol
+// `data-plane/llm/chat-completions/events/` directory. Remove this stub
+// once all legacy callers move alongside.
+export * from '../../../chat-completions/events/to-sse.ts';
