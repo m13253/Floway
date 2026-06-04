@@ -6,7 +6,7 @@ import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.t
 
 describe('createGatewayCtxFromHono', () => {
   test('copies auth fields when both are set', async () => {
-    const app = new Hono();
+    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       c.set('apiKeyId', 'key-1');
@@ -100,7 +100,7 @@ describe('createGatewayCtxFromHono', () => {
 
 describe('createGatewayCtxForWs', () => {
   test('copies auth fields from Hono context', async () => {
-    const app = new Hono();
+    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       c.set('apiKeyId', 'ws-key');
