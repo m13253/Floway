@@ -38,6 +38,9 @@ export interface LayeredStatefulResponsesStoreOptions {
   readonly itemWrites: readonly StatefulResponsesWriteTarget[];
   readonly snapshotWrites: readonly StatefulResponsesWriteTarget[];
   readonly stageInputs: boolean;
+  // When false, output item rows are written with null payload (metadata-only).
+  // Corresponds to the user-supplied store=false flag on Responses HTTP/WS entries.
+  readonly shouldStorePayload?: boolean;
 }
 
 // How a Responses turn should commit its snapshot:
@@ -58,6 +61,10 @@ export interface WebSocketStatefulResponsesStoragePolicy {
 }
 
 export interface StatefulResponsesStore {
+  readonly apiKeyId: string | null;
+  // False when the user requested store=false; output item rows are written with
+  // null payload (metadata-only) and no snapshot is committed.
+  readonly shouldStorePayload: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems<TSourceItems>(options: {
     readonly sourceItems: TSourceItems;
@@ -98,6 +105,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly durableItemIds = new Set<string>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
+
+  get apiKeyId(): string | null {
+    return this.options.apiKeyId;
+  }
+
+  get shouldStorePayload(): boolean {
+    return this.options.shouldStorePayload !== false;
+  }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
     const cached = this.snapshotsById.get(id);
@@ -564,6 +579,7 @@ export const createResponsesHttpStore = (apiKeyId: string | null, store: boolean
     itemWrites: [{ backing: new RepoStatefulResponsesBacking(getRepo), durable: true }],
     snapshotWrites: store === false ? [] : [{ backing: new RepoStatefulResponsesBacking(getRepo), durable: true }],
     stageInputs: store !== false,
+    shouldStorePayload: store !== false,
   });
 
 // For Responses WebSocket entry — session-scoped layered store.

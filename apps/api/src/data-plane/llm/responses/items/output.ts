@@ -1,0 +1,186 @@
+import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from '../../sources/responses/items/format.ts';
+import type { StatefulResponsesStore, ResponsesSnapshotMode } from './store.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { LlmTargetApi } from '@floway-dev/provider';
+import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import type { ResponsesItemIdMapper, ResponsesItemFinalizedHandler } from '@floway-dev/translate/via-responses/responses-items';
+
+// Wraps a Responses event stream to mint gateway-owned stored ids for every
+// output item and persist the matching rows. Runs inside `responsesAttempt`
+// after any cross-protocol translation, so the stream is always
+// Responses-shaped by the time it arrives here.
+//
+// Items are committed at their `done` frame and the snapshot is committed
+// at the terminal `response.completed` / `response.incomplete` frame.
+// `onItemFinalized` is awaited before the terminal frame is yielded, so a
+// client that has seen the frame can reference the row on its next turn.
+export const wrapResponsesOutputForStorage = (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  args: {
+    readonly store: StatefulResponsesStore;
+    readonly upstream: string;
+    readonly snapshotMode: ResponsesSnapshotMode;
+    readonly targetApi: LlmTargetApi;
+  },
+): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
+  const { store, upstream, snapshotMode, targetApi } = args;
+  const upstreamToStored = new Map<string, string>();
+
+  const idMapper: ResponsesItemIdMapper = (upstreamId, itemType) => {
+    let storedId = upstreamToStored.get(upstreamId);
+    if (storedId === undefined) {
+      storedId = createStoredResponsesItemId(itemType);
+      upstreamToStored.set(upstreamId, storedId);
+    }
+    return storedId;
+  };
+
+  const commitStoredItems = async (): Promise<void> => {
+    try {
+      await store.commitOutputItems();
+    } catch (error) {
+      console.error('Failed to persist stored Responses items:', error);
+    }
+  };
+
+  const commitSnapshot = async (responseId: string, mode: 'append' | 'replace'): Promise<void> => {
+    try {
+      await store.commitSnapshot(responseId, mode);
+    } catch (error) {
+      console.error('Failed to persist stored Responses snapshot:', error);
+    }
+  };
+
+  const onItemFinalized: ResponsesItemFinalizedHandler = async (originalItem, newId) => {
+    const row = await buildRow(newId, originalItem, { store, upstream, targetApi });
+    store.stageOutputItem(row);
+    await commitStoredItems();
+  };
+
+  return streamWithStorageAndSnapshot(frames, idMapper, onItemFinalized, snapshotMode, commitSnapshot);
+};
+
+const buildRow = async (
+  newId: string,
+  originalItem: ResponsesInputItem,
+  context: { store: StatefulResponsesStore; upstream: string; targetApi: LlmTargetApi },
+): Promise<StoredResponsesItem> => {
+  const { store, upstream, targetApi } = context;
+  const upstreamId = responsesItemId(originalItem);
+  if (upstreamId === null) {
+    throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
+  }
+  // A native Responses upstream owns its items — except those a source
+  // interceptor synthesized this request, whose gateway-minted ids the
+  // upstream never issued. Those persist with no upstream identity so they
+  // stay non_affinity.
+  const upstreamOwned = targetApi === 'responses' && !store.isSyntheticItem(upstreamId);
+  const encryptedContent = responsesItemEncryptedContent(originalItem);
+  // Interceptors register per-item server-only payloads under the wire id.
+  // Attaching it lets a later turn restore the real success/failure state
+  // even when the client stripped fields from the echoed wire item.
+  const privatePayload = store.getPrivatePayload(upstreamId);
+  const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
+  const now = Date.now();
+  return {
+    id: newId,
+    apiKeyId: store.apiKeyId,
+    upstreamId: upstreamOwned ? upstream : null,
+    upstreamItemId: upstreamOwned ? upstreamId : null,
+    itemType: originalItem.type,
+    origin: upstreamOwned ? 'upstream' : 'synthetic',
+    payload: store.shouldStorePayload ? persistedPayload : null,
+    contentHash: await hashResponsesItemContent(originalItem),
+    encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
+    createdAt: now,
+    refreshedAt: now,
+  };
+};
+
+const streamWithStorageAndSnapshot = async function* (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  idMapper: ResponsesItemIdMapper,
+  onItemFinalized: ResponsesItemFinalizedHandler,
+  snapshotMode: ResponsesSnapshotMode,
+  commitSnapshot: (id: string, mode: 'append' | 'replace') => Promise<void>,
+): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  // `seenItemTypes` records item type for every upstream id we have mapped
+  // via an item-bearing frame. Delta events carry only `item_id` with no
+  // type, so we look the type up before re-invoking idMapper.
+  const seenItemTypes = new Map<string, string>();
+  const finalized = new Set<string>();
+
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
+    }
+    const event = frame.event;
+
+    if (event.type === 'response.output_item.added') {
+      const upstreamId = itemId(event.item);
+      if (upstreamId === null) { yield frame; continue; }
+      seenItemTypes.set(upstreamId, event.item.type);
+      const newId = idMapper(upstreamId, event.item.type);
+      yield eventFrame({ ...event, item: { ...event.item, id: newId } });
+      continue;
+    }
+
+    if (event.type === 'response.output_item.done') {
+      const upstreamId = itemId(event.item);
+      if (upstreamId === null) { yield frame; continue; }
+      seenItemTypes.set(upstreamId, event.item.type);
+      const newId = idMapper(upstreamId, event.item.type);
+      if (!finalized.has(upstreamId)) {
+        finalized.add(upstreamId);
+        await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
+      }
+      yield eventFrame({ ...event, item: { ...event.item, id: newId } });
+      continue;
+    }
+
+    if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      const output: ResponsesInputItem[] = [];
+      for (const item of event.response.output) {
+        const upstreamId = itemId(item);
+        if (upstreamId === null) { output.push(item as unknown as ResponsesInputItem); continue; }
+        seenItemTypes.set(upstreamId, item.type);
+        const newId = idMapper(upstreamId, item.type);
+        if (!finalized.has(upstreamId)) {
+          finalized.add(upstreamId);
+          await onItemFinalized(item as unknown as ResponsesInputItem, newId);
+        }
+        output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
+      }
+      const responseId = event.response.id;
+      const rewritten = eventFrame({
+        ...event,
+        response: { ...event.response, output: output as typeof event.response.output },
+      });
+      yield rewritten;
+      if (snapshotMode !== 'none' && responseId) await commitSnapshot(responseId, snapshotMode);
+      return;
+    }
+
+    if (event.type === 'response.failed' || event.type === 'error') {
+      yield frame;
+      return;
+    }
+
+    const refId = (event as { item_id?: unknown }).item_id;
+    if (typeof refId === 'string') {
+      const knownType = seenItemTypes.get(refId);
+      if (knownType === undefined) { yield frame; continue; }
+      const newId = idMapper(refId, knownType);
+      yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
+      continue;
+    }
+    yield frame;
+  }
+};
+
+const itemId = (item: { id?: unknown }): string | null => {
+  const id = item.id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+};
