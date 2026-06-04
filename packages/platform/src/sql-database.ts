@@ -22,4 +22,10 @@ export interface SqlPreparedStatement {
 export interface SqlDatabase {
   prepare(query: string): SqlPreparedStatement;
   batch?(statements: SqlPreparedStatement[]): Promise<SqlResult[]>;
+  // Execute a SQL string that may contain multiple statements. Used by
+  // migration runners that need to apply hand-authored DDL files where a
+  // single statement contains a `;` (e.g. CREATE TRIGGER ... BEGIN ... END;)
+  // and a per-statement bind/run loop would mangle the body. Returns
+  // a runtime-defined value the contract does not promise to expose.
+  exec(sql: string): Promise<unknown>;
 }

@@ -45,6 +45,8 @@ class FakeSqlPreparedStatement {
 }
 
 class FakeSqlDatabase implements SqlDatabase {
+  exec(): Promise<unknown> { return Promise.resolve(undefined); }
+
   readonly config = new Map<string, string>();
 
   prepare(query: string): FakeSqlPreparedStatement {

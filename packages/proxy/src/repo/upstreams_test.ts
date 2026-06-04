@@ -472,6 +472,8 @@ class FakeUpstreamsSqlPreparedStatement {
 }
 
 class FakeUpstreamsSqlDatabase implements SqlDatabase {
+  exec(): Promise<unknown> { return Promise.resolve(undefined); }
+
   rows: FakeUpstreamRow[] = [];
 
   prepare(query: string): FakeUpstreamsSqlPreparedStatement {

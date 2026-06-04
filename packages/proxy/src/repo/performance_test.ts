@@ -198,6 +198,8 @@ type FakePerformanceBucketRow = FakePerformanceDimensionsRow & {
 };
 
 class FakePerformanceSqlDatabase implements SqlDatabase {
+  exec(): Promise<unknown> { return Promise.resolve(undefined); }
+
   summaries: FakePerformanceSummaryRow[] = [];
   buckets: FakePerformanceBucketRow[] = [];
 

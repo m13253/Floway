@@ -467,6 +467,8 @@ class FakeResponsesItemsSqlPreparedStatement {
 }
 
 class FakeResponsesItemsSqlDatabase implements SqlDatabase {
+  exec(): Promise<unknown> { return Promise.resolve(undefined); }
+
   rows: FakeResponsesItemRow[] = [];
 
   prepare(query: string): FakeResponsesItemsSqlPreparedStatement {

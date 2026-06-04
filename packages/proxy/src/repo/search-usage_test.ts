@@ -259,6 +259,8 @@ class FakeSqlPreparedStatement {
 }
 
 class FakeSqlDatabase implements SqlDatabase {
+  exec(): Promise<unknown> { return Promise.resolve(undefined); }
+
   rows: Array<{
     provider: string;
     key_id: string;
