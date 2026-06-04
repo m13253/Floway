@@ -7,6 +7,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -391,9 +392,12 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
   assertEquals(expanded.input[0], { type: 'item_reference', id });
 });
 
-// chatCompletionsAttempt remains a stub until Task 24 lands; the
-// chat-completions translate-out test stays skipped until then.
 const makeMessagesProtocolFrames = async function* (events: readonly MessagesStreamEvent[]): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+  for (const event of events) yield eventFrame(event);
+  yield doneFrame();
+};
+
+const makeChatCompletionsProtocolFrames = async function* (events: readonly ChatCompletionsStreamEvent[]): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
@@ -457,4 +461,61 @@ test('generate falls through translate-out to messages target', async () => {
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
-test.skip('generate falls through translate-out to chat-completions target', () => {});
+test('generate falls through translate-out to chat-completions target', async () => {
+  installRepo();
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true,
+    events: makeChatCompletionsProtocolFrames([
+      {
+        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+      },
+      {
+        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+      },
+      {
+        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      },
+      {
+        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+        choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+      },
+    ]),
+    modelKey: 'chat-completions-key',
+  }));
+  // Build a candidate with targetApi='chat-completions' whose provider answers
+  // callChatCompletions — the translate-out branch routes through
+  // chatCompletionsAttempt and calls provider.callChatCompletions instead of
+  // provider.callResponses.
+  const upstreamModel = stubUpstreamModel();
+  const provider = stubProvider({ callChatCompletions });
+  const candidate: ProviderCandidate = {
+    provider: {
+      upstream: 'up_c', providerKind: 'custom', name: 'up_c',
+      disabledPublicModelIds: [], provider, supportsResponsesItemReference: true,
+    },
+    binding: {
+      upstream: 'up_c', upstreamName: 'up_c', providerKind: 'custom',
+      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
+      supportsResponsesItemReference: true,
+    },
+    targetApi: 'chat-completions',
+  };
+  queueCandidates([candidate]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  // The translate trip wraps the upstream Chat Completions events back into
+  // Responses events; draining proves the cross-protocol path composes
+  // without throwing.
+  await collectEvents(result.events);
+  assertEquals(callChatCompletions.mock.calls.length, 1);
+});

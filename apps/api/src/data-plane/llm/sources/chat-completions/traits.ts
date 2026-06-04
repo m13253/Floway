@@ -1,6 +1,7 @@
 import { chatCompletionsSourceInterceptors } from './interceptors/index.ts';
 import { respondChatCompletions } from './respond.ts';
-import { type ChatCompletionsInvocation, type LlmTargetApi, runInterceptors } from '../../interceptors.ts';
+import { type ChatCompletionsInvocation, type LlmTargetApi, type RequestContext, runInterceptors } from '../../interceptors.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
@@ -13,6 +14,22 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ExecuteResult, ProviderModelRecord } from '@floway-dev/provider';
 import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+
+// Thin adapter for the legacy traits glue: respondChatCompletions now takes
+// GatewayCtx (per the new per-protocol entry shape), so the RequestContext
+// threaded through the legacy serveLlm runtime is mapped onto the same fields.
+// This helper exists only here — Task 27 removes the entire legacy entry layer.
+const requestContextToGatewayCtx = (request: RequestContext, downstreamAbortController: AbortController | undefined): GatewayCtx => ({
+  apiKeyId: request.apiKeyId ?? null,
+  apiKeyUpstreamIds: request.apiKeyUpstreamIds,
+  headers: new Headers(),
+  ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
+  wantsStream: request.clientStream,
+  scheduleBackground: request.scheduleBackground !== undefined
+    ? (fn: () => Promise<void> | void) => request.scheduleBackground!(Promise.resolve(fn()))
+    : () => {},
+  requestStartedAt: request.requestStartedAt,
+});
 
 const chatCompletionsInvocation = <TPayload extends { model: string }>(
   binding: ProviderModelRecord,
@@ -61,7 +78,7 @@ const INCLUDE_USAGE_CHUNK_KEY = 'chatCompletionsIncludeUsageChunk';
 
 const chatCompletionsGenerate: LlmHttpEndpoint<readonly ChatCompletionsMessage[], ChatCompletionsStreamEvent> = {
   respond: async ({ c, result, runtime }) =>
-    await respondChatCompletions(c, result, runtime.wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, runtime.request, runtime.downstreamAbortController),
+    await respondChatCompletions(c, result, runtime.wantsStream, c.get(INCLUDE_USAGE_CHUNK_KEY) === true, requestContextToGatewayCtx(runtime.request, runtime.downstreamAbortController)),
   prepare: async c => {
     const payload = await c.req.json<ChatCompletionsPayload>();
     c.set(INCLUDE_USAGE_CHUNK_KEY, payload.stream_options?.include_usage === true);
