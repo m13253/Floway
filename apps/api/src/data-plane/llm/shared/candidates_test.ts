@@ -34,7 +34,6 @@ const pickMessagesOrResponses = (e: ModelEndpoints): LlmTargetApi | null =>
 const pickResponses = (e: ModelEndpoints): LlmTargetApi | null =>
   e.responses ? 'responses' : null;
 
-// Prefer messages, fall back to responses, then chat-completions.
 const pickAny = (e: ModelEndpoints): LlmTargetApi | null =>
   e.messages ? 'messages' : e.responses ? 'responses' : e.chatCompletions ? 'chat-completions' : null;
 
@@ -122,7 +121,6 @@ describe('enumerateProviderCandidates', () => {
       pickTarget: pickMessages,
     });
 
-    // apiKeyUpstreamIds order is preserved (up_c first, then up_a).
     assertEquals(candidates.length, 2);
     assertEquals(candidates[0].provider.upstream, 'up_c');
     assertEquals(candidates[1].provider.upstream, 'up_a');

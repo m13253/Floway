@@ -1,7 +1,6 @@
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { LlmSourceApi, LlmTargetApi } from '@floway-dev/provider';
-import type { ModelProviderInstance, ProviderModelRecord } from '@floway-dev/provider';
+import type { LlmSourceApi, LlmTargetApi, ModelProviderInstance, ProviderModelRecord } from '@floway-dev/provider';
 
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
@@ -9,13 +8,15 @@ export interface ProviderCandidate {
   readonly targetApi: LlmTargetApi;
 }
 
-export const enumerateProviderCandidates = async (input: {
+export const enumerateProviderCandidates = async ({
+  apiKeyUpstreamIds, model, pickTarget,
+  sourceApi: _sourceApi,
+}: {
   apiKeyUpstreamIds: readonly string[] | null;
   model: string;
   sourceApi: LlmSourceApi;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
 }): Promise<readonly ProviderCandidate[]> => {
-  const { apiKeyUpstreamIds, model, pickTarget } = input;
   const providers = await listModelProviders(apiKeyUpstreamIds);
   const candidates: ProviderCandidate[] = [];
 
