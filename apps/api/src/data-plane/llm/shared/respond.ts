@@ -1,11 +1,9 @@
+import type { StreamCompletion } from './stream/proxy-sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { recordRequestPerformanceForApiKey } from '../../shared/telemetry/performance.ts';
-import { hasTokenUsage, recordTokenUsageForApiKey } from '../../shared/telemetry/usage.ts';
-import type { RequestContext } from '../interceptors.ts';
-import type { StreamCompletion } from '../shared/stream/proxy-sse.ts';
+import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
-import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 // Emits a measurement endpoint's already-shaped body verbatim. The endpoint's
 // `attempt` owns all shaping — the success body and any source-specific error
@@ -52,11 +50,3 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
   });
-
-export const recordSourceUsage = async (request: RequestContext, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  if (usage && hasTokenUsage(usage)) await recordTokenUsageForApiKey(request.apiKeyId, modelIdentity, usage);
-};
-
-export const recordSourcePerformance = (request: RequestContext, context: EventResultMetadata['performance'], failed: boolean): void => {
-  recordRequestPerformanceForApiKey(request.apiKeyId, request.scheduleBackground, context, failed, performance.now() - request.requestStartedAt);
-};

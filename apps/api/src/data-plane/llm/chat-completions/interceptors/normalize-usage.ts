@@ -1,5 +1,5 @@
-import { asJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatCompletionsInterceptor } from './types.ts';
+import { asJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 

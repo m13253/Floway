@@ -14,6 +14,7 @@ import {
   type UpstreamTerminal,
 } from './server-tool-shim.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
+import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
@@ -26,7 +27,6 @@ import type {
   WebSearchProviderRequest,
   WebSearchProviderResult,
 } from '../../../tools/web-search/types.ts';
-import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';

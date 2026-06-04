@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
 import { classifyResponsesItemAffinity } from './affinity.ts';
+import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
+import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import { createNonResponsesSourceStore } from './store.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';

@@ -2,7 +2,6 @@ import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import type { ResponsesInvocation } from '../types.ts';
 import { serverToolResultSlot } from '../server-tool-shim.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';

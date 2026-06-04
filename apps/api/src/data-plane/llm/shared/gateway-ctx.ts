@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 
 export interface GatewayCtx {

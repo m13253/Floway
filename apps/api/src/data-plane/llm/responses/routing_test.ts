@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { createStoredResponsesItemId } from './items/format.ts';
-import { planResponsesRouting } from './routing.ts';
 import { createNonResponsesSourceStore } from './items/store.ts';
+import { planResponsesRouting } from './routing.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';

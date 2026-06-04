@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 import type { ResponsesInvocation } from './types.ts';
+import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';

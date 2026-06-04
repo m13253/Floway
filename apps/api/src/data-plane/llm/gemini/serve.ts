@@ -33,8 +33,7 @@ export const geminiServe = {
       model,
       sourceApi: 'gemini',
       // Gemini has no native upstream target in the provider API; prefer
-      // Chat Completions, then Messages, then Responses. Matches legacy
-      // `sources/gemini/traits.ts:93`.
+      // Chat Completions, then Messages, then Responses.
       pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
     });
     const decision = await planGeminiRouting({ payload, candidates, store });

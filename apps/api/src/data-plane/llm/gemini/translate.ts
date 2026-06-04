@@ -38,8 +38,8 @@ export const translateGeminiToMessagesForCountTokens = async (
   const { stream: _stream, ...countPayload } = trip.target;
   return {
     target: countPayload,
-    // eslint-disable-next-line require-yield
-    events: async function* () {
+
+    async *events() {
       throw new Error('translateGeminiToMessagesForCountTokens: events translator is not used in countTokens path');
     },
   };

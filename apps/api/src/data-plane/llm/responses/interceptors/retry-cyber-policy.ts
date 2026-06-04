@@ -1,5 +1,5 @@
-import { isObjectLike } from '../../../../shared/json-helpers.ts';
 import type { ResponsesInterceptor } from './types.ts';
+import { isObjectLike } from '../../../../shared/json-helpers.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';

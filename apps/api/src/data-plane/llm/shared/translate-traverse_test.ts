@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
+import { traverseTranslation } from './translate-traverse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
-import { traverseTranslation } from './translate-traverse.ts';
 
 // Fake event types — no real protocol types needed.
 type SrcEvent = { kind: 'src'; value: string };
@@ -13,7 +13,7 @@ const translate = async (payload: string): Promise<{
   events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
 }> => ({
   target: `translated(${payload})`,
-  events: async function* (frames) {
+  async *events(frames) {
     for await (const frame of frames) {
       if (frame.type === 'done') {
         yield doneFrame();

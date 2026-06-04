@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import type { ResponsesInvocation } from './types.ts';
+import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';

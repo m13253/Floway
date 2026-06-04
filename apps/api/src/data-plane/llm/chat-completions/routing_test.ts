@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
 import { planChatCompletionsRouting } from './routing.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createStoredResponsesItemId } from '../responses/items/format.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { createStoredResponsesItemId } from '../responses/items/format.ts';
+import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';

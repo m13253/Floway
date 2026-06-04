@@ -2,19 +2,18 @@
 // per-upstream behavior flag exposed by the dashboard, validated by the
 // /api/upstreams endpoint, and stored in upstreams.flag_overrides.
 //
-// The catalog only describes flags. Source/target interceptor code
-// references a flag by id; the dependency goes interceptor → flag, never
-// the other way. This makes "one flag drives multiple interceptors" trivial
-// and keeps the catalog free of runtime closures.
+// The catalog only describes flags. Interceptor code references a flag by
+// id; the dependency goes interceptor → flag, never the other way. This
+// makes "one flag drives multiple interceptors" trivial and keeps the
+// catalog free of runtime closures.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) each
-// own a dedicated last-running interceptor under the api's targets/<api>/
-// interceptors/ directory. That interceptor translates the gateway's
-// OpenAI-canonical request and response shape into the vendor's wire
-// dialect. With no vendor flag set, behavior defaults to the OpenAI standard
-// and no vendor rewrite runs. Vendor flags are mutually exclusive per
-// binding — the dashboard surfaces them as a single radio rather than three
-// independent toggles.
+// own a dedicated last-running interceptor on the api side. That
+// interceptor translates the gateway's OpenAI-canonical request and
+// response shape into the vendor's wire dialect. With no vendor flag set,
+// behavior defaults to the OpenAI standard and no vendor rewrite runs.
+// Vendor flags are mutually exclusive per binding — the dashboard surfaces
+// them as a single radio rather than three independent toggles.
 
 import type { UpstreamProviderKind } from './model.ts';
 

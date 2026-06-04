@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+
 import { responsesItemsView } from './view.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 describe('responsesItemsView', () => {
   it('visits items in order', async () => {

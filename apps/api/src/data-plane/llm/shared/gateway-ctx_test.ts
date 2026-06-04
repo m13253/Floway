@@ -1,8 +1,8 @@
-import { describe, test } from 'vitest';
 import { Hono } from 'hono';
+import { describe, test } from 'vitest';
 
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
 import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.ts';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 describe('createGatewayCtxFromHono', () => {
   test('copies auth fields when both are set', async () => {

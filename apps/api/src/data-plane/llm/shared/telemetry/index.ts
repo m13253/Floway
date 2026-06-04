@@ -1,7 +1,7 @@
+import type { NonLlmServeApiName } from '../../../shared/api-names.ts';
 import { type PerformanceTelemetryContext, recordPerformanceError, recordPerformanceLatency } from '../../../shared/telemetry/performance.ts';
 import type { Invocation, RequestContext } from '../../interceptors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { NonLlmServeApiName } from '../../../shared/api-names.ts';
 import { type PerformanceApiName, type TelemetryModelIdentity, type ProviderStreamResult, type UpstreamErrorResult, type ExecuteResult, type InternalErrorResult, eventResult, internalErrorResult } from '@floway-dev/provider';
 import { toInternalDebugError, readUpstreamError } from '@floway-dev/provider';
 

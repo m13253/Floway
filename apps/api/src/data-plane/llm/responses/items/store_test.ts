@@ -1,8 +1,7 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
-import { prepareStoredResponsesItemsForSource } from '../../sources/responses/items/request-plan.ts';
-import { createNonResponsesSourceStore, createResponsesHttpStore, createResponsesWsSession } from './store.ts';
+import { createStoredResponsesItemId } from './format.ts';
+import { createNonResponsesSourceStore, createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
@@ -23,81 +22,6 @@ const storedRow = (overrides: Partial<StoredResponsesItem> & Pick<StoredResponse
   createdAt: 1_000,
   refreshedAt: 1_000,
   ...overrides,
-});
-
-test('encrypted-content lookup refreshes only the selected compatible candidate', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const encryptedContent = 'shared-encrypted-content';
-  const encryptedContentHash = await hashResponsesItemEncryptedContent(encryptedContent);
-  const compatible = storedRow({
-    id: createStoredResponsesItemId('reasoning'),
-    itemType: 'reasoning',
-    upstreamId: 'up_a',
-    upstreamItemId: 'raw_rs_a',
-    encryptedContentHash,
-    createdAt: 2_000,
-    refreshedAt: 2_000,
-  });
-  const incompatible = storedRow({
-    id: createStoredResponsesItemId('message'),
-    itemType: 'message',
-    upstreamId: 'up_b',
-    upstreamItemId: 'raw_msg_b',
-    encryptedContentHash,
-    createdAt: 3_000,
-    refreshedAt: 3_000,
-  });
-  await repo.responsesItems.insertMany([compatible, incompatible]);
-
-  const input = [{ type: 'reasoning', encrypted_content: encryptedContent, summary: [] }] as unknown as ResponsesInputItem[];
-  const store = createResponsesHttpStore(API_KEY_ID, undefined);
-  await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
-  await prepareStoredResponsesItemsForSource(input, responsesItemsView, store);
-  await store.refreshTouchedItems();
-
-  const [readCompatible, readIncompatible] = await repo.responsesItems.lookupMany(API_KEY_ID, [compatible.id, incompatible.id]);
-  assertExists(readCompatible);
-  assertExists(readIncompatible);
-  assertEquals(readCompatible.refreshedAt > compatible.refreshedAt, true);
-  assertEquals(readIncompatible.refreshedAt, incompatible.refreshedAt);
-});
-
-test('websocket local incompatible encrypted-content candidates do not mask durable compatible rows', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const encryptedContent = 'websocket-shared-encrypted-content';
-  const encryptedContentHash = await hashResponsesItemEncryptedContent(encryptedContent);
-  const localIncompatible = storedRow({
-    id: createStoredResponsesItemId('message'),
-    itemType: 'message',
-    upstreamId: 'up_local',
-    upstreamItemId: 'raw_msg_local',
-    encryptedContentHash,
-    createdAt: 3_000,
-    refreshedAt: 3_000,
-  });
-  const durableCompatible = storedRow({
-    id: createStoredResponsesItemId('reasoning'),
-    itemType: 'reasoning',
-    upstreamId: 'up_durable',
-    upstreamItemId: 'raw_rs_durable',
-    encryptedContentHash,
-    createdAt: 2_000,
-    refreshedAt: 2_000,
-  });
-  await repo.responsesItems.insertMany([durableCompatible]);
-  const session = createResponsesWsSession(API_KEY_ID);
-  const localStore = session.createStore(false);
-  localStore.stageOutputItem(localIncompatible);
-  await localStore.commitOutputItems();
-
-  const input = [{ type: 'reasoning', encrypted_content: encryptedContent, summary: [] }] as unknown as ResponsesInputItem[];
-  const store = session.createStore(undefined);
-  await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
-  const prepared = await prepareStoredResponsesItemsForSource(input, responsesItemsView, store);
-
-  assertEquals(prepared.references[0].row?.id, durableCompatible.id);
 });
 
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {

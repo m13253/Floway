@@ -4,7 +4,7 @@ import { recordUpstreamHttpFailure, withUpstreamTelemetry } from './index.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { Invocation, RequestContext } from '../../interceptors.ts';
-import { createHttpStatefulResponsesStore } from '../../sources/responses/stateful-store.ts';
+import { createResponsesHttpStore } from '../../responses/items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
@@ -55,7 +55,7 @@ const baseRequest = (
   apiKeyUpstreamIds: null,
   apiKeyId: 'apiKeyId' in overrides ? overrides.apiKeyId : 'key_a',
   clientStream: overrides.stream ?? true,
-  statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
+  statefulResponsesStore: createResponsesHttpStore(null, undefined),
   runtimeLocation: 'SJC',
   scheduleBackground: (promise: Promise<unknown>) => {
     harness.background.push(promise);
@@ -311,7 +311,7 @@ test('withUpstreamTelemetry skips recording when apiKeyId is absent', async () =
       requestStartedAt: 0,
       apiKeyUpstreamIds: null,
       clientStream: true,
-      statefulResponsesStore: createHttpStatefulResponsesStore(null, undefined),
+      statefulResponsesStore: createResponsesHttpStore(null, undefined),
       runtimeLocation: 'SJC',
       scheduleBackground: promise => background.push(promise),
     },
