@@ -2,8 +2,6 @@ import type { Context } from 'hono';
 
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
-export type { BackgroundScheduler };
-
 let _resolver: ((c: Context) => BackgroundScheduler) | null = null;
 
 export const initBackgroundSchedulerResolver = (

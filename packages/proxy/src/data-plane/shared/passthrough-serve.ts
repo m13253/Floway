@@ -22,9 +22,9 @@ import { recordPerformanceError, recordPerformanceLatency, recordRequestPerforma
 import { recordTokenUsageForApiKey } from './telemetry/usage.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import type { BackgroundScheduler } from '../../runtime/background.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord } from '@floway-dev/provider';
 

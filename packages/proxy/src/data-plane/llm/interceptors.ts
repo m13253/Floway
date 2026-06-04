@@ -1,6 +1,6 @@
-import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { StatefulResponsesStore } from './sources/responses/stateful-store.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';

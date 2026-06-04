@@ -100,10 +100,6 @@ export const compressBytesToWebp = async (
 // end-to-end. Interceptor behaviour (which images are rewritten, what target
 // is computed) is asserted against dedicated spy processors in the
 // interceptor tests, not against this stub.
-class InMemoryImageProcessor implements ImageProcessor {
-  compressToWebp(input: Uint8Array, _target: ImageDimensions | null): Promise<Uint8Array> {
-    return Promise.resolve(input);
-  }
-}
-
-export const createInMemoryImageProcessor = (): ImageProcessor => new InMemoryImageProcessor();
+export const createInMemoryImageProcessor = (): ImageProcessor => ({
+  compressToWebp: input => Promise.resolve(input),
+});

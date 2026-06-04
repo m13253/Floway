@@ -1,9 +1,10 @@
 import type { Context } from 'hono';
 
 import { createHttpStatefulResponsesStore, type StatefulResponsesStore } from './responses/stateful-store.ts';
-import { backgroundSchedulerFromContext, type BackgroundScheduler } from '../../../runtime/background.ts';
+import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { RequestContext } from '../interceptors.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface CreateRequestContextInput {
   apiKeyId?: string;
