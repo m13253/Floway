@@ -11,10 +11,9 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { responsesResultToEvents, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, readUpstreamError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
-import { compactionResponse } from '@floway-dev/provider-copilot/compaction';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -69,26 +68,15 @@ export const responsesAttempt = {
     }
     const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
 
-    // Capture the rewritten input from the chain's last invocation so the
-    // post-chain compaction reshape sees the same items the upstream did.
-    // Retry interceptors may invoke `run` multiple times; the latest call
-    // wins, matching the events the chain actually emitted.
-    let rewrittenInput: ResponsesInputItem[] | null = null;
-
     const chainResult = await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
-      rewrittenInput = inputAsItems(rewritten.payload.input);
-      return await callResponsesAsExecuteResult(rewritten.payload, ctx, candidate, invocation.headers);
+      return await callResponsesCompactAsExecuteResult(rewritten.payload, ctx, candidate, invocation.headers);
     });
 
     if (chainResult.type !== 'events') return chainResult;
-    if (rewrittenInput === null) {
-      throw new Error('responsesAttempt.compact: chain returned events without invoking the provider call');
-    }
 
-    const generated = await collectResponsesProtocolEventsToResult(chainResult.events);
-    const compacted = compactionResponse(rewrittenInput, generated);
+    const compacted = await collectResponsesProtocolEventsToResult(chainResult.events);
     // Drive storage and snapshot via the same wrapper generate uses; the
     // events here are synthesized from the compaction envelope so the
     // upstream-owned ids it carries persist identically to a native call.
@@ -204,6 +192,38 @@ const callResponsesAsExecuteResult = async (
   return await providerStreamResultToExecuteResult(providerResult, candidate);
 };
 
+// `/responses/compact` is non-streaming: the provider returns the compaction
+// envelope as a value (Copilot rebuilds it from a `compaction_trigger` turn,
+// custom upstreams call native `/responses/compact`), so we synthesize the
+// canonical event frames here instead of pretending the result came from an
+// SSE body. `model` is positional, `stream` and `store` are gateway-only and
+// must not reach the wire — `store` is a snapshot-persistence hint, the
+// upstream compact endpoint rejects it.
+const callResponsesCompactAsExecuteResult = async (
+  payload: ResponsesPayload,
+  ctx: GatewayCtx,
+  candidate: ProviderCandidate,
+  invocationHeaders: Record<string, string>,
+): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const { model: _model, stream: _stream, store: _store, ...body } = payload;
+  const providerResult = await candidate.binding.provider.callResponsesCompact(
+    candidate.binding.upstreamModel,
+    body,
+    ctx.abortSignal,
+    mergeInvocationHeaders(ctx.headers, invocationHeaders),
+  );
+  if (!providerResult.ok) return await readUpstreamError(providerResult.response);
+  return eventResult(
+    compactionFrames(providerResult.result),
+    telemetryModelIdentity(candidate, providerResult.modelKey),
+  );
+};
+
+const compactionFrames = async function* (result: ResponsesResult): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  yield* responsesResultToEvents(result, { genericOutputItems: true });
+  yield doneFrame();
+};
+
 const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ProviderCandidate,
@@ -239,6 +259,3 @@ const mergeInvocationHeaders = (ctxHeaders: Headers, invocationHeaders: Record<s
   for (const [key, value] of Object.entries(invocationHeaders)) merged[key] = value;
   return merged;
 };
-
-const inputAsItems = (input: ResponsesPayload['input']): ResponsesInputItem[] =>
-  typeof input === 'string' ? [{ type: 'message', role: 'user', content: input }] : [...input];

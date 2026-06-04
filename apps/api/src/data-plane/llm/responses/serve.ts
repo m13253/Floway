@@ -66,15 +66,17 @@ export const responsesServe = {
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
     const { payload, ctx, store } = args;
-    // Compact has no `previous_response_id` semantics — the request narrows to
-    // a single retain+compaction turn on the input present in the body.
+    // Compact accepts `previous_response_id` (the official endpoint documents
+    // it). When present we expand it the same way generate does so the
+    // upstream sees the same item_reference + current input shape.
+    const prepared = await expandPreviousResponseId(payload, store);
     const candidates = await enumerateProviderCandidates({
       apiKeyUpstreamIds: ctx.apiKeyUpstreamIds,
-      model: payload.model,
+      model: prepared.model,
       sourceApi: 'responses',
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
-    const decision = await planResponsesRouting({ payload, candidates, store });
+    const decision = await planResponsesRouting({ payload: prepared, candidates, store });
     if (decision.kind === 'failure') return renderResponsesFailure(decision.failure, 'compact');
     await stageUserInputItems(payload.input, store);
 
@@ -82,12 +84,12 @@ export const responsesServe = {
     // internal-error envelopes are final, not a hint to try another
     // upstream. Iteration only loops if the candidate list is empty.
     for (const candidate of decision.candidates) {
-      return await responsesAttempt.compact({ payload, ctx, store, candidate });
+      return await responsesAttempt.compact({ payload: prepared, ctx, store, candidate });
     }
     return renderResponsesFailure(
       candidates.length > 0
-        ? { kind: 'model-unsupported', model: payload.model }
-        : { kind: 'model-missing', model: payload.model },
+        ? { kind: 'model-unsupported', model: prepared.model }
+        : { kind: 'model-missing', model: prepared.model },
       'compact',
     );
   },
