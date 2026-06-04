@@ -4,6 +4,7 @@ import type { ResponsesItemsView } from './view.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { LlmServeFailure } from '../../shared/errors.ts';
+import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 export type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -17,12 +18,6 @@ export interface StoredResponsesItemRef {
 export interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
   row?: StoredResponsesItem;
   affinity?: StoredResponsesAffinity;
-}
-
-export interface ResponsesItemAffinityResult {
-  kind: 'success' | 'failure';
-  candidates?: readonly ProviderCandidate[];
-  failure?: LlmServeFailure;
 }
 
 const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem & { upstreamId: string } =>
@@ -130,7 +125,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   // matches one of them. Without this, a duplicate user message resent on
   // a later turn cannot be reused — it would mint a fresh row each time.
   inputItemsToStage?: readonly ResponsesInputItem[];
-}): Promise<ResponsesItemAffinityResult> => {
+}): Promise<RoutingDecision> => {
   const { sourceItems, view, store, candidates, inputItemsToStage } = input;
   await store.loadInputItems({
     sourceItems,

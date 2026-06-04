@@ -23,13 +23,11 @@ export const planResponsesRouting = async (input: {
   const inputItemsToStage: readonly ResponsesInputItem[] = typeof input.payload.input === 'string'
     ? [{ type: 'message', role: 'user', content: input.payload.input }]
     : input.payload.input;
-  const result = await classifyResponsesItemAffinity({
+  return await classifyResponsesItemAffinity({
     sourceItems,
     view: responsesItemsView,
     store: input.store,
     candidates: input.candidates,
     inputItemsToStage,
   });
-  if (result.kind === 'failure') return { kind: 'failure', failure: result.failure! };
-  return { kind: 'success', candidates: result.candidates! };
 };

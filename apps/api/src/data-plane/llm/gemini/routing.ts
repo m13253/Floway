@@ -11,13 +11,10 @@ export const planGeminiRouting = async (input: {
   readonly payload: GeminiPayload;
   readonly candidates: readonly ProviderCandidate[];
   readonly store: StatefulResponsesStore;
-}): Promise<GeminiRoutingDecision> => {
-  const result = await classifyResponsesItemAffinity({
+}): Promise<GeminiRoutingDecision> =>
+  await classifyResponsesItemAffinity({
     sourceItems: input.payload.contents ?? [],
     view: geminiViaResponsesItemsView,
     store: input.store,
     candidates: input.candidates,
   });
-  if (result.kind === 'failure') return { kind: 'failure', failure: result.failure! };
-  return { kind: 'success', candidates: result.candidates! };
-};
