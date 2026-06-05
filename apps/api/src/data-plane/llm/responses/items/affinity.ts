@@ -9,13 +9,10 @@ import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/res
 
 type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
 
-interface StoredResponsesItemRef {
+interface ResolvedStoredResponsesItemRef {
   type: string;
   id?: string;
   encryptedContent?: string;
-}
-
-interface ResolvedStoredResponsesItemRef extends StoredResponsesItemRef {
   row?: StoredResponsesItem;
   affinity?: StoredResponsesAffinity;
 }
@@ -70,12 +67,6 @@ const findUnexpandedItemReferenceForcingId = (
     && ref.type === 'item_reference'
     && ref.row?.upstreamId === upstreamId
     && ref.row.payload === null)?.id ?? null;
-
-const selectEncryptedContentRow = (
-  ref: StoredResponsesItemRef,
-  candidates: readonly StoredResponsesItem[],
-): StoredResponsesItem | undefined =>
-  candidates.find(row => ref.type === 'item_reference' || row.itemType === ref.type) ?? candidates[0];
 
 const collectStoredResponsesItemRefs = async <TSourceItems>(
   sourceItems: TSourceItems,
@@ -150,7 +141,12 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   const failures: LlmServeFailure[] = [];
   for (const ref of references) {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
-      ?? (ref.encryptedContent !== undefined ? selectEncryptedContentRow(ref, store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!)) : undefined);
+      ?? (ref.encryptedContent !== undefined
+        ? (() => {
+            const candidates = store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!);
+            return candidates.find(r => ref.type === 'item_reference' || r.itemType === ref.type) ?? candidates[0];
+          })()
+        : undefined);
     if (row === undefined) {
       if (ref.type === 'item_reference') {
         // `item_reference` is enforced by collectStoredResponsesItemRefs to

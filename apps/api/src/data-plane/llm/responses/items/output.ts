@@ -35,14 +35,6 @@ export const wrapResponsesOutputForStorage = async function* (
     return storedId;
   };
 
-  const commitSnapshot = async (responseId: string, mode: 'append' | 'replace'): Promise<void> => {
-    try {
-      await store.commitSnapshot(responseId, mode);
-    } catch (error) {
-      console.error('Failed to persist stored Responses snapshot:', error);
-    }
-  };
-
   const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
     const upstreamId = responsesItemId(originalItem);
     if (upstreamId === null) {
@@ -139,7 +131,13 @@ export const wrapResponsesOutputForStorage = async function* (
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
       // ordering matches a synchronous emit.
-      if (snapshotMode !== 'none' && responseId) await commitSnapshot(responseId, snapshotMode);
+      if (snapshotMode !== 'none' && responseId) {
+        try {
+          await store.commitSnapshot(responseId, snapshotMode);
+        } catch (error) {
+          console.error('Failed to persist stored Responses snapshot:', error);
+        }
+      }
       yield rewritten;
       return;
     }

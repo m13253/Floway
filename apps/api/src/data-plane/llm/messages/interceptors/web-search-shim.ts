@@ -13,7 +13,6 @@ import type {
   MessagesPayload,
   MessagesSearchResultBlock,
   MessagesStreamEvent,
-  MessagesTextBlock,
   MessagesTextCitation,
   MessagesTool,
   MessagesToolResultBlock,
@@ -157,7 +156,7 @@ const hasExactKeys = (value: Record<string, unknown>, keys: string[]): boolean =
   return actualKeys.length === keys.length && actualKeys.every(key => keys.includes(key));
 };
 
-const isNonNegativeInteger = (value: unknown): value is number => Number.isInteger(value) && typeof value === 'number' && value >= 0;
+const isNonNegativeInteger = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 
 const isShimWebSearchResultPayload = (value: unknown): value is ShimWebSearchResultPayload => {
   if (!isJsonObject(value)) {
@@ -212,14 +211,6 @@ const isWebSearchToolResultError = (value: unknown): value is MessagesWebSearchT
 const toUpstreamToolUseId = (toolUseId: string): string => (toolUseId.startsWith('srvtoolu_') ? `toolu_${toolUseId.slice('srvtoolu_'.length)}` : toolUseId);
 
 const toNativeServerToolUseId = (toolUseId: string): string => (toolUseId.startsWith('toolu_') ? `srvtoolu_${toolUseId.slice('toolu_'.length)}` : toolUseId);
-
-const toUserContentBlocks = (content: string | MessagesUserContentBlock[]): MessagesUserContentBlock[] => (typeof content === 'string' ? [{ type: 'text', text: content }] : [...content]);
-
-const mapTextBlockCitations = (block: MessagesTextBlock, mapCitation: (citation: MessagesTextCitation) => MessagesTextCitation): MessagesTextBlock => ({
-  type: 'text',
-  text: block.text,
-  ...(block.citations ? { citations: block.citations.map(mapCitation) } : {}),
-});
 
 const buildUpstreamSearchResultBlock = (result: MessagesWebSearchResultBlock, decoded: NonNullable<ReturnType<typeof decodeWebSearchResultPayload>>): MessagesSearchResultBlock => ({
   type: 'search_result',
@@ -395,7 +386,7 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
 
       if (pendingOwnedReplayToolResults.length > 0 && Array.isArray(message.content) && message.content.some(block => block.type === 'tool_result')) {
         const toolResults = pendingOwnedReplayToolResults.map(({ upstreamToolResult }) => upstreamToolResult);
-        rewrittenMessages.push({ role: 'user', content: [...toolResults, ...toUserContentBlocks(message.content)] });
+        rewrittenMessages.push({ role: 'user', content: [...toolResults, ...(typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content)] });
         requestSearchResultOwnership.push(...pendingOwnedReplayToolResults.flatMap(({ searchResultOwnership }) => searchResultOwnership), ...foreignSearchResultOwnership);
         pendingOwnedReplayToolResults = [];
         continue;
@@ -439,7 +430,11 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
         return [block];
       }
 
-      return [mapTextBlockCitations(block, decodeOwnedReplayCitation)];
+      return [{
+        type: 'text',
+        text: block.text,
+        ...(block.citations ? { citations: block.citations.map(decodeOwnedReplayCitation) } : {}),
+      }];
     });
 
     rewrittenMessages.push({
@@ -488,9 +483,6 @@ const validateNativeWebSearchToolDefinitions = (payload: MessagesPayload): { typ
     nativeTool,
   };
 };
-
-const rewriteMessagesWebSearchToolDefinitions = (tools: MessagesPayload['tools'], nativeTool?: MessagesNativeWebSearchTool): MessagesPayload['tools'] =>
-  nativeTool ? (tools ?? []).map(tool => (isNativeWebSearchToolDefinition(tool) ? buildUpstreamWebSearchToolDefinition() : tool)) : tools;
 
 const buildMessagesWebSearchShimState = (nativeTool: MessagesNativeWebSearchTool | undefined, replay: PreparedMessagesWebSearchReplay): MessagesWebSearchShimState => {
   if (!nativeTool && !replay.hasOwnedReplay) {
@@ -547,7 +539,9 @@ export const prepareMessagesWebSearchShimRequest = (payload: MessagesPayload): P
       ...payload,
       ...(payload.tools
         ? {
-            tools: rewriteMessagesWebSearchToolDefinitions(payload.tools, validatedNativeTools.nativeTool),
+            tools: validatedNativeTools.nativeTool
+              ? payload.tools.map(tool => (isNativeWebSearchToolDefinition(tool) ? buildUpstreamWebSearchToolDefinition() : tool))
+              : payload.tools,
           }
         : {}),
       messages: replay.messages,
@@ -591,19 +585,6 @@ const buildNativeWebSearchResultBlockFromProviderResult = (result: WebSearchProv
   };
 };
 
-const searchWithActiveMessagesWebSearchProvider = (provider: ActiveMessagesWebSearchProvider, request: WebSearchProviderRequest): Promise<WebSearchProviderResult> =>
-  provider.apiKeyId
-    ? searchWebAndRecordUsage({
-        provider: provider.impl,
-        providerName: provider.providerName,
-        keyId: provider.apiKeyId,
-        request,
-      })
-    : searchWebWithoutRecordingUsage({
-        provider: provider.impl,
-        request,
-      });
-
 // Per-block sub-state captured while walking upstream content blocks. Messages
 // SSE serializes blocks (no interleaving), so a single ActiveBlock at a time is
 // sufficient; an interleaving upstream is treated as a protocol violation.
@@ -625,9 +606,6 @@ interface ShimStreamingState {
   interceptedSearches: number;
   hasRemainingClientToolUse: boolean;
 }
-
-const isNativeWebSearchToolUseStart = (event: MessagesStreamEvent, state: MessagesWebSearchShimState): boolean =>
-  state.mode === 'active' && event.type === 'content_block_start' && event.content_block.type === 'tool_use' && event.content_block.name === WEB_SEARCH_TOOL_NAME;
 
 const rewriteContentBlockStartCitations = (
   event: Extract<MessagesStreamEvent, { type: 'content_block_start' }>,
@@ -721,12 +699,15 @@ const runWebSearchStopHandler = async function* (
     shimState.currentSearchUseCount += 1;
 
     try {
-      const providerResult = await searchWithActiveMessagesWebSearchProvider(provider, {
+      const request: WebSearchProviderRequest = {
         query,
         allowedDomains: state.allowedDomains,
         blockedDomains: state.blockedDomains,
         userLocation: state.userLocation,
-      });
+      };
+      const providerResult = await (provider.apiKeyId
+        ? searchWebAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request })
+        : searchWebWithoutRecordingUsage({ provider: provider.impl, request }));
       return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
     } catch {
       // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed provider/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
@@ -787,7 +768,7 @@ export const rewriteMessagesWebSearchEventsToNative = async function* (
 
       const downstreamBase = event.index + shimState.downstreamIndexOffset;
 
-      if (isNativeWebSearchToolUseStart(event, state) && event.content_block.type === 'tool_use') {
+      if (state.mode === 'active' && event.content_block.type === 'tool_use' && event.content_block.name === WEB_SEARCH_TOOL_NAME) {
         activeBlock = {
           kind: 'web-search-tool-use',
           upstreamToolUseId: event.content_block.id,

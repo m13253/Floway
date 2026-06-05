@@ -1,5 +1,5 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
-import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesInvocation } from './interceptors/types.ts';
+import type { MessagesInvocation } from './interceptors/types.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
@@ -53,7 +53,13 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    return await runInterceptors(invocation, ctx, sourceChainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, [
+      // Source-side interceptors apply regardless of target — they shape the
+      // Messages payload before either calling Messages directly or translating to
+      // another protocol.
+      ...messagesInterceptors,
+      ...(candidate.binding.interceptors?.messages ?? []),
+    ], async () => {
       if (candidate.targetApi === 'messages') {
         // Target-side Messages interceptors (anthropic-beta filter, vision
         // header, tool-strict stripper for Copilot Vertex, etc.) only apply
@@ -103,7 +109,10 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    const response = await runInterceptors(invocation, ctx, countTokensChainInterceptors(candidate), async () => {
+    const response = await runInterceptors(invocation, ctx, [
+      ...messagesCountTokensInterceptors,
+      ...(candidate.binding.interceptors?.messagesCountTokens ?? []),
+    ], async () => {
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.binding.provider.callMessagesCountTokens(
         candidate.binding.upstreamModel,
@@ -154,19 +163,6 @@ const rewriteOrRenderMessagesFailure = async (
     };
   }
 };
-
-// Source-side interceptors apply regardless of target — they shape the
-// Messages payload before either calling Messages directly or translating to
-// another protocol.
-const sourceChainInterceptors = (candidate: ProviderCandidate): readonly MessagesInterceptor[] => [
-  ...messagesInterceptors,
-  ...(candidate.binding.interceptors?.messages ?? []),
-];
-
-const countTokensChainInterceptors = (candidate: ProviderCandidate): readonly MessagesCountTokensInterceptor[] => [
-  ...messagesCountTokensInterceptors,
-  ...(candidate.binding.interceptors?.messagesCountTokens ?? []),
-];
 
 const callMessagesAsExecuteResult = async (
   payload: MessagesPayload,

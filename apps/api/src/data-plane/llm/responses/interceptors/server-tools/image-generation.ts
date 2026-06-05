@@ -393,11 +393,9 @@ interface EchoFields {
   size?: string;
 }
 
-type ImageOutcome =
+export type ImageOutcome =
   | { ok: true; b64: string; echo: EchoFields }
   | { ok: false; error: ImageError };
-
-export type { EchoFields, ImageError, ImageOutcome };
 
 // Project the server-resolved echo fields out of a backend payload (a response
 // JSON body or an SSE event). Each field is validated against the public enum
@@ -476,8 +474,8 @@ export const buildGenerationsBody = (prompt: string, config: ImageGenerationConf
   // single-image Responses behavior.
   n: 1,
   // `response_format` is intentionally not sent: gpt-image-* always returns
-  // base64 (`data[0].b64_json`) and rejects `response_format`, so
-  // `extractB64` reads `b64_json` directly.
+  // base64 (`data[0].b64_json`) and rejects `response_format`, so the inline
+  // extraction below reads `b64_json` directly.
   ...(config.size !== undefined ? { size: config.size } : {}),
   ...(config.quality !== undefined ? { quality: config.quality } : {}),
   ...(config.output_format !== undefined ? { output_format: config.output_format } : {}),
@@ -517,14 +515,6 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     form.append('mask', new Blob([config.mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
   }
   return form;
-};
-
-const extractB64 = (body: unknown): string | null => {
-  if (body === null || typeof body !== 'object') return null;
-  const data = (body as { data?: unknown }).data;
-  if (!Array.isArray(data) || data.length === 0) return null;
-  const first = data[0] as { b64_json?: unknown };
-  return typeof first.b64_json === 'string' ? first.b64_json : null;
 };
 
 const serverError = (e: unknown): ImageError => ({
@@ -643,7 +633,13 @@ const consumeImageResponse = async (
   } catch {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a non-JSON success body.', code: 'server_error', retryable: true } };
   }
-  const b64 = extractB64(parsed);
+  const b64 = (() => {
+    if (parsed === null || typeof parsed !== 'object') return null;
+    const data = (parsed as { data?: unknown }).data;
+    if (!Array.isArray(data) || data.length === 0) return null;
+    const first = data[0] as { b64_json?: unknown };
+    return typeof first.b64_json === 'string' ? first.b64_json : null;
+  })();
   if (b64 === null) {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }

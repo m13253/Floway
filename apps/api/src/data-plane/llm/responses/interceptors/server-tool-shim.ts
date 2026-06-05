@@ -156,16 +156,13 @@ export interface TurnSummary {
 
 type LatestUpstreamMetadata = Pick<EventResultMetadata, 'modelIdentity' | 'performance'>;
 
-const synthesizeShimResponseId = (): string =>
-  `resp_shim_${crypto.randomUUID().replace(/-/g, '')}`;
-
 export const createMergeState = (): MergeState => ({
   sequenceNumber: 0,
   outputIndex: 0,
   accumulatedOutput: new Map(),
   accumulatedUsage: {},
   lastSeenModel: null,
-  synthesizedResponseId: synthesizeShimResponseId(),
+  synthesizedResponseId: `resp_shim_${crypto.randomUUID().replace(/-/g, '')}`,
   upstreamResponseSnapshot: undefined,
 });
 
@@ -424,9 +421,6 @@ const serverToolEndFrames = (
   merge.accumulatedOutput.set(outputIndex, attachServerToolItemId(result.item, slot.id));
   return frames;
 };
-
-const responseInputItemsOf = (input: ResponsesPayload['input']): ResponsesInputItem[] =>
-  Array.isArray(input) ? input : [{ type: 'message', role: 'user', content: input }];
 
 const transformServerToolItems = (
   items: ResponsesInputItem[],
@@ -962,7 +956,7 @@ export const withResponsesServerToolShim = (
       : { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
-  const canonicalInput = responseInputItemsOf(ctx.payload.input);
+  const canonicalInput: ResponsesInputItem[] = Array.isArray(ctx.payload.input) ? ctx.payload.input : [{ type: 'message', role: 'user', content: ctx.payload.input }];
   const inputArray = Array.isArray(ctx.payload.input) ? ctx.payload.input : undefined;
   if (inputArray !== undefined) {
     const nextInput = transformServerToolItems(inputArray, active);
