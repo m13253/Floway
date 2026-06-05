@@ -1,6 +1,7 @@
+import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
 import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/messages';
-import { compressBase64ImageToWebp, type InterceptorRequest, type MessagesInvocation } from '@floway-dev/provider';
+import { compressBase64ImageToWebp } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here):
@@ -43,13 +44,17 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
 
 // Recompresses every inline base64 image in the outgoing Messages payload to
 // WebP before the Copilot upstream call. Generic in the run-result type so the
-// same definition serves both the streaming Messages target chain and the
-// count_tokens chain, so count_tokens sizes the same recompressed payload the
-// chat path sends.
-export const withInlineImagesCompressed = async <TResult>(ctx: MessagesInvocation, _request: InterceptorRequest, run: () => Promise<TResult>): Promise<TResult> => {
+// same definition serves both the streaming Messages boundary chain and the
+// count_tokens boundary chain, so count_tokens sizes the same recompressed
+// payload the chat path sends.
+export const withInlineImagesCompressed = async <TResult>(
+  ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx,
+  _request: object,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
   const blocks = collectImageBlocks(ctx.payload.messages);
   if (blocks.length > 0) {
-    const caps = claudeImageCaps(ctx.candidate.binding.upstreamModel.id);
+    const caps = claudeImageCaps(ctx.model.id);
     const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
     await Promise.all(
       blocks.map(async block => {

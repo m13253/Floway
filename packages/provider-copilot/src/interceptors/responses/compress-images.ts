@@ -1,14 +1,14 @@
 import { targetSizeForResponsesChat } from '../image-size.ts';
 import type { ResponsesInputImage } from '@floway-dev/protocols/responses';
 import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '@floway-dev/provider';
-import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
+import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 
 // Recompresses every inline base64 image in the outgoing Responses payload to
 // WebP before the Copilot upstream call. Images appear both as `input_image`
 // parts inside message content and inside `function_call_output` outputs
 // (multimodal tool results, e.g. a screenshot tool). Remote https image
 // references are left untouched.
-export const withInlineImagesCompressed: ProviderResponsesInterceptor = async (ctx, _request, run) => {
+export const withInlineImagesCompressed: CopilotResponsesBoundaryInterceptor = async (ctx, _request, run) => {
   const targets: ResponsesInputImage[] = [];
   if (Array.isArray(ctx.payload.input)) {
     for (const item of ctx.payload.input) {

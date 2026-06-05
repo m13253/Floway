@@ -1,4 +1,4 @@
-import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
+import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 
 /**
  * Copilot's `/responses` rejects `store: true` with
@@ -8,7 +8,7 @@ import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
  * gateway's own stored-items persistence keys off the caller's original `store`
  * value captured at parse time and is unaffected by this upstream-only flag.
  */
-export const withStoreForcedFalse: ProviderResponsesInterceptor = async (ctx, _request, run) => {
+export const withStoreForcedFalse: CopilotResponsesBoundaryInterceptor = async (ctx, _request, run) => {
   ctx.payload = { ...ctx.payload, store: false };
 
   return await run();

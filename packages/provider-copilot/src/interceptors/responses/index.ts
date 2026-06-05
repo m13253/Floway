@@ -1,6 +1,6 @@
-// Copilot-only Responses target workarounds. The Copilot provider attaches
-// this set to its provider metadata, so target interceptor assembly does not
-// need to know which provider kind is running.
+// Copilot-only Responses workarounds. The boundary chain runs inside
+// `provider.callResponses`, so the gateway main flow never knows that
+// Copilot has Responses interceptors at all.
 
 import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { withInlineImagesCompressed } from './compress-images.ts';
@@ -10,12 +10,12 @@ import { withVisionHeaderSet } from './set-vision-header.ts';
 import { withImageGenerationStripped } from './strip-image-generation.ts';
 import { withServiceTierStripped } from './strip-service-tier.ts';
 import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
-import type { ProviderResponsesInterceptor } from '@floway-dev/provider';
+import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 
 // Order matters: payload-mutating interceptors run first so the header
 // interceptors see the final outgoing payload, then header interceptors
-// populate `invocation.headers` for the upstream call.
-export const responsesCopilotInterceptors = [
+// populate the boundary header bag for the upstream call.
+export const COPILOT_RESPONSES_BOUNDARY = [
   withInlineImagesCompressed,
   withServiceTierStripped,
   withImageGenerationStripped,
@@ -24,4 +24,4 @@ export const responsesCopilotInterceptors = [
   withToolArgumentWhitespaceAborted,
   withVisionHeaderSet,
   withInitiatorHeaderSet,
-] as const satisfies readonly ProviderResponsesInterceptor[];
+] as const satisfies readonly CopilotResponsesBoundaryInterceptor[];
