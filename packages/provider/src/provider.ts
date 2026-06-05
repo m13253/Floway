@@ -1,4 +1,3 @@
-import type { ProviderChatCompletionsInterceptor, ProviderGeminiCountTokensInterceptor, ProviderGeminiInterceptor, ProviderMessagesCountTokensInterceptor, ProviderMessagesInterceptor, ProviderResponsesInterceptor } from './invocation.ts';
 import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -15,7 +14,6 @@ export interface ProviderModelRecord {
   upstreamModel: UpstreamModel;
   enabledFlags: ReadonlySet<string>;
   supportsResponsesItemReference: boolean;
-  interceptors?: ProviderInterceptors;
 }
 
 // endpoints describes which endpoints this model is served by on its
@@ -28,30 +26,6 @@ export interface ResolvedModel extends InternalModel {
   providers: readonly ProviderModelRecord[];
 }
 
-// Per-protocol interceptor table the provider registers once per upstream.
-// The api side extends each list with its own protocol-shared interceptors
-// before running the chain.
-//
-// `messagesTarget` runs only when the wire actually carries Messages —
-// translated payloads must not see target-only mutators that strip fields
-// the translator forwards (e.g., tool.strict).
-//
-// `messagesCountTokens` is separate from `messages` because count_tokens
-// returns a raw upstream Response (no protocol-frame translation). Only the
-// header/payload mutators that pre-translation applied to count_tokens
-// (vision, initiator, anthropic-beta) belong on count_tokens; chat-only
-// mutators like thinking-display promotion and cache_control.scope
-// stripping never ran on count_tokens and stay on `messagesTarget`.
-export interface ProviderInterceptors {
-  readonly messages?: readonly ProviderMessagesInterceptor[];
-  readonly messagesTarget?: readonly ProviderMessagesInterceptor[];
-  readonly chatCompletions?: readonly ProviderChatCompletionsInterceptor[];
-  readonly responses?: readonly ProviderResponsesInterceptor[];
-  readonly gemini?: readonly ProviderGeminiInterceptor[];
-  readonly messagesCountTokens?: readonly ProviderMessagesCountTokensInterceptor[];
-  readonly geminiCountTokens?: readonly ProviderGeminiCountTokensInterceptor[];
-}
-
 export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
@@ -62,7 +36,6 @@ export interface ModelProviderInstance {
   disabledPublicModelIds: readonly string[];
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
-  interceptors?: ProviderInterceptors;
   resolveRequestedModelId?(modelId: string): string | undefined;
 }
 
@@ -98,12 +71,13 @@ export interface ModelProvider {
   // id). Used by aggregation-time cost computation. Public-model-name lookups
   // happen elsewhere by reading `UpstreamModel.cost` directly.
   getPricingForModelKey(modelKey: string): ModelPricing | null;
-  // `headers` is the mutable header bag attached to the invocation; target
-  // interceptors populate it (vision, initiator, anthropic-beta, ...) and the
-  // provider passes it straight through to the upstream fetch unchanged. The
-  // shape is uniform across protocols so provider implementations never branch
-  // on which protocol they are serving. Image endpoints have no target
-  // interceptor stack today, but the parameter stays for interface uniformity.
+  // `headers` is the mutable header bag the caller seeds. A provider may run
+  // its own boundary interceptor chain that populates headers (vision,
+  // initiator, anthropic-beta, ...) before reaching the wire; the provider
+  // passes the bag straight through to the upstream fetch unchanged. The
+  // shape is uniform across protocols so provider implementations never
+  // branch on which protocol they are serving. Image endpoints have no
+  // boundary chain today, but the parameter stays for interface uniformity.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   // `/responses/compact` is non-streaming: the upstream returns a single
@@ -116,7 +90,7 @@ export interface ModelProvider {
   // `anthropicBeta` slice as a typed read-only input separate from the wire
   // headers. Copilot uses it to pick a raw upstream model variant
   // (claude-*-1m-internal vs the standard variant) BEFORE the
-  // anthropic-beta target interceptor filters the wire header down to the
+  // anthropic-beta boundary interceptor filters the wire header down to the
   // Copilot allow-list. Variant selection must see the caller's full intent
   // even when the beta value itself is dropped before hitting the wire.
   callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderStreamResult<MessagesStreamEvent>>;
