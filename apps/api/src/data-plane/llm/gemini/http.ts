@@ -7,13 +7,18 @@ import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
+interface GeminiModelAction {
+  readonly model: string;
+  readonly action: string;
+}
+
 // The Gemini wire API encodes both the model id and the action in one path
 // segment (e.g. `models/gemini-2.5-pro:streamGenerateContent`). The Hono route
 // captures everything after `/v1beta/models/` in a single `modelAction` param;
 // we split on the trailing `:` here so each entry sees just the action and
 // the resolved model id (with a leading `models/` prefix tolerated, as Google
 // SDKs send it).
-const parseGeminiModelAction = (modelAction: string | undefined): { model: string; action: string } | Response => {
+const parseGeminiModelAction = (modelAction: string | undefined): GeminiModelAction | Response => {
   if (!modelAction) return geminiRpcErrorResponse(404, 'Missing Gemini model action.');
   const separator = modelAction.lastIndexOf(':');
   if (separator <= 0 || separator === modelAction.length - 1) return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${modelAction}`);
@@ -62,28 +67,18 @@ const respondWithGeminiError = async (
   return geminiInternalRpcErrorResponse(500, error);
 };
 
-export const geminiHttp = {
-  generate: async (c: Context): Promise<Response> => {
-    const parsed = parseGeminiModelAction(c.req.param('modelAction'));
-    if (parsed instanceof Response) return parsed;
+// Single entry for `/v1beta/models/:modelAction`. Splits the model and action
+// once, then dispatches to the matching sub-handler. Keeping the parse here
+// means the sub-handlers see a validated `(model, action)` pair and never
+// need to re-emit "Unknown Gemini model action" on already-validated input.
+export const geminiHttp = async (c: Context): Promise<Response> => {
+  const parsed = parseGeminiModelAction(c.req.param('modelAction'));
+  if (parsed instanceof Response) return parsed;
+  if (parsed.action === 'countTokens') return await runGeminiCountTokens(c, parsed.model);
+  if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
     return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
-  },
-
-  countTokens: async (c: Context): Promise<Response> => {
-    const parsed = parseGeminiModelAction(c.req.param('modelAction'));
-    if (parsed instanceof Response) return parsed;
-    return await runGeminiCountTokens(c, parsed.model);
-  },
-
-  dispatch: async (c: Context): Promise<Response> => {
-    const parsed = parseGeminiModelAction(c.req.param('modelAction'));
-    if (parsed instanceof Response) return parsed;
-    if (parsed.action === 'countTokens') return await runGeminiCountTokens(c, parsed.model);
-    if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
-      return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
-    }
-    return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
-  },
+  }
+  return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
 };
 
 const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {

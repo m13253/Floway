@@ -14,7 +14,7 @@ export const mountLlmRoutes = (app: Hono) => {
   app.post('/v1/messages/count_tokens', messagesHttp.countTokens);
   app.get('/v1/responses', responsesWebSocket);
   // Gemini encodes both the model id and the action in one path segment
-  // (e.g. `models/gemini-2.5-pro:streamGenerateContent`); `geminiHttp.dispatch`
+  // (e.g. `models/gemini-2.5-pro:streamGenerateContent`); `geminiHttp`
   // splits on the trailing `:` and fans out to the right sub-endpoint.
-  app.post('/v1beta/models/:modelAction{.+}', geminiHttp.dispatch);
+  app.post('/v1beta/models/:modelAction{.+}', geminiHttp);
 };

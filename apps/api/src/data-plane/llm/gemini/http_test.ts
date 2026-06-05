@@ -43,7 +43,7 @@ const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: rea
     c.set('apiKeyId', API_KEY_ID);
     await next();
   });
-  app.post('/v1beta/models/:modelAction{.+}', geminiHttp.dispatch);
+  app.post('/v1beta/models/:modelAction{.+}', geminiHttp);
   return app;
 };
 
