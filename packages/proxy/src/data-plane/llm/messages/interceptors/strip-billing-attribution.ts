@@ -1,10 +1,12 @@
-import type { ProviderMessagesInterceptor } from '@floway-dev/provider';
+import type { MessagesInterceptor } from './types.ts';
 
 /**
  * Claude Code injects `x-anthropic-billing-header` lines containing a per-turn
- * `cch=` hash. Copilot's upstream Messages endpoint treats this metadata as
- * ordinary prompt text, so prompt caching stops hitting even when the real
- * prompt did not change.
+ * `cch=` hash. Some upstreams treat this metadata as ordinary prompt text, so
+ * prompt caching stops hitting even when the real prompt did not change. The
+ * cleanup is wire-shape-agnostic — every provider benefits whether the wire
+ * stays Messages or the gateway translates onward — so it lives on the
+ * gateway-side Messages source chain.
  *
  * References:
  * - https://github.com/Menci/Floway/pull/9
@@ -14,7 +16,7 @@ const CCH_HASH_RE = /cch=[0-9a-f]{5,};?/gi;
 
 const stripText = (text: string): string => text.replace(BILLING_HEADER_LINE_RE, '').replace(CCH_HASH_RE, '').trim();
 
-export const stripBillingAttribution: ProviderMessagesInterceptor = (ctx, _request, run) => {
+export const stripBillingAttribution: MessagesInterceptor = (ctx, _request, run) => {
   const { payload } = ctx;
 
   if (typeof payload.system === 'string') {

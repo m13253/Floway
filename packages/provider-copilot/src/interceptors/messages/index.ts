@@ -12,7 +12,6 @@ import { withCompactHeadersSet } from './set-compact-headers.ts';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import { withInteractionIdHeaderSet } from './set-interaction-id-header.ts';
 import { withVisionHeaderSet } from './set-vision-header.ts';
-import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import { withCacheControlExtensionsStripped } from './strip-cache-control-extensions.ts';
 import { withEagerInputStreamingStripped } from './strip-eager-input-streaming.ts';
 import { withStructuredOutputFormatStripped } from './strip-structured-output-format.ts';
@@ -32,7 +31,6 @@ import type { ProviderMessagesCountTokensInterceptor, ProviderMessagesIntercepto
 // targets keep the regular Copilot identity while still receiving portable
 // compact / interaction-id headers.
 export const messagesCopilotSourceInterceptors = [
-  stripBillingAttribution,
   rewriteContextWindowError,
   withCompactHeadersSet,
   withClaudeAgentHeadersSet,
