@@ -118,7 +118,6 @@ test('generate native chat-completions target calls provider.callChatCompletions
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
-    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');
@@ -137,7 +136,6 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'messages', callMessages }),
-    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');
@@ -168,7 +166,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'responses', callResponses }),
-    sourceApi: 'chat-completions',
   });
 
   assertEquals(result.type, 'events');
@@ -202,7 +199,6 @@ test('generate inherits Chat Completions source-side invocation headers across t
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: candidateWithInterceptor,
-    sourceApi: 'chat-completions',
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
@@ -247,7 +243,6 @@ test('generate inherits Chat Completions source-side invocation headers across t
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: candidateWithInterceptor,
-    sourceApi: 'chat-completions',
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');

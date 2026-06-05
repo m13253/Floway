@@ -14,7 +14,7 @@ import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamError, type ExecuteResult, type LlmSourceApi } from '@floway-dev/provider';
+import { eventResult, readUpstreamError, type ExecuteResult } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -22,7 +22,6 @@ export interface ResponsesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   // Native HTTP/WS entry passes 'append'; the cross-protocol translation-in
   // path (another protocol's attempt translating into Responses) passes
   // 'none' so the outer source owns snapshot persistence.
@@ -38,12 +37,11 @@ export interface ResponsesAttemptCompactArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
 }
 
 export const responsesAttempt = {
   generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, snapshotMode, inheritedInvocationHeaders, sourceApi } = args;
+    const { payload, ctx, store, candidate, snapshotMode, inheritedInvocationHeaders } = args;
     const invocation: ResponsesInvocation = {
       payload,
       candidate,
@@ -58,7 +56,7 @@ export const responsesAttempt = {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
 
-      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, sourceApi, invocation.headers);
+      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
       if (inner.type !== 'events') return inner;
       return eventResult(
         wrapResponsesOutputForStorage(inner.events, {
@@ -75,7 +73,7 @@ export const responsesAttempt = {
   },
 
   compact: async (args: ResponsesAttemptCompactArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, ctx, store, candidate, sourceApi } = args;
+    const { payload, ctx, store, candidate } = args;
     if (candidate.targetApi !== 'responses') {
       throw new Error(`responsesAttempt.compact requires targetApi='responses', got '${candidate.targetApi}'`);
     }
@@ -153,7 +151,6 @@ const dispatchResponses = async (
   ctx: GatewayCtx,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
-  sourceApi: LlmSourceApi,
   invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (candidate.targetApi === 'responses') {
@@ -174,7 +171,7 @@ const dispatchResponses = async (
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       }),
       translated => messagesAttempt.generate({
-        payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocationHeaders,
+        payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocationHeaders,
       }),
     );
   }
@@ -183,7 +180,7 @@ const dispatchResponses = async (
       payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
       translated => chatCompletionsAttempt.generate({
-        payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocationHeaders,
+        payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocationHeaders,
       }),
     );
   }

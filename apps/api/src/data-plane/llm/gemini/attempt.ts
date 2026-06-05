@@ -47,7 +47,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaMessages(p, transCtx),
           translated => messagesAttempt.generate({
-            payload: translated, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -56,7 +56,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, sourceApi: 'gemini', snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -65,7 +65,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaChatCompletions(p, transCtx),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -99,7 +99,7 @@ export const geminiAttempt = {
       const trip = await translateGeminiViaMessages(cleaned, transCtx);
       const { stream: _stream, ...target } = trip.target;
       const messagesResult = await messagesAttempt.countTokens({
-        payload: target, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
+        payload: target, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
       });
       return reshapeMessagesCountAsGemini(messagesResult);
     });

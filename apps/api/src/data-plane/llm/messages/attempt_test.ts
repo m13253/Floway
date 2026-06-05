@@ -121,7 +121,6 @@ test('generate native messages target calls provider.callMessages with no rewrit
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages }),
-    sourceApi: 'messages',
   });
 
   assertEquals(result.type, 'events');
@@ -150,7 +149,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'responses', callResponses }),
-    sourceApi: 'messages',
   });
 
   assertEquals(result.type, 'events');
@@ -173,7 +171,6 @@ test('countTokens proxies the upstream response as a plain result', async () => 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessagesCountTokens }),
-    sourceApi: 'messages',
   });
 
   assertEquals(result.type, 'plain');
@@ -193,7 +190,6 @@ test('countTokens refuses a non-messages candidate', async () => {
       ctx: makeGatewayCtx(),
       store: createNonResponsesSourceStore(API_KEY_ID),
       candidate: makeCandidate({ targetApi: 'responses' }),
-      sourceApi: 'messages',
     });
   } catch (error) {
     thrown = error;
@@ -256,7 +252,6 @@ test('messagesTarget interceptors run only when the wire target is messages', as
         callChatCompletions,
         interceptors: { messagesTarget: [spy] },
       }),
-      sourceApi: 'messages',
     });
     if (result.type !== 'events') throw new Error('unreachable');
     await collectEvents(result.events);

@@ -50,7 +50,7 @@ export const messagesServe = {
         'generate',
       );
     }
-    return await messagesAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'messages', anthropicBeta });
+    return await messagesAttempt.generate({ payload, ctx, store, candidate, anthropicBeta });
   },
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
@@ -75,6 +75,6 @@ export const messagesServe = {
         'countTokens',
       );
     }
-    return await messagesAttempt.countTokens({ payload, ctx, store, candidate, sourceApi: 'messages', anthropicBeta });
+    return await messagesAttempt.countTokens({ payload, ctx, store, candidate, anthropicBeta });
   },
 };

@@ -41,6 +41,6 @@ export const chatCompletionsServe = {
           : { kind: 'model-missing', model: payload.model },
       );
     }
-    return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, sourceApi: 'chat-completions' });
+    return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate });
   },
 };

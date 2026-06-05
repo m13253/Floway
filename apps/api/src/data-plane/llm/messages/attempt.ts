@@ -13,7 +13,7 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, type LlmSourceApi, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -22,7 +22,6 @@ export interface MessagesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
   // Optional invocation-headers inheritance from a source attempt that
   // translated INTO messages. Source-side interceptors write trace headers
@@ -36,14 +35,13 @@ export interface MessagesAttemptCountTokensArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   readonly anthropicBeta?: readonly string[];
   readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, sourceApi, anthropicBeta, inheritedInvocationHeaders } = args;
+    const { payload, ctx, store, candidate, anthropicBeta, inheritedInvocationHeaders } = args;
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
@@ -82,7 +80,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, sourceApi, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, snapshotMode: 'none', inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -91,7 +89,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, sourceApi, inheritedInvocationHeaders: invocation.headers,
+            payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocation.headers,
           }),
         );
       }
@@ -100,7 +98,7 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, sourceApi, anthropicBeta, inheritedInvocationHeaders } = args;
+    const { payload, ctx, store, candidate, anthropicBeta, inheritedInvocationHeaders } = args;
     if (candidate.targetApi !== 'messages') {
       throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }

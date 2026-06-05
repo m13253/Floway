@@ -35,7 +35,7 @@ export const responsesServe = {
               : null,
     });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, sourceApi: 'responses', snapshotMode });
+    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, snapshotMode });
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -48,6 +48,6 @@ export const responsesServe = {
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.compact({ payload: plan.prepared, ctx, store, candidate: plan.candidate, sourceApi: 'responses' });
+    return await responsesAttempt.compact({ payload: plan.prepared, ctx, store, candidate: plan.candidate });
   },
 };
