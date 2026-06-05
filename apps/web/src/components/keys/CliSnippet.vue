@@ -116,7 +116,7 @@ const codexSnippet = computed(() => [
   `chatgpt_base_url = "${codexBaseUrl.value}"`,
   '',
   '[model_providers.floway]',
-  'name = "floway"',
+  'name = "Floway"',
   `base_url = "${codexBaseUrl.value}"`,
   'wire_api = "responses"',
 ].join('\n'));
