@@ -7,7 +7,6 @@ import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gem
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesStreamEvent, ResponsesPayload } from '@floway-dev/protocols/responses';
 
-export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemini';
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 // The provider-binding decision the planner made for this attempt: which
