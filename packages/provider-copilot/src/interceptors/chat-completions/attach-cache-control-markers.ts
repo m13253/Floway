@@ -1,5 +1,5 @@
-import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
+import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 
 /**
  * Prime Copilot's content-addressed prompt cache by tagging a small set of

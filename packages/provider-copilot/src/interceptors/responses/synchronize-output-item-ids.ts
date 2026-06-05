@@ -1,5 +1,5 @@
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` stream is inconsistent about per-output-item ids:

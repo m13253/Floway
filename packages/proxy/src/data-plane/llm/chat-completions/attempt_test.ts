@@ -174,31 +174,19 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate inherits Chat Completions source-side invocation headers across translation to Messages', async () => {
+test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Record<string, string> | undefined;
   const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
     observedHeaders = headers;
     return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k' };
   });
-  const candidate = makeCandidate({ targetApi: 'messages', callMessages });
-  const candidateWithInterceptor: ProviderCandidate = {
-    ...candidate,
-    binding: {
-      ...candidate.binding,
-      interceptors: {
-        chatCompletions: [(invocation, _gctx, run) => {
-          invocation.headers['x-test'] = 'abc';
-          return run();
-        }],
-      },
-    },
-  };
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: candidateWithInterceptor,
+    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    inheritedInvocationHeaders: { 'x-test': 'abc' },
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
@@ -206,7 +194,7 @@ test('generate inherits Chat Completions source-side invocation headers across t
   assertEquals(observedHeaders?.['x-test'], 'abc');
 });
 
-test('generate inherits Chat Completions source-side invocation headers across translation to Responses', async () => {
+test('generate inherits invocation headers across translation to Responses', async () => {
   installRepo();
   let observedHeaders: Record<string, string> | undefined;
   const respResp: ResponsesResult = {
@@ -225,24 +213,12 @@ test('generate inherits Chat Completions source-side invocation headers across t
       modelKey: 'k',
     };
   });
-  const candidate = makeCandidate({ targetApi: 'responses', callResponses });
-  const candidateWithInterceptor: ProviderCandidate = {
-    ...candidate,
-    binding: {
-      ...candidate.binding,
-      interceptors: {
-        chatCompletions: [(invocation, _gctx, run) => {
-          invocation.headers['x-test'] = 'abc';
-          return run();
-        }],
-      },
-    },
-  };
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: candidateWithInterceptor,
+    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    inheritedInvocationHeaders: { 'x-test': 'abc' },
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');

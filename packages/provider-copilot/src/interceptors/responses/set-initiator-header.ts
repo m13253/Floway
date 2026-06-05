@@ -1,5 +1,5 @@
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from

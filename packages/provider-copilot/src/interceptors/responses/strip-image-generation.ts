@@ -1,5 +1,5 @@
-import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
+import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool

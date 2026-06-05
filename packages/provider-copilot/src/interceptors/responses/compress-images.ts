@@ -1,7 +1,7 @@
 import { targetSizeForResponsesChat } from '../image-size.ts';
+import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 import type { ResponsesInputImage } from '@floway-dev/protocols/responses';
 import { compressImageDataUrlToWebp, isBase64ImageDataUrl } from '@floway-dev/provider';
-import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
 
 // Recompresses every inline base64 image in the outgoing Responses payload to
 // WebP before the Copilot upstream call. Images appear both as `input_image`
@@ -21,7 +21,7 @@ export const withInlineImagesCompressed: CopilotResponsesBoundaryInterceptor = a
   }
 
   if (targets.length > 0) {
-    const targetSize = targetSizeForResponsesChat(ctx.candidate.binding.upstreamModel.id);
+    const targetSize = targetSizeForResponsesChat(ctx.model.id);
     await Promise.all(
       targets.map(async target => {
         target.image_url = await compressImageDataUrlToWebp(target.image_url, targetSize);

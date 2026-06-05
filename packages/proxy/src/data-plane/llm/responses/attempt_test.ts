@@ -311,10 +311,10 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   wrapSpy.mockRestore();
 });
 
-// In-attempt test asserting the narrow header-inheritance contract: when a
-// Responses-source interceptor stamps `invocation.headers['x-test']`, the
-// translated Messages call sees it on the wire.
-test('generate inherits Responses source-side invocation headers across translation to Messages', async () => {
+// In-attempt test asserting the narrow header-inheritance contract: when an
+// outer protocol passes invocation headers, the translated Messages call sees
+// them on the wire.
+test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Record<string, string> | undefined;
   const upstreamModel = stubUpstreamModel();
@@ -348,12 +348,6 @@ test('generate inherits Responses source-side invocation headers across translat
       upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',
       provider: messagesProvider, upstreamModel,
       enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-      interceptors: {
-        responses: [(invocation, _gctx, run) => {
-          invocation.headers['x-test'] = 'abc';
-          return run();
-        }],
-      },
     },
     targetApi: 'messages',
   };
@@ -364,6 +358,7 @@ test('generate inherits Responses source-side invocation headers across translat
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
     snapshotMode: 'append',
+    inheritedInvocationHeaders: { 'x-test': 'abc' },
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');

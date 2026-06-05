@@ -1,7 +1,7 @@
+import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside
