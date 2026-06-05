@@ -6,7 +6,7 @@ import { COPILOT_CHATCOMPLETIONS_BOUNDARY } from './interceptors/chat-completion
 import type { ChatCompletionsBoundaryCtx } from './interceptors/chat-completions/types.ts';
 import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/messages/index.ts';
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './interceptors/messages/types.ts';
-import { COPILOT_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
+import { COPILOT_RESPONSES_BOUNDARY, COPILOT_RESPONSES_COMPACT_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
@@ -19,7 +19,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -322,24 +322,33 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     },
     callResponsesCompact: async (model, body, signal, headers) => {
       const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
-      // Normalize `input` to an item array so the trigger item can be appended
-      // regardless of whether the caller sent the convenience string form.
-      const input: ResponsesInputItem[] = typeof body.input === 'string' ? [{ type: 'message', role: 'user', content: body.input }] : (body.input ?? []);
-      // Compaction is inherently non-streaming — a single encrypted blob, not
-      // a token stream — so we drive /responses with stream:false (bypassing
-      // the SSE-forcing callStreaming helper) and reshape the response into
-      // the canonical `response.compaction` envelope. The Responses boundary
-      // chain wraps stream-event mutators that have no analogue here, so the
-      // compact path does not run it.
-      const triggered = { ...body, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-      const response = await copilotFetchResponses(
-        upstreamConfig,
-        { method: 'POST', body: JSON.stringify(triggered), signal },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+      const ctx: ResponsesBoundaryCtx = {
+        payload: { ...body, model: model.id },
+        headers: { ...(headers ?? {}) },
+        model,
+      };
+      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
+        ctx, {}, COPILOT_RESPONSES_COMPACT_BOUNDARY, async () => {
+          // Compaction is non-streaming — a single encrypted blob, not a token
+          // stream — so we drive `/responses` with `stream:false` (bypassing
+          // the SSE-forcing callStreaming helper) and reshape the response
+          // into the canonical `response.compaction` envelope. Build the wire
+          // body from the post-interceptor `ctx.payload` so mutations from
+          // `withStoreForcedFalse`, `withServiceTierStripped`, etc. survive
+          // the trigger-item insertion.
+          const { model: _ignored, ...wireBody } = ctx.payload;
+          const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
+          const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
+          const response = await copilotFetchResponses(
+            upstreamConfig,
+            { method: 'POST', body: JSON.stringify(triggered), signal },
+            Object.keys(ctx.headers).length > 0 ? { extraHeaders: ctx.headers } : undefined,
+          );
+          if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
+          const generated = (await response.json()) as ResponsesResult;
+          return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+        },
       );
-      if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
-      const generated = (await response.json()) as ResponsesResult;
-      return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
     },
     callMessages: async (model, body, signal, headers, anthropicBeta) => {
       const rawModel = messagesRawModel(model, body, anthropicBeta);

@@ -270,6 +270,88 @@ test('Copilot provider selects raw variants that support the target endpoint', a
   assertEquals(responsesBody?.model, 'claude-opus-4.7');
 });
 
+test('Copilot provider runs the Responses boundary chain on the compact path', async () => {
+  // The compact-path boundary registers payload mutators (force-store-false,
+  // strip-service-tier, strip-image-generation, ...) plus header derivers
+  // (set-vision-header, set-initiator-header). Driving callResponsesCompact
+  // through a real upstream stub exercises the integration end-to-end: the
+  // payload mutators reach the wire body, the header derivers reach the wire
+  // request headers, and the compact-shaped envelope still comes back through
+  // `compactionResponse`.
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  const provider = instance.provider;
+  let responsesBody: Record<string, unknown> | undefined;
+  let visionHeader: string | null = null;
+  let initiatorHeader: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-resp', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        responsesBody = (await request.json()) as Record<string, unknown>;
+        visionHeader = request.headers.get('copilot-vision-request');
+        initiatorHeader = request.headers.get('x-initiator');
+        return jsonResponse({
+          id: 'resp_test',
+          object: 'response',
+          model: 'gpt-resp',
+          status: 'completed',
+          output: [{ type: 'compaction', summary: 'compacted state' }],
+          incomplete_details: null,
+          error: null,
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels();
+      // service_tier is set so withServiceTierStripped has something to strip;
+      // an input_image is included so withVisionHeaderSet fires; the last
+      // input item is a user message so withInitiatorHeaderSet picks 'user'.
+      const result = await provider.callResponsesCompact(model, {
+        input: [
+          {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: 'compact me' },
+              { type: 'input_image', image_url: 'https://example.com/x.png', detail: 'auto' },
+            ],
+          },
+        ],
+        service_tier: 'priority',
+      });
+
+      if (!result.ok) throw new Error('expected ok compaction result');
+      assertEquals(result.result.object, 'response.compaction');
+    },
+  );
+
+  // withStoreForcedFalse reached the wire body.
+  assertEquals(responsesBody?.store, false);
+  // withServiceTierStripped removed the field from the wire body.
+  assertEquals('service_tier' in (responsesBody ?? {}), false);
+  // The compaction trigger item was still appended to input.
+  const wireInput = responsesBody?.input as Array<{ type: string }>;
+  assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
+  // withVisionHeaderSet detected the input_image and set the Copilot vision
+  // header on the upstream request.
+  assertEquals(visionHeader, 'true');
+  // withInitiatorHeaderSet classified the last input item (a user message) as
+  // user-initiated.
+  assertEquals(initiatorHeader, 'user');
+});
+
 test('Copilot provider exposes its default flag set via UpstreamModel.enabledFlags', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider({

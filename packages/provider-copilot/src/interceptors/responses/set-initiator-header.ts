@@ -1,4 +1,4 @@
-import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 /**
@@ -31,7 +31,11 @@ const isAgentInitiated = (lastItem: ResponsesInputItem | undefined): boolean => 
   return typeof record.role === 'string' && record.role.toLowerCase() === 'assistant';
 };
 
-export const withInitiatorHeaderSet: CopilotResponsesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withInitiatorHeaderSet = async <TResult>(
+  ctx: ResponsesBoundaryCtx,
+  _request: object,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
   const input = ctx.payload.input;
   const initiator: 'user' | 'agent' = Array.isArray(input) && isAgentInitiated(input.at(-1)) ? 'agent' : 'user';
   ctx.headers['x-initiator'] = initiator;

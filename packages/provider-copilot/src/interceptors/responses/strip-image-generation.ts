@@ -1,4 +1,4 @@
-import type { CopilotResponsesBoundaryInterceptor } from './types.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
@@ -49,7 +49,11 @@ export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void
   }
 };
 
-export const withImageGenerationStripped: CopilotResponsesBoundaryInterceptor = async (ctx, _request, run) => {
+export const withImageGenerationStripped = async <TResult>(
+  ctx: ResponsesBoundaryCtx,
+  _request: object,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
   stripImageGenerationFromPayload(ctx.payload);
   return await run();
 };
