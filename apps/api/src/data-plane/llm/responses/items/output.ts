@@ -131,7 +131,7 @@ export const wrapResponsesOutputForStorage = async function* (
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
       // ordering matches a synchronous emit.
-      if (snapshotMode !== 'none' && responseId) {
+      if (snapshotMode !== 'none') {
         try {
           await store.commitSnapshot(responseId, snapshotMode);
         } catch (error) {

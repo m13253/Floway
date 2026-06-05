@@ -10,14 +10,15 @@ export const planResponsesRouting = async (input: {
   readonly candidates: readonly ProviderCandidate[];
   readonly store: StatefulResponsesStore;
 }): Promise<RoutingDecision> => {
-  // `payload.input` is `string | ResponsesInputItem[]`. A bare string has no
-  // item references to look up, so the affinity walk has nothing to do — the
-  // native view's `visitAsResponsesItems` only accepts item arrays, so we
-  // hand it an empty array in that case.
-  const sourceItems = Array.isArray(input.payload.input) ? input.payload.input : [];
-  const inputItemsToStage: readonly ResponsesInputItem[] = typeof input.payload.input === 'string'
-    ? [{ type: 'message', role: 'user', content: input.payload.input }]
-    : input.payload.input;
+  // A bare-string input is wrapped into a synthetic user message for staging;
+  // the affinity walk receives an empty item array since strings carry no
+  // item references to resolve.
+  const { sourceItems, inputItemsToStage }: {
+    sourceItems: readonly ResponsesInputItem[];
+    inputItemsToStage: readonly ResponsesInputItem[];
+  } = typeof input.payload.input === 'string'
+    ? { sourceItems: [], inputItemsToStage: [{ type: 'message', role: 'user', content: input.payload.input }] }
+    : { sourceItems: input.payload.input, inputItemsToStage: input.payload.input };
   return await classifyResponsesItemAffinity({
     sourceItems,
     view: responsesItemsView,

@@ -15,23 +15,21 @@ const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
 // Codex sends auto-review requests over the Responses wire API as a
 // `codex-auto-review` model id; rewrite at the entry so downstream routing,
 // performance telemetry, and usage accounting all see the real model name
-// (and the `low` reasoning effort the alias implies).
+// (and the `low` reasoning effort the alias implies — generate only;
+// compact carries no `reasoning` field).
 //
 // References (codex @ e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df):
 //   codex-rs/model-provider/src/provider.rs#L73-L96
 //   codex-rs/codex-api/src/endpoint/responses.rs#L102-L134
-const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload): ResponsesPayload => {
+const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoningEffort: boolean): ResponsesPayload => {
   if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
+  if (!stampReasoningEffort) return { ...payload, model: CODEX_AUTO_REVIEW_TARGET };
   return {
     ...payload,
     model: CODEX_AUTO_REVIEW_TARGET,
     reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
   };
 };
-
-// Compact carries no `reasoning` field, so only the model swap applies.
-const rewriteResponsesCompactEntryModelAlias = (payload: ResponsesPayload): ResponsesPayload =>
-  payload.model === CODEX_AUTO_REVIEW_ALIAS ? { ...payload, model: CODEX_AUTO_REVIEW_TARGET } : payload;
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -66,7 +64,7 @@ const respondWithInternalError = async (c: Context, error: unknown): Promise<Res
 export const responsesHttp = {
   generate: async (c: Context): Promise<Response> => {
     try {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>());
+      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), true);
       const wantsStream = payload.stream === true;
       const ctx = createGatewayCtxFromHono(c, wantsStream);
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
@@ -81,7 +79,7 @@ export const responsesHttp = {
 
   compact: async (c: Context): Promise<Response> => {
     try {
-      const payload = rewriteResponsesCompactEntryModelAlias(await c.req.json<ResponsesPayload>());
+      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), false);
       const ctx = createGatewayCtxFromHono(c, false);
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store });

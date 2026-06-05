@@ -14,7 +14,7 @@ export type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 // binding; each interceptor's body decides whether to act (flag-gated entries
 // early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
 //
-// Order follows source-then-target semantics collapsed into a single chain:
+// Order matters: earlier entries wrap later ones.
 //   - withResponsesServerToolShim: runs outermost so it wraps the full
 //     multi-turn ReAct loop around the rest of the chain.
 //   - withReasoningEncryptedContentCanonicalized: registered first after the

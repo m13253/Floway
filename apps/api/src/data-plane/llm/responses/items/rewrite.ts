@@ -111,13 +111,8 @@ export const rewriteResponsesItemsForCandidate = async (
   return { ...payload, input: rewritten };
 };
 
-// Generic source-items rewriter for non-Responses attempts (Messages, Chat
-// Completions, Gemini). Walks the source items via the protocol's view,
-// rebuilds a Responses item carrier per assistant reasoning block, looks up
-// the matching stored row, and returns a Responses item shape the view can
-// project back into the source protocol. Stored ids that resolve to a row
-// for this candidate get rewritten to the upstream-owned id; rows owned by
-// a different upstream are dropped (reasoning is bound to its producer).
+// Source-items rewriter for non-Responses attempts (Messages, Chat
+// Completions, Gemini); per-row rewrite policy lives in rewriteItemForCandidate.
 export const rewriteStoredResponsesItemsForCandidate = async <TSourceItems>(
   sourceItems: TSourceItems,
   view: ResponsesItemsView<TSourceItems>,

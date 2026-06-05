@@ -1,6 +1,5 @@
 import type { ChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject } from '../../../../shared/json-helpers.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
 
 // Spec-compliant Chat Completions usage chunk shape. The OpenAI spec puts the
@@ -18,15 +17,6 @@ import { eventFrame } from '@floway-dev/protocols/common';
 // the chunk reaches us its `usage.prompt_tokens_details.cached_tokens` is
 // already in the OpenAI standard shape.
 
-const relocateUsageChunk = (chunk: ChatCompletionsStreamEvent): readonly ChatCompletionsStreamEvent[] => {
-  const usage = asJsonObject(chunk.usage);
-  if (!usage) return [chunk];
-  if (chunk.choices.length === 0) return [chunk];
-
-  const { usage: chunkUsage, ...withoutUsage } = chunk;
-  return [withoutUsage, { ...withoutUsage, choices: [], usage: chunkUsage }];
-};
-
 export const withUsageNormalized: ChatCompletionsInterceptor = async (_ctx, _gatewayCtx, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
@@ -39,12 +29,15 @@ export const withUsageNormalized: ChatCompletionsInterceptor = async (_ctx, _gat
           continue;
         }
 
-        const chunks = relocateUsageChunk(frame.event);
-        if (chunks.length === 1 && chunks[0] === frame.event) {
+        const chunk = frame.event;
+        const usage = asJsonObject(chunk.usage);
+        if (!usage || chunk.choices.length === 0) {
           yield frame;
           continue;
         }
-        for (const chunk of chunks) yield eventFrame(chunk);
+        const { usage: chunkUsage, ...withoutUsage } = chunk;
+        yield eventFrame(withoutUsage);
+        yield eventFrame({ ...withoutUsage, choices: [], usage: chunkUsage });
       }
     })(),
   };

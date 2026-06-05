@@ -66,45 +66,52 @@ export const geminiHttp = {
   generate: async (c: Context): Promise<Response> => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
-    const { model, action } = parsed;
-    const wantsStream = action === 'streamGenerateContent';
-    const payload = await parseGeminiBody(c, payload => payload as GeminiPayload);
-    if (payload instanceof Response) return payload;
-
-    const ctx = createGatewayCtxFromHono(c, wantsStream);
-    const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    try {
-      const result = await geminiServe.generate({ payload, ctx, store, model });
-      const { response } = await respondGemini(c, result, wantsStream, ctx);
-      return response;
-    } catch (error) {
-      return await respondWithGeminiError(c, error, ctx, wantsStream);
-    }
+    return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
   },
 
   countTokens: async (c: Context): Promise<Response> => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
-    const { model } = parsed;
-    const payload = await parseGeminiBody(c, parseGeminiCountTokensPayload);
-    if (payload instanceof Response) return payload;
-
-    const ctx = createGatewayCtxFromHono(c, false);
-    const store = createNonResponsesSourceStore(ctx.apiKeyId);
-    try {
-      const result = await geminiServe.countTokens({ payload, ctx, store, model });
-      const { response } = await respondGemini(c, result, false, ctx);
-      return response;
-    } catch (error) {
-      return await respondWithGeminiError(c, error, ctx, false);
-    }
+    return await runGeminiCountTokens(c, parsed.model);
   },
 
   dispatch: async (c: Context): Promise<Response> => {
     const parsed = parseGeminiModelAction(c.req.param('modelAction'));
     if (parsed instanceof Response) return parsed;
-    if (parsed.action === 'countTokens') return await geminiHttp.countTokens(c);
-    if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') return await geminiHttp.generate(c);
+    if (parsed.action === 'countTokens') return await runGeminiCountTokens(c, parsed.model);
+    if (parsed.action === 'generateContent' || parsed.action === 'streamGenerateContent') {
+      return await runGeminiGenerate(c, parsed.model, parsed.action === 'streamGenerateContent');
+    }
     return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
   },
+};
+
+const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {
+  const payload = await parseGeminiBody(c, payload => payload as GeminiPayload);
+  if (payload instanceof Response) return payload;
+
+  const ctx = createGatewayCtxFromHono(c, wantsStream);
+  const store = createNonResponsesSourceStore(ctx.apiKeyId);
+  try {
+    const result = await geminiServe.generate({ payload, ctx, store, model });
+    const { response } = await respondGemini(c, result, wantsStream, ctx);
+    return response;
+  } catch (error) {
+    return await respondWithGeminiError(c, error, ctx, wantsStream);
+  }
+};
+
+const runGeminiCountTokens = async (c: Context, model: string): Promise<Response> => {
+  const payload = await parseGeminiBody(c, parseGeminiCountTokensPayload);
+  if (payload instanceof Response) return payload;
+
+  const ctx = createGatewayCtxFromHono(c, false);
+  const store = createNonResponsesSourceStore(ctx.apiKeyId);
+  try {
+    const result = await geminiServe.countTokens({ payload, ctx, store, model });
+    const { response } = await respondGemini(c, result, false, ctx);
+    return response;
+  } catch (error) {
+    return await respondWithGeminiError(c, error, ctx, false);
+  }
 };

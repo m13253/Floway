@@ -9,8 +9,7 @@
 //   instead uses a top-level `enable_thinking: false` field. We strip the
 //   sentinel and emit the Qwen form.
 //
-// Inbound: nothing today — Qwen's response shape already matches OpenAI's
-// for the fields the gateway reads.
+// Inbound: Qwen's response shape matches OpenAI for the fields the gateway reads.
 //
 // Reference:
 // - https://www.alibabacloud.com/help/en/model-studio/deep-thinking

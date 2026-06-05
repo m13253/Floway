@@ -8,7 +8,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/proxy-sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
@@ -127,7 +127,8 @@ const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFr
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && 'response' in frame.event ? tokenUsageFromResponsesResult((frame.event as { response: ResponsesResult }).response) : null);
+      const response = frame.type === 'event' ? responsesResultFromStreamEvent(frame.event) : null;
+      state.rememberUsage(response !== null ? tokenUsageFromResponsesResult(response) : null);
     }
     if (isResponsesTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;

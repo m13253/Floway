@@ -7,7 +7,7 @@ import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import { tryCatchLlmServeFailure, type LlmServeFailure } from '../shared/errors.ts';
+import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
@@ -123,34 +123,30 @@ const rewriteOrRenderFailure = async (
   } catch (error) {
     const failure = tryCatchLlmServeFailure(error);
     if (failure === null) throw error;
-    return { failure: renderResponsesAttemptFailure(failure) };
-  }
-};
-
-// Minimal in-attempt renderer covering the failure kinds rewrite can produce
-// (`item-not-found`). The full Responses failure renderer that also handles
-// `model-missing` / `model-unsupported` / `routing-unavailable` lives in the
-// serve layer and treats the `endpoint` distinction (`generate` vs
-// `compact`); from inside an attempt, only `item-not-found` is reachable.
-const renderResponsesAttemptFailure = (failure: LlmServeFailure): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
-  if (failure.kind === 'item-not-found') {
+    // The full Responses failure renderer that also handles `model-missing`
+    // / `model-unsupported` / `routing-unavailable` lives in the serve
+    // layer and treats the `endpoint` distinction (`generate` vs
+    // `compact`); from inside an attempt, only `item-not-found` is
+    // reachable from rewrite — anything else is a bug.
+    if (failure.kind !== 'item-not-found') {
+      throw new Error(`responsesAttempt cannot render failure kind '${failure.kind}' — rewrite only produces 'item-not-found'.`);
+    }
     return {
-      type: 'upstream-error',
-      status: 404,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: new TextEncoder().encode(JSON.stringify({
-        error: {
-          message: `Item with id '${failure.itemId}' not found.`,
-          type: 'invalid_request_error',
-          param: 'input',
-          code: null,
-        },
-      })),
+      failure: {
+        type: 'upstream-error',
+        status: 404,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: new TextEncoder().encode(JSON.stringify({
+          error: {
+            message: `Item with id '${failure.itemId}' not found.`,
+            type: 'invalid_request_error',
+            param: 'input',
+            code: null,
+          },
+        })),
+      },
     };
   }
-  // `routing-unavailable` originates in the routing layer (not rewrite);
-  // `model-*` is produced by the serve layer. Reaching here is a bug.
-  throw new Error(`responsesAttempt cannot render failure kind '${failure.kind}' — rewrite only produces 'item-not-found'.`);
 };
 
 const dispatchResponses = async (

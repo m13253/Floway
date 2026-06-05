@@ -1,6 +1,7 @@
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { geminiCountTokensInterceptors, geminiInterceptors } from './interceptors/index.ts';
-import { translateGeminiToMessagesForCountTokens } from './translate.ts';
+import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
+import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -82,14 +83,21 @@ export const geminiAttempt = {
       // Gemini countTokens has no native upstream; translate to Messages and
       // delegate to `messagesAttempt.countTokens`, then reshape the Messages
       // count_tokens reply into the Gemini `{ totalTokens }` envelope. The
-      // translate trip's events translator is never invoked because the
-      // Messages count_tokens path returns a `PlainResult` rather than an
-      // event stream.
+      // shipped Gemini interceptors that mutate the payload pre-dispatch
+      // cannot run via the countTokens interceptor list — the post-`run()`
+      // ones inspect event streams the result type cannot carry — so the
+      // payload-mutators are applied inline here on a structuredClone of
+      // the source so the caller's payload stays intact.
       const transCtx = {
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       };
-      const target = await translateGeminiToMessagesForCountTokens(invocation.payload, transCtx);
+      const cleaned = structuredClone(invocation.payload);
+      stripUnsupportedPartFieldsFromPayload(cleaned);
+      stripUnsupportedToolsFromPayload(cleaned);
+      delete cleaned.safetySettings;
+      const trip = await translateGeminiViaMessages(cleaned, transCtx);
+      const { stream: _stream, ...target } = trip.target;
       const messagesResult = await messagesAttempt.countTokens({
         payload: target, ctx, store, candidate, sourceApi: 'gemini', inheritedInvocationHeaders: invocation.headers,
       });
@@ -106,9 +114,7 @@ export const geminiAttempt = {
 // than a passthrough of the upstream shape.
 const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult => {
   if (messagesResult.status !== 200) {
-    // Upstream rejected the count request — relay its status, wrapping the
-    // body in the Google-RPC envelope so the caller sees Gemini-shaped error
-    // text rather than a passthrough of the upstream JSON.
+    // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
     const text = new TextDecoder().decode(messagesResult.body);
     return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.');
   }

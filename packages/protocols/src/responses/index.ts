@@ -709,6 +709,13 @@ export type ResponsesReasoningItem = ResponsesInputReasoning | ResponsesOutputRe
 export const isResponsesTerminalEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
+// Typed accessor for the `response` payload carried on lifecycle envelopes
+// (`response.created`, `response.in_progress`, `response.completed`,
+// `response.incomplete`, `response.failed`). Returns null on every other
+// event type so callers don't have to reproduce the variant check.
+export const responsesResultFromStreamEvent = (event: ResponsesStreamEvent): ResponsesResult | null =>
+  'response' in event ? event.response : null;
+
 export { responsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
