@@ -88,7 +88,7 @@ const rewrite = async (
   // Simulate the affinity classification that populates the store cache.
   await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
   const result = await rewriteResponsesItemsForCandidate(makePayload(input), store, cand);
-  return result.input as ResponsesInputItem[];
+  return result.payload.input as ResponsesInputItem[];
 };
 
 // Case 1: no matching row → item is kept as-is
@@ -292,7 +292,8 @@ test('string input is returned unchanged', async () => {
   const payload: ResponsesPayload = { model: 'test-model', input: 'plain text' };
   const result = await rewriteResponsesItemsForCandidate(payload, store, candidate('up_a'));
 
-  assertEquals(result, payload);
+  assertEquals(result.payload, payload);
+  assertEquals(result.references, []);
 });
 
 test('id-less encrypted_content duplicate hash uses freshest stored row for rewrite', async () => {

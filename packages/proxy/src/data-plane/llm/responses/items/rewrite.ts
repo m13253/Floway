@@ -74,11 +74,21 @@ const collectEncryptedContents = async (items: Iterable<ResponsesInputItem>): Pr
   );
 };
 
+export interface RewrittenResponsesReference {
+  readonly row?: StoredResponsesItem;
+}
+
+export interface RewrittenResponsesPayload {
+  readonly payload: ResponsesPayload;
+  readonly references: ReadonlyArray<RewrittenResponsesReference>;
+}
+
 const rewriteOneItemAgainstStore = (
   item: ResponsesInputItem,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
   hashByEncryptedContent: ReadonlyMap<string, string>,
+  references: RewrittenResponsesReference[],
 ): ResponsesInputItem | null => {
   const id = responsesItemId(item);
   const encryptedContent = responsesItemEncryptedContent(item);
@@ -88,6 +98,7 @@ const rewriteOneItemAgainstStore = (
     ) ?? store.getItemsByEncryptedContentHash(hashByEncryptedContent.get(encryptedContent)!)[0] : undefined);
 
   if (row === undefined) return item;
+  references.push({ row });
   return rewriteItemForCandidate(item, row, candidate);
 };
 
@@ -95,20 +106,21 @@ export const rewriteResponsesItemsForCandidate = async (
   payload: ResponsesPayload,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
-): Promise<ResponsesPayload> => {
-  if (typeof payload.input === 'string') return payload;
+): Promise<RewrittenResponsesPayload> => {
+  if (typeof payload.input === 'string') return { payload, references: [] };
 
   // Pre-compute encrypted_content hashes so each item lookup is a single
   // synchronous map access rather than a fresh hash per item.
   const hashByEncryptedContent = await collectEncryptedContents(payload.input);
 
   const rewritten: ResponsesInputItem[] = [];
+  const references: RewrittenResponsesReference[] = [];
   for (const item of payload.input) {
-    const result = rewriteOneItemAgainstStore(item, store, candidate, hashByEncryptedContent);
+    const result = rewriteOneItemAgainstStore(item, store, candidate, hashByEncryptedContent, references);
     if (result !== null) rewritten.push(result);
   }
 
-  return { ...payload, input: rewritten };
+  return { payload: { ...payload, input: rewritten }, references };
 };
 
 // Source-items rewriter for non-Responses attempts (Messages, Chat
@@ -125,6 +137,10 @@ export const rewriteStoredResponsesItemsForCandidate = async <TSourceItems>(
   await view.visitAsResponsesItems(sourceItems, item => { visited.push(item); });
   const hashByEncryptedContent = await collectEncryptedContents(visited);
 
+  // Per-attempt private-payload seeding lives on the Responses-shaped variant
+  // because only `responsesAttempt` runs the seed; non-Responses sources
+  // discard references after the rewrite.
+  const references: RewrittenResponsesReference[] = [];
   return (await view.mapAsResponsesItems(sourceItems, item =>
-    rewriteOneItemAgainstStore(item, store, candidate, hashByEncryptedContent))) as TSourceItems;
+    rewriteOneItemAgainstStore(item, store, candidate, hashByEncryptedContent, references))) as TSourceItems;
 };

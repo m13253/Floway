@@ -365,3 +365,75 @@ test('generate inherits invocation headers across translation to Messages', asyn
   await collectEvents(result.events);
   assertEquals(observedHeaders?.['x-test'], 'abc');
 });
+
+test('generate seeds store.privatePayload from rewrite references so cross-turn shims can replay', async () => {
+  const repo = installRepo();
+
+  // A stored web_search_call row whose payload carries `private` — the
+  // payload kind the web-search shim relies on at cross-turn replay time.
+  const wireId = createStoredResponsesItemId('web_search_call');
+  await insertStoredItem(repo, {
+    id: wireId,
+    itemType: 'web_search_call',
+    origin: 'upstream',
+    payload: {
+      item: {
+        type: 'web_search_call',
+        id: wireId,
+        status: 'completed',
+        action: { type: 'search', query: 'previous query' },
+      },
+      private: { kind: 'web-search-call', marker: 'seeded' },
+    },
+  });
+
+  // Echo the stored item in the input — this is what a follow-up turn from a
+  // stateless client looks like.
+  const completedEvent: ResponsesStreamEvent = {
+    type: 'response.completed',
+    sequence_number: 0,
+    response: makeResponsesResult(),
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProviderEvents([completedEvent]),
+    modelKey: 'test-model-key',
+  }));
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  // Populate the store cache the same way affinity-classified turns do, so
+  // the rewriter can resolve the echoed item against the stored row.
+  await store.loadInputItems({
+    sourceItems: [{ type: 'web_search_call', id: wireId } as unknown as { id: string }],
+    view: {
+      visitAsResponsesItems: async (items, visit) => {
+        for (const item of items as readonly { id: string }[]) {
+          await visit({ type: 'web_search_call', id: item.id } as unknown as never);
+        }
+      },
+    },
+  });
+
+  // Before generate runs, no per-attempt seed exists.
+  assertEquals(store.getPrivatePayload(wireId), undefined);
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [{ type: 'web_search_call', id: wireId } as unknown as never],
+    }),
+    ctx: makeGatewayCtx(),
+    store,
+    candidate,
+    snapshotMode: 'append',
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  // beginAttempt should have re-seeded privatePayload from the rewrite
+  // references — keyed by the wire id the stored payload.item carries.
+  const seeded = store.getPrivatePayload(wireId);
+  assert(seeded !== undefined, 'privatePayload must be seeded after rewrite');
+  assertEquals((seeded as { marker: string }).marker, 'seeded');
+});

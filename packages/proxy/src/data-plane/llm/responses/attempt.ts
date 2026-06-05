@@ -1,7 +1,7 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
-import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
+import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
@@ -56,6 +56,11 @@ export const responsesAttempt = {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
 
+      // Reset per-attempt staged output and re-seed privatePayload from the
+      // rows the rewrite just resolved, so cross-turn shims (e.g. web-search)
+      // can recover real prior-turn results instead of placeholder fallbacks.
+      store.beginAttempt(rewritten.references);
+
       const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
       if (inner.type !== 'events') return inner;
       return eventResult(
@@ -82,6 +87,7 @@ export const responsesAttempt = {
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () => {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
+      store.beginAttempt(rewritten.references);
       return await callResponsesCompactAsExecuteResult(rewritten.payload, ctx, candidate, invocation.headers);
     });
 
@@ -102,7 +108,7 @@ export const responsesAttempt = {
 };
 
 type RewriteOutcome =
-  | { readonly payload: ResponsesPayload }
+  | RewrittenResponsesPayload
   | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
 
 const rewriteOrRenderFailure = async (
@@ -111,7 +117,7 @@ const rewriteOrRenderFailure = async (
   candidate: ProviderCandidate,
 ): Promise<RewriteOutcome> => {
   try {
-    return { payload: await rewriteResponsesItemsForCandidate(payload, store, candidate) };
+    return await rewriteResponsesItemsForCandidate(payload, store, candidate);
   } catch (error) {
     const failure = tryCatchLlmServeFailure(error);
     if (failure === null) throw error;
