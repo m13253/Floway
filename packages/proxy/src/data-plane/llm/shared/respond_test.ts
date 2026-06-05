@@ -1,9 +1,9 @@
 import { beforeEach, test } from 'vitest';
 
+import type { GatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState, recordPerformance, recordUsage } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { GatewayCtx } from './gateway-ctx.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
