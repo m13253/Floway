@@ -17,7 +17,6 @@ const makeCtx = (
   thinking: MessagesInvocation['payload']['thinking'],
   overrides: {
     model?: string;
-    sourceApi?: MessagesInvocation['sourceApi'];
   } = {},
 ): MessagesInvocation => ({
   payload: {
@@ -27,7 +26,6 @@ const makeCtx = (
     ...(thinking ? { thinking } : {}),
   },
   candidate: stubProviderCandidate({ targetApi: 'messages', binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }) } }),
-  sourceApi: overrides.sourceApi ?? 'messages',
   headers: {},
 });
 
@@ -134,7 +132,7 @@ test('withThinkingDisplayPromoted leaves unknown display values for upstream val
 });
 
 test('withThinkingDisplayPromoted simulates omitted display on protocol events', async () => {
-  const ctx = makeCtx({ type: 'adaptive' }, { sourceApi: 'responses' });
+  const ctx = makeCtx({ type: 'adaptive' });
 
   const result = await withThinkingDisplayPromoted(ctx, stubRequest, () =>
     Promise.resolve(

@@ -47,7 +47,6 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
       enabledFlags: new Set(['messages-web-search-shim']),
     },
   }),
-  sourceApi: 'messages',
   headers: {},
 });
 

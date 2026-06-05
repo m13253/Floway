@@ -28,7 +28,6 @@ const invocation = (
     targetApi: 'messages',
     binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }), enabledFlags },
   }),
-  sourceApi: 'messages',
   headers: {},
 });
 

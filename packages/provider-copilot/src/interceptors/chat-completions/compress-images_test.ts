@@ -19,7 +19,6 @@ const fixedProcessor: ImageProcessor = {
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
-  sourceApi: 'chat-completions',
   headers: {},
 });
 

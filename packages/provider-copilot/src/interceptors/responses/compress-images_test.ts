@@ -19,7 +19,6 @@ const fixedProcessor: ImageProcessor = {
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'responses' }),
-  sourceApi: 'responses',
   headers: {},
 });
 

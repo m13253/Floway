@@ -32,7 +32,7 @@ export interface GeminiAttemptCountTokensArgs {
 export const geminiAttempt = {
   generate: async (args: GeminiAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, candidate } = args;
-    const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
+    const invocation: GeminiInvocation = { payload, candidate, headers: {} };
     return await runInterceptors(invocation, ctx, [...geminiInterceptors, ...(candidate.binding.interceptors?.gemini ?? [])], async () => {
       // Gemini has no native upstream target today — every targetApi we
       // pickTarget for is reached via translation. The dispatch threads each
@@ -78,7 +78,7 @@ export const geminiAttempt = {
     if (candidate.targetApi !== 'messages') {
       throw new Error(`geminiAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
-    const invocation: GeminiInvocation = { payload, candidate, sourceApi: 'gemini', headers: {} };
+    const invocation: GeminiInvocation = { payload, candidate, headers: {} };
     return await runInterceptors(invocation, ctx, [...geminiCountTokensInterceptors, ...(candidate.binding.interceptors?.geminiCountTokens ?? [])], async () => {
       // Gemini countTokens has no native upstream; translate to Messages and
       // delegate to `messagesAttempt.countTokens`, then reshape the Messages

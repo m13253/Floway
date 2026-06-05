@@ -47,7 +47,6 @@ export const responsesAttempt = {
     const invocation: ResponsesInvocation = {
       payload,
       candidate,
-      sourceApi,
       store,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
@@ -80,7 +79,7 @@ export const responsesAttempt = {
     if (candidate.targetApi !== 'responses') {
       throw new Error(`responsesAttempt.compact requires targetApi='responses', got '${candidate.targetApi}'`);
     }
-    const invocation: ResponsesInvocation = { payload, candidate, sourceApi, store, headers: {} };
+    const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
 
     const chainResult = await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);

@@ -33,7 +33,6 @@ const invocation = (
 ): ResponsesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
-  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],

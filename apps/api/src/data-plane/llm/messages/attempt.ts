@@ -49,7 +49,6 @@ export const messagesAttempt = {
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
-      sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
@@ -114,7 +113,6 @@ export const messagesAttempt = {
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
-      sourceApi,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };

@@ -15,7 +15,6 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload & { cache_control?: { type: 'ephemeral' } }): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'messages' }),
-  sourceApi: 'messages',
   headers: {},
 });
 

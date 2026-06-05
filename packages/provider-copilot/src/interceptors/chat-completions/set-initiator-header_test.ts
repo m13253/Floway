@@ -15,7 +15,6 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEv
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
-  sourceApi: 'chat-completions',
   headers: {},
 });
 

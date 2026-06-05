@@ -434,7 +434,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
         provider: instance,
         binding: { upstream: 'up_copilot', upstreamModel: model, enabledFlags: model.enabledFlags },
       }),
-      sourceApi: 'messages',
       headers: {},
     };
 

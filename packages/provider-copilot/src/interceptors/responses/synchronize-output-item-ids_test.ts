@@ -25,7 +25,6 @@ const invocation = (): ResponsesInvocation => ({
     parallel_tool_calls: true,
   },
   candidate: stubProviderCandidate({ targetApi: 'responses' }),
-  sourceApi: 'responses',
   headers: {},
 });
 

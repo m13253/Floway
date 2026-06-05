@@ -324,7 +324,6 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
       enabledFlags: overrides.enabledFlags ?? new Set<string>(),
     } as never,
   },
-  sourceApi: 'responses',
   store: makeStore(),
   payload: {
     model: 'claude-x',

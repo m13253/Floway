@@ -30,7 +30,6 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; calc
 const invocation = (payload: MessagesPayload, upstreamModelId = 'claude-test'): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'messages', binding: { upstreamModel: stubUpstreamModel({ id: upstreamModelId }) } }),
-  sourceApi: 'messages',
   headers: {},
 });
 

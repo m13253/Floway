@@ -38,7 +38,6 @@ export const chatCompletionsAttempt = {
     const invocation: ChatCompletionsInvocation = {
       payload: rewritten.payload,
       candidate,
-      sourceApi,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
     return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {

@@ -11,7 +11,6 @@ import { assert, assertEquals, assertStringIncludes, stubProviderCandidate, test
 const invocation = (): ChatCompletionsInvocation => ({
   payload: { model: 'test-model', messages: [] },
   candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
-  sourceApi: 'chat-completions',
   headers: {},
 });
 

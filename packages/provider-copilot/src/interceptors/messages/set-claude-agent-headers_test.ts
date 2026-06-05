@@ -16,7 +16,6 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'messages' }),
-  sourceApi: 'messages',
   headers: {},
 });
 

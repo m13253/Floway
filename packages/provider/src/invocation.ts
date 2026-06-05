@@ -25,17 +25,15 @@ export interface ProviderCandidate {
 
 // Per-protocol invocation shape passed to interceptors. Carries the source-
 // shape request body (mutable so source-side interceptors can clean it), the
-// planner's binding decision, the original source protocol (so target-only
-// interceptors can distinguish a native call from a translated one), and the
-// mutable HTTP-header bag the source seeds empty. Target-portable interceptors
-// populate `headers`; the provider's upstream call passes it through to the
-// wire fetch unchanged, so workarounds that only need to set or drop a header
-// (vision, initiator, anthropic-beta, ...) stay at the owning interceptor
-// boundary instead of widening the provider call signature.
+// planner's binding decision, and the mutable HTTP-header bag the source
+// seeds empty. Target-portable interceptors populate `headers`; the
+// provider's upstream call passes it through to the wire fetch unchanged, so
+// workarounds that only need to set or drop a header (vision, initiator,
+// anthropic-beta, ...) stay at the owning interceptor boundary instead of
+// widening the provider call signature.
 export interface MessagesInvocation {
   payload: MessagesPayload;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   // `anthropicBeta` is an inbound Messages concept that crosses native
   // Messages targets; translated targets (Responses, Chat Completions) do not
   // consume it, so it stays optional and is only populated when the source
@@ -47,21 +45,18 @@ export interface MessagesInvocation {
 export interface ResponsesInvocation {
   payload: ResponsesPayload;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   readonly headers: Record<string, string>;
 }
 
 export interface ChatCompletionsInvocation {
   payload: ChatCompletionsPayload;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   readonly headers: Record<string, string>;
 }
 
 export interface GeminiInvocation {
   payload: GeminiPayload;
   readonly candidate: ProviderCandidate;
-  readonly sourceApi: LlmSourceApi;
   readonly headers: Record<string, string>;
 }
 

@@ -38,7 +38,6 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
     } as never,
   },
-  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],

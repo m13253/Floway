@@ -15,7 +15,6 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload, anthropicBeta?: readonly string[]): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'messages' }),
-  sourceApi: 'messages',
   headers: {},
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });

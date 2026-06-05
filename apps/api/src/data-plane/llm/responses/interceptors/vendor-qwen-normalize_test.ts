@@ -30,7 +30,6 @@ const okEvents = () =>
 const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
-  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],

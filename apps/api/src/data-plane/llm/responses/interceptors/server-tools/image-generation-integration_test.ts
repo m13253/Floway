@@ -122,7 +122,6 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
     } as never,
   },
-  sourceApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: null,
     reads: [new MemoryStatefulResponsesBacking()],
