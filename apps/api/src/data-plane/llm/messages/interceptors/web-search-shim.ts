@@ -90,7 +90,7 @@ export type PrepareMessagesWebSearchShimRequestResult =
 // Official Anthropic API exposes native web_search to the model with this
 // description and query-only input schema, and requires the native tool name to
 // be exactly `web_search` when present.
-const buildUpstreamWebSearchToolDefinition = (): MessagesClientTool => ({
+const UPSTREAM_WEB_SEARCH_TOOL_DEFINITION: MessagesClientTool = {
   name: WEB_SEARCH_TOOL_NAME,
   description: 'The web_search tool searches the internet and returns up-to-date information from web sources.',
   input_schema: {
@@ -103,7 +103,7 @@ const buildUpstreamWebSearchToolDefinition = (): MessagesClientTool => ({
     },
     required: ['query'],
   },
-});
+};
 
 const normalizeNonEmptyDomainList = (domains?: string[]): string[] | undefined => {
   const normalized = domains?.map(domain => domain.trim()).filter(domain => domain.length > 0);
@@ -433,7 +433,7 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
       return [{
         type: 'text',
         text: block.text,
-        ...(block.citations ? { citations: block.citations.map(decodeOwnedReplayCitation) } : {}),
+        citations: block.citations.map(decodeOwnedReplayCitation),
       }];
     });
 
@@ -540,7 +540,7 @@ export const prepareMessagesWebSearchShimRequest = (payload: MessagesPayload): P
       ...(payload.tools
         ? {
             tools: validatedNativeTools.nativeTool
-              ? payload.tools.map(tool => (isNativeWebSearchToolDefinition(tool) ? buildUpstreamWebSearchToolDefinition() : tool))
+              ? payload.tools.map(tool => (isNativeWebSearchToolDefinition(tool) ? UPSTREAM_WEB_SEARCH_TOOL_DEFINITION : tool))
               : payload.tools,
           }
         : {}),

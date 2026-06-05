@@ -171,17 +171,6 @@ export const materializeAccumulatedOutput = (state: MergeState): ResponsesOutput
   return sorted.map(k => state.accumulatedOutput.get(k)!);
 };
 
-const rebuildOutputText = (items: readonly ResponsesOutputItem[]): string => {
-  let out = '';
-  for (const item of items) {
-    if (item.type !== 'message') continue;
-    for (const block of item.content) {
-      if (block.type === 'output_text') out += block.text;
-    }
-  }
-  return out;
-};
-
 export const sumUsage = (a: Partial<MergeUsage>, b: Partial<MergeUsage>): Partial<MergeUsage> => {
   const out: Partial<MergeUsage> = {};
   const sumScalar = (key: 'input_tokens' | 'output_tokens' | 'total_tokens') => {
@@ -252,9 +241,8 @@ const rewriteHostedToolChoice = (
   return toolChoice;
 };
 
-const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
-
 export const resolveServerToolName = (baseName: string, tools: readonly ResponsesTool[]): string => {
+  const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
   const taken = new Set(tools.flatMap(tool => (tool.type === 'function' || tool.type === 'custom') ? [tool.name] : []));
   if (!taken.has(baseName)) return baseName;
   for (let i = 2; i <= MAX_NAME_RESOLUTION_ATTEMPTS; i++) {
@@ -431,13 +419,6 @@ const transformServerToolItems = (
     if (entry.transformItems !== undefined) next = entry.transformItems(next, entry.toolName);
   }
   return next;
-};
-
-const UPSTREAM_TERMINAL_LABEL: Record<UpstreamTerminal['kind'], string> = {
-  completed: 'response.completed',
-  failed: 'response.failed',
-  incomplete: 'response.incomplete',
-  'bare-error-pre-shell': 'a pre-shell bare error',
 };
 
 export const consumeTurnStreaming = async function* (
@@ -676,6 +657,8 @@ export const consumeTurnStreaming = async function* (
     const unmatched = [...interceptedByUpstreamIndex.entries()]
       .filter(([, intercepted]) => !dispatchedSet.has(intercepted.intercepted))
       .map(([idx]) => idx);
+    const priorKind = terminalStatus.kind;
+    const priorLabel = priorKind === 'bare-error-pre-shell' ? 'a pre-shell bare error' : `response.${priorKind}`;
     terminalStatus = {
       kind: 'failed',
       response: {
@@ -685,7 +668,7 @@ export const consumeTurnStreaming = async function* (
         output: [],
         status: 'failed',
         error: {
-          message: `Upstream emitted ${UPSTREAM_TERMINAL_LABEL[terminalStatus.kind]} without closing shim call items at upstream output_index ${unmatched.join(', ')}.`,
+          message: `Upstream emitted ${priorLabel} without closing shim call items at upstream output_index ${unmatched.join(', ')}.`,
           code: 'server_error',
         },
         incomplete_details: null,
@@ -748,16 +731,6 @@ const invalidRequestEnvelope = (
   };
 };
 
-const overlayOnSnapshot = (
-  state: MergeState,
-  overlay: Partial<ResponsesResult> & Pick<ResponsesResult, 'id' | 'object' | 'model' | 'status' | 'output'>,
-): ResponsesResult => {
-  if (state.upstreamResponseSnapshot === undefined) {
-    throw new Error('Server-tool shim cannot overlay on an undefined upstream snapshot.');
-  }
-  return { ...state.upstreamResponseSnapshot, ...overlay };
-};
-
 // The terminal the shim emits downstream. Unlike `UpstreamTerminal`
 // (what we observed), this carries only the already-extracted `error` /
 // `incompleteDetails` the synthesized envelope needs; the output and
@@ -781,23 +754,34 @@ const synthesizeTerminalEnvelope = (
   if (state.lastSeenModel === null) {
     throw new Error('Server-tool shim cannot synthesize a Responses terminal envelope before upstream `response.created` reports a model.');
   }
+  if (state.upstreamResponseSnapshot === undefined) {
+    throw new Error('Server-tool shim cannot synthesize a Responses terminal envelope before upstream `response.created` is captured.');
+  }
   const output = materializeAccumulatedOutput(state);
   const usage = usageForWire(state);
   const frame = SYNTHESIZED_TERMINAL_FRAME[kind.kind];
+  let outputText = '';
+  for (const item of output) {
+    if (item.type !== 'message') continue;
+    for (const block of item.content) {
+      if (block.type === 'output_text') outputText += block.text;
+    }
+  }
   return eventFrame({
     type: frame.type,
     sequence_number: state.sequenceNumber++,
-    response: overlayOnSnapshot(state, {
+    response: {
+      ...state.upstreamResponseSnapshot,
       id: state.synthesizedResponseId,
       object: 'response',
       model: state.lastSeenModel,
       status: frame.status,
       output,
-      output_text: rebuildOutputText(output),
+      output_text: outputText,
       ...(usage !== undefined ? { usage } : {}),
       ...(kind.kind === 'failed' ? { error: kind.error } : {}),
       ...(kind.kind === 'incomplete' ? { incomplete_details: kind.incompleteDetails } : {}),
-    }),
+    },
   } as ResponsesStreamEvent);
 };
 
@@ -951,9 +935,7 @@ export const withResponsesServerToolShim = (
 
   const rewrittenToolChoice = rewriteHostedToolChoice(ctx.payload.tool_choice, active);
   if (rewrittenToolChoice !== ctx.payload.tool_choice) {
-    ctx.payload = rewrittenToolChoice === undefined
-      ? { ...ctx.payload, tool_choice: undefined }
-      : { ...ctx.payload, tool_choice: rewrittenToolChoice };
+    ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
   const canonicalInput: ResponsesInputItem[] = Array.isArray(ctx.payload.input) ? ctx.payload.input : [{ type: 'message', role: 'user', content: ctx.payload.input }];

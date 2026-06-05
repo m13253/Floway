@@ -143,8 +143,8 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined
         ? (() => {
-            const candidates = store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!);
-            return candidates.find(r => ref.type === 'item_reference' || r.itemType === ref.type) ?? candidates[0];
+            const hashMatches = store.getItemsByEncryptedContentHash(hashByContent.get(ref.encryptedContent)!);
+            return hashMatches.find(r => ref.type === 'item_reference' || r.itemType === ref.type) ?? hashMatches[0];
           })()
         : undefined);
     if (row === undefined) {
@@ -180,8 +180,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
 
   if (failures.length > 0) return { kind: 'failure', failure: failures[0] };
 
-  const forcingUpstreamIds = collectForcingUpstreams(references);
-  const forcingUpstreamList = [...forcingUpstreamIds];
+  const forcingUpstreamList = [...collectForcingUpstreams(references)];
 
   if (forcingUpstreamList.length > 1) {
     return {

@@ -151,13 +151,13 @@ export interface ImageGenerationConfig {
   action: 'generate' | 'edit' | 'auto';
 }
 
-export interface PrepareConfigError {
+interface PrepareConfigError {
   message: string;
   param: string;
   code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value';
 }
 
-export type PrepareConfigResult =
+type PrepareConfigResult =
   | { ok: true; config: ImageGenerationConfig }
   | { ok: false; error: PrepareConfigError };
 
@@ -563,7 +563,7 @@ const MAX_RATE_LIMIT_RETRIES = 2;
 // Header priority matches openai-python's `_parse_retry_after_header` with
 // Azure's `x-ms-retry-after-ms` alias added. Treats <= 0 as "no hint" so the
 // gpt-image-1 `retry-after: 0.0` quirk falls back to backoff instead of
-// pretending the quota is free. Exported for unit tests.
+// pretending the quota is free.
 export const parseRetryAfterMs = (headers: Headers): number | null => {
   for (const name of ['retry-after-ms', 'x-ms-retry-after-ms']) {
     const raw = headers.get(name);
