@@ -1,21 +1,22 @@
 import { test } from 'vitest';
 
 import { withVisionHeaderSet } from './set-vision-header.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
+const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'responses' }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { responses: {} } }),
 });
 
 test('Responses vision header set when an input_image block is present on a top-level message', async () => {

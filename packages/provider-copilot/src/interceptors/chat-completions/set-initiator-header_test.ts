@@ -1,21 +1,22 @@
 import { test } from 'vitest';
 
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
+import type { ChatCompletionsBoundaryCtx } from './types.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatCompletionsInvocation, InterceptorRequest, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
+const invocation = (payload: ChatCompletionsPayload): ChatCompletionsBoundaryCtx => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
 });
 
 test('Chat Completions initiator is user when the last message is from the user', async () => {

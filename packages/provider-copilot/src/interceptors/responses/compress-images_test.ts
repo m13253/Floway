@@ -1,14 +1,15 @@
 import { test } from 'vitest';
 
 import { withInlineImagesCompressed } from './compress-images.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult, InterceptorRequest, ResponsesInvocation } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
@@ -17,10 +18,10 @@ const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
+const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'responses' }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { responses: {} } }),
 });
 
 const firstImageUrl = (payload: ResponsesPayload): string => {

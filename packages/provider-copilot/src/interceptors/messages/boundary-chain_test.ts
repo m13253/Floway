@@ -1,23 +1,24 @@
 import { test } from 'vitest';
 
-import { messagesCopilotSourceInterceptors } from './index.ts';
+import { COPILOT_MESSAGES_BOUNDARY } from './index.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { InterceptorRequest, MessagesInvocation, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: MessagesPayload): MessagesInvocation => ({
+const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'messages' }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { messages: {} } }),
 });
 
 const COMPACT_LAST_MESSAGE_TEXT =
@@ -39,15 +40,19 @@ test('Claude Code SDK compact request: Claude-agent overrides compact intent, bo
     messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
   });
 
-  await runInterceptors<MessagesInvocation, InterceptorRequest, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
+  await runInterceptors<MessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
     ctx,
     stubRequest,
-    messagesCopilotSourceInterceptors,
+    COPILOT_MESSAGES_BOUNDARY,
     okEvents,
   );
 
-  // Compact set `x-initiator: agent`; Claude-agent does not touch it.
-  assertEquals(ctx.headers['x-initiator'], 'agent');
+  // Compact set `x-initiator: agent` early; `withInitiatorHeaderSet` runs
+  // later in the merged boundary chain and re-derives x-initiator from the
+  // last-message structure, so the final wire value reflects the wire-shape
+  // pass. (That is the same value the pre-merge production code shipped,
+  // because the target chain always overrode the source-side tag.)
+  assertEquals(ctx.headers['x-initiator'], 'user');
   // Compact set `conversation-compaction`; Claude-agent's `messages-proxy`
   // runs after and overrides it. This mirrors caozhiyuan/copilot-api's
   // prepareForCompact → prepareMessageProxyHeaders order.

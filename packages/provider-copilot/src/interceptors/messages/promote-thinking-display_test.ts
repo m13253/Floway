@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
 import { resolveMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted } from './promote-thinking-display.ts';
+import type { MessagesBoundaryCtx } from './types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { InterceptorRequest, MessagesInvocation, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -14,22 +15,22 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
 };
 
 const makeCtx = (
-  thinking: MessagesInvocation['payload']['thinking'],
+  thinking: MessagesBoundaryCtx['payload']['thinking'],
   overrides: {
     model?: string;
   } = {},
-): MessagesInvocation => ({
+): MessagesBoundaryCtx => ({
   payload: {
     model: overrides.model ?? 'claude-opus-4.7-1m-internal',
     messages: [{ role: 'user', content: 'hi' }],
     max_tokens: 128,
     ...(thinking ? { thinking } : {}),
   },
-  candidate: stubProviderCandidate({ targetApi: 'messages', binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }) } }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { messages: {} } }),
 });
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));
 

@@ -1,15 +1,16 @@
 import { test } from 'vitest';
 
 import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { InterceptorRequest, ResponsesInvocation, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubRequest: InterceptorRequest = {};
+const stubRequest = {};
 
-const invocation = (): ResponsesInvocation => ({
+const invocation = (): ResponsesBoundaryCtx => ({
   payload: {
     model: 'test-model',
     input: [] as unknown as ResponsesPayload['input'],
@@ -24,8 +25,8 @@ const invocation = (): ResponsesInvocation => ({
     store: false,
     parallel_tool_calls: true,
   },
-  candidate: stubProviderCandidate({ targetApi: 'responses' }),
   headers: {},
+  model: stubUpstreamModel({ endpoints: { responses: {} } }),
 });
 
 const collect = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
