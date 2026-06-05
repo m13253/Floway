@@ -1,5 +1,5 @@
 import { responsesInterceptors } from './interceptors/index.ts';
-import type { ResponsesAttemptResult, ResponsesInterceptor, ResponsesInvocation } from './interceptors/types.ts';
+import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
@@ -48,7 +48,7 @@ export const responsesAttempt = {
       store,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, responsesInterceptors, async () => {
       // Rewriting stored items happens inside the chain runner so interceptors
       // (server-tool shim, vendor normalizers) can adjust the payload first;
       // the rewrite then resolves item references against the chosen
@@ -79,7 +79,7 @@ export const responsesAttempt = {
     }
     const invocation: ResponsesInvocation = { payload, candidate, store, headers: {} };
 
-    const chainResult = await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
+    const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () => {
       const rewritten = await rewriteOrRenderFailure(invocation.payload, store, candidate);
       if (!('payload' in rewritten)) return rewritten.failure;
       return await callResponsesCompactAsExecuteResult(rewritten.payload, ctx, candidate, invocation.headers);
@@ -100,11 +100,6 @@ export const responsesAttempt = {
     return { type: 'result', result: compacted };
   },
 };
-
-const chainInterceptors = (candidate: ProviderCandidate): readonly ResponsesInterceptor[] => [
-  ...responsesInterceptors,
-  ...(candidate.binding.interceptors?.responses ?? []),
-];
 
 type RewriteOutcome =
   | { readonly payload: ResponsesPayload }

@@ -50,30 +50,17 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    return await runInterceptors(invocation, ctx, [
-      // Source-side interceptors apply regardless of target — they shape the
-      // Messages payload before either calling Messages directly or translating to
-      // another protocol.
-      ...messagesInterceptors,
-      ...(candidate.binding.interceptors?.messages ?? []),
-    ], async () => {
+    return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
-        // Target-side Messages interceptors (anthropic-beta filter, vision
-        // header, tool-strict stripper for Copilot Vertex, etc.) only apply
-        // when the wire actually carries a Messages payload — running them
-        // for translated targets would mutate fields the translator hasn't
-        // produced yet (or shouldn't strip from the translation source).
-        return await runInterceptors(invocation, ctx, candidate.binding.interceptors?.messagesTarget ?? [], async () => {
-          const { model: _model, ...body } = invocation.payload;
-          const providerResult = await candidate.binding.provider.callMessages(
-            candidate.binding.upstreamModel,
-            body,
-            ctx.abortSignal,
-            invocation.headers,
-            invocation.anthropicBeta,
-          );
-          return await providerStreamResultToExecuteResult(providerResult, candidate);
-        });
+        const { model: _model, ...body } = invocation.payload;
+        const providerResult = await candidate.binding.provider.callMessages(
+          candidate.binding.upstreamModel,
+          body,
+          ctx.abortSignal,
+          invocation.headers,
+          invocation.anthropicBeta,
+        );
+        return await providerStreamResultToExecuteResult(providerResult, candidate);
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
@@ -114,10 +101,7 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    const response = await runInterceptors(invocation, ctx, [
-      ...messagesCountTokensInterceptors,
-      ...(candidate.binding.interceptors?.messagesCountTokens ?? []),
-    ], async () => {
+    const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.binding.provider.callMessagesCountTokens(
         candidate.binding.upstreamModel,

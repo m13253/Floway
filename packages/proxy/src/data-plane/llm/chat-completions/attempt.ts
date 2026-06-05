@@ -1,5 +1,5 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
-import type { ChatCompletionsInterceptor, ChatCompletionsInvocation } from './interceptors/types.ts';
+import type { ChatCompletionsInvocation } from './interceptors/types.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
@@ -39,7 +39,7 @@ export const chatCompletionsAttempt = {
       candidate,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    return await runInterceptors(invocation, ctx, chainInterceptors(candidate), async () => {
+    return await runInterceptors(invocation, ctx, chatCompletionsInterceptors, async () => {
       if (candidate.targetApi === 'chat-completions') {
         return await callChatCompletionsAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers);
       }
@@ -98,11 +98,6 @@ const rewriteOrRenderChatCompletionsFailure = async (
     };
   }
 };
-
-const chainInterceptors = (candidate: ProviderCandidate): readonly ChatCompletionsInterceptor[] => [
-  ...chatCompletionsInterceptors,
-  ...(candidate.binding.interceptors?.chatCompletions ?? []),
-];
 
 const callChatCompletionsAsExecuteResult = async (
   payload: ChatCompletionsPayload,
