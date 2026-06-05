@@ -14,20 +14,28 @@ export interface GatewayCtx {
   readonly requestStartedAt: number;
 }
 
+// In Workers, `c.executionCtx.waitUntil` keeps the isolate alive past the
+// response so background work (telemetry persistence, log writes) can finish.
+// In test contexts and any non-Workers runtime that omits the execution
+// context, the scheduler simply drops the work — these paths still compile
+// against `GatewayCtx` but never need the side effect.
+const buildScheduleBackground = (c: Context): GatewayCtx['scheduleBackground'] => {
+  const backgroundScheduler = backgroundSchedulerFromContext(c);
+  return backgroundScheduler !== undefined
+    ? (fn: () => Promise<void> | void) => backgroundScheduler(Promise.resolve(fn()))
+    : (_fn: () => Promise<void> | void) => {};
+};
+
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
   const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
   const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-  const backgroundScheduler = backgroundSchedulerFromContext(c);
-  const scheduleBackground = backgroundScheduler !== undefined
-    ? (fn: () => Promise<void> | void) => backgroundScheduler(Promise.resolve(fn()))
-    : (_fn: () => Promise<void> | void) => {};
   return {
     apiKeyId,
     apiKeyUpstreamIds,
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
-    scheduleBackground,
+    scheduleBackground: buildScheduleBackground(c),
     requestStartedAt: performance.now(),
   };
 };
@@ -39,17 +47,13 @@ export const createGatewayCtxForWs = (
 ): GatewayCtx => {
   const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
   const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
-  const backgroundScheduler = backgroundSchedulerFromContext(c);
-  const scheduleBackground = backgroundScheduler !== undefined
-    ? (fn: () => Promise<void> | void) => backgroundScheduler(Promise.resolve(fn()))
-    : (_fn: () => Promise<void> | void) => {};
   return {
     apiKeyId,
     apiKeyUpstreamIds,
     abortSignal: downstreamAbortController.signal,
     wantsStream: true,
     downstreamAbortController,
-    scheduleBackground,
+    scheduleBackground: buildScheduleBackground(c),
     requestStartedAt: performance.now(),
   };
 };
