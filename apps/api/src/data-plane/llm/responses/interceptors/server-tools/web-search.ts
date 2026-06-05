@@ -5,7 +5,7 @@ import { loadSearchConfig } from '../../../../tools/web-search/search-config.ts'
 import { searchWebAndRecordUsage, searchWebWithoutRecordingUsage } from '../../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
-import { serverToolResultSlot, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
+import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 
@@ -1353,7 +1353,7 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
                 arguments: JSON.stringify(intercepted.arguments ?? {}),
                 status: 'completed',
               };
-              return [serverToolResultSlot({
+              return [{
                 id: slot.id,
                 startItem: { type: 'web_search_call', status: 'in_progress' },
                 startEvents: [
@@ -1380,7 +1380,7 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
                     privatePayload,
                   };
                 },
-              })];
+              }];
             },
           },
         }

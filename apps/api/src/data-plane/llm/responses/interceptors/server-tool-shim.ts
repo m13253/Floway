@@ -18,18 +18,18 @@ import type {
 import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
 
 export interface MergeUsage {
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  input_tokens_details: { cached_tokens: number };
-  output_tokens_details: { reasoning_tokens: number };
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  input_tokens_details?: { cached_tokens: number };
+  output_tokens_details?: { reasoning_tokens: number };
 }
 
 export interface MergeState {
   sequenceNumber: number;
   outputIndex: number;
   accumulatedOutput: Map<number, ResponsesOutputItem>;
-  accumulatedUsage: Partial<MergeUsage>;
+  accumulatedUsage: MergeUsage;
   lastSeenModel: string | null;
   synthesizedResponseId: string;
   upstreamResponseSnapshot: ResponsesResult | undefined;
@@ -65,7 +65,7 @@ export interface ServerToolTerminal {
 export interface ServerToolResultSlot {
   id: string;
   startItem: ServerToolOutputItem;
-  startEvents: ServerToolLifecycleEvent[];
+  startEvents: readonly ServerToolLifecycleEvent[];
   // The deferred portion of a slot's lifecycle, driven at materialization
   // time. It yields any intermediate lifecycle events as they arrive — e.g.
   // progressively-rendered `image_generation_call.partial_image` frames a
@@ -150,7 +150,7 @@ export type UpstreamTerminal =
 export interface TurnSummary {
   dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }>;
   sawClientToolCall: boolean;
-  turnUsage: Partial<MergeUsage>;
+  turnUsage: MergeUsage;
   terminalStatus: UpstreamTerminal;
 }
 
@@ -171,8 +171,8 @@ export const materializeAccumulatedOutput = (state: MergeState): ResponsesOutput
   return sorted.map(k => state.accumulatedOutput.get(k)!);
 };
 
-export const sumUsage = (a: Partial<MergeUsage>, b: Partial<MergeUsage>): Partial<MergeUsage> => {
-  const out: Partial<MergeUsage> = {};
+export const sumUsage = (a: MergeUsage, b: MergeUsage): MergeUsage => {
+  const out: MergeUsage = {};
   const sumScalar = (key: 'input_tokens' | 'output_tokens' | 'total_tokens') => {
     if (a[key] !== undefined || b[key] !== undefined) out[key] = (a[key] ?? 0) + (b[key] ?? 0);
   };
@@ -212,9 +212,9 @@ const usageForWire = (state: MergeState): ResponsesResult['usage'] => {
   };
 };
 
-const usageOf = (usage: ResponsesResult['usage']): Partial<MergeUsage> => {
+const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
   if (usage === undefined) return {};
-  const out: Partial<MergeUsage> = {};
+  const out: MergeUsage = {};
   if (usage.input_tokens !== undefined) out.input_tokens = usage.input_tokens;
   if (usage.output_tokens !== undefined) out.output_tokens = usage.output_tokens;
   if (usage.total_tokens !== undefined) out.total_tokens = usage.total_tokens;
@@ -326,7 +326,7 @@ const rewriteOutputIndex = (
 const captureTerminalEvent = (
   event: ResponsesStreamEvent,
   merge: MergeState,
-): { status: UpstreamTerminal; usage: Partial<MergeUsage> } | null => {
+): { status: UpstreamTerminal; usage: MergeUsage } | null => {
   if (event.type === 'response.completed') {
     merge.upstreamResponseSnapshot = event.response;
     return { status: { kind: 'completed' }, usage: usageOf(event.response.usage) };
@@ -356,24 +356,6 @@ const stampServerToolEvent = (
     item_id: itemId,
     sequence_number: merge.sequenceNumber++,
   } as ResponsesStreamEvent);
-
-// Builds a slot whose deferred lifecycle is driven by `run` at materialization:
-// `run` yields any intermediate frames as they arrive (e.g. image generation's
-// progressive partial_image previews) and returns the terminal item plus its
-// closing events. A one-shot tool whose terminal needs no preview frames (e.g.
-// web search: one backend round-trip, then the finished `web_search_call`)
-// passes a generator that yields nothing and returns the terminal directly.
-export const serverToolResultSlot = (args: {
-  id: string;
-  startItem: ServerToolOutputItem;
-  startEvents: readonly ServerToolLifecycleEvent[];
-  run: () => AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal>;
-}): ServerToolResultSlot => ({
-  id: args.id,
-  startItem: args.startItem,
-  startEvents: [...args.startEvents],
-  run: args.run,
-});
 
 const attachServerToolItemId = (item: ServerToolOutputItem, id: string): ResponsesOutputItem => ({ ...item, id } as ResponsesOutputItem);
 
@@ -430,7 +412,7 @@ export const consumeTurnStreaming = async function* (
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary> {
   const dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }> = [];
   let sawClientToolCall = false;
-  let turnUsage: Partial<MergeUsage> = {};
+  let turnUsage: MergeUsage = {};
   let terminalStatus: UpstreamTerminal | undefined = undefined;
 
   const openItems = new Map<number, number>();

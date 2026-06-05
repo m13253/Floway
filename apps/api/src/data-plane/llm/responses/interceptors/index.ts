@@ -8,8 +8,6 @@ import type { ResponsesInterceptor } from './types.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 
-export type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-
 // Unified Responses interceptor list. All entries are attached to every
 // binding; each interceptor's body decides whether to act (flag-gated entries
 // early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).

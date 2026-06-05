@@ -19,7 +19,7 @@ export interface StatefulResponsesItemLookupResult {
 export interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StatefulResponsesItemLookupResult[]>;
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
-  fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<number>;
+  fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
   markDurable?(apiKeyId: string | null, id: string): void;
   refreshItems(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<void>;
   lookupSnapshot(apiKeyId: string | null, id: string): Promise<StoredResponsesSnapshot | null>;
@@ -438,8 +438,8 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.repo.responsesItems.insertMany(items);
   }
 
-  async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
-    return await this.repo.responsesItems.fillPayloads(items);
+  async fillPayloads(items: readonly StoredResponsesItem[]): Promise<void> {
+    await this.repo.responsesItems.fillPayloads(items);
   }
 
   async refreshItems(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<void> {
@@ -492,8 +492,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     return Promise.resolve();
   }
 
-  fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<number> {
-    let changes = 0;
+  fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void> {
     for (const item of items) {
       if (item.payload === null) continue;
       const existing = this.items.get(scopedKey(item.apiKeyId, item.id));
@@ -507,9 +506,8 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
         refreshedAt: Math.max(existing.row.refreshedAt, item.refreshedAt),
       };
       if (options.durable) existing.durable = true;
-      changes += 1;
     }
-    return Promise.resolve(changes);
+    return Promise.resolve();
   }
 
   markDurable(apiKeyId: string | null, id: string): void {
@@ -578,39 +576,26 @@ export const createResponsesWsSession = (apiKeyId: string | null): {
   const repoBacking = new RepoStatefulResponsesBacking(getRepo);
   return {
     createStore(store: boolean | undefined): StatefulResponsesStore {
-      return store === false
-        ? wsSessionOnlyStore(apiKeyId, localBacking, repoBacking)
-        : wsDurableStore(apiKeyId, localBacking, repoBacking);
+      const localWrite = { backing: localBacking, durable: false };
+      if (store === false) {
+        return new LayeredStatefulResponsesStore({
+          apiKeyId,
+          reads: [localBacking, repoBacking],
+          itemWrites: [localWrite],
+          snapshotWrites: [localWrite],
+          stageInputs: true,
+        });
+      }
+      const repoWrite = { backing: repoBacking, durable: true };
+      return new LayeredStatefulResponsesStore({
+        apiKeyId,
+        reads: [localBacking, repoBacking],
+        itemWrites: [localWrite, repoWrite],
+        snapshotWrites: [localWrite, repoWrite],
+        stageInputs: true,
+      });
     },
   };
-};
-
-const wsSessionOnlyStore = (
-  apiKeyId: string | null,
-  localBacking: StatefulResponsesBacking,
-  repoBacking: StatefulResponsesBacking,
-): StatefulResponsesStore => new LayeredStatefulResponsesStore({
-  apiKeyId,
-  reads: [localBacking, repoBacking],
-  itemWrites: [{ backing: localBacking, durable: false }],
-  snapshotWrites: [{ backing: localBacking, durable: false }],
-  stageInputs: true,
-});
-
-const wsDurableStore = (
-  apiKeyId: string | null,
-  localBacking: StatefulResponsesBacking,
-  repoBacking: StatefulResponsesBacking,
-): StatefulResponsesStore => {
-  const localWrite = { backing: localBacking, durable: false };
-  const repoWrite = { backing: repoBacking, durable: true };
-  return new LayeredStatefulResponsesStore({
-    apiKeyId,
-    reads: [localBacking, repoBacking],
-    itemWrites: [localWrite, repoWrite],
-    snapshotWrites: [localWrite, repoWrite],
-    stageInputs: true,
-  });
 };
 
 const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {

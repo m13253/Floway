@@ -2,8 +2,6 @@ import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-
 import type { MessagesCountTokensInterceptor, MessagesInterceptor } from './types.ts';
 import { withMessagesWebSearchShim } from './web-search-shim.ts';
 
-export type { MessagesInterceptor, MessagesInvocation, MessagesCountTokensInterceptor } from './types.ts';
-
 // Unified Messages interceptor list. All entries are attached to every
 // binding; each interceptor's body decides whether to act (flag-gated entries
 // early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).

@@ -6,7 +6,6 @@ import {
   createMergeState,
   materializeAccumulatedOutput,
   parseServerToolArguments,
-  serverToolResultSlot,
   sumUsage,
   type InterceptedFunctionCall,
   type ServerToolResultSlot,
@@ -5783,8 +5782,8 @@ test('sumUsage with one-sided details preserves the field (treats missing side a
 
 // ── Slot run() contract ────────────────────────────────────────────────
 
-test('serverToolResultSlot run() yields mid events in order then returns the terminal', async () => {
-  const slot = serverToolResultSlot({
+test('ServerToolResultSlot run() yields mid events in order then returns the terminal', async () => {
+  const slot: ServerToolResultSlot = {
     id: 'ig_1',
     startItem: { type: 'image_generation_call', status: 'in_progress' },
     startEvents: [{ type: 'response.image_generation_call.in_progress' }],
@@ -5796,7 +5795,7 @@ test('serverToolResultSlot run() yields mid events in order then returns the ter
         endEvents: [{ type: 'response.image_generation_call.completed' }],
       };
     },
-  });
+  };
 
   const mid: unknown[] = [];
   const gen = slot.run();
@@ -5810,8 +5809,8 @@ test('serverToolResultSlot run() yields mid events in order then returns the ter
   assertEquals(step.value.endEvents.map(e => e.type), ['response.image_generation_call.completed']);
 });
 
-test('serverToolResultSlot run() yields nothing and returns the terminal', async () => {
-  const slot = serverToolResultSlot({
+test('ServerToolResultSlot run() yields nothing and returns the terminal', async () => {
+  const slot: ServerToolResultSlot = {
     id: 'ws_1',
     startItem: { type: 'web_search_call', status: 'in_progress' },
     startEvents: [],
@@ -5821,7 +5820,7 @@ test('serverToolResultSlot run() yields nothing and returns the terminal', async
         endEvents: [{ type: 'response.web_search_call.completed' }],
       };
     },
-  });
+  };
 
   const gen = slot.run();
   const first = await gen.next();

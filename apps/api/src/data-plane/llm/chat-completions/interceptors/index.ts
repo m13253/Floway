@@ -6,8 +6,6 @@ import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-no
 import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
 import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 
-export type { ChatCompletionsInterceptor, ChatCompletionsInvocation } from './types.ts';
-
 // Unified Chat Completions interceptor list. All entries are attached to
 // every binding; each interceptor's body decides whether to act (flag-gated
 // entries early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).

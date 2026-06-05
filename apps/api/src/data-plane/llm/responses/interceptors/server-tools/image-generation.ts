@@ -2,7 +2,6 @@ import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { serverToolResultSlot } from '../server-tool-shim.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
@@ -959,7 +958,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         // a terminal answer. The exhausted item is a failure, so its `action`
         // field is unused.
         if (state.imageDispatchCount >= IMAGE_ITERATION_CAP) {
-          return [serverToolResultSlot({
+          return [{
             id,
             startItem: { type: 'image_generation_call', status: 'in_progress' },
             startEvents: [{ type: 'response.image_generation_call.in_progress' }, { type: 'response.image_generation_call.generating' }],
@@ -969,7 +968,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
                 error: { type: 'image_generation_error', code: 'tool_call_budget_exhausted', message: `Image generation budget (${IMAGE_ITERATION_CAP} attempts) reached for this response. Summarize and finish without another image.`, retryable: false },
               });
             },
-          })];
+          }];
         }
         state.imageDispatchCount += 1;
 
@@ -980,7 +979,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         const isEdit = config.action === 'edit' || (config.action === 'auto' && sources.length > 0);
         const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
 
-        return [serverToolResultSlot({
+        return [{
           id,
           startItem: { type: 'image_generation_call', status: 'in_progress' },
           startEvents: [
@@ -988,7 +987,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
             { type: 'response.image_generation_call.generating' },
           ],
           run: streamImageGeneration(promptArg, action, isEdit, sources, state),
-        })];
+        }];
       },
     },
   };
