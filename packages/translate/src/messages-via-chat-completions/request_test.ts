@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { translateMessagesToChatCompletions } from './request.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
+import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
+import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 test('translateMessagesToChatCompletions maps thinking.disabled to reasoning_effort none', () => {
   const result = translateMessagesToChatCompletions({
@@ -343,4 +344,30 @@ test('translateMessagesToChatCompletions omits response_format when output_confi
   });
 
   assertFalse('response_format' in result);
+});
+
+test('translateMessagesToChatCompletions rejects an unknown assistant content block type', () => {
+  assertThrows(
+    () =>
+      translateMessagesToChatCompletions({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
+      }),
+    Error,
+    'does not accept audio assistant content blocks',
+  );
+});
+
+test('translateMessagesToChatCompletions rejects an unknown user content block type', () => {
+  assertThrows(
+    () =>
+      translateMessagesToChatCompletions({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
+      }),
+    Error,
+    'does not accept audio content blocks',
+  );
 });

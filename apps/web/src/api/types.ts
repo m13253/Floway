@@ -1,13 +1,24 @@
 // Control-plane DTOs the SPA consumes. These mirror the serialized shapes that
-// apps/api emits from the unified /api endpoints — keeping them here (rather
+// the proxy emits from the unified /api endpoints — keeping them here (rather
 // than re-using internal repo types) prevents the bundler from pulling Worker
 // runtime code into the browser bundle.
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot';
 
-export type CustomEndpoint = '/chat/completions' | '/responses' | '/v1/messages';
-
 export type ModelKind = 'chat' | 'embedding' | 'image';
+
+// Structured per-endpoint capability map. Mirrors @floway-dev/protocols
+// ModelEndpoints: a present key means the model is served by that endpoint.
+export interface ModelEndpoints {
+  chatCompletions?: {};
+  responses?: {};
+  messages?: {};
+  embeddings?: {};
+  imagesGenerations?: {};
+  imagesEdits?: {};
+}
+
+export type ModelEndpointKey = keyof ModelEndpoints;
 
 // USD per million tokens, keyed by billing dimension. Mirrors
 // @floway-dev/protocols ModelPricing; every key is optional.
@@ -17,7 +28,7 @@ export interface UpstreamModelConfig {
   upstreamModelId: string;
   publicModelId?: string;
   kind: ModelKind;
-  supportedEndpoints: string[];
+  endpoints: ModelEndpoints;
   display_name?: string;
   limits?: { max_context_window_tokens?: number; max_prompt_tokens?: number; max_output_tokens?: number };
   cost?: ModelPricing;
@@ -46,7 +57,7 @@ export interface CustomRawModel {
 export interface CustomUpstreamConfig {
   baseUrl: string;
   authStyle: 'bearer' | 'anthropic';
-  supportedEndpoints: CustomEndpoint[];
+  endpoints: ModelEndpoints;
   pathOverrides?: Record<string, string>;
   modelsFetch: CustomModelsFetch;
   models: UpstreamModelConfig[];
@@ -132,16 +143,6 @@ export interface SearchConfig {
   provider: 'disabled' | 'tavily' | 'microsoft-grounding';
   tavily: { apiKey: string };
   microsoftGrounding: { apiKey: string };
-}
-
-export interface UpstreamTestResult {
-  ok: boolean;
-  status?: number;
-  models?: string[];
-  body?: string;
-  error?: string;
-  model_count?: number;
-  probes?: Array<{ upstreamModelId: string; endpoint: string; ok: boolean; status?: number; error?: string }>;
 }
 
 export interface CopilotQuotaSnapshot {

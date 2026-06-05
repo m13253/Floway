@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals } from '../test-assert.ts';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
+import { assertEquals, assertThrows } from '../test-assert.ts';
+import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 const noOptions = {};
@@ -314,4 +314,94 @@ test('buildTargetRequest merges thinking-level effort with responseSchema format
   );
 
   assertEquals(request.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
+});
+
+test('buildTargetRequest rejects an unknown content role', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiContent],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'does not accept system content roles',
+  );
+});
+
+test('buildTargetRequest rejects a part with an unsupported kind in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ fileData: { mimeType: 'text/plain', fileUri: 'files/abc' } }] }],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'does not accept file_data parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects a function_call part in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'does not accept function_call parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects an inline_data part in model content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'does not accept inline_data parts in model content',
+  );
+});
+
+test('buildTargetRequest rejects a part that sets conflicting content fields', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } }] }],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'sets conflicting content fields',
+  );
+});
+
+test('buildTargetRequest rejects a part with no recognized content field', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{}] }],
+        },
+        'claude-test',
+        noOptions,
+      ),
+    Error,
+    'has no recognized content',
+  );
 });

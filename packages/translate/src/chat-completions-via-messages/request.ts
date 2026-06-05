@@ -69,7 +69,11 @@ const convertUserContent = async (message: ChatCompletionsMessage, loadRemoteIma
         return Promise.resolve({ type: 'text', text: part.text } as MessagesUserContentBlock);
       }
 
-      return resolveImageUrlToMessagesImage(part.image_url.url, loadRemoteImage);
+      if (part.type === 'image_url') {
+        return resolveImageUrlToMessagesImage(part.image_url.url, loadRemoteImage);
+      }
+
+      throw new Error(`Chat Completions → Messages translator does not accept ${(part as { type: string }).type} content parts.`);
     }),
   );
 
@@ -105,6 +109,8 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
         },
       ]);
       break;
+    default:
+      throw new Error(`Chat Completions → Messages translator does not accept ${message.role} messages.`);
     }
   }
 

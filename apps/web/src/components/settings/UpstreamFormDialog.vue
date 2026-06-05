@@ -54,7 +54,7 @@ const emptyPathOverrides: Record<PathKey, string> = {
   images_edits: '',
 };
 
-const blankAzureModel = (): UpstreamModelConfig => ({ upstreamModelId: '', kind: 'chat', supportedEndpoints: ['/responses'] });
+const blankAzureModel = (): UpstreamModelConfig => ({ upstreamModelId: '', kind: 'chat', endpoints: { responses: {} } });
 
 const name = ref('');
 const enabled = ref(true);
@@ -65,7 +65,7 @@ const sortOrder = ref<number>(0);
 const flagOverrides = ref<Record<string, boolean>>({});
 const disabledPublicModelIds = ref<string[]>([]);
 const flagsOpen = ref(false);
-const custom = ref<CustomDraft>({ baseUrl: '', authStyle: 'bearer', supportedEndpoints: ['/chat/completions'], bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] });
+const custom = ref<CustomDraft>({ baseUrl: '', authStyle: 'bearer', endpoints: { chatCompletions: {} }, bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] });
 const azure = ref<AzureDraft>({ endpoint: '', apiKey: '', models: [blankAzureModel()] });
 
 // Copilot's catalog is fixed by the upstream and shown read-only. It is fetched
@@ -117,7 +117,7 @@ const reset = () => {
       custom.value = {
         baseUrl: cfg.baseUrl ?? '',
         authStyle: cfg.authStyle ?? 'bearer',
-        supportedEndpoints: [...(cfg.supportedEndpoints ?? [])],
+        endpoints: { ...(cfg.endpoints ?? {}) },
         bearerToken: '',
         pathOverrides: seedPathOverrides(cfg.pathOverrides),
         modelsFetch: cfg.modelsFetch
@@ -145,7 +145,7 @@ const reset = () => {
     sortOrder.value = props.nextSortOrder;
     flagOverrides.value = {};
     disabledPublicModelIds.value = [];
-    custom.value = { baseUrl: '', authStyle: 'bearer', supportedEndpoints: ['/chat/completions'], bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] };
+    custom.value = { baseUrl: '', authStyle: 'bearer', endpoints: { chatCompletions: {} }, bearerToken: '', pathOverrides: { ...emptyPathOverrides }, modelsFetch: { enabled: true, endpoint: '' }, models: [] };
     azure.value = { endpoint: '', apiKey: '', models: [blankAzureModel()] };
   }
   error.value = null;

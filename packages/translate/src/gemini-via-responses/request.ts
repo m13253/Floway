@@ -4,6 +4,7 @@ import {
   geminiFunctionDeclarations,
   geminiFunctionResponsePart,
   geminiInlineDataUrl,
+  geminiPartKind,
   geminiPartText,
   geminiReasoningEffort,
   geminiReasoningId,
@@ -12,7 +13,7 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
 import type { ResponsesInputContent, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (input: ResponsesInputItem[], pending: ResponsesInputContent[], role: 'user' | 'assistant'): void => {
@@ -32,91 +33,84 @@ const inlineDataToInputImage = (part: GeminiPart): ResponsesInputContent | null 
   };
 };
 
-const buildFunctionCallOutput = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem | null => {
-  const functionResponsePart = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex);
-  if (!functionResponsePart) return null;
-
-  return {
-    type: 'function_call_output',
-    call_id: functionResponsePart.id,
-    output: JSON.stringify(functionResponsePart.response.response),
-    status: 'completed',
-  };
-};
-
-const buildFunctionCall = (part: GeminiPart, turnIndex: number, partIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem | null => {
-  const functionCallPart = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex);
-  if (!functionCallPart) return null;
-
-  return {
-    type: 'function_call',
-    call_id: functionCallPart.id,
-    name: functionCallPart.call.name,
-    arguments: JSON.stringify(functionCallPart.call.args),
-    status: 'completed',
-  };
-};
-
-const buildReasoningItem = (part: GeminiPart, turnIndex: number, partIndex: number): ResponsesInputItem | null => {
-  const text = geminiThoughtText(part) ?? '';
-
-  if (!text) return null;
-
-  return {
-    type: 'reasoning',
-    id: geminiReasoningId(turnIndex, partIndex),
-    summary: text ? [{ type: 'summary_text', text }] : [],
-  };
-};
-
-const buildUserInputItems = (content: NonNullable<GeminiPayload['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
+const buildUserInputItems = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
-    const functionOutput = buildFunctionCallOutput(part, turnIndex, partIndex, unmatchedToolCallIds);
-    if (functionOutput) {
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
+      return;
+    case 'function_response': {
+      const { response, id } = geminiFunctionResponsePart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
       flushPendingContent(input, pendingContent, 'user');
-      input.push(functionOutput);
+      input.push({
+        type: 'function_call_output',
+        call_id: id,
+        output: JSON.stringify(response.response),
+        status: 'completed',
+      });
       return;
     }
-
-    const text = geminiPartText(part);
-    if (text !== null) {
-      pendingContent.push({ type: 'input_text', text });
+    case 'text': {
+      const text = geminiPartText(part);
+      if (text !== null) pendingContent.push({ type: 'input_text', text });
       return;
     }
-
-    const image = inlineDataToInputImage(part);
-    if (image) pendingContent.push(image);
+    case 'inline_data': {
+      const image = inlineDataToInputImage(part);
+      if (image) pendingContent.push(image);
+      return;
+    }
+    default:
+      throw new Error(`Gemini → Responses translator does not accept ${kind} parts in user content.`);
+    }
   });
 
   flushPendingContent(input, pendingContent, 'user');
   return input;
 };
 
-const buildAssistantInputItems = (content: NonNullable<GeminiPayload['contents']>[number], turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
+const buildAssistantInputItems = (content: GeminiContent, turnIndex: number, unmatchedToolCallIds: GeminiToolCallIds): ResponsesInputItem[] => {
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
   content.parts.forEach((part, partIndex) => {
-    const reasoning = buildReasoningItem(part, turnIndex, partIndex);
-    if (reasoning) {
+    const kind = geminiPartKind(part);
+    switch (kind) {
+    case null:
+      return;
+    case 'function_call': {
+      const { call, id } = geminiFunctionCallPart(part, unmatchedToolCallIds, turnIndex, partIndex)!;
       flushPendingContent(input, pendingContent, 'assistant');
-      input.push(reasoning);
-
-      if (part.thought === true && !part.functionCall) return;
-    }
-
-    const functionCall = buildFunctionCall(part, turnIndex, partIndex, unmatchedToolCallIds);
-    if (functionCall) {
-      flushPendingContent(input, pendingContent, 'assistant');
-      input.push(functionCall);
+      input.push({
+        type: 'function_call',
+        call_id: id,
+        name: call.name,
+        arguments: JSON.stringify(call.args),
+        status: 'completed',
+      });
       return;
     }
-
-    const text = geminiVisibleText(part);
-    if (text !== null) pendingContent.push({ type: 'output_text', text });
+    case 'text': {
+      const thoughtText = geminiThoughtText(part);
+      if (thoughtText !== null) {
+        flushPendingContent(input, pendingContent, 'assistant');
+        input.push({
+          type: 'reasoning',
+          id: geminiReasoningId(turnIndex, partIndex),
+          summary: [{ type: 'summary_text', text: thoughtText }],
+        });
+        return;
+      }
+      const visible = geminiVisibleText(part);
+      if (visible !== null) pendingContent.push({ type: 'output_text', text: visible });
+      return;
+    }
+    default:
+      throw new Error(`Gemini → Responses translator does not accept ${kind} parts in model content.`);
+    }
   });
 
   flushPendingContent(input, pendingContent, 'assistant');
@@ -184,7 +178,17 @@ export const buildTargetRequest = (payload: GeminiPayload, model: string): Respo
 
   const input = request.input as ResponsesInputItem[];
   payload.contents?.forEach((content, turnIndex) => {
-    input.push(...(content.role === 'model' ? buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds) : buildUserInputItems(content, turnIndex, unmatchedToolCallIds)));
+    switch (content.role) {
+    case 'model':
+      input.push(...buildAssistantInputItems(content, turnIndex, unmatchedToolCallIds));
+      return;
+    case 'user':
+    case undefined:
+      input.push(...buildUserInputItems(content, turnIndex, unmatchedToolCallIds));
+      return;
+    default:
+      throw new Error(`Gemini → Responses translator does not accept ${(content as { role: string }).role} content roles.`);
+    }
   });
 
   applyGenerationConfig(request, payload.generationConfig);

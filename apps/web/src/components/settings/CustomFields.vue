@@ -3,7 +3,7 @@ import { Button, Input, Switch } from '@floway-dev/ui';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { CustomEndpoint, CustomRawModel, FlagDef, UpstreamModelConfig } from '../../api/types.ts';
+import type { CustomRawModel, FlagDef, ModelEndpointKey, ModelEndpoints, UpstreamModelConfig } from '../../api/types.ts';
 
 import SecretInput from '../shared/SecretInput.vue';
 
@@ -31,18 +31,18 @@ const props = defineProps<{
 
 const api = useApi();
 
-const endpointPills: { value: CustomEndpoint; label: string }[] = [
-  { value: '/chat/completions', label: '/chat/completions' },
-  { value: '/responses', label: '/responses' },
-  { value: '/v1/messages', label: '/messages' },
+const endpointPills: { key: ModelEndpointKey; label: string }[] = [
+  { key: 'chatCompletions', label: '/chat/completions' },
+  { key: 'responses', label: '/responses' },
+  { key: 'messages', label: '/messages' },
 ];
 
 const pathOverrideKeys: PathKey[] = ['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits'];
 
-const toggleEndpoint = (ep: CustomEndpoint) => {
-  const set = new Set(draft.value.supportedEndpoints);
-  if (set.has(ep)) set.delete(ep); else set.add(ep);
-  draft.value = { ...draft.value, supportedEndpoints: Array.from(set) };
+const toggleEndpoint = (key: ModelEndpointKey) => {
+  const endpoints: ModelEndpoints = { ...draft.value.endpoints };
+  if (endpoints[key] !== undefined) delete endpoints[key]; else endpoints[key] = {};
+  draft.value = { ...draft.value, endpoints };
 };
 
 const updatePathOverride = (key: PathKey, value: string) => {
@@ -77,10 +77,10 @@ const fetchError = ref<string | null>(null);
 // image map to their fixed endpoints; chat models follow the upstream-level
 // Default LLM Endpoints selection, mirroring how the data plane derives an
 // auto chat model's endpoints from the per-upstream config.
-const endpointsForKind = (kind: CustomRawModel['kind']): string[] => {
-  if (kind === 'embedding') return ['/embeddings'];
-  if (kind === 'image') return ['/v1/images/generations', '/v1/images/edits'];
-  return draft.value.supportedEndpoints.length ? [...draft.value.supportedEndpoints] : ['/chat/completions'];
+const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
+  if (kind === 'embedding') return { embeddings: {} };
+  if (kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
+  return Object.keys(draft.value.endpoints).length > 0 ? { ...draft.value.endpoints } : { chatCompletions: {} };
 };
 
 const toModelConfig = (m: CustomRawModel): UpstreamModelConfig => {
@@ -89,7 +89,7 @@ const toModelConfig = (m: CustomRawModel): UpstreamModelConfig => {
     upstreamModelId: m.id,
     publicModelId: m.id,
     kind: m.kind ?? 'chat',
-    supportedEndpoints: endpointsForKind(m.kind),
+    endpoints: endpointsForKind(m.kind),
     ...(label ? { display_name: label } : {}),
     ...(m.limits ? { limits: m.limits } : {}),
     ...(m.cost ? { cost: m.cost } : {}),
@@ -208,14 +208,14 @@ onMounted(() => {
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <label
           v-for="ep in endpointPills"
-          :key="ep.value"
+          :key="ep.key"
           class="flex items-center gap-2 rounded-md border border-white/10 bg-surface-800/50 px-3 py-2 text-xs text-gray-300 cursor-pointer"
         >
           <input
             type="checkbox"
             class="accent-accent-cyan"
-            :checked="draft.supportedEndpoints.includes(ep.value)"
-            @change="toggleEndpoint(ep.value)"
+            :checked="draft.endpoints[ep.key] !== undefined"
+            @change="toggleEndpoint(ep.key)"
           >
           <span class="font-mono text-[11px]">{{ ep.label }}</span>
         </label>

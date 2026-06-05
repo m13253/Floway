@@ -35,6 +35,28 @@ export interface ResponsesPayload {
   service_tier?: string | null;
 }
 
+// Narrower payload for `/responses/compact`. The official endpoint accepts a
+// strict subset of `/responses` fields — model/input/instructions/
+// previous_response_id/prompt_cache_*/service_tier — plus we honour `store`
+// as a gateway-policy hint for snapshot persistence. Anything from
+// `ResponsesPayload` not listed here (tools, temperature, max_output_tokens,
+// reasoning, stream, etc.) is create-only and would be rejected or silently
+// ignored by the upstream compact endpoint.
+// Reference: https://developers.openai.com/api/reference/resources/responses/methods/compact
+export interface ResponsesCompactPayload {
+  model: string;
+  input: string | ResponsesInputItem[];
+  instructions?: string | null;
+  previous_response_id?: string | null;
+  prompt_cache_key?: string | null;
+  prompt_cache_retention?: 'in_memory' | '24h' | null;
+  service_tier?: string | null;
+  // Gateway-only: controls whether the compact response's output items + the
+  // committed snapshot persist. Forwarded NEITHER to upstream nor to the
+  // provider call body.
+  store?: boolean | null;
+}
+
 export type ResponsesInputItem =
   | ResponsesInputMessage
   | ResponsesFunctionToolCallItem
@@ -50,6 +72,7 @@ export type ResponsesInputItem =
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
   | ResponsesCompactionItem
+  | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem
@@ -191,6 +214,12 @@ export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'
 }
 
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
+
+// Trailing input item recognised by codex's RemoteCompactionV2: the upstream
+// turns a normal `/responses` call into a compaction round-trip and replies
+// with a single `compaction` output item. Payload-free on the wire (any extra
+// keys are tolerated by the permissive base).
+export type ResponsesCompactionTriggerItem = ResponsesPermissiveItem<'compaction_trigger'>;
 
 export interface ResponsesCodeInterpreterCallItem extends ResponsesPermissiveItem<'code_interpreter_call'> {
   call_id?: string;
@@ -501,7 +530,11 @@ export interface ResponsesOutputImageGenerationCall {
 
 // ── Stream event types ──
 
-export type ResponsesStreamEvent =
+// Spec marks sequence_number required, but some Copilot upstreams omit it
+// on the wire; the stream parser backfills a monotonic counter when missing.
+export type ResponsesStreamEvent = ResponsesStreamEventVariant & { sequence_number?: number };
+
+type ResponsesStreamEventVariant =
   | { type: 'response.created'; response: ResponsesResult }
   | { type: 'response.in_progress'; response: ResponsesResult }
   | {
@@ -668,44 +701,6 @@ export type ResponsesStreamEvent =
   }
   | { type: 'ping' };
 
-// Forward-compatibility escape hatch for unknown event types. Earlier
-// versions of `ResponsesStreamEvent` ended with a permissive
-// `{ type: string; [key: string]: unknown }` catch-all in the union;
-// because that branch matches any object with a `type` field and any
-// extra keys, it silently let test fixtures compile against
-// `ResponsesStreamEvent` while missing required fields on the
-// `response` member (e.g. spec-required `error: null` /
-// `incomplete_details: null` on `response.created.response`). Splitting
-// the catch-all into a separate exported type means callers that need
-// to accept unknown future events must opt in explicitly (and assume
-// the responsibility of asserting field shapes themselves) instead of
-// letting every malformed fixture compile through silently.
-export interface UnknownResponsesStreamEvent {
-  type: string;
-  [key: string]: unknown;
-}
-
-// Union for consumers that explicitly need to accept future / unknown
-// event types alongside the strongly-typed ones. Use this when reading
-// from an upstream wire we do not fully control. Producers (test
-// fixtures, gateway synthesizers) should keep using
-// `ResponsesStreamEvent` so missing required fields are caught at
-// compile time.
-export type ResponsesStreamEventOrUnknown = ResponsesStreamEvent | UnknownResponsesStreamEvent;
-
-// Gateway-side extension: upstream Responses streams may omit `sequence_number`
-// when probing, so the gateway-internal shape leaves it optional.
-export type RawResponsesStreamEvent = ResponsesStreamEvent & {
-  sequence_number?: number;
-};
-
-// Sibling of RawResponsesStreamEvent for sequences synthesized inside the
-// gateway (from-result expansion, from-stream projection), where the
-// sequence number is always present.
-export type SequencedResponsesStreamEvent = ResponsesStreamEvent & {
-  sequence_number: number;
-};
-
 // Either side of the Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape
 // is identical aside from the type tag's role.
@@ -714,6 +709,14 @@ export type ResponsesReasoningItem = ResponsesInputReasoning | ResponsesOutputRe
 export const isResponsesTerminalEvent = (event: Pick<ResponsesStreamEvent, 'type'>): boolean =>
   event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed' || event.type === 'error';
 
+// Typed accessor for the `response` payload carried on lifecycle envelopes
+// (`response.created`, `response.in_progress`, `response.completed`,
+// `response.incomplete`, `response.failed`). Returns null on every other
+// event type so callers don't have to reproduce the variant check.
+export const responsesResultFromStreamEvent = (event: ResponsesStreamEvent): ResponsesResult | null =>
+  'response' in event ? event.response : null;
+
 export { responsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
+export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream.ts';

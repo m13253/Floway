@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals } from '../test-assert.ts';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
+import { assertEquals, assertThrows } from '../test-assert.ts';
+import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 test('buildTargetRequest maps system instruction and multimodal user content', () => {
   const payload: GeminiPayload = {
@@ -392,4 +392,88 @@ test('buildTargetRequest maps thinking budget thresholds', () => {
   assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test').reasoning_effort, 'low');
   assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test').reasoning_effort, 'medium');
   assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test').reasoning_effort, 'high');
+});
+
+test('buildTargetRequest rejects an unknown content role', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiContent],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept system content roles',
+  );
+});
+
+test('buildTargetRequest rejects a part with an unsupported kind in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ executableCode: { language: 'PYTHON', code: 'print(1)' } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept executable_code parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects a function_call part in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept function_call parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects a function_response part in model content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ functionResponse: { name: 'x', response: {} } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept function_response parts in model content',
+  );
+});
+
+test('buildTargetRequest rejects a part that sets conflicting content fields', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'sets conflicting content fields',
+  );
+});
+
+test('buildTargetRequest rejects a part with no recognized content field', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{}] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'has no recognized content',
+  );
 });

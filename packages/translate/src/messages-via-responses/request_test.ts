@@ -2,7 +2,8 @@ import { test } from 'vitest';
 
 import { translateMessagesToResponses } from './request.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
-import { assertEquals, assertFalse } from '../test-assert.ts';
+import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
+import type { MessagesAssistantContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import type { ResponsesFunctionTool, ResponsesInputReasoning } from '@floway-dev/protocols/responses';
 
 test('translateMessagesToResponses preserves a native thinking signature as encrypted_content with a synthesized id', () => {
@@ -388,4 +389,30 @@ test('translateMessagesToResponses omits text when output_config has no format',
   });
 
   assertFalse('text' in result);
+});
+
+test('translateMessagesToResponses rejects an unknown assistant content block type', () => {
+  assertThrows(
+    () =>
+      translateMessagesToResponses({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
+      }),
+    Error,
+    'does not accept audio assistant content blocks',
+  );
+});
+
+test('translateMessagesToResponses rejects an unknown user content block type', () => {
+  assertThrows(
+    () =>
+      translateMessagesToResponses({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
+      }),
+    Error,
+    'does not accept audio user content blocks',
+  );
 });

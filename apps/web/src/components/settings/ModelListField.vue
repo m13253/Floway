@@ -4,7 +4,7 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-json.js';
 import { computed, reactive, ref, useTemplateRef, watch } from 'vue';
 
-import type { FlagDef, ModelKind, ModelPricing, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import type { FlagDef, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
 
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 
@@ -40,16 +40,17 @@ const kindOptions: { value: ModelKind; label: string }[] = [
   { value: 'image', label: 'Image' },
 ];
 
-// Public endpoint paths offered per kind. Embedding has no choice (it always
-// routes to /embeddings); chat and image expose a checkbox set.
-const CHAT_ENDPOINTS = [
-  { value: '/chat/completions', label: '/chat/completions' },
-  { value: '/responses', label: '/responses' },
-  { value: '/v1/messages', label: '/messages' },
+// Endpoints offered per kind. Embedding has no choice (it always serves the
+// embeddings endpoint); chat and image expose a checkbox set keyed by the
+// structured endpoint key, labelled with its public path.
+const CHAT_ENDPOINTS: { key: ModelEndpointKey; label: string }[] = [
+  { key: 'chatCompletions', label: '/chat/completions' },
+  { key: 'responses', label: '/responses' },
+  { key: 'messages', label: '/messages' },
 ];
-const IMAGE_ENDPOINTS = [
-  { value: '/v1/images/generations', label: '/images/generations' },
-  { value: '/v1/images/edits', label: '/images/edits' },
+const IMAGE_ENDPOINTS: { key: ModelEndpointKey; label: string }[] = [
+  { key: 'imagesGenerations', label: '/images/generations' },
+  { key: 'imagesEdits', label: '/images/edits' },
 ];
 
 // Pricing dimensions surfaced per kind. Hidden dimensions keep their stored
@@ -68,24 +69,24 @@ const PRICING_BY_KIND: Record<ModelKind, (keyof ModelPricing)[]> = {
   image: ['input', 'input_image', 'output', 'output_image'],
 };
 
-const kindFromEndpoints = (endpoints: string[] | undefined): ModelKind => {
-  const set = new Set(endpoints ?? []);
-  if (set.has('/embeddings') || set.has('/v1/embeddings')) return 'embedding';
-  if ([...set].some(e => e.includes('/images/'))) return 'image';
+const kindFromEndpoints = (endpoints: ModelEndpoints | undefined): ModelKind => {
+  if (endpoints?.embeddings) return 'embedding';
+  if (endpoints?.imagesGenerations || endpoints?.imagesEdits) return 'image';
   return 'chat';
 };
 
-const kindFor = (config: UpstreamModelConfig): ModelKind => config.kind ?? kindFromEndpoints(config.supportedEndpoints);
+const kindFor = (config: UpstreamModelConfig): ModelKind => config.kind ?? kindFromEndpoints(config.endpoints);
 
-// The endpoint set to apply when switching INTO a kind, preserving any current
-// endpoints that already belong to that kind so a chat model keeps its protocol
-// choices across an accidental round-trip.
-const defaultEndpointsForKind = (kind: ModelKind, current: string[] | undefined): string[] => {
-  const set = new Set(current ?? []);
-  if (kind === 'embedding') return ['/embeddings'];
-  const options = (kind === 'image' ? IMAGE_ENDPOINTS : CHAT_ENDPOINTS).map(e => e.value);
-  const kept = options.filter(v => set.has(v));
-  return kept.length ? kept : (kind === 'image' ? options : ['/chat/completions']);
+// The endpoint map to apply when switching INTO a kind, preserving any current
+// endpoints (and their sub-capabilities) that already belong to that kind so a
+// chat model keeps its protocol choices across an accidental round-trip.
+const defaultEndpointsForKind = (kind: ModelKind, current: ModelEndpoints | undefined): ModelEndpoints => {
+  if (kind === 'embedding') return { embeddings: {} };
+  const keys = (kind === 'image' ? IMAGE_ENDPOINTS : CHAT_ENDPOINTS).map(e => e.key);
+  const kept: ModelEndpoints = {};
+  for (const key of keys) if (current?.[key]) kept[key] = current[key]!;
+  if (Object.keys(kept).length > 0) return kept;
+  return kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} };
 };
 
 const endpointOptionsForKind = (kind: ModelKind) => (kind === 'image' ? IMAGE_ENDPOINTS : CHAT_ENDPOINTS);
@@ -115,9 +116,9 @@ const expanded = reactive<Record<string, boolean>>({});
 // appended at the bottom.
 const reconcile = () => {
   const manual = models.value;
-  // Normalize kind on every manual entry (older configs predate the field) so
-  // the form, the JSON view, and the next save all carry an explicit kind.
-  for (const c of manual) if (!c.kind) c.kind = kindFromEndpoints(c.supportedEndpoints);
+  // Normalize kind on every manual entry that omits it so the form, the JSON
+  // view, and the next save all carry an explicit kind.
+  for (const c of manual) if (!c.kind) c.kind = kindFromEndpoints(c.endpoints);
   const manualIds = new Set(manual.map(m => m.upstreamModelId));
   const auto = (props.autoModels ?? []).filter(a => !manualIds.has(a.upstreamModelId));
 
@@ -186,13 +187,14 @@ const patchConfig = (config: UpstreamModelConfig, patch: Partial<UpstreamModelCo
 };
 
 const setKind = (config: UpstreamModelConfig, kind: ModelKind) => {
-  patchConfig(config, { kind, supportedEndpoints: defaultEndpointsForKind(kind, config.supportedEndpoints) });
+  patchConfig(config, { kind, endpoints: defaultEndpointsForKind(kind, config.endpoints) });
 };
 
-const toggleEndpoint = (config: UpstreamModelConfig, ep: string, on: boolean) => {
-  const set = new Set(config.supportedEndpoints ?? []);
-  if (on) set.add(ep); else set.delete(ep);
-  patchConfig(config, { supportedEndpoints: Array.from(set) });
+const toggleEndpoint = (config: UpstreamModelConfig, key: ModelEndpointKey, on: boolean) => {
+  const endpoints: ModelEndpoints = { ...(config.endpoints ?? {}) };
+  if (on) endpoints[key] = endpoints[key] ?? {};
+  else delete endpoints[key];
+  patchConfig(config, { endpoints });
 };
 
 const updateLimit = (config: UpstreamModelConfig, key: 'max_context_window_tokens' | 'max_prompt_tokens' | 'max_output_tokens', value: string) => {
@@ -285,12 +287,15 @@ const hasAutoCounterpart = (row: Row) => {
 };
 const showModePills = (row: Row) => !props.readOnly && !props.allManual && hasAutoCounterpart(row);
 
-const blankConfig = (): UpstreamModelConfig => ({ upstreamModelId: '', kind: 'chat', supportedEndpoints: ['/chat/completions'] });
+const blankConfig = (): UpstreamModelConfig => ({ upstreamModelId: '', kind: 'chat', endpoints: { chatCompletions: {} } });
+
+const cloneEndpoints = (endpoints: ModelEndpoints | undefined): ModelEndpoints =>
+  endpoints && Object.keys(endpoints).length > 0 ? { ...endpoints } : { chatCompletions: {} };
 
 const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => ({
   upstreamModelId: auto.upstreamModelId,
-  kind: auto.kind ?? kindFromEndpoints(auto.supportedEndpoints),
-  supportedEndpoints: auto.supportedEndpoints?.length ? [...auto.supportedEndpoints] : ['/chat/completions'],
+  kind: auto.kind ?? kindFromEndpoints(auto.endpoints),
+  endpoints: cloneEndpoints(auto.endpoints),
   ...(auto.publicModelId ? { publicModelId: auto.publicModelId } : {}),
   ...(auto.display_name ? { display_name: auto.display_name } : {}),
   ...(auto.limits ? { limits: { ...auto.limits } } : {}),
@@ -492,8 +497,8 @@ const syncJsonScroll = (event: Event) => {
           <div v-if="kindFor(configOf(row)) !== 'embedding'" class="space-y-1.5">
             <span class="block text-xs font-medium text-gray-500">Supported Endpoints</span>
             <div class="flex flex-wrap gap-2">
-              <label v-for="ep in endpointOptionsForKind(kindFor(configOf(row)))" :key="ep.value" class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-surface-800/40 px-2 py-1 text-xs text-gray-200" :class="!isEditable(row) && 'opacity-80'">
-                <input type="checkbox" class="accent-accent-cyan" :checked="configOf(row).supportedEndpoints?.includes(ep.value)" :disabled="!isEditable(row)" @change="(e: Event) => isEditable(row) && toggleEndpoint(row.config, ep.value, (e.target as HTMLInputElement).checked)">
+              <label v-for="ep in endpointOptionsForKind(kindFor(configOf(row)))" :key="ep.key" class="inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-surface-800/40 px-2 py-1 text-xs text-gray-200" :class="!isEditable(row) && 'opacity-80'">
+                <input type="checkbox" class="accent-accent-cyan" :checked="configOf(row).endpoints?.[ep.key] !== undefined" :disabled="!isEditable(row)" @change="(e: Event) => isEditable(row) && toggleEndpoint(row.config, ep.key, (e.target as HTMLInputElement).checked)">
                 <code class="font-mono text-[11px]">{{ ep.label }}</code>
               </label>
             </div>

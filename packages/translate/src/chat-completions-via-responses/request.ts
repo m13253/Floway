@@ -95,6 +95,10 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
       continue;
     }
 
+    if (message.role !== 'tool') {
+      throw new Error(`Chat Completions → Responses translator does not accept ${(message as { role: string }).role} messages.`);
+    }
+
     if (!message.tool_call_id) {
       throw new Error('tool message requires tool_call_id for Responses translation');
     }

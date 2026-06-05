@@ -22,15 +22,17 @@ const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesI
   pending.length = 0;
 };
 
-const translateUserContentBlock = (block: MessagesUserContentBlock): ResponsesInputContent | undefined => {
+const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>): ResponsesInputContent => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
-  if (block.type !== 'image') return undefined;
+  if (block.type === 'image') {
+    return {
+      type: 'input_image',
+      image_url: `data:${block.source.media_type};base64,${block.source.data}`,
+      detail: 'auto',
+    };
+  }
 
-  return {
-    type: 'input_image',
-    image_url: `data:${block.source.media_type};base64,${block.source.data}`,
-    detail: 'auto',
-  };
+  throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} user content blocks.`);
 };
 
 const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
@@ -91,8 +93,7 @@ const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[
       continue;
     }
 
-    const content = translateUserContentBlock(block);
-    if (content) pendingContent.push(content);
+    pendingContent.push(translateUserContentBlock(block));
   }
 
   flushPendingContent(pendingContent, input, 'user');
@@ -128,7 +129,10 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
 
     if (block.type === 'text') {
       pendingContent.push({ type: 'output_text', text: block.text });
+      continue;
     }
+
+    throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');

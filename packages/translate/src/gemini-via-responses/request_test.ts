@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals } from '../test-assert.ts';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
+import { assertEquals, assertThrows } from '../test-assert.ts';
+import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 test('buildTargetRequest maps instructions and multimodal user input without defaults', () => {
   const payload: GeminiPayload = {
@@ -326,4 +326,88 @@ test('buildTargetRequest maps tool declarations and tool choice modes only when 
     'required',
   );
   assertEquals(buildTargetRequest({ toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test').tool_choice, undefined);
+});
+
+test('buildTargetRequest rejects an unknown content role', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'tool', parts: [{ text: 'Hi' }] } as unknown as GeminiContent],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept tool content roles',
+  );
+});
+
+test('buildTargetRequest rejects a part with an unsupported kind in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ codeExecutionResult: { outcome: 'OK' } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept code_execution_result parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects a function_call part in user content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept function_call parts in user content',
+  );
+});
+
+test('buildTargetRequest rejects an inline_data part in model content', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'does not accept inline_data parts in model content',
+  );
+});
+
+test('buildTargetRequest rejects a part that sets conflicting content fields', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } }] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'sets conflicting content fields',
+  );
+});
+
+test('buildTargetRequest rejects a part with no recognized content field', () => {
+  assertThrows(
+    () =>
+      buildTargetRequest(
+        {
+          contents: [{ role: 'user', parts: [{}] }],
+        },
+        'gpt-test',
+      ),
+    Error,
+    'has no recognized content',
+  );
 });

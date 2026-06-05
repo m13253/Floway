@@ -1,0 +1,213 @@
+import { test } from 'vitest';
+
+import { assertCustomUpstreamRecord } from './config.ts';
+import {
+  customFetchChatCompletions,
+  customFetchEmbeddings,
+  customFetchMessages,
+  customFetchMessagesCountTokens,
+  customFetchModels,
+  customFetchResponses,
+  customFetchResponsesCompact,
+} from './fetch.ts';
+import type { UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+
+const baseRecord: UpstreamRecord = {
+  id: 'up_test',
+  provider: 'custom',
+  name: 'Test Custom',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-04-29T00:00:00.000Z',
+  updatedAt: '2026-04-29T00:00:00.000Z',
+  config: {
+    baseUrl: 'https://custom.example.com',
+    bearerToken: 'sk-test',
+    endpoints: { chatCompletions: {} },
+  },
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+};
+
+test('typed transports use default /v1/* paths', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
+
+  const seen: string[] = [];
+  await withMockedFetch(
+    request => {
+      seen.push(request.url);
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchChatCompletions(config, { method: 'POST', body: '{}' });
+      await customFetchResponses(config, { method: 'POST', body: '{}' });
+      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' });
+      await customFetchMessages(config, { method: 'POST', body: '{}' });
+      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' });
+      await customFetchEmbeddings(config, { method: 'POST', body: '{}' });
+      await customFetchModels(config, { method: 'GET' });
+    },
+  );
+
+  assertEquals(seen, [
+    'https://custom.example.com/v1/chat/completions',
+    'https://custom.example.com/v1/responses',
+    'https://custom.example.com/v1/responses/compact',
+    'https://custom.example.com/v1/messages',
+    'https://custom.example.com/v1/messages/count_tokens',
+    'https://custom.example.com/v1/embeddings',
+    'https://custom.example.com/v1/models',
+  ]);
+});
+
+test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      pathOverrides: {
+        messages: '/api/v1/messages',
+        responses: '/api/v1/responses',
+      },
+    },
+  });
+  const seen: string[] = [];
+  await withMockedFetch(
+    request => {
+      seen.push(request.url);
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchMessages(config, { method: 'POST', body: '{}' });
+      // count_tokens / compact follow their parent override.
+      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' });
+      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' });
+      // Endpoints without an override fall back to the OpenAI default.
+      await customFetchChatCompletions(config, { method: 'POST', body: '{}' });
+    },
+  );
+
+  assertEquals(seen, [
+    'https://custom.example.com/api/v1/messages',
+    'https://custom.example.com/api/v1/messages/count_tokens',
+    'https://custom.example.com/api/v1/responses/compact',
+    'https://custom.example.com/v1/chat/completions',
+  ]);
+});
+
+test('customFetchModels resolves the path from modelsFetch.endpoint', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      modelsFetch: { enabled: true, endpoint: '/models' },
+    },
+  });
+  let seen: string | undefined;
+  await withMockedFetch(
+    request => {
+      seen = request.url;
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchModels(config, { method: 'GET' });
+    },
+  );
+
+  assertEquals(seen, 'https://custom.example.com/models');
+});
+
+test('customFetchModels falls back to the default /v1/models path when modelsFetch.endpoint is absent', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      modelsFetch: { enabled: true },
+    },
+  });
+  let seen: string | undefined;
+  await withMockedFetch(
+    request => {
+      seen = request.url;
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchModels(config, { method: 'GET' });
+    },
+  );
+
+  assertEquals(seen, 'https://custom.example.com/v1/models');
+});
+
+test('bearer authStyle sends the configured token via Authorization', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
+  let authHeader: string | null = null;
+  let xApiKey: string | null = null;
+  await withMockedFetch(
+    request => {
+      authHeader = request.headers.get('authorization');
+      xApiKey = request.headers.get('x-api-key');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchModels(config, { method: 'GET' });
+    },
+  );
+
+  assertEquals(authHeader, 'Bearer sk-test');
+  assertEquals(xApiKey, null);
+});
+
+test('authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      authStyle: 'anthropic',
+    },
+  });
+  let authHeader: string | null = null;
+  let xApiKey: string | null = null;
+  let anthropicVersion: string | null = null;
+  await withMockedFetch(
+    request => {
+      authHeader = request.headers.get('authorization');
+      xApiKey = request.headers.get('x-api-key');
+      anthropicVersion = request.headers.get('anthropic-version');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchMessages(config, { method: 'POST', body: '{}' });
+    },
+  );
+
+  assertEquals(authHeader, null);
+  assertEquals(xApiKey, 'sk-test');
+  assertEquals(anthropicVersion, '2023-06-01');
+});
+
+test('authStyle "anthropic" preserves a caller-supplied anthropic-version', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      authStyle: 'anthropic',
+    },
+  });
+  let anthropicVersion: string | null = null;
+  await withMockedFetch(
+    request => {
+      anthropicVersion = request.headers.get('anthropic-version');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchMessages(
+        config,
+        { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
+      );
+    },
+  );
+
+  assertEquals(anthropicVersion, '2024-01-01');
+});
