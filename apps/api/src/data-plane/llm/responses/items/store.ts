@@ -38,8 +38,9 @@ export interface LayeredStatefulResponsesStoreOptions {
   readonly itemWrites: readonly StatefulResponsesWriteTarget[];
   readonly snapshotWrites: readonly StatefulResponsesWriteTarget[];
   readonly stageInputs: boolean;
-  // When false, output item rows are written with null payload (metadata-only).
-  // Corresponds to the user-supplied store=false flag on Responses HTTP/WS entries.
+  // Gates durable payload persistence. When false, output item rows reach durable
+  // backings with null payload (metadata-only) and snapshot writes are skipped.
+  // In-memory backings keep full payloads regardless — see StatefulResponsesStore.
   readonly shouldStorePayload?: boolean;
 }
 
@@ -56,8 +57,11 @@ export type ResponsesSnapshotMode = 'none' | 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string | null;
-  // False when the user requested store=false; output item rows are written with
-  // null payload (metadata-only) and no snapshot is committed.
+  // Gates *durable* payload persistence specifically. When false (HTTP store=false),
+  // durable item rows are written metadata-only (null payload) and no snapshot is
+  // committed. WS session-scoped in-memory writes always retain full payloads
+  // regardless of this flag — they live for the WS lifetime only and never reach
+  // durable storage.
   readonly shouldStorePayload: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems<TSourceItems>(options: {
@@ -569,6 +573,13 @@ export const createResponsesHttpStore = (apiKeyId: string | null, store: boolean
   });
 
 // For Responses WebSocket entry — session-scoped layered store.
+//
+// `store=false` on a WS message disables the durable backing for that turn but
+// still records full items and snapshots in the session-scoped in-memory layer,
+// so subsequent messages on the same socket can resolve `previous_response_id`
+// against them. The session's lifetime bounds the data — nothing persists beyond
+// the socket. `store=true` (or omitted) layers durable repo writes on top of the
+// in-memory layer, so the turn is also addressable from later sessions.
 export const createResponsesWsSession = (apiKeyId: string | null): {
   createStore(store: boolean | undefined): StatefulResponsesStore;
 } => {
