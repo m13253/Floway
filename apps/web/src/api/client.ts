@@ -15,7 +15,7 @@ const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<
 };
 
 // The Hono RPC proxy. Every control-plane route declares its request shape via
-// zValidator in apps/api/src/control-plane/routes.ts, so the proxy types both
+// zValidator in packages/proxy/src/control-plane/routes.ts, so the proxy types both
 // the path/method and the JSON body / query for the SPA — no extra wrapper
 // needed for mutations.
 const client = hc<AppType>('/', { fetch: authFetch });
