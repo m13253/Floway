@@ -11,8 +11,8 @@ target ships in the same repo for self-hosting on a long-lived process.
 
 | Source API                              | Path                          |
 | --------------------------------------- | ----------------------------- |
-| Anthropic Messages                      | `POST /v1/messages`           |
-| OpenAI Responses                        | `POST /v1/responses`, `GET /v1/responses` WebSocket |
+| Anthropic Messages                      | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
+| OpenAI Responses                        | `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/responses` WebSocket |
 | OpenAI Chat Completions                 | `POST /v1/chat/completions`   |
 | OpenAI Embeddings                       | `POST /v1/embeddings`         |
 | OpenAI Images                           | `POST /v1/images/generations` |
@@ -133,7 +133,7 @@ The repo is a pnpm workspace.
   hold the upstream-side adapters.
 - `packages/platform` exposes the runtime contracts (`FileProvider`,
   `ImageProcessor`, `SqlDatabase`, etc.) and a few portable helpers.
-- `packages/proxy` is the runtime-agnostic gateway core: Hono app, all
+- `packages/gateway` is the runtime-agnostic gateway core: Hono app, all
   control- and data-plane routes, the Repo interface and impls, middleware,
   and the migrations SQL.
 - `apps/platform-cloudflare` ships the Cloudflare implementations
