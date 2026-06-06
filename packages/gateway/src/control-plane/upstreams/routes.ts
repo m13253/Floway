@@ -140,6 +140,21 @@ const newId = (): string => `up_${crypto.randomUUID().replace(/-/g, '').slice(0,
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
 
+// `'direct'` is the sentinel for "dial without a proxy" and is always valid;
+// any other entry must reference a proxy row that currently exists. The list
+// is otherwise free-form (duplicates and ordering are the operator's choice
+// and meaningful at dial time — see createUpstreamFetch).
+const validateProxyFallbackList = async (list: readonly string[]): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const ids = list.filter(id => id !== 'direct');
+  if (ids.length === 0) return { ok: true };
+  const proxies = await getRepo().proxies.list();
+  const known = new Set(proxies.map(p => p.id));
+  for (const id of ids) {
+    if (!known.has(id)) return { ok: false, error: `unknown proxy id in fallback list: ${id}` };
+  }
+  return { ok: true };
+};
+
 export const listUpstreams = async (c: Context) => {
   const items = await getRepo().upstreams.list();
   return c.json(await Promise.all(items.map(serializeForResponse)));
@@ -158,6 +173,10 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     return c.json({ error: 'Use POST /api/upstreams/codex-import for codex provider' }, 400);
   }
 
+  const proxyFallbackList = body.proxy_fallback_list ?? [];
+  const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
+  if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
+
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
   const upstream: UpstreamRecord = {
@@ -170,7 +189,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
-    proxyFallbackList: [],
+    proxyFallbackList,
     config: body.config,
     state: null,
   };
@@ -211,6 +230,11 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
+  if (body.proxy_fallback_list !== undefined) {
+    const fallbackCheck = await validateProxyFallbackList(body.proxy_fallback_list);
+    if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
+    next = { ...next, proxyFallbackList: body.proxy_fallback_list };
+  }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);

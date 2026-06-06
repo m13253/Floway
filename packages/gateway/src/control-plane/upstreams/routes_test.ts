@@ -553,3 +553,63 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
   assertEquals(afterState.accounts[0].refresh_token, 'rt_concurrent_winner');
   assertEquals(afterState.accounts[0].state, 'active');
 });
+
+// --- proxy_fallback_list ---
+//
+// The list is opaque to the schema — duplicates and ordering are meaningful at
+// dial time — so the only ingestion-time guard is "every non-`direct` entry
+// names a known proxy row". Both POST and PATCH share that guard and round-trip
+// the list verbatim.
+
+test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the response', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0 });
+
+  const resp = await requestApp(
+    '/api/upstreams',
+    authed(adminKey, createBody({ proxy_fallback_list: ['p_fallback', 'direct'] })),
+  );
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as Record<string, any>;
+  assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
+
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['p_fallback', 'direct']);
+});
+
+test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0 });
+
+  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const created = (await create.json()) as { id: string; proxy_fallback_list: string[] };
+  assertEquals(created.proxy_fallback_list, []);
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': adminKey },
+    body: JSON.stringify({ proxy_fallback_list: ['p_fallback', 'direct'] }),
+  });
+  assertEquals(patch.status, 200);
+  const updated = (await patch.json()) as Record<string, any>;
+  assertEquals(updated.proxy_fallback_list, ['p_fallback', 'direct']);
+});
+
+test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown proxy id', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const created = (await create.json()) as { id: string };
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-api-key': adminKey },
+    body: JSON.stringify({ proxy_fallback_list: ['nope'] }),
+  });
+  assertEquals(patch.status, 400);
+  const body = (await patch.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});

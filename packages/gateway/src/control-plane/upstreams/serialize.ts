@@ -11,6 +11,7 @@ export interface SerializedUpstreamRecord {
   updated_at: string;
   flag_overrides: Record<string, boolean>;
   disabled_public_model_ids: string[];
+  proxy_fallback_list: string[];
   config: unknown;
   state: unknown;
   // Present only for provider === 'codex'. Route handlers attach the live
@@ -114,6 +115,7 @@ const serializeBase = (
   updated_at: upstream.updatedAt,
   flag_overrides: { ...upstream.flagOverrides },
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
+  proxy_fallback_list: [...upstream.proxyFallbackList],
   config: payload.config,
   state: payload.state,
 });

@@ -154,12 +154,19 @@ export const updateKeyBody = z.object({
 
 // --- upstreams ---
 
+// Per-upstream proxy fallback list. Each entry is either a proxy id known to
+// the proxies repo or the literal `'direct'` sentinel meaning "dial without a
+// proxy". The handler validates the ids against the proxies repo; the schema
+// only enforces the wire shape.
+export const proxyFallbackListSchema = z.array(z.string().min(1));
+
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 };
 
 // Create accepts a discriminated union on `provider` so frontends get
@@ -196,6 +203,7 @@ export const updateUpstreamBody = z.object({
   sort_order: z.number().int().optional(),
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
   config: z.unknown().optional(),
 });
 
