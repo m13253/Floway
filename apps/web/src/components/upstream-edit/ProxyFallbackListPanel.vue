@@ -83,13 +83,14 @@ const activeBackoffByEntry = computed<Map<string, ActiveBackoff | null>>(() => {
     for (const entry of props.modelValue) map.set(entry, null);
     return map;
   }
-  const nowMs = now.value.getTime();
+  // expires_at is unix seconds; now is ms.
+  const nowSec = Math.floor(now.value.getTime() / 1000);
   for (const entry of props.modelValue) {
     if (entry === DIRECT) { map.set(entry, null); continue; }
     const rows = backoffsByProxyId.value.get(entry);
-    const row = rows?.find(r => r.upstream_id === props.upstreamId && r.expires_at > nowMs);
+    const row = rows?.find(r => r.upstream_id === props.upstreamId && r.expires_at > nowSec);
     map.set(entry, row
-      ? { expiresIn: formatCountdown(row.expires_at - nowMs), failCount: row.fail_count, lastError: row.last_error }
+      ? { expiresIn: formatCountdown((row.expires_at - nowSec) * 1000), failCount: row.fail_count, lastError: row.last_error }
       : null);
   }
   return map;

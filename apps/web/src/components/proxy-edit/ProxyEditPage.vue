@@ -103,8 +103,8 @@ const upstreamNames = computed<Map<string, string>>(() => {
 // 1s tick to drive the backoff "in Xm Ys" countdown without a parent reload.
 const now = useNow({ interval: 1000 });
 
-const formatCountdown = (expiresAtMs: number): string => {
-  const ms = expiresAtMs - now.value.getTime();
+const formatCountdown = (expiresAtSec: number): string => {
+  const ms = expiresAtSec * 1000 - now.value.getTime();
   if (ms <= 0) return 'expiring';
   const totalSec = Math.ceil(ms / 1000);
   const m = Math.floor(totalSec / 60);
@@ -117,15 +117,15 @@ const formatCountdown = (expiresAtMs: number): string => {
 };
 
 const activeBackoffs = computed(() => {
-  const nowMs = now.value.getTime();
+  const nowSec = Math.floor(now.value.getTime() / 1000);
   return [...backoffsForProxy.value]
-    .filter(b => b.expires_at > nowMs)
+    .filter(b => b.expires_at > nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
 
 const lastTestedAgo = computed<string | null>(() => {
   if (lastTestedAt.value === null) return null;
-  const ms = now.value.getTime() - lastTestedAt.value;
+  const ms = now.value.getTime() - lastTestedAt.value * 1000;
   if (ms < 0) return 'just now';
   const totalSec = Math.floor(ms / 1000);
   if (totalSec < 60) return `${totalSec}s ago`;

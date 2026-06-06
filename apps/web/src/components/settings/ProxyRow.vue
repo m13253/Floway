@@ -101,7 +101,8 @@ const urlPreview = computed(() => {
 
 const lastTestedAgo = computed(() => {
   if (props.proxy.last_tested_at == null) return null;
-  return dayjs(props.proxy.last_tested_at).from(dayjs(now.value));
+  // last_tested_at is unix seconds; dayjs takes milliseconds.
+  return dayjs(props.proxy.last_tested_at * 1000).from(dayjs(now.value));
 });
 
 const formatCountdown = (ms: number): string => {
@@ -117,9 +118,10 @@ const formatCountdown = (ms: number): string => {
 };
 
 const activeBackoffs = computed(() => {
-  const nowMs = now.value.getTime();
+  // expires_at is unix seconds.
+  const nowSec = Math.floor(now.value.getTime() / 1000);
   return props.backoffsForProxy
-    .filter(b => b.expires_at > nowMs)
+    .filter(b => b.expires_at > nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
 
@@ -232,7 +234,7 @@ const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;
           :title="row.last_error ?? undefined"
         >
           {{ upstreamLabel(row.upstream_id) }}
-          <span class="text-gray-600">(in {{ formatCountdown(row.expires_at - now.getTime()) }})</span>
+          <span class="text-gray-600">(in {{ formatCountdown(row.expires_at * 1000 - now.getTime()) }})</span>
         </span>
         <span v-if="extraBackoffCount > 0" class="text-gray-600">+{{ extraBackoffCount }} more</span>
         <button
