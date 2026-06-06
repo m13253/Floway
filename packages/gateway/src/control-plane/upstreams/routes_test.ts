@@ -613,3 +613,26 @@ test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown pr
   const body = (await patch.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
+
+test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', sortOrder: 0 });
+
+  const create = await requestApp('/api/upstreams', authed(adminKey, createBody({ proxy_fallback_list: ['p_a'] })));
+  const created = (await create.json()) as { id: string };
+
+  await repo.proxyBackoffs.recordDialFailure('p_a', created.id, 'tcp refused');
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'other_upstream', 'tcp refused');
+  assertEquals((await repo.proxyBackoffs.listAll()).length, 2);
+
+  const del = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'DELETE',
+    headers: { 'x-api-key': adminKey },
+  });
+  assertEquals(del.status, 200);
+
+  const remaining = await repo.proxyBackoffs.listAll();
+  assertEquals(remaining.length, 1);
+  assertEquals(remaining[0]!.upstreamId, 'other_upstream');
+});

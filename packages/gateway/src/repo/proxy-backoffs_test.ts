@@ -69,6 +69,16 @@ describe('proxy_upstream_backoffs repo', () => {
     expect(ids).toEqual(['u2']);
   });
 
+  it('resetForUpstream removes every row scoped to the upstream', async () => {
+    const repo = new InMemoryRepo();
+    await repo.proxyBackoffs.recordDialFailure('pA', 'u1', 'x');
+    await repo.proxyBackoffs.recordDialFailure('pB', 'u1', 'x');
+    await repo.proxyBackoffs.recordDialFailure('pA', 'u2', 'x');
+    await repo.proxyBackoffs.resetForUpstream('u1');
+    expect(await repo.proxyBackoffs.listForUpstream('u1')).toEqual([]);
+    expect((await repo.proxyBackoffs.listForUpstream('u2')).length).toBe(1);
+  });
+
   it('listAll returns every row', async () => {
     const repo = new InMemoryRepo();
     await repo.proxyBackoffs.recordDialFailure('p1', 'u1', 'x');

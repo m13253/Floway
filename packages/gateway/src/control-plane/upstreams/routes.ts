@@ -252,8 +252,13 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
 
 export const deleteUpstream = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const deleted = await getRepo().upstreams.delete(id);
+  const repo = getRepo();
+  const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
+  // Sweep orphaned backoff rows. Schema cascades on the SQL side; the call is
+  // a no-op when the cascade already fired but is still required for the
+  // in-memory repo and any future store that doesn't enforce FK cascades.
+  await repo.proxyBackoffs.resetForUpstream(id);
   await invalidateModelsStore(id);
   return c.json({ ok: true });
 };

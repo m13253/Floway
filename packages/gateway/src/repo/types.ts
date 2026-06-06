@@ -187,6 +187,7 @@ export interface ProxyBackoffRepo {
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;
   resetForProxy(proxyId: string): Promise<void>;
+  resetForUpstream(upstreamId: string): Promise<void>;
   reset(proxyId: string, upstreamId: string): Promise<void>;
 }
 

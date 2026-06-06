@@ -639,6 +639,8 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   recordTestSuccess(id: string, egressIp: string): Promise<void> {
+    // Test results don't bump `updated_at` — only operator edits to
+    // name/url/sort_order do.
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve();
     existing.lastEgressIp = egressIp;
@@ -717,6 +719,13 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   resetForProxy(proxyId: string): Promise<void> {
     for (const [k, r] of this.rows) {
       if (r.proxyId === proxyId) this.rows.delete(k);
+    }
+    return Promise.resolve();
+  }
+
+  resetForUpstream(upstreamId: string): Promise<void> {
+    for (const [k, r] of this.rows) {
+      if (r.upstreamId === upstreamId) this.rows.delete(k);
     }
     return Promise.resolve();
   }

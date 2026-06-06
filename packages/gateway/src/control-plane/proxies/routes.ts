@@ -98,6 +98,14 @@ const ANCHORS = {
   'ident.me-v6': { host: '6.ident.me', port: 443, path: '/' },
 } as const;
 
+// IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
+// hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
+// chars before sniffing — a misbehaving anchor could otherwise feed an
+// arbitrary HTML page into `last_egress_ip`. The regex is tight enough to
+// reject anything obviously not an IP without trying to be a strict
+// validator (we only need a "this looks plausible" gate).
+const IP_LIKE_RE = /^[0-9a-fA-F:.]{1,45}$/;
+
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const id = c.req.param('id') ?? '';
   const body = c.req.valid('json');
@@ -121,9 +129,12 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     if (!response.ok) {
       return c.json({ ok: false, error: `Anchor returned status ${response.status}` });
     }
-    const ip = (await response.text()).trim();
-    await repo.proxies.recordTestSuccess(id, ip);
-    return c.json({ ok: true, egress_ip: ip });
+    const truncated = (await response.text()).slice(0, 256).trim();
+    if (!IP_LIKE_RE.test(truncated)) {
+      return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
+    }
+    await repo.proxies.recordTestSuccess(id, truncated);
+    return c.json({ ok: true, egress_ip: truncated });
   } catch (err) {
     return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }

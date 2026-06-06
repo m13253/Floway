@@ -1143,6 +1143,8 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async recordTestSuccess(id: string, egressIp: string): Promise<void> {
+    // Test results don't bump `updated_at` — only operator edits to
+    // name/url/sort_order do.
     await this.db
       .prepare('UPDATE proxies SET last_egress_ip = ?, last_tested_at = ? WHERE id = ?')
       .bind(egressIp, Math.floor(Date.now() / 1000), id)
@@ -1241,6 +1243,13 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
     await this.db
       .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ?')
       .bind(proxyId)
+      .run();
+  }
+
+  async resetForUpstream(upstreamId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM proxy_upstream_backoffs WHERE upstream_id = ?')
+      .bind(upstreamId)
       .run();
   }
 
