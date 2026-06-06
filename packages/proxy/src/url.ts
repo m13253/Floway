@@ -1,6 +1,6 @@
 // Parse subscription-style proxy URIs into the discriminated `ProxyConfig`
-// union. Supported schemes: http, https, socks5, ss, trojan, vless. The
-// formatter (the inverse direction) lives next to it once task 7 lands.
+// union, and serialize the same shape back out. Supported schemes: http,
+// https, socks5, ss, trojan, vless.
 //
 // Discrimination notes:
 //   * `ss://` covers both legacy AEAD-2018 (userinfo is base64(method:pwd))
@@ -12,6 +12,11 @@
 // Required-field validation lives here so callers receive a typed
 // `ProxyConfig` they can dial without re-checking, e.g. REALITY mandates
 // pbk / fp / sni up front.
+//
+// Round-trip guarantee: `parseProxyUri(formatProxyUri(c))` deep-equals `c`
+// for every supported variant. The serialized string is canonical-shaped
+// but not byte-for-byte identical with arbitrary inputs — query order,
+// percent-encoding, and SS-2022 base64 padding may vary.
 
 import type {
   HttpProxyConfig,
@@ -236,3 +241,143 @@ const parseReality = (
 
 // `atob` is universally available in Workers, Node 22+, and browsers.
 const base64Decode = (s: string): string => atob(s)
+
+export const formatProxyUri = (config: ProxyConfig): string => {
+  switch (config.kind) {
+    case 'http': return formatHttp(config)
+    case 'socks5': return formatSocks5(config)
+    case 'ss': return formatSs(config)
+    case 'ss2022': return formatSs2022(config)
+    case 'trojan': return formatTrojan(config)
+    case 'vless-tcp': return formatVlessTcp(config)
+    case 'vless-ws': return formatVlessWs(config)
+    case 'reality': return formatReality(config)
+  }
+}
+
+const formatAuthority = (
+  scheme: string,
+  username: string | undefined,
+  password: string | undefined,
+  host: string,
+  port: number,
+): string => {
+  let userinfo = ''
+  if (username !== undefined && username !== '') {
+    userinfo = encodeURIComponent(username)
+    if (password !== undefined && password !== '') {
+      userinfo += `:${encodeURIComponent(password)}`
+    }
+    userinfo += '@'
+  }
+  return `${scheme}://${userinfo}${host}:${port}`
+}
+
+const formatFragment = (name: string, host: string, port: number): string => {
+  // Match the parser's default: when `name` was synthesized from
+  // `host:port`, drop the fragment so the round trip stays stable.
+  return name === `${host}:${port}` ? '' : `#${encodeURIComponent(name)}`
+}
+
+const formatQuery = (params: Record<string, string | undefined>): string => {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.set(key, value)
+  }
+  const s = search.toString()
+  return s ? `?${s}` : ''
+}
+
+const formatHttp = (config: HttpProxyConfig): string => {
+  const scheme = config.tls ? 'https' : 'http'
+  const authority = formatAuthority(
+    scheme, config.username, config.password, config.host, config.port,
+  )
+  return `${authority}${formatFragment(config.name, config.host, config.port)}`
+}
+
+const formatSocks5 = (config: Socks5ProxyConfig): string => {
+  const authority = formatAuthority(
+    'socks5', config.username, config.password, config.host, config.port,
+  )
+  return `${authority}${formatFragment(config.name, config.host, config.port)}`
+}
+
+const formatSs = (config: ShadowsocksProxyConfig): string => {
+  // Legacy SS userinfo is the entire base64-encoded `method:password`;
+  // `btoa` handles only Latin-1 input, which matches every byte SS allows
+  // in either field.
+  const userinfo = btoa(`${config.method}:${config.password}`)
+  return `ss://${userinfo}@${config.host}:${config.port}`
+    + formatFragment(config.name, config.host, config.port)
+}
+
+const formatSs2022 = (config: Shadowsocks2022ProxyConfig): string => {
+  // SS-2022 keeps userinfo as plaintext `method:base64key`. We emit the
+  // base64 padding (`=`) raw — `parseProxyUri` decodes via
+  // `decodeURIComponent`, which accepts both raw and percent-encoded `=`.
+  return `ss://${config.method}:${config.passwordBase64}`
+    + `@${config.host}:${config.port}`
+    + formatFragment(config.name, config.host, config.port)
+}
+
+const formatTrojan = (config: TrojanProxyConfig): string => {
+  const authority = formatAuthority(
+    'trojan', config.password, undefined, config.host, config.port,
+  )
+  const query = formatQuery({
+    sni: config.sni,
+    allowInsecure: config.allowInsecure === undefined
+      ? undefined
+      : config.allowInsecure ? '1' : '0',
+  })
+  return `${authority}${query}`
+    + formatFragment(config.name, config.host, config.port)
+}
+
+const formatVlessTcp = (config: VlessTcpTlsProxyConfig): string => {
+  const authority = formatAuthority(
+    'vless', config.uuid, undefined, config.host, config.port,
+  )
+  const query = formatQuery({
+    type: 'tcp',
+    security: 'tls',
+    sni: config.sni,
+    fp: config.fingerprint,
+  })
+  return `${authority}${query}`
+    + formatFragment(config.name, config.host, config.port)
+}
+
+const formatVlessWs = (config: VlessWsTlsProxyConfig): string => {
+  const authority = formatAuthority(
+    'vless', config.uuid, undefined, config.host, config.port,
+  )
+  const query = formatQuery({
+    type: 'ws',
+    security: 'tls',
+    host: config.wsHost,
+    path: config.path,
+    sni: config.sni,
+    fp: config.fingerprint,
+  })
+  return `${authority}${query}`
+    + formatFragment(config.name, config.host, config.port)
+}
+
+const formatReality = (config: RealityProxyConfig): string => {
+  const authority = formatAuthority(
+    'vless', config.uuid, undefined, config.host, config.port,
+  )
+  const query = formatQuery({
+    type: 'tcp',
+    security: 'reality',
+    pbk: config.publicKey,
+    fp: config.fingerprint,
+    sni: config.serverName,
+    sid: config.shortId,
+    spx: config.spiderX,
+  })
+  return `${authority}${query}`
+    + formatFragment(config.name, config.host, config.port)
+}

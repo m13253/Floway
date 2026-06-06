@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseProxyUri } from './url.js'
+import { formatProxyUri, parseProxyUri } from './url.js'
 
 describe('parseProxyUri', () => {
   it('parses HTTP CONNECT plain', () => {
@@ -132,5 +132,25 @@ describe('parseProxyUri', () => {
     expect(() =>
       parseProxyUri('vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s'),
     ).toThrow(/pbk/)
+  })
+})
+
+describe('formatProxyUri', () => {
+  const cases: string[] = [
+    'http://user:pass@example.com:3128#name',
+    'https://example.com:443',
+    'socks5://u:p@1.2.3.4:1080#jp',
+    'ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#tag',
+    'ss://2022-blake3-aes-128-gcm:MTIzNDU2Nzg5MGFiY2RlZg==@1.2.3.4:8388#tag',
+    'trojan://pw@example.com:443?sni=example.com&allowInsecure=0#t',
+    'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v',
+    'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw',
+    'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r',
+  ]
+
+  it.each(cases)('round-trips %s', (uri) => {
+    const config = parseProxyUri(uri)
+    const formatted = formatProxyUri(config)
+    expect(parseProxyUri(formatted)).toEqual(config)
   })
 })
