@@ -13,6 +13,8 @@
 
 export type { TargetSpec } from './types.js'
 
+export { parseProxyUri } from './url.js'
+
 export type {
   ProxyConfig,
   ProxyConfigBase,
