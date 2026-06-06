@@ -155,6 +155,30 @@ export interface FlagDef {
   defaultFor: UpstreamProviderKind[];
 }
 
+// Mirrors SerializedProxyRecord from packages/gateway/src/control-plane/proxies/serialize.ts.
+// Field names stay snake_case to match the wire format the dashboard receives.
+export interface ProxyRecord {
+  id: string;
+  name: string;
+  url: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  last_egress_ip: string | null;
+  last_tested_at: number | null;
+}
+
+// Mirrors SerializedBackoffRow. `expires_at` and `last_error_at` are unix epoch
+// milliseconds; the dashboard formats them locally without a tz hop.
+export interface BackoffRow {
+  proxy_id: string;
+  upstream_id: string;
+  fail_count: number;
+  expires_at: number;
+  last_error: string | null;
+  last_error_at: number | null;
+}
+
 export interface ApiKey {
   id: string;
   name: string;

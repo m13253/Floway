@@ -4,6 +4,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { callApi, useApi } from '../../api/client.ts';
 import type { SearchConfig } from '../../api/types.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
+import { useProxiesStore as useProxiesStoreForLoader } from '../../composables/useProxies.ts';
 import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../composables/useUpstreams.ts';
 
 const defaultSearchConfig: SearchConfig = {
@@ -18,6 +19,7 @@ export const useSettingsPageData = defineBasicLoader(async () => {
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
     useUpstreamsStoreForLoader().load(),
     useModelsStoreForLoader().load(),
+    useProxiesStoreForLoader().load(),
   ]);
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
@@ -30,13 +32,15 @@ export const useSettingsPageData = defineBasicLoader(async () => {
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import type { UpstreamRecord } from '../../api/types.ts';
+import type { ProxyRecord, UpstreamRecord } from '../../api/types.ts';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
+import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.vue';
 import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
 import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
+import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 
 definePage({ meta: { requiresAdmin: true } });
@@ -45,6 +49,8 @@ const router = useRouter();
 const store = useUpstreamsStore();
 const { upstreams, loading: storeLoading, error: storeError, load } = store;
 const modelsStore = useModelsStore();
+const proxiesStore = useProxiesStore();
+const { proxies, backoffs, loading: proxiesLoading, load: loadProxies } = proxiesStore;
 const settingsData = useSettingsPageData();
 
 // Local copy sorted by sort_order; the child card emits a reordered array
@@ -54,8 +60,13 @@ watch(upstreams, list => {
   ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
 }, { immediate: true });
 
+const orderedProxies = ref<ProxyRecord[]>([]);
+watch(proxies, list => {
+  orderedProxies.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
+}, { immediate: true });
+
 const reloadAll = async () => {
-  await Promise.all([load(), modelsStore.load()]);
+  await Promise.all([load(), modelsStore.load(), loadProxies()]);
 };
 </script>
 
@@ -73,6 +84,15 @@ const reloadAll = async () => {
           :models="modelsStore.models.value"
           @add="() => router.push('/dashboard/upstreams/new')"
           @edit="(record: UpstreamRecord) => router.push(`/dashboard/upstreams/${record.id}`)"
+          @changed="reloadAll"
+        />
+        <ProxiesSettingsCard
+          v-model:ordered="orderedProxies"
+          :loading="proxiesLoading"
+          :backoffs="backoffs"
+          :upstreams="upstreams"
+          @add="() => router.push('/dashboard/proxies/new')"
+          @edit="(record: ProxyRecord) => router.push(`/dashboard/proxies/${record.id}`)"
           @changed="reloadAll"
         />
         <SearchConfigSection
