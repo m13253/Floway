@@ -60,6 +60,7 @@ const enabled = ref(true);
 const sortOrder = ref<number>(props.nextSortOrder);
 const flagOverrides = ref<Record<string, boolean>>({});
 const disabledPublicModelIds = ref<string[]>([]);
+const proxyFallbackList = ref<string[]>([]);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
 
@@ -76,6 +77,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
   sortOrder.value = r.sort_order;
   flagOverrides.value = { ...r.flag_overrides };
   disabledPublicModelIds.value = [...r.disabled_public_model_ids];
+  proxyFallbackList.value = [...r.proxy_fallback_list];
 
   if (r.provider === 'custom') {
     const cfg = r.config as CustomUpstreamConfig;
@@ -110,6 +112,7 @@ const seedFresh = () => {
   sortOrder.value = props.nextSortOrder;
   flagOverrides.value = {};
   disabledPublicModelIds.value = [];
+  proxyFallbackList.value = [];
   customDraft.value = blankCustomDraft();
   azureDraft.value = blankAzureDraft();
 };
@@ -238,6 +241,7 @@ const baseFields = () => ({
   sort_order: sortOrder.value,
   flag_overrides: flagOverrides.value,
   disabled_public_model_ids: disabledPublicModelIds.value,
+  proxy_fallback_list: proxyFallbackList.value,
 });
 
 const save = async () => {
@@ -420,6 +424,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:enabled="enabled"
         v-model:flag-overrides="flagOverrides"
         v-model:disabled-ids="disabledPublicModelIds"
+        v-model:proxy-fallback-list="proxyFallbackList"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         :mode="mode"

@@ -140,6 +140,10 @@ export interface UpstreamRecord {
   // longer present in the live model list.
   disabled_public_model_ids: string[];
   config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig;
+  // Ordered fallback dial-list. Each entry is either a proxy id from the
+  // proxies table or the literal string `direct` (no proxy). Empty list means
+  // "always direct" — same effective behaviour as the legacy default.
+  proxy_fallback_list: string[];
   // Codex is the only provider that ships gateway-managed state on the row
   // today; the other providers serialize this as null.
   state: CodexUpstreamState | null;

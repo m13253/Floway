@@ -10,6 +10,7 @@ import CustomConfigPanel from './CustomConfigPanel.vue';
 import type { AzureDraft, CustomDraft } from './customConfig.ts';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import ProviderPicker from './ProviderPicker.vue';
+import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 
 const activeProvider = defineModel<UpstreamProviderKind>('provider', { required: true });
 const name = defineModel<string>('name', { required: true });
@@ -18,6 +19,7 @@ const flagOverrides = defineModel<Record<string, boolean>>('flagOverrides', { re
 const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
+const proxyFallbackList = defineModel<string[]>('proxyFallbackList', { required: true });
 
 defineProps<{
   mode: 'create' | 'edit';
@@ -150,6 +152,12 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
           class="min-h-0 flex-1"
         />
       </section>
+
+      <ProxyFallbackListPanel
+        v-model="proxyFallbackList"
+        :upstream-id="record?.id ?? null"
+        class="shrink-0"
+      />
 
     </div>
   </aside>

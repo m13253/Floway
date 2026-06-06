@@ -3,6 +3,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { callApi, useApi } from '../../../api/client.ts';
 import type { CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, UpstreamModelConfig } from '../../../api/types.ts';
+import { useProxiesStore as useProxiesStoreForLoader } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 
 // Pre-fetch the provider-specific model list (and Copilot's premium quota)
@@ -13,7 +14,7 @@ import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]', async route => {
   const api = useApi();
   const store = useUpstreamsStore();
-  await store.load();
+  await Promise.all([store.load(), useProxiesStoreForLoader().load()]);
   const list = store.upstreams.value ?? [];
   const id = route.params.id;
   const record = list.find(u => u.id === id) ?? null;
