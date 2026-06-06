@@ -50,6 +50,13 @@ export const nodeSocketDial: SocketDial = {
       socket.once('close', () => resolve());
     });
 
+    // After the connect handshake resolves, the dial-time onError listener is
+    // gone. Without a permanent 'error' listener Node escalates any
+    // post-connect socket error to uncaughtException and crashes the process.
+    // The error itself surfaces via the readable/writable streams the proxy
+    // runners drive — this listener exists purely to keep Node from crashing.
+    socket.on('error', () => {});
+
     return {
       readable,
       writable,

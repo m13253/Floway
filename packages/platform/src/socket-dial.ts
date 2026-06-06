@@ -39,7 +39,8 @@ export const getSocketDial = (): SocketDial => {
   return current;
 };
 
-/** Test-only: resets the module-level singleton. Not exported from index.ts. */
+/** Test-only: resets the module-level singleton. Pair with `initSocketDial`
+ *  in `afterEach` to keep the dial implementation from leaking across suites. */
 export const resetSocketDialForTesting = (): void => {
   current = null;
 };

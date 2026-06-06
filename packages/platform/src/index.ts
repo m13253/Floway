@@ -6,6 +6,7 @@ export * from './sha256.ts';
 export {
   initSocketDial,
   getSocketDial,
+  resetSocketDialForTesting,
   type SocketDial,
   type DialedSocket,
   type DialOptions,

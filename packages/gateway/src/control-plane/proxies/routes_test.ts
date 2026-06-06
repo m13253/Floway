@@ -1,17 +1,15 @@
-import { beforeEach, test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
-import { initSocketDial, type SocketDial } from '@floway-dev/platform';
+import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // Stub SocketDial so the test endpoint hits a deterministic error path
 // (`runProxiedRequest` calls connect() and we surface its rejection as the
 // response's `error` field). The proxy library has no other path to a real
-// socket, so this fully isolates the handler from the network. The stub is
-// re-installed before each test rather than reset between tests because
-// `initSocketDial` overrides the module-level singleton in place — every
-// test that needs the stub gets a fresh one, and any subsequent suite that
-// installs its own impl will replace ours the same way.
+// socket, so this fully isolates the handler from the network. Reset the
+// singleton in afterEach so a later suite that expects an uninitialized
+// SocketDial doesn't see this stub.
 const stubFailingSocketDial = (message: string): SocketDial => ({
   connect: async () => {
     throw new Error(message);
@@ -20,6 +18,10 @@ const stubFailingSocketDial = (message: string): SocketDial => ({
 
 beforeEach(() => {
   initSocketDial(stubFailingSocketDial('stub: dial refused'));
+});
+
+afterEach(() => {
+  resetSocketDialForTesting();
 });
 
 const SOCKS_URL = 'socks5://user:pass@198.51.100.10:1080';
