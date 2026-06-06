@@ -138,6 +138,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         updatedAt: nonEmptyString(item.updated_at, 'updated_at'),
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
+        proxyFallbackList: [],
         config: item.config,
         state: normalizeUpstreamState(provider, item.state),
       };

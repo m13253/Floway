@@ -16,6 +16,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   updatedAt: '2026-01-01T00:00:00.000Z',
   flagOverrides: {},
   disabledPublicModelIds: [],
+  proxyFallbackList: [],
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',

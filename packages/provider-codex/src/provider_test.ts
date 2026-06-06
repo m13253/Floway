@@ -27,6 +27,7 @@ const record: UpstreamRecord = {
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z' }] },
   flagOverrides: {},
   disabledPublicModelIds: [],
+  proxyFallbackList: [],
 };
 
 let cache: CacheRepo & { _store: Map<string, string> };

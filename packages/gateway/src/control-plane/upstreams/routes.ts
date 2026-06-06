@@ -170,6 +170,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
+    proxyFallbackList: [],
     config: body.config,
     state: null,
   };
@@ -262,6 +263,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     updatedAt: now,
     flagOverrides: {},
     disabledPublicModelIds: [],
+    proxyFallbackList: [],
     config: { ...config, bearerToken },
     state: null,
   };
@@ -382,6 +384,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           updatedAt: now,
           flagOverrides: {},
           disabledPublicModelIds: [],
+          proxyFallbackList: [],
           config,
           state: null,
         };
@@ -511,6 +514,7 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     updatedAt: now,
     flagOverrides: {},
     disabledPublicModelIds: [],
+    proxyFallbackList: [],
     config: ingestion.config,
     state: ingestion.state,
   };

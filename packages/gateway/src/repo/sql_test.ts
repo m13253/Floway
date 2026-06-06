@@ -19,6 +19,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   state: { accounts: [goodAccount] },
   flagOverrides: {},
   disabledPublicModelIds: [],
+  proxyFallbackList: [],
   ...overrides,
 });
 

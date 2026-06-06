@@ -14,6 +14,7 @@ const upstreamRecord = () => ({
   updatedAt: '2026-01-01T00:00:00Z',
   flagOverrides: {},
   disabledPublicModelIds: [],
+  proxyFallbackList: [],
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'token',

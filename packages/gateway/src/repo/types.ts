@@ -136,6 +136,37 @@ export interface UpstreamRepo {
   saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
 }
 
+export interface ProxyRecord {
+  id: string;
+  name: string;
+  url: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  // Egress IP observed during the most recent successful test run. Cleared
+  // whenever `url` changes so the dashboard never shows a stale IP for a
+  // freshly re-pointed proxy. Unix seconds for `lastTestedAt` matches what
+  // SQLite stores in the integer column.
+  lastEgressIp: string | null;
+  lastTestedAt: number | null;
+}
+
+export interface ProxyRepo {
+  list(): Promise<ProxyRecord[]>;
+  getById(id: string): Promise<ProxyRecord | null>;
+  insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord>;
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null>;
+  delete(id: string): Promise<boolean>;
+  // Records the egress IP observed by a successful proxy test, alongside the
+  // current timestamp. Pairs with `patch`'s url-change detection: a url edit
+  // wipes both fields back to null in the same statement.
+  recordTestSuccess(id: string, egressIp: string): Promise<void>;
+  // Returns the ids of every upstream whose `proxyFallbackList` currently
+  // includes the given proxy id. The control-plane DELETE handler reads this
+  // before allowing a proxy to be removed.
+  findUpstreamsReferencing(proxyId: string): Promise<string[]>;
+}
+
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string | null;
@@ -198,6 +229,7 @@ export interface Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  proxies: ProxyRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 }

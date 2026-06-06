@@ -62,6 +62,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
+    proxyFallbackList: [],
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -86,6 +87,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
+    proxyFallbackList: [],
     ...rest,
     config: overrideConfig ?? config,
   };

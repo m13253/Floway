@@ -26,6 +26,10 @@ export interface UpstreamRecord {
   // id is hidden from the catalog and unroutable, but its row metadata stays
   // editable. Entries may reference ids no longer present in the live model list.
   disabledPublicModelIds: string[];
+  // Ordered list of proxy ids (or the literal 'direct') the upstream falls back
+  // through when its primary dial path is exhausted. Empty means no proxy
+  // fallback configured. Persisted in the proxy_fallback_list_json column.
+  proxyFallbackList: string[];
 }
 
 // API names the telemetry pipeline records dimensions against. Used by

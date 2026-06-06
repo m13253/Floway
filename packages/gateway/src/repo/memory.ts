@@ -2,6 +2,7 @@
 
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
 import type {
   ApiKey,
@@ -12,6 +13,8 @@ import type {
   PerformanceLatencySample,
   PerformanceRepo,
   PerformanceTelemetryRecord,
+  ProxyRecord,
+  ProxyRepo,
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
@@ -417,6 +420,7 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
+  proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
 });
 
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
@@ -576,6 +580,78 @@ const compareResponsesItemsByFreshness = (a: StoredResponsesItem, b: StoredRespo
 
 const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `${apiKeyId ?? ''}\0${id}`;
 
+class MemoryProxyRepo implements ProxyRepo {
+  private store = new Map<string, ProxyRecord>();
+
+  constructor(private upstreams: UpstreamRepo) {}
+
+  list(): Promise<ProxyRecord[]> {
+    return Promise.resolve(
+      [...this.store.values()]
+        .map(cloneProxyRecord)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)),
+    );
+  }
+
+  getById(id: string): Promise<ProxyRecord | null> {
+    const found = this.store.get(id);
+    return Promise.resolve(found ? cloneProxyRecord(found) : null);
+  }
+
+  insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord> {
+    const now = new Date().toISOString();
+    const record: ProxyRecord = {
+      id: input.id,
+      name: input.name,
+      url: input.url,
+      sortOrder: input.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+      lastEgressIp: null,
+      lastTestedAt: null,
+    };
+    this.store.set(record.id, record);
+    return Promise.resolve(cloneProxyRecord(record));
+  }
+
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null> {
+    const existing = this.store.get(id);
+    if (!existing) return Promise.resolve(null);
+
+    const urlChanged = patch.url !== undefined && patch.url !== existing.url;
+    const updated: ProxyRecord = {
+      ...existing,
+      name: patch.name ?? existing.name,
+      url: patch.url ?? existing.url,
+      sortOrder: patch.sortOrder ?? existing.sortOrder,
+      updatedAt: new Date().toISOString(),
+      lastEgressIp: urlChanged ? null : existing.lastEgressIp,
+      lastTestedAt: urlChanged ? null : existing.lastTestedAt,
+    };
+    this.store.set(id, updated);
+    return Promise.resolve(cloneProxyRecord(updated));
+  }
+
+  delete(id: string): Promise<boolean> {
+    return Promise.resolve(this.store.delete(id));
+  }
+
+  recordTestSuccess(id: string, egressIp: string): Promise<void> {
+    const existing = this.store.get(id);
+    if (!existing) return Promise.resolve();
+    existing.lastEgressIp = egressIp;
+    existing.lastTestedAt = Math.floor(Date.now() / 1000);
+    return Promise.resolve();
+  }
+
+  async findUpstreamsReferencing(proxyId: string): Promise<string[]> {
+    const upstreams = await this.upstreams.list();
+    return upstreams.filter(u => u.proxyFallbackList.includes(proxyId)).map(u => u.id);
+  }
+}
+
+const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -584,6 +660,7 @@ export class InMemoryRepo implements Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  proxies: ProxyRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -595,6 +672,7 @@ export class InMemoryRepo implements Repo {
     this.cache = new MemoryCacheRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
+    this.proxies = new MemoryProxyRepo(this.upstreams);
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
   }

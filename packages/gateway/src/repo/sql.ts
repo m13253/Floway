@@ -1,5 +1,6 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
+import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_REFRESH_DEBOUNCE_MS, serializeStoredResponsesPayload } from './responses-payload.ts';
 import type {
   ApiKey,
@@ -11,6 +12,8 @@ import type {
   PerformanceMetricScope,
   PerformanceRepo,
   PerformanceTelemetryRecord,
+  ProxyRecord,
+  ProxyRepo,
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
@@ -871,14 +874,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -889,7 +892,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -899,7 +902,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            config_json = excluded.config_json,
            state_json = excluded.state_json,
            flag_overrides = excluded.flag_overrides,
-           disabled_public_model_ids = excluded.disabled_public_model_ids`,
+           disabled_public_model_ids = excluded.disabled_public_model_ids,
+           proxy_fallback_list_json = excluded.proxy_fallback_list_json`,
       )
       .bind(
         upstream.id,
@@ -913,6 +917,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
       )
       .run();
   }
@@ -951,6 +956,7 @@ interface UpstreamRow {
   state_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
+  proxy_fallback_list_json: string;
 }
 
 function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
@@ -981,6 +987,7 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     state,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
+    proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
   };
 }
 
@@ -1028,6 +1035,152 @@ const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
   return normalizeDisabledPublicModelIds(parsed as string[]);
 };
 
+const parseProxyFallbackList = (id: string, json: string): string[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (cause) {
+    throw new Error(`Malformed upstream proxy_fallback_list_json for ${id}`, { cause });
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Upstream ${id} proxy_fallback_list_json must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
+  }
+  for (const entry of parsed) {
+    if (typeof entry !== 'string') {
+      throw new Error(`Upstream ${id} proxy_fallback_list_json entries must be strings, got ${typeof entry}`);
+    }
+  }
+  return normalizeProxyFallbackList(parsed as string[]);
+};
+
+class SqlProxyRepo implements ProxyRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<ProxyRecord[]> {
+    const { results } = await this.db
+      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at FROM proxies ORDER BY sort_order, created_at')
+      .all<ProxyRow>();
+    return results.map(toProxyRecord);
+  }
+
+  async getById(id: string): Promise<ProxyRecord | null> {
+    const row = await this.db
+      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at FROM proxies WHERE id = ?')
+      .bind(id)
+      .first<ProxyRow>();
+    return row ? toProxyRecord(row) : null;
+  }
+
+  async insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord> {
+    const now = new Date().toISOString();
+    await this.db
+      .prepare('INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)')
+      .bind(input.id, input.name, input.url, input.sortOrder, now, now)
+      .run();
+    return {
+      id: input.id,
+      name: input.name,
+      url: input.url,
+      sortOrder: input.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+      lastEgressIp: null,
+      lastTestedAt: null,
+    };
+  }
+
+  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null> {
+    const existing = await this.getById(id);
+    if (!existing) return null;
+
+    const nextName = patch.name ?? existing.name;
+    const nextUrl = patch.url ?? existing.url;
+    const nextSortOrder = patch.sortOrder ?? existing.sortOrder;
+    const urlChanged = patch.url !== undefined && patch.url !== existing.url;
+    const updatedAt = new Date().toISOString();
+
+    // CASE WHEN ? evaluates the urlChanged flag at write time so url-edit clears
+    // the test snapshot in the same statement; a name-only patch leaves both
+    // fields untouched.
+    await this.db
+      .prepare(
+        `UPDATE proxies SET
+           name = ?,
+           url = ?,
+           sort_order = ?,
+           updated_at = ?,
+           last_egress_ip = CASE WHEN ? THEN NULL ELSE last_egress_ip END,
+           last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END
+         WHERE id = ?`,
+      )
+      .bind(
+        nextName,
+        nextUrl,
+        nextSortOrder,
+        updatedAt,
+        urlChanged ? 1 : 0,
+        urlChanged ? 1 : 0,
+        id,
+      )
+      .run();
+
+    return {
+      ...existing,
+      name: nextName,
+      url: nextUrl,
+      sortOrder: nextSortOrder,
+      updatedAt,
+      lastEgressIp: urlChanged ? null : existing.lastEgressIp,
+      lastTestedAt: urlChanged ? null : existing.lastTestedAt,
+    };
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM proxies WHERE id = ?').bind(id).run();
+    return ((result.meta.changes as number) ?? 0) > 0;
+  }
+
+  async recordTestSuccess(id: string, egressIp: string): Promise<void> {
+    await this.db
+      .prepare('UPDATE proxies SET last_egress_ip = ?, last_tested_at = ? WHERE id = ?')
+      .bind(egressIp, Math.floor(Date.now() / 1000), id)
+      .run();
+  }
+
+  async findUpstreamsReferencing(proxyId: string): Promise<string[]> {
+    // json_each unrolls the upstreams.proxy_fallback_list_json array into
+    // virtual rows so the predicate matches by element. Both D1 and node:sqlite
+    // ship the json1 extension.
+    const { results } = await this.db
+      .prepare('SELECT DISTINCT u.id FROM upstreams u, json_each(u.proxy_fallback_list_json) j WHERE j.value = ?')
+      .bind(proxyId)
+      .all<{ id: string }>();
+    return results.map(row => row.id);
+  }
+}
+
+interface ProxyRow {
+  id: string;
+  name: string;
+  url: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  last_egress_ip: string | null;
+  last_tested_at: number | null;
+}
+
+const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
+  id: row.id,
+  name: row.name,
+  url: row.url,
+  sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  lastEgressIp: row.last_egress_ip,
+  lastTestedAt: row.last_tested_at,
+});
+
 export class SqlRepo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -1036,6 +1189,7 @@ export class SqlRepo implements Repo {
   cache: CacheRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
+  proxies: ProxyRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -1047,6 +1201,7 @@ export class SqlRepo implements Repo {
     this.cache = new SqlCacheRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
+    this.proxies = new SqlProxyRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
   }
