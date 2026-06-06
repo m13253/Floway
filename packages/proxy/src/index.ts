@@ -1,0 +1,43 @@
+// @floway-dev/proxy — outbound proxy-dialing library for Cloudflare Workers
+// (and Node, mostly).
+//
+// Each `runXxx(opts)` function dials through the named proxy protocol and
+// issues an HTTP/1.1 request against the upstream described by `opts.target`.
+// Returns a Web `Response` whose body is a `ReadableStream<Uint8Array>` of the
+// upstream's response body (decrypted, transfer-encoding decoded).
+//
+// All variants use a single hand-rolled HTTP/1.1 client over a userspace
+// TLS implementation built on `@reclaimprotocol/tls` (see `tls.ts`); the
+// runtime requires `cloudflare:sockets` `connect()` for TCP and the standard
+// Web Streams API.
+
+export type { TargetSpec } from './types.js'
+
+export { runHttpConnect } from './protocols/http-connect.js'
+export type { HttpConnectOptions } from './protocols/http-connect.js'
+
+export { runSocks5 } from './protocols/socks5.js'
+export type { Socks5Options } from './protocols/socks5.js'
+
+export { runTrojan } from './protocols/trojan.js'
+export type { TrojanOptions } from './protocols/trojan.js'
+
+export { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js'
+export type { VlessTcpTlsOptions, VlessWsTlsOptions } from './protocols/vless.js'
+
+export { runShadowsocks } from './protocols/shadowsocks.js'
+export type { ShadowsocksOptions, SsMethod } from './protocols/shadowsocks.js'
+
+export { runShadowsocks2022 } from './protocols/shadowsocks-2022.js'
+export type { Shadowsocks2022Options, Ss2022Method } from './protocols/shadowsocks-2022.js'
+
+export { runReality } from './protocols/reality.js'
+export type { RealityOptions } from './protocols/reality.js'
+
+// Lower-level building blocks, exported for advanced use cases (e.g. wrapping
+// an arbitrary plain-TCP transport with TLS without going through a proxy).
+export { userspaceTls } from './tls.js'
+export type { UserspaceTlsOptions, TlsStream } from './tls.js'
+
+export { runHttp1Stream } from './http1-stream.js'
+export type { DuplexBytes } from './http1-stream.js'

@@ -4,3 +4,4 @@ packages:
 
 patchedDependencies:
   overlayscrollbars: patches/overlayscrollbars.patch
+  '@reclaimprotocol/tls': packages/proxy/patches/@reclaimprotocol__tls.patch
