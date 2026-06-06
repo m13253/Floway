@@ -12,7 +12,7 @@ import { connect } from 'cloudflare:sockets'
 import { runHttp1 } from '../http1.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export interface HttpConnectOptions {
   proxyHost: string
@@ -32,8 +32,8 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
   const writer = socket.writable.getWriter()
   const enc = new TextEncoder()
   const lines = [
-    `CONNECT ${target.host}:${target.port} HTTP/1.1`,
-    `Host: ${target.host}:${target.port}`,
+    `CONNECT ${target.dialHost}:${target.port} HTTP/1.1`,
+    `Host: ${target.dialHost}:${target.port}`,
     `User-Agent: proxy-dial-test/0.1`,
     `Proxy-Connection: keep-alive`,
   ]
@@ -92,7 +92,7 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
   // Now wrap the post-CONNECT byte stream with userspace TLS for the upstream.
   if (target.tls) {
     const transport = { readable: postConnect, writable: socket.writable }
-    const tls = await userspaceTls(transport, { host: target.host })
+    const tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
     const resp = await runHttp1Stream(tls, target)
     // Run peelDone in the background; if it throws after handshake the body
     // stream will surface the error.

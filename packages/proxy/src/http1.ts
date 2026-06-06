@@ -10,7 +10,7 @@ export async function runHttp1(socket: Socket, target: TargetSpec): Promise<Resp
   const writer = socket.writable.getWriter()
   const enc = new TextEncoder()
   const headers = { ...target.headers }
-  if (!('host' in lowerKeys(headers))) headers.Host = target.host
+  if (!('host' in lowerKeys(headers))) headers.Host = target.dialHost
   if (!('connection' in lowerKeys(headers))) headers.Connection = 'close'
   if (!('accept-encoding' in lowerKeys(headers))) headers['Accept-Encoding'] = 'identity'
 

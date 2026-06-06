@@ -12,7 +12,7 @@ import { connect } from 'cloudflare:sockets'
 import { sha224 } from '@noble/hashes/sha2.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export interface TrojanOptions {
   serverHost: string
@@ -35,7 +35,7 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
   const hash = sha224(enc.encode(password))
   const hashHex = bytesToHex(hash)
 
-  const dom = enc.encode(target.host)
+  const dom = enc.encode(target.dialHost)
   if (dom.byteLength > 255) throw new Error('hostname too long for Trojan')
   const header = new Uint8Array(56 + 2 + 1 + 1 + 1 + dom.byteLength + 2 + 2)
   let off = 0
@@ -50,7 +50,7 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
   header[off++] = 0x0d; header[off++] = 0x0a
 
   if (target.tls) {
-    const innerTls = await userspaceTls(outerTls, { host: target.host, prefix: header })
+    const innerTls = await userspaceTls(outerTls, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), prefix: header })
     return await runHttp1Stream(innerTls, target)
   } else {
     const writer = outerTls.writable.getWriter()

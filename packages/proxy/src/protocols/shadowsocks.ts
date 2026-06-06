@@ -24,7 +24,7 @@ import { gcm } from '@noble/ciphers/aes.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export type SsMethod = 'chacha20-ietf-poly1305' | 'aes-256-gcm' | 'aes-128-gcm'
 
@@ -72,7 +72,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   const reader = socket.readable.getReader()
 
   // Build the SS address header for the first payload chunk.
-  const addrBytes = buildSocksAddress(target.host, target.port)
+  const addrBytes = buildSocksAddress(target.dialHost, target.port)
 
   // Encrypt and send: [salt] + frame(addr+initialPayload). For an AEAD frame,
   // we encrypt up to MAX_PAYLOAD plaintext bytes per record. The first record
@@ -156,7 +156,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   })
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: target.host })
+    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target)

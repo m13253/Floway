@@ -17,7 +17,7 @@ import { gcm } from '@noble/ciphers/aes.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export type Ss2022Method =
   | '2022-blake3-aes-128-gcm'
@@ -74,7 +74,7 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   //   - fixed header AEAD: [type=0x00 | timestamp(u64be) | len(u16be)] + tag
   //     where len = byte length of the variable header (excluding tag).
   //   - variable header AEAD: [ATYP|addr|port|padlen(u16be)|pad|initial_payload] + tag
-  const variableHeader = buildRequestHeader(target.host, target.port)
+  const variableHeader = buildRequestHeader(target.dialHost, target.port)
   const fixedPlain = new Uint8Array(1 + 8 + 2)
   fixedPlain[0] = REQ_HEADER_TYPE
   writeU64BE(fixedPlain, 1, BigInt(Math.floor(currentTimeMs() / 1000)))
@@ -161,7 +161,7 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   })
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: target.host })
+    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target)

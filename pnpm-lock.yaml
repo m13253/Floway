@@ -6,8 +6,8 @@ settings:
 
 patchedDependencies:
   '@reclaimprotocol/tls':
-    hash: 95496e4c49ed2a4f22d511837016228bf19822eaff5b2027eb0e2bd28244c06a
-    path: packages/proxy/patches/@reclaimprotocol__tls.patch
+    hash: 30020770864ce90b7ff587ef82a96bad1f5e2ef979267c8be3e63ddf0d1c8233
+    path: patches/@reclaimprotocol__tls.patch
   overlayscrollbars:
     hash: 0989d8ab263bb64de03bfa5ce05a0492b7a0b2211ac83be29beaf137c31b2e22
     path: patches/overlayscrollbars.patch
@@ -370,7 +370,7 @@ importers:
         version: 2.2.0
       '@reclaimprotocol/tls':
         specifier: ^0.1.2
-        version: 0.1.2(patch_hash=95496e4c49ed2a4f22d511837016228bf19822eaff5b2027eb0e2bd28244c06a)
+        version: 0.1.2(patch_hash=30020770864ce90b7ff587ef82a96bad1f5e2ef979267c8be3e63ddf0d1c8233)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251215.0
@@ -4371,7 +4371,7 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
-  '@reclaimprotocol/tls@0.1.2(patch_hash=95496e4c49ed2a4f22d511837016228bf19822eaff5b2027eb0e2bd28244c06a)':
+  '@reclaimprotocol/tls@0.1.2(patch_hash=30020770864ce90b7ff587ef82a96bad1f5e2ef979267c8be3e63ddf0d1c8233)':
     dependencies:
       '@noble/ciphers': 1.3.0
       '@noble/curves': 1.9.7

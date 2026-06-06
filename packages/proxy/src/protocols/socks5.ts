@@ -7,7 +7,7 @@
 import { connect } from 'cloudflare:sockets'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export interface Socks5Options {
   proxyHost: string
@@ -75,7 +75,7 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
 
   // 3. CONNECT request (ATYP=domain)
   const enc = new TextEncoder()
-  const dom = enc.encode(target.host)
+  const dom = enc.encode(target.dialHost)
   if (dom.byteLength > 255) throw new Error('hostname too long for SOCKS5')
   const req = new Uint8Array(7 + dom.byteLength)
   req[0] = 0x05
@@ -125,7 +125,7 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
 
   if (target.tls) {
     const transport = { readable: postHandshake, writable: socket.writable }
-    const tls = await userspaceTls(transport, { host: target.host })
+    const tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: postHandshake, writable: socket.writable }, target)

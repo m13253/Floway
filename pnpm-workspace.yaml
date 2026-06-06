@@ -3,5 +3,5 @@ packages:
   - apps/*
 
 patchedDependencies:
+  '@reclaimprotocol/tls': patches/@reclaimprotocol__tls.patch
   overlayscrollbars: patches/overlayscrollbars.patch
-  '@reclaimprotocol/tls': packages/proxy/patches/@reclaimprotocol__tls.patch

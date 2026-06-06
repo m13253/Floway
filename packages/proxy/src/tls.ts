@@ -22,17 +22,37 @@ function ensureCrypto(): void {
 }
 
 export interface UserspaceTlsOptions {
+  /**
+   * TLS ClientHello server_name extension and (unless `verifyHost` is set)
+   * the hostname against which the cert chain is validated.
+   */
   host: string
+  /**
+   * Override the cert-validation hostname independently from `host` (the
+   * SNI). The cert's SAN/CN must prove this name. Defaults to `host`.
+   */
+  verifyHost?: string
   alpn?: string[]
-  // When false, we pass the cert chain through reclaim's verifier as-is.
-  // When true, all certs are accepted — only useful in test paths.
+  /**
+   * When true, all server certificates are accepted (no chain validation,
+   * no name match). Test-only.
+   */
   insecure?: boolean
-  // Optional bytes prepended to our first record write to the transport. Used
-  // when the proxy protocol's request header must be transmitted in the same
-  // TCP segment as our first TLS ClientHello (e.g. sing-box's Trojan inbound
-  // uses `conn.Read(key[56])` and short-reads if the proxy header arrives in
-  // a separate TLS fragment from the rest of the stream).
+  /**
+   * Optional bytes prepended to our first record write to the transport.
+   * Used when the proxy protocol's request header must be transmitted in
+   * the same TCP segment as our first TLS ClientHello (e.g. sing-box's
+   * Trojan inbound uses `conn.Read(key[56])` and short-reads if the proxy
+   * header arrives in a separate TLS fragment from the rest of the stream).
+   */
   prefix?: Uint8Array
+  /**
+   * Force TLS 1.3 cipher suites. Defaults to the AES-GCM suites which use
+   * Web Crypto's hardware-accelerated AES-NI path on Workers; ChaCha20-
+   * Poly1305 falls back to @noble/ciphers' pure-JS impl which is much
+   * slower for the typical record sizes our HTTP/1.1 traffic produces.
+   */
+  cipherSuites?: Array<'TLS_AES_256_GCM_SHA384' | 'TLS_AES_128_GCM_SHA256' | 'TLS_CHACHA20_POLY1305_SHA256'>
 }
 
 export interface TlsStream {
@@ -93,15 +113,14 @@ export async function userspaceTls(
 
   tlsClient = makeTLSClient(({
     host: opts.host,
+    verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
     applicationLayerProtocols: opts.alpn,
-    // Force AES-GCM only. reclaim has Web Crypto's AES-GCM available
-    // (BoringSSL → AES-NI accelerated) for AES suites, while ChaCha20
-    // falls back to @noble/ciphers' pure-JS impl. Picking AES exposes
-    // whether the slowness is the algorithm itself (AES-via-WebCrypto
-    // should match rustls-chacha) or per-record async/stream overhead
-    // (would persist regardless of cipher).
-    cipherSuites: ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
+    // Default to AES-GCM only because reclaim routes those through Web
+    // Crypto, which is hardware-accelerated by V8 (AES-NI on x86, the SHA
+    // extensions on ARM). ChaCha20-Poly1305 in reclaim falls back to
+    // @noble/ciphers' pure-JS impl, which is ~5-10× slower per byte.
+    cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
       const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0
       const out = new Uint8Array(prefixLen + header.byteLength + content.byteLength)

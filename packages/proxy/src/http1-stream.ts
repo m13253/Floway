@@ -13,7 +13,7 @@ export async function runHttp1Stream(stream: DuplexBytes, target: TargetSpec): P
   const writer = stream.writable.getWriter()
   const enc = new TextEncoder()
   const headers = { ...target.headers }
-  if (!('host' in lowerKeys(headers))) headers.Host = target.host
+  if (!('host' in lowerKeys(headers))) headers.Host = target.dialHost
   if (!('connection' in lowerKeys(headers))) headers.Connection = 'close'
   if (!('accept-encoding' in lowerKeys(headers))) headers['Accept-Encoding'] = 'identity'
 

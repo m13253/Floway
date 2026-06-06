@@ -6,7 +6,7 @@
 
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
-import { type TargetSpec } from '../types.js'
+import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export async function runVlessCoreOverStream(
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
@@ -23,7 +23,7 @@ export async function runVlessCoreOverStream(
   if (target.tls) {
     const tls = await userspaceTls(
       { readable: stripped, writable: transport.writable },
-      { host: target.host },
+      { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) },
     )
     return await runHttp1Stream(tls, target)
   } else {
@@ -33,7 +33,7 @@ export async function runVlessCoreOverStream(
 
 function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
   const enc = new TextEncoder()
-  const dom = enc.encode(target.host)
+  const dom = enc.encode(target.dialHost)
   if (dom.byteLength > 255) throw new Error('VLESS: hostname too long')
   const uuidBytes = parseUuid(uuid)
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength)
