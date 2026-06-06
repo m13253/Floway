@@ -32,10 +32,10 @@ defineEmits<{
 // 1s granularity matches the "in Xm Ys" precision we render.
 const now = useNow({ interval: 1000 });
 
-// Best-effort proxy-kind label derived from the URL scheme. parseProxyUri
-// lives in @floway-dev/proxy, but the dashboard avoids pulling that package
-// into the browser bundle — the scheme alone is enough to colour-code rows
-// and we already validate the URI server-side at create/update time.
+// Best-effort proxy-kind label derived from the URL scheme. The editor uses
+// the real `parseProxyUri` for live validation, but the settings card just
+// needs a stable colour-code per row — the scheme alone is enough, and the
+// regex-free dispatch keeps the list cheap to render even with many rows.
 const kindOf = (url: string): string => {
   let parsed: URL;
   try {

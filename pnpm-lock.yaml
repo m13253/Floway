@@ -114,6 +114,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@floway-dev/proxy':
+        specifier: workspace:*
+        version: link:../../packages/proxy
       '@floway-dev/ui':
         specifier: workspace:*
         version: link:../../packages/ui

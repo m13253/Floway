@@ -17,6 +17,15 @@ import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
+// Workerd-only WebSocket surface used for the WS transport. We re-declare the
+// two members we touch (`accept`, `send`) here instead of pulling
+// `@cloudflare/workers-types` into the package's tsconfig — that type set
+// would override the lib.dom WebSocket globally and pollute every consumer
+// (including the dashboard) with workerd-specific signatures.
+type WorkerdWebSocket = WebSocket & {
+  accept: () => void
+}
+
 export interface VlessTcpTlsOptions {
   serverHost: string
   serverPort: number
@@ -91,7 +100,7 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   if (resp.status !== 101) {
     throw new ProxyDialError(`VLESS-WS upgrade replied ${resp.status} ${resp.statusText}`, 'proxy-handshake')
   }
-  const ws = resp.webSocket
+  const ws = (resp as Response & { webSocket?: WorkerdWebSocket }).webSocket
   if (!ws) throw new ProxyDialError('VLESS-WS: response has no .webSocket', 'proxy-handshake')
   // Wrap the WebSocket as a duplex byte stream — listeners attach before
   // ws.accept() so we don't miss any early messages.
@@ -195,7 +204,7 @@ function stripVlessReplyPrefix(
   })
 }
 
-function wsAsDuplex(ws: WebSocket): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } {
+function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } {
   const buffer: Uint8Array[] = []
   let pending: ((v: { value: Uint8Array | undefined; done: boolean }) => void) | null = null
   let closed = false
