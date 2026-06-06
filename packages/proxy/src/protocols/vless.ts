@@ -11,9 +11,10 @@
 // The reply prefix from the server is `ver[1] | addonsLen[1] | addons[M]`,
 // followed by transparent payload. We parse and discard the reply prefix.
 
-import { getSocketDial } from '@floway-dev/platform'
+import { type DialedSocket, getSocketDial } from '@floway-dev/platform'
+import { ProxyDialError } from '../errors.js'
 import { runHttp1Stream } from '../http1-stream.js'
-import { userspaceTls } from '../tls.js'
+import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export interface VlessTcpTlsOptions {
@@ -26,7 +27,19 @@ export interface VlessTcpTlsOptions {
 export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response> {
   const { serverHost, serverPort, uuid, target } = opts
 
-  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true, tls: true })
+  // workerd handles outer TLS to the VLESS server inside connect(tls=true);
+  // we can't distinguish a TCP RST from a TLS handshake failure here, so any
+  // dial-time error is reported as tcp-connect.
+  let socket: DialedSocket
+  try {
+    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true, tls: true })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `tcp connect to ${serverHost}:${serverPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
 
   const header = buildVlessHeader(uuid, target)
   const writer = socket.writable.getWriter()
@@ -38,7 +51,12 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
   const stripped = stripVlessReplyPrefix(socket.readable)
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: stripped, writable: socket.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls({ readable: stripped, writable: socket.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: stripped, writable: socket.writable }, target)
@@ -58,14 +76,23 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
 
   // Use Worker fetch() to do the WS upgrade — workerd handles outer TLS for us.
   const wsUrl = `https://${serverHost}:${serverPort}${path}`
-  const resp = await fetch(wsUrl, {
-    headers: { Upgrade: 'websocket', Host: serverHost },
-  })
+  let resp: Response
+  try {
+    resp = await fetch(wsUrl, {
+      headers: { Upgrade: 'websocket', Host: serverHost },
+    })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `ws upgrade fetch to ${serverHost}:${serverPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
   if (resp.status !== 101) {
-    throw new Error(`VLESS-WS upgrade failed: ${resp.status} ${resp.statusText}`)
+    throw new ProxyDialError(`VLESS-WS upgrade replied ${resp.status} ${resp.statusText}`, 'proxy-handshake')
   }
   const ws = resp.webSocket
-  if (!ws) throw new Error('VLESS-WS: response has no .webSocket')
+  if (!ws) throw new ProxyDialError('VLESS-WS: response has no .webSocket', 'proxy-handshake')
   // Wrap the WebSocket as a duplex byte stream — listeners attach before
   // ws.accept() so we don't miss any early messages.
   const transport = wsAsDuplex(ws)
@@ -81,7 +108,12 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   const stripped = stripVlessReplyPrefix(transport.readable)
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: stripped, writable: transport.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls({ readable: stripped, writable: transport.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: stripped, writable: transport.writable }, target)
@@ -91,7 +123,7 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
 function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
   const enc = new TextEncoder()
   const dom = enc.encode(target.dialHost)
-  if (dom.byteLength > 255) throw new Error('VLESS: hostname too long')
+  if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake')
   const uuidBytes = parseUuid(uuid)
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength)
   let off = 0
@@ -132,7 +164,7 @@ function stripVlessReplyPrefix(
         while (buf.byteLength < 2) {
           const r = await reader.read()
           if (r.done) {
-            controller.error(new Error('VLESS reply: EOF before prefix'))
+            controller.error(new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'))
             return
           }
           buf = concat(buf, r.value)
@@ -141,7 +173,7 @@ function stripVlessReplyPrefix(
         while (buf.byteLength < 2 + addonsLen) {
           const r = await reader.read()
           if (r.done) {
-            controller.error(new Error('VLESS reply: EOF in addons'))
+            controller.error(new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'))
             return
           }
           buf = concat(buf, r.value)

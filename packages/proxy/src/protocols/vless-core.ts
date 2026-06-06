@@ -4,8 +4,9 @@
 // Used by reality.ts (after the REALITY-tls is established) and could be
 // reused by vless.ts in a refactor.
 
+import { ProxyDialError } from '../errors.js'
 import { runHttp1Stream } from '../http1-stream.js'
-import { userspaceTls } from '../tls.js'
+import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export async function runVlessCoreOverStream(
@@ -21,10 +22,15 @@ export async function runVlessCoreOverStream(
   const stripped = stripVlessReplyPrefix(transport.readable)
 
   if (target.tls) {
-    const tls = await userspaceTls(
-      { readable: stripped, writable: transport.writable },
-      { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) },
-    )
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls(
+        { readable: stripped, writable: transport.writable },
+        { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) },
+      )
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: stripped, writable: transport.writable }, target)
@@ -34,7 +40,7 @@ export async function runVlessCoreOverStream(
 function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
   const enc = new TextEncoder()
   const dom = enc.encode(target.dialHost)
-  if (dom.byteLength > 255) throw new Error('VLESS: hostname too long')
+  if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake')
   const uuidBytes = parseUuid(uuid)
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength)
   let off = 0
@@ -68,7 +74,7 @@ function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStre
         while (buf.byteLength < 2) {
           const r = await reader.read()
           if (r.done) {
-            controller.error(new Error('VLESS reply: EOF before prefix'))
+            controller.error(new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'))
             return
           }
           buf = concat(buf, r.value)
@@ -77,7 +83,7 @@ function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStre
         while (buf.byteLength < 2 + addonsLen) {
           const r = await reader.read()
           if (r.done) {
-            controller.error(new Error('VLESS reply: EOF in addons'))
+            controller.error(new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'))
             return
           }
           buf = concat(buf, r.value)

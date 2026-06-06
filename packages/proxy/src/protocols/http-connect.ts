@@ -8,10 +8,11 @@
 //   3. Hand the post-CONNECT byte stream to our userspace TLS for the upstream
 //      handshake. This avoids `startTls()` entirely.
 
-import { getSocketDial } from '@floway-dev/platform'
+import { type DialedSocket, getSocketDial } from '@floway-dev/platform'
+import { ProxyDialError } from '../errors.js'
 import { runHttp1 } from '../http1.js'
 import { runHttp1Stream } from '../http1-stream.js'
-import { userspaceTls } from '../tls.js'
+import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 
 export interface HttpConnectOptions {
@@ -24,7 +25,19 @@ export interface HttpConnectOptions {
 
 export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response> {
   const { proxyHost, proxyPort, proxyTls, auth, target } = opts
-  const socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true, tls: proxyTls })
+  // workerd performs the outer TLS handshake inside connect() when tls=true,
+  // so a TLS handshake error to the proxy surfaces as a connect failure here
+  // — we can't tell the two apart from this layer.
+  let socket: DialedSocket
+  try {
+    socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true, tls: proxyTls })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `tcp connect to ${proxyHost}:${proxyPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
 
   const writer = socket.writable.getWriter()
   const enc = new TextEncoder()
@@ -57,10 +70,10 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
       if (idx >= 0) {
         const head = new TextDecoder().decode(buf.subarray(0, idx))
         const m = /^HTTP\/1\.[01] (\d{3}) (.*)\r\n/.exec(head + '\r\n')
-        if (!m) throw new Error(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`)
+        if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`, 'proxy-handshake')
         const status = parseInt(m[1]!, 10)
         if (status < 200 || status >= 300) {
-          throw new Error(`CONNECT failed: ${m[1]} ${m[2]}\n${head}`)
+          throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2]}`, 'proxy-handshake')
         }
         const trailing = buf.subarray(idx + 4)
         if (trailing.byteLength) await fwdWriter.write(copy(trailing))
@@ -75,7 +88,7 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
         }
       }
       const { value, done } = await reader.read()
-      if (done) throw new Error(`CONNECT: EOF before status (${buf.byteLength} bytes read)`)
+      if (done) throw new ProxyDialError(`CONNECT: EOF before status (${buf.byteLength} bytes read)`, 'proxy-handshake')
       const next = new Uint8Array(buf.byteLength + value.byteLength)
       next.set(buf, 0)
       next.set(value, buf.byteLength)
@@ -89,7 +102,12 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
   // Now wrap the post-CONNECT byte stream with userspace TLS for the upstream.
   if (target.tls) {
     const transport = { readable: postConnect, writable: socket.writable }
-    const tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     const resp = await runHttp1Stream(tls, target)
     // Run peelDone in the background; if it throws after handshake the body
     // stream will surface the error.

@@ -16,14 +16,15 @@
 //
 // First plaintext chunk: SOCKS5-style address: [ATYP][addr][port BE]
 
-import { getSocketDial } from '@floway-dev/platform'
+import { type DialedSocket, getSocketDial } from '@floway-dev/platform'
 import { md5 } from '@noble/hashes/legacy.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha1 } from '@noble/hashes/legacy.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
+import { ProxyDialError } from '../errors.js'
 import { runHttp1Stream } from '../http1-stream.js'
-import { userspaceTls } from '../tls.js'
+import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 import type { SsMethod } from '../proxy-config.js'
 
@@ -52,7 +53,16 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   const keyLen = METHOD_KEY_LEN[method]
   if (!keyLen) throw new Error(`unsupported method: ${method}`)
 
-  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
+  let socket: DialedSocket
+  try {
+    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `tcp connect to ${serverHost}:${serverPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
 
   const masterKey = evpBytesToKey(password, keyLen)
 
@@ -104,12 +114,12 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
         recvNonce++
         const payloadLen = (lenPlain[0]! << 8) | lenPlain[1]!
         if (payloadLen === 0 || payloadLen > MAX_PAYLOAD) {
-          controller.error(new Error(`SS: bad payload length ${payloadLen}`))
+          controller.error(new ProxyDialError(`SS: bad payload length ${payloadLen}`, 'proxy-handshake'))
           return
         }
         const payloadSealed = await readExactly(reader, payloadLen + TAG_LEN)
         if (!payloadSealed) {
-          controller.error(new Error('SS: EOF mid-record'))
+          controller.error(new ProxyDialError('SS: EOF mid-record', 'proxy-handshake'))
           return
         }
         const payloadPlain = recvCipher.decrypt(nonceBytes(recvNonce), payloadSealed)
@@ -154,7 +164,12 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   })
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target)

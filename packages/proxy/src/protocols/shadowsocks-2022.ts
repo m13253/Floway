@@ -11,12 +11,13 @@
 //   - TCP response: server echoes the request salt and includes a fresh
 //     timestamp (must be within 30s of now).
 
-import { getSocketDial } from '@floway-dev/platform'
+import { type DialedSocket, getSocketDial } from '@floway-dev/platform'
 import { blake3 } from '@noble/hashes/blake3.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
+import { ProxyDialError } from '../errors.js'
 import { runHttp1Stream } from '../http1-stream.js'
-import { userspaceTls } from '../tls.js'
+import { userspaceTls, type TlsStream } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
 import type { Ss2022Method } from '../proxy-config.js'
 
@@ -52,7 +53,16 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   const psk = base64Decode(password)
   if (psk.byteLength !== keyLen) throw new Error(`SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`)
 
-  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
+  let socket: DialedSocket
+  try {
+    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `tcp connect to ${serverHost}:${serverPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
 
   const sendSalt = randomBytes(keyLen)
   const sendKey = blake3(concat(psk, sendSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES })
@@ -94,19 +104,19 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
           const respFixedSealed = await readN(reader, 1 + 8 + keyLen + 2 + TAG)
           const respFixedPlain = recvCipher.decrypt(nonce(recvNonce++), respFixedSealed)
           if (respFixedPlain[0] !== RESP_HEADER_TYPE) {
-            throw new Error(`SS2022: bad response type ${respFixedPlain[0]}`)
+            throw new ProxyDialError(`SS2022: bad response type ${respFixedPlain[0]}`, 'proxy-handshake')
           }
           // Skip timestamp validation for our test path. Production should
           // enforce 30s window.
           const echoStart = 1 + 8
           for (let i = 0; i < keyLen; i++) {
             if (respFixedPlain[echoStart + i] !== sendSalt[i]) {
-              throw new Error('SS2022: salt-echo mismatch')
+              throw new ProxyDialError('SS2022: salt-echo mismatch', 'proxy-handshake')
             }
           }
           // First-payload length
           const firstLen = (respFixedPlain[1 + 8 + keyLen]! << 8) | respFixedPlain[1 + 8 + keyLen + 1]!
-          if (firstLen > MAX) throw new Error(`SS2022: bad first payload length ${firstLen}`)
+          if (firstLen > MAX) throw new ProxyDialError(`SS2022: bad first payload length ${firstLen}`, 'proxy-handshake')
           const firstSealed = await readN(reader, firstLen + TAG)
           const firstPlain = recvCipher.decrypt(nonce(recvNonce++), firstSealed)
           if (firstPlain.byteLength) controller.enqueue(firstPlain as Uint8Array<ArrayBuffer>)
@@ -156,7 +166,12 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   })
 
   if (target.tls) {
-    const tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    let tls: TlsStream
+    try {
+      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) })
+    } catch (cause) {
+      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause })
+    }
     return await runHttp1Stream(tls, target)
   } else {
     return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target)

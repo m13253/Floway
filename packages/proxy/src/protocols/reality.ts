@@ -23,13 +23,14 @@
 //   - onRecvCertificateVerify: lets us replace the standard signature check
 //     with the REALITY HMAC check, returning false to skip the default check.
 
-import { getSocketDial } from '@floway-dev/platform'
+import { type DialedSocket, getSocketDial } from '@floway-dev/platform'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { hmac } from '@noble/hashes/hmac.js'
 import { sha512 } from '@noble/hashes/sha2.js'
 import { gcm } from '@noble/ciphers/aes.js'
+import { ProxyDialError } from '../errors.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { type TargetSpec } from '../types.js'
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls'
@@ -63,7 +64,16 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`)
 
   // Plain TCP — userspace TLS will do the entire handshake.
-  const socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { allowHalfOpen: true })
+  let socket: DialedSocket
+  try {
+    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { allowHalfOpen: true })
+  } catch (cause) {
+    throw new ProxyDialError(
+      `tcp connect to ${opts.serverHost}:${opts.serverPort} failed`,
+      'tcp-connect',
+      { cause },
+    )
+  }
 
   // Build the unsealed session_id payload
   const ts = Math.floor(Date.now() / 1000)
@@ -225,7 +235,14 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
 
   // Trigger the handshake with our pre-built sessionId and random.
   await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<NonNullable<typeof tlsClient>['startHandshake']>[0])
-  await handshakeDone
+  try {
+    await handshakeDone
+  } catch (cause) {
+    // The REALITY handshake combines outer TLS framing with the auth seal in
+    // session_id; we can't tell whether the server rejected the seal or the
+    // TLS handshake itself failed, so we tag the whole leg as outer-tls.
+    throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause })
+  }
 
   // After REALITY auth, the inner protocol is VLESS by convention.
   return await runVlessCoreOverStream(
