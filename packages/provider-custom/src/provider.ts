@@ -6,7 +6,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamFetch, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -83,8 +83,9 @@ const finalizeCustomModels = (
   return models;
 };
 
-export const createCustomProvider = (record: UpstreamRecord): ModelProviderInstance => {
+export const createCustomProvider = (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
+  const fetcher = options?.fetcher;
   const configuredEndpoints = config.endpoints;
   // Computed once for the auto-fetch layer: only the upstream layer applies to
   // auto models (no per-model override layer). Manual models layer their own
@@ -148,7 +149,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     signal?: AbortSignal,
     headers?: Record<string, string>,
   ): Promise<ProviderCallResult> =>
-    transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers })
+    transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers, fetcher })
       .then(response => ({
         response,
         modelKey: providerData(model).rawModelId,
@@ -167,7 +168,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers },
+        { extraHeaders: headers, fetcher },
       ),
       parser,
       rawModelId,
@@ -211,7 +212,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       const response = await customFetchResponsesCompact(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-        { extraHeaders: headers },
+        { extraHeaders: headers, fetcher },
       );
       return response.ok
         ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -225,7 +226,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       // Custom forwards the resolved upstream model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', providerData(model).rawModelId);
-      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headers });
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher });
       return { response, modelKey: providerData(model).rawModelId };
     },
   };

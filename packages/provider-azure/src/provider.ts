@@ -4,7 +4,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ModelProvider, type ModelProviderInstance, type ProviderStreamParser, type UpstreamFetchOptions, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { type ModelProvider, type ModelProviderInstance, type ProviderStreamParser, type UpstreamFetch, type UpstreamFetchOptions, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;
@@ -26,8 +26,9 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
 
 type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>;
 
-export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstance => {
+export const createAzureProvider = (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): ModelProviderInstance => {
   const azure = assertAzureUpstreamRecord(record);
+  const fetcher = options?.fetcher;
 
   const callStreaming = <TEvent>(
     transport: AzureTypedFetch,
@@ -42,7 +43,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       transport(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
-        { extraHeaders: headers },
+        { extraHeaders: headers, fetcher },
       ),
       parser,
       upstreamModelId,
@@ -52,7 +53,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>) => {
     const upstreamModelId = providerData(model).upstreamModelId;
-    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers });
+    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher });
     return { response, modelKey: upstreamModelId };
   };
 
@@ -87,7 +88,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       const response = await azureFetchResponsesCompact(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal },
-        { extraHeaders: headers },
+        { extraHeaders: headers, fetcher },
       );
       return response.ok
         ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
@@ -103,7 +104,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       // Content-Type itself.
       const upstreamModelId = providerData(model).upstreamModelId;
       body.append('model', upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: headers });
+      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher });
       return { response, modelKey: upstreamModelId };
     },
   };

@@ -19,10 +19,18 @@ export interface CreateUpstreamFetchInput {
 // non-skipped entry hit a ProxyDialError, the second pass walks the same
 // list ignoring backoff state — that's how we both kick the recovery
 // schedule and keep serving when literally every proxy is in cooldown.
+//
+// Body buffering is deferred until a non-`direct` proxy actually needs it;
+// the direct-only fast path passes `init` straight to runtime `fetch`,
+// which is how non-buffered shapes like FormData stay supported.
 export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFetch => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : ['direct'];
   return async (url, init) => {
-    const target = await buildTargetSpec(url, init);
+    let target: TargetSpec | undefined;
+    const targetForProxy = async (): Promise<TargetSpec> => {
+      target ??= await buildTargetSpec(url, init);
+      return target;
+    };
     const errors: ProxyDialError[] = [];
 
     const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
@@ -30,12 +38,12 @@ export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFe
     const skip = new Set(active.filter(b => b.expiresAt > now).map(b => b.proxyId));
     for (const id of list) {
       if (skip.has(id)) continue;
-      const result = await tryOne(id, input, target, url, init, errors);
+      const result = await tryOne(id, input, targetForProxy, url, init, errors);
       if (result) return result;
     }
 
     for (const id of list) {
-      const result = await tryOne(id, input, target, url, init, errors);
+      const result = await tryOne(id, input, targetForProxy, url, init, errors);
       if (result) return result;
     }
 
@@ -52,7 +60,7 @@ export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFe
 const tryOne = async (
   id: string,
   input: CreateUpstreamFetchInput,
-  target: TargetSpec,
+  targetForProxy: () => Promise<TargetSpec>,
   url: string,
   init: RequestInit,
   errors: ProxyDialError[],
@@ -67,7 +75,7 @@ const tryOne = async (
     if (!config) {
       throw new Error(`unknown proxy id in fallback list: ${id}`);
     }
-    const response = await input.runProxied(config, target);
+    const response = await input.runProxied(config, await targetForProxy());
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
     // schedule from where it left off.
@@ -128,6 +136,14 @@ const collectBody = async (
     let off = 0;
     for (const c of chunks) { out.set(c, off); off += c.length; }
     return out;
+  }
+  // FormData / URLSearchParams: round-trip through Request so the runtime
+  // produces a canonical multipart/url-encoded byte stream we can buffer.
+  // The Request consumer also reads the boundary into Content-Type, but the
+  // proxy path adds its own headers from the target spec so we only need
+  // the body bytes here.
+  if (body instanceof FormData || body instanceof URLSearchParams) {
+    return new Uint8Array(await new Request('https://internal/', { method: 'POST', body }).arrayBuffer());
   }
   throw new Error('unsupported BodyInit shape for proxied request');
 };

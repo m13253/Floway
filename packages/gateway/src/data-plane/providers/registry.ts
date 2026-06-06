@@ -1,6 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamFetch, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
@@ -12,7 +12,10 @@ interface ProviderModelsResult {
   lastError: unknown;
 }
 
-type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
+type ProviderFactory = (
+  record: UpstreamRecord,
+  options?: { fetcher?: UpstreamFetch },
+) => ModelProviderInstance | Promise<ModelProviderInstance>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
@@ -22,12 +25,29 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 };
 
 // Build a single provider instance for one upstream record, regardless of kind.
-// Used by the control plane to list a saved upstream's resolved catalog.
+// Used by the control plane to list a saved upstream's resolved catalog. The
+// control plane never proxies, so no fetcher is supplied.
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record);
 
+// Same factory dispatch as `createProviderInstance`, but bakes a per-request
+// proxy-aware UpstreamFetch into the provider closure so every outbound call
+// for this request walks the upstream's proxy fallback list.
+export const createProviderInstanceForRequest = (
+  record: UpstreamRecord,
+  fetcher: UpstreamFetch,
+): ModelProviderInstance | Promise<ModelProviderInstance> =>
+  providerFactories[record.provider](record, { fetcher });
+
 // Ids not in the catalog are silently dropped; undefined/null preserves global sort order.
-export const listModelProviders = async (upstreamFilter?: readonly string[] | null): Promise<ModelProviderInstance[]> => {
+// `fetcherForUpstream` is optional: callers that only need the catalog (e.g.
+// /models listing) pass nothing and provider transports stay on
+// `globalThis.fetch`. The data plane passes a real builder so each provider
+// instance owns its per-request UpstreamFetch.
+export const listModelProviders = async (
+  upstreamFilter?: readonly string[] | null,
+  fetcherForUpstream?: (upstreamId: string) => UpstreamFetch,
+): Promise<ModelProviderInstance[]> => {
   const upstreams = await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   for (const upstream of upstreams) {
@@ -40,7 +60,8 @@ export const listModelProviders = async (upstreamFilter?: readonly string[] | nu
 
   const providers: ModelProviderInstance[] = [];
   for (const upstream of selection) {
-    providers.push(await providerFactories[upstream.provider](upstream));
+    const factory = providerFactories[upstream.provider];
+    providers.push(await (fetcherForUpstream ? factory(upstream, { fetcher: fetcherForUpstream(upstream.id) }) : factory(upstream)));
   }
 
   return providers;
@@ -211,8 +232,12 @@ const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId:
   return modelWithProviderInstances(resolved, providersForAlias);
 };
 
-export const resolveModelForRequest = async (modelId: string, upstreamFilter?: readonly string[] | null): Promise<ModelResolution> => {
-  const providers = await listModelProviders(upstreamFilter);
+export const resolveModelForRequest = async (
+  modelId: string,
+  upstreamFilter?: readonly string[] | null,
+  fetcherForUpstream?: (upstreamId: string) => UpstreamFetch,
+): Promise<ModelResolution> => {
+  const providers = await listModelProviders(upstreamFilter, fetcherForUpstream);
   if (providers.length === 0) {
     throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }

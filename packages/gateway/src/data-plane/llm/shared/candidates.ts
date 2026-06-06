@@ -1,3 +1,4 @@
+import { createPerRequestFetcher } from '../../../dial/per-request.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
@@ -16,7 +17,8 @@ export const enumerateProviderCandidates = async ({
   model: string;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
 }): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }> => {
-  const providers = await listModelProviders(apiKeyUpstreamIds);
+  const fetcherForUpstream = await createPerRequestFetcher();
+  const providers = await listModelProviders(apiKeyUpstreamIds, fetcherForUpstream);
   const candidates: ProviderCandidate[] = [];
   let sawModel = false;
 

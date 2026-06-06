@@ -42,7 +42,8 @@ const customFetchInternal = async (
   if (options?.extraHeaders) {
     for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
   }
-  return await fetch(joinBaseAndPath(trimTrailingSlash(config.baseUrl), path), { ...init, headers });
+  const dispatch = options?.fetcher ?? fetch;
+  return await dispatch(joinBaseAndPath(trimTrailingSlash(config.baseUrl), path), { ...init, headers });
 };
 
 // Typed transports — one per logical endpoint Custom serves. count_tokens /

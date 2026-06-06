@@ -66,12 +66,13 @@ const azureFetchInternal = async (
     for (const [key, value] of Object.entries(options.extraHeaders)) headers.set(key, value);
   }
   const url = joinBaseAndPath(baseUrl, path);
-  if (!query) return await fetch(url, { ...init, headers });
+  const dispatch = options?.fetcher ?? fetch;
+  if (!query) return await dispatch(url, { ...init, headers });
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
   const parsed = new URL(url);
   for (const [key, value] of new URLSearchParams(query).entries()) parsed.searchParams.append(key, value);
-  return await fetch(parsed.href, { ...init, headers });
+  return await dispatch(parsed.href, { ...init, headers });
 };
 
 // Typed transports — one per logical endpoint Azure serves. Streaming and

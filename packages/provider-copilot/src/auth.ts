@@ -1,4 +1,4 @@
-import { getProviderRepo as getRepo } from '@floway-dev/provider';
+import { getProviderRepo as getRepo, type UpstreamFetch } from '@floway-dev/provider';
 
 const COPILOT_BASE_URLS = {
   individual: 'https://api.githubcopilot.com',
@@ -171,6 +171,11 @@ async function getCopilotToken(githubToken: string): Promise<string> {
 
 export interface CopilotFetchOptions {
   headers?: Record<string, string>;
+  // Per-request proxy-aware indirection. Only the Copilot data-plane call
+  // routes through this; the api.github.com token exchange in
+  // `getCopilotToken` is admin-side bootstrap that intentionally bypasses
+  // the upstream proxy fallback.
+  fetcher?: UpstreamFetch;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options?: CopilotFetchOptions): Promise<Response> {
@@ -214,7 +219,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, github
     }
   }
 
-  return await fetch(`${baseUrl}${path}`, { ...init, headers });
+  return await (options?.fetcher ?? fetch)(`${baseUrl}${path}`, { ...init, headers });
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.

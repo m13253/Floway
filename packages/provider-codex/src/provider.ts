@@ -9,7 +9,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamFetch, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // L1 (in-process) memo lifetime. Kept short so an operator-triggered model
 // list change propagates within minutes even before the L2 ledger ages out.
@@ -25,10 +25,11 @@ interface CodexModelsLedger {
   models: CodexRawModel[];
 }
 
-export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
+export const createCodexProvider = async (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
+  const fetcher = options?.fetcher;
   // v1 of the codex provider always operates on the first account in the
   // pool. The schema carries an array so a future fan-out can pick a
   // different active account per call without a wire migration.
@@ -124,6 +125,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             signal,
             cache: getProviderRepo().cache,
             effects,
+            fetcher,
           });
         },
       );
@@ -148,6 +150,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             signal,
             cache: getProviderRepo().cache,
             effects,
+            fetcher,
           });
         },
       );

@@ -1,3 +1,4 @@
+import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
@@ -534,7 +535,8 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await resolveModelForRequest(state.config.model, state.apiKeyUpstreamIds);
+    const fetcherForUpstream = await createPerRequestFetcher();
+    resolution = await resolveModelForRequest(state.config.model, state.apiKeyUpstreamIds, fetcherForUpstream);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }

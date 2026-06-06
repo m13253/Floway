@@ -18,7 +18,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamFetch, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -170,8 +170,9 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
   return models;
 };
 
-export const createCopilotProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
+export const createCopilotProvider = async (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): Promise<ModelProviderInstance> => {
   const copilot = assertCopilotUpstreamRecord(record);
+  const fetcher = options?.fetcher;
   const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer). Azure recomputes per deployment.
@@ -184,6 +185,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
   ): Promise<ProviderCallResult> => {
+    const transportOptions: UpstreamFetchOptions = {};
+    if (headers && Object.keys(headers).length > 0) transportOptions.extraHeaders = headers;
+    if (fetcher) transportOptions.fetcher = fetcher;
     const response = await transport(
       upstreamConfig,
       {
@@ -191,7 +195,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
-      headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+      Object.keys(transportOptions).length > 0 ? transportOptions : undefined,
     );
     return { response, modelKey: rawModel.id };
   };
@@ -203,8 +207,11 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
-  ) =>
-    streamingProviderCall(
+  ) => {
+    const transportOptions: UpstreamFetchOptions = {};
+    if (headers && Object.keys(headers).length > 0) transportOptions.extraHeaders = headers;
+    if (fetcher) transportOptions.fetcher = fetcher;
+    return streamingProviderCall(
       transport(
         upstreamConfig,
         {
@@ -212,12 +219,13 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+        Object.keys(transportOptions).length > 0 ? transportOptions : undefined,
       ),
       parser,
       rawModel.id,
       signal,
     );
+  };
 
   // The boundary chain expects ExecuteResult shape so post-`run()` inspectors
   // (e.g. rewriteContextWindowError) can pattern-match on `result.type`. The
@@ -338,10 +346,13 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
           const { model: _ignored, ...wireBody } = ctx.payload;
           const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
           const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
+          const compactOptions: UpstreamFetchOptions = {};
+          if (Object.keys(ctx.headers).length > 0) compactOptions.extraHeaders = ctx.headers;
+          if (fetcher) compactOptions.fetcher = fetcher;
           const response = await copilotFetchResponses(
             upstreamConfig,
             { method: 'POST', body: JSON.stringify(triggered), signal },
-            Object.keys(ctx.headers).length > 0 ? { extraHeaders: ctx.headers } : undefined,
+            Object.keys(compactOptions).length > 0 ? compactOptions : undefined,
           );
           if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
           const generated = (await response.json()) as ResponsesResult;

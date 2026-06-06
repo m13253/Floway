@@ -20,6 +20,7 @@ import type { NonLlmServeApiName } from './api-names.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { recordPerformanceError, recordPerformanceLatency, recordRequestPerformanceForApiKey, runtimeLocationFromRequest } from './telemetry/performance.ts';
 import { recordTokenUsageForApiKey } from './telemetry/usage.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -153,7 +154,8 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    const { id: modelId, model: resolved } = await resolveModelForRequest(model, apiKeyUpstreamIdsFromContext(c));
+    const fetcherForUpstream = await createPerRequestFetcher();
+    const { id: modelId, model: resolved } = await resolveModelForRequest(model, apiKeyUpstreamIdsFromContext(c), fetcherForUpstream);
     if (!resolved) {
       return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
     }
