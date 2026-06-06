@@ -1,18 +1,19 @@
-import type { ResponsesCompactionTriggerItem, ResponsesInputContent, ResponsesInputItem, ResponsesInputMessage, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
-
-// Copilot has no native `/responses/compact`, so we replicate codex's
-// RemoteCompactionV2: drive a normal `/responses` turn with a trailing
-// `compaction_trigger` input item, keep the single `compaction` output item the
-// server returns, and rebuild the `response.compaction` envelope client-side.
-// Retained-message reconstruction matches the shape a native Azure
-// `/responses/compact` echoes: every retained user/assistant/developer/system
-// message verbatim (content normalized to `input_text` so the client can
-// resend `output` directly as the next turn's `input`), then the compaction
-// item last.
+// Shared helper for synthesizing the `response.compaction` envelope from a
+// trigger turn that returns one `compaction` output item. Used by both:
+// - Copilot, which has no native /responses/compact and replays codex's
+//   RemoteCompactionV2 client-side over /responses with stream:false.
+// - Codex, where the upstream natively supports the compaction_trigger but
+//   delivers the compaction item via the streamed response.output_item.done
+//   event instead of response.completed.output (which is always empty).
+// Both providers reuse the same retained-message reconstruction logic so the
+// envelope shape is uniform across provider kinds.
 //
 // References (codex @ ebb79803697acee75baf24073ef49af87ad7e483):
 //   codex-rs/core/src/compact_remote_v2.rs#L409-L457
 //   codex-rs/utils/string/src/truncate.rs#L71-L74
+
+import type { ResponsesCompactionTriggerItem, ResponsesInputContent, ResponsesInputItem, ResponsesInputMessage, ResponsesOutputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+
 export const COMPACTION_TRIGGER: ResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
 // Native compact retains `user` + `assistant` + `developer` + `system` —
@@ -51,12 +52,12 @@ const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMess
 // roles, so the final cast records that the compaction envelope's `output` is
 // deliberately input-shaped.
 //
-// A retained message with no id gets a synthetic one (so the store can mint
-// a stored id and persist it). That means Copilot-rebuilt retained items
-// persist as upstream-owned with an id the upstream never issued (giving them
-// `portable` affinity); the compaction blob carries the real `forcing`
-// affinity. Benign: retained messages are resent as full content rather than
-// `item_reference`s, so the synthetic id is never replayed to the upstream.
+// A retained message with no id gets a synthetic one (so the store can mint a
+// stored id and persist it). Retained messages persist as upstream-owned with
+// an id the upstream never issued (giving them `portable` affinity); the
+// compaction blob carries the real `forcing` affinity. Benign: retained
+// messages are resent as full content rather than `item_reference`s, so the
+// synthetic id is never replayed to the upstream.
 export const compactionResponse = (input: ResponsesInputItem[], generated: ResponsesResult): ResponsesResult => {
   const kept: ResponsesInputMessage[] = [];
   let used = 0;
@@ -82,7 +83,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
   // everything but the lone compaction item and errors if it is not exactly one.
   const compactionItems = generated.output.filter(it => it.type === 'compaction');
   if (compactionItems.length !== 1) {
-    throw new Error(`Expected exactly one compaction output item from the Copilot trigger turn, got ${compactionItems.length}`);
+    throw new Error(`Expected exactly one compaction output item, got ${compactionItems.length}`);
   }
 
   return {

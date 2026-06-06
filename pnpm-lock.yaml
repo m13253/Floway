@@ -105,6 +105,9 @@ importers:
       tsx:
         specifier: ^4
         version: 4.22.4
+      undici:
+        specifier: ^8.3.0
+        version: 8.3.0
 
   apps/web:
     dependencies:
@@ -214,6 +217,9 @@ importers:
       '@floway-dev/provider-azure':
         specifier: workspace:*
         version: link:../provider-azure
+      '@floway-dev/provider-codex':
+        specifier: workspace:*
+        version: link:../provider-codex
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../provider-copilot
@@ -282,6 +288,22 @@ importers:
         version: link:../test-utils
 
   packages/provider-azure:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../provider
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/provider-codex:
     dependencies:
       '@floway-dev/interceptor':
         specifier: workspace:*
@@ -3212,6 +3234,10 @@ packages:
   undici@7.24.4:
     resolution: {integrity: sha512-BM/JzwwaRXxrLdElV2Uo6cTLEjhSb3WXboncJamZ15NgUURmvlXvxa6xkwIOILIjPNo9i8ku136ZvWV0Uly8+w==}
     engines: {node: '>=20.18.1'}
+
+  undici@8.3.0:
+    resolution: {integrity: sha512-TkUDgb6tl7KOGZ+7e8E3d2FYgUQgF6z5YypqjWmixVQSQERFcVrVg0ySADm2LVLRh5ljAaHTCR5Fmz3Q34rB7Q==}
+    engines: {node: '>=22.19.0'}
 
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
@@ -6323,6 +6349,8 @@ snapshots:
   undici-types@6.21.0: {}
 
   undici@7.24.4: {}
+
+  undici@8.3.0: {}
 
   unenv@2.0.0-rc.24:
     dependencies:

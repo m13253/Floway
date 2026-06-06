@@ -172,6 +172,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
       apiKey: 'az-secret',
       models: [{ upstreamModelId: 'gpt-prod', endpoints: { messages: {} } }],
     },
+    state: null,
   });
 
   const patch = await requestApp('/api/upstreams/up_azure_single_endpoint', {
@@ -252,6 +253,7 @@ test('POST /api/upstreams/fetch-models substitutes the stored secret when the to
     flagOverrides: {},
     disabledPublicModelIds: [],
     config: { ...customConfig, bearerToken: 'sk-stored-secret' },
+    state: null,
   });
 
   await withMockedFetch(
@@ -322,4 +324,230 @@ test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s f
 
   const missing = await requestApp('/api/upstreams/nope/models', { headers: { 'x-api-key': adminKey } });
   assertEquals(missing.status, 404);
+});
+
+// --- Codex routes ---
+//
+// The auth.json import path lets us drive the OAuth ingestion deterministically
+// without mocking the token-exchange roundtrip: parseCodexIdTokenClaims decodes
+// the id_token JWT directly. Build a fake JWT that carries the identity claims
+// the production parser requires.
+const encodeBase64Url = (input: string): string =>
+  btoa(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+const fakeIdToken = (claims: Record<string, unknown>): string => {
+  const header = encodeBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = encodeBase64Url(JSON.stringify({
+    'https://api.openai.com/auth': {
+      chatgpt_account_id: 'acc_test',
+      chatgpt_user_id: 'usr_test',
+      chatgpt_plan_type: 'plus',
+    },
+    'https://api.openai.com/profile': { email: 'alice@example.com' },
+    ...claims,
+  }));
+  return `${header}.${payload}.fake-signature`;
+};
+
+const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
+  name: 'ChatGPT Codex',
+  auth_json: {
+    tokens: {
+      access_token: 'at_test',
+      refresh_token: 'rt_test',
+      id_token: fakeIdToken({}),
+    },
+    ...overrides,
+  },
+});
+
+test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes the verifier', async () => {
+  const { repo, adminKey } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminKey, {}));
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
+  assertEquals(typeof body.state, 'string');
+  assertEquals(body.authorize_url.startsWith('https://auth.openai.com/oauth/authorize?'), true);
+  assertEquals(body.expires_in_seconds, 300);
+
+  const stashed = await repo.cache.get(`codex_oauth_pending:${body.state}`);
+  assertEquals(typeof stashed, 'string');
+  const parsed = JSON.parse(stashed!) as { verifier: string; created_at: string };
+  assertEquals(typeof parsed.verifier, 'string');
+});
+
+test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with state', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()));
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as Record<string, any>;
+  assertEquals(created.provider, 'codex');
+  assertEquals(created.config.accounts[0].email, 'alice@example.com');
+  assertEquals(created.config.accounts[0].chatgptAccountId, 'acc_test');
+  assertEquals(created.config.accounts[0].planType, 'plus');
+  assertEquals(created.state.accounts[0].state, 'active');
+  assertEquals(created.state.accounts[0].refresh_token_set, true);
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ refresh_token: string }> };
+  assertEquals(storedState.accounts[0].refresh_token, 'rt_test');
+});
+
+test('POST /api/upstreams/codex-import without an explicit name auto-derives one from the imported identity', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const { name: _ignored, ...bodyWithoutName } = codexAuthJsonImport();
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, bodyWithoutName));
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as { name: string };
+  assertEquals(created.name, 'ChatGPT Codex (alice@example.com)');
+});
+
+test('POST /api/upstreams/codex-import rejects when both auth_json and callback are absent', async () => {
+  const { adminKey } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, { name: 'ChatGPT Codex' }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: { issues?: Array<{ message: string }> } | string };
+  // The schema-level XOR refine surfaces as a zod validation error envelope.
+  assertEquals(JSON.stringify(body).includes('Provide exactly one of auth_json or callback'), true);
+});
+
+test('POST /api/upstreams/codex-import rejects a malformed PKCE callback URL', async () => {
+  const { adminKey } = await setupAppTest();
+
+  const resp = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminKey, { name: 'Codex', callback: { callback_url: 'http://localhost:1455/auth/callback' } }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  // The handler unwraps the URL and reports "missing `code`" before ever
+  // touching the token endpoint.
+  assertEquals(body.error.includes('missing'), true);
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now rejects non-codex rows with 404', async () => {
+  const { adminKey } = await setupAppTest();
+
+  const created = (await (await requestApp('/api/upstreams', authed(adminKey, createBody()))).json()) as { id: string };
+  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+  assertEquals(resp.status, 404);
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now rejects upstreams in a terminal state with 400', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Plant a codex upstream in `session_terminated` state by importing then
+  // hand-mutating the row (the routes never expose a way to get into this
+  // state without a real upstream 401).
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
+  await repo.upstreams.save({
+    ...stored!,
+    state: { accounts: storedState.accounts.map(a => ({ ...a, state: 'session_terminated' })) },
+  });
+
+  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('session_terminated'), true);
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now rotates the refresh token on success', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+
+  await withMockedFetch(
+    () => jsonResponse({
+      access_token: 'at_rotated',
+      refresh_token: 'rt_rotated',
+      id_token: fakeIdToken({}),
+      expires_in: 3600,
+    }),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      assertEquals(resp.status, 200);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ refresh_token: string }> };
+  assertEquals(storedState.accounts[0].refresh_token, 'rt_rotated');
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+
+  await withMockedFetch(
+    () => new Response(
+      JSON.stringify({ error: { code: 'invalid_grant', message: 'Your refresh token has already been used to generate a new access token.' } }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    ),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      // 502, not 401 — the dashboard's auth client treats any 401 as a
+      // logout signal, and a dead codex credential must not log the
+      // operator out of the dashboard.
+      assertEquals(resp.status, 502);
+      const body = await resp.json() as { error: string };
+      assertEquals(body.error.includes('Re-import'), true);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ state: string; state_message?: string }> };
+  assertEquals(storedState.accounts[0].state, 'refresh_failed');
+  assertEquals(typeof storedState.accounts[0].state_message, 'string');
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-state CAS write loses to a concurrent mutation', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+
+  // Race: another writer rotates the refresh_token between our read and our
+  // failure-state CAS write. The route should still respond — the concurrent
+  // writer's state is fresher than our `refresh_failed` proposal by
+  // construction, so we drop ours rather than overwrite theirs.
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
+
+  await withMockedFetch(
+    () => {
+      // Simulate the concurrent writer mid-OAuth by mutating the row before
+      // the route reaches its CAS write. The OAuth call itself fails terminally.
+      void repo.upstreams.save({
+        ...stored!,
+        state: { accounts: storedState.accounts.map(a => ({ ...a, refresh_token: 'rt_concurrent_winner' })) },
+      });
+      return new Response(
+        JSON.stringify({ error: { code: 'invalid_grant', message: 'Your refresh token has already been used to generate a new access token.' } }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    },
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      assertEquals(resp.status, 502);
+    },
+  );
+
+  // The concurrent writer's state survives — our refresh_failed write was
+  // dropped by the CAS guard, which is the intended best-effort behavior.
+  const after = await repo.upstreams.getById(created.id);
+  const afterState = after?.state as { accounts: Array<{ state: string; refresh_token: string }> };
+  assertEquals(afterState.accounts[0].refresh_token, 'rt_concurrent_winner');
+  assertEquals(afterState.accounts[0].state, 'active');
 });

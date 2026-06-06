@@ -24,6 +24,7 @@ import type {
   UsageRecord,
   UsageRepo,
 } from './types.ts';
+import { serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
@@ -395,11 +396,25 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     this.store.clear();
     return Promise.resolve();
   }
+
+  // Mirrors the SQL CAS predicate by comparing the canonical JSON encoding of
+  // the row's current state against the expected one — same encoding the SQL
+  // impl writes, so callers see identical semantics across backends.
+  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
+    const existing = this.store.get(id);
+    if (!existing) return Promise.resolve({ updated: false });
+    if (serializeStoredState(existing.state) !== serializeStoredState(options.expectedState)) {
+      return Promise.resolve({ updated: false });
+    }
+    existing.state = newState === undefined ? null : structuredClone(newState);
+    return Promise.resolve({ updated: true });
+  }
 }
 
 const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   ...upstream,
   config: structuredClone(upstream.config),
+  state: upstream.state === null || upstream.state === undefined ? null : structuredClone(upstream.state),
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
 });

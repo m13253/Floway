@@ -25,6 +25,7 @@ const azureUpstream = (): UpstreamRecord => ({
       },
     ],
   },
+  state: null,
 });
 
 test('/api/models exposes each binding as { kind, id } so multi-provider models are unambiguous', async () => {

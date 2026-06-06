@@ -2,6 +2,7 @@ import { getRepo } from '../../repo/index.ts';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
+import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { createCustomProvider } from '@floway-dev/provider-custom';
 
@@ -17,6 +18,7 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
   custom: createCustomProvider,
   azure: createAzureProvider,
+  codex: createCodexProvider,
 };
 
 // Build a single provider instance for one upstream record, regardless of kind.

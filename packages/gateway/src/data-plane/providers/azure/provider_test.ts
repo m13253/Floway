@@ -33,6 +33,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     sortOrder: 0,
     createdAt: '2026-05-21T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
+    state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
     ...rest,
@@ -386,6 +387,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
         endpoints: { imagesGenerations: {}, imagesEdits: {} },
       }],
     },
+    state: null,
   };
 
   let observedUrl: string | undefined;
@@ -430,6 +432,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
         endpoints: { imagesEdits: {} },
       }],
     },
+    state: null,
   };
 
   let observedUrl: string | undefined;

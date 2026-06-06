@@ -47,6 +47,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
     endpoints: { chatCompletions: {}, responses: {} },
     modelsFetch: { enabled: true, endpoint: '/models' },
   },
+  state: null,
 };
 
 const COPILOT_UPSTREAM: UpstreamRecord = {
@@ -69,6 +70,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
       avatar_url: 'https://example.com/a.png',
     },
   },
+  state: null,
 };
 
 const AZURE_UPSTREAM: UpstreamRecord = {
@@ -97,6 +99,35 @@ const AZURE_UPSTREAM: UpstreamRecord = {
         endpoints: { chatCompletions: {} },
       },
     ],
+  },
+  state: null,
+};
+
+const CODEX_UPSTREAM: UpstreamRecord = {
+  id: 'up_codex_a',
+  provider: 'codex',
+  name: 'ChatGPT Codex (alice)',
+  enabled: true,
+  sortOrder: 30,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  config: {
+    accounts: [{
+      email: 'alice@example.com',
+      chatgptAccountId: 'acc_alice',
+      chatgptUserId: 'usr_alice',
+      planType: 'plus',
+    }],
+  },
+  state: {
+    accounts: [{
+      chatgptAccountId: 'acc_alice',
+      refresh_token: 'rt_alice_v3',
+      state: 'active',
+      state_updated_at: '2026-01-01T00:00:00.000Z',
+    }],
   },
 };
 
@@ -392,6 +423,58 @@ test('import rejects missing upstreams before clearing existing data', async () 
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_1]);
+});
+
+test('codex upstreams export and import round-trip with state intact', async () => {
+  const { app, repo } = setup();
+  await repo.upstreams.save(CODEX_UPSTREAM);
+  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+
+  const result = await doExport(app);
+  const exportedCodex = result.data.upstreams.find((upstream: any) => upstream.id === 'up_codex_a');
+  assertEquals(exportedCodex.config, CODEX_UPSTREAM.config);
+  assertEquals(exportedCodex.state, CODEX_UPSTREAM.state);
+
+  const replaceResult = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [exportedCodex],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  assertEquals(replaceResult.status, 200);
+  assertEquals(await repo.upstreams.list(), [CODEX_UPSTREAM]);
+});
+
+test('codex import rejects when state is missing', async () => {
+  const { app } = setup();
+  const { state: _dropped, ...stateless } = upstreamRecordToFullJson(CODEX_UPSTREAM);
+  const result = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [{ ...stateless, state: null }],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error.includes('codex upstream import is missing state'), true);
+});
+
+test('codex import rejects unknown keys in state', async () => {
+  const { app } = setup();
+  const exported = upstreamRecordToFullJson(CODEX_UPSTREAM);
+  const result = await doImport(app, 'replace', {
+    apiKeys: [],
+    upstreams: [{ ...exported, state: { ...(exported.state as object), smuggled: 'x' } }],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  });
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error.includes('unexpected key'), true);
 });
 
 test('import rejects invalid records before clearing existing data', async () => {

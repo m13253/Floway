@@ -194,6 +194,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
         endpoints: { imagesEdits: {} },
       }],
     },
+    state: null,
   });
 
   let observedUrl: string | undefined;

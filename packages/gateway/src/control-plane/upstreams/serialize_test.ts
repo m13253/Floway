@@ -23,6 +23,7 @@ const custom: UpstreamRecord = {
     modelsFetch: { enabled: true, endpoint: '/models' },
     models: [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }],
   },
+  state: null,
 };
 
 test('upstreamRecordToJson redacts custom bearer token inside config', () => {
@@ -35,6 +36,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(result.created_at, timestamp);
   assertEquals(result.updated_at, timestamp);
   assertEquals(result.flag_overrides, { 'vendor-deepseek': true });
+  assertEquals(result.state, null);
   assertEquals(config.baseUrl, 'https://api.example.com');
   assertEquals(config.bearerToken, undefined);
   assertEquals(config.bearerTokenSet, true);

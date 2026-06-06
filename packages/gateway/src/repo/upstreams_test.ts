@@ -13,6 +13,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   enabled: true,
   updatedAt: overrides.createdAt,
   config: { nested: { value: overrides.id }, endpoints: { chatCompletions: {} } },
+  state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
   ...overrides,
@@ -240,6 +241,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{bad json',
+    state_json: null,
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
   });
@@ -258,6 +260,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
+    state_json: null,
     flag_overrides: '{bad json',
     disabled_public_model_ids: '[]',
   });
@@ -276,6 +279,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
+    state_json: null,
     flag_overrides: '[]',
     disabled_public_model_ids: '[]',
   });
@@ -298,6 +302,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     created_at: '2026-05-21T10:00:00.000Z',
     updated_at: '2026-05-21T10:00:00.000Z',
     config_json: '{}',
+    state_json: null,
     flag_overrides: '{"x": 1}',
     disabled_public_model_ids: '[]',
   });
@@ -419,6 +424,7 @@ type FakeUpstreamRow = {
   created_at: string;
   updated_at: string;
   config_json: string;
+  state_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
 };
@@ -490,7 +496,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, flagOverrides, disabledPublicModelIds] = binds as [string, string, string, number, number, string, string, string, string, string];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds] = binds as [string, string, string, number, number, string, string, string, string | null, string, string];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
     const row = {
@@ -502,6 +508,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       created_at: preservedCreatedAt,
       updated_at: updatedAt,
       config_json: configJson,
+      state_json: stateJson,
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
     };

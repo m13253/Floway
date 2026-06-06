@@ -150,5 +150,11 @@ test('saveSearchConfig stores normalized JSON', async () => {
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
   });
-  assertEquals(db.config.get('search_config'), JSON.stringify(saved));
+  // Stored form is canonical (keys sorted at every depth), so the persisted
+  // string is comparable byte-for-byte regardless of input key order.
+  assertEquals(db.config.get('search_config'), JSON.stringify({
+    microsoftGrounding: { apiKey: 'ms-test' },
+    provider: 'disabled',
+    tavily: { apiKey: 'tvly-test' },
+  }));
 });

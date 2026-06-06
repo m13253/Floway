@@ -114,6 +114,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     },
     flagOverrides: {},
     disabledPublicModelIds: [],
+    state: null,
   });
   await repo.upstreams.save(buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
@@ -326,6 +327,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
       apiKey: 'az-key',
       models: over.models.map(m => ({ ...m, endpoints: { chatCompletions: {} } })),
     },
+    state: null,
     flagOverrides: {},
     disabledPublicModelIds: over.disabledPublicModelIds,
   });
@@ -387,6 +389,7 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
     },
     flagOverrides: {},
     disabledPublicModelIds: ['disabled-model'],
+    state: null,
   });
 
   const [provider] = await listModelProviders();

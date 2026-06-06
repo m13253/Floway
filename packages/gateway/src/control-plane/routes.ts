@@ -6,11 +6,11 @@ import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
-import { authLoginBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, exportQuery, fetchModelsBody, importBody, performanceQuery, searchConfigSchema, searchUsageQuery, tokenUsageQuery, updateKeyBody, updateUpstreamBody } from './schemas.ts';
+import { authLoginBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, exportQuery, fetchModelsBody, importBody, performanceQuery, searchConfigSchema, searchUsageQuery, tokenUsageQuery, updateKeyBody, updateUpstreamBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const adminOnlyMiddleware = async (c: Context, next: Next) => {
@@ -53,6 +53,10 @@ export const controlPlaneRoutes = new Hono()
     .get('/upstream-flags', listOptionalFlags)
     .post('/upstreams/copilot/auth/start', copilotAuthStart)
     .post('/upstreams/copilot/auth/poll', zValidator('json', copilotAuthPollBody), copilotAuthPoll)
+    .post('/upstreams/codex-pkce-start', zValidator('json', codexPkceStartBody), codexPkceStart)
+    .post('/upstreams/codex-import', zValidator('json', codexImportBody), codexImport)
+    .post('/upstreams/:id/codex-reimport', zValidator('json', codexReimportBody), codexReimport)
+    .post('/upstreams/:id/codex-refresh-now', zValidator('json', codexRefreshNowBody), codexRefreshNow)
     .post('/upstreams/fetch-models', zValidator('json', fetchModelsBody), fetchModels)
     .post('/upstreams', zValidator('json', createUpstreamBody), createUpstream)
     .get('/upstreams/:id/copilot/quota', copilotQuota)

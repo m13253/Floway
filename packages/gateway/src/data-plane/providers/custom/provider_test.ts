@@ -21,6 +21,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
     bearerToken: 'sk-test',
     endpoints: { chatCompletions: {}, responses: {}, messages: {} },
   },
+  state: null,
   ...overrides,
 });
 

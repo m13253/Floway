@@ -167,10 +167,17 @@ const upstreamBaseFields = {
 // originate from the device-flow poll endpoint, but POST also accepts them
 // for the import flow. `enabled` and `sort_order` are optional — the handler
 // defaults them to `true` and `nextSortOrder()` respectively when omitted.
+//
+// `codex` is listed here so the handler can return the canonical
+// "use POST /api/upstreams/codex-import" 400 instead of the cryptic zod
+// "invalid discriminator value" message. The `config` slot is `unknown()`
+// because the real Codex config is derived from the OAuth/`auth.json` flow,
+// not from anything the dashboard would post against this endpoint.
 export const createUpstreamBody = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
   z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
+  z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
 ]);
 
 // Update is provider-agnostic: provider is read from the existing record, and
@@ -183,7 +190,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot']).optional(),
+  provider: z.enum(['custom', 'azure', 'copilot', 'codex']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -206,6 +213,54 @@ export const fetchModelsBody = z.object({
 export const copilotAuthPollBody = z.object({
   device_code: z.string().min(1),
 });
+
+// --- codex import / PKCE / refresh ---
+//
+// The control plane refuses `provider: 'codex'` on the generic create / update
+// upstream endpoints; Codex credentials enter only through these dedicated
+// routes so the PKCE verifier handoff and id_token parsing live in one place.
+
+export const codexPkceStartBody = z.object({});
+
+// Path A — operator pastes `~/.codex/auth.json` verbatim. Path B — operator
+// supplies the OAuth callback, identified by the prior PKCE-start `state`. The
+// two paths are mutually exclusive; the refine below catches the both-or-
+// neither case before the handler runs.
+const codexCredentialFields = {
+  auth_json: z.unknown().optional(),
+  callback: z.object({
+    code: z.string().min(1).optional(),
+    state: z.string().min(1).optional(),
+    // Either `{code, state}` or `callback_url` (which we parse) — the handler
+    // picks `callback_url` first when present.
+    callback_url: z.string().min(1).optional(),
+  }).optional(),
+};
+
+const requireExactlyOneCredential = (b: { auth_json?: unknown; callback?: unknown }): boolean =>
+  (b.auth_json !== undefined) !== (b.callback !== undefined);
+
+const codexCredentialRefineMessage = { message: 'Provide exactly one of auth_json or callback' };
+
+// Both `codexImportBody.name` and `codexReimportBody.name` are optional. On
+// import, the server synthesizes a default name from the id_token-derived
+// identity (matching how copilot's device flow auto-names rows from the
+// GitHub login); the operator can rename later from the edit page. On
+// re-import, the existing row already has a name, so omitting it is the
+// common case.
+export const codexImportBody = z.object({
+  name: z.string().min(1).optional(),
+  sort_order: z.number().int().optional(),
+  ...codexCredentialFields,
+}).refine(requireExactlyOneCredential, codexCredentialRefineMessage);
+
+// `sort_order` is omitted because re-import must not re-rank the row.
+export const codexReimportBody = z.object({
+  name: z.string().min(1).optional(),
+  ...codexCredentialFields,
+}).refine(requireExactlyOneCredential, codexCredentialRefineMessage);
+
+export const codexRefreshNowBody = z.object({});
 
 // --- search config ---
 

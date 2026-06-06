@@ -23,6 +23,7 @@ import type {
   UsageRecord,
   UsageRepo,
 } from './types.ts';
+import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
@@ -30,8 +31,6 @@ import { type BillingDimension, type ModelPricing, unitPriceForDimension } from 
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const SEARCH_CONFIG_KEY = 'search_config';
-
-const serializeStoredConfig = (value: unknown): string => JSON.stringify(value === undefined ? null : value);
 
 // Apply a list of prepared statements, using `db.batch` when available
 // (D1 ships it; SqlDatabase models it as optional) and falling back to a
@@ -872,14 +871,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -890,7 +889,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -898,6 +897,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
            sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
            config_json = excluded.config_json,
+           state_json = excluded.state_json,
            flag_overrides = excluded.flag_overrides,
            disabled_public_model_ids = excluded.disabled_public_model_ids`,
       )
@@ -910,6 +910,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         upstream.createdAt,
         upstream.updatedAt,
         serializeStoredConfig(upstream.config),
+        serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
       )
@@ -924,6 +925,18 @@ class SqlUpstreamRepo implements UpstreamRepo {
   async deleteAll(): Promise<void> {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
+
+  // `IS` (not `=`) so NULL on either side compares correctly — a row whose
+  // state_json is SQL NULL still matches when the caller passes
+  // expectedState: null. The serialized form here must equal what save()
+  // wrote for the predicate to hold on the back-to-back write path.
+  async saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
+    const result = await this.db
+      .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
+      .bind(serializeStoredState(newState), id, serializeStoredState(options.expectedState))
+      .run();
+    return { updated: ((result.meta.changes as number | undefined) ?? 0) > 0 };
+  }
 }
 
 interface UpstreamRow {
@@ -935,6 +948,7 @@ interface UpstreamRow {
   created_at: string;
   updated_at: string;
   config_json: string;
+  state_json: string | null;
   flag_overrides: string;
   disabled_public_model_ids: string;
 }
@@ -946,6 +960,14 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
   } catch {
     throw new Error(`Malformed upstream config JSON for ${row.id}`);
   }
+  let state: unknown = null;
+  if (row.state_json !== null) {
+    try {
+      state = JSON.parse(row.state_json) as unknown;
+    } catch {
+      throw new Error(`Malformed upstream state JSON for ${row.id}`);
+    }
+  }
 
   return {
     id: row.id,
@@ -956,13 +978,14 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     config,
+    state,
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
   };
 }
 
 const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
-  if (provider === 'copilot' || provider === 'custom' || provider === 'azure') return provider;
+  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex') return provider;
   throw new TypeError(`Invalid upstream provider kind: ${provider}`);
 };
 

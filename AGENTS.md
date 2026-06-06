@@ -27,7 +27,8 @@
 `floway` is an LLM API gateway. It exposes Anthropic Messages, OpenAI
 Responses, OpenAI Chat Completions, Embeddings, OpenAI Images, and Google
 Gemini-compatible APIs over a unified upstream model. Provider kinds are
-`copilot`, `custom`, and `azure`.
+`copilot`, `custom`, `azure`, and `codex` (ChatGPT subscription via the
+Codex CLI's OAuth client).
 
 As a gateway, preserve upstream status, headers, and body as directly as
 possible; surface internal failures with stack traces rather than masking
@@ -56,6 +57,7 @@ floway/
 │   ├── protocols/           # @floway-dev/protocols — protocol type defs
 │   ├── provider/            # @floway-dev/provider — upstream provider contracts
 │   ├── provider-azure/      # @floway-dev/provider-azure — Azure OpenAI provider
+│   ├── provider-codex/      # @floway-dev/provider-codex — ChatGPT Codex (subscription) provider
 │   ├── provider-copilot/    # @floway-dev/provider-copilot — GitHub Copilot provider
 │   ├── provider-custom/     # @floway-dev/provider-custom — generic OpenAI-compatible
 │   ├── translate/           # @floway-dev/translate — cross-protocol translation pairs

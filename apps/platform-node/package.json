@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.19"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,6 +20,7 @@
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*",
     "@types/node": "^22",
-    "tsx": "^4"
+    "tsx": "^4",
+    "undici": "^8.3.0"
   }
 }

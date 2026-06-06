@@ -16,6 +16,7 @@ import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/commo
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceApiName, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
@@ -37,7 +38,7 @@ const EXPORT_VERSION = 3;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
-const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot']);
+const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot', 'codex']);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -85,7 +86,25 @@ const copilotConfigField = (value: unknown): unknown => {
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   if (record.provider === 'custom') return assertCustomUpstreamRecord(record).config;
   if (record.provider === 'azure') return assertAzureUpstreamRecord(record).config;
+  if (record.provider === 'codex') {
+    assertCodexUpstreamRecord(record);
+    return record.config;
+  }
   return copilotConfigField(record.config);
+};
+
+// State is persisted only for providers that own autonomous runtime state. Codex
+// rotates a refresh_token and tracks credential health; Custom/Azure/Copilot
+// have no such state and serialize to null. Round-trip codex state through
+// the same shape assertion the runtime uses so a corrupt or hand-edited
+// import can't smuggle unknown fields onto the column.
+const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
+  if (provider !== 'codex') return null;
+  if (value === null || value === undefined) {
+    throw new Error('codex upstream import is missing state — re-export with current code');
+  }
+  assertCodexUpstreamState(value);
+  return value;
 };
 
 const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRecord[] } | { type: 'invalid'; index: number; error: string } => {
@@ -100,7 +119,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         throw new Error("legacy 'enabled_fixes' field is no longer supported; this export predates the flag_overrides refactor — re-export with current code");
       }
       if (typeof item.provider !== 'string' || !UPSTREAM_PROVIDERS.has(item.provider as UpstreamProviderKind)) {
-        throw new Error('provider must be one of custom, azure, copilot');
+        throw new Error('provider must be one of custom, azure, copilot, codex');
       }
       if (typeof item.enabled !== 'boolean') throw new Error('enabled must be a boolean');
       if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');
@@ -108,9 +127,10 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
       const id = nonEmptyString(item.id, 'id');
       if (isLegacyUpstreamIdentity(id)) throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
 
+      const provider = item.provider as UpstreamProviderKind;
       const record: UpstreamRecord = {
         id,
-        provider: item.provider as UpstreamProviderKind,
+        provider,
         name: nonEmptyString(item.name, 'name'),
         enabled: item.enabled,
         sortOrder: Math.floor(item.sort_order),
@@ -119,6 +139,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         config: item.config,
+        state: normalizeUpstreamState(provider, item.state),
       };
       records.push({ ...record, config: normalizeUpstreamConfig(record) });
     } catch (error) {

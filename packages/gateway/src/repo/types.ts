@@ -129,6 +129,11 @@ export interface UpstreamRepo {
   save(upstream: UpstreamRecord): Promise<void>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
+  // Gateway autonomous state write with optimistic concurrency. Returns
+  // updated:true only if the row's state_json equals the serialized form of
+  // options.expectedState at write time. On updated:false the caller re-reads
+  // and decides whether to retry or drop the update.
+  saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }>;
 }
 
 export interface StoredResponsesItem {
