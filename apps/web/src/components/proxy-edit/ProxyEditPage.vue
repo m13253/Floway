@@ -196,7 +196,9 @@ const test = async () => {
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
     if (data?.egress_ip) {
       lastEgressIp.value = data.egress_ip;
-      lastTestedAt.value = Date.now();
+      // Match the wire format — unix seconds, not millis. The parent re-fetch
+      // below will overwrite this from the server's authoritative value.
+      lastTestedAt.value = Math.floor(Date.now() / 1000);
     }
     // Tell the parent to re-fetch so the settings card mirrors the new
     // egress state when the operator navigates back.
