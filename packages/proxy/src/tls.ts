@@ -12,15 +12,16 @@
 // transport and returns a fresh { readable, writable } pair carrying the
 // upstream's decrypted application data.
 
-import { getSocketDial } from '@floway-dev/platform'
-import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls'
-import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto'
+import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
+import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-let cryptoInstalled = false
+import { getSocketDial } from '@floway-dev/platform';
+
+let cryptoInstalled = false;
 function ensureCrypto(): void {
-  if (cryptoInstalled) return
-  setCryptoImplementation(webcryptoCrypto)
-  cryptoInstalled = true
+  if (cryptoInstalled) return;
+  setCryptoImplementation(webcryptoCrypto);
+  cryptoInstalled = true;
 }
 
 export interface UserspaceTlsOptions {
@@ -28,18 +29,18 @@ export interface UserspaceTlsOptions {
    * TLS ClientHello server_name extension and (unless `verifyHost` is set)
    * the hostname against which the cert chain is validated.
    */
-  host: string
+  host: string;
   /**
    * Override the cert-validation hostname independently from `host` (the
    * SNI). The cert's SAN/CN must prove this name. Defaults to `host`.
    */
-  verifyHost?: string
-  alpn?: string[]
+  verifyHost?: string;
+  alpn?: string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
    * no name match). Test-only.
    */
-  insecure?: boolean
+  insecure?: boolean;
   /**
    * Optional bytes prepended to our first record write to the transport.
    * Used when the proxy protocol's request header must be transmitted in
@@ -47,19 +48,19 @@ export interface UserspaceTlsOptions {
    * Trojan inbound uses `conn.Read(key[56])` and short-reads if the proxy
    * header arrives in a separate TLS fragment from the rest of the stream).
    */
-  prefix?: Uint8Array
+  prefix?: Uint8Array;
   /**
    * Force TLS 1.3 cipher suites. Defaults to the AES-GCM suites which use
    * Web Crypto's hardware-accelerated AES-NI path on Workers; ChaCha20-
    * Poly1305 falls back to @noble/ciphers' pure-JS impl which is much
    * slower for the typical record sizes our HTTP/1.1 traffic produces.
    */
-  cipherSuites?: Array<'TLS_AES_256_GCM_SHA384' | 'TLS_AES_128_GCM_SHA256' | 'TLS_CHACHA20_POLY1305_SHA256'>
+  cipherSuites?: Array<'TLS_AES_256_GCM_SHA384' | 'TLS_AES_128_GCM_SHA256' | 'TLS_CHACHA20_POLY1305_SHA256'>;
 }
 
 export interface TlsStream {
-  readable: ReadableStream<Uint8Array>
-  writable: WritableStream<Uint8Array>
+  readable: ReadableStream<Uint8Array>;
+  writable: WritableStream<Uint8Array>;
 }
 
 // Wrap a duplex byte transport (typically a `DialedSocket` after the proxy
@@ -72,46 +73,46 @@ export async function userspaceTls(
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
   opts: UserspaceTlsOptions,
 ): Promise<TlsStream> {
-  ensureCrypto()
+  ensureCrypto();
 
-  const writer = transport.writable.getWriter()
+  const writer = transport.writable.getWriter();
 
   // App-data downward stream (TLS plaintext → consumer)
-  let plainController!: ReadableStreamDefaultController<Uint8Array>
+  let plainController!: ReadableStreamDefaultController<Uint8Array>;
   const plainReadable = new ReadableStream<Uint8Array>({
-    start(c) { plainController = c },
-  })
+    start(c) { plainController = c; },
+  });
 
   // App-data upward stream (consumer → TLS encrypt → transport)
   // We construct the writable AFTER the TLS client exists so its write hook can
   // call tls.write directly. Use a placeholder; reassigned below.
-  let tlsClient: ReturnType<typeof makeTLSClient> | null = null
+  let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      if (!tlsClient) throw new Error('TLS not ready')
-      await tlsClient.write(chunk)
+      if (!tlsClient) throw new Error('TLS not ready');
+      await tlsClient.write(chunk);
     },
     async close() {
-      try { await tlsClient?.end() } catch {}
-      try { writer.close() } catch {}
+      try { await tlsClient?.end(); } catch {}
+      try { void writer.close(); } catch {}
     },
     abort(reason) {
-      try { tlsClient?.end() } catch {}
-      try { writer.abort(reason) } catch {}
+      try { void tlsClient?.end(); } catch {}
+      try { void writer.abort(reason); } catch {}
     },
-  })
+  });
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
-  let handshakeResolve!: () => void
-  let handshakeReject!: (e: unknown) => void
+  let handshakeResolve!: () => void;
+  let handshakeReject!: (e: unknown) => void;
   const handshakeDone = new Promise<void>((resolve, reject) => {
-    handshakeResolve = resolve
-    handshakeReject = reject
-  })
+    handshakeResolve = resolve;
+    handshakeReject = reject;
+  });
 
-  let handshakeOk = false
+  let handshakeOk = false;
 
-  let pendingPrefix: Uint8Array | null = opts.prefix ?? null
+  let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
   tlsClient = makeTLSClient(({
     host: opts.host,
@@ -124,72 +125,72 @@ export async function userspaceTls(
     // @noble/ciphers' pure-JS impl, which is ~5-10× slower per byte.
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
-      const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0
-      const out = new Uint8Array(prefixLen + header.byteLength + content.byteLength)
-      let off = 0
+      const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0;
+      const out = new Uint8Array(prefixLen + header.byteLength + content.byteLength);
+      let off = 0;
       if (pendingPrefix) {
-        out.set(pendingPrefix, 0); off += prefixLen
-        pendingPrefix = null
+        out.set(pendingPrefix, 0); off += prefixLen;
+        pendingPrefix = null;
       }
-      out.set(header, off); off += header.byteLength
-      out.set(content, off)
-      writer.write(out).catch((e) => {
-        if (!handshakeOk) handshakeReject(e)
-        else plainController?.error(e)
-      })
+      out.set(header, off); off += header.byteLength;
+      out.set(content, off);
+      writer.write(out).catch(e => {
+        if (!handshakeOk) handshakeReject(e);
+        else plainController?.error(e);
+      });
     },
-    async onHandshake() {
-      handshakeOk = true
-      handshakeResolve()
+    onHandshake() {
+      handshakeOk = true;
+      handshakeResolve();
     },
     onApplicationData(plaintext) {
-      if (plainController) plainController.enqueue(copy(plaintext))
+      if (plainController) plainController.enqueue(copy(plaintext));
     },
     onTlsEnd(error) {
       if (!handshakeOk) {
-        handshakeReject(error ?? new Error('TLS ended before handshake'))
-        return
+        handshakeReject(error ?? new Error('TLS ended before handshake'));
+        return;
       }
-      if (error) plainController?.error(error)
-      else plainController?.close()
-      try { writer.close() } catch {}
+      if (error) plainController?.error(error);
+      else plainController?.close();
+      try { void writer.close(); } catch {}
     },
-  } as Parameters<typeof makeTLSClient>[0]))
+  } as Parameters<typeof makeTLSClient>[0]));
 
   // Pump bytes from transport → tls.handleReceivedBytes
-  ;(async () => {
-    const reader = transport.readable.getReader()
+  void (async () => {
+    const reader = transport.readable.getReader();
     try {
       while (true) {
-        const { value, done } = await reader.read()
+        const { value, done } = await reader.read();
         if (done) {
-          tlsClient?.end().catch(() => {})
-          return
+          tlsClient?.end().catch(() => {});
+          return;
         }
-        await tlsClient?.handleReceivedBytes(value)
+        await tlsClient?.handleReceivedBytes(value);
       }
     } catch (e) {
-      if (!handshakeOk) handshakeReject(e)
-      else plainController?.error(e)
+      if (!handshakeOk) handshakeReject(e);
+      else plainController?.error(e);
     } finally {
-      try { reader.releaseLock() } catch {}
+      try { reader.releaseLock(); } catch {}
     }
-  })()
+  })();
 
-  await tlsClient.startHandshake()
-  await handshakeDone
+  await tlsClient.startHandshake();
+  await handshakeDone;
 
-  return { readable: plainReadable, writable: plainWritable }
+  return { readable: plainReadable, writable: plainWritable };
 }
 
 function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
-  const r = new Uint8Array(u.byteLength)
-  r.set(u)
-  return r
+  const r = new Uint8Array(u.byteLength);
+  r.set(u);
+  return r;
 }
 
 // Convenience: open a plain TCP socket and immediately wrap it in TLS.
 export async function connectTls(host: string, port: number, opts?: { alpn?: string[]; insecure?: boolean }): Promise<TlsStream> {
-  const sock = await getSocketDial().connect(host, port, { allowHalfOpen: true })
-  return await userspaceTls(sock, { host, alpn: opts?.alpn, insecure: opts?.insecure })
+  const sock = await getSocketDial().connect(host, port, { allowHalfOpen: true });
+  return await userspaceTls(sock, { host, alpn: opts?.alpn, insecure: opts?.insecure });
 }

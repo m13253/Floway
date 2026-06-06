@@ -25,7 +25,7 @@ describe('SocketDial singleton', () => {
 
   it('returns the registered impl after init', () => {
     const fake: SocketDial = {
-      connect: async (host, port): Promise<DialedSocket> => ({
+      connect: async (_host, _port): Promise<DialedSocket> => ({
         readable: new ReadableStream(),
         writable: new WritableStream(),
         closed: Promise.resolve(),

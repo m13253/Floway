@@ -30,45 +30,45 @@ import type {
   TrojanProxyConfig,
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
-} from './proxy-config.js'
+} from './proxy-config.js';
 
 const SS_METHODS: ReadonlySet<string> = new Set<SsMethod>([
   'aes-128-gcm',
   'aes-256-gcm',
   'chacha20-ietf-poly1305',
-])
+]);
 
 const SS2022_METHODS: ReadonlySet<string> = new Set<Ss2022Method>([
   '2022-blake3-aes-128-gcm',
   '2022-blake3-aes-256-gcm',
   '2022-blake3-chacha20-poly1305',
-])
+]);
 
 export const parseProxyUri = (uri: string): ProxyConfig => {
-  const url = new URL(uri)
-  const host = url.hostname
-  const port = resolvePort(url, uri)
+  const url = new URL(uri);
+  const host = url.hostname;
+  const port = resolvePort(url, uri);
   const name = url.hash
     ? decodeURIComponent(url.hash.slice(1))
-    : `${host}:${port}`
+    : `${host}:${port}`;
 
   switch (url.protocol) {
-    case 'http:': return parseHttp(url, host, port, name, false)
-    case 'https:': return parseHttp(url, host, port, name, true)
-    case 'socks5:': return parseSocks5(url, host, port, name)
-    case 'ss:': return parseSs(url, host, port, name)
-    case 'trojan:': return parseTrojan(url, host, port, name)
-    case 'vless:': return parseVless(url, host, port, name)
-    default:
-      throw new Error(`Unknown scheme: ${url.protocol.replace(/:$/, '')}`)
+  case 'http:': return parseHttp(url, host, port, name, false);
+  case 'https:': return parseHttp(url, host, port, name, true);
+  case 'socks5:': return parseSocks5(url, host, port, name);
+  case 'ss:': return parseSs(url, host, port, name);
+  case 'trojan:': return parseTrojan(url, host, port, name);
+  case 'vless:': return parseVless(url, host, port, name);
+  default:
+    throw new Error(`Unknown scheme: ${url.protocol.replace(/:$/, '')}`);
   }
-}
+};
 
 const resolvePort = (url: URL, uri: string): number => {
-  if (url.port) return Number(url.port)
-  if (url.protocol === 'https:') return 443
-  throw new Error(`port required: ${uri}`)
-}
+  if (url.port) return Number(url.port);
+  if (url.protocol === 'https:') return 443;
+  throw new Error(`port required: ${uri}`);
+};
 
 const parseHttp = (
   url: URL,
@@ -77,11 +77,11 @@ const parseHttp = (
   name: string,
   tls: boolean,
 ): HttpProxyConfig => {
-  const config: HttpProxyConfig = { kind: 'http', tls, host, port, name }
-  if (url.username) config.username = decodeURIComponent(url.username)
-  if (url.password) config.password = decodeURIComponent(url.password)
-  return config
-}
+  const config: HttpProxyConfig = { kind: 'http', tls, host, port, name };
+  if (url.username) config.username = decodeURIComponent(url.username);
+  if (url.password) config.password = decodeURIComponent(url.password);
+  return config;
+};
 
 const parseSocks5 = (
   url: URL,
@@ -89,11 +89,11 @@ const parseSocks5 = (
   port: number,
   name: string,
 ): Socks5ProxyConfig => {
-  const config: Socks5ProxyConfig = { kind: 'socks5', host, port, name }
-  if (url.username) config.username = decodeURIComponent(url.username)
-  if (url.password) config.password = decodeURIComponent(url.password)
-  return config
-}
+  const config: Socks5ProxyConfig = { kind: 'socks5', host, port, name };
+  if (url.username) config.username = decodeURIComponent(url.username);
+  if (url.password) config.password = decodeURIComponent(url.password);
+  return config;
+};
 
 const parseSs = (
   url: URL,
@@ -106,7 +106,7 @@ const parseSs = (
   // method; if so, the suffix is the raw base64 key (URL parsing already
   // split userinfo on the first ':' for us via username/password, and
   // percent-encoded any `=` padding on the way through).
-  const username = decodeURIComponent(url.username)
+  const username = decodeURIComponent(url.username);
   if (SS2022_METHODS.has(username)) {
     return {
       kind: 'ss2022',
@@ -115,7 +115,7 @@ const parseSs = (
       host,
       port,
       name,
-    }
+    };
   }
 
   // Legacy: the entire userinfo is base64(method:password). The URL parser
@@ -123,13 +123,13 @@ const parseSs = (
   // the two halves before decoding.
   const userinfo = url.password
     ? `${url.username}:${decodeURIComponent(url.password)}`
-    : url.username
-  const decoded = base64Decode(userinfo)
-  const sep = decoded.indexOf(':')
-  if (sep < 0) throw new Error(`malformed ss userinfo: ${url.username}`)
-  const method = decoded.slice(0, sep)
+    : url.username;
+  const decoded = base64Decode(userinfo);
+  const sep = decoded.indexOf(':');
+  if (sep < 0) throw new Error(`malformed ss userinfo: ${url.username}`);
+  const method = decoded.slice(0, sep);
   if (!SS_METHODS.has(method)) {
-    throw new Error(`unknown ss method: ${method}`)
+    throw new Error(`unknown ss method: ${method}`);
   }
   return {
     kind: 'ss',
@@ -138,8 +138,8 @@ const parseSs = (
     host,
     port,
     name,
-  }
-}
+  };
+};
 
 const parseTrojan = (
   url: URL,
@@ -153,13 +153,13 @@ const parseTrojan = (
     host,
     port,
     name,
-  }
-  const sni = url.searchParams.get('sni')
-  if (sni) config.sni = sni
-  const allowInsecure = url.searchParams.get('allowInsecure')
-  if (allowInsecure !== null) config.allowInsecure = allowInsecure === '1'
-  return config
-}
+  };
+  const sni = url.searchParams.get('sni');
+  if (sni) config.sni = sni;
+  const allowInsecure = url.searchParams.get('allowInsecure');
+  if (allowInsecure !== null) config.allowInsecure = allowInsecure === '1';
+  return config;
+};
 
 const parseVless = (
   url: URL,
@@ -167,14 +167,14 @@ const parseVless = (
   port: number,
   name: string,
 ): VlessTcpTlsProxyConfig | VlessWsTlsProxyConfig | RealityProxyConfig => {
-  const uuid = decodeURIComponent(url.username)
-  const type = url.searchParams.get('type') ?? 'tcp'
-  const security = url.searchParams.get('security') ?? 'tls'
-  const sni = url.searchParams.get('sni') ?? undefined
-  const fp = url.searchParams.get('fp') ?? undefined
+  const uuid = decodeURIComponent(url.username);
+  const type = url.searchParams.get('type') ?? 'tcp';
+  const security = url.searchParams.get('security') ?? 'tls';
+  const sni = url.searchParams.get('sni') ?? undefined;
+  const fp = url.searchParams.get('fp') ?? undefined;
 
   if (type === 'tcp' && security === 'reality') {
-    return parseReality(url, host, port, name, uuid, fp, sni)
+    return parseReality(url, host, port, name, uuid, fp, sni);
   }
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
@@ -183,13 +183,13 @@ const parseVless = (
       host,
       port,
       name,
-    }
-    if (sni) config.sni = sni
-    if (fp) config.fingerprint = fp
-    return config
+    };
+    if (sni) config.sni = sni;
+    if (fp) config.fingerprint = fp;
+    return config;
   }
   if (type === 'ws' && security === 'tls') {
-    const path = url.searchParams.get('path') ?? '/'
+    const path = url.searchParams.get('path') ?? '/';
     const config: VlessWsTlsProxyConfig = {
       kind: 'vless-ws',
       uuid,
@@ -197,17 +197,17 @@ const parseVless = (
       port,
       name,
       path,
-    }
-    if (sni) config.sni = sni
-    if (fp) config.fingerprint = fp
-    const wsHost = url.searchParams.get('host')
-    if (wsHost) config.wsHost = wsHost
-    return config
+    };
+    if (sni) config.sni = sni;
+    if (fp) config.fingerprint = fp;
+    const wsHost = url.searchParams.get('host');
+    if (wsHost) config.wsHost = wsHost;
+    return config;
   }
   throw new Error(
     `unsupported vless transport: type=${type}, security=${security}`,
-  )
-}
+  );
+};
 
 const parseReality = (
   url: URL,
@@ -218,10 +218,10 @@ const parseReality = (
   fp: string | undefined,
   sni: string | undefined,
 ): RealityProxyConfig => {
-  const pbk = url.searchParams.get('pbk')
-  if (!pbk) throw new Error('reality requires pbk')
-  if (!fp) throw new Error('reality requires fp')
-  if (!sni) throw new Error('reality requires sni')
+  const pbk = url.searchParams.get('pbk');
+  if (!pbk) throw new Error('reality requires pbk');
+  if (!fp) throw new Error('reality requires fp');
+  if (!sni) throw new Error('reality requires sni');
   const config: RealityProxyConfig = {
     kind: 'reality',
     uuid,
@@ -231,29 +231,29 @@ const parseReality = (
     publicKey: pbk,
     fingerprint: fp,
     serverName: sni,
-  }
-  const sid = url.searchParams.get('sid')
-  if (sid) config.shortId = sid
-  const spx = url.searchParams.get('spx')
-  if (spx) config.spiderX = spx
-  return config
-}
+  };
+  const sid = url.searchParams.get('sid');
+  if (sid) config.shortId = sid;
+  const spx = url.searchParams.get('spx');
+  if (spx) config.spiderX = spx;
+  return config;
+};
 
 // `atob` is universally available in Workers, Node 22+, and browsers.
-const base64Decode = (s: string): string => atob(s)
+const base64Decode = (s: string): string => atob(s);
 
 export const formatProxyUri = (config: ProxyConfig): string => {
   switch (config.kind) {
-    case 'http': return formatHttp(config)
-    case 'socks5': return formatSocks5(config)
-    case 'ss': return formatSs(config)
-    case 'ss2022': return formatSs2022(config)
-    case 'trojan': return formatTrojan(config)
-    case 'vless-tcp': return formatVlessTcp(config)
-    case 'vless-ws': return formatVlessWs(config)
-    case 'reality': return formatReality(config)
+  case 'http': return formatHttp(config);
+  case 'socks5': return formatSocks5(config);
+  case 'ss': return formatSs(config);
+  case 'ss2022': return formatSs2022(config);
+  case 'trojan': return formatTrojan(config);
+  case 'vless-tcp': return formatVlessTcp(config);
+  case 'vless-ws': return formatVlessWs(config);
+  case 'reality': return formatReality(config);
   }
-}
+};
 
 const formatAuthority = (
   scheme: string,
@@ -262,97 +262,97 @@ const formatAuthority = (
   host: string,
   port: number,
 ): string => {
-  let userinfo = ''
+  let userinfo = '';
   if (username !== undefined && username !== '') {
-    userinfo = encodeURIComponent(username)
+    userinfo = encodeURIComponent(username);
     if (password !== undefined && password !== '') {
-      userinfo += `:${encodeURIComponent(password)}`
+      userinfo += `:${encodeURIComponent(password)}`;
     }
-    userinfo += '@'
+    userinfo += '@';
   }
-  return `${scheme}://${userinfo}${host}:${port}`
-}
+  return `${scheme}://${userinfo}${host}:${port}`;
+};
 
 const formatFragment = (name: string, host: string, port: number): string => {
   // Match the parser's default: when `name` was synthesized from
   // `host:port`, drop the fragment so the round trip stays stable.
-  return name === `${host}:${port}` ? '' : `#${encodeURIComponent(name)}`
-}
+  return name === `${host}:${port}` ? '' : `#${encodeURIComponent(name)}`;
+};
 
 const formatQuery = (params: Record<string, string | undefined>): string => {
-  const search = new URLSearchParams()
+  const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, value)
+    if (value !== undefined) search.set(key, value);
   }
-  const s = search.toString()
-  return s ? `?${s}` : ''
-}
+  const s = search.toString();
+  return s ? `?${s}` : '';
+};
 
 const formatHttp = (config: HttpProxyConfig): string => {
-  const scheme = config.tls ? 'https' : 'http'
+  const scheme = config.tls ? 'https' : 'http';
   const authority = formatAuthority(
     scheme, config.username, config.password, config.host, config.port,
-  )
-  return `${authority}${formatFragment(config.name, config.host, config.port)}`
-}
+  );
+  return `${authority}${formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatSocks5 = (config: Socks5ProxyConfig): string => {
   const authority = formatAuthority(
     'socks5', config.username, config.password, config.host, config.port,
-  )
-  return `${authority}${formatFragment(config.name, config.host, config.port)}`
-}
+  );
+  return `${authority}${formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatSs = (config: ShadowsocksProxyConfig): string => {
   // Legacy SS userinfo is the entire base64-encoded `method:password`;
   // `btoa` handles only Latin-1 input, which matches every byte SS allows
   // in either field.
-  const userinfo = btoa(`${config.method}:${config.password}`)
-  return `ss://${userinfo}@${config.host}:${config.port}`
-    + formatFragment(config.name, config.host, config.port)
-}
+  const userinfo = btoa(`${config.method}:${config.password}`);
+  return `ss://${userinfo}@${config.host}:${config.port}${
+    formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatSs2022 = (config: Shadowsocks2022ProxyConfig): string => {
   // SS-2022 keeps userinfo as plaintext `method:base64key`. We emit the
   // base64 padding (`=`) raw — `parseProxyUri` decodes via
   // `decodeURIComponent`, which accepts both raw and percent-encoded `=`.
   return `ss://${config.method}:${config.passwordBase64}`
-    + `@${config.host}:${config.port}`
-    + formatFragment(config.name, config.host, config.port)
-}
+    + `@${config.host}:${config.port}${
+      formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatTrojan = (config: TrojanProxyConfig): string => {
   const authority = formatAuthority(
     'trojan', config.password, undefined, config.host, config.port,
-  )
+  );
   const query = formatQuery({
     sni: config.sni,
     allowInsecure: config.allowInsecure === undefined
       ? undefined
       : config.allowInsecure ? '1' : '0',
-  })
-  return `${authority}${query}`
-    + formatFragment(config.name, config.host, config.port)
-}
+  });
+  return `${authority}${query}${
+    formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatVlessTcp = (config: VlessTcpTlsProxyConfig): string => {
   const authority = formatAuthority(
     'vless', config.uuid, undefined, config.host, config.port,
-  )
+  );
   const query = formatQuery({
     type: 'tcp',
     security: 'tls',
     sni: config.sni,
     fp: config.fingerprint,
-  })
-  return `${authority}${query}`
-    + formatFragment(config.name, config.host, config.port)
-}
+  });
+  return `${authority}${query}${
+    formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatVlessWs = (config: VlessWsTlsProxyConfig): string => {
   const authority = formatAuthority(
     'vless', config.uuid, undefined, config.host, config.port,
-  )
+  );
   const query = formatQuery({
     type: 'ws',
     security: 'tls',
@@ -360,15 +360,15 @@ const formatVlessWs = (config: VlessWsTlsProxyConfig): string => {
     path: config.path,
     sni: config.sni,
     fp: config.fingerprint,
-  })
-  return `${authority}${query}`
-    + formatFragment(config.name, config.host, config.port)
-}
+  });
+  return `${authority}${query}${
+    formatFragment(config.name, config.host, config.port)}`;
+};
 
 const formatReality = (config: RealityProxyConfig): string => {
   const authority = formatAuthority(
     'vless', config.uuid, undefined, config.host, config.port,
-  )
+  );
   const query = formatQuery({
     type: 'tcp',
     security: 'reality',
@@ -377,7 +377,7 @@ const formatReality = (config: RealityProxyConfig): string => {
     sni: config.serverName,
     sid: config.shortId,
     spx: config.spiderX,
-  })
-  return `${authority}${query}`
-    + formatFragment(config.name, config.host, config.port)
-}
+  });
+  return `${authority}${query}${
+    formatFragment(config.name, config.host, config.port)}`;
+};

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest';
 
-import { formatProxyUri, parseProxyUri } from './url.js'
+import { formatProxyUri, parseProxyUri } from './url.js';
 
 describe('parseProxyUri', () => {
   it('parses HTTP CONNECT plain', () => {
@@ -12,8 +12,8 @@ describe('parseProxyUri', () => {
       username: 'user',
       password: 'pass',
       name: 'name',
-    })
-  })
+    });
+  });
 
   it('parses HTTPS CONNECT', () => {
     expect(parseProxyUri('https://example.com:443')).toEqual({
@@ -22,8 +22,8 @@ describe('parseProxyUri', () => {
       host: 'example.com',
       port: 443,
       name: 'example.com:443',
-    })
-  })
+    });
+  });
 
   it('parses SOCKS5 with auth', () => {
     expect(parseProxyUri('socks5://u:p@1.2.3.4:1080#jp')).toEqual({
@@ -33,8 +33,8 @@ describe('parseProxyUri', () => {
       username: 'u',
       password: 'p',
       name: 'jp',
-    })
-  })
+    });
+  });
 
   it('parses Shadowsocks legacy base64(method:password)', () => {
     // base64('aes-256-gcm:secret') = 'YWVzLTI1Ni1nY206c2VjcmV0'
@@ -46,8 +46,8 @@ describe('parseProxyUri', () => {
         host: '1.2.3.4',
         port: 8388,
         name: 'tag',
-      })
-  })
+      });
+  });
 
   it('parses Shadowsocks 2022', () => {
     // userinfo = '2022-blake3-aes-128-gcm:<base64key>'
@@ -60,8 +60,8 @@ describe('parseProxyUri', () => {
       host: '1.2.3.4',
       port: 8388,
       name: 'tag',
-    })
-  })
+    });
+  });
 
   it('parses Trojan', () => {
     expect(parseProxyUri(
@@ -74,12 +74,12 @@ describe('parseProxyUri', () => {
       sni: 'example.com',
       allowInsecure: false,
       name: 't',
-    })
-  })
+    });
+  });
 
   it('parses VLESS TCP+TLS', () => {
     const uri =
-      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v'
+      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-tcp',
       uuid: 'aaaa-uuid',
@@ -88,12 +88,12 @@ describe('parseProxyUri', () => {
       sni: 'h',
       fingerprint: 'chrome',
       name: 'v',
-    })
-  })
+    });
+  });
 
   it('parses VLESS WS+TLS', () => {
     const uri =
-      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw'
+      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-ws',
       uuid: 'u',
@@ -104,12 +104,12 @@ describe('parseProxyUri', () => {
       wsHost: 'front',
       path: '/ws',
       name: 'vw',
-    })
-  })
+    });
+  });
 
   it('parses VLESS REALITY', () => {
     const uri =
-      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r'
+      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'reality',
       uuid: 'u',
@@ -121,19 +121,18 @@ describe('parseProxyUri', () => {
       shortId: 'ab',
       spiderX: '/',
       name: 'r',
-    })
-  })
+    });
+  });
 
   it('throws on unknown scheme', () => {
-    expect(() => parseProxyUri('weird://x:1')).toThrow(/scheme/i)
-  })
+    expect(() => parseProxyUri('weird://x:1')).toThrow(/scheme/i);
+  });
 
   it('throws on missing required REALITY pbk', () => {
     expect(() =>
-      parseProxyUri('vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s'),
-    ).toThrow(/pbk/)
-  })
-})
+      parseProxyUri('vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s')).toThrow(/pbk/);
+  });
+});
 
 describe('formatProxyUri', () => {
   const cases: string[] = [
@@ -146,11 +145,11 @@ describe('formatProxyUri', () => {
     'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v',
     'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw',
     'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r',
-  ]
+  ];
 
-  it.each(cases)('round-trips %s', (uri) => {
-    const config = parseProxyUri(uri)
-    const formatted = formatProxyUri(config)
-    expect(parseProxyUri(formatted)).toEqual(config)
-  })
-})
+  it.each(cases)('round-trips %s', uri => {
+    const config = parseProxyUri(uri);
+    const formatted = formatProxyUri(config);
+    expect(parseProxyUri(formatted)).toEqual(config);
+  });
+});

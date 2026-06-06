@@ -7,7 +7,7 @@
 // ProxyDialError — that's the upstream's problem.
 
 export class ProxyDialError extends Error {
-  override readonly name = 'ProxyDialError'
+  override readonly name = 'ProxyDialError';
 
   constructor(
     message: string,
@@ -19,6 +19,6 @@ export class ProxyDialError extends Error {
       | 'inner-tls',
     options?: { cause?: unknown },
   ) {
-    super(message, options)
+    super(message, options);
   }
 }

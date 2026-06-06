@@ -11,9 +11,9 @@
 // host runtime — Cloudflare Workers (`cloudflare:sockets`), Node (`node:net`),
 // or any future target — only needs to ship a `SocketDial` impl at boot.
 
-export type { TargetSpec } from './types.js'
+export type { TargetSpec } from './types.js';
 
-export { formatProxyUri, parseProxyUri } from './url.js'
+export { formatProxyUri, parseProxyUri } from './url.js';
 
 export type {
   ProxyConfig,
@@ -28,37 +28,37 @@ export type {
   RealityProxyConfig,
   SsMethod,
   Ss2022Method,
-} from './proxy-config.js'
+} from './proxy-config.js';
 
-export { ProxyDialError } from './errors.js'
+export { ProxyDialError } from './errors.js';
 
-export { runProxiedRequest } from './dialer.js'
+export { runProxiedRequest } from './dialer.js';
 
-export { runHttpConnect } from './protocols/http-connect.js'
-export type { HttpConnectOptions } from './protocols/http-connect.js'
+export { runHttpConnect } from './protocols/http-connect.js';
+export type { HttpConnectOptions } from './protocols/http-connect.js';
 
-export { runSocks5 } from './protocols/socks5.js'
-export type { Socks5Options } from './protocols/socks5.js'
+export { runSocks5 } from './protocols/socks5.js';
+export type { Socks5Options } from './protocols/socks5.js';
 
-export { runTrojan } from './protocols/trojan.js'
-export type { TrojanOptions } from './protocols/trojan.js'
+export { runTrojan } from './protocols/trojan.js';
+export type { TrojanOptions } from './protocols/trojan.js';
 
-export { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js'
-export type { VlessTcpTlsOptions, VlessWsTlsOptions } from './protocols/vless.js'
+export { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js';
+export type { VlessTcpTlsOptions, VlessWsTlsOptions } from './protocols/vless.js';
 
-export { runShadowsocks } from './protocols/shadowsocks.js'
-export type { ShadowsocksOptions } from './protocols/shadowsocks.js'
+export { runShadowsocks } from './protocols/shadowsocks.js';
+export type { ShadowsocksOptions } from './protocols/shadowsocks.js';
 
-export { runShadowsocks2022 } from './protocols/shadowsocks-2022.js'
-export type { Shadowsocks2022Options } from './protocols/shadowsocks-2022.js'
+export { runShadowsocks2022 } from './protocols/shadowsocks-2022.js';
+export type { Shadowsocks2022Options } from './protocols/shadowsocks-2022.js';
 
-export { runReality } from './protocols/reality.js'
-export type { RealityOptions } from './protocols/reality.js'
+export { runReality } from './protocols/reality.js';
+export type { RealityOptions } from './protocols/reality.js';
 
 // Lower-level building blocks, exported for advanced use cases (e.g. wrapping
 // an arbitrary plain-TCP transport with TLS without going through a proxy).
-export { userspaceTls } from './tls.js'
-export type { UserspaceTlsOptions, TlsStream } from './tls.js'
+export { userspaceTls } from './tls.js';
+export type { UserspaceTlsOptions, TlsStream } from './tls.js';
 
-export { runHttp1Stream } from './http1-stream.js'
-export type { DuplexBytes } from './http1-stream.js'
+export { runHttp1Stream } from './http1-stream.js';
+export type { DuplexBytes } from './http1-stream.js';

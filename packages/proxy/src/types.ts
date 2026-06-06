@@ -28,17 +28,17 @@ export interface TargetSpec {
    * TCP host to connect to. Can be a hostname (resolved by the runtime's
    * resolver) or a literal IPv4/IPv6 address.
    */
-  dialHost: string
+  dialHost: string;
   /** TCP port. */
-  port: number
+  port: number;
   /** Whether to wrap the post-proxy byte stream with TLS to the upstream. */
-  tls: boolean
+  tls: boolean;
 
   /**
    * TLS ClientHello `server_name` extension value. Defaults to `dialHost`.
    * If `dialHost` is an IP, set this explicitly — IPs in SNI are invalid.
    */
-  tlsSni?: string
+  tlsSni?: string;
 
   /**
    * Hostname the upstream's certificate chain must prove. Defaults to
@@ -47,27 +47,27 @@ export interface TargetSpec {
    * verification is what the *client* checks; a request can want them to
    * differ.
    */
-  tlsVerifyHost?: string
+  tlsVerifyHost?: string;
 
   /** HTTP/1.1 method. */
-  method: string
+  method: string;
   /** HTTP/1.1 path + query string. */
-  path: string
+  path: string;
   /**
    * HTTP/1.1 request headers. The `Host:` header (case-insensitive) is
    * inserted from `dialHost` if absent; set it explicitly to send something
    * else (e.g. for domain fronting).
    */
-  headers: Record<string, string>
+  headers: Record<string, string>;
   /** Optional request body. */
-  requestBody?: Uint8Array
+  requestBody?: Uint8Array;
 }
 
 /**
  * Resolves the SNI used for a TargetSpec. `tlsSni` if set, else `dialHost`.
  */
 export function resolveTlsSni(target: TargetSpec): string {
-  return target.tlsSni ?? target.dialHost
+  return target.tlsSni ?? target.dialHost;
 }
 
 /**
@@ -75,7 +75,7 @@ export function resolveTlsSni(target: TargetSpec): string {
  * set, else falls back through `tlsSni`, else `dialHost`.
  */
 export function resolveTlsVerifyHost(target: TargetSpec): string {
-  return target.tlsVerifyHost ?? target.tlsSni ?? target.dialHost
+  return target.tlsVerifyHost ?? target.tlsSni ?? target.dialHost;
 }
 
 /**
@@ -84,7 +84,7 @@ export function resolveTlsVerifyHost(target: TargetSpec): string {
  */
 export function resolveHttpHost(target: TargetSpec): string {
   for (const k of Object.keys(target.headers)) {
-    if (k.toLowerCase() === 'host') return target.headers[k]!
+    if (k.toLowerCase() === 'host') return target.headers[k]!;
   }
-  return target.dialHost
+  return target.dialHost;
 }
