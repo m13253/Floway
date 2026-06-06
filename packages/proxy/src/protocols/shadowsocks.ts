@@ -25,8 +25,9 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
+import type { SsMethod } from '../proxy-config.js'
 
-export type SsMethod = 'chacha20-ietf-poly1305' | 'aes-256-gcm' | 'aes-128-gcm'
+export type { SsMethod }
 
 export interface ShadowsocksOptions {
   serverHost: string

@@ -18,11 +18,9 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
+import type { Ss2022Method } from '../proxy-config.js'
 
-export type Ss2022Method =
-  | '2022-blake3-aes-128-gcm'
-  | '2022-blake3-aes-256-gcm'
-  | '2022-blake3-chacha20-poly1305'
+export type { Ss2022Method }
 
 export interface Shadowsocks2022Options {
   serverHost: string

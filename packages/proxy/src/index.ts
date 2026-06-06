@@ -13,6 +13,23 @@
 
 export type { TargetSpec } from './types.js'
 
+export type {
+  ProxyConfig,
+  ProxyConfigBase,
+  HttpProxyConfig,
+  Socks5ProxyConfig,
+  ShadowsocksProxyConfig,
+  Shadowsocks2022ProxyConfig,
+  TrojanProxyConfig,
+  VlessTcpTlsProxyConfig,
+  VlessWsTlsProxyConfig,
+  RealityProxyConfig,
+  SsMethod,
+  Ss2022Method,
+} from './proxy-config.js'
+
+export { ProxyDialError } from './errors.js'
+
 export { runHttpConnect } from './protocols/http-connect.js'
 export type { HttpConnectOptions } from './protocols/http-connect.js'
 
@@ -26,10 +43,10 @@ export { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js'
 export type { VlessTcpTlsOptions, VlessWsTlsOptions } from './protocols/vless.js'
 
 export { runShadowsocks } from './protocols/shadowsocks.js'
-export type { ShadowsocksOptions, SsMethod } from './protocols/shadowsocks.js'
+export type { ShadowsocksOptions } from './protocols/shadowsocks.js'
 
 export { runShadowsocks2022 } from './protocols/shadowsocks-2022.js'
-export type { Shadowsocks2022Options, Ss2022Method } from './protocols/shadowsocks-2022.js'
+export type { Shadowsocks2022Options } from './protocols/shadowsocks-2022.js'
 
 export { runReality } from './protocols/reality.js'
 export type { RealityOptions } from './protocols/reality.js'
