@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { mountCodexRoutes } from './routes.ts';
 import { authMiddleware } from '../../middleware/auth.ts';
-import { setupAppTest } from '../../test-helpers.ts';
+import { copilotModels, setupAppTest } from '../../test-helpers.ts';
+import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCodexApp = () => {
   const app = new Hono();
@@ -12,13 +13,42 @@ const buildCodexApp = () => {
   return app;
 };
 
+// Copilot models-list responder seeded with whatever slugs/limits the test
+// wants the registry to advertise. Other Copilot endpoints (token mint,
+// editor version) are answered with the canned shapes that every
+// withMockedFetch caller expects.
+const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: number; supported_endpoints?: string[] }>) =>
+  (request: Request): Response => {
+    const url = new URL(request.url);
+    if (url.hostname === 'update.code.visualstudio.com') {
+      return jsonResponse(['1.110.1']);
+    }
+    if (url.pathname === '/copilot_internal/v2/token') {
+      return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600 });
+    }
+    if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      return jsonResponse(copilotModels(models));
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  };
+
+interface CodexModelsResponse {
+  models: Array<{
+    slug: string;
+    context_window?: number;
+    max_context_window?: number;
+    effective_context_window_percent?: number;
+    auto_compact_token_limit?: number | null;
+  }>;
+}
+
 describe('codex 1p namespace', () => {
   describe('auth', () => {
     it('accepts a floway api key supplied as `Authorization: Bearer <key>`', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
 
-      const response = await app.request('/azure-api.codex/codex/models', {
+      const response = await app.request('/azure-api.codex/wham/agent-identities/jwks', {
         headers: { authorization: `Bearer ${apiKey.key}` },
       });
       expect(response.status).toBe(200);
@@ -28,7 +58,7 @@ describe('codex 1p namespace', () => {
       await setupAppTest();
       const app = buildCodexApp();
 
-      const response = await app.request('/azure-api.codex/codex/models', {
+      const response = await app.request('/azure-api.codex/wham/agent-identities/jwks', {
         headers: { authorization: 'Bearer not-a-floway-key' },
       });
       expect(response.status).toBe(401);
@@ -38,7 +68,7 @@ describe('codex 1p namespace', () => {
       await setupAppTest();
       const app = buildCodexApp();
 
-      const response = await app.request('/azure-api.codex/codex/models');
+      const response = await app.request('/azure-api.codex/wham/agent-identities/jwks');
       expect(response.status).toBe(401);
     });
   });
@@ -135,22 +165,63 @@ describe('codex 1p namespace', () => {
   });
 
   describe('/codex/models', () => {
-    it('returns codex ModelsResponse shape with gpt-5.5 advertised at 1M context', async () => {
+    it('advertises gpt-5.5 at 1M when the registry confirms the upstream serves a 1M-context tier', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
-      const response = await app.request('/azure-api.codex/codex/models', {
-        headers: { authorization: `Bearer ${apiKey.key}` },
-      });
-      expect(response.status).toBe(200);
-      const body = (await response.json()) as { models: { slug: string; context_window?: number; max_context_window?: number; effective_context_window_percent?: number; auto_compact_token_limit?: number | null }[] };
+      const body = await withMockedFetch(
+        copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
+        async () => {
+          const response = await app.request('/azure-api.codex/codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
       const gpt55 = body.models.find(m => m.slug === 'gpt-5.5');
-      expect(gpt55).toBeDefined();
       expect(gpt55).toMatchObject({
         context_window: 1050000,
         max_context_window: 1050000,
         effective_context_window_percent: 100,
         auto_compact_token_limit: 945000,
       });
+    });
+
+    it('passes through codex bundled values when the registry does not advertise 1M for the slug', async () => {
+      const { apiKey } = await setupAppTest();
+      const app = buildCodexApp();
+      const body = await withMockedFetch(
+        copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 272000 }]),
+        async () => {
+          const response = await app.request('/azure-api.codex/codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
+      // codex's bundled rust-v0.136.0 catalog pins gpt-5.5 at 272k; with no
+      // override applied, that's exactly what reaches the client.
+      const gpt55 = body.models.find(m => m.slug === 'gpt-5.5');
+      expect(gpt55?.context_window).toBe(272000);
+      expect(gpt55?.max_context_window).toBe(272000);
+    });
+
+    it('passes through codex bundled values when the registry has no record of the slug', async () => {
+      const { apiKey } = await setupAppTest();
+      const app = buildCodexApp();
+      const body = await withMockedFetch(
+        copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
+        async () => {
+          const response = await app.request('/azure-api.codex/codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
+      const gpt55 = body.models.find(m => m.slug === 'gpt-5.5');
+      expect(gpt55?.context_window).toBe(272000);
     });
   });
 });
