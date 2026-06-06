@@ -1,0 +1,5 @@
+runner               target       | cpu_med p90 max | wall_med p90 max | n
+rustls-direct        large-500k   |      85 132 156 |      592 799 801 | 11
+rustls-direct        large-5mb    |     380 464 485 |      881 928 980 | 11
+rustls-direct        upload-500k  |      51  61  65 |      400 421 487 | 11
+rustls-direct        upload-5mb   |     132 181 248 |      661 734 843 | 11

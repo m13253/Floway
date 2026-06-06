@@ -1,0 +1,5 @@
+runner                 target       | cpu_med p90 max | wall_med p90 max | n
+userspace-direct       large-500k   |      75 377 547 |      499 794 1069 | 11
+userspace-direct       large-5mb    |     289 386 1010 |      808 1165 1686 | 11
+userspace-direct       upload-500k  |      96 128 400 |      511 527 863 | 11
+userspace-direct       upload-5mb   |     600 972 1225 |     1324 1838 1840 | 11

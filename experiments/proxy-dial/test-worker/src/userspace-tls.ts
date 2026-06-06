@@ -91,10 +91,17 @@ export async function userspaceTls(
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null
 
-  tlsClient = makeTLSClient({
+  tlsClient = makeTLSClient(({
     host: opts.host,
     verifyServerCertificate: !opts.insecure,
     applicationLayerProtocols: opts.alpn,
+    // Force AES-GCM only. reclaim has Web Crypto's AES-GCM available
+    // (BoringSSL → AES-NI accelerated) for AES suites, while ChaCha20
+    // falls back to @noble/ciphers' pure-JS impl. Picking AES exposes
+    // whether the slowness is the algorithm itself (AES-via-WebCrypto
+    // should match rustls-chacha) or per-record async/stream overhead
+    // (would persist regardless of cipher).
+    cipherSuites: ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
       const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0
       const out = new Uint8Array(prefixLen + header.byteLength + content.byteLength)
@@ -126,7 +133,7 @@ export async function userspaceTls(
       else plainController?.close()
       try { writer.close() } catch {}
     },
-  })
+  } as Parameters<typeof makeTLSClient>[0]))
 
   // Pump bytes from transport → tls.handleReceivedBytes
   ;(async () => {

@@ -4,6 +4,7 @@ import { connect } from 'cloudflare:sockets'
 import { runHttp1 } from './http1.js'
 import { runHttp1Stream } from './http1-stream.js'
 import { userspaceTls } from './userspace-tls.js'
+import { runRustlsDirect } from './userspace-tls-rustls.js'
 import { runHttpConnect } from './proxies/http-connect.js'
 import { runSocks5 } from './proxies/socks5.js'
 import { runTrojan } from './proxies/trojan.js'
@@ -45,9 +46,10 @@ const RUNNERS: Record<string, ProxyRunner> = {
       { hostname: target.host, port: target.port },
       { secureTransport: 'off', allowHalfOpen: true },
     )
-    const tls = await userspaceTls(sock, { host: target.host })
+    const tls = await userspaceTls(sock, { host: target.sni ?? target.host })
     return await runHttp1Stream(tls, target)
   },
+  'rustls-direct': async (target) => await runRustlsDirect(target),
   'http-connect': async (target) =>
     await runHttpConnect({
       proxyHost: PROXY_HOST_PLAIN,
@@ -138,6 +140,49 @@ export default {
         JSON.stringify({ ok: true, runners: Object.keys(RUNNERS) }, null, 2),
         { headers: { 'content-type': 'application/json' } },
       )
+    }
+    if (parts[0] === 'bench') {
+      // /bench/{runner}/{target} — drain the upstream body inside the Worker
+      // and return only timings. No streaming hand-off, so the wall time
+      // measured here covers all worker work for the request and bills
+      // accordingly under Workers' duration + CPU model.
+      const runnerName = parts[1] ?? ''
+      const targetName = parts[2] ?? 'echo'
+      const runner = RUNNERS[runnerName]
+      if (!runner) return new Response(`unknown runner: ${runnerName}`, { status: 404 })
+      const target = resolveTarget(targetName)
+      if (!target) return new Response(`unknown target: ${targetName}`, { status: 404 })
+      try {
+        const t0 = performance.now()
+        const upstream = await runner(target)
+        const tHeaders = performance.now()
+        let bytes = 0
+        let firstByteAt: number | null = null
+        const reader = upstream.body!.getReader()
+        while (true) {
+          const r = await reader.read()
+          if (r.done) break
+          if (firstByteAt === null) firstByteAt = performance.now()
+          bytes += r.value.byteLength
+        }
+        const tDone = performance.now()
+        return new Response(
+          JSON.stringify({
+            runner: runnerName,
+            target: targetName,
+            status: upstream.status,
+            bytes,
+            handshake_and_headers_ms: +(tHeaders - t0).toFixed(2),
+            ttfb_ms: firstByteAt === null ? null : +(firstByteAt - t0).toFixed(2),
+            total_ms: +(tDone - t0).toFixed(2),
+            body_drain_ms: firstByteAt === null ? null : +(tDone - firstByteAt).toFixed(2),
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )
+      } catch (e) {
+        const stack = e instanceof Error ? e.stack ?? `${e.name}: ${e.message}` : String(e)
+        return new Response(stack, { status: 502, headers: { 'content-type': 'text/plain' } })
+      }
     }
     const runnerName = parts[0]!
     const targetName = parts[1] ?? 'echo'

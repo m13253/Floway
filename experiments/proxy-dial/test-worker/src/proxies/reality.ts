@@ -160,8 +160,9 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       // ephemeral key — all auth flows from the keyshare's private key).
       if (!tlsX25519Priv) throw new Error('REALITY: X25519 privKey not captured')
       const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sharedSecret = new Uint8Array(
-        await crypto.subtle.deriveBits({ name: 'X25519', public: serverPubKey } as unknown as AlgorithmIdentifier, tlsX25519Priv, 256),
+        await crypto.subtle.deriveBits({ name: 'X25519', public: serverPubKey } as any, tlsX25519Priv, 256),
       )
       // Xray runs HKDF-SHA256 over the shared secret in place (writing 32
       // output bytes back into the 32-byte input buffer). We just call hkdf

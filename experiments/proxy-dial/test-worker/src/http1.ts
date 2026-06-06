@@ -19,6 +19,9 @@ export async function runHttp1(socket: Socket, target: TargetSpec): Promise<Resp
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`
   head += '\r\n'
   await writer.write(enc.encode(head))
+  if (target.requestBody && target.requestBody.byteLength) {
+    await writer.write(target.requestBody)
+  }
   writer.releaseLock()
 
   return await parseResponse(socket.readable)

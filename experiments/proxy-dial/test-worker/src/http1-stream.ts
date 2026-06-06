@@ -22,6 +22,21 @@ export async function runHttp1Stream(stream: DuplexBytes, target: TargetSpec): P
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`
   head += '\r\n'
   await writer.write(enc.encode(head))
+  if (target.requestBody && target.requestBody.byteLength) {
+    // Match the inner TLS record size (16 KiB plaintext, per RFC 8446 §5.1).
+    // Each call to writer.write() on the userspace-TLS stream maps 1:1 to
+    // an AEAD-sealed record, so larger chunks just trigger reclaim's own
+    // chunkUint8Array re-split, while smaller chunks add per-call await
+    // overhead. 16 KiB is the sweet spot for the userspace path; native
+    // sockets are insensitive to chunk size.
+    const CHUNK = 16384
+    let off = 0
+    while (off < target.requestBody.byteLength) {
+      const slice = target.requestBody.subarray(off, Math.min(off + CHUNK, target.requestBody.byteLength))
+      await writer.write(slice)
+      off += slice.byteLength
+    }
+  }
   writer.releaseLock()
 
   return await parseResponse(stream.readable)

@@ -1,0 +1,21 @@
+# parsed 88 log entries
+
+runner               target       | cpu med   p90   max | wall med   p90   max | n
+native-direct        large-500k   |       8    12    17 |      465   550   578 | 11
+native-direct        large-5mb    |      55    83    99 |      631   648   859 | 11
+native-direct        upload-500k  |       7     9     9 |      390   430   522 | 11
+native-direct        upload-5mb   |      49    63    71 |      679   708   808 | 11
+userspace-direct     large-500k   |      86   329   428 |      486   729   861 | 11
+userspace-direct     large-5mb    |     296   385   544 |      767   854  1020 | 11
+userspace-direct     upload-500k  |     103   149   641 |      495   515  1045 | 11
+userspace-direct     upload-5mb   |     750   816   906 |     1304  1437  1508 | 11
+
+# all CPU samples per group:
+  native-direct/large-500k: [4, 5, 5, 6, 7, 8, 10, 11, 11, 12, 17]
+  native-direct/large-5mb: [46, 50, 51, 52, 54, 55, 55, 61, 62, 83, 99]
+  native-direct/upload-500k: [3, 5, 5, 5, 7, 7, 7, 8, 8, 9, 9]
+  native-direct/upload-5mb: [20, 42, 42, 48, 49, 49, 52, 54, 57, 63, 71]
+  userspace-direct/large-500k: [46, 54, 71, 72, 84, 86, 114, 117, 129, 329, 428]
+  userspace-direct/large-5mb: [187, 192, 247, 254, 264, 296, 317, 345, 372, 385, 544]
+  userspace-direct/upload-500k: [63, 64, 72, 77, 89, 103, 104, 118, 121, 149, 641]
+  userspace-direct/upload-5mb: [472, 497, 510, 515, 558, 750, 758, 769, 809, 816, 906]

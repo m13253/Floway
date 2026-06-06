@@ -94,3 +94,28 @@ index 6dea9236436c5eb445d7d96a2df926103144d3b3..09f4653f01380b929cd755fb51f2de3f
              handshakeMsgs.push(clientHello);
              if (opts?.psk) {
                  earlySecret = opts.psk.earlySecret;
+diff --git a/lib/utils/generics.js b/lib/utils/generics.js
+index 4e2986ab30883f62e4c1ff3c283260032ca017f5..b380375ecb560416c513e6b35454c9c1d87cb008 100644
+--- a/lib/utils/generics.js
++++ b/lib/utils/generics.js
+@@ -1,12 +1,15 @@
+ import { TLS_PROTOCOL_VERSION_MAP } from "./constants.js";
+ /**
+- * Converts a buffer to a hex string with whitespace between each byte
+- * @returns eg. '01 02 03 04'
++ * Converts a buffer to a hex string with whitespace between each byte.
++ * [perf-patch] Reclaim's hot path calls this from logger.trace(...) on every
++ * TLS record (`writeEncryptedPacket`/`writePacket`). JS eagerly evaluates
++ * the args even when trace is a no-op, so a 5 MiB upload pays 320 × 16 KiB
++ * hex-stringification (~75% of total CPU per V8 Inspector flame graph).
++ * Stub it to a `<NN bytes>` summary; the only non-trace caller is the MAC-
++ * mismatch error path, where the summary is still informative.
+  */
+ export function toHexStringWithWhitespace(buff, whitespace = ' ') {
+-    return [...buff]
+-        .map(x => x.toString(16).padStart(2, '0'))
+-        .join(whitespace);
++    return `<${buff.byteLength ?? buff.length ?? 0} bytes>`;
+ }
+ export function xor(a, b) {
+     const result = new Uint8Array(a.length);
