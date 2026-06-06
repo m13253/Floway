@@ -167,6 +167,29 @@ export interface ProxyRepo {
   findUpstreamsReferencing(proxyId: string): Promise<string[]>;
 }
 
+export interface BackoffRow {
+  proxyId: string;
+  upstreamId: string;
+  failCount: number;
+  // Unix seconds. Schedule: after the n-th consecutive failure for a
+  // (proxy, upstream) pair, expires_at = now + min(60 * 2^(n-1), 3600)
+  // (so n=1 → 60s, n=7+ → 3600s capped). A successful dial deletes the
+  // row, so the next failure restarts at n=1.
+  expiresAt: number;
+  lastError: string | null;
+  lastErrorAt: number | null;
+}
+
+export interface ProxyBackoffRepo {
+  recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void>;
+  recordDialSuccess(proxyId: string, upstreamId: string): Promise<void>;
+  listForUpstream(upstreamId: string): Promise<BackoffRow[]>;
+  listForProxy(proxyId: string): Promise<BackoffRow[]>;
+  listAll(): Promise<BackoffRow[]>;
+  resetForProxy(proxyId: string): Promise<void>;
+  reset(proxyId: string, upstreamId: string): Promise<void>;
+}
+
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string | null;
@@ -230,6 +253,7 @@ export interface Repo {
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
+  proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 }

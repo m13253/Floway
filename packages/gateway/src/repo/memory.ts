@@ -7,12 +7,14 @@ import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
+  BackoffRow,
   CacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
   PerformanceRepo,
   PerformanceTelemetryRecord,
+  ProxyBackoffRepo,
   ProxyRecord,
   ProxyRepo,
   Repo,
@@ -652,6 +654,81 @@ class MemoryProxyRepo implements ProxyRepo {
 
 const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
 
+class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
+  private rows = new Map<string, BackoffRow>();
+
+  private key(proxyId: string, upstreamId: string): string {
+    return `${proxyId}\0${upstreamId}`;
+  }
+
+  recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+    const k = this.key(proxyId, upstreamId);
+    const now = Math.floor(Date.now() / 1000);
+    const existing = this.rows.get(k);
+    if (!existing) {
+      this.rows.set(k, {
+        proxyId,
+        upstreamId,
+        failCount: 1,
+        expiresAt: now + 60,
+        lastError: errorMessage,
+        lastErrorAt: now,
+      });
+      return Promise.resolve();
+    }
+    // Mirror the SQL UPSERT: SQLite reads `fail_count` on the RHS at the
+    // start of the UPDATE, before the increment lands. So expires_at is
+    // computed against the pre-increment count, which gives the
+    // 60 * 2^(n-1) schedule when the row already represents n-1 failures
+    // and we're recording the n-th.
+    const previousFailCount = existing.failCount;
+    this.rows.set(k, {
+      proxyId,
+      upstreamId,
+      failCount: previousFailCount + 1,
+      expiresAt: now + Math.min(60 * (1 << previousFailCount), 3600),
+      lastError: errorMessage,
+      lastErrorAt: now,
+    });
+    return Promise.resolve();
+  }
+
+  recordDialSuccess(proxyId: string, upstreamId: string): Promise<void> {
+    this.rows.delete(this.key(proxyId, upstreamId));
+    return Promise.resolve();
+  }
+
+  listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
+    return Promise.resolve(
+      [...this.rows.values()].filter(r => r.upstreamId === upstreamId).map(cloneBackoffRow),
+    );
+  }
+
+  listForProxy(proxyId: string): Promise<BackoffRow[]> {
+    return Promise.resolve(
+      [...this.rows.values()].filter(r => r.proxyId === proxyId).map(cloneBackoffRow),
+    );
+  }
+
+  listAll(): Promise<BackoffRow[]> {
+    return Promise.resolve([...this.rows.values()].map(cloneBackoffRow));
+  }
+
+  resetForProxy(proxyId: string): Promise<void> {
+    for (const [k, r] of this.rows) {
+      if (r.proxyId === proxyId) this.rows.delete(k);
+    }
+    return Promise.resolve();
+  }
+
+  reset(proxyId: string, upstreamId: string): Promise<void> {
+    this.rows.delete(this.key(proxyId, upstreamId));
+    return Promise.resolve();
+  }
+}
+
+const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -661,6 +738,7 @@ export class InMemoryRepo implements Repo {
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
+  proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -673,6 +751,7 @@ export class InMemoryRepo implements Repo {
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);
+    this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
   }

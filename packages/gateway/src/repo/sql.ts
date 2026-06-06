@@ -5,6 +5,7 @@ import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPON
 import type {
   ApiKey,
   ApiKeyRepo,
+  BackoffRow,
   CacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -12,6 +13,7 @@ import type {
   PerformanceMetricScope,
   PerformanceRepo,
   PerformanceTelemetryRecord,
+  ProxyBackoffRepo,
   ProxyRecord,
   ProxyRepo,
   Repo,
@@ -1181,6 +1183,93 @@ const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
   lastTestedAt: row.last_tested_at,
 });
 
+class SqlProxyBackoffRepo implements ProxyBackoffRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    // SQLite reads RHS column references at the start of the UPDATE, before
+    // the increment is applied. So `1 << fail_count` resolves against the
+    // pre-increment value, yielding the 60 * 2^(n-1) schedule when this
+    // call records the n-th consecutive failure.
+    await this.db
+      .prepare(
+        `INSERT INTO proxy_upstream_backoffs
+           (proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at)
+         VALUES (?, ?, 1, ? + 60, ?, ?)
+         ON CONFLICT (proxy_id, upstream_id) DO UPDATE SET
+           fail_count = fail_count + 1,
+           expires_at = ? + min(60 * (1 << fail_count), 3600),
+           last_error = excluded.last_error,
+           last_error_at = excluded.last_error_at`,
+      )
+      .bind(proxyId, upstreamId, now, errorMessage, now, now)
+      .run();
+  }
+
+  async recordDialSuccess(proxyId: string, upstreamId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ? AND upstream_id = ?')
+      .bind(proxyId, upstreamId)
+      .run();
+  }
+
+  async listForUpstream(upstreamId: string): Promise<BackoffRow[]> {
+    const { results } = await this.db
+      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs WHERE upstream_id = ?')
+      .bind(upstreamId)
+      .all<BackoffRowDb>();
+    return results.map(toBackoffRow);
+  }
+
+  async listForProxy(proxyId: string): Promise<BackoffRow[]> {
+    const { results } = await this.db
+      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs WHERE proxy_id = ?')
+      .bind(proxyId)
+      .all<BackoffRowDb>();
+    return results.map(toBackoffRow);
+  }
+
+  async listAll(): Promise<BackoffRow[]> {
+    const { results } = await this.db
+      .prepare('SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at FROM proxy_upstream_backoffs')
+      .all<BackoffRowDb>();
+    return results.map(toBackoffRow);
+  }
+
+  async resetForProxy(proxyId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ?')
+      .bind(proxyId)
+      .run();
+  }
+
+  async reset(proxyId: string, upstreamId: string): Promise<void> {
+    await this.db
+      .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ? AND upstream_id = ?')
+      .bind(proxyId, upstreamId)
+      .run();
+  }
+}
+
+interface BackoffRowDb {
+  proxy_id: string;
+  upstream_id: string;
+  fail_count: number;
+  expires_at: number;
+  last_error: string | null;
+  last_error_at: number | null;
+}
+
+const toBackoffRow = (row: BackoffRowDb): BackoffRow => ({
+  proxyId: row.proxy_id,
+  upstreamId: row.upstream_id,
+  failCount: row.fail_count,
+  expiresAt: row.expires_at,
+  lastError: row.last_error,
+  lastErrorAt: row.last_error_at,
+});
+
 export class SqlRepo implements Repo {
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
@@ -1190,6 +1279,7 @@ export class SqlRepo implements Repo {
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
+  proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -1202,6 +1292,7 @@ export class SqlRepo implements Repo {
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
+    this.proxyBackoffs = new SqlProxyBackoffRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
   }
