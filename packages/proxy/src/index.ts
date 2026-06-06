@@ -1,5 +1,4 @@
-// @floway-dev/proxy — outbound proxy-dialing library for Cloudflare Workers
-// (and Node, mostly).
+// @floway-dev/proxy — outbound proxy-dialing library.
 //
 // Each `runXxx(opts)` function dials through the named proxy protocol and
 // issues an HTTP/1.1 request against the upstream described by `opts.target`.
@@ -7,9 +6,10 @@
 // upstream's response body (decrypted, transfer-encoding decoded).
 //
 // All variants use a single hand-rolled HTTP/1.1 client over a userspace
-// TLS implementation built on `@reclaimprotocol/tls` (see `tls.ts`); the
-// runtime requires `cloudflare:sockets` `connect()` for TCP and the standard
-// Web Streams API.
+// TLS implementation built on `@reclaimprotocol/tls` (see `tls.ts`). TCP
+// dialing goes through `getSocketDial()` from `@floway-dev/platform`, so the
+// host runtime — Cloudflare Workers (`cloudflare:sockets`), Node (`node:net`),
+// or any future target — only needs to ship a `SocketDial` impl at boot.
 
 export type { TargetSpec } from './types.js'
 

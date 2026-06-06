@@ -1,16 +1,18 @@
-// Userspace TLS adapter over a raw plain-TCP `cloudflare:sockets` Socket.
+// Userspace TLS adapter over a raw plain-TCP byte transport.
 //
-// We need this because `Socket.startTls()` on Workers production edge fails
-// with "TLS Handshake Failed." after any plain bytes have been read or written
+// On Cloudflare Workers, `Socket.startTls()` on the production edge fails with
+// "TLS Handshake Failed." after any plain bytes have been read or written
 // (workerd issue #2712, unresolved). The same bug means our HTTP CONNECT and
-// SOCKS5 paths cannot complete the upstream TLS handshake natively.
+// SOCKS5 paths cannot complete the upstream TLS handshake natively. We
+// therefore use a userspace TLS client uniformly across all runtimes so the
+// proxy library does not depend on any runtime-specific TLS upgrade.
 //
 // `@reclaimprotocol/tls` provides a TLS 1.2/1.3 client implemented in JS using
-// Web Crypto + @noble. We wrap it as an adapter that takes a plain Socket and
-// returns a fresh { readable, writable } pair carrying the upstream's
-// decrypted application data.
+// Web Crypto + @noble. We wrap it as an adapter that takes a duplex byte
+// transport and returns a fresh { readable, writable } pair carrying the
+// upstream's decrypted application data.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls'
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto'
 
@@ -60,7 +62,7 @@ export interface TlsStream {
   writable: WritableStream<Uint8Array>
 }
 
-// Wrap a duplex byte transport (typically a Worker `Socket` after the proxy
+// Wrap a duplex byte transport (typically a `DialedSocket` after the proxy
 // handshake completes) with a TLS 1.3 client and emit an application-data
 // duplex stream.
 //
@@ -188,6 +190,6 @@ function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
 
 // Convenience: open a plain TCP socket and immediately wrap it in TLS.
 export async function connectTls(host: string, port: number, opts?: { alpn?: string[]; insecure?: boolean }): Promise<TlsStream> {
-  const sock = connect({ hostname: host, port }, { secureTransport: 'off', allowHalfOpen: true })
+  const sock = await getSocketDial().connect(host, port, { allowHalfOpen: true })
   return await userspaceTls(sock, { host, alpn: opts?.alpn, insecure: opts?.insecure })
 }

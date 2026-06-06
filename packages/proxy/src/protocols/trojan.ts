@@ -8,7 +8,7 @@
 // "bad request size: fallback disabled". Doing the outer TLS in userspace
 // gives us full control of record framing.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { sha224 } from '@noble/hashes/sha2.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
@@ -25,10 +25,7 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
   const { serverHost, serverPort, password, target } = opts
 
   // Plain TCP to Trojan server; outer TLS done in userspace.
-  const socket = connect(
-    { hostname: serverHost, port: serverPort },
-    { secureTransport: 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
   const outerTls = await userspaceTls(socket, { host: serverHost })
 
   const enc = new TextEncoder()

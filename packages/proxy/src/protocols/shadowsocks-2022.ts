@@ -11,7 +11,7 @@
 //   - TCP response: server echoes the request salt and includes a fresh
 //     timestamp (must be within 30s of now).
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { blake3 } from '@noble/hashes/blake3.js'
 import { gcm } from '@noble/ciphers/aes.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
@@ -54,10 +54,7 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   const psk = base64Decode(password)
   if (psk.byteLength !== keyLen) throw new Error(`SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`)
 
-  const socket = connect(
-    { hostname: serverHost, port: serverPort },
-    { secureTransport: 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
 
   const sendSalt = randomBytes(keyLen)
   const sendKey = blake3(concat(psk, sendSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES })

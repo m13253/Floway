@@ -11,7 +11,7 @@
 // The reply prefix from the server is `ver[1] | addonsLen[1] | addons[M]`,
 // followed by transparent payload. We parse and discard the reply prefix.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
@@ -26,10 +26,7 @@ export interface VlessTcpTlsOptions {
 export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response> {
   const { serverHost, serverPort, uuid, target } = opts
 
-  const socket = connect(
-    { hostname: serverHost, port: serverPort },
-    { secureTransport: 'on', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true, tls: true })
 
   const header = buildVlessHeader(uuid, target)
   const writer = socket.writable.getWriter()

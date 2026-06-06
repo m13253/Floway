@@ -359,6 +359,9 @@ importers:
 
   packages/proxy:
     dependencies:
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../platform
       '@noble/ciphers':
         specifier: ^2.2.0
         version: 2.2.0

@@ -16,7 +16,7 @@
 //
 // First plaintext chunk: SOCKS5-style address: [ATYP][addr][port BE]
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { md5 } from '@noble/hashes/legacy.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha1 } from '@noble/hashes/legacy.js'
@@ -51,10 +51,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   const keyLen = METHOD_KEY_LEN[method]
   if (!keyLen) throw new Error(`unsupported method: ${method}`)
 
-  const socket = connect(
-    { hostname: serverHost, port: serverPort },
-    { secureTransport: 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true })
 
   const masterKey = evpBytesToKey(password, keyLen)
 

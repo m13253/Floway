@@ -23,7 +23,7 @@
 //   - onRecvCertificateVerify: lets us replace the standard signature check
 //     with the REALITY HMAC check, returning false to skip the default check.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { hkdf } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
@@ -63,10 +63,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`)
 
   // Plain TCP — userspace TLS will do the entire handshake.
-  const socket = connect(
-    { hostname: opts.serverHost, port: opts.serverPort },
-    { secureTransport: 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { allowHalfOpen: true })
 
   // Build the unsealed session_id payload
   const ts = Math.floor(Date.now() / 1000)

@@ -1,12 +1,13 @@
+import { type DialedSocket } from '@floway-dev/platform'
 import { type TargetSpec } from './types.js'
 
-// Minimal HTTP/1.1 client over an established Socket (already at the right TLS
-// layer). Streams the response body straight through — no buffering — so SSE,
-// chunked, and large bodies all work.
+// Minimal HTTP/1.1 client over an established dialed socket (already at the
+// right TLS layer). Streams the response body straight through — no buffering
+// — so SSE, chunked, and large bodies all work.
 //
 // Returns a Web Response. The Response stream is the upstream body, decoded
 // from chunked transfer-encoding when present.
-export async function runHttp1(socket: Socket, target: TargetSpec): Promise<Response> {
+export async function runHttp1(socket: DialedSocket, target: TargetSpec): Promise<Response> {
   const writer = socket.writable.getWriter()
   const enc = new TextEncoder()
   const headers = { ...target.headers }

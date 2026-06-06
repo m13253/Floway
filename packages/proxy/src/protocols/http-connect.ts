@@ -2,13 +2,13 @@
 //
 // Native `socket.startTls()` is broken on Workers production edge after any
 // pre-handshake bytes are exchanged (workerd #2712). We therefore:
-//   1. Open a plain TCP socket to the proxy (or, if the proxy is HTTPS, use
-//      `secureTransport: 'on'` so workerd's TLS does the proxy hop).
+//   1. Open a plain TCP socket to the proxy (or, if the proxy is HTTPS, ask
+//      the runtime to wrap the proxy hop in TLS via the dial `tls` option).
 //   2. Write CONNECT + auth, parse 2xx response.
 //   3. Hand the post-CONNECT byte stream to our userspace TLS for the upstream
 //      handshake. This avoids `startTls()` entirely.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { runHttp1 } from '../http1.js'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
@@ -24,10 +24,7 @@ export interface HttpConnectOptions {
 
 export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response> {
   const { proxyHost, proxyPort, proxyTls, auth, target } = opts
-  const socket = connect(
-    { hostname: proxyHost, port: proxyPort },
-    { secureTransport: proxyTls ? 'on' : 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true, tls: proxyTls })
 
   const writer = socket.writable.getWriter()
   const enc = new TextEncoder()

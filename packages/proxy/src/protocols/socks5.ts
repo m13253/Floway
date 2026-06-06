@@ -4,7 +4,7 @@
 // the SOCKS5 handshake we hand the post-handshake byte stream to userspace
 // TLS for the upstream's HTTPS handshake.
 
-import { connect } from 'cloudflare:sockets'
+import { getSocketDial } from '@floway-dev/platform'
 import { runHttp1Stream } from '../http1-stream.js'
 import { userspaceTls } from '../tls.js'
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js'
@@ -18,10 +18,7 @@ export interface Socks5Options {
 
 export async function runSocks5(opts: Socks5Options): Promise<Response> {
   const { proxyHost, proxyPort, auth, target } = opts
-  const socket = connect(
-    { hostname: proxyHost, port: proxyPort },
-    { secureTransport: 'off', allowHalfOpen: true },
-  )
+  const socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true })
 
   const writer = socket.writable.getWriter()
 
