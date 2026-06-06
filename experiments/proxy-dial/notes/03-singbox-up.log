@@ -1,0 +1,41 @@
+==CHECK CONFIG==
+==CERT PERMS==
+total 20
+drwxr-xr-x 2 root root 4096 Jun  6 08:31 .
+drwxr-xr-x 3 root root 4096 Jun  6 08:30 ..
+-rw-r--r-- 1 root root 4836 Jun  6 08:31 fullchain.pem
+-rw-r--r-- 1 root root  227 Jun  6 08:31 privkey.pem
+==RESTART==
+==STATUS==
+● sing-box.service - sing-box service
+     Loaded: loaded (/usr/lib/systemd/system/sing-box.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-06-06 08:32:54 BST; 2s ago
+ Invocation: 7ae3d8a902ee499b958ee38ba2f1cc4f
+       Docs: https://sing-box.sagernet.org
+   Main PID: 36495 (sing-box)
+      Tasks: 6 (limit: 2272)
+     Memory: 13.2M (peak: 13.5M)
+        CPU: 40ms
+     CGroup: /system.slice/sing-box.service
+             └─36495 /usr/bin/sing-box -D /var/lib/sing-box -C /etc/sing-box run
+
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/shadowsocks[test-ss-aead]: tcp server started at [::]:56015
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/shadowsocks[test-ss-aead]: udp server started at [::]:56015
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/vless[test-vless-reality]: tcp server started at [::]:56016
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/http[test-http-tls]: tcp server started at [::]:56017
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/shadowsocks[test-ss-aes-gcm]: tcp server started at [::]:56018
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO inbound/shadowsocks[test-ss-aes-gcm]: udp server started at [::]:56018
+Jun 06 08:32:54 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:54 INFO sing-box started (0.00s)
+Jun 06 08:32:55 neburst-jp sing-box[36495]: +0100 2026-06-06 08:32:55 INFO [1727140058 0ms] inbound/anytls[anytls-in]: inbound connection from 112.20.126.3:35085
+==LISTEN==
+LISTEN 0      4096               *:56018            *:*    users:(("sing-box",pid=36495,fd=26))
+LISTEN 0      4096               *:56016            *:*    users:(("sing-box",pid=36495,fd=23))
+LISTEN 0      4096               *:56017            *:*    users:(("sing-box",pid=36495,fd=25))
+LISTEN 0      4096               *:56010            *:*    users:(("sing-box",pid=36495,fd=13))
+LISTEN 0      4096               *:56011            *:*    users:(("sing-box",pid=36495,fd=14))
+LISTEN 0      4096               *:56014            *:*    users:(("sing-box",pid=36495,fd=20))
+LISTEN 0      4096               *:56015            *:*    users:(("sing-box",pid=36495,fd=21))
+LISTEN 0      4096               *:56012            *:*    users:(("sing-box",pid=36495,fd=16))
+LISTEN 0      4096               *:56013            *:*    users:(("sing-box",pid=36495,fd=18))
+LISTEN 0      4096               *:56003            *:*    users:(("sing-box",pid=36495,fd=12))
+LISTEN 0      4096               *:56001            *:*    users:(("sing-box",pid=36495,fd=7)) 

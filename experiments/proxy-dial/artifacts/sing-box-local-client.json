@@ -1,0 +1,133 @@
+{
+  "log": { "level": "warn", "timestamp": true },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-in-trojan",
+      "listen": "127.0.0.1",
+      "listen_port": 21001,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-vless-tcp-tls",
+      "listen": "127.0.0.1",
+      "listen_port": 21002,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-vless-ws-tls",
+      "listen": "127.0.0.1",
+      "listen_port": 21003,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-vless-reality",
+      "listen": "127.0.0.1",
+      "listen_port": 21004,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-ss-aead",
+      "listen": "127.0.0.1",
+      "listen_port": 21005,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-ss-2022",
+      "listen": "127.0.0.1",
+      "listen_port": 21006,
+      "users": []
+    },
+    {
+      "type": "socks",
+      "tag": "socks-in-ss-aes-gcm",
+      "listen": "127.0.0.1",
+      "listen_port": 21007,
+      "users": []
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "trojan",
+      "tag": "out-trojan",
+      "server": "23.145.36.136.sslip.io",
+      "server_port": 56012,
+      "password": "proxy-test-trojan-pw",
+      "tls": { "enabled": true, "server_name": "23.145.36.136.sslip.io" }
+    },
+    {
+      "type": "vless",
+      "tag": "out-vless-tcp-tls",
+      "server": "23.145.36.136.sslip.io",
+      "server_port": 56013,
+      "uuid": "850a5cd2-688b-4448-bc81-a25e9a4d8997",
+      "tls": { "enabled": true, "server_name": "23.145.36.136.sslip.io" }
+    },
+    {
+      "type": "vless",
+      "tag": "out-vless-ws-tls",
+      "server": "23.145.36.136.sslip.io",
+      "server_port": 56014,
+      "uuid": "850a5cd2-688b-4448-bc81-a25e9a4d8997",
+      "tls": { "enabled": true, "server_name": "23.145.36.136.sslip.io" },
+      "transport": { "type": "ws", "path": "/vlessws" }
+    },
+    {
+      "type": "vless",
+      "tag": "out-vless-reality",
+      "server": "23.145.36.136",
+      "server_port": 56016,
+      "uuid": "850a5cd2-688b-4448-bc81-a25e9a4d8997",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.cloudflare.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" },
+        "reality": {
+          "enabled": true,
+          "public_key": "Z0U6ShVrG5W4dx3xBCgvvUJB3iDjkqKsJjgSoPgZjXY",
+          "short_id": "e458728e679958a4"
+        }
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "out-ss-aead",
+      "server": "23.145.36.136",
+      "server_port": 56015,
+      "method": "chacha20-ietf-poly1305",
+      "password": "Xm6v6YwWu96Flmqqsl8hjPDL4MbigQBTkIW49xSa/gY="
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "out-ss-2022",
+      "server": "23.145.36.136",
+      "server_port": 56001,
+      "method": "2022-blake3-aes-256-gcm",
+      "password": "Pgevx6VbhdOmFEK7jeJYe83goa66T0HHQFfIrLtJuDo="
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "out-ss-aes-gcm",
+      "server": "23.145.36.136",
+      "server_port": 56018,
+      "method": "aes-256-gcm",
+      "password": "Xm6v6YwWu96Flmqqsl8hjPDL4MbigQBTkIW49xSa/gY="
+    }
+  ],
+  "route": {
+    "rules": [
+      { "inbound": "socks-in-trojan", "outbound": "out-trojan" },
+      { "inbound": "socks-in-vless-tcp-tls", "outbound": "out-vless-tcp-tls" },
+      { "inbound": "socks-in-vless-ws-tls", "outbound": "out-vless-ws-tls" },
+      { "inbound": "socks-in-vless-reality", "outbound": "out-vless-reality" },
+      { "inbound": "socks-in-ss-aead", "outbound": "out-ss-aead" },
+      { "inbound": "socks-in-ss-2022", "outbound": "out-ss-2022" },
+      { "inbound": "socks-in-ss-aes-gcm", "outbound": "out-ss-aes-gcm" }
+    ]
+  }
+}

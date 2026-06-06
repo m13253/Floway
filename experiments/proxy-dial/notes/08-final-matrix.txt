@@ -1,0 +1,17 @@
+runner\target          echo         httpbin      large        sse          chunked      abort        sleep-then-200
+direct                 200/518      503/162      200/5242880  ok(188)      ok(40)       curl: (92) HTTP/2 stream 1 was not closed cleanly: INTERNAL_ERROR (err 2)
+200/22 200/14      
+native-direct          200/302      200/299      200/5242880  ok(188)      ok(40)       200/22       200/14      
+native-starttls        200/302      200/299      200/5242880  ok(188)      ok(40)       200/22       200/14      
+userspace-direct       200/302      503/162      200/5242880  ok(188)      ok(40)       200/22       200/14      
+http-connect           200/302      200/299      200/5242880  ok(188)      ok(40)       200/22       200/14      
+http-connect-tls       200/302      503/162      200/5242880  ok(188)      ok(40)       200/22       200/14      
+socks5                 200/302      503/162      200/5242880  ok(188)      ok(40)       200/22       200/14      
+trojan                 200/302      503/162      200/5242880  ok(188)      ok(40)       200/22       200/14      
+vless-tcp-tls          200/302      200/299      200/5242880  ok(188)      ok(40)       200/22       200/14      
+vless-ws-tls           200/302      200/299      200/5242880  ok(188)      ok(40)       200/22       200/14      
+ss-aead-chacha         200/302      200/299      200/5242880  ok(188)      ok(40)       200/0        200/14      
+ss-aead-aes            200/302      curl: (28) Operation timed out after 20011 milliseconds with 0 bytes received
+000/0 200/5242880  ok(188)      ok(40)       200/22       200/14      
+ss-2022                200/302      503/162      200/5242880  ok(188)      ok(40)       200/0        200/14      
+reality                200/302      503/162      200/5242880  ok(188)      ok(40)       200/22       200/14      

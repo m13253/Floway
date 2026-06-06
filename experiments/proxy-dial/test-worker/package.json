@@ -1,0 +1,27 @@
+{
+  "name": "proxy-dial-test-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8810",
+    "deploy": "wrangler deploy",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260601.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.81.0"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@reclaimprotocol/tls": "^0.1.2"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@reclaimprotocol/tls": "patches/@reclaimprotocol__tls.patch"
+    }
+  }
+}

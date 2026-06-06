@@ -1,0 +1,31 @@
+==NGINX-T==
+2026/06/06 08:34:25 [emerg] 36766#36766: unknown directive "content_by_lua_block" in /etc/nginx/sites-enabled/proxy-test:43
+nginx: configuration file /etc/nginx/nginx.conf test failed
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+● upstream-test.service - Proxy-test upstream test server
+     Loaded: loaded (/etc/systemd/system/upstream-test.service; disabled; preset: enabled)
+     Active: active (running) since Sat 2026-06-06 08:34:46 BST; 1s ago
+ Invocation: 38edc87b93764957b424c33389751da0
+   Main PID: 36816 (python3)
+      Tasks: 1 (limit: 2272)
+     Memory: 17.2M (peak: 17.4M)
+        CPU: 56ms
+==LOCAL TESTS==
+GET /: 301
+large: 301 size=162
+echo: 301
+==SSE-FIRST==
+<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+<center><h1>301 Moved Permanently</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+==CHUNKED-FIRST==
+<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+==HTTPS PUBLIC TEST==
+https /echo: 200 verify=0

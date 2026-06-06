@@ -1,0 +1,96 @@
+diff --git a/lib/make-tls-client.js b/lib/make-tls-client.js
+index 6dea9236436c5eb445d7d96a2df926103144d3b3..09f4653f01380b929cd755fb51f2de3f8e134132 100644
+--- a/lib/make-tls-client.js
++++ b/lib/make-tls-client.js
+@@ -16,7 +16,7 @@ import { parseServerHello } from "./utils/parse-server-hello.js";
+ import { getPskFromTicket, parseSessionTicket } from "./utils/session-ticket.js";
+ import { decryptWrappedRecord, encryptWrappedRecord } from "./utils/wrapped-record.js";
+ const RECORD_LENGTH_BYTES = 3;
+-export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates }) {
++export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates, onClientHelloPack, onRecvCertificateVerify, onKeyPairGenerated }) {
+     const logger = _logger || LOGGER;
+     const processor = makeMessageProcessor(logger);
+     const { enqueue: enqueueServerPacket } = makeQueue();
+@@ -191,11 +191,29 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                             throw new Error('No certificates received');
+                         }
+                         const signatureData = await getSignatureDataTls13(handshakeMsgs.slice(0, -1), cipherSuite);
+-                        await verifyCertificateSignature({
+-                            ...signature,
+-                            publicKey: certificates[0].getPublicKey(),
+-                            signatureData,
+-                        });
++                        // REALITY hook: surfaces the parsed CertificateVerify
++                        // info so the caller can perform a custom signature
++                        // check (e.g. HMAC-SHA512 over the leaf cert pubkey).
++                        // The hook may return false to skip the standard
++                        // signature verification; useful when the cert is
++                        // forged and the server's signature is actually a
++                        // REALITY HMAC tag.
++                        let skipVerify = false;
++                        if (onRecvCertificateVerify) {
++                            const r = await onRecvCertificateVerify({
++                                ...signature,
++                                certificates,
++                                signatureData,
++                            });
++                            if (r === false) skipVerify = true;
++                        }
++                        if (!skipVerify) {
++                            await verifyCertificateSignature({
++                                ...signature,
++                                publicKey: certificates[0].getPublicKey(),
++                                signatureData,
++                            });
++                        }
+                         break;
+                     case SUPPORTED_RECORD_TYPE_MAP.FINISHED:
+                         await processServerFinish(content);
+@@ -528,7 +546,17 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+     }
+     async function getKeyPair(keyType) {
+         const algorithm = SUPPORTED_NAMED_CURVE_MAP[keyType].algorithm;
+-        keyPairs[keyType] ??= await crypto.generateKeyPair(algorithm);
++        if (!keyPairs[keyType]) {
++            keyPairs[keyType] = await crypto.generateKeyPair(algorithm);
++            // REALITY hook: caller may capture or replace the just-generated
++            // keypair. Returning a new keypair from the callback replaces the
++            // cached one, so the same caller-controlled private key is
++            // available for off-band X25519 derivations.
++            if (onKeyPairGenerated) {
++                const replacement = await onKeyPairGenerated(keyType, keyPairs[keyType], algorithm);
++                if (replacement) keyPairs[keyType] = replacement;
++            }
++        }
+         return { algorithm, keyPair: keyPairs[keyType] };
+     }
+     return {
+@@ -570,10 +598,10 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+             if (handshakeDone) {
+                 throw new Error('Handshake already done');
+             }
+-            sessionId = crypto.randomBytes(32);
++            sessionId = opts?.sessionId || crypto.randomBytes(32);
+             ended = false;
+             clientRandom = opts?.random || crypto.randomBytes(32);
+-            const clientHello = await packClientHello({
++            let clientHello = await packClientHello({
+                 host,
+                 keysToShare: await Promise.all(namedCurves
+                     .map(async (keyType) => {
+@@ -591,6 +619,15 @@ export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, l
+                 signatureAlgorithms,
+                 applicationLayerProtocols,
+             });
++            // REALITY hook: allow caller to mutate the ClientHello bytes
++            // after they're built but before they enter the transcript hash.
++            // The returned bytes (if non-null) replace the original entirely.
++            if (onClientHelloPack) {
++                const mutated = await onClientHelloPack(clientHello, { sessionId, random: clientRandom });
++                if (mutated && mutated !== clientHello) {
++                    clientHello = mutated;
++                }
++            }
+             handshakeMsgs.push(clientHello);
+             if (opts?.psk) {
+                 earlySecret = opts.psk.earlySecret;
