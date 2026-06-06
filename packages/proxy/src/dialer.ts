@@ -84,5 +84,9 @@ export const runProxiedRequest = async (
       uuid: config.uuid,
       target,
     });
+  default: {
+    const _: never = config;
+    throw new Error(`unknown ProxyConfig kind: ${(config as { kind: string }).kind}`);
+  }
   }
 };

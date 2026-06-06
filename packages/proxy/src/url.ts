@@ -239,10 +239,15 @@ const parseReality = (
   return config;
 };
 
-// `atob` is universally available in Workers, Node 22+, and browsers.
+// `atob` is universally available in all our runtime targets per the
+// workspace's `engines.node >= 22`.
 const base64Decode = (s: string): string => atob(s);
 
 export const formatProxyUri = (config: ProxyConfig): string => {
+  // The output is canonical, not byte-for-byte identical to the input — for
+  // example `formatProxyUri` always emits `security=tls` for VLESS-TLS
+  // variants and may reorder query params. Round-tripping through
+  // `parseProxyUri` is preserved.
   switch (config.kind) {
   case 'http': return formatHttp(config);
   case 'socks5': return formatSocks5(config);
@@ -252,6 +257,10 @@ export const formatProxyUri = (config: ProxyConfig): string => {
   case 'vless-tcp': return formatVlessTcp(config);
   case 'vless-ws': return formatVlessWs(config);
   case 'reality': return formatReality(config);
+  default: {
+    const _: never = config;
+    throw new Error(`unknown ProxyConfig kind: ${(config as { kind: string }).kind}`);
+  }
   }
 };
 

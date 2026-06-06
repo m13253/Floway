@@ -25,6 +25,20 @@ describe('parseProxyUri', () => {
     });
   });
 
+  it('defaults port to 443 for https without an explicit port', () => {
+    expect(parseProxyUri('https://example.com')).toEqual({
+      kind: 'http',
+      tls: true,
+      host: 'example.com',
+      port: 443,
+      name: 'example.com:443',
+    });
+  });
+
+  it('throws when http has no explicit port', () => {
+    expect(() => parseProxyUri('http://example.com')).toThrow(/port/);
+  });
+
   it('parses SOCKS5 with auth', () => {
     expect(parseProxyUri('socks5://u:p@1.2.3.4:1080#jp')).toEqual({
       kind: 'socks5',
