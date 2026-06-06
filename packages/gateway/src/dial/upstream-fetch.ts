@@ -23,6 +23,10 @@ export interface CreateUpstreamFetchInput {
 // Body buffering is deferred until a non-`direct` proxy actually needs it;
 // the direct-only fast path passes `init` straight to runtime `fetch`,
 // which is how non-buffered shapes like FormData stay supported.
+//
+// Streaming bodies (`init.body instanceof ReadableStream`) are rejected
+// upfront because the two-pass dial can replay a request, and a stream is
+// single-shot. Buffer streaming bodies in the caller before reaching here.
 export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFetch => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : ['direct'];
   return async (url, init) => {
@@ -51,9 +55,12 @@ export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFe
     // ProxyDialErrors in `errors`, but the upstream really only had one
     // dial path — surface that single error directly so callers don't see
     // a meaningless AggregateError wrapper.
-    throw list.length === 1
-      ? errors[errors.length - 1]!
-      : new AggregateError(errors, 'all proxies failed at the dial layer');
+    if (list.length === 1) {
+      const err = errors[errors.length - 1];
+      if (!err) throw new Error('unreachable: no errors on single-entry exhaustion');
+      throw err;
+    }
+    throw new AggregateError(errors, 'all proxies failed at the dial layer');
   };
 };
 
@@ -84,7 +91,10 @@ const tryOne = async (
   } catch (err) {
     if (err instanceof ProxyDialError) {
       errors.push(err);
-      await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, err.message);
+      // Tag the persisted message with the dial stage so a dashboard reader
+      // can tell a tcp-connect refusal from an inner-tls cert mismatch
+      // without cracking the proxy library open.
+      await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
       return null;
     }
     throw err;
@@ -93,57 +103,75 @@ const tryOne = async (
 
 const buildTargetSpec = async (url: string, init: RequestInit): Promise<TargetSpec> => {
   const u = new URL(url);
+  const collected = await collectBody(init.body);
+  const headers = extractHeaders(init.headers);
+  // FormData/URLSearchParams synthesize a Content-Type with the multipart
+  // boundary or the urlencoded marker. Adopt it only when the caller did not
+  // pre-set Content-Type itself, so explicit overrides keep winning.
+  if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
+    headers['content-type'] = collected.contentType;
+  }
   return {
     dialHost: u.hostname,
     port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
     tls: u.protocol === 'https:',
     method: init.method ?? 'GET',
     path: `${u.pathname}${u.search}`,
-    headers: extractHeaders(init.headers),
-    requestBody: await collectBody(init.body),
+    headers,
+    requestBody: collected?.body,
   };
 };
 
+// Header keys are lowercased so downstream emit-stage code (HTTP/1.1
+// formatter, header dedup) sees a single canonical casing regardless of
+// what the caller used.
 const extractHeaders = (input: HeadersInit | undefined): Record<string, string> => {
   if (!input) return {};
   if (input instanceof Headers) {
     const out: Record<string, string> = {};
-    input.forEach((v, k) => { out[k] = v; });
+    input.forEach((v, k) => { out[k.toLowerCase()] = v; });
     return out;
   }
-  if (Array.isArray(input)) return Object.fromEntries(input);
-  return { ...input };
+  if (Array.isArray(input)) {
+    const out: Record<string, string> = {};
+    for (const [k, v] of input) out[k.toLowerCase()] = v;
+    return out;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input)) out[k.toLowerCase()] = v;
+  return out;
 };
+
+interface CollectedBody {
+  body: Uint8Array;
+  /** Content-Type the runtime synthesizes for FormData/URLSearchParams (with
+   *  multipart boundary or urlencoded marker). undefined for shapes that
+   *  carry no implicit Content-Type. */
+  contentType?: string;
+}
 
 const collectBody = async (
   body: BodyInit | null | undefined,
-): Promise<Uint8Array | undefined> => {
+): Promise<CollectedBody | undefined> => {
   if (body == null) return undefined;
-  if (typeof body === 'string') return new TextEncoder().encode(body);
-  if (body instanceof Uint8Array) return body;
-  if (body instanceof ArrayBuffer) return new Uint8Array(body);
-  if (body instanceof Blob) return new Uint8Array(await body.arrayBuffer());
+  if (typeof body === 'string') return { body: new TextEncoder().encode(body) };
+  if (body instanceof Uint8Array) return { body };
+  if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };
+  if (body instanceof Blob) return { body: new Uint8Array(await body.arrayBuffer()) };
   if (body instanceof ReadableStream) {
-    const chunks: Uint8Array[] = [];
-    const reader = body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) chunks.push(value);
-    }
-    const total = chunks.reduce((n, c) => n + c.length, 0);
-    const out = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.length; }
-    return out;
+    // The two-pass dial can replay a request, and a stream is single-shot.
+    // Surface this constraint as an explicit error — the caller must buffer
+    // streaming bodies before they reach the proxy fetcher.
+    throw new Error('streaming request bodies are not yet supported through proxies');
   }
   // FormData / URLSearchParams: round-trip through Request so the runtime
-  // produces a canonical multipart/url-encoded byte stream we can buffer.
-  // The Request consumer also reads the boundary into Content-Type, but the
-  // proxy path adds its own headers from the target spec so we only need
-  // the body bytes here.
+  // produces a canonical multipart/url-encoded byte stream we can buffer
+  // alongside the synthesized Content-Type (with boundary or charset).
   if (body instanceof FormData || body instanceof URLSearchParams) {
-    return new Uint8Array(await new Request('https://internal/', { method: 'POST', body }).arrayBuffer());
+    const req = new Request('https://internal/', { method: 'POST', body });
+    const buffer = new Uint8Array(await req.arrayBuffer());
+    const contentType = req.headers.get('content-type') ?? undefined;
+    return { body: buffer, contentType };
   }
   throw new Error('unsupported BodyInit shape for proxied request');
 };

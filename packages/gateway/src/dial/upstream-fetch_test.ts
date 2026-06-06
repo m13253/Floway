@@ -134,4 +134,79 @@ describe('createUpstreamFetch', () => {
     await expect(fetcher('https://api.openai.com', { method: 'GET' }))
       .rejects.toBeInstanceOf(AggregateError);
   });
+
+  it('captures the runtime-synthesized multipart Content-Type when posting FormData', async () => {
+    const repo = new InMemoryRepo();
+    const captured: TargetSpec[] = [];
+    const fetcher = createUpstreamFetch({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_config, target) => { captured.push(target); return new Response('ok'); },
+      runDirect: async () => new Response('direct'),
+    });
+    const fd = new FormData();
+    fd.append('field', 'value');
+    await fetcher('https://api.openai.com/v1/upload', { method: 'POST', body: fd });
+    expect(captured).toHaveLength(1);
+    const contentType = captured[0]!.headers['content-type'];
+    expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+  });
+
+  it('lets the caller override the FormData-synthesized Content-Type', async () => {
+    const repo = new InMemoryRepo();
+    const captured: TargetSpec[] = [];
+    const fetcher = createUpstreamFetch({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_config, target) => { captured.push(target); return new Response('ok'); },
+      runDirect: async () => new Response('direct'),
+    });
+    const fd = new FormData();
+    fd.append('field', 'value');
+    await fetcher('https://api.openai.com/v1/upload', {
+      method: 'POST',
+      body: fd,
+      headers: { 'Content-Type': 'application/x-explicit-override' },
+    });
+    expect(captured[0]!.headers['content-type']).toBe('application/x-explicit-override');
+  });
+
+  it('rejects ReadableStream bodies upfront', async () => {
+    const repo = new InMemoryRepo();
+    const fetcher = createUpstreamFetch({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => new Response('ok'),
+      runDirect: async () => new Response('direct'),
+    });
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('hi'));
+        controller.close();
+      },
+    });
+    await expect(fetcher('https://api.openai.com/v1/x', { method: 'POST', body: stream }))
+      .rejects.toThrow(/streaming request bodies/);
+  });
+
+  it('persists the failed dial stage in the backoff lastError tag', async () => {
+    const repo = new InMemoryRepo();
+    const fetcher = createUpstreamFetch({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw new ProxyDialError('cert mismatch', 'inner-tls'); },
+      runDirect: async () => new Response('ok'),
+    });
+    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    const [row] = await repo.proxyBackoffs.listForUpstream('u');
+    expect(row!.lastError).toBe('[inner-tls] cert mismatch');
+  });
 });
