@@ -262,6 +262,39 @@ export const codexReimportBody = z.object({
 
 export const codexRefreshNowBody = z.object({});
 
+// --- proxies ---
+//
+// Proxy URLs accept the full subscription-style scheme set parsed by
+// `parseProxyUri` in @floway-dev/proxy (http(s), socks5, ss, ss2022, trojan,
+// vless, reality). We don't pre-validate the URI shape in zod — the handler
+// runs `parseProxyUri` and returns its error message verbatim so the operator
+// sees the canonical "unsupported scheme" / "missing password" feedback.
+
+export const createProxyBody = z.object({
+  name: z.string().min(1).max(200),
+  url: z.string().min(1),
+});
+
+export const updateProxyBody = z.object({
+  name: z.string().min(1).max(200).optional(),
+  url: z.string().min(1).optional(),
+  sort_order: z.number().int().optional(),
+});
+
+// Anchor names the test endpoint maps to known IP-echo HTTPS services. Three
+// distinct anchors (ipify, AWS checkip, ident.me v6-only) so an operator
+// debugging "wrong egress IP" or "v4 vs v6 routing" can rerun the test against
+// a different anchor without needing to teach the gateway a new endpoint.
+export const testProxyBody = z.object({
+  anchor: z.enum(['ipify', 'aws', 'ident.me-v6']).optional(),
+});
+
+// `upstream_id` narrows the reset to a single (proxy, upstream) pair; without
+// it the handler clears every backoff row for the proxy.
+export const resetBackoffBody = z.object({
+  upstream_id: z.string().optional(),
+});
+
 // --- search config ---
 
 export const searchConfigSchema = z.object({

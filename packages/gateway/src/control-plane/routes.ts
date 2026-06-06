@@ -6,7 +6,8 @@ import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
-import { authLoginBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, exportQuery, fetchModelsBody, importBody, performanceQuery, searchConfigSchema, searchUsageQuery, tokenUsageQuery, updateKeyBody, updateUpstreamBody } from './schemas.ts';
+import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
+import { authLoginBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createProxyBody, createUpstreamBody, exportQuery, fetchModelsBody, importBody, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateKeyBody, updateProxyBody, updateUpstreamBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
@@ -63,6 +64,18 @@ export const controlPlaneRoutes = new Hono()
     .get('/upstreams/:id/models', listUpstreamModels)
     .patch('/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
     .delete('/upstreams/:id', deleteUpstream)
+    // Proxies. Literal `/proxies/backoffs` and the per-id sub-paths are
+    // registered before the catch-all `/:id` routes so Hono matches the
+    // literal segments first; same constraint applies to test/backoffs/reset
+    // before the bare PATCH/DELETE on `/:id`.
+    .get('/proxies', listProxies)
+    .get('/proxies/backoffs', listAllBackoffs)
+    .post('/proxies', zValidator('json', createProxyBody), createProxy)
+    .post('/proxies/:id/test', zValidator('json', testProxyBody), testProxy)
+    .post('/proxies/:id/backoffs/reset', zValidator('json', resetBackoffBody), resetProxyBackoffs)
+    .get('/proxies/:id/backoffs', listProxyBackoffs)
+    .patch('/proxies/:id', zValidator('json', updateProxyBody), updateProxy)
+    .delete('/proxies/:id', deleteProxy)
     .get('/search-config', getSearchConfigRoute)
     .put('/search-config', zValidator('json', searchConfigSchema), putSearchConfigRoute)
     .post('/search-config/test', zValidator('json', searchConfigSchema), testSearchConfigRoute)
