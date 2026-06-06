@@ -46,7 +46,7 @@ export const nodeSocketDial: SocketDial = {
     // Listen on 'close' rather than the toWeb readable's own close signal:
     // the latter fires on read-side EOF and would resolve early whenever the
     // peer half-closes its write side.
-    const closed = new Promise<void>((resolve) => {
+    const closed = new Promise<void>(resolve => {
       socket.once('close', () => resolve());
     });
 

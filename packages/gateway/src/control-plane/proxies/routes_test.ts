@@ -1,8 +1,8 @@
 import { beforeEach, test } from 'vitest';
 
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
 import { initSocketDial, type SocketDial } from '@floway-dev/platform';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // Stub SocketDial so the test endpoint hits a deterministic error path
 // (`runProxiedRequest` calls connect() and we surface its rejection as the
