@@ -229,6 +229,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../provider-custom
+      '@floway-dev/proxy':
+        specifier: workspace:*
+        version: link:../proxy
       '@floway-dev/translate':
         specifier: workspace:*
         version: link:../translate
