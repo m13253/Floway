@@ -6,6 +6,13 @@
 export interface DialOptions {
   /** TCP-level. Forwarded to the underlying transport when supported. */
   allowHalfOpen?: boolean;
+  /**
+   * Wrap the connection with the runtime's native TLS implementation.
+   * The hostname is reused as SNI and as the certificate-verify name.
+   * Useful when the proxy protocol's outer leg is plain TLS — userspace
+   * TLS works too but native TLS is faster.
+   */
+  tls?: boolean;
 }
 
 export interface DialedSocket {

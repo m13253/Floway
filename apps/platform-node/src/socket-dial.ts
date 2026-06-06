@@ -1,27 +1,39 @@
 import net from 'node:net';
 import { Readable, Writable } from 'node:stream';
+import tls from 'node:tls';
 
 import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 
 // `allowHalfOpen: true` lets packages/proxy send a request body and
 // half-close the write side while the upstream response body is still
 // streaming back. The connect-promise pattern is required because
-// net.connect() returns synchronously and the actual TCP handshake runs on
+// node:net / node:tls connect synchronously and the actual handshake runs on
 // the event loop; without the await, downstream code would write into a
 // not-yet-connected socket.
+//
+// `tls: true` switches to node:tls — the SNI and cert-verify name both
+// default to `host`. Used by the proxy library's outer-TLS legs (HTTPS
+// CONNECT, VLESS-TCP+TLS) where the runtime's native TLS is faster than
+// userspace TLS.
 export const nodeSocketDial: SocketDial = {
-  async connect(host, port): Promise<DialedSocket> {
-    const socket = net.connect({ host, port, allowHalfOpen: true });
+  async connect(host, port, opts): Promise<DialedSocket> {
+    const allowHalfOpen = opts?.allowHalfOpen ?? true;
+    // tls.connect does not accept allowHalfOpen — TLS has its own
+    // close-notify so half-open is not meaningful at this layer.
+    const socket = opts?.tls
+      ? tls.connect({ host, port, servername: host })
+      : net.connect({ host, port, allowHalfOpen });
+    const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
-      const onConnect = (): void => {
+      const onReady = (): void => {
         socket.off('error', onError);
         resolve();
       };
       const onError = (err: Error): void => {
-        socket.off('connect', onConnect);
+        socket.off(readyEvent, onReady);
         reject(err);
       };
-      socket.once('connect', onConnect);
+      socket.once(readyEvent, onReady);
       socket.once('error', onError);
     });
 
