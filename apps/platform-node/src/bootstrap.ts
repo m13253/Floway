@@ -1,10 +1,12 @@
 import { FsFileProvider } from './fs-file-provider.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { createMemoryImageCache, createSharpImageProcessor } from './sharp-image-processor.ts';
+import { nodeSocketDial } from './socket-dial.ts';
 import {
   initEnv,
   initFileProvider,
   initImageProcessor,
+  initSocketDial,
   type ImageCache,
   type SqlDatabase,
 } from '@floway-dev/platform';
@@ -25,5 +27,6 @@ export const bootstrapNodePlatform = (opts: NodePlatformOptions): { db: SqlDatab
   initEnv(name => process.env[name] ?? '');
   initFileProvider(new FsFileProvider(opts.filesDir));
   initImageProcessor(createSharpImageProcessor({ cache: opts.imageCache ?? createMemoryImageCache() }));
+  initSocketDial(nodeSocketDial);
   return { db: createNodeSqliteDatabase(opts.dbPath) };
 };
