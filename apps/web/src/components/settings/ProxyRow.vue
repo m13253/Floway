@@ -68,17 +68,23 @@ const kindOf = (url: string): string => {
   }
 };
 
+// Palette is structured around a single rule: amber is reserved for the
+// backoff/warning semantic everywhere else in the dashboard, so no proxy-kind
+// label may use it. Tunneling protocols (HTTPS CONNECT, VLESS over TCP/WS)
+// share cyan; encrypted-userinfo protocols (SS family, Trojan, REALITY) share
+// violet. Plain HTTP CONNECT is the least-secure option and reads neutral
+// gray. SOCKS5 stays emerald because it is the simplest "just works" option.
 const kindBadgeClass = (kind: string) => {
   switch (kind) {
-  case 'HTTP':
-  case 'HTTPS': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
+  case 'HTTP': return 'border-white/10 bg-white/5 text-gray-400';
+  case 'HTTPS':
+  case 'VLESS':
+  case 'VLESS-WS': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'SOCKS5': return 'border-accent-emerald/30 bg-accent-emerald/10 text-accent-emerald';
   case 'SS':
-  case 'SS-2022': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
-  case 'TROJAN': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'REALITY':
-  case 'VLESS':
-  case 'VLESS-WS': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'SS-2022':
+  case 'TROJAN':
+  case 'REALITY': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   default: return 'border-white/10 bg-white/5 text-gray-400';
   }
 };
@@ -218,14 +224,14 @@ const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;
       </div>
     </div>
 
-    <div v-if="showExpansion" class="mt-2 border-t border-white/[0.04] pt-2 text-xs text-gray-500">
-      <div v-if="hasEgressInfo" class="flex flex-wrap items-center gap-x-2">
+    <div v-if="showExpansion" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.04] pt-2 text-xs text-gray-500">
+      <template v-if="hasEgressInfo">
         <span class="text-gray-600">Egress:</span>
         <span v-if="proxy.last_egress_ip" class="font-mono text-gray-400">{{ proxy.last_egress_ip }}</span>
         <span v-else class="italic">untested</span>
         <span v-if="lastTestedAgo" class="text-gray-600">({{ lastTestedAgo }})</span>
-      </div>
-      <div v-if="hasBackoffs" class="mt-1 flex flex-wrap items-center gap-x-2">
+      </template>
+      <template v-if="hasBackoffs">
         <span class="text-gray-600">Backoff:</span>
         <span
           v-for="row in visibleBackoffs"
@@ -242,7 +248,7 @@ const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;
           class="ml-auto rounded px-1.5 py-0.5 text-xs text-gray-400 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
           @click="$emit('resetBackoffs')"
         >Reset all</button>
-      </div>
+      </template>
     </div>
   </div>
 </template>

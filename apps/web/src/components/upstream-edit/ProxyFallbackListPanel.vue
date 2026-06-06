@@ -5,6 +5,7 @@
 // list defers to the gateway's default behaviour ("always direct").
 
 import { useNow } from '@vueuse/core';
+import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui';
 import { computed } from 'vue';
 
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
@@ -120,15 +121,8 @@ const moveDown = (index: number) => {
   emit('update:modelValue', next);
 };
 
-// Native <select> doubles as a one-shot picker: any non-empty value gets
-// pushed onto the list, then we reset back to the placeholder option so the
-// next pick fires another change event.
-const onAddSelection = (event: Event) => {
-  const select = event.target as HTMLSelectElement;
-  const value = select.value;
-  if (!value) return;
-  emit('update:modelValue', [...props.modelValue, value]);
-  select.value = '';
+const append = (entry: string) => {
+  emit('update:modelValue', [...props.modelValue, entry]);
 };
 </script>
 
@@ -142,34 +136,34 @@ const onAddSelection = (event: Event) => {
       No fallback list configured — defaults to direct.
     </div>
 
-    <ul v-else class="space-y-2">
+    <ul v-else class="divide-y divide-white/[0.06]">
       <li
         v-for="(entry, index) in modelValue"
         :key="`${entry}-${index}`"
-        class="flex items-center gap-2 rounded-md border border-white/5 bg-surface-900/40 px-3 py-2 text-sm"
+        class="flex items-center gap-2 px-1 py-2 text-sm"
       >
-        <div class="flex shrink-0 flex-col">
+        <div class="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            class="inline-flex h-4 w-5 items-center justify-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
             :disabled="index === 0"
             aria-label="Move entry up"
             title="Move up"
             @click="moveUp(index)"
           >
-            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="m18 15-6-6-6 6" />
             </svg>
           </button>
           <button
             type="button"
-            class="inline-flex h-4 w-5 items-center justify-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
             :disabled="index === modelValue.length - 1"
             aria-label="Move entry down"
             title="Move down"
             @click="moveDown(index)"
           >
-            <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
@@ -183,11 +177,11 @@ const onAddSelection = (event: Event) => {
 
         <span
           v-if="activeBackoffByEntry.get(entry)"
-          class="shrink-0 rounded border border-accent-amber/30 bg-accent-amber/10 px-1.5 py-0.5 text-[10px] font-medium text-accent-amber"
+          class="shrink-0 text-[10px] font-medium text-accent-amber"
           :title="activeBackoffByEntry.get(entry)?.lastError ?? undefined"
         >
-          in backoff ({{ activeBackoffByEntry.get(entry)?.expiresIn }}, {{ activeBackoffByEntry.get(entry)?.failCount }}
-          fail{{ activeBackoffByEntry.get(entry)?.failCount === 1 ? '' : 's' }})
+          backoff {{ activeBackoffByEntry.get(entry)?.expiresIn }} · {{ activeBackoffByEntry.get(entry)?.failCount }}
+          fail{{ activeBackoffByEntry.get(entry)?.failCount === 1 ? '' : 's' }}
         </span>
 
         <button
@@ -206,15 +200,45 @@ const onAddSelection = (event: Event) => {
     </ul>
 
     <div class="mt-2">
-      <select
-        class="w-full rounded-md border border-white/5 bg-surface-900/40 px-3 py-2 text-sm text-gray-300 transition-colors hover:border-white/10 focus:border-accent-cyan/40 focus:outline-none"
-        :value="''"
-        @change="onAddSelection"
-      >
-        <option value="">+ Add proxy</option>
-        <option value="direct" :disabled="directInList">direct</option>
-        <option v-for="p in proxiesNotInList" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
+      <DropdownMenuRoot>
+        <DropdownMenuTrigger
+          class="inline-flex h-9 w-full items-center justify-between rounded-[10px] border border-white/[0.06] bg-surface-700 px-3 text-sm text-gray-300 transition-colors hover:border-white/[0.1] focus:border-accent-cyan/50 focus:outline-none focus:ring-1 focus:ring-accent-cyan/30"
+        >
+          <span>+ Add proxy</span>
+          <svg class="size-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </DropdownMenuTrigger>
+        <DropdownMenuPortal>
+          <DropdownMenuContent
+            align="start"
+            :side-offset="4"
+            class="z-50 w-[var(--reka-dropdown-menu-trigger-width)] min-w-[8rem] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 p-1 text-white shadow-xl"
+          >
+            <DropdownMenuItem
+              v-if="!directInList"
+              class="flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 font-mono text-sm text-gray-300 outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
+              @select="append(DIRECT)"
+            >
+              direct
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              v-for="p in proxiesNotInList"
+              :key="p.id"
+              class="flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm text-white outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
+              @select="append(p.id)"
+            >
+              {{ p.name }}
+            </DropdownMenuItem>
+            <p
+              v-if="proxiesNotInList.length === 0 && directInList"
+              class="px-2 py-1.5 text-xs text-gray-500"
+            >
+              All proxies already added.
+            </p>
+          </DropdownMenuContent>
+        </DropdownMenuPortal>
+      </DropdownMenuRoot>
     </div>
   </section>
 </template>

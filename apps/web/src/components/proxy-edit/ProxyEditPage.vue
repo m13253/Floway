@@ -281,16 +281,17 @@ const remove = async () => {
     </p>
 
     <div class="space-y-1.5">
-      <label class="block text-xs font-medium text-gray-500">Name <span class="text-accent-rose">*</span></label>
+      <label class="block text-xs font-medium text-gray-500">Name</label>
       <Input v-model="name" placeholder="My JP server" />
     </div>
 
     <div class="space-y-1.5">
-      <label class="block text-xs font-medium text-gray-500">URL <span class="text-accent-rose">*</span></label>
+      <label class="block text-xs font-medium text-gray-500">URL</label>
       <Input
         v-model="url"
         placeholder="vless://uuid@host:443?type=tcp&security=reality&pbk=..."
         :invalid="parsed?.ok === false"
+        class="font-mono"
       />
       <div v-if="parsed?.ok === true" class="inline-flex items-center gap-1 rounded-md border border-accent-emerald/30 bg-accent-emerald/10 px-2 py-1 text-xs text-accent-emerald">
         <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -305,26 +306,28 @@ const remove = async () => {
         </svg>
         {{ parsed.error }}
       </div>
+      <!-- Egress reads as inline meta under the URL — the IP echo is one
+           short value, not enough to deserve a section header of its own.
+           The backoff list below stays on the section ladder because its
+           countdown table demands more visual real estate. -->
+      <div v-if="mode === 'edit' && record" class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
+        <span>Egress:</span>
+        <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
+        <span v-else class="italic">untested</span>
+        <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
+        <Button variant="secondary" size="sm" :loading="testing" class="ml-auto" @click="test">Test</Button>
+      </div>
+      <p v-if="mode === 'edit' && testError" class="text-xs text-accent-rose">{{ testError }}</p>
     </div>
 
     <template v-if="mode === 'edit' && record">
-      <div class="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-5 text-sm">
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-500">Egress:</span>
-          <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
-          <span v-else class="italic text-gray-500">untested</span>
-          <span v-if="lastTestedAgo" class="text-xs text-gray-600">({{ lastTestedAgo }})</span>
-        </div>
-        <Button variant="secondary" size="sm" :loading="testing" class="ml-auto" @click="test">Test</Button>
-      </div>
-      <p v-if="testError" class="-mt-2 text-xs text-accent-rose">{{ testError }}</p>
-
       <section v-if="activeBackoffs.length > 0">
         <div class="mb-2 flex items-center justify-between">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
             Backoff state <span class="text-accent-amber">({{ activeBackoffs.length }})</span>
           </h3>
           <button
+            v-if="activeBackoffs.length > 1"
             type="button"
             class="text-xs text-gray-400 transition-colors hover:text-accent-rose"
             @click="resetAllBackoffs"
