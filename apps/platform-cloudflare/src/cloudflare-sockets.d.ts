@@ -1,8 +1,4 @@
-// Local ambient declaration mirrors the convention used elsewhere in this
-// app — `R2BucketLike`, `ImagesBinding`, `KvNamespace` are all hand-rolled
-// instead of pulling in `@cloudflare/workers-types`. We only declare the
-// surface we use, which is `connect()` returning a Web-streams-shaped
-// socket.
+// Hand-rolled ambient declaration matching this app's convention for runtime types (cf. R2BucketLike, ImagesBinding, KvNamespace) — only the surface used here.
 declare module 'cloudflare:sockets' {
   interface CloudflareSocket {
     readonly readable: ReadableStream<Uint8Array>;
