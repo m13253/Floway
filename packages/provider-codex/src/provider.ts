@@ -9,7 +9,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamFetch, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderFactoryOptions, type ProviderStreamResult, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // L1 (in-process) memo lifetime. Kept short so an operator-triggered model
 // list change propagates within minutes even before the L2 ledger ages out.
@@ -25,7 +25,7 @@ interface CodexModelsLedger {
   models: CodexRawModel[];
 }
 
-export const createCodexProvider = async (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): Promise<ModelProviderInstance> => {
+export const createCodexProvider = async (record: UpstreamRecord, options?: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;

@@ -97,7 +97,7 @@ export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
 
-export type { UpstreamFetchOptions, UpstreamFetch } from './upstream.ts';
+export type { UpstreamFetchOptions, UpstreamFetch, ProviderFactoryOptions } from './upstream.ts';
 
 export {
   compressBase64ImageToWebp,

@@ -30,10 +30,7 @@ const copilotFetchInternal = async (
   options?: UpstreamFetchOptions,
 ): Promise<Response> => {
   try {
-    return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, {
-      ...(options?.extraHeaders ? { headers: options.extraHeaders } : {}),
-      ...(options?.fetcher ? { fetcher: options.fetcher } : {}),
-    });
+    return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, { headers: options?.extraHeaders, fetcher: options?.fetcher });
   } catch (error) {
     if (!isCopilotTokenFetchError(error)) throw error;
     return new Response(error.body, {

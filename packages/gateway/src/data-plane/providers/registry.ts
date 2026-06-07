@@ -1,6 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamFetch, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, ModelProviderInstance, ProviderFactoryOptions, ProviderModelRecord, ResolvedModel, UpstreamFetch, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
@@ -14,7 +14,7 @@ interface ProviderModelsResult {
 
 type ProviderFactory = (
   record: UpstreamRecord,
-  options?: { fetcher?: UpstreamFetch },
+  options?: ProviderFactoryOptions,
 ) => ModelProviderInstance | Promise<ModelProviderInstance>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {

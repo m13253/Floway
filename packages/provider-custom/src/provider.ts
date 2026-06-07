@@ -6,7 +6,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamFetch, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderFactoryOptions, type ProviderStreamParser, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -83,7 +83,7 @@ const finalizeCustomModels = (
   return models;
 };
 
-export const createCustomProvider = (record: UpstreamRecord, options?: { fetcher?: UpstreamFetch }): ModelProviderInstance => {
+export const createCustomProvider = (record: UpstreamRecord, options?: ProviderFactoryOptions): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
   const fetcher = options?.fetcher;
   const configuredEndpoints = config.endpoints;
