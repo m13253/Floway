@@ -27,7 +27,7 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
   const { data } = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()) },
+    query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: 'self-by-key' },
   }));
   return data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] };
 });
@@ -103,7 +103,7 @@ const load = async () => {
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
   const { data } = await callApi<OverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()) },
+    query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: 'self-by-key' },
   }));
   if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope) return;
   if (data) {

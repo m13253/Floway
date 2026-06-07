@@ -18,7 +18,8 @@ interface TabDef {
 }
 
 const allTabs: TabDef[] = [
-  { path: '/dashboard/settings', label: 'Settings', adminOnly: true, alsoActiveFor: ['/dashboard/upstreams'] },
+  { path: '/dashboard/settings', label: 'Settings', alsoActiveFor: ['/dashboard/upstreams'] },
+  { path: '/dashboard/users', label: 'Users', adminOnly: true },
   { path: '/dashboard/models', label: 'Models' },
   { path: '/dashboard/keys', label: 'API Keys' },
   { path: '/dashboard/usage', label: 'Usage' },

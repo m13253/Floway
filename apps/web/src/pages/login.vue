@@ -41,7 +41,7 @@ const [loading, submit] = useLoading(async () => {
   if (!data) return;
 
   auth.setAuth({ token: data.token, user: data.user });
-  await router.replace(data.user.isAdmin ? '/dashboard/settings' : '/dashboard/keys');
+  await router.replace('/dashboard/settings');
 });
 
 const onSubmit = (e: Event) => {

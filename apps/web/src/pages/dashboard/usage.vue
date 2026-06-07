@@ -33,8 +33,8 @@ export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const { start, end } = dashboardRangeQueryForLoader('today');
   const [usageRes, searchRes] = await Promise.all([
-    callApiForLoader<LoaderUsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-    callApiForLoader<LoaderSearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
+    callApiForLoader<LoaderUsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApiForLoader<LoaderSearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     useModelsStoreForLoader().load(),
   ]);
   return {
@@ -125,8 +125,8 @@ const load = async () => {
   const { start, end } = dashboardRangeQuery(requestedRange);
   try {
     const [usageRes, searchRes] = await Promise.all([
-      callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-      callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
+      callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+      callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     ]);
     if (requestId !== usageRequestId || tokenRange.value !== requestedRange) return;
     if (usageRes.data) data.value = usageRes.data;

@@ -5,6 +5,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { SearchConfig } from '../../api/types.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
 import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../composables/useUpstreams.ts';
+import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 const defaultSearchConfig: SearchConfig = {
   provider: 'disabled',
@@ -13,6 +14,12 @@ const defaultSearchConfig: SearchConfig = {
 };
 
 export const useSettingsPageData = defineBasicLoader(async () => {
+  const auth = useAuthStoreForLoader();
+  if (!auth.isAdmin) {
+    // Non-admin users land on this page only for the My Account panel; the
+    // admin-only data fetches would 403 and clear their session.
+    return { searchConfig: defaultSearchConfig, searchConfigError: null };
+  }
   const api = useApi();
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
@@ -27,10 +34,12 @@ export const useSettingsPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
+import { Button } from '@floway-dev/ui';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import type { UpstreamRecord } from '../../api/types.ts';
+import PasswordDrawer from '../../components/users/PasswordDrawer.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
@@ -38,14 +47,14 @@ import SearchConfigSection from '../../components/settings/SearchConfigSection.v
 import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-
-definePage({ meta: { requiresAdmin: true } });
+import { useAuthStore } from '../../stores/auth.ts';
 
 const router = useRouter();
 const store = useUpstreamsStore();
 const { upstreams, loading: storeLoading, error: storeError, load } = store;
 const modelsStore = useModelsStore();
 const settingsData = useSettingsPageData();
+const auth = useAuthStore();
 
 // Local copy sorted by sort_order; the child card emits a reordered array
 // via update:ordered, and reloadAll re-syncs from the store after PATCH.
@@ -57,15 +66,39 @@ watch(upstreams, list => {
 const reloadAll = async () => {
   await Promise.all([load(), modelsStore.load()]);
 };
+
+const passwordDrawerOpen = ref(false);
+const passwordToast = ref<string | null>(null);
+
+const openChangePassword = () => { passwordDrawerOpen.value = true; };
+
+const onPasswordChanged = () => {
+  passwordToast.value = 'Password updated. Other devices have been signed out.';
+  window.setTimeout(() => { passwordToast.value = null; }, 4000);
+};
 </script>
 
 <template>
   <div>
-    <div v-if="storeError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+    <div v-if="storeError && auth.isAdmin" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
       {{ storeError }}
     </div>
+    <div v-if="passwordToast" class="mb-4 rounded-md border border-accent-emerald/40 bg-accent-emerald/10 px-3 py-2 text-sm text-accent-emerald">
+      {{ passwordToast }}
+    </div>
 
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <div class="glass-card p-5 sm:p-6 animate-in mb-5">
+      <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
+      <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p class="text-sm text-white">{{ auth.currentUser?.username ?? '—' }}</p>
+          <p class="text-xs text-gray-500">{{ auth.isAdmin ? 'Administrator' : 'Standard user' }}</p>
+        </div>
+        <Button variant="secondary" @click="openChangePassword">Change my password</Button>
+      </div>
+    </div>
+
+    <div v-if="auth.isAdmin" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
         <UpstreamsSettingsCard
           v-model:ordered="ordered"
@@ -90,5 +123,11 @@ const reloadAll = async () => {
         </div>
       </div>
     </div>
+
+    <PasswordDrawer
+      v-model:open="passwordDrawerOpen"
+      mode="self"
+      @saved="onPasswordChanged"
+    />
   </div>
 </template>

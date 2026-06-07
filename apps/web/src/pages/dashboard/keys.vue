@@ -12,6 +12,8 @@ export const useKeysPageData = defineBasicLoader(async () => {
   const auth = useAuthStoreForLoader();
   const [keysRes] = await Promise.all([
     callApiForLoader<LoaderApiKey[]>(() => api.api.keys.$get()),
+    // Upstreams listing is admin-only on the gateway; non-admin users skip the
+    // round-trip and edit their keys without an upstream override picker.
     auth.isAdmin ? useUpstreamsStoreForLoader().load() : Promise.resolve(),
     useModelsStoreForLoader().load(),
   ]);
@@ -126,7 +128,7 @@ const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
     <div class="glass-card p-5 sm:p-6 mb-6 animate-in">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">API Keys</span>
-        <div v-if="auth.isAdmin" class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Input
             v-model="newName"
             size="sm"
@@ -153,10 +155,10 @@ const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
       <KeysTable
         :keys="keys"
         :loading="loading"
-        :is-admin="auth.isAdmin"
         :upstreams="upstreamsStore.upstreams.value ?? []"
         :selected-id="selectedKeyId"
         :copied="copied"
+        :can-edit-upstreams="auth.isAdmin"
         @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
