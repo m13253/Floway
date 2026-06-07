@@ -28,10 +28,12 @@ export interface CreateFetcherInput {
 
 // Two-pass dial strategy. First pass walks the fallback list skipping any
 // entry whose (proxy, upstream) backoff row is still active, so a flaky
-// proxy gets shed in steady state. If every entry was skipped or every
-// non-skipped entry hit a ProxyDialError, the second pass walks the same
-// list ignoring backoff state — that's how we both kick the recovery
-// schedule and keep serving when literally every proxy is in cooldown.
+// proxy gets shed in steady state. The second pass walks the entries that
+// the first pass skipped (i.e. the backed-off ones) — that's how we both
+// kick the recovery schedule and keep serving when literally every proxy
+// is in cooldown. Entries that already failed on pass 1 are NOT retried
+// in pass 2; doing so would double the backoff fail-count for every real
+// failure and warp the geometric schedule.
 //
 // Body buffering is deferred until a non-`direct` proxy actually needs it;
 // the direct-only fast path passes `init` straight to runtime `fetch`,
@@ -53,23 +55,31 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const skip = new Set(active.filter(b => b.expiresAt > now).map(b => b.proxyId));
+
+    // Track which entries have already been attempted in this call so the
+    // second pass only retries the ones we actively skipped. Without this,
+    // a single dial failure would record TWO recordDialFailure calls — the
+    // backoff schedule advertised in proxy-backoffs would double-step on
+    // every real failure.
+    const triedThisCall = new Set<string>();
     for (const id of list) {
       if (skip.has(id)) continue;
+      triedThisCall.add(id);
       const result = await tryOne(id, input, targetForProxy, url, init, errors);
       if (result) return result;
     }
 
     for (const id of list) {
+      if (triedThisCall.has(id)) continue;
       const result = await tryOne(id, input, targetForProxy, url, init, errors);
       if (result) return result;
     }
 
-    // A single fallback entry that fails both passes still produces two
-    // ProxyDialErrors in `errors`, but the upstream really only had one
-    // dial path — surface that single error directly so callers don't see
+    // A single fallback entry that failed once still produces just one
+    // ProxyDialError in `errors` — surface it directly so callers don't see
     // a meaningless AggregateError wrapper.
-    if (list.length === 1) {
-      throw errors[errors.length - 1]!;
+    if (errors.length === 1) {
+      throw errors[0];
     }
     throw new AggregateError(errors, 'all proxies failed at the dial layer');
   };
@@ -93,10 +103,17 @@ const tryOne = async (
     if (!config) {
       throw new Error(`unknown proxy id in fallback list: ${id}`);
     }
+    // Caller cancellation flows through init.signal into the dialer's
+    // combined controller so a disconnected client tears down any
+    // in-flight handshake instead of waiting for the per-proxy deadline.
+    const options: RunProxiedRequestOptions = {
+      signal: init.signal ?? undefined,
+    };
+    if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
     const response = await input.runProxied(
       config.config,
       await targetForProxy(),
-      config.dialTimeoutMs === null ? undefined : { dialTimeoutMs: config.dialTimeoutMs },
+      options,
     );
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
@@ -104,6 +121,12 @@ const tryOne = async (
     await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
     return response;
   } catch (err) {
+    // Caller-driven cancellation must propagate up immediately. Without
+    // this, a client disconnect would let the dial chain continue burning
+    // the deadline budget against every other entry in the list.
+    if (isAbortError(err)) {
+      throw err;
+    }
     if (id === 'direct') {
       // Direct egress can fail for the same dial-shaped reasons a proxy can
       // (TCP refused, GFW SNI reset, DNS, connect timeout). Runtime fetch
@@ -125,6 +148,15 @@ const tryOne = async (
     }
     throw err;
   }
+};
+
+// AbortError can land as a DOMException (Web Streams / fetch / browsers /
+// modern Node) or, when the caller manually wraps it, as any object whose
+// `name === 'AbortError'`. Treat both as cancellation.
+const isAbortError = (err: unknown): boolean => {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof Error && err.name === 'AbortError') return true;
+  return false;
 };
 
 const buildTargetSpec = async (url: string, init: RequestInit): Promise<TargetSpec> => {

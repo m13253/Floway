@@ -37,7 +37,7 @@ describe('createFetcher', () => {
     expect(calls).toEqual(['b']);
   });
 
-  it('records dial failures', async () => {
+  it('records exactly one dial failure per call when the same entry is the only fallback', async () => {
     const repo = new InMemoryRepo();
     const fetcher = createFetcher({
       repo,
@@ -49,8 +49,10 @@ describe('createFetcher', () => {
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
     const [row] = await repo.proxyBackoffs.listForUpstream('u');
-    // first pass + second pass = 2 increments
-    expect(row!.failCount).toBe(2);
+    // Pass-2 only walks entries pass-1 skipped (i.e. ones in active backoff).
+    // A fresh entry that fails pass-1 stays out of pass-2, so we record one
+    // failure per real failure — preserving the geometric backoff schedule.
+    expect(row!.failCount).toBe(1);
   });
 
   it('clears backoff on dial success', async () => {
@@ -89,6 +91,27 @@ describe('createFetcher', () => {
     });
     await fetcher('https://api.openai.com', { method: 'GET' });
     expect(order).toEqual(['a', 'b']);
+  });
+
+  it('does not retry an entry that already failed in the first pass', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a', 'b'],
+      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
+      runProxied: async (config: ProxyConfig) => {
+        calls.push(config.host);
+        throw new ProxyDialError('fail', 'tcp-connect');
+      },
+      runDirect: async () => new Response('ok'),
+    });
+    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(AggregateError);
+    expect(calls).toEqual(['a', 'b']);
+    // Each entry recorded one failure, not two.
+    const rows = await repo.proxyBackoffs.listForUpstream('u');
+    expect(rows.map(r => [r.proxyId, r.failCount]).sort()).toEqual([['a', 1], ['b', 1]]);
   });
 
   it('non-ProxyDialError errors propagate immediately and do not update backoff', async () => {
@@ -133,6 +156,49 @@ describe('createFetcher', () => {
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' }))
       .rejects.toBeInstanceOf(AggregateError);
+  });
+
+  it('rethrows AbortError without continuing the chain', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['direct', 'a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (config: ProxyConfig) => {
+        calls.push(`proxy:${config.host}`);
+        return new Response('proxy-should-not-be-called');
+      },
+      runDirect: async () => {
+        calls.push('direct');
+        throw new DOMException('client gone', 'AbortError');
+      },
+    });
+    await expect(fetcher('https://api.openai.com', { method: 'GET' }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toEqual(['direct']);
+    // No proxy was attempted, so backoff stays empty.
+    expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
+  });
+
+  it('forwards init.signal to runProxied so the dialer can honour client cancellation', async () => {
+    const repo = new InMemoryRepo();
+    let observedSignal: AbortSignal | undefined;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_c, _t, options) => {
+        observedSignal = options?.signal;
+        return new Response('ok');
+      },
+      runDirect: async () => new Response('direct'),
+    });
+    const ac = new AbortController();
+    await fetcher('https://api.openai.com', { method: 'GET', signal: ac.signal });
+    expect(observedSignal).toBe(ac.signal);
   });
 
   it('captures the runtime-synthesized multipart Content-Type when posting FormData', async () => {
