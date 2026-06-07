@@ -556,10 +556,9 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
 
 // --- proxy_fallback_list ---
 //
-// The list is opaque to the schema — duplicates and ordering are meaningful at
-// dial time — so the only ingestion-time guard is "every non-`direct` entry
-// names a known proxy row". Both POST and PATCH share that guard and round-trip
-// the list verbatim.
+// The list has set semantics — duplicates are dropped silently before
+// storage. Order is meaningful at dial time. Both POST and PATCH normalize
+// the list so the wire response matches what GET returns afterwards.
 
 test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the response', async () => {
   const { repo, adminKey } = await setupAppTest();
@@ -576,6 +575,28 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
 
   const stored = await repo.upstreams.getById(created.id);
   assertEquals(stored?.proxyFallbackList, ['p_fallback', 'direct']);
+});
+
+test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0, dialTimeoutSeconds: null });
+
+  const resp = await requestApp(
+    '/api/upstreams',
+    authed(adminKey, createBody({ proxy_fallback_list: ['p_fallback', 'direct', 'p_fallback', 'direct'] })),
+  );
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as Record<string, any>;
+  // Without the API-layer normalize, the response would echo the duplicates
+  // while the saved row only kept one of each — operators would see a
+  // different list on POST vs the next GET.
+  assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
+
+  const get = await requestApp('/api/upstreams', authed(adminKey));
+  const list = (await get.json()) as Array<Record<string, any>>;
+  const fresh = list.find(u => u.id === created.id);
+  assertEquals(fresh!.proxy_fallback_list, ['p_fallback', 'direct']);
 });
 
 test('PATCH /api/upstreams sets proxy_fallback_list', async () => {

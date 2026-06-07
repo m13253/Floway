@@ -6,6 +6,7 @@ import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { clearModelsStore, directFetcher, getProviderRepo, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
@@ -174,7 +175,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     return c.json({ error: 'Use POST /api/upstreams/codex-import for codex provider' }, 400);
   }
 
-  const proxyFallbackList = body.proxy_fallback_list ?? [];
+  const proxyFallbackList = normalizeProxyFallbackList(body.proxy_fallback_list ?? []);
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
 
@@ -232,9 +233,10 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.disabled_public_model_ids !== undefined) next = { ...next, disabledPublicModelIds: body.disabled_public_model_ids };
   if (body.proxy_fallback_list !== undefined) {
-    const fallbackCheck = await validateProxyFallbackList(body.proxy_fallback_list);
+    const normalized = normalizeProxyFallbackList(body.proxy_fallback_list);
+    const fallbackCheck = await validateProxyFallbackList(normalized);
     if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
-    next = { ...next, proxyFallbackList: body.proxy_fallback_list };
+    next = { ...next, proxyFallbackList: normalized };
   }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
