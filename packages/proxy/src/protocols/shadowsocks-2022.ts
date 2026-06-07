@@ -110,7 +110,7 @@ const dialShadowsocks2022Inner = async (
   //   - fixed header AEAD: [type=0x00 | timestamp(u64be) | len(u16be)] + tag
   //     where len = byte length of the variable header (excluding tag).
   //   - variable header AEAD: [ATYP|addr|port|padlen(u16be)|pad|initial_payload] + tag
-  const variableHeader = buildRequestHeader(target.host, target.port);
+  const variableHeader = buildSs2022RequestHeader(target.host, target.port);
   const fixedPlain = new Uint8Array(1 + 8 + 2);
   fixedPlain[0] = REQ_HEADER_TYPE;
   writeU64BE(fixedPlain, 1, BigInt(Math.floor(Date.now() / 1000)));
@@ -237,11 +237,17 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
   };
 };
 
-const buildRequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
-  // ATYP=0x03 domain | domLen | dom | port BE | padlen(u16be) | pad | initial_payload
-  // SIP022 requires either padding or initial payload to be non-empty in the
-  // first request frame. We have no initial application data yet (the inner
-  // TLS handshake hasn't started), so include 16 random padding bytes.
+/**
+ * Build the SS2022 variable header for a domain target. Exported for tests.
+ *
+ *   ATYP=0x03 | dom_len | dom | port[BE] | padlen[BE u16] | pad | initial_payload
+ *
+ * SIP022 requires either non-zero padding OR a non-empty initial_payload in
+ * the very first request frame. The dialer has no application data to send
+ * yet (the inner TLS handshake hasn't started), so we always emit 16 random
+ * padding bytes and an empty initial_payload.
+ */
+export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   const padLen = 16;
