@@ -47,7 +47,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     const [rawRecords, users, keys] = await Promise.all([
       queryWebSearchUsage({ provider: providerResult.provider, start, end }),
       repo.users.listIncludingDeleted(),
-      repo.apiKeys.list(),
+      repo.apiKeys.listIncludingDeleted(),
     ]);
     const keyToUser = new Map(keys.map(k => [k.id, k.userId] as const));
     const records = aggregateSearchUsageByUser(rawRecords, keyToUser);

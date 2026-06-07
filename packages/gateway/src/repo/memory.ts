@@ -135,6 +135,10 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
   }
 
+  listIncludingDeleted(): Promise<ApiKey[]> {
+    return Promise.resolve(this.keys.map(k => ({ ...k })));
+  }
+
   listByUserId(userId: number): Promise<ApiKey[]> {
     return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => ({ ...k })));
   }

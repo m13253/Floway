@@ -32,7 +32,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     const [rawRecords, users, keys] = await Promise.all([
       repo.usage.query({ start, end }),
       repo.users.listIncludingDeleted(),
-      repo.apiKeys.list(),
+      repo.apiKeys.listIncludingDeleted(),
     ]);
     const keyToUser = new Map(keys.map(k => [k.id, k.userId] as const));
     const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);

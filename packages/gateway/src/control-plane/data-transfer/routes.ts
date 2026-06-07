@@ -464,7 +464,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
 
   const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams] = await Promise.all([
     repo.users.listIncludingDeleted(),
-    repo.apiKeys.list(),
+    repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
@@ -565,7 +565,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performance = performanceResult.records;
 
   const repo = getRepo();
-  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.list() : [], mode);
+  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
   if (mode === 'replace') {

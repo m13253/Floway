@@ -97,6 +97,10 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
+  // Includes soft-deleted rows. Telemetry attribution and v4 export need every
+  // historical key, including ones the owner has rotated or deleted, so the
+  // user_id behind each row stays resolvable.
+  listIncludingDeleted(): Promise<ApiKey[]>;
   listByUserId(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;

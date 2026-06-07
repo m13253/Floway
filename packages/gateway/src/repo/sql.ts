@@ -71,6 +71,13 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return results.map(toApiKey);
   }
 
+  async listIncludingDeleted(): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys ORDER BY created_at`)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
   async listByUserId(userId: number): Promise<ApiKey[]> {
     const { results } = await this.db
       .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at`)
