@@ -10,9 +10,6 @@ import { getEnv } from '@floway-dev/platform';
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
-const isControlPlanePath = (path: string): boolean =>
-  path.startsWith('/api/') || path.startsWith('/auth/');
-
 export const authMiddleware = async (c: Context, next: Next) => {
   const path = c.req.path;
   if (PUBLIC_PATHS.has(path) && c.req.method === 'GET') return await next();
@@ -20,7 +17,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
 
   const sessionToken = c.req.header('x-floway-session');
   if (sessionToken) {
-    if (!isControlPlanePath(path)) {
+    if (!(path.startsWith('/api/') || path.startsWith('/auth/'))) {
       return c.json({ error: 'Session tokens are only valid on dashboard routes; data-plane requests must use an API key.' }, 401);
     }
     const session = await getRepo().sessions.getByIdAndTouch(sessionToken);

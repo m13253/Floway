@@ -13,7 +13,7 @@ export const useUsersPageData = defineBasicLoader(async () => {
 
 <script setup lang="ts">
 import { Button, Code } from '@floway-dev/ui';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import PasswordDrawer from '../../components/users/PasswordDrawer.vue';
@@ -26,6 +26,12 @@ definePage({ meta: { requiresAdmin: true } });
 const api = useApi();
 const auth = useAuthStore();
 const initial = useUsersPageData();
+
+// Route is admin-guarded, so currentUser is always set when this page renders.
+const actorUserId = computed(() => {
+  if (!auth.currentUser) throw new Error('users page rendered without an authenticated admin');
+  return auth.currentUser.id;
+});
 
 const users = ref<WireUser[]>(initial.data.value.users);
 const error = ref<string | null>(initial.data.value.error);
@@ -46,7 +52,6 @@ const reload = async () => {
 const onCreated = ({ user, defaultKey }: { user: WireUser; defaultKey: { name: string; key: string } }) => {
   revealedKey.value = defaultKey;
   void reload();
-  // Bring the just-created user into the local list optimistically.
   if (!users.value.find(u => u.id === user.id)) users.value = [...users.value, user];
 };
 
@@ -106,7 +111,7 @@ const remove = async (u: WireUser) => {
 
       <UsersTable
         :users="users"
-        :actor-user-id="auth.currentUser?.id ?? -1"
+        :actor-user-id="actorUserId"
         @toggle-admin="toggleAdmin"
         @toggle-global-telemetry="toggleGlobalTelemetry"
         @reset-password="resetPassword"
