@@ -50,7 +50,7 @@ const store = useUpstreamsStore();
 const { upstreams, loading: storeLoading, error: storeError, load } = store;
 const modelsStore = useModelsStore();
 const proxiesStore = useProxiesStore();
-const { proxies, backoffs, loading: proxiesLoading, load: loadProxies } = proxiesStore;
+const { load: loadProxies } = proxiesStore;
 const settingsData = useSettingsPageData();
 
 // Local copy sorted by sort_order; the child card emits a reordered array
@@ -58,11 +58,6 @@ const settingsData = useSettingsPageData();
 const ordered = ref<UpstreamRecord[]>([]);
 watch(upstreams, list => {
   ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
-}, { immediate: true });
-
-const orderedProxies = ref<ProxyRecord[]>([]);
-watch(proxies, list => {
-  orderedProxies.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
 }, { immediate: true });
 
 const reloadAll = async () => {
@@ -87,10 +82,6 @@ const reloadAll = async () => {
           @changed="reloadAll"
         />
         <ProxiesSettingsCard
-          v-model:ordered="orderedProxies"
-          :loading="proxiesLoading"
-          :backoffs="backoffs"
-          :upstreams="upstreams"
           @add="() => router.push('/dashboard/proxies/new')"
           @edit="(record: ProxyRecord) => router.push(`/dashboard/proxies/${record.id}`)"
           @changed="reloadAll"

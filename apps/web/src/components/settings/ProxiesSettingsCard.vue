@@ -1,26 +1,27 @@
 <script setup lang="ts">
 import { Spinner } from '@floway-dev/ui';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { BackoffRow, ProxyRecord, UpstreamRecord } from '../../api/types.ts';
+import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
+import { useProxiesStore } from '../../composables/useProxies.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import ProxyRow from './ProxyRow.vue';
-
-const props = defineProps<{
-  loading: boolean;
-  ordered: ProxyRecord[];
-  backoffs: BackoffRow[] | null;
-  upstreams: UpstreamRecord[] | null;
-}>();
 
 const emit = defineEmits<{
   'add': [];
   'edit': [record: ProxyRecord];
   'changed': [];
-  'update:ordered': [list: ProxyRecord[]];
 }>();
 
 const api = useApi();
+const proxiesStore = useProxiesStore();
+const upstreamsStore = useUpstreamsStore();
+
+const ordered = ref<ProxyRecord[]>([]);
+watch(proxiesStore.proxies, list => {
+  ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
+}, { immediate: true });
 
 // Per-proxy in-flight + last error for the Test button. Plain Maps keyed by id;
 // Vue tracks Map reassignments rather than internal mutation, so replace on every update.
@@ -35,13 +36,13 @@ const setMapEntry = <V>(map: Map<string, V>, key: string, value: V): Map<string,
 
 const upstreamNames = computed<Map<string, string>>(() => {
   const map = new Map<string, string>();
-  for (const u of props.upstreams ?? []) map.set(u.id, u.name);
+  for (const u of upstreamsStore.upstreams.value ?? []) map.set(u.id, u.name);
   return map;
 });
 
 const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
   const map = new Map<string, BackoffRow[]>();
-  for (const row of props.backoffs ?? []) {
+  for (const row of proxiesStore.backoffs.value ?? []) {
     const list = map.get(row.proxy_id);
     if (list) list.push(row);
     else map.set(row.proxy_id, [row]);
@@ -65,21 +66,21 @@ const persistReorder = async (next: ProxyRecord[]) => {
 };
 
 const moveProxy = async (id: string, direction: -1 | 1) => {
-  const list = [...props.ordered];
+  const list = [...ordered.value];
   const idx = list.findIndex(p => p.id === id);
   const target = idx + direction;
   if (idx === -1 || target < 0 || target >= list.length) return;
   const tmp = list[idx]!;
   list[idx] = list[target]!;
   list[target] = tmp;
-  emit('update:ordered', list);
+  ordered.value = list;
   await persistReorder(list);
 };
 
 const moveDisabled = (id: string, direction: -1 | 1) => {
-  const idx = props.ordered.findIndex(p => p.id === id);
+  const idx = ordered.value.findIndex(p => p.id === id);
   const target = idx + direction;
-  return idx === -1 || target < 0 || target >= props.ordered.length;
+  return idx === -1 || target < 0 || target >= ordered.value.length;
 };
 
 const testProxy = async (record: ProxyRecord) => {
@@ -164,6 +165,6 @@ const deleteProxy = async (record: ProxyRecord) => {
       />
     </div>
 
-    <Spinner v-if="loading && ordered.length > 0" class="mt-3 h-4 w-4 text-gray-500" />
+    <Spinner v-if="proxiesStore.loading.value && ordered.length > 0" class="mt-3 h-4 w-4 text-gray-500" />
   </div>
 </template>
