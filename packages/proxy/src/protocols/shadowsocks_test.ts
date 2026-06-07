@@ -4,9 +4,9 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { describe, expect, it } from 'vitest';
 
 import type { ShadowsocksProxyConfig } from '../proxy-config.ts';
+import { buildSsAddress, dialShadowsocks, evpBytesToKey } from './shadowsocks.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
-import { buildSsAddress, dialShadowsocks, evpBytesToKey } from './shadowsocks.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 

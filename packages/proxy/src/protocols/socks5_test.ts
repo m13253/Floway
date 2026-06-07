@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
-import type { DialOptions, DialTarget } from '../types.ts';
 import { dialSocks5 } from './socks5.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import type { DialOptions, DialTarget } from '../types.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 

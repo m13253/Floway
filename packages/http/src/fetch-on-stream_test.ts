@@ -42,7 +42,7 @@ describe('parseHttpResponse — status line', () => {
     const fake = makeFakeDuplex();
     // 70 KiB of plausible-looking but never-terminating header bytes.
     fake.respond('HTTP/1.1 200 OK\r\n');
-    const garbage = 'X-Garbage: ' + 'a'.repeat(70 * 1024);
+    const garbage = `X-Garbage: ${  'a'.repeat(70 * 1024)}`;
     fake.respond(garbage);
     await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
       name: 'HttpProtocolError',
@@ -220,7 +220,7 @@ describe('fetchOnStream — request line and headers', () => {
     let firstChunk: Uint8Array | null = null;
     const writableTap = new WritableStream<Uint8Array>({
       write(chunk) {
-        if (firstChunk === null) firstChunk = new Uint8Array(chunk);
+        firstChunk ??= new Uint8Array(chunk);
         const w = fake.writable.getWriter();
         return w.write(chunk).finally(() => w.releaseLock());
       },
