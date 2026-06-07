@@ -41,8 +41,8 @@ const record = computed(() => {
   return (store.proxies.value ?? []).find(p => p.id === id) ?? null;
 });
 
-// Redirect both at mount AND on subsequent transitions to null. A row
-// deleted by a sibling action while this page is mounted previously left
+// Redirect both at mount AND on subsequent transitions to null so a row
+// deleted by a sibling action while this page is mounted does not leave
 // the user staring at a blank glass card — the watcher takes them home.
 const goBackToSettings = (): void => { void router.replace('/dashboard/settings'); };
 watch(
