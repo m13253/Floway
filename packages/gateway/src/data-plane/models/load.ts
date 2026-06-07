@@ -1,4 +1,5 @@
 import { getInternalModels } from '../providers/registry.ts';
+import type { Fetcher } from '@floway-dev/provider';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
 
@@ -20,8 +21,11 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   return info;
 };
 
-export const loadModels = async (upstreamFilter?: readonly string[] | null): Promise<PublicModelsResponse> => {
-  const data = (await getInternalModels(upstreamFilter)).map(toPublicModel);
+export const loadModels = async (
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  upstreamFilter?: readonly string[] | null,
+): Promise<PublicModelsResponse> => {
+  const data = (await getInternalModels(fetcherForUpstream, upstreamFilter)).map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

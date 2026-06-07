@@ -2,6 +2,7 @@
 // new protocol = add a variant to ProxyConfig, a parser branch in url.ts,
 // and a case here.
 
+import { ProxyDialError } from './errors.js';
 import { runHttpConnect } from './protocols/http-connect.js';
 import { runReality } from './protocols/reality.js';
 import { runShadowsocks2022 } from './protocols/shadowsocks-2022.js';
@@ -12,10 +13,34 @@ import { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js';
 import type { ProxyConfig } from './proxy-config.js';
 import type { TargetSpec } from './types.js';
 
+// Hard ceiling on the time the dial layer is allowed to spend before the
+// fallback chain moves on. Counts TCP connect + every handshake leg, but
+// not the upstream response — once the request bytes have been written we
+// expect normal response streaming. Picked to stay above slow-but-real
+// dials (handshake to a regional REALITY anchor) while still rescuing the
+// dashboard from a black-holed proxy entry that would otherwise hang the
+// whole call.
+const DIAL_DEADLINE_MS = 10_000;
+
 export const runProxiedRequest = async (
   config: ProxyConfig,
   target: TargetSpec,
 ): Promise<Response> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new ProxyDialError(`dial deadline exceeded after ${DIAL_DEADLINE_MS}ms`, 'tcp-connect')),
+      DIAL_DEADLINE_MS,
+    );
+  });
+  try {
+    return await Promise.race([dispatch(config, target), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Response> => {
   switch (config.kind) {
   case 'http':
     return await runHttpConnect({

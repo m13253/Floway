@@ -5,6 +5,7 @@
 import type { Context } from 'hono';
 
 import { loadModels } from './load.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
@@ -24,7 +25,8 @@ const modelLoadErrorResponse = (error: unknown): Response => {
 
 export const models = async (c: Context) => {
   try {
-    return Response.json(await loadModels(apiKeyUpstreamIdsFromContext(c)));
+    const fetcherForUpstream = await createPerRequestFetcher();
+    return Response.json(await loadModels(fetcherForUpstream, apiKeyUpstreamIdsFromContext(c)));
   } catch (e) {
     return modelLoadErrorResponse(e);
   }

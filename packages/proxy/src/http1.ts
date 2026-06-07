@@ -12,10 +12,25 @@ export interface DuplexBytes {
 export async function runHttp1(stream: DuplexBytes, target: TargetSpec): Promise<Response> {
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();
-  const headers = { ...target.headers };
+  // Strip any caller-supplied framing headers — the buffered body's exact
+  // length is the source of truth at this layer, and a chunked encoding from
+  // the runtime fetch path would leave the body wrapped in chunk markers
+  // we cannot decode here.
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(target.headers)) {
+    const lk = k.toLowerCase();
+    if (lk === 'content-length' || lk === 'transfer-encoding') continue;
+    headers[k] = v;
+  }
   if (!('host' in lowerKeys(headers))) headers.Host = target.dialHost;
   if (!('connection' in lowerKeys(headers))) headers.Connection = 'close';
   if (!('accept-encoding' in lowerKeys(headers))) headers['Accept-Encoding'] = 'identity';
+  // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
+  // server treat the message as zero-length — that's how Copilot's
+  // `invalid_request_body` surfaces when our serialized POST goes out with
+  // no framing at all.
+  const bodyLen = target.requestBody?.byteLength ?? 0;
+  if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
 
   const requestLine = `${target.method} ${target.path} HTTP/1.1\r\n`;
   let head = requestLine;

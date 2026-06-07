@@ -176,7 +176,7 @@ test('getInternalModels returns the catalog projection without execution binding
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const catalog = await getInternalModels();
+      const catalog = await getInternalModels(() => directFetcher);
       const model = catalog.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
@@ -355,7 +355,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     disabledPublicModelIds: [],
   }));
 
-  const catalog = await getInternalModels();
+  const catalog = await getInternalModels(() => directFetcher);
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).

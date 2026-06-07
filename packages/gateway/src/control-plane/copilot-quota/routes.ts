@@ -2,6 +2,7 @@
 
 import type { Context } from 'hono';
 
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { githubHeaders } from '@floway-dev/provider-copilot';
 
@@ -50,7 +51,9 @@ export const copilotQuota = async (c: Context) => {
     const githubToken = githubTokenFromConfig(upstream.config);
     if (!githubToken) return c.json({ error: 'Copilot upstream is missing githubToken' }, 400);
 
-    const resp = await fetch('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
+    const fetcherForUpstream = await createPerRequestFetcher();
+    const fetcher = fetcherForUpstream(upstream.id);
+    const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
     if (!resp.ok) {
       const text = await resp.text();

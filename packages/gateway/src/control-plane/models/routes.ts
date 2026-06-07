@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
@@ -40,7 +41,8 @@ const emptyResponse = (): ControlPlaneModelsResponse => ({
 
 export const controlPlaneModels = async (c: Context) => {
   try {
-    const models = await getModels();
+    const fetcherForUpstream = await createPerRequestFetcher();
+    const models = await getModels(fetcherForUpstream);
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {
       object: 'list',

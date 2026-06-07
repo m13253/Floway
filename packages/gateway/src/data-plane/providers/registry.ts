@@ -1,7 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderFactoryOptions, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
@@ -26,17 +25,18 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 };
 
 // Build a single provider instance for one upstream record. Used by the
-// control plane to list a saved upstream's resolved catalog. The control
-// plane never proxies, so the instance is built with `directFetcher` and
-// never sees the per-upstream proxy chain.
-export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
-  providerFactories[record.provider](record, { fetcher: directFetcher });
+// control plane to list a saved upstream's resolved catalog. The caller
+// supplies the fetcher: control-plane callers route through that
+// upstream's own proxy fallback list so the dashboard works for operators
+// whose direct egress can't reach Copilot/etc.
+export const createProviderInstance = (record: UpstreamRecord, fetcher: Fetcher): ModelProviderInstance | Promise<ModelProviderInstance> =>
+  providerFactories[record.provider](record, { fetcher });
 
 // Ids not in the catalog are silently dropped; undefined/null preserves global sort order.
-// `fetcherForUpstream` decides each instance's outbound HTTP. /models listing
-// passes `() => directFetcher` so the catalog refresh stays direct; the data
-// plane passes a real per-upstream builder so each instance owns its
-// proxy-aware Fetcher.
+// `fetcherForUpstream` decides each instance's outbound HTTP. Both the data
+// plane and the control-plane catalog views funnel through the same
+// per-upstream proxy chain, so dashboard listings work behind GFW when the
+// operator has configured proxies.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null | undefined,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -173,8 +173,11 @@ export const compareModelIds = (a: string, b: string): number => {
     || cmp(a, b, -1);
 };
 
-export const getModels = async (upstreamFilter?: readonly string[] | null): Promise<ResolvedModel[]> => {
-  const providers = await listModelProviders(upstreamFilter, () => directFetcher);
+export const getModels = async (
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  upstreamFilter?: readonly string[] | null,
+): Promise<ResolvedModel[]> => {
+  const providers = await listModelProviders(upstreamFilter, fetcherForUpstream);
   if (providers.length === 0) {
     throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
@@ -188,8 +191,11 @@ export const getModels = async (upstreamFilter?: readonly string[] | null): Prom
 
 // Strips planner-only and provider-binding fields, leaving the InternalModel
 // shape consumed by the public /models DTO projection and the dashboard.
-export const getInternalModels = async (upstreamFilter?: readonly string[] | null): Promise<InternalModel[]> =>
-  (await getModels(upstreamFilter)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
+export const getInternalModels = async (
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  upstreamFilter?: readonly string[] | null,
+): Promise<InternalModel[]> =>
+  (await getModels(fetcherForUpstream, upstreamFilter)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 export interface ModelResolution {
   id: string;

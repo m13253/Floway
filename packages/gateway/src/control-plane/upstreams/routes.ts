@@ -3,6 +3,7 @@ import type { z } from 'zod';
 
 import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
@@ -329,7 +330,8 @@ export const listUpstreamModels = async (c: Context) => {
   if (!record) return c.json({ error: 'upstream not found' }, 404);
 
   try {
-    const instance = await createProviderInstance(record);
+    const fetcherForUpstream = await createPerRequestFetcher();
+    const instance = await createProviderInstance(record, fetcherForUpstream(record.id));
     const models = await instance.provider.getProvidedModels();
     const data = models.map(model => ({
       upstreamModelId: model.id,

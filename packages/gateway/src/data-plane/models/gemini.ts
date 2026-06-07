@@ -1,7 +1,9 @@
 import type { Context } from 'hono';
 
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getInternalModels } from '../providers/registry.ts';
+import type { Fetcher } from '@floway-dev/provider';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel } from '@floway-dev/provider';
@@ -89,8 +91,11 @@ const geminiModelLoadError = (error: unknown): Response => {
   return geminiError(502, error instanceof Error ? error.message : String(error));
 };
 
-const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Promise<GeminiModel[]> => {
-  const models = await getInternalModels(upstreamFilter);
+const loadGeminiModels = async (
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  upstreamFilter?: readonly string[] | null,
+): Promise<GeminiModel[]> => {
+  const models = await getInternalModels(fetcherForUpstream, upstreamFilter);
   // The Gemini /models surface represents only generative chat models;
   // embedding and image kinds are intentionally skipped because the
   // gateway exposes no Gemini-shaped endpoint for them.
@@ -99,7 +104,8 @@ const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Prom
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
-    return Response.json({ models: await loadGeminiModels(apiKeyUpstreamIdsFromContext(c)) });
+    const fetcherForUpstream = await createPerRequestFetcher();
+    return Response.json({ models: await loadGeminiModels(fetcherForUpstream, apiKeyUpstreamIdsFromContext(c)) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -111,7 +117,8 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
 
   const modelId = rawModelId.replace(/^models\//, '');
   try {
-    const model = (await loadGeminiModels(apiKeyUpstreamIdsFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const fetcherForUpstream = await createPerRequestFetcher();
+    const model = (await loadGeminiModels(fetcherForUpstream, apiKeyUpstreamIdsFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {

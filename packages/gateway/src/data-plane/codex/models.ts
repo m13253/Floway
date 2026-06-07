@@ -16,13 +16,15 @@ import type { Context } from 'hono';
 
 import { resolveCodexCatalog } from './catalog.ts';
 import { applyCodexOverrides, type ContextWindowResolver } from './patches.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getInternalModels } from '../providers/registry.ts';
 
 export const codexModels = async (c: Context): Promise<Response> => {
+  const fetcherForUpstream = await createPerRequestFetcher();
   const [catalog, internalModels] = await Promise.all([
     resolveCodexCatalog(c.req.header('user-agent')),
-    getInternalModels(apiKeyUpstreamIdsFromContext(c)),
+    getInternalModels(fetcherForUpstream, apiKeyUpstreamIdsFromContext(c)),
   ]);
   const actualContextWindowOf: ContextWindowResolver = slug =>
     internalModels.find(m => m.id === slug)?.limits.max_context_window_tokens ?? null;
