@@ -50,21 +50,8 @@ export const createStoredResponsesItemId = (itemType: string): string => {
   return `${prefixForItemType(itemType)}_${crc32Checksum(body)}_${body}`;
 };
 
-export const isStoredResponsesItemId = (value: string): boolean => {
-  const firstSeparator = value.indexOf('_');
-  if (firstSeparator <= 0) return false;
-  const checksumStart = firstSeparator + 1;
-  const checksumEnd = checksumStart + 6;
-  if (value[checksumEnd] !== '_') return false;
-
-  const prefix = value.slice(0, firstSeparator);
-  const checksum = value.slice(checksumStart, checksumEnd);
-  const body = value.slice(checksumEnd + 1);
-
-  if (!knownPrefixes.has(prefix)) return false;
-  if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return false;
-  return crc32Checksum(body) === checksum;
-};
+export const isStoredResponsesItemId = (value: string): boolean =>
+  isValidStoredId(value, prefix => knownPrefixes.has(prefix));
 
 // Codex and other stateless Responses clients echo reasoning and compaction
 // items back with their `encrypted_content` blob but no gateway id (the id is
@@ -92,6 +79,39 @@ export const hashResponsesItemContent = async (item: ResponsesInputItem): Promis
 };
 
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
+
+// Gateway-owned response envelope id. A response from this gateway is not
+// a 1:1 wrapper for an upstream response — the server-tool runtime can
+// drive multiple upstream calls behind a single client-visible response —
+// so we always mint our own id and never echo the upstream's. The wrap
+// layer is the only place this is generated; everything downstream of
+// wrap (the snapshot store key, the SSE/WS frames the client sees) carries
+// this id.
+const responseEnvelopePrefix = 'resp';
+export const createStoredResponseId = (): string => {
+  const body = randomBody();
+  return `${responseEnvelopePrefix}_${crc32Checksum(body)}_${body}`;
+};
+
+export const isStoredResponseId = (value: string): boolean =>
+  isValidStoredId(value, prefix => prefix === responseEnvelopePrefix);
+
+// Validates that `value` matches `<prefix>_<crc6>_<body22>`, the prefix
+// predicate accepts the prefix, and the crc32 of `body` matches the
+// checksum.
+const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
+  const firstSeparator = value.indexOf('_');
+  if (firstSeparator <= 0) return false;
+  const checksumStart = firstSeparator + 1;
+  const checksumEnd = checksumStart + 6;
+  if (value[checksumEnd] !== '_') return false;
+  const prefix = value.slice(0, firstSeparator);
+  const checksum = value.slice(checksumStart, checksumEnd);
+  const body = value.slice(checksumEnd + 1);
+  if (!isPrefixValid(prefix)) return false;
+  if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return false;
+  return crc32Checksum(body) === checksum;
+};
 
 const prefixForItemType = (itemType: string): string => {
   const prefix = itemTypePrefixes[itemType as keyof typeof itemTypePrefixes];

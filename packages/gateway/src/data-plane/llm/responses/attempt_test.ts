@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
-import { createStoredResponsesItemId } from './items/format.ts';
+import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
@@ -301,6 +301,9 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   assertEquals(result.result.object, 'response.compaction');
   assertEquals(result.result.output.length, 1);
   assertEquals((result.result.output[0] as { id: string }).id, 'cmp_1');
+  // The compact result wears a floway-minted response id, not the upstream's
+  // — same id wrap committed the snapshot under.
+  assert(isStoredResponseId(result.result.id));
 
   // wrap-output-storage runs exactly once on the synthesized compaction
   // events, with snapshotMode='replace'.

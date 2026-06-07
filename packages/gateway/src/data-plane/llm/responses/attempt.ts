@@ -1,5 +1,6 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
+import { createStoredResponseId } from './items/format.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
@@ -48,7 +49,7 @@ export const responsesAttempt = {
       store,
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
-    return await runInterceptors(invocation, ctx, responsesInterceptors, async () => {
+    const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () => {
       // Rewriting stored items happens inside the chain runner so interceptors
       // (server-tool shim, vendor normalizers) can adjust the payload first;
       // the rewrite then resolves item references against the chosen
@@ -61,20 +62,32 @@ export const responsesAttempt = {
       // can recover real prior-turn results instead of placeholder fallbacks.
       store.beginAttempt(rewritten.references);
 
-      const inner = await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
-      if (inner.type !== 'events') return inner;
-      return eventResult(
-        wrapResponsesOutputForStorage(inner.events, {
-          store,
-          upstream: candidate.binding.upstream,
-          snapshotMode,
-          targetApi: candidate.targetApi,
-        }),
-        inner.modelIdentity,
-        inner.performance,
-        inner.finalMetadata,
-      );
+      return await dispatchResponses(rewritten.payload, ctx, store, candidate, invocation.headers);
     });
+
+    if (chainResult.type !== 'events') return chainResult;
+
+    // Persistence and id rewriting wrap the *outermost* stream — after every
+    // interceptor (including the server-tool shim) has emitted its final
+    // events. This is the only seam at which the gateway-owned response id
+    // is minted; whatever id any inner layer produced (the upstream's blob,
+    // the shim's internal `resp_shim_*` placeholder) is overwritten to a
+    // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
+    // is committed under the same id so the next turn's
+    // `previous_response_id` lookup is guaranteed to hit.
+    const responseId = createStoredResponseId();
+    return eventResult(
+      wrapResponsesOutputForStorage(chainResult.events, {
+        store,
+        upstream: candidate.binding.upstream,
+        snapshotMode,
+        targetApi: candidate.targetApi,
+        responseId,
+      }),
+      chainResult.modelIdentity,
+      chainResult.performance,
+      chainResult.finalMetadata,
+    );
   },
 
   compact: async (args: ResponsesAttemptCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -93,17 +106,20 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    const compacted = await collectResponsesProtocolEventsToResult(chainResult.events);
+    const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
     // Drive storage and snapshot via the same wrapper generate uses; the
-    // events here are synthesized from the compaction envelope so the
-    // upstream-owned ids it carries persist identically to a native call.
-    await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(compacted), {
+    // events here are synthesized from the compaction envelope so item
+    // persistence and the snapshot key are produced under the same id the
+    // client will see.
+    const responseId = createStoredResponseId();
+    await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
       store,
       upstream: candidate.binding.upstream,
       snapshotMode: 'replace',
       targetApi: 'responses',
+      responseId,
     }));
-    return { type: 'result', result: compacted };
+    return { type: 'result', result: { ...upstreamCompacted, id: responseId } };
   },
 };
 

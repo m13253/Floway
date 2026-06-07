@@ -14,6 +14,16 @@ import type { LlmTargetApi } from '@floway-dev/provider';
 // at the terminal `response.completed` / `response.incomplete` frame.
 // `onItemFinalized` is awaited before the terminal frame is yielded, so a
 // client that has seen the frame can reference the row on its next turn.
+//
+// Wrap is also the single source of truth for the response envelope id the
+// client sees. The caller mints a `resp_<crc>_<body>` once and passes it
+// in here; every envelope event (`response.created`, `response.in_progress`,
+// `response.completed`, `response.incomplete`, `response.failed`) yielded
+// downstream has its `response.id` rewritten to it, and the snapshot is
+// committed under the same id. Whatever id the upstream produced
+// (Copilot's encrypted blob, OpenAI's `resp_*`, the server-tool runtime's
+// internal `resp_shim_*` placeholder) is discarded at this seam — we never
+// persist or surface an upstream-owned response id.
 export const wrapResponsesOutputForStorage = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
@@ -21,9 +31,10 @@ export const wrapResponsesOutputForStorage = async function* (
     readonly upstream: string;
     readonly snapshotMode: ResponsesSnapshotMode;
     readonly targetApi: LlmTargetApi;
+    readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, upstream, snapshotMode, targetApi } = args;
+  const { store, upstream, snapshotMode, targetApi, responseId } = args;
   const upstreamToStored = new Map<string, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
@@ -86,6 +97,16 @@ export const wrapResponsesOutputForStorage = async function* (
     }
     const event = frame.event;
 
+    // Envelope events that carry `response.id` — overwrite to the
+    // gateway-minted id before any downstream consumer (SSE writer, WS
+    // forwarder, snapshot collector) sees them. Item-level events
+    // (`response.output_item.*`, delta events) do not carry `response.id`
+    // and are handled below.
+    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+      yield eventFrame({ ...event, response: { ...event.response, id: responseId } });
+      continue;
+    }
+
     if (event.type === 'response.output_item.added') {
       const upstreamId = itemId(event.item);
       if (upstreamId === null) { yield frame; continue; }
@@ -121,10 +142,9 @@ export const wrapResponsesOutputForStorage = async function* (
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
       }
-      const responseId = event.response.id;
       const rewritten = eventFrame({
         ...event,
-        response: { ...event.response, output: output as typeof event.response.output },
+        response: { ...event.response, id: responseId, output: output as typeof event.response.output },
       });
       // Commit BEFORE yielding the terminal frame: a consumer that
       // breaks the for-await on the terminal yield never gives this
@@ -142,7 +162,11 @@ export const wrapResponsesOutputForStorage = async function* (
       return;
     }
 
-    if (event.type === 'response.failed' || event.type === 'error') {
+    if (event.type === 'response.failed') {
+      yield eventFrame({ ...event, response: { ...event.response, id: responseId } });
+      return;
+    }
+    if (event.type === 'error') {
       yield frame;
       return;
     }

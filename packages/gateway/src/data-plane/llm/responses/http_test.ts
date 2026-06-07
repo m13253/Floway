@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { createStoredResponsesItemId } from './items/format.ts';
+import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
@@ -137,7 +137,10 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
   const body = await response.text();
   assert(body.includes('event: response.completed'));
-  assert(body.includes('"id":"resp_test"'));
+  // Wrap layer mints its own response id; upstream's "resp_test" is discarded.
+  const completedMatch = body.match(/"id":"(resp_[A-Za-z0-9_-]+)"/);
+  assert(completedMatch !== null, 'expected a floway-minted resp_ id in the SSE body');
+  assert(isStoredResponseId(completedMatch[1]));
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -159,7 +162,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as ResponsesResult;
-  assertEquals(body.id, 'resp_nonstream');
+  assert(isStoredResponseId(body.id), `expected floway-minted resp_ id, got ${body.id}`);
   assertEquals(body.status, 'completed');
 });
 
@@ -189,8 +192,9 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { object: string };
+  const body = await response.json() as { object: string; id: string };
   assertEquals(body.object, 'response.compaction');
+  assert(isStoredResponseId(body.id), `expected floway-minted resp_ id, got ${body.id}`);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
