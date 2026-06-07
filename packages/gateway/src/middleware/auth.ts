@@ -75,9 +75,6 @@ const extractApiKey = (c: Context): string | null => {
     ?? null;
 };
 
-const apiKeyUpstreamIdsFromContext = (c: Context): readonly string[] | null =>
-  (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
-
 export const userUpstreamIdsFromContext = (c: Context): readonly string[] | null =>
   (c.get('userUpstreamIds') as readonly string[] | null | undefined) ?? null;
 
@@ -87,7 +84,7 @@ export const userUpstreamIdsFromContext = (c: Context): readonly string[] | null
 // "no upstream available" error path.
 export const effectiveUpstreamIdsFromContext = (c: Context): readonly string[] | null => {
   const userIds = userUpstreamIdsFromContext(c);
-  const keyIds = apiKeyUpstreamIdsFromContext(c);
+  const keyIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
   if (userIds === null && keyIds === null) return null;
   if (userIds === null) return keyIds;
   if (keyIds === null) return userIds;

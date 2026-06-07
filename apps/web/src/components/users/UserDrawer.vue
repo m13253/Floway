@@ -6,9 +6,9 @@ import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
 import type { WireUser } from './types.ts';
 
-// The create response carries the synthesized default API key in cleartext for one-shot reveal.
 const open = defineModel<boolean>('open');
 
+// The create response carries the synthesized default API key in cleartext for one-shot reveal.
 const emit = defineEmits<{ created: [payload: { user: WireUser; defaultKey: { name: string; key: string } }] }>();
 
 const api = useApi();

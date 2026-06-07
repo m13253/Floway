@@ -79,8 +79,6 @@ const remove = async (u: WireUser) => {
   if (err) { window.alert(err.message); return; }
   await reload();
 };
-
-const dismissRevealed = () => { revealedKey.value = null; };
 </script>
 
 <template>
@@ -102,7 +100,7 @@ const dismissRevealed = () => { revealedKey.value = null; };
         </p>
         <div class="flex items-center gap-2">
           <Code :code="revealedKey.key" copyable class="flex-1 break-all" />
-          <Button variant="secondary" size="sm" @click="dismissRevealed">Dismiss</Button>
+          <Button variant="secondary" size="sm" @click="revealedKey = null">Dismiss</Button>
         </div>
       </div>
 
