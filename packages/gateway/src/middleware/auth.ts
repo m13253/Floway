@@ -75,7 +75,7 @@ const extractApiKey = (c: Context): string | null => {
     ?? null;
 };
 
-export const apiKeyUpstreamIdsFromContext = (c: Context): readonly string[] | null =>
+const apiKeyUpstreamIdsFromContext = (c: Context): readonly string[] | null =>
   (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
 
 export const userUpstreamIdsFromContext = (c: Context): readonly string[] | null =>

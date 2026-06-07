@@ -595,8 +595,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
-  // Users land first in v4 so api_keys' user_id references resolve. v3
-  // skips the users loop entirely.
+  // Users land first so api_keys' user_id references resolve.
   for (const user of users) await repo.users.save(user);
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);

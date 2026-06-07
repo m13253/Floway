@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button, Dialog, Spinner } from '@floway-dev/ui';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
@@ -40,45 +40,35 @@ const submit = async () => {
     error.value = 'Passwords do not match';
     return;
   }
+  if (props.mode === 'self' && !currentPassword.value) {
+    error.value = 'Current password is required';
+    return;
+  }
+  if (props.mode === 'admin' && props.targetUserId === undefined) {
+    error.value = 'Missing target user';
+    return;
+  }
   saving.value = true;
   error.value = null;
-  if (props.mode === 'self') {
-    if (!currentPassword.value) {
-      error.value = 'Current password is required';
-      saving.value = false;
-      return;
-    }
-    const { error: err } = await callApi(
-      () => api.api.users.me.password.$patch({ json: { currentPassword: currentPassword.value, newPassword: newPassword.value } }),
-    );
-    saving.value = false;
+  try {
+    const { error: err } = props.mode === 'self'
+      ? await callApi(() => api.api.users.me.password.$patch({ json: { currentPassword: currentPassword.value, newPassword: newPassword.value } }))
+      : await callApi(() => api.api.users[':id'].$patch({ param: { id: String(props.targetUserId) }, json: { password: newPassword.value } }));
     if (err) {
       error.value = err.message;
       return;
     }
-  } else {
-    if (props.targetUserId === undefined) {
-      saving.value = false;
-      error.value = 'Missing target user';
-      return;
-    }
-    const { error: err } = await callApi(
-      () => api.api.users[':id'].$patch({ param: { id: String(props.targetUserId) }, json: { password: newPassword.value } }),
-    );
+    open.value = false;
+    emit('saved');
+  } finally {
     saving.value = false;
-    if (err) {
-      error.value = err.message;
-      return;
-    }
   }
-  open.value = false;
-  emit('saved');
 };
 
-const title = (() => {
+const title = computed(() => {
   if (props.mode === 'self') return 'Change my password';
   return props.targetUsername ? `Reset password — ${props.targetUsername}` : 'Reset password';
-})();
+});
 </script>
 
 <template>

@@ -139,7 +139,6 @@ export const authLoginBody = z.object({
 // --- users ---
 
 const usernameSchema = z.string().regex(/^[a-zA-Z0-9_.\-]{1,64}$/, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
-const passwordSchema = z.string().min(1);
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because a key that allows zero upstreams cannot serve
@@ -151,7 +150,7 @@ const upstreamIdsValueSchema = z.array(z.string().min(1))
 
 export const createUserBody = z.object({
   username: usernameSchema,
-  password: passwordSchema,
+  password: z.string().min(1),
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),
@@ -159,7 +158,7 @@ export const createUserBody = z.object({
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
-  password: passwordSchema.optional(),
+  password: z.string().min(1).optional(),
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),

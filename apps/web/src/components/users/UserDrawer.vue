@@ -4,32 +4,12 @@ import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
+import type { WireUser } from './types.ts';
 
-// Create-only drawer for /api/users. The response includes the synthesized
-// Default API key in cleartext, which the parent surfaces in a one-shot
-// reveal alongside a Copy button.
+// The create response carries the synthesized default API key in cleartext for one-shot reveal.
 const open = defineModel<boolean>('open');
 
-const emit = defineEmits<{ created: [payload: { user: WireUser; defaultKey: WireKey }] }>();
-
-interface WireUser {
-  id: number;
-  username: string;
-  isAdmin: boolean;
-  upstreamIds: string[] | null;
-  canViewGlobalTelemetry: boolean;
-  createdAt: string;
-  deletedAt: string | null;
-}
-
-interface WireKey {
-  id: string;
-  name: string;
-  key: string;
-  created_at: string;
-  last_used_at: string | null;
-  upstream_ids: string[] | null;
-}
+const emit = defineEmits<{ created: [payload: { user: WireUser; defaultKey: { name: string; key: string } }] }>();
 
 const api = useApi();
 
@@ -62,7 +42,7 @@ const submit = async () => {
   }
   saving.value = true;
   error.value = null;
-  const { data, error: err } = await callApi<{ user: WireUser; defaultKey: WireKey }>(
+  const { data, error: err } = await callApi<{ user: WireUser; defaultKey: { name: string; key: string } }>(
     () => api.api.users.$post({
       json: {
         username: username.value,
@@ -77,9 +57,8 @@ const submit = async () => {
     error.value = err.message;
     return;
   }
-  if (!data) return;
   open.value = false;
-  emit('created', data);
+  emit('created', data!);
 };
 </script>
 

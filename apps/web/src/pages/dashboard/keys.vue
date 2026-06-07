@@ -38,7 +38,6 @@ const modelsStore = useModelsStore();
 const initialData = useKeysPageData();
 
 const keys = ref<ApiKey[]>(initialData.data.value.keys);
-const loading = ref(false);
 const error = ref<string | null>(initialData.data.value.error);
 const newName = ref('');
 const creating = ref(false);
@@ -48,14 +47,12 @@ const selectedKeyId = ref<string>('');
 const copied = ref<string | null>(null);
 
 const loadAll = async () => {
-  loading.value = true;
   error.value = null;
   const [keysRes] = await Promise.all([
     callApi<ApiKey[]>(() => api.api.keys.$get()),
     upstreamOptionsStore.load(),
     modelsStore.load(),
   ]);
-  loading.value = false;
   if (keysRes.error) {
     error.value = keysRes.error.message;
     return;

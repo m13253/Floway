@@ -2,16 +2,7 @@
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
-
-interface WireUser {
-  id: number;
-  username: string;
-  isAdmin: boolean;
-  upstreamIds: string[] | null;
-  canViewGlobalTelemetry: boolean;
-  createdAt: string;
-  deletedAt: string | null;
-}
+import type { WireUser } from '../../components/users/types.ts';
 
 export const useUsersPageData = defineBasicLoader(async () => {
   const api = useApiForLoader();

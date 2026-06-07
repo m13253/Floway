@@ -2,15 +2,7 @@
 import { OverlayScrollbars, Switch } from '@floway-dev/ui';
 import dayjs from 'dayjs';
 
-interface WireUser {
-  id: number;
-  username: string;
-  isAdmin: boolean;
-  upstreamIds: string[] | null;
-  canViewGlobalTelemetry: boolean;
-  createdAt: string;
-  deletedAt: string | null;
-}
+import type { WireUser } from './types.ts';
 
 defineProps<{
   users: WireUser[];

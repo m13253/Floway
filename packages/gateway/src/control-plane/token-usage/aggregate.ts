@@ -13,7 +13,6 @@ export interface DisplayUsageRecord {
   cost: number;
 }
 
-// Per-(user, model, hour) shape for the all-by-user telemetry view.
 export interface DisplayUsageByUserRecord {
   userId: number;
   model: string;
