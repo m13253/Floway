@@ -20,27 +20,57 @@ const apiKeyToJson = (key: ApiKey) => ({
   upstream_ids: key.upstreamIds,
 });
 
+const userUpstreamIdsFromCtx = (c: Context): readonly string[] | null =>
+  (c.get('userUpstreamIds') as readonly string[] | null | undefined) ?? null;
+
+const validateUpstreamIds = async (
+  c: Context,
+  proposed: readonly string[] | null | undefined,
+): Promise<string | null> => {
+  if (proposed === null || proposed === undefined) return null;
+  const upstreams = await getRepo().upstreams.list();
+  const known = new Set(upstreams.map(u => u.id));
+  const unknown = proposed.filter(id => !known.has(id));
+  if (unknown.length) return `unknown upstream id(s): ${unknown.join(', ')}`;
+
+  const userCap = userUpstreamIdsFromCtx(c);
+  if (userCap === null) return null;
+  const userSet = new Set(userCap);
+  const blocked = proposed.filter(id => !userSet.has(id));
+  return blocked.length
+    ? `upstream_ids contains entries outside your user-level whitelist: ${blocked.join(', ')}`
+    : null;
+};
+
+const ownedKeyOr404 = async (c: Context, id: string): Promise<ApiKey | Response> => {
+  const userId = c.get('userId') as number;
+  const key = await getRepo().apiKeys.getById(id);
+  // Returning 404 on foreign keys (rather than 403) avoids leaking the
+  // existence of another user's key id to the actor.
+  if (key?.userId !== userId) return c.json({ error: 'Key not found' }, 404);
+  return key;
+};
+
 export const listKeys = async (c: Context) => {
-  const isAdmin = c.get('isAdmin');
-  if (isAdmin) {
-    const keys = await getRepo().apiKeys.list();
-    return c.json(keys.map(k => apiKeyToJson(k)));
-  }
-  const keyId = c.get('apiKeyId') as string;
-  const key = await getRepo().apiKeys.getById(keyId);
-  return c.json(key ? [apiKeyToJson(key)] : []);
+  const userId = c.get('userId') as number;
+  const keys = await getRepo().apiKeys.listByUserId(userId);
+  return c.json(keys.map(apiKeyToJson));
 };
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
+  const userId = c.get('userId') as number;
   const body = c.req.valid('json');
-  const userId = (c.get('userId') as number | undefined) ?? 1;
+
+  const upstreamErr = await validateUpstreamIds(c, body.upstream_ids ?? null);
+  if (upstreamErr) return c.json({ error: upstreamErr }, 400);
+
   const key = {
     id: crypto.randomUUID(),
     userId,
     name: body.name,
     key: generateKey(),
     createdAt: new Date().toISOString(),
-    upstreamIds: null,
+    upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
   } satisfies ApiKey;
   await getRepo().apiKeys.save(key);
@@ -49,19 +79,19 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 
 export const deleteKey = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const deleted = await getRepo().apiKeys.softDelete(id);
-  if (!deleted) return c.json({ error: 'Key not found' }, 404);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
+  await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };
 
 export const rotateKey = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const repo = getRepo().apiKeys;
-  const existing = await repo.getById(id);
-  if (!existing) return c.json({ error: 'Key not found' }, 404);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
 
-  const updated = { ...existing, key: generateKey() } satisfies ApiKey;
-  await repo.save(updated);
+  const updated = { ...owned, key: generateKey() } satisfies ApiKey;
+  await getRepo().apiKeys.save(updated);
   return c.json(apiKeyToJson(updated));
 };
 
@@ -73,24 +103,19 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     return c.json({ error: 'at least one of name or upstream_ids must be provided' }, 400);
   }
 
-  // Schema enforces format and uniqueness; the only remaining domain check
-  // is that every referenced upstream id actually exists.
-  if (body.upstream_ids != null) {
-    const upstreams = await getRepo().upstreams.list();
-    const knownIds = new Set(upstreams.map(u => u.id));
-    const unknown = body.upstream_ids.filter(uid => !knownIds.has(uid));
-    if (unknown.length > 0) return c.json({ error: `unknown upstream id(s): ${unknown.join(', ')}` }, 400);
+  const owned = await ownedKeyOr404(c, id);
+  if (owned instanceof Response) return owned;
+
+  if (body.upstream_ids !== undefined) {
+    const err = await validateUpstreamIds(c, body.upstream_ids);
+    if (err) return c.json({ error: err }, 400);
   }
 
-  const repo = getRepo().apiKeys;
-  const existing = await repo.getById(id);
-  if (!existing) return c.json({ error: 'Key not found' }, 404);
-
   const updated: ApiKey = {
-    ...existing,
+    ...owned,
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
   };
-  await repo.save(updated);
+  await getRepo().apiKeys.save(updated);
   return c.json(apiKeyToJson(updated));
 };

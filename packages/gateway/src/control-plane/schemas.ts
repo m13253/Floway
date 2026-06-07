@@ -175,15 +175,13 @@ export const changeOwnPasswordBody = z.object({
 
 export const createKeyBody = z.object({
   name: z.string().min(1),
+  upstream_ids: userUpstreamIdsValueSchema.optional(),
 });
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because a key that allows zero upstreams cannot serve
 // any model and the UI has no affordance to express that intent.
-const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .min(1, 'upstream_ids must contain at least one upstream id; use null for Default mode')
-  .refine(arr => new Set(arr).size === arr.length, { message: 'upstream_ids contains duplicates' })
-  .nullable();
+const upstreamIdsValueSchema = userUpstreamIdsValueSchema;
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
