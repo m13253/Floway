@@ -19,7 +19,6 @@ export { kindFromUri } from './url-kind.ts';
 
 export type {
   ProxyConfig,
-  ProxyConfigBase,
   HttpProxyConfig,
   Socks5ProxyConfig,
   ShadowsocksProxyConfig,
