@@ -4,6 +4,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
+import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
 
@@ -29,15 +30,67 @@ interface LoaderSearchUsageResponse {
   activeProvider: string;
 }
 
+// All-by-user response payload — `userId` replaces `keyId`, `users` replaces
+// `keys`. The page normalizes both shapes into the per-key shape so the chart
+// and summary code can stay shape-agnostic.
+interface LoaderUsageByUserResponse {
+  records: Array<{
+    userId: number;
+    model: string;
+    hour: string;
+    requests: number;
+    tokens: Partial<Record<BillingDimension, number>>;
+    cost: number;
+  }>;
+  users: Array<{ id: number; username: string; deletedAt: string | null }>;
+  keyColorOrder: string[];
+}
+
+interface LoaderSearchUsageByUserResponse {
+  records: Array<{ provider: string; userId: number; hour: string; requests: number }>;
+  users: Array<{ id: number; username: string; deletedAt: string | null }>;
+  keyColorOrder: string[];
+  activeProvider: string;
+}
+
+const userBucketId = (userId: number): string => `user-${userId}`;
+const usersAsKeys = (users: ReadonlyArray<{ id: number; username: string }>) =>
+  users.map(u => ({ id: userBucketId(u.id), name: u.username, createdAt: '' }));
+const userRecordsAsKeyShape = (records: LoaderUsageByUserResponse['records']) =>
+  records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost }));
+const userSearchRecordsAsKeyShape = (records: LoaderSearchUsageByUserResponse['records']) =>
+  records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests }));
+
+const initialView = (canViewGlobal: boolean): 'all-by-user' | 'self-by-key' => canViewGlobal ? 'all-by-user' : 'self-by-key';
+
 export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
+  const auth = useAuthStoreForLoader();
+  const view = initialView(auth.canViewGlobalTelemetry);
   const { start, end } = dashboardRangeQueryForLoader('today');
+  if (view === 'all-by-user') {
+    const [usageRes, searchRes] = await Promise.all([
+      callApiForLoader<LoaderUsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApiForLoader<LoaderSearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      useModelsStoreForLoader().load(),
+    ]);
+    return {
+      view,
+      usage: usageRes.data
+        ? { records: userRecordsAsKeyShape(usageRes.data.records), keys: usersAsKeys(usageRes.data.users), keyColorOrder: usageRes.data.keyColorOrder }
+        : { records: [], keys: [], keyColorOrder: [] },
+      search: searchRes.data
+        ? { records: userSearchRecordsAsKeyShape(searchRes.data.records), keys: usersAsKeys(searchRes.data.users), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider }
+        : { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
+    };
+  }
   const [usageRes, searchRes] = await Promise.all([
     callApiForLoader<LoaderUsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     callApiForLoader<LoaderSearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     useModelsStoreForLoader().load(),
   ]);
   return {
+    view,
     usage: usageRes.data ?? { records: [], keys: [], keyColorOrder: [] },
     search: searchRes.data ?? { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
   };
@@ -56,6 +109,7 @@ import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBu
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
+import { useAuthStore } from '../../stores/auth.ts';
 
 interface DisplayUsageRecord {
   keyId: string;
@@ -90,6 +144,7 @@ type Range = DashboardRange;
 const dim = (r: DisplayUsageRecord, k: BillingDimension): number => r.tokens[k] ?? 0;
 
 const api = useApi();
+const auth = useAuthStore();
 const initialUsageData = useUsagePageData();
 const modelsStore = useModelsStore();
 
@@ -97,6 +152,11 @@ const tokenRange = ref<Range>('today');
 const loadedTokenRange = ref<Range>('today');
 const tokenChartMetric = ref<Metric>('total');
 const redactKeys = ref(false);
+// `view` controls whether the page aggregates per-key (the user's own keys) or
+// per-user (everyone's, for admins and grant-holders). The picker UI is hidden
+// when the actor lacks `canViewGlobalTelemetry`; the value is then pinned to
+// `self-by-key` so the gateway returns the actor's slice.
+const view = ref<'all-by-user' | 'self-by-key'>(initialUsageData.data.value.view);
 const data = ref<UsageResponse | null>(initialUsageData.data.value.usage);
 const searchData = ref<SearchUsageResponse | null>(initialUsageData.data.value.search);
 const tokenLoading = ref(false);
@@ -120,17 +180,31 @@ const toggleHidden = (set: Set<string>, id: string) => {
 const load = async () => {
   const requestId = ++usageRequestId;
   const requestedRange = tokenRange.value;
+  const requestedView = view.value;
   tokenLoading.value = true;
   searchUsageLoading.value = true;
   const { start, end } = dashboardRangeQuery(requestedRange);
   try {
-    const [usageRes, searchRes] = await Promise.all([
-      callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
-      callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
-    ]);
-    if (requestId !== usageRequestId || tokenRange.value !== requestedRange) return;
-    if (usageRes.data) data.value = usageRes.data;
-    if (searchRes.data) searchData.value = searchRes.data;
+    const [usageRes, searchRes] = requestedView === 'all-by-user'
+      ? await Promise.all([
+        callApi<LoaderUsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+        callApi<LoaderSearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      ])
+      : await Promise.all([
+        callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+        callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+      ]);
+    if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
+    if (usageRes.data) {
+      data.value = requestedView === 'all-by-user'
+        ? { records: userRecordsAsKeyShape((usageRes.data as LoaderUsageByUserResponse).records), keys: usersAsKeys((usageRes.data as LoaderUsageByUserResponse).users), keyColorOrder: usageRes.data.keyColorOrder }
+        : usageRes.data as UsageResponse;
+    }
+    if (searchRes.data) {
+      searchData.value = requestedView === 'all-by-user'
+        ? { records: userSearchRecordsAsKeyShape((searchRes.data as LoaderSearchUsageByUserResponse).records), keys: usersAsKeys((searchRes.data as LoaderSearchUsageByUserResponse).users), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: (searchRes.data as LoaderSearchUsageByUserResponse).activeProvider }
+        : searchRes.data as SearchUsageResponse;
+    }
     loadedTokenRange.value = requestedRange;
   } finally {
     if (requestId === usageRequestId) {
@@ -147,6 +221,7 @@ const switchTokenRange = (r: Range) => {
 const switchTokenChartMetric = (m: string) => { tokenChartMetric.value = m as Metric; };
 
 watch(tokenRange, load);
+watch(view, load);
 useIntervalFn(load, 60_000);
 
 const tokenSummary = computed(() => {
@@ -583,11 +658,25 @@ const formatCost = (v: number) => {
     <div class="glass-card p-6 animate-in">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage — By Key</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage — {{ view === 'all-by-user' ? 'By User' : 'By Key' }}</span>
+          <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'all-by-user'"
+            >All by user</button>
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'self-by-key'"
+            >My keys</button>
+          </div>
           <button
             class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1 transition-colors text-gray-600 hover:text-gray-400 hover:bg-white/[0.04]"
-            aria-label="Toggle key name redaction"
-            title="Redact key names"
+            :aria-label="view === 'all-by-user' ? 'Toggle user name redaction' : 'Toggle key name redaction'"
+            :title="view === 'all-by-user' ? 'Redact usernames' : 'Redact key names'"
             @click="redactKeys = !redactKeys"
           >
             <svg v-if="!redactKeys" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -3,6 +3,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
+import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 interface LoaderPerformanceRecord {
   bucket: string;
@@ -23,13 +24,18 @@ interface LoaderOverviewResponse {
   runtimeRows: LoaderPerformanceRecord[];
 }
 
+const initialPerformanceView = (canViewGlobal: boolean): 'all-by-user' | 'self-by-key' =>
+  canViewGlobal ? 'all-by-user' : 'self-by-key';
+
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
+  const auth = useAuthStoreForLoader();
+  const view = initialPerformanceView(auth.canViewGlobalTelemetry);
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
   const { data } = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: 'self-by-key' },
+    query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
   }));
-  return data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] };
+  return { view, overview: data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] } };
 });
 </script>
 
@@ -43,6 +49,7 @@ import { computed, ref, watch, watchEffect } from 'vue';
 import { callApi, useApi } from '../../api/client.ts';
 import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import { useAuthStore } from '../../stores/auth.ts';
 
 interface DisplayRecord {
   bucket: string;
@@ -68,6 +75,7 @@ type ChartView = 'model' | 'percentile';
 type PercentileKey = 'p50Ms' | 'p95Ms' | 'p99Ms';
 
 const api = useApi();
+const auth = useAuthStore();
 const initialOverview = usePerformancePageData();
 
 const performanceRange = ref<Range>('today');
@@ -76,9 +84,12 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
+// `view` mirrors the Token Usage page: hidden picker for callers without
+// `canViewGlobalTelemetry`, defaults to `all-by-user` for everyone with the flag.
+const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
 
-const series = ref<DisplayRecord[]>(initialOverview.data.value.series);
-const overview = ref<OverviewResponse | null>(initialOverview.data.value);
+const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);
+const overview = ref<OverviewResponse | null>(initialOverview.data.value.overview);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
 
@@ -100,12 +111,13 @@ const load = async () => {
   const requestId = ++performanceRequestId;
   const requestedRange = performanceRange.value;
   const requestedScope = performanceMetricScope.value;
+  const requestedView = view.value;
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
   const { data } = await callApi<OverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: 'self-by-key' },
+    query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView },
   }));
-  if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope) return;
+  if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope || view.value !== requestedView) return;
   if (data) {
     overview.value = data;
     series.value = data.series;
@@ -114,7 +126,7 @@ const load = async () => {
   performanceLoading.value = false;
 };
 
-watch([performanceRange, performanceMetricScope], load);
+watch([performanceRange, performanceMetricScope, view], load);
 useIntervalFn(load, 60_000);
 
 const seriesValue = (r: DisplayRecord, p: PercentileKey) => r[p];
@@ -271,6 +283,20 @@ const formatDuration = formatDurationMs;
       <div class="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex items-center gap-3">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Performance</span>
+          <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'all-by-user'"
+            >All by user</button>
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'self-by-key'"
+            >My keys</button>
+          </div>
           <Spinner v-if="performanceLoading" class="h-3.5 w-3.5 text-gray-500" />
         </div>
         <div class="flex max-w-full flex-wrap items-center gap-2">
