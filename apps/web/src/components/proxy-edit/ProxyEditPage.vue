@@ -210,12 +210,18 @@ const cancel = async () => {
 };
 
 const test = async () => {
-  if (!props.record) return;
+  // Capture the id once: with the parent now passing `record` reactively
+  // from the store, props.record could go null mid-flight if the row is
+  // deleted by another action. Read the id synchronously and let the
+  // request finish against the captured value rather than crashing on a
+  // non-null assertion later.
+  const id = props.record?.id;
+  if (!id) return;
   testing.value = true;
   testError.value = null;
   try {
     const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
-      () => api.api.proxies[':id'].test.$post({ param: { id: props.record!.id }, json: {} }),
+      () => api.api.proxies[':id'].test.$post({ param: { id }, json: {} }),
     );
     if (error) { testError.value = error.message; return; }
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }

@@ -4,6 +4,9 @@ declare module 'cloudflare:sockets' {
     readonly readable: ReadableStream<Uint8Array>;
     readonly writable: WritableStream<Uint8Array>;
     readonly closed: Promise<void>;
+    /** Resolves when the underlying TCP / TLS handshake has finished;
+     *  rejects with the connect / handshake error otherwise. */
+    readonly opened: Promise<void>;
     close(): Promise<void>;
   }
   interface SocketAddress {
@@ -11,7 +14,7 @@ declare module 'cloudflare:sockets' {
     port: number;
   }
   interface SocketOptions {
-    allowHalfOpen?: boolean;
+    allowHalfOpen: boolean;
     secureTransport?: 'off' | 'on' | 'starttls';
   }
   export const connect: (address: SocketAddress, options?: SocketOptions) => CloudflareSocket;

@@ -93,23 +93,64 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   const status = parseInt(m[2]!, 10);
 
   const respHeaders = new Headers();
+  // Track raw header lines so we can validate framing-related fields off
+  // the unmerged values. `Headers.get('content-length')` collapses two
+  // separate `Content-Length` headers into `5, 5` and `parseInt` then
+  // accepts the first value silently — that's the classic HTTP-smuggling
+  // shape (RFC 9112 §6.3 mandates rejecting messages with multiple
+  // distinct Content-Lengths). Same applies to the chunked detection.
+  const rawContentLengths: string[] = [];
+  const rawTransferEncodings: string[] = [];
   for (const line of lines) {
     const idx = line.indexOf(':');
     if (idx < 0) continue;
-    respHeaders.append(line.slice(0, idx).trim(), line.slice(idx + 1).trim());
+    const name = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    const lower = name.toLowerCase();
+    if (lower === 'content-length') rawContentLengths.push(value);
+    else if (lower === 'transfer-encoding') rawTransferEncodings.push(value);
+    respHeaders.append(name, value);
   }
 
-  const transferEncoding = (respHeaders.get('transfer-encoding') ?? '').toLowerCase();
-  const contentLength = respHeaders.get('content-length');
+  // RFC 9112 §6.3: a message with both Transfer-Encoding and
+  // Content-Length is an error (the sender is broken or actively
+  // smuggling). Reject loud rather than picking one.
+  if (rawTransferEncodings.length > 0 && rawContentLengths.length > 0) {
+    throw new Error('HTTP/1.1 response has both Transfer-Encoding and Content-Length');
+  }
+  // RFC 9112 §6.3: multiple Content-Length values are an error unless
+  // every value is the same single token. We forbid duplicates outright.
+  if (rawContentLengths.length > 1) {
+    throw new Error(`HTTP/1.1 response has ${rawContentLengths.length} Content-Length headers`);
+  }
+
+  // Parse Transfer-Encoding as a token list; `chunked` MUST be the final
+  // (or only) coding. Anything else (gzip, identity, etc.) framed without
+  // chunked has no defined termination and we don't decode them anyway.
+  const teTokens = rawTransferEncodings
+    .flatMap(v => v.split(','))
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t !== '');
+  const teIsChunked = teTokens.length > 0 && teTokens[teTokens.length - 1] === 'chunked';
+  if (teTokens.length > 0 && !teIsChunked) {
+    throw new Error(`HTTP/1.1 response has Transfer-Encoding without chunked: ${teTokens.join(',')}`);
+  }
+  if (teTokens.filter(t => t === 'chunked').length > 1) {
+    throw new Error('HTTP/1.1 response has chunked listed more than once in Transfer-Encoding');
+  }
+  const contentLength = rawContentLengths[0] ?? null;
 
   let body: ReadableStream<Uint8Array>;
   let mode: 'chunked' | 'length' | 'eof';
-  if (transferEncoding.includes('chunked')) {
+  if (teIsChunked) {
     body = chunkedBody(reader, remainder);
     mode = 'chunked';
     respHeaders.delete('transfer-encoding');
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
+    if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
+      throw new Error(`HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`);
+    }
     body = lengthBody(reader, remainder, total);
     mode = 'length';
   } else {

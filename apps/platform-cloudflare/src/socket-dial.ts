@@ -10,8 +10,12 @@ import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
 // before opening a socket; once opened, an abort closes the socket — the
 // proxy runners observe that as a read/write rejection. The listener is
-// detached on close() so a long-lived caller signal doesn't accumulate one
-// pinned closure per dial.
+// detached on close() and on natural socket close so a long-lived caller
+// signal doesn't accumulate one pinned closure per dial.
+//
+// We `await socket.opened` before resolving so a TLS handshake error or
+// connect-refused surfaces as a connect-time rejection (with `cause`)
+// rather than as an opaque first-read failure later.
 export const cloudflareSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) {
@@ -30,17 +34,36 @@ export const cloudflareSocketDial: SocketDial = {
       try { await socket.close(); } catch { /* already closed/errored */ }
     };
     let abortListener: (() => void) | null = null;
-    if (opts?.signal) {
-      const signal = opts.signal;
-      abortListener = (): void => { void safeClose(); };
-      signal.addEventListener('abort', abortListener, { once: true });
-    }
     const removeAbortListener = (): void => {
       if (abortListener && opts?.signal) {
         opts.signal.removeEventListener('abort', abortListener);
         abortListener = null;
       }
     };
+    if (opts?.signal) {
+      const signal = opts.signal;
+      abortListener = (): void => { void safeClose(); };
+      signal.addEventListener('abort', abortListener, { once: true });
+    }
+    // Drop the abort listener on natural close as well, so a signal that
+    // outlives this dial doesn't accumulate stale closures.
+    void socket.closed.finally(removeAbortListener);
+
+    try {
+      await socket.opened;
+    } catch (cause) {
+      removeAbortListener();
+      await safeClose();
+      throw new Error(`dial ${host}:${port} failed`, { cause });
+    }
+
+    // The signal may have aborted during the await above; recheck so we
+    // don't return a socket that we already torn down.
+    if (opts?.signal?.aborted) {
+      await safeClose();
+      throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
+    }
+
     return {
       readable: socket.readable,
       writable: socket.writable,
