@@ -110,7 +110,7 @@ const dialShadowsocksInner = async (
   };
 
   // Build the SS address header for the first payload chunk.
-  const addrBytes = buildSocksAddress(target.host, target.port);
+  const addrBytes = buildSsAddress(target.host, target.port);
 
   // Encrypt and send: [salt] + frame(addr+initialPayload). For an AEAD frame,
   // we encrypt up to MAX_PAYLOAD plaintext bytes per record. The first record
@@ -241,7 +241,17 @@ const nonceBytes = (counter: bigint): Uint8Array<ArrayBuffer> => {
   return out;
 };
 
-const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer> => {
+/**
+ * OpenSSL's EVP_BytesToKey — MD5-chained key derivation. Used by SS to turn
+ * a UTF-8 password into a fixed-length symmetric key.
+ *
+ *   M0 = MD5(password)
+ *   Mi = MD5(M(i-1) || password)
+ *   key = (M0 || M1 || …)[0..keyLen]
+ *
+ * Exported for tests.
+ */
+export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer> => {
   const pw = asciiBytes(password);
   const out = new Uint8Array(keyLen);
   let prev = new Uint8Array(0);
@@ -260,7 +270,17 @@ const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer
 const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
   new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
 
-const buildSocksAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
+/**
+ * Build the SS-style request address: ATYP | addr | port[BE].
+ *
+ * SS only ever uses ATYP=0x03 (domain) on the dial side — the dialer
+ * resolves nothing locally; the SS server runs the DNS lookup. v4/v6
+ * literals would still pass through the domain-typed encoding because
+ * SS servers parse them by string.
+ *
+ * Exported for tests.
+ */
+export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   if (dom.byteLength > 255) throw new Error('SS: address too long');
