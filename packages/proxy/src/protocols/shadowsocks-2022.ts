@@ -138,6 +138,11 @@ async function runShadowsocks2022Inner(
   await writer.write(initialOut);
   writer.releaseLock();
 
+  // See shadowsocks.ts for the same fail-classification rationale: an AEAD
+  // auth failure before the receive side has produced any plaintext is
+  // overwhelmingly a misconfigured key, so flag the dial as
+  // proxy-handshake to let the dial layer fall through cleanly.
+  let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
@@ -164,6 +169,7 @@ async function runShadowsocks2022Inner(
           if (firstLen > MAX) throw new ProxyDialError(`SS2022: bad first payload length ${firstLen}`, 'proxy-handshake');
           const firstSealed = await readN(firstLen + TAG);
           const firstPlain = recvCipher.decrypt(nonce(recvNonce++), firstSealed);
+          recvBootstrapped = true;
           if (firstPlain.byteLength) controller.enqueue(firstPlain as Uint8Array<ArrayBuffer>);
           return;
         }
@@ -179,6 +185,10 @@ async function runShadowsocks2022Inner(
         const pt = recvCipher.decrypt(nonce(recvNonce++), ptSealed);
         controller.enqueue(pt as Uint8Array<ArrayBuffer>);
       } catch (e) {
+        if (!recvBootstrapped && !(e instanceof ProxyDialError)) {
+          controller.error(new ProxyDialError(`SS2022 handshake decrypt failed: ${e instanceof Error ? e.message : String(e)}`, 'proxy-handshake', { cause: e }));
+          return;
+        }
         controller.error(e);
       }
     },

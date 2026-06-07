@@ -237,17 +237,17 @@ async function runRealityInner(
     }
   })();
 
+  let detachAbortListener: (() => void) | null = null;
   if (opts.signal) {
-    opts.signal.addEventListener(
-      'abort',
-      () => {
-        const reason = opts.signal!.reason ?? new DOMException('aborted', 'AbortError');
-        if (!handshakeOk) handshakeReject(reason);
-        else plainController?.error(reason);
-        void reader.cancel(reason).catch(() => {});
-      },
-      { once: true },
-    );
+    const captured = opts.signal;
+    const onAbort = (): void => {
+      const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
+      if (!handshakeOk) handshakeReject(reason);
+      else plainController?.error(reason);
+      void reader.cancel(reason).catch(() => {});
+    };
+    captured.addEventListener('abort', onAbort, { once: true });
+    detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);
   }
 
   // Trigger the handshake with our pre-built sessionId and random.
@@ -255,6 +255,7 @@ async function runRealityInner(
   try {
     await handshakeDone;
   } catch (cause) {
+    detachAbortListener?.();
     // The REALITY handshake combines outer TLS framing with the auth seal in
     // session_id; we can't tell whether the server rejected the seal or the
     // TLS handshake itself failed, so we tag the whole leg as outer-tls.
@@ -262,6 +263,7 @@ async function runRealityInner(
     try { writer.releaseLock(); } catch { /* lock already released */ }
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
+  detachAbortListener?.();
 
   // After REALITY auth, the inner protocol is VLESS by convention.
   return await runVlessCoreOverStream(

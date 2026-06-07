@@ -125,6 +125,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec, signal: AbortSi
       serverPort: config.port,
       uuid: config.uuid,
       path: config.path,
+      wsHost: config.wsHost,
       target,
       signal,
     });

@@ -136,6 +136,13 @@ async function runShadowsocksInner(
   // record before forwarding to the underlying socket.
   writer.releaseLock();
 
+  // Track whether the SS receive side has produced any successful payload
+  // yet — before the first plaintext is enqueued, an AEAD auth failure is
+  // overwhelmingly likely to mean wrong password / wrong cipher (i.e. a
+  // misconfigured proxy), and tagging it as `proxy-handshake` lets the dial
+  // layer fall through to the next entry instead of masquerading the cause
+  // as an opaque inner-TLS failure.
+  let recvBootstrapped = false;
   // Build the SS-decrypted readable
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -158,8 +165,13 @@ async function runShadowsocksInner(
         const payloadSealed = await readExactly(payloadLen + TAG_LEN);
         const payloadPlain = recvCipher.decrypt(nonceBytes(recvNonce), payloadSealed);
         recvNonce++;
+        recvBootstrapped = true;
         controller.enqueue(payloadPlain as Uint8Array<ArrayBuffer>);
       } catch (e) {
+        if (!recvBootstrapped && !(e instanceof ProxyDialError)) {
+          controller.error(new ProxyDialError(`SS handshake decrypt failed: ${e instanceof Error ? e.message : String(e)}`, 'proxy-handshake', { cause: e }));
+          return;
+        }
         controller.error(e);
       }
     },

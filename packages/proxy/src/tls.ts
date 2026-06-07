@@ -87,6 +87,15 @@ export async function userspaceTls(
   const writer = transport.writable.getWriter();
   const reader = transport.readable.getReader();
 
+  // Detach the abort listener on every teardown path so a long-lived caller
+  // signal (e.g. a request controller shared across many dials) doesn't
+  // accumulate one closure per dial pinning the closed-over streams.
+  let detachAbortListener: (() => void) | null = null;
+  const cleanupSignal = (): void => {
+    detachAbortListener?.();
+    detachAbortListener = null;
+  };
+
   // App-data downward stream (TLS plaintext → consumer)
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   const plainReadable = new ReadableStream<Uint8Array>({
@@ -96,6 +105,7 @@ export async function userspaceTls(
     // skip their controller calls, and signal end-of-stream upward.
     cancel() {
       plainClosed = true;
+      cleanupSignal();
       void tlsClient?.end().catch(logTlsTeardownError);
       void reader.cancel().catch(() => {});
       void writer.close().catch(logTlsTeardownError);
@@ -158,6 +168,7 @@ export async function userspaceTls(
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
+    cleanupSignal();
     if (error) safeError(error);
     else safeClose();
     void writer.close().catch(logTlsTeardownError);
@@ -230,19 +241,22 @@ export async function userspaceTls(
   void pump;
 
   if (opts.signal) {
+    const captured = opts.signal;
     const onAbort = (): void => {
-      const reason = opts.signal!.reason ?? new DOMException('aborted', 'AbortError');
+      const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
       if (!handshakeOk) handshakeReject(reason);
       else closePlain(reason);
       void reader.cancel(reason).catch(() => {});
     };
-    opts.signal.addEventListener('abort', onAbort, { once: true });
+    captured.addEventListener('abort', onAbort, { once: true });
+    detachAbortListener = (): void => { captured.removeEventListener('abort', onAbort); };
   }
 
   try {
     await tlsClient.startHandshake();
     await handshakeDone;
   } catch (err) {
+    cleanupSignal();
     // Handshake never completed: the reader still holds the transport.readable
     // lock and the writer holds transport.writable. Cancel both so the caller
     // can close the underlying socket cleanly without an orphaned stream lock.
@@ -258,11 +272,11 @@ export async function userspaceTls(
 // already closed" but a real bug would otherwise be silenced. Gate behind
 // an env flag so we don't log on Workers (where we don't want any noise on
 // the hot path).
+interface NodeProcessShape { env?: { FLOWAY_DEBUG_TLS?: string } }
 const logTlsTeardownError = (e: unknown): void => {
-
-  const env = (globalThis as any).process?.env;
-  if (env?.FLOWAY_DEBUG_TLS) {
-
+  const proc = (globalThis as unknown as { process?: NodeProcessShape }).process;
+  if (proc?.env?.FLOWAY_DEBUG_TLS) {
+    // eslint-disable-next-line no-console
     console.debug('[userspace-tls] teardown:', e);
   }
 };

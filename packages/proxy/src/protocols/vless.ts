@@ -12,9 +12,8 @@
 // followed by transparent payload. We parse and discard the reply prefix.
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
+import { type TargetSpec } from '../types.js';
+import { runVlessCoreOverStream } from './vless-core.js';
 import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
 
 // Workerd-only WebSocket surface used for the WS transport. We re-declare the
@@ -52,38 +51,10 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
   }
 
   try {
-    return await runVlessTcpInner(socket, uuid, target, signal);
+    return await runVlessCoreOverStream(socket, uuid, target, signal);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
-  }
-}
-
-async function runVlessTcpInner(
-  socket: DialedSocket,
-  uuid: string,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
-  const header = buildVlessHeader(uuid, target);
-  const writer = socket.writable.getWriter();
-  await writer.write(header);
-  writer.releaseLock();
-
-  // Strip the VLESS reply prefix lazily — it only arrives after the upstream
-  // sees our first inner-payload bytes (e.g. TLS ClientHello).
-  const stripped = stripVlessReplyPrefix(socket.readable);
-
-  if (target.tls) {
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls({ readable: stripped, writable: socket.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
-    } catch (cause) {
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    return await runHttp1({ readable: stripped, writable: socket.writable }, target);
   }
 }
 
@@ -92,19 +63,21 @@ export interface VlessWsTlsOptions {
   serverPort: number;
   uuid: string;
   path: string;
+  /** Optional Host header for domain fronting; defaults to serverHost. */
+  wsHost?: string;
   target: TargetSpec;
   signal?: AbortSignal;
 }
 
 export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> {
-  const { serverHost, serverPort, uuid, path, target, signal } = opts;
+  const { serverHost, serverPort, uuid, path, wsHost, target, signal } = opts;
 
   // Use Worker fetch() to do the WS upgrade — workerd handles outer TLS for us.
   const wsUrl = `https://${serverHost}:${serverPort}${path}`;
   let resp: Response;
   try {
     resp = await fetch(wsUrl, {
-      headers: { Upgrade: 'websocket', Host: serverHost },
+      headers: { Upgrade: 'websocket', Host: wsHost ?? serverHost },
       signal,
     });
   } catch (cause) {
@@ -123,130 +96,28 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   // ws.accept() so we don't miss any early messages.
   const transport = wsAsDuplex(ws);
   ws.accept();
+
+  // The signal listener fires during the dial + handshake legs; once
+  // runVlessCoreOverStream returns, response-time cancellation propagates
+  // through the inner TLS layer's own signal-aware streams. Detach the
+  // listener before returning so a long-lived caller signal doesn't
+  // accumulate one closure per dial.
+  let detachAbortListener: (() => void) | null = null;
   if (signal) {
-    signal.addEventListener(
-      'abort',
-      () => { try { ws.close(1000, 'aborted'); } catch { /* WS already closed */ } },
-      { once: true },
-    );
+    const onAbort = (): void => { try { ws.close(1000, 'aborted'); } catch { /* WS already closed */ } };
+    signal.addEventListener('abort', onAbort, { once: true });
+    detachAbortListener = (): void => signal.removeEventListener('abort', onAbort);
   }
 
   try {
-    return await runVlessWsInner(transport, uuid, target, signal);
+    const response = await runVlessCoreOverStream(transport, uuid, target, signal);
+    detachAbortListener?.();
+    return response;
   } catch (err) {
+    detachAbortListener?.();
     try { ws.close(1011, 'dial failed'); } catch { /* WS already closed */ }
     throw err;
   }
-}
-
-async function runVlessWsInner(
-  transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
-  uuid: string,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
-  const header = buildVlessHeader(uuid, target);
-  const wsWriter = transport.writable.getWriter();
-  await wsWriter.write(header);
-  wsWriter.releaseLock();
-
-  const stripped = stripVlessReplyPrefix(transport.readable);
-
-  if (target.tls) {
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls({ readable: stripped, writable: transport.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
-    } catch (cause) {
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    return await runHttp1({ readable: stripped, writable: transport.writable }, target);
-  }
-}
-
-function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
-  const enc = new TextEncoder();
-  const dom = enc.encode(target.dialHost);
-  if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake');
-  const uuidBytes = parseUuid(uuid);
-  const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength);
-  let off = 0;
-  header[off++] = 0x00;
-  header.set(uuidBytes, off); off += 16;
-  header[off++] = 0x00;
-  header[off++] = 0x01;
-  header[off++] = (target.port >> 8) & 0xff;
-  header[off++] = target.port & 0xff;
-  header[off++] = 0x02;
-  header[off++] = dom.byteLength;
-  header.set(dom, off); off += dom.byteLength;
-  return header;
-}
-
-function parseUuid(s: string): Uint8Array {
-  const hex = s.replace(/-/g, '');
-  if (hex.length !== 32) throw new Error('bad UUID');
-  const out = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return out;
-}
-
-function stripVlessReplyPrefix(
-  source: ReadableStream<Uint8Array>,
-): ReadableStream<Uint8Array> {
-  // The reply prefix is sent only after the upstream responds. If we eagerly
-  // wait for it before the inner protocol writes its first bytes (e.g. TLS
-  // ClientHello), we deadlock — the upstream won't speak until we've sent
-  // the inner request. So we strip lazily on first pull.
-  const reader = source.getReader();
-  let stripped = false;
-  let buf = new Uint8Array(0);
-
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (!stripped) {
-        while (buf.byteLength < 2) {
-          const r = await reader.read();
-          if (r.done) {
-            controller.error(new ProxyDialError('VLESS reply: EOF before prefix', 'proxy-handshake'));
-            return;
-          }
-          buf = concat(buf, r.value);
-        }
-        // The version echo MUST be 0x00 — anything else is a server that
-        // didn't speak VLESS. Without this check, a misconfigured peer's
-        // reply would be silently fed to the inner TLS handshake and the
-        // failure would surface as an opaque TLS error rather than a
-        // typed proxy-handshake error the dial layer can classify.
-        if (buf[0] !== 0x00) {
-          controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
-          return;
-        }
-        const addonsLen = buf[1]!;
-        while (buf.byteLength < 2 + addonsLen) {
-          const r = await reader.read();
-          if (r.done) {
-            controller.error(new ProxyDialError('VLESS reply: EOF in addons', 'proxy-handshake'));
-            return;
-          }
-          buf = concat(buf, r.value);
-        }
-        stripped = true;
-        const remainder = copy(buf.subarray(2 + addonsLen));
-        if (remainder.byteLength) {
-          controller.enqueue(remainder);
-          return;
-        }
-      }
-      const r = await reader.read();
-      if (r.done) controller.close();
-      else controller.enqueue(copy(r.value));
-    },
-    cancel() {
-      reader.cancel().catch(() => {});
-    },
-  });
 }
 
 // Hard cap on the queued-but-not-yet-pulled bytes from the WS. LLM responses
@@ -377,17 +248,4 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
   });
 
   return { readable, writable };
-}
-
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
-}
-
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
 }
