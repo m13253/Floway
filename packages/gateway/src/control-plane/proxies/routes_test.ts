@@ -102,6 +102,28 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
   assertEquals(body.error?.startsWith('Invalid proxy URI:'), true);
 });
 
+test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_c', name: 'C', url: HTTP_URL, sortOrder: 2, dialTimeoutSeconds: null });
+
+  const resp = await requestApp('/api/proxies/reorder', authed(adminKey, { ids: ['p_c', 'p_a', 'p_b'] }));
+  assertEquals(resp.status, 200);
+  const list = (await resp.json()) as ProxyJson[];
+  assertEquals(list.map(p => p.id), ['p_c', 'p_a', 'p_b']);
+  assertEquals(list.map(p => p.sort_order), [0, 1, 2]);
+});
+
+test('POST /api/proxies/reorder rejects a non-permutation with 400', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
+
+  const resp = await requestApp('/api/proxies/reorder', authed(adminKey, { ids: ['p_a'] }));
+  assertEquals(resp.status, 400);
+});
+
 test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
   const { repo, adminKey } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });

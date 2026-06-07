@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
+import type { createProxyBody, reorderProxiesBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
 const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
@@ -13,6 +13,22 @@ const proxyUriValidationError = (err: unknown): string => `Invalid proxy URI: ${
 export const listProxies = async (c: Context) => {
   const proxies = await getRepo().proxies.list();
   return c.json(proxies.map(proxyRecordToJson));
+};
+
+export const reorderProxies = async (c: CtxWithJson<typeof reorderProxiesBody>) => {
+  const { ids } = c.req.valid('json');
+  const repo = getRepo();
+  // The repo enforces "ids is a permutation of the catalog" atomically.
+  // Surface its complaint as 400 so the dashboard can react: a stale
+  // snapshot (concurrent insert/delete) is the operator's signal to
+  // refresh the list and try again.
+  try {
+    await repo.proxies.bulkReorder(ids);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+  const updated = await repo.proxies.list();
+  return c.json(updated.map(proxyRecordToJson));
 };
 
 export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {

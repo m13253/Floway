@@ -649,6 +649,25 @@ class MemoryProxyRepo implements ProxyRepo {
     return this.store.delete(id);
   }
 
+  bulkReorder(ids: string[]): Promise<void> {
+    const incoming = new Set(ids);
+    if (ids.length !== this.store.size || ids.length !== incoming.size) {
+      return Promise.reject(new Error(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${this.store.size} rows)`));
+    }
+    for (const id of ids) {
+      if (!this.store.has(id)) {
+        return Promise.reject(new Error(`bulkReorder: unknown proxy id ${id}`));
+      }
+    }
+    const now = new Date().toISOString();
+    ids.forEach((id, index) => {
+      const existing = this.store.get(id)!;
+      if (existing.sortOrder === index) return;
+      this.store.set(id, { ...existing, sortOrder: index, updatedAt: now });
+    });
+    return Promise.resolve();
+  }
+
   recordTestSuccess(id: string, egressIp: string): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve();

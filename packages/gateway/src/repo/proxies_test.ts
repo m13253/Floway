@@ -84,3 +84,37 @@ test('proxies repo patch returns null for unknown id', async () => {
   const repo = new InMemoryRepo();
   assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
 });
+
+test('proxies repo bulkReorder rewrites sort_order to match the input array', async () => {
+  const repo = new InMemoryRepo();
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'c', name: 'C', url: 'socks5://host-c:1080', sortOrder: 2, dialTimeoutSeconds: null });
+
+  await repo.proxies.bulkReorder(['c', 'a', 'b']);
+  const list = await repo.proxies.list();
+  assertEquals(list.map(p => p.id), ['c', 'a', 'b']);
+  assertEquals(list.map(p => p.sortOrder), [0, 1, 2]);
+});
+
+test('proxies repo bulkReorder rejects a non-permutation', async () => {
+  const repo = new InMemoryRepo();
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+
+  // Missing id.
+  await repo.proxies.bulkReorder(['a']).then(
+    () => { throw new Error('expected bulkReorder to reject a missing id'); },
+    () => undefined,
+  );
+  // Unknown id.
+  await repo.proxies.bulkReorder(['a', 'b', 'c']).then(
+    () => { throw new Error('expected bulkReorder to reject an unknown id'); },
+    () => undefined,
+  );
+  // Duplicate id.
+  await repo.proxies.bulkReorder(['a', 'a']).then(
+    () => { throw new Error('expected bulkReorder to reject duplicate ids'); },
+    () => undefined,
+  );
+});

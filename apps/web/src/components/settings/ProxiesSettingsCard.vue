@@ -50,37 +50,30 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
   return map;
 });
 
-// Reorder is persisted serially, not in parallel, because the sort_order
-// column has no uniqueness constraint at the DB layer — racing two PATCH
-// /api/proxies/:id sort_order writes is safe in isolation, but a mid-flight
-// failure on row N would leave a hybrid order that's hard to recover. On
-// any failure, re-fetch the live order from the server (a local-snapshot
-// rollback would now diverge from the partially-applied server state) and
-// surface the error.
+// Reorder is persisted as a single atomic POST: the server writes every
+// row's sort_order in one statement, so a half-applied write is impossible
+// and a concurrent insert/delete fails the whole operation rather than
+// leaving a hybrid order. On any failure, re-fetch from the server so the
+// local UI matches whatever the truth now is.
 //
 // `reorderInFlight` guards `moveProxy` so a rapid sequence of arrow clicks
-// can't fan out into overlapping per-row patches, which would otherwise
-// race the server-side rewrite of `sort_order` against a stale client
-// snapshot. Dropping the click is fine: the move-arrow buttons reflect
+// can't fan out into overlapping requests, which would otherwise race the
+// server-side rewrite of `sort_order` against a stale client snapshot.
+// Dropping the click is fine: the move-arrow buttons reflect
 // `reorderInFlight` and the user retries once the operation lands.
 const reorderInFlight = ref(false);
 const persistReorder = async (next: ProxyRecord[]) => {
-  const patches = next
-    .map((p, i) => ({ id: p.id, oldOrder: p.sort_order, newOrder: i }))
-    .filter(({ oldOrder, newOrder }) => oldOrder !== newOrder);
-  if (patches.length === 0) return;
+  if (next.every((p, i) => p.sort_order === i)) return;
   reorderInFlight.value = true;
   try {
-    for (const { id, newOrder } of patches) {
-      const { error } = await callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } }));
-      if (error) {
-        window.alert(`Reorder failed: ${error.message}`);
-        // Reload from server so the local UI matches whatever rows have
-        // already been written before the failure point.
-        await proxiesStore.load();
-        emit('changed');
-        return;
-      }
+    const { error } = await callApi(
+      () => api.api.proxies.reorder.$post({ json: { ids: next.map(p => p.id) } }),
+    );
+    if (error) {
+      window.alert(`Reorder failed: ${error.message}`);
+      await proxiesStore.load();
+      emit('changed');
+      return;
     }
     emit('changed');
   } finally {

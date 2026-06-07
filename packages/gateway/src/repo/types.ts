@@ -161,6 +161,11 @@ export interface ProxyRepo {
   insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
   patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
   delete(id: string): Promise<boolean>;
+  // Atomically rewrite sort_order of every proxy from `ids` to its index in
+  // the array. The set must equal the full proxies catalog — both sides of
+  // a mismatch (ids missing from the array or unknown ids in it) abort the
+  // call so a half-applied write never leaves the table in a hybrid order.
+  bulkReorder(ids: string[]): Promise<void>;
   // Records the egress IP observed by a successful proxy test, alongside the
   // current timestamp. Pairs with `patch`'s url-change detection: a url edit
   // wipes both fields back to null in the same statement. Test results do

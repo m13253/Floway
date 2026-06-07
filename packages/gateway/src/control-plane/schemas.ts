@@ -305,6 +305,14 @@ export const testProxyBody = z.object({
   anchor: z.enum(['ipify', 'aws', 'ident.me-v6']).optional(),
 });
 
+// Atomic bulk-reorder body. The array MUST cover every proxy in the
+// catalog exactly once: missing or unknown ids are a 400, not a partial
+// rewrite. The repo enforces the same invariant at the storage layer so a
+// race against a concurrent insert/delete cannot leave a hybrid order.
+export const reorderProxiesBody = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+});
+
 // `upstream_id` narrows the reset to a single (proxy, upstream) pair; without
 // it the handler clears every backoff row for the proxy.
 export const resetBackoffBody = z.object({

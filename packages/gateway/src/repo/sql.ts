@@ -1162,6 +1162,47 @@ class SqlProxyRepo implements ProxyRepo {
     return ((result.meta.changes as number) ?? 0) > 0;
   }
 
+  async bulkReorder(ids: string[]): Promise<void> {
+    // Validate the ids form an exact partition of the current catalog
+    // before touching any row. A mismatched call would otherwise either
+    // skip rows (leaving them at their old sort_order) or update non-
+    // existent ids (no-op, but the caller is now lying about its intent),
+    // both of which violate "atomic" — fail loudly instead.
+    const existing = await this.list();
+    const existingSet = new Set(existing.map(p => p.id));
+    const incoming = new Set(ids);
+    if (ids.length !== existing.length || ids.length !== incoming.size) {
+      throw new Error(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${existing.length} rows)`);
+    }
+    for (const id of ids) {
+      if (!existingSet.has(id)) {
+        throw new Error(`bulkReorder: unknown proxy id ${id}`);
+      }
+    }
+    if (ids.length === 0) return;
+
+    // One UPDATE keyed off json_each unrolling the requested order. The
+    // subselect maps each row's id to its array index in the input; the
+    // outer WHERE limits the update to ids actually in the array (already
+    // validated above to equal the full table). updated_at is bumped per
+    // row whose sort_order changes — a no-op reorder leaves timestamps
+    // unchanged so the dashboard doesn't appear to "edit" rows.
+    const json = JSON.stringify(ids);
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `UPDATE proxies
+            SET sort_order = (SELECT j.key FROM json_each(?) j WHERE j.value = proxies.id),
+                updated_at = CASE
+                  WHEN sort_order = (SELECT j.key FROM json_each(?) j WHERE j.value = proxies.id) THEN updated_at
+                  ELSE ?
+                END
+          WHERE id IN (SELECT j.value FROM json_each(?) j)`,
+      )
+      .bind(json, json, now, json)
+      .run();
+  }
+
   async recordTestSuccess(id: string, egressIp: string): Promise<void> {
     await this.db
       .prepare('UPDATE proxies SET last_egress_ip = ?, last_tested_at = ? WHERE id = ?')
