@@ -95,28 +95,28 @@ pull, allowing the inner TLS handshake to drive the conversation forward.
 - Per-record max payload is `0xffff`, not `0x3fff` (AEAD-2018's limit).
   sing-box sends 32 KiB records; the client must accept them.
 
-### 7. reclaim-tls TLS 1.3 padding bug
+### 7. reclaim-tls TLS 1.3 padding (investigated, not patched)
 
 `@reclaimprotocol/tls@0.1.2` reads the inner content type as
 `decrypted.plaintext[length-1]` without scanning back through the zero-
-padding RFC 8446 §5.4 allows. When the server sends padded handshake
-records (sing-box's REALITY does), reclaim sees the last byte as `0x00` →
-content type undefined → falls back to the outer record's content type
-`0x17` (application_data) → handshake bytes get treated as app data and
-the handshake never completes.
+padding RFC 8446 §5.4 allows. We expected sing-box's REALITY to exercise
+this path, but the live test matrix passes against sing-box without the
+fix — sing-box does not in practice pad inner handshake records during
+the REALITY handshake. We left the upstream code untouched after
+verifying empirically that the path is not triggered. If a different
+peer pads inner records this fix would be required; carry as a follow-up
+if and when that surfaces.
 
-**Patch:** scan backward through trailing zeros to find the actual content
-type byte, then trim padding + content-type before passing the inner bytes
-to the handshake state machine. Patched via `pnpm patch` in
-`patches/@reclaimprotocol__tls.patch`.
-
-### 8. reclaim-tls is missing Ed25519 signature scheme
+### 8. Ed25519 signature scheme (not needed in production)
 
 Sing-box's REALITY forges an Ed25519 server cert (TLS sig scheme `0x0807`).
-reclaim's `SUPPORTED_SIGNATURE_ALGS_MAP` does not include Ed25519, so
-`parseServerCertificateVerify` throws `Unsupported signature algorithm '8,7'`.
-Fixed by adding the ED25519 entry — only the identifier needs to match;
-the actual signature is bypassed via the REALITY auth path anyway.
+We initially expected reclaim's missing `SUPPORTED_SIGNATURE_ALGS_MAP`
+entry to break the handshake, but the REALITY path bypasses standard
+certificate-signature verification entirely (see `onRecvCertificateVerify`
+returning `false` in `protocols/reality.ts`). The signature_algorithms
+extension we send doesn't advertise Ed25519, so the server never picks
+it on the wire, and the cert-verify hook short-circuits before the alg
+table is consulted. No patch is necessary.
 
 ### 9. REALITY's X25519 ECDHE reuses the TLS keyshare keypair
 
@@ -136,7 +136,8 @@ required for the server's AEAD-Open to succeed.
 
 ## reclaim-tls patches (cumulative)
 
-`patches/@reclaimprotocol__tls.patch` adds three new hooks and two bug fixes:
+`patches/@reclaimprotocol__tls.patch` adds three new hooks (and a small
+hot-path stub):
 
 - `onClientHelloPack(bytes, ctx) → bytes?` — mutate the ClientHello after
   pack but before transcript hash. REALITY uses this to seal session_id.
@@ -145,10 +146,17 @@ required for the server's AEAD-Open to succeed.
   replace the keyshare keypair as it is generated. REALITY captures the
   X25519 private CryptoKey for off-band ECDHE.
 - `startHandshake(opts)` accepts `sessionId` and `random` overrides.
-- TLS 1.3 inner-content-type detection scans backward through padding.
-- ED25519 signature scheme (TLS 0x0807) added to the supported list.
+- `verifyHost` is threaded through so the cert-validation name can differ
+  from the `server_name` extension (used when SNI and cert match diverge).
+- `toHexStringWithWhitespace` is stubbed to a `<NN bytes>` summary —
+  reclaim's hot path called the original on every TLS record from
+  `logger.trace(...)`, where the args are eagerly evaluated even when
+  trace is a no-op (~75% of CPU on a 5 MiB upload before the stub).
 
-These are generic patches — every one is something upstream reclaim should
+The patch is pinned to `@reclaimprotocol/tls@0.1.2` in
+`pnpm-workspace.yaml`'s `patchedDependencies` so a future minor bump
+forces a deliberate reapply rather than silently shifting line numbers.
+The hooks are generic — every one is something upstream reclaim should
 accept. We carry them as a vendored patch for now; can upstream as a PR.
 
 ## Architecture

@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@reclaimprotocol/tls':
+  '@reclaimprotocol/tls@0.1.2':
     hash: 30020770864ce90b7ff587ef82a96bad1f5e2ef979267c8be3e63ddf0d1c8233
     path: patches/@reclaimprotocol__tls.patch
   overlayscrollbars:
@@ -378,7 +378,7 @@ importers:
         specifier: ^2.2.0
         version: 2.2.0
       '@reclaimprotocol/tls':
-        specifier: ^0.1.2
+        specifier: 0.1.2
         version: 0.1.2(patch_hash=30020770864ce90b7ff587ef82a96bad1f5e2ef979267c8be3e63ddf0d1c8233)
     devDependencies:
       '@cloudflare/workers-types':
