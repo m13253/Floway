@@ -13,7 +13,6 @@
 // that supplies a SocketDial impl.
 
 export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, SocketDialOptions, DialedSocket } from './types.ts';
-export { resolveSni, resolveVerifyHost } from './types.ts';
 
 export { formatProxyUri, parseProxyUri } from './url.ts';
 export { kindFromUri } from './url-kind.ts';

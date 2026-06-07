@@ -30,7 +30,7 @@ import type {
   TrojanProxyConfig,
   VlessTcpTlsProxyConfig,
   VlessWsTlsProxyConfig,
-} from './proxy-config.js';
+} from './proxy-config.ts';
 
 const SS_METHODS: ReadonlySet<string> = new Set<SsMethod>([
   'aes-128-gcm',

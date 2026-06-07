@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatProxyUri, parseProxyUri } from './url.js';
+import { formatProxyUri, parseProxyUri } from './url.ts';
 
 describe('parseProxyUri', () => {
   it('parses HTTP CONNECT plain', () => {

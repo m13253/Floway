@@ -1,7 +1,9 @@
 // Runtime-agnostic byte-stream dial primitive. Each apps/platform-* app
-// supplies a concrete impl at boot via initSocketDial. packages/proxy
-// imports getSocketDial() instead of `cloudflare:sockets` so the same
-// proxy library runs on Workers (cloudflare:sockets) and Node (node:net).
+// supplies a concrete impl at boot via initSocketDial; the gateway calls
+// getSocketDial() at the dial-layer composition root and threads the
+// resulting SocketDial into @floway-dev/proxy. The proxy library never
+// imports a runtime module like `cloudflare:sockets` directly, so the same
+// dialers run on Workers (cloudflare:sockets) and Node (node:net).
 
 export interface DialOptions {
   /**
