@@ -35,7 +35,7 @@ export const aggregateSearchUsageByKey = (records: readonly SearchUsageRecord[])
       grouped.set(key, { provider: r.provider, keyId: r.keyId, hour: r.hour, requests: r.requests });
     }
   }
-  return [...grouped.values()];
+  return [...grouped.values()].sort((a, b) => a.hour.localeCompare(b.hour) || a.keyId.localeCompare(b.keyId) || a.provider.localeCompare(b.provider));
 };
 
 // Records whose keyId no longer resolves to a user (a key the operator hard-

@@ -143,6 +143,14 @@ user, then create or pick an API key under your account and use it as
 purpose is to let an operator who lost the admin password log in via
 `POST /auth/login`.
 
+`POST /api/users` is a single transaction that creates the user and
+provisions a `Default` API key under them with `upstream_ids: null`.
+The cleartext key comes back in the response and is shown once in the
+dashboard's create flow. Operators who do not want this side effect
+should rotate or delete the Default key immediately after creation;
+the design favours "every freshly minted user can call the gateway
+without a second round-trip" over keeping the API orthogonal.
+
 Database exports include the `password_hash` for every user (active and
 soft-deleted) so a restore reconstructs login state. Treat exported
 payloads as credential bundles — anyone with the file can sign in as
