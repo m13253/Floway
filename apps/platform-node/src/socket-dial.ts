@@ -1,8 +1,51 @@
 import net from 'node:net';
-import { Readable, Writable } from 'node:stream';
+import { Readable } from 'node:stream';
 import tls from 'node:tls';
 
 import type { DialedSocket, SocketDial } from '@floway-dev/platform';
+
+// Hand-rolled adapter from a node:net.Socket to a WritableStream<Uint8Array>.
+// Writable.toWeb only wires `close()` to socket.end(); writer.abort() is
+// routed through the same end-of-stream path and leaves the underlying
+// socket alive in a half-open state. Our proxy runners depend on
+// cancellation actually destroying the socket so the inner-TLS stack
+// stops trying to drain a dead leg, so we drive the four lifecycle hooks
+// ourselves: write awaits the chunk callback (which fires once the chunk
+// is flushed and naturally backpressures behind socket buffering), close
+// half-closes the write side, abort destroys the socket, and a socket
+// 'error' propagates into the writer via controller.error().
+const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
+  let controller: WritableStreamDefaultController | null = null;
+  const onError = (err: Error): void => { controller?.error(err); };
+  socket.on('error', onError);
+  socket.once('close', () => { socket.off('error', onError); });
+  return new WritableStream<Uint8Array>({
+    start(c) { controller = c; },
+    write(chunk) {
+      return new Promise<void>((resolve, reject) => {
+        // The chunk callback fires once the chunk is flushed past the
+        // internal buffer; that's the right moment to release the writer
+        // because it gives the runtime its natural backpressure window.
+        socket.write(chunk, err => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    },
+    close() {
+      return new Promise<void>(resolve => {
+        socket.end(() => resolve());
+      });
+    },
+    abort(reason) {
+      // `destroy()` closes both halves immediately and surfaces the reason
+      // on the next 'error' event. Wrap a non-Error reason in an Error so
+      // destroy() carries something sensible into the runtime's logger.
+      const err = reason instanceof Error ? reason : new Error(String(reason ?? 'aborted'));
+      socket.destroy(err);
+    },
+  });
+};
 
 // The connect-promise pattern is required because node:net / node:tls connect
 // synchronously and the actual handshake runs on the event loop; without the
@@ -69,7 +112,7 @@ export const nodeSocketDial: SocketDial = {
         controller.enqueue(owned);
       },
     }));
-    const writable = Writable.toWeb(socket) as WritableStream<Uint8Array>;
+    const writable = socketToWritable(socket);
 
     // Listen on 'close' rather than the toWeb readable's own close signal:
     // the latter fires on read-side EOF and would resolve early whenever the
