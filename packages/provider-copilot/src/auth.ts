@@ -113,7 +113,7 @@ async function copilotTokenCacheKey(githubToken: string, accountType: string): P
   return `${COPILOT_TOKEN_KV_KEY_PREFIX}:${hash}`;
 }
 
-async function getCopilotToken(githubToken: string, fetcher: Fetcher): Promise<string> {
+async function getCopilotToken(githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<string> {
   const cacheKey = await copilotTokenCacheKey(githubToken, 'copilot');
 
   // Level 1: in-process cache (avoids KV read on hot path)
@@ -145,9 +145,13 @@ async function getCopilotToken(githubToken: string, fetcher: Fetcher): Promise<s
   return await withRetry(async () => {
     // Token exchange is a GET against api.github.com (not POST); matches
     // VSCode Copilot Chat and caozhiyuan/copilot-api. A POST returns 404.
+    // Forward the data-plane request's signal so a client disconnect
+    // during refresh tears the call down instead of burning the per-proxy
+    // dial deadline before unwinding.
     const resp = await fetcher('https://api.github.com/copilot_internal/v2/token', {
       method: 'GET',
       headers: githubHeaders(githubToken),
+      signal,
     });
 
     if (!resp.ok) {
@@ -183,7 +187,7 @@ export interface CopilotFetchOptions {
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options: CopilotFetchOptions): Promise<Response> {
-  const token = await getCopilotToken(githubToken, options.fetcher);
+  const token = await getCopilotToken(githubToken, options.fetcher, init.signal ?? undefined);
   const baseUrl = copilotBaseUrl(accountType);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring

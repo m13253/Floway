@@ -1142,7 +1142,23 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await this.db.prepare('DELETE FROM proxies WHERE id = ?').bind(id).run();
+    // Conditional delete that refuses to drop a row currently referenced by
+    // any upstream's fallback list. The route layer also reads
+    // findUpstreamsReferencing before this call to surface a 409 with the
+    // referencing ids — folding the same predicate into the DELETE closes
+    // the TOCTOU window where an admin PATCHes an upstream to add the
+    // reference between the read and the DELETE.
+    const result = await this.db
+      .prepare(
+        `DELETE FROM proxies
+         WHERE id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM upstreams u, json_each(u.proxy_fallback_list_json) j
+             WHERE j.value = proxies.id
+           )`,
+      )
+      .bind(id)
+      .run();
     return ((result.meta.changes as number) ?? 0) > 0;
   }
 

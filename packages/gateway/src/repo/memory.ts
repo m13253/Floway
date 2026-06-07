@@ -639,8 +639,14 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(cloneProxyRecord(updated));
   }
 
-  delete(id: string): Promise<boolean> {
-    return Promise.resolve(this.store.delete(id));
+  async delete(id: string): Promise<boolean> {
+    // Mirror the SQL repo's atomic delete: refuse if any upstream's
+    // fallback list still references the row, so an admin race adding the
+    // reference between findUpstreamsReferencing and delete in the route
+    // is rejected at the storage layer.
+    const upstreams = await this.upstreams.list();
+    if (upstreams.some(u => u.proxyFallbackList.includes(id))) return false;
+    return this.store.delete(id);
   }
 
   recordTestSuccess(id: string, egressIp: string): Promise<void> {

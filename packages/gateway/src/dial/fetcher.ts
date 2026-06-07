@@ -101,7 +101,15 @@ const tryOne = async (
     }
     const config = input.proxyById.get(id);
     if (!config) {
-      throw new Error(`unknown proxy id in fallback list: ${id}`);
+      // The proxies catalog was loaded once at the top of the request, but
+      // an admin can delete a row mid-flight. Treat the missing id as a
+      // dial-shaped failure for THIS entry so the fallback chain advances
+      // instead of killing the whole call (and any healthy `direct` /
+      // sibling entries further down the list). We don't write to backoff
+      // here — the row is gone, and the upstream's fallback_list will
+      // surface the dangling reference next time the dashboard renders it.
+      errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'tcp-connect'));
+      return null;
     }
     // Caller cancellation flows through init.signal into the dialer's
     // combined controller so a disconnected client tears down any

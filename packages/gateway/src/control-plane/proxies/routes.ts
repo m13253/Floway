@@ -4,7 +4,7 @@ import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
-import { parseProxyUri, runProxiedRequest, type TargetSpec } from '@floway-dev/proxy';
+import { parseProxyUri, runProxiedRequest, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
 const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
@@ -94,8 +94,19 @@ export const deleteProxy = async (c: Context) => {
     return c.json({ error: 'Proxy is referenced by upstreams', referencing_upstream_ids: referencing }, 409);
   }
 
+  // The DELETE predicate re-checks referencing in the same statement to
+  // close the TOCTOU window between the read above and the write — a
+  // concurrent admin PATCH that adds a reference now blocks the delete
+  // atomically. If 0 rows changed, distinguish "raced into 409" from
+  // "really not found" by re-reading the reference list.
   const ok = await repo.proxies.delete(id);
-  if (!ok) return c.json({ error: 'Proxy not found' }, 404);
+  if (!ok) {
+    const racedRefs = await repo.proxies.findUpstreamsReferencing(id);
+    if (racedRefs.length > 0) {
+      return c.json({ error: 'Proxy is referenced by upstreams', referencing_upstream_ids: racedRefs }, 409);
+    }
+    return c.json({ error: 'Proxy not found' }, 404);
+  }
 
   // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to proxies (see migration 0028), so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForProxy(id);
@@ -128,8 +139,18 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const proxy = await repo.proxies.getById(id);
   if (!proxy) return c.json({ error: 'Proxy not found' }, 404);
 
+  // Stored-data validation: a row whose URL no longer parses is operator-
+  // actionable D1 drift, not a transient dial failure. 400 surfaces it as
+  // a config problem so the dashboard can prompt the operator to fix the
+  // row instead of styling it as a network error.
+  let config: ProxyConfig;
   try {
-    const config = parseProxyUri(proxy.url);
+    config = parseProxyUri(proxy.url);
+  } catch (err) {
+    return c.json({ error: proxyUriValidationError(err) }, 400);
+  }
+
+  try {
     const target: TargetSpec = {
       dialHost: anchor.host,
       port: anchor.port,
