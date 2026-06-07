@@ -28,16 +28,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
     const proxies = await repo.proxies.list();
     for (const p of proxies) {
       if (!referencedProxyIds.has(p.id)) continue;
-      try {
-        proxyById.set(p.id, parseProxyUri(p.url));
-      } catch (err) {
-        // A single malformed URL must not poison every other upstream's
-        // dial path. Skip the entry; createUpstreamFetch already throws
-        // "unknown proxy id" for the affected upstream's fallback list,
-        // which surfaces as a 502 only on requests that name this proxy.
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`proxy ${p.id}: skipping (malformed url): ${message}`);
-      }
+      proxyById.set(p.id, parseProxyUri(p.url));
     }
   }
 

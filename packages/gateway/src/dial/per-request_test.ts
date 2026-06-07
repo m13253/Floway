@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { createPerRequestFetcher } from './per-request.ts';
 import { initRepo } from '../repo/index.ts';
@@ -26,31 +26,28 @@ const upstream = (id: string, proxyFallbackList: string[]) => ({
 });
 
 describe('createPerRequestFetcher', () => {
-  let consoleError: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    consoleError.mockRestore();
-  });
-
-  it('skips a malformed proxy url and still serves direct-only upstreams', async () => {
+  it('throws when a referenced proxy row carries a malformed URL', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    // u_ok references a proxy with a malformed URL — its dial path will be
-    // broken, but u_direct must still get a working fetcher.
+    // The dashboard validates URLs at POST/PATCH time, so a malformed row in
+    // the proxies table is operator-actionable D1 drift. Surface the parse
+    // error rather than silently dropping the proxy.
     await repo.upstreams.save(upstream('u_ok', ['p_bad']));
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0 });
+
+    await expect(createPerRequestFetcher()).rejects.toThrow();
+  });
+
+  it('does not load the proxy catalog when no upstream references one', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    // A malformed row sitting unreferenced in the table must not break
+    // direct-only upstreams: we only parse rows that are reachable via some
+    // upstream's fallback list.
     await repo.upstreams.save(upstream('u_direct', []));
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0 });
 
     const fetcherFor = await createPerRequestFetcher();
-    expect(consoleError).toHaveBeenCalled();
-    expect(consoleError.mock.calls[0]![0]).toMatch(/proxy p_bad: skipping/);
-
-    // u_direct's fetcher walks the implicit ['direct'] list and never asks
-    // for the proxy table, so it works regardless of the malformed entry.
     const directFetcher = fetcherFor('u_direct');
     expect(typeof directFetcher).toBe('function');
   });

@@ -256,9 +256,7 @@ export const deleteUpstream = async (c: Context) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // Sweep orphaned backoff rows. Schema cascades on the SQL side; the call is
-  // a no-op when the cascade already fired but is still required for the
-  // in-memory repo and any future store that doesn't enforce FK cascades.
+  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams (see migration 0028), so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForUpstream(id);
   await invalidateModelsStore(id);
   return c.json({ ok: true });

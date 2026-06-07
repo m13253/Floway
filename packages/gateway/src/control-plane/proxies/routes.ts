@@ -82,9 +82,7 @@ export const deleteProxy = async (c: Context) => {
   const ok = await repo.proxies.delete(id);
   if (!ok) return c.json({ error: 'Proxy not found' }, 404);
 
-  // Sweep orphaned backoff rows. The schema already cascades on delete in SQL,
-  // but the in-memory repo and any future store benefit from an explicit
-  // reset call — a no-op when the cascade already fired.
+  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to proxies (see migration 0028), so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForProxy(id);
   return c.body(null, 204);
 };

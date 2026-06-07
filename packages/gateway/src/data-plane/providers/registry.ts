@@ -24,20 +24,11 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   codex: createCodexProvider,
 };
 
-// Build a single provider instance for one upstream record, regardless of kind.
-// Used by the control plane to list a saved upstream's resolved catalog. The
-// control plane never proxies, so no fetcher is supplied.
+// Build a single provider instance for one upstream record. Used by the
+// control plane to list a saved upstream's resolved catalog; the control
+// plane never proxies, so this transport always uses runtime fetch.
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record);
-
-// Same factory dispatch as `createProviderInstance`, but bakes a per-request
-// proxy-aware UpstreamFetch into the provider closure so every outbound call
-// for this request walks the upstream's proxy fallback list.
-export const createProviderInstanceForRequest = (
-  record: UpstreamRecord,
-  fetcher: UpstreamFetch,
-): ModelProviderInstance | Promise<ModelProviderInstance> =>
-  providerFactories[record.provider](record, { fetcher });
 
 // Ids not in the catalog are silently dropped; undefined/null preserves global sort order.
 // `fetcherForUpstream` is optional: callers that only need the catalog (e.g.

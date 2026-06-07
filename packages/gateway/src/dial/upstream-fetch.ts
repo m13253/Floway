@@ -3,7 +3,7 @@ import type { UpstreamFetch } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
 export interface CreateUpstreamFetchInput {
-  repo: Pick<Repo, 'proxyBackoffs' | 'proxies'>;
+  repo: Pick<Repo, 'proxyBackoffs'>;
   upstreamId: string;
   fallbackList: string[];
   proxyById: Map<string, ProxyConfig>;
@@ -56,9 +56,7 @@ export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFe
     // dial path — surface that single error directly so callers don't see
     // a meaningless AggregateError wrapper.
     if (list.length === 1) {
-      const err = errors[errors.length - 1];
-      if (!err) throw new Error('unreachable: no errors on single-entry exhaustion');
-      throw err;
+      throw errors[errors.length - 1]!;
     }
     throw new AggregateError(errors, 'all proxies failed at the dial layer');
   };
