@@ -45,7 +45,7 @@ export interface RealityOptions {
   serverHost: string;
   serverPort: number;
   publicKeyB64Url: string; // server's X25519 public key (base64url, 43 chars)
-  shortIdHex: string; // 8 hex bytes (16 chars)
+  shortIdHex?: string; // 8 hex bytes (16 chars); defaults to all-zero shortId
   spoofSni: string; // SNI presented in ClientHello, e.g. "www.cloudflare.com"
   uuid: string; // VLESS user UUID
   version?: [number, number, number]; // Xray version in session_id, default [25,4,30]
@@ -57,7 +57,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   const ver = opts.version ?? [25, 4, 30];
   const serverPub = base64UrlDecode(opts.publicKeyB64Url);
   if (serverPub.byteLength !== 32) throw new Error(`REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`);
-  const shortId = hexDecode(opts.shortIdHex);
+  const shortId = hexDecode(opts.shortIdHex ?? '0000000000000000');
   if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`);
 
   // Plain TCP — userspace TLS will do the entire handshake.
@@ -119,7 +119,6 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     handshakeReject = reject;
   });
   let handshakeOk = false;
-  let realityVerified = false;
 
   const writer = socket.writable.getWriter();
 
@@ -137,7 +136,6 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       });
     },
     onHandshake() {
-      console.log(`[reality] reclaim onHandshake fired; realityVerified=${  realityVerified}`);
       handshakeOk = true;
       handshakeResolve();
     },
@@ -197,18 +195,9 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       console.log(`[reality] sealed session_id sent (authKey[:16]=${bytesToHex(authKey.subarray(0, 16))})`);
       return out;
     },
-    onRecvCertificateVerify({ certificates, signature, algorithm }: { certificates: Array<{ getPublicKey(): { buffer: Uint8Array; algorithm: string } }>; signature: Uint8Array; algorithm: string }) {
-      // sing-box's REALITY does NOT use HMAC-SHA512 like xray-core's. It signs
-      // the CertificateVerify with a real ECDSA-P256-SHA256 signature using a
-      // forged-cert key. That key is unknown to us — REALITY's whole point is
-      // we authenticate via the AEAD-sealed session_id, NOT the cert chain.
-      // So we just record the cert + signature for later debug and accept.
-      if (!certificates?.length) throw new Error('REALITY: no certs received');
-      const leaf = certificates[0]!.getPublicKey();
-      const pubBytes = stripSpkiPrefix(leaf.buffer, leaf.algorithm);
-      console.log(`[reality] server-side: sigAlg=${algorithm} sigLen=${signature?.byteLength ?? 0} certPubAlg=${leaf.algorithm} certPubLen=${pubBytes.byteLength}`);
-      realityVerified = true;
-      return false; // skip the standard signature verification
+    onRecvCertificateVerify() {
+      // REALITY authenticates via the AEAD-sealed session_id; the cert-chain signature is forged and unverifiable.
+      return false
     },
   }) as Parameters<typeof makeTLSClient>[0]);
 
@@ -247,23 +236,6 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     opts.uuid,
     opts.target,
   );
-}
-
-function stripSpkiPrefix(spki: Uint8Array, algorithm: string): Uint8Array {
-  // For Ed25519 (the default REALITY forged-cert key type), the SPKI is:
-  //   30 2a              SEQUENCE
-  //     30 05            SEQUENCE (algorithm)
-  //       06 03 2b 65 70   OID 1.3.101.112 (Ed25519)
-  //     03 21 00         BIT STRING (33 bytes, 0 unused)
-  //     <32-byte raw key>
-  // We strip the 12-byte prefix.
-  if (algorithm === 'ED25519' || algorithm === 'Ed25519') {
-    if (spki.byteLength === 32) return spki; // already raw
-    if (spki.byteLength === 44) return spki.subarray(12);
-  }
-  // Fallback heuristic: trim leading prefix until 32 bytes remain.
-  if (spki.byteLength > 32) return spki.subarray(spki.byteLength - 32);
-  return spki;
 }
 
 function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {

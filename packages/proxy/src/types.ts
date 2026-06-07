@@ -77,14 +77,3 @@ export function resolveTlsSni(target: TargetSpec): string {
 export function resolveTlsVerifyHost(target: TargetSpec): string {
   return target.tlsVerifyHost ?? target.tlsSni ?? target.dialHost;
 }
-
-/**
- * Resolves the HTTP `Host:` header for a TargetSpec — explicit value in
- * `headers` (case-insensitive lookup) wins, else falls back to `dialHost`.
- */
-export function resolveHttpHost(target: TargetSpec): string {
-  for (const k of Object.keys(target.headers)) {
-    if (k.toLowerCase() === 'host') return target.headers[k]!;
-  }
-  return target.dialHost;
-}

@@ -79,7 +79,7 @@ export const runProxiedRequest = async (
       serverHost: config.host,
       serverPort: config.port,
       publicKeyB64Url: config.publicKey,
-      shortIdHex: config.shortId ?? '0000000000000000',
+      shortIdHex: config.shortId,
       spoofSni: config.serverName,
       uuid: config.uuid,
       target,

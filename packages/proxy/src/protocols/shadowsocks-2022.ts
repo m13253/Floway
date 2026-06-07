@@ -83,13 +83,16 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   const variableHeader = buildRequestHeader(target.dialHost, target.port);
   const fixedPlain = new Uint8Array(1 + 8 + 2);
   fixedPlain[0] = REQ_HEADER_TYPE;
-  writeU64BE(fixedPlain, 1, BigInt(Math.floor(currentTimeMs() / 1000)));
+  writeU64BE(fixedPlain, 1, BigInt(Math.floor(Date.now() / 1000)));
   fixedPlain[9] = (variableHeader.byteLength >> 8) & 0xff;
   fixedPlain[10] = variableHeader.byteLength & 0xff;
 
   const fixedSealed = sendCipher.encrypt(nonce(sendNonce++), fixedPlain);
   const variableSealed = sendCipher.encrypt(nonce(sendNonce++), variableHeader);
-  const initialOut = concat3(sendSalt, fixedSealed, variableSealed);
+  const initialOut = new Uint8Array(sendSalt.byteLength + fixedSealed.byteLength + variableSealed.byteLength);
+  initialOut.set(sendSalt, 0);
+  initialOut.set(fixedSealed, sendSalt.byteLength);
+  initialOut.set(variableSealed, sendSalt.byteLength + fixedSealed.byteLength);
   await writer.write(initialOut);
   writer.releaseLock();
 
@@ -125,10 +128,6 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
         }
         // Read length record
         const lenSealed = await readN(reader, 2 + TAG);
-        if (!lenSealed) {
-          controller.close();
-          return;
-        }
         const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (len === 0 || len > MAX) {
@@ -251,14 +250,6 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
   const r = new Uint8Array(a.byteLength + b.byteLength);
   r.set(a, 0);
   r.set(b, a.byteLength);
-  return r;
-}
-
-function concat3(a: Uint8Array, b: Uint8Array, c: Uint8Array): Uint8Array<ArrayBuffer> {
-  const r = new Uint8Array(a.byteLength + b.byteLength + c.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  r.set(c, a.byteLength + b.byteLength);
   return r;
 }
 

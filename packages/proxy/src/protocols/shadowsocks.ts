@@ -106,10 +106,6 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
         }
         // Read length record (2-byte len + 16-byte tag)
         const lenSealed = await readExactly(reader, 2 + TAG_LEN);
-        if (!lenSealed) {
-          controller.close();
-          return;
-        }
         const lenPlain = recvCipher.decrypt(nonceBytes(recvNonce), lenSealed);
         recvNonce++;
         const payloadLen = (lenPlain[0]! << 8) | lenPlain[1]!;
@@ -118,10 +114,6 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
           return;
         }
         const payloadSealed = await readExactly(reader, payloadLen + TAG_LEN);
-        if (!payloadSealed) {
-          controller.error(new ProxyDialError('SS: EOF mid-record', 'proxy-handshake'));
-          return;
-        }
         const payloadPlain = recvCipher.decrypt(nonceBytes(recvNonce), payloadSealed);
         recvNonce++;
         controller.enqueue(payloadPlain as Uint8Array<ArrayBuffer>);

@@ -15,8 +15,6 @@
 import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { getSocketDial } from '@floway-dev/platform';
-
 let cryptoInstalled = false;
 function ensureCrypto(): void {
   if (cryptoInstalled) return;
@@ -187,10 +185,4 @@ function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
-
-// Convenience: open a plain TCP socket and immediately wrap it in TLS.
-export async function connectTls(host: string, port: number, opts?: { alpn?: string[]; insecure?: boolean }): Promise<TlsStream> {
-  const sock = await getSocketDial().connect(host, port, { allowHalfOpen: true });
-  return await userspaceTls(sock, { host, alpn: opts?.alpn, insecure: opts?.insecure });
 }
