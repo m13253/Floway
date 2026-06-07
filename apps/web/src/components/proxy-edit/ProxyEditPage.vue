@@ -1,21 +1,28 @@
 <script setup lang="ts">
-// URL validation runs on every keystroke via parseProxyUri. Import from
-// the package's /url and /proxy-config subpaths rather than the barrel —
-// the barrel pulls in runProxiedRequest and the userspace TLS stack,
-// which transitively depend on Node's crypto and inflate the dashboard
-// bundle. The parser itself is pure (no SocketDial, no TLS), so the
-// subpath gives live feedback without dial-time code. The gateway re-
-// parses on POST/PATCH, so this client check is not load-bearing for
-// security.
+// URL parsing runs on every keystroke via parseProxyUri. Import from the
+// package's /url and /proxy-config subpaths rather than the barrel — the
+// barrel pulls in runProxiedRequest and the userspace TLS stack, which
+// transitively depend on Node's crypto and inflate the dashboard bundle.
+// The parser itself is pure (no SocketDial, no TLS), so the subpath gives
+// live feedback without dial-time code. The gateway re-parses on
+// POST/PATCH, so this client check is not load-bearing for security.
+//
+// The page hosts a bidirectional sync between the URL field and a
+// `ProxyConfigForm`: typing in the URL repopulates the form, editing the
+// form regenerates the URL via formatProxyUri. A per-tick `lastSource`
+// guard prevents the two watchers from ping-ponging — whichever side just
+// pushed an update marks itself as the source and the other side skips
+// re-deriving.
 
-import { parseProxyUri } from '@floway-dev/proxy/url';
+import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import { Button, Input, Spinner } from '@floway-dev/ui';
 import { useNow, useTimeoutFn } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
+import ProxyConfigForm from './ProxyConfigForm.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
@@ -40,6 +47,56 @@ const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
 const lastEgressIp = computed(() => props.record?.last_egress_ip ?? null);
 const lastTestedAt = computed(() => props.record?.last_tested_at ?? null);
+
+const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false; error: string } | null => {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    return { ok: true, config: parseProxyUri(trimmed) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+};
+
+// Canonical form-side state. Seeded from the initial URL so the form
+// shows the parsed shape on mount; null while the URL is empty or
+// unparseable. The form panel's v-if drives off this — when null, the
+// panel falls back to the last good config but visually dims via the
+// `urlError` prop.
+const initialParse = tryParse(url.value);
+const config = ref<ProxyConfig | null>(initialParse && initialParse.ok ? initialParse.config : null);
+const urlError = ref<string | null>(initialParse && !initialParse.ok ? initialParse.error : null);
+
+// Single-tick guard: whichever side just pushed a change tags itself as
+// the source so the other side's watcher can skip re-deriving and avoid a
+// feedback loop. Cleared on the next tick.
+let lastSource: 'url' | 'form' | null = null;
+
+watch(url, next => {
+  if (lastSource === 'form') { lastSource = null; return; }
+  const parsed = tryParse(next);
+  if (parsed === null) {
+    config.value = null;
+    urlError.value = null;
+    return;
+  }
+  if (parsed.ok) {
+    config.value = parsed.config;
+    urlError.value = null;
+  } else {
+    // Keep the last good config so the form does not reset mid-keystroke.
+    urlError.value = parsed.error;
+  }
+});
+
+watch(config, next => {
+  if (lastSource === 'url') { lastSource = null; return; }
+  if (next === null) return;
+  lastSource = 'form';
+  url.value = formatProxyUri(next);
+  urlError.value = null;
+  void nextTick(() => { if (lastSource === 'form') lastSource = null; });
+}, { deep: true });
 
 // Per-proxy dial-stage deadline. Stored as a string to make "empty" the
 // canonical "use default" signal; coerced to a number on save. The
@@ -68,17 +125,6 @@ const testError = ref<string | null>(null);
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
 
-// Empty string returns null (neutral) so a fresh draft does not flash an error before the user types.
-const parsed = computed<{ ok: true; config: ProxyConfig } | { ok: false; error: string } | null>(() => {
-  const trimmed = url.value.trim();
-  if (!trimmed) return null;
-  try {
-    return { ok: true, config: parseProxyUri(trimmed) };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
-  }
-});
-
 const KIND_LABELS: Record<ProxyConfig['kind'], string> = {
   'http': 'HTTP',
   'socks5': 'SOCKS5',
@@ -91,8 +137,8 @@ const KIND_LABELS: Record<ProxyConfig['kind'], string> = {
 };
 
 const parseLabel = computed(() => {
-  if (!parsed.value || !parsed.value.ok) return '';
-  const c = parsed.value.config;
+  const c = config.value;
+  if (!c || urlError.value) return '';
   // HTTP variant carries a TLS bit rather than a separate kind; surface it
   // in the label so an operator can tell https-CONNECT from plain http.
   const kindLabel = c.kind === 'http' && c.tls ? 'HTTPS' : KIND_LABELS[c.kind];
@@ -143,8 +189,8 @@ const save = async () => {
   const trimmedUrl = url.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (!trimmedUrl) { saveError.value = 'URL is required'; return; }
-  if (parsed.value && !parsed.value.ok) {
-    saveError.value = `Invalid proxy URI: ${parsed.value.error}`;
+  if (urlError.value) {
+    saveError.value = `Invalid proxy URI: ${urlError.value}`;
     return;
   }
   if (dialTimeoutParsed.value && 'error' in dialTimeoutParsed.value) {
@@ -293,27 +339,32 @@ const remove = async () => {
       <Input v-model="name" placeholder="My JP server" />
     </div>
 
-    <div class="space-y-1.5">
+    <div class="space-y-2">
       <label class="block text-xs font-medium text-gray-500">URL</label>
       <Input
         v-model="url"
         placeholder="vless://uuid@host:443?type=tcp&security=reality&pbk=..."
-        :invalid="parsed?.ok === false"
+        :invalid="urlError !== null"
         class="font-mono"
       />
-      <div v-if="parsed?.ok === true" class="inline-flex items-center gap-1 rounded-md border border-accent-emerald/30 bg-accent-emerald/10 px-2 py-1 text-xs text-accent-emerald">
+      <div v-if="config && !urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-emerald/30 bg-accent-emerald/10 px-2 py-1 text-xs text-accent-emerald">
         <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
           <path d="m5 13 4 4L19 7" />
         </svg>
         {{ parseLabel }}
       </div>
-      <div v-else-if="parsed?.ok === false" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
+      <div v-else-if="urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
         <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10" />
           <path d="M12 8v4M12 16h.01" />
         </svg>
-        {{ parsed.error }}
+        {{ urlError }}
       </div>
+      <ProxyConfigForm
+        v-if="config"
+        v-model="config"
+        :url-error="urlError"
+      />
       <div v-if="mode === 'edit' && record" class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
         <span>Egress:</span>
         <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
