@@ -3,12 +3,14 @@ import { hc } from 'hono/client';
 import { useAuthStore } from '../stores/auth.ts';
 import type { AppType } from '@floway-dev/gateway/app-type';
 
-// Inject the live x-api-key on every outbound request and short-circuit the
-// store on 401 so the router guard can redirect to /login.
+// Injects the dashboard session token on every outbound request and clears the
+// store on 401 so the router guard redirects to /login. Data-plane calls
+// (e.g. the Models playground) bypass this client and set `x-api-key` directly,
+// since session tokens are rejected outside the control plane.
 const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const headers = new Headers(init?.headers ?? {});
-  const key = useAuthStore().authKey;
-  if (key) headers.set('x-api-key', key);
+  const token = useAuthStore().authToken;
+  if (token) headers.set('x-floway-session', token);
   const response = await fetch(input, { ...init, headers });
   if (response.status === 401) useAuthStore().clearAuth();
   return response;

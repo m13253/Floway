@@ -5,7 +5,7 @@
 import type { Context } from 'hono';
 
 import { loadModels } from './load.ts';
-import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 const modelListingFailureMessage = 'Upstream model listing failed';
@@ -24,7 +24,7 @@ const modelLoadErrorResponse = (error: unknown): Response => {
 
 export const models = async (c: Context) => {
   try {
-    return Response.json(await loadModels(apiKeyUpstreamIdsFromContext(c)));
+    return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c)));
   } catch (e) {
     return modelLoadErrorResponse(e);
   }

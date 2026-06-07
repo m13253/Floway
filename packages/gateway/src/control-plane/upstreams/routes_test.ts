@@ -40,20 +40,20 @@ const createBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const authed = (adminKey: string, body?: unknown): RequestInit => ({
+const authed = (adminSession: string, body?: unknown): RequestInit => ({
   method: body === undefined ? 'GET' : 'POST',
   headers: {
     'content-type': 'application/json',
-    'x-api-key': adminKey,
+    'x-floway-session': adminSession,
   },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
 test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminKey, createBody({ flag_overrides: { 'vendor-kimi': true } })));
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ flag_overrides: { 'vendor-kimi': true } })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
@@ -66,21 +66,21 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   const stored = await repo.upstreams.getById(created.id);
   assertEquals((stored?.config as Record<string, unknown>).bearerToken, 'sk-test');
 
-  const list = await requestApp('/api/upstreams', { headers: { 'x-api-key': adminKey } });
+  const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   const items = (await list.json()) as Array<Record<string, any>>;
   assertEquals(items[0].config.bearerToken, undefined);
 });
 
 test('POST /api/upstreams validates Azure models and redacts API keys', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const invalid = await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'azure', config: { ...azureConfig, models: [] } })));
+  const invalid = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', config: { ...azureConfig, models: [] } })));
   assertEquals(invalid.status, 400);
   const invalidBody = (await invalid.json()) as { error?: string };
   assertEquals(invalidBody.error?.includes('models must be a non-empty array'), true);
 
-  const createdResp = await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'azure', name: 'Azure', config: azureConfig })));
+  const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', name: 'Azure', config: azureConfig })));
   assertEquals(createdResp.status, 201);
   const created = (await createdResp.json()) as Record<string, any>;
   assertEquals(created.provider, 'azure');
@@ -91,10 +91,10 @@ test('POST /api/upstreams validates Azure models and redacts API keys', async ()
 });
 
 test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tokens', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
@@ -108,17 +108,17 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
 });
 
 test('PATCH /api/upstreams rejects provider changes and preserves the row', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': adminKey,
+      'x-floway-session': adminSession,
     },
     body: JSON.stringify({ provider: 'azure' }),
   });
@@ -129,10 +129,10 @@ test('PATCH /api/upstreams rejects provider changes and preserves the row', asyn
 });
 
 test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
   await repo.cache.set(`models_store:${created.id}`, 'stale');
 
@@ -140,7 +140,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': adminKey,
+      'x-floway-session': adminSession,
     },
     body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
   });
@@ -155,7 +155,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_azure_single_endpoint',
@@ -179,7 +179,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     method: 'PATCH',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': adminKey,
+      'x-floway-session': adminSession,
     },
     body: JSON.stringify({
       config: {
@@ -198,9 +198,9 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
 });
 
 test('GET /api/upstream-flags returns the flag catalog and requires admin auth', async () => {
-  const { adminKey, apiKey } = await setupAppTest();
+  const { adminSession, apiKey } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': adminKey } });
+  const resp = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const catalog = (await resp.json()) as Array<Record<string, unknown>>;
   const sample = catalog.find(e => e.id === 'vendor-kimi');
@@ -214,7 +214,7 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
 });
 
 test('POST /api/upstreams/fetch-models fetches a draft custom upstream model list', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     async request => {
@@ -226,7 +226,7 @@ test('POST /api/upstreams/fetch-models fetches a draft custom upstream model lis
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminKey, { config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
       assertEquals(body.data.map(m => m.id), ['gpt-a', 'gpt-b']);
@@ -236,7 +236,7 @@ test('POST /api/upstreams/fetch-models fetches a draft custom upstream model lis
 });
 
 test('POST /api/upstreams/fetch-models substitutes the stored secret when the token is blank', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // Seed a record whose secret differs from the draft fixture so the outgoing
   // header can only carry it when the stored secret is actually loaded — a
@@ -270,7 +270,7 @@ test('POST /api/upstreams/fetch-models substitutes the stored secret when the to
     async () => {
       const resp = await requestApp(
         '/api/upstreams/fetch-models',
-        authed(adminKey, { id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
+        authed(adminSession, { id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
       );
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
@@ -280,7 +280,7 @@ test('POST /api/upstreams/fetch-models substitutes the stored secret when the to
 });
 
 test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures as 502', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
     async request => {
@@ -291,7 +291,7 @@ test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminKey, { config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
       assertEquals(resp.status, 502);
       const body = (await resp.json()) as { error: { message: string; type: string } };
       assertEquals(body.error.type, 'api_error');
@@ -300,29 +300,29 @@ test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures 
 });
 
 test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
   // Blank token with no id and no stored secret to substitute: the runtime
   // assert rejects the empty bearerToken, surfaced as a 400 validation error.
-  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminKey, { config: { ...customConfig, bearerToken: '' } }));
+  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: { ...customConfig, bearerToken: '' } }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('bearerToken'), true);
 });
 
 test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s for an unknown id', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = (await (await requestApp('/api/upstreams', authed(adminKey, createBody({ provider: 'azure', name: 'Az', config: azureConfig })))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', name: 'Az', config: azureConfig })))).json()) as { id: string };
 
-  const resp = await requestApp(`/api/upstreams/${created.id}/models`, { headers: { 'x-api-key': adminKey } });
+  const resp = await requestApp(`/api/upstreams/${created.id}/models`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { data: Array<{ upstreamModelId: string; kind: string; endpoints: Record<string, unknown> }> };
   assertEquals(body.data[0].upstreamModelId, 'gpt-public');
   assertEquals(body.data[0].kind, 'chat');
 
-  const missing = await requestApp('/api/upstreams/nope/models', { headers: { 'x-api-key': adminKey } });
+  const missing = await requestApp('/api/upstreams/nope/models', { headers: { 'x-floway-session': adminSession } });
   assertEquals(missing.status, 404);
 });
 
@@ -362,9 +362,9 @@ const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
 });
 
 test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes the verifier', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminKey, {}));
+  const resp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
   assertEquals(typeof body.state, 'string');
@@ -378,10 +378,10 @@ test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes 
 });
 
 test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with state', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()));
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
   assertEquals(created.provider, 'codex');
@@ -397,20 +397,20 @@ test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with
 });
 
 test('POST /api/upstreams/codex-import without an explicit name auto-derives one from the imported identity', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const { name: _ignored, ...bodyWithoutName } = codexAuthJsonImport();
-  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, bodyWithoutName));
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, bodyWithoutName));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as { name: string };
   assertEquals(created.name, 'ChatGPT Codex (alice@example.com)');
 });
 
 test('POST /api/upstreams/codex-import rejects when both auth_json and callback are absent', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex-import', authed(adminKey, { name: 'ChatGPT Codex' }));
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, { name: 'ChatGPT Codex' }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { issues?: Array<{ message: string }> } | string };
   // The schema-level XOR refine surfaces as a zod validation error envelope.
@@ -418,11 +418,11 @@ test('POST /api/upstreams/codex-import rejects when both auth_json and callback 
 });
 
 test('POST /api/upstreams/codex-import rejects a malformed PKCE callback URL', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
     '/api/upstreams/codex-import',
-    authed(adminKey, { name: 'Codex', callback: { callback_url: 'http://localhost:1455/auth/callback' } }),
+    authed(adminSession, { name: 'Codex', callback: { callback_url: 'http://localhost:1455/auth/callback' } }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
@@ -432,21 +432,21 @@ test('POST /api/upstreams/codex-import rejects a malformed PKCE callback URL', a
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now rejects non-codex rows with 404', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
-  const created = (await (await requestApp('/api/upstreams', authed(adminKey, createBody()))).json()) as { id: string };
-  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json()) as { id: string };
+  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
   assertEquals(resp.status, 404);
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now rejects upstreams in a terminal state with 400', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   // Plant a codex upstream in `session_terminated` state by importing then
   // hand-mutating the row (the routes never expose a way to get into this
   // state without a real upstream 401).
-  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
   const stored = await repo.upstreams.getById(created.id);
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
   await repo.upstreams.save({
@@ -454,17 +454,17 @@ test('POST /api/upstreams/:id/codex-refresh-now rejects upstreams in a terminal 
     state: { accounts: storedState.accounts.map(a => ({ ...a, state: 'session_terminated' })) },
   });
 
-  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+  const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('session_terminated'), true);
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now rotates the refresh token on success', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
 
   await withMockedFetch(
     () => jsonResponse({
@@ -474,7 +474,7 @@ test('POST /api/upstreams/:id/codex-refresh-now rotates the refresh token on suc
       expires_in: 3600,
     }),
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
       assertEquals(resp.status, 200);
     },
   );
@@ -485,10 +485,10 @@ test('POST /api/upstreams/:id/codex-refresh-now rotates the refresh token on suc
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
 
   await withMockedFetch(
     () => new Response(
@@ -496,7 +496,7 @@ test('POST /api/upstreams/:id/codex-refresh-now flips the row to refresh_failed 
       { status: 400, headers: { 'content-type': 'application/json' } },
     ),
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
       // 502, not 401 — the dashboard's auth client treats any 401 as a
       // logout signal, and a dead codex credential must not log the
       // operator out of the dashboard.
@@ -513,10 +513,10 @@ test('POST /api/upstreams/:id/codex-refresh-now flips the row to refresh_failed 
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-state CAS write loses to a concurrent mutation', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminKey, codexAuthJsonImport()))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
 
   // Race: another writer rotates the refresh_token between our read and our
   // failure-state CAS write. The route should still respond — the concurrent
@@ -539,7 +539,7 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
       );
     },
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminKey, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
       assertEquals(resp.status, 502);
     },
   );

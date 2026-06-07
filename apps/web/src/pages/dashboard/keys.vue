@@ -117,7 +117,7 @@ const copyToClipboard = async (text: string, tag: string) => {
 };
 
 const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));
-const configurationKey = computed(() => selectedKey.value?.key ?? (auth.isAdmin ? '<your-api-key>' : (auth.authKey ?? keys.value[0]?.key ?? '')));
+const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
 const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
 </script>
 

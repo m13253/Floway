@@ -28,7 +28,7 @@ import type { Context } from 'hono';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
 import { parseCodexVersion, resolveCodexCatalog, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
-import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getInternalModels } from '../providers/registry.ts';
 
@@ -74,7 +74,7 @@ const computeCatalog = async (userAgent: string | undefined, upstreamIds: readon
 
 export const codexModels = async (c: Context): Promise<Response> => {
   const userAgent = c.req.header('user-agent');
-  const upstreamIds = apiKeyUpstreamIdsFromContext(c);
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default ?? null;
   const cacheKey = cache === null ? null : cacheKeyFor(
     c.req.query('client_version') ?? parseCodexVersion(userAgent) ?? 'unknown',

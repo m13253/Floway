@@ -1,25 +1,32 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
+import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
+import type { ApiKey as LoaderApiKey } from '../../api/types.ts';
 import { useModelsStore } from '../../composables/useModels.ts';
 
 export const useModelsPageData = defineBasicLoader(async () => {
-  await useModelsStore().load();
-  return true;
+  const api = useApiForLoader();
+  const [keysRes] = await Promise.all([
+    callApiForLoader<LoaderApiKey[]>(() => api.api.keys.$get()),
+    useModelsStore().load(),
+  ]);
+  return { keys: keysRes.data ?? [] };
 });
 </script>
 
 <script setup lang="ts">
 import { Input, OverlayScrollbars } from '@floway-dev/ui';
-import { computed, ref, useTemplateRef } from 'vue';
+import { computed, ref, useTemplateRef, watch } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import ChatPanel from '../../components/models/ChatPanel.vue';
 import ModelInfoBar from '../../components/models/ModelInfoBar.vue';
 
-useModelsPageData();
-
+const initialData = useModelsPageData();
 const { models, error } = useModelsStore();
+
+const keys = ref(initialData.data.value.keys);
 
 const modelsSearch = ref('');
 const chatModelId = ref<string>('');
@@ -39,6 +46,20 @@ const chatModelInfo = computed<ControlPlaneModel | undefined>(
 const selectChatModel = (id: string) => { chatModelId.value = id; };
 
 if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filteredChatModels.value[0].id;
+
+// Playground requires a real API key (the per-user one). Default to the first
+// active key on load and keep the selection sticky across model changes.
+const selectedKeyId = ref<string | null>(keys.value[0]?.id ?? null);
+watch(keys, list => {
+  if (selectedKeyId.value && list.some(k => k.id === selectedKeyId.value)) return;
+  selectedKeyId.value = list[0]?.id ?? null;
+});
+
+const selectedApiKey = computed(() => {
+  const id = selectedKeyId.value;
+  if (!id) return null;
+  return keys.value.find(k => k.id === id)?.key ?? null;
+});
 </script>
 
 <template>
@@ -49,7 +70,17 @@ if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filte
 
     <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
       <div class="max-h-56 w-full shrink-0 border-b border-white/[0.06] flex flex-col lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r">
-        <div class="p-3 border-b border-white/[0.06]">
+        <div class="p-3 border-b border-white/[0.06] space-y-2">
+          <select
+            v-model="selectedKeyId"
+            :disabled="keys.length === 0"
+            class="w-full rounded-md border border-white/[0.08] bg-surface-700 px-2 py-1.5 text-xs text-gray-200 focus:border-accent-cyan focus:outline-none"
+          >
+            <option v-if="keys.length === 0" :value="null">(no API keys — create one in Keys)</option>
+            <option v-for="k in keys" :key="k.id" :value="k.id">
+              {{ k.name }} (·{{ k.key.slice(-4) }})
+            </option>
+          </select>
           <Input
             v-model="modelsSearch"
             type="search"
@@ -86,7 +117,7 @@ if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filte
       <div class="flex-1 flex flex-col min-w-0 min-h-0">
         <template v-if="chatModelInfo">
           <ModelInfoBar :model="chatModelInfo" @clear="chatPanelRef?.clear()" />
-          <ChatPanel ref="chatPanel" :model-id="chatModelInfo.id" />
+          <ChatPanel ref="chatPanel" :model-id="chatModelInfo.id" :api-key="selectedApiKey" />
         </template>
         <div v-else class="flex-1 flex items-center justify-center text-gray-600 text-sm">Select a model to begin</div>
       </div>

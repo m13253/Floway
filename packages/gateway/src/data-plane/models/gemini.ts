@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
@@ -99,7 +99,7 @@ const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Prom
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
-    return Response.json({ models: await loadGeminiModels(apiKeyUpstreamIdsFromContext(c)) });
+    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c)) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -111,7 +111,7 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
 
   const modelId = rawModelId.replace(/^models\//, '');
   try {
-    const model = (await loadGeminiModels(apiKeyUpstreamIdsFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {

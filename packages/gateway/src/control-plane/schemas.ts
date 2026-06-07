@@ -129,8 +129,11 @@ const copilotConfigSchema = z.object({
 
 // --- auth ---
 
+// Username is allowed to be empty here so the dashboard's "leave blank +
+// ADMIN_KEY" backdoor passes validation; the login handler dispatches on it.
 export const authLoginBody = z.object({
-  key: z.string().min(1),
+  username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
+  password: z.string().min(1),
 });
 
 // --- api keys ---

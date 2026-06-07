@@ -20,6 +20,7 @@ interface SetupOptions {
 interface AppTestContext {
   repo: InMemoryRepo;
   adminKey: string;
+  adminSession: string;
   apiKey: ApiKey;
   githubAccount: CopilotAccountFixture;
   copilotUpstream: UpstreamRecord;
@@ -106,9 +107,23 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   await clearCopilotTokenCache();
   clearModelsStore();
 
+  // The default API key is owned by a non-admin user so tests can assert
+  // "non-admin via API key" behavior straight away. Tests that need an
+  // admin caller use `adminSession` (sessions belong to user 1).
+  await repo.users.save({
+    id: 2,
+    username: 'tester',
+    passwordHash: null,
+    isAdmin: false,
+    upstreamIds: null,
+    canViewGlobalTelemetry: false,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    deletedAt: null,
+  });
+
   const apiKey = options.apiKey ?? {
     id: `key_${crypto.randomUUID()}`,
-    userId: 1,
+    userId: 2,
     name: 'Primary key',
     key: `raw_${crypto.randomUUID().replace(/-/g, '')}`,
     createdAt: '2026-03-15T00:00:00.000Z',
@@ -134,7 +149,13 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     await repo.searchConfig.save(options.searchConfig);
   }
 
-  return { repo, adminKey, apiKey, githubAccount, copilotUpstream };
+  // Most tests need an admin-authenticated dashboard caller; expose a fresh
+  // session token tied to user 1 (the seed admin) so they can use
+  // `x-floway-session: adminSession` instead of a now-rejected `x-api-key:
+  // ADMIN_KEY`.
+  const adminSession = (await repo.sessions.create(1)).id;
+
+  return { repo, adminKey, adminSession, apiKey, githubAccount, copilotUpstream };
 }
 
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {

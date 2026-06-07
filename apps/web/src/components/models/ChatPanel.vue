@@ -2,17 +2,13 @@
 import { Input, OverlayScrollbars, Textarea, type OverlayScrollbarsInitializedEvent } from '@floway-dev/ui';
 import { nextTick, ref, watch } from 'vue';
 
-import { useAuthStore } from '../../stores/auth.ts';
-
 interface Message {
   role: 'user' | 'assistant';
   text: string;
   imageUrl?: string;
 }
 
-const props = defineProps<{ modelId: string }>();
-
-const auth = useAuthStore();
+const props = defineProps<{ modelId: string; apiKey: string | null }>();
 
 const chatMessages = ref<Message[]>([]);
 const chatInput = ref('');
@@ -76,9 +72,8 @@ const sendChatMessage = async () => {
   try {
     const headers: Record<string, string> = {
       'content-type': 'application/json',
-      'x-models-playground': '1',
     };
-    if (auth.authKey) headers['x-api-key'] = auth.authKey;
+    if (props.apiKey) headers['x-api-key'] = props.apiKey;
 
     const resp = await fetch('/v1/chat/completions', {
       method: 'POST',

@@ -3,19 +3,19 @@ import { test } from 'vitest';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const adminPatch = (id: string, body: unknown, adminKey: string) =>
+const adminPatch = (id: string, body: unknown, adminSession: string) =>
   requestApp(`/api/keys/${id}`, {
     method: 'PATCH',
-    headers: { 'x-api-key': adminKey, 'content-type': 'application/json' },
+    headers: { 'x-floway-session': adminSession, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_y', name: 'Y' }));
 
-  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_y', 'up_x'] }, adminKey);
+  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_y', 'up_x'] }, adminSession);
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.upstream_ids, ['up_y', 'up_x']);
@@ -26,11 +26,11 @@ test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async ()
 });
 
 test('PATCH /api/keys/:id resets to default with upstream_ids: null', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await adminPatch(apiKey.id, { upstream_ids: ['up_x'] }, adminKey);
+  await adminPatch(apiKey.id, { upstream_ids: ['up_x'] }, adminSession);
 
-  const response = await adminPatch(apiKey.id, { upstream_ids: null }, adminKey);
+  const response = await adminPatch(apiKey.id, { upstream_ids: null }, adminSession);
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.upstream_ids, null);
@@ -41,16 +41,16 @@ test('PATCH /api/keys/:id resets to default with upstream_ids: null', async () =
 });
 
 test('PATCH /api/keys/:id rejects an empty upstream_ids array', async () => {
-  const { apiKey, adminKey } = await setupAppTest();
-  const response = await adminPatch(apiKey.id, { upstream_ids: [] }, adminKey);
+  const { apiKey, adminSession } = await setupAppTest();
+  const response = await adminPatch(apiKey.id, { upstream_ids: [] }, adminSession);
   assertEquals(response.status, 400);
 });
 
 test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_known', name: 'Known' }));
 
-  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_known', 'up_ghost'] }, adminKey);
+  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_known', 'up_ghost'] }, adminSession);
   assertEquals(response.status, 400);
   const body = await response.json();
   assertEquals(typeof body.error, 'string');
@@ -60,16 +60,16 @@ test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error'
 });
 
 test('PATCH /api/keys/:id rejects duplicate ids inside the whitelist', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_x', 'up_x'] }, adminKey);
+  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_x', 'up_x'] }, adminSession);
   assertEquals(response.status, 400);
 });
 
 test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await adminPatch(apiKey.id, { upstream_ids: ['up_x'] }, adminKey);
+  await adminPatch(apiKey.id, { upstream_ids: ['up_x'] }, adminSession);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
@@ -77,12 +77,12 @@ test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent',
 });
 
 test('PATCH /api/keys/:id leaves upstream_ids unchanged (stale ids included) when only name is sent', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
   // Stale id surviving from a prior write; only touched by writes that target upstream_ids.
   await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_x', 'up_gone'] });
 
-  const response = await adminPatch(apiKey.id, { name: 'renamed' }, adminKey);
+  const response = await adminPatch(apiKey.id, { name: 'renamed' }, adminSession);
   assertEquals(response.status, 200);
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
@@ -91,12 +91,12 @@ test('PATCH /api/keys/:id leaves upstream_ids unchanged (stale ids included) whe
 });
 
 test('PATCH /api/keys/:id drops stale ids from storage when upstream_ids is written', async () => {
-  const { repo, apiKey, adminKey } = await setupAppTest();
+  const { repo, apiKey, adminSession } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_known', name: 'Known' }));
   // up_gone refers to an upstream deleted earlier; cleanup runs at save time.
   await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_known', 'up_gone'] });
 
-  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_known'] }, adminKey);
+  const response = await adminPatch(apiKey.id, { upstream_ids: ['up_known'] }, adminSession);
   assertEquals(response.status, 200);
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);

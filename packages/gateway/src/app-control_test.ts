@@ -1,114 +1,27 @@
 import { test } from 'vitest';
 
 import { DEFAULT_SEARCH_CONFIG } from './data-plane/tools/web-search/search-config.ts';
-import { copilotModels, requestApp, setupAppTest } from './test-helpers.ts';
-import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { requestApp, setupAppTest } from './test-helpers.ts';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-test('admin key is limited to control plane routes', async () => {
-  const { adminKey } = await setupAppTest();
+test('session token grants control-plane access but is rejected on data-plane', async () => {
+  const { adminSession } = await setupAppTest();
 
   const exportResponse = await requestApp('/api/export', {
-    headers: { 'x-api-key': adminKey },
+    headers: { 'x-floway-session': adminSession },
   });
   assertEquals(exportResponse.status, 200);
 
   const modelsResponse = await requestApp('/v1/models', {
-    headers: { 'x-api-key': adminKey },
+    headers: { 'x-floway-session': adminSession },
   });
-  assertEquals(modelsResponse.status, 403);
-  assertEquals(await modelsResponse.json(), {
-    error: 'This key is for dashboard only. Create an API key for API access.',
-  });
+  assertEquals(modelsResponse.status, 401);
 });
 
-test('admin key can access playground-approved data plane routes with x-models-playground', async () => {
+test('ADMIN_KEY presented as x-api-key on data plane is rejected', async () => {
   const { adminKey } = await setupAppTest();
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-        });
-      }
-
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'claude-test' }]));
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/models', {
-        headers: {
-          'x-api-key': adminKey,
-          'x-models-playground': '1',
-        },
-      });
-
-      assertEquals(response.status, 200);
-      assertEquals((await response.json()).data[0].id, 'claude-test');
-    },
-  );
-});
-
-test('admin key can access playground embeddings with x-models-playground', async () => {
-  const { adminKey } = await setupAppTest();
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-        });
-      }
-
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'text-embedding-real', supported_endpoints: ['/embeddings'] }]));
-      }
-
-      if (url.pathname === '/embeddings') {
-        return jsonResponse({
-          object: 'list',
-          model: 'text-embedding-real',
-          data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        });
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': adminKey,
-          'x-models-playground': '1',
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-real',
-          input: 'hello',
-        }),
-      });
-
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), {
-        object: 'list',
-        model: 'text-embedding-real',
-        data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
-        usage: { prompt_tokens: 1, total_tokens: 1 },
-      });
-    },
-  );
+  const response = await requestApp('/v1/models', { headers: { 'x-api-key': adminKey } });
+  assertEquals(response.status, 401);
 });
 
 test('uncaught internal errors include debug details in the HTTP body', async () => {
