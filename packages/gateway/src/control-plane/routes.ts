@@ -6,16 +6,17 @@ import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
-import { authLoginBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, exportQuery, fetchModelsBody, importBody, performanceQuery, searchConfigSchema, searchUsageQuery, tokenUsageQuery, updateKeyBody, updateUpstreamBody } from './schemas.ts';
+import { authLoginBody, changeOwnPasswordBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, performanceQuery, searchConfigSchema, searchUsageQuery, tokenUsageQuery, updateKeyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
 import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const adminOnlyMiddleware = async (c: Context, next: Next) => {
   if (!c.get('isAdmin')) {
-    return c.json({ error: 'Dashboard key required' }, 403);
+    return c.json({ error: 'Admin privileges required' }, 403);
   }
   await next();
 };
@@ -43,12 +44,20 @@ export const controlPlaneRoutes = new Hono()
   .get('/api/performance', zValidator('query', performanceQuery), performanceTelemetry)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/models', controlPlaneModels)
+  // Self-service password change is session-only (the current-password check
+  // pairs with a logged-in dashboard session); admins reset other users'
+  // passwords through PATCH /api/users/:id below, which is admin-gated.
+  .patch('/api/users/me/password', zValidator('json', changeOwnPasswordBody), changeOwnPassword)
   .route('/api', new Hono()
     .use('*', adminOnlyMiddleware)
     .post('/keys', zValidator('json', createKeyBody), createKey)
     .post('/keys/:id/rotate', rotateKey)
     .patch('/keys/:id', zValidator('json', updateKeyBody), updateKey)
     .delete('/keys/:id', deleteKey)
+    .get('/users', listUsers)
+    .post('/users', zValidator('json', createUserBody), createUser)
+    .patch('/users/:id', zValidator('json', updateUserBody), updateUser)
+    .delete('/users/:id', deleteUser)
     .get('/upstreams', listUpstreams)
     .get('/upstream-flags', listOptionalFlags)
     .post('/upstreams/copilot/auth/start', copilotAuthStart)

@@ -75,7 +75,7 @@ test('API key users cannot call admin-only key mutation routes', async () => {
   });
 
   assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'Dashboard key required' });
+  assertEquals(await response.json(), { error: 'Admin privileges required' });
 });
 
 test('API key users cannot mutate /api/search-config routes', async () => {
@@ -91,7 +91,7 @@ test('API key users cannot mutate /api/search-config routes', async () => {
   });
 
   assertEquals(response.status, 403);
-  assertEquals(await response.json(), { error: 'Dashboard key required' });
+  assertEquals(await response.json(), { error: 'Admin privileges required' });
 });
 
 test('/api/token-usage is visible to any authenticated user and includes all keys', async () => {

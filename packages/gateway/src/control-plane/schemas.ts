@@ -136,6 +136,41 @@ export const authLoginBody = z.object({
   password: z.string().min(1),
 });
 
+// --- users ---
+
+const usernameSchema = z.string().regex(/^[a-zA-Z0-9_.\-]{1,64}$/, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
+const passwordSchema = z.string().min(1);
+
+// upstream_ids reuses the api-key value semantics: null means unrestricted,
+// non-empty unique array narrows the user-level cap. Empty array is rejected.
+// Defined ahead of upstreamIdsValueSchema below so users + keys both reference
+// the same shape.
+const userUpstreamIdsValueSchema = z.array(z.string().min(1))
+  .min(1, 'upstreamIds must contain at least one upstream id; use null for unrestricted')
+  .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
+  .nullable();
+
+export const createUserBody = z.object({
+  username: usernameSchema,
+  password: passwordSchema,
+  isAdmin: z.boolean().optional(),
+  upstreamIds: userUpstreamIdsValueSchema.optional(),
+  canViewGlobalTelemetry: z.boolean().optional(),
+});
+
+export const updateUserBody = z.object({
+  username: usernameSchema.optional(),
+  password: passwordSchema.optional(),
+  isAdmin: z.boolean().optional(),
+  upstreamIds: userUpstreamIdsValueSchema.optional(),
+  canViewGlobalTelemetry: z.boolean().optional(),
+});
+
+export const changeOwnPasswordBody = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
+});
+
 // --- api keys ---
 
 export const createKeyBody = z.object({
