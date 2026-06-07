@@ -136,18 +136,23 @@ required for the server's AEAD-Open to succeed.
 
 ## reclaim-tls patches (cumulative)
 
-`patches/@reclaimprotocol__tls.patch` adds three new hooks (and a small
-hot-path stub):
+`patches/@reclaimprotocol__tls.patch` ships five surface changes — three
+new hooks, a `verifyHost` plumbing fix, and a hot-path performance stub:
 
 - `onClientHelloPack(bytes, ctx) → bytes?` — mutate the ClientHello after
   pack but before transcript hash. REALITY uses this to seal session_id.
-- `onRecvCertificateVerify({ certificates, signature, algorithm, signatureData }) → false?` — replace the standard signature check with a custom verifier; return `false` to skip the default check.
+- `onRecvCertificateVerify({ certificates, signature, algorithm, signatureData }) → false?` — replace the standard signature check with a custom verifier; return `false` to skip the default check. REALITY uses this to skip chain verification.
 - `onKeyPairGenerated(keyType, keyPair, algorithm) → keyPair?` — capture or
   replace the keyshare keypair as it is generated. REALITY captures the
   X25519 private CryptoKey for off-band ECDHE.
 - `startHandshake(opts)` accepts `sessionId` and `random` overrides.
-- `verifyHost` is threaded through so the cert-validation name can differ
-  from the `server_name` extension (used when SNI and cert match diverge).
+  REALITY uses both to preset the ClientHello's session_id slot before
+  the seal hook runs and the random for HKDF salt.
+- `verifyHost` is threaded into `verifyCertificateChain` so SNI and
+  cert-validation hostname can diverge. Consumed by every protocol
+  runner that drives userspace TLS to an upstream HTTPS endpoint
+  (http-connect, socks5, trojan, vless-core); enables domain fronting
+  and dial-by-IP shapes via `TargetSpec.tlsVerifyHost`.
 - `toHexStringWithWhitespace` is stubbed to a `<NN bytes>` summary —
   reclaim's hot path called the original on every TLS record from
   `logger.trace(...)`, where the args are eagerly evaluated even when

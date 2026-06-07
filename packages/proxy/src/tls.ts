@@ -163,7 +163,19 @@ export async function userspaceTls(
     try { plainController?.error(error); } catch { /* already closed/errored */ }
   };
   const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
-    try { plainController?.enqueue(chunk); } catch { plainClosed = true; }
+    // Once `plainClosed` is set, the controller has been closed/errored by
+    // a teardown path and the next reclaim-driven onApplicationData would
+    // throw ERR_INVALID_STATE. The teardown reason is the source of truth
+    // for the consumer; silently dropping post-close bytes here is correct.
+    // BEFORE plainClosed, an enqueue throw means a different invariant
+    // violation — surface it instead of latching to closed.
+    if (plainClosed) return;
+    try {
+      plainController?.enqueue(chunk);
+    } catch (err) {
+      plainClosed = true;
+      logTlsTeardownError(err);
+    }
   };
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
@@ -276,7 +288,7 @@ interface NodeProcessShape { env?: { FLOWAY_DEBUG_TLS?: string } }
 const logTlsTeardownError = (e: unknown): void => {
   const proc = (globalThis as unknown as { process?: NodeProcessShape }).process;
   if (proc?.env?.FLOWAY_DEBUG_TLS) {
-    // eslint-disable-next-line no-console
+
     console.debug('[userspace-tls] teardown:', e);
   }
 };

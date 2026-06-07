@@ -93,6 +93,46 @@ describe('createFetcher', () => {
     expect(order).toEqual(['a', 'b']);
   });
 
+  it('only adds one failure when an already-backed-off entry fails again on pass 2', async () => {
+    const repo = new InMemoryRepo();
+    // Pre-record two failures so 'a' is in active backoff with failCount=2.
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => { throw new ProxyDialError('still bad', 'tcp-connect'); },
+      runDirect: async () => new Response('ok'),
+    });
+    // Pass 1 skips 'a' (in backoff). Pass 2 retries it and fails — the
+    // retry must increment failCount by exactly 1 so the geometric
+    // schedule advances one step per real failure, not one step per pass.
+    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    const [row] = await repo.proxyBackoffs.listForUpstream('u');
+    expect(row!.failCount).toBe(3);
+  });
+
+  it('falls through when a fallback-list entry references an unknown proxy id', async () => {
+    const repo = new InMemoryRepo();
+    let directCalls = 0;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      // 'p_unknown' is in the list but not in proxyById — simulating a
+      // mid-request DELETE between catalog load and dial. The chain must
+      // advance to 'direct' rather than killing the whole call.
+      fallbackList: ['p_unknown', 'direct'],
+      proxyById: new Map(),
+      runProxied: async () => new Response('proxy'),
+      runDirect: async () => { directCalls++; return new Response('direct'); },
+    });
+    const res = await fetcher('https://api.openai.com', { method: 'GET' });
+    expect(await res.text()).toBe('direct');
+    expect(directCalls).toBe(1);
+  });
+
   it('does not retry an entry that already failed in the first pass', async () => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { runProxiedRequest } from './dialer.js';
+import { ProxyDialError } from './errors.js';
 import type { ProxyConfig } from './proxy-config.js';
 import type { TargetSpec } from './types.js';
 
@@ -53,3 +54,56 @@ describe('runProxiedRequest dispatch', () => {
     expect(await res.text()).toBe('ok');
   });
 });
+
+describe('runProxiedRequest deadline', () => {
+  it('rejects with a tcp-connect ProxyDialError when the per-call timeout fires', async () => {
+    // Wire socks5 to a runner that never resolves so only the deadline can
+    // unstick the call. The dialer's combined controller signals abort
+    // through to dispatch on timeout.
+    const { runSocks5 } = await import('./protocols/socks5.js');
+    vi.mocked(runSocks5).mockImplementationOnce(async opts => {
+      // Hold open until the caller signal aborts; reject with the abort
+      // reason so the dialer can surface the deadline error.
+      await new Promise<void>((_, reject) => {
+        opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
+      });
+      return new Response();
+    });
+    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+    await expect(
+      runProxiedRequest(config, target, { dialTimeoutMs: 50 }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('dial deadline exceeded'),
+    });
+  });
+
+  it('rethrows the caller-driven AbortError when the external signal aborts mid-dial', async () => {
+    const { runSocks5 } = await import('./protocols/socks5.js');
+    vi.mocked(runSocks5).mockImplementationOnce(async opts => {
+      await new Promise<void>((_, reject) => {
+        opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
+      });
+      return new Response();
+    });
+    const ac = new AbortController();
+    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+    setTimeout(() => ac.abort(new DOMException('client gone', 'AbortError')), 30);
+    await expect(
+      runProxiedRequest(config, target, { signal: ac.signal, dialTimeoutMs: 5_000 }),
+    ).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
+  });
+
+  it('refuses to dial when the caller signal is already aborted', async () => {
+    const ac = new AbortController();
+    ac.abort(new DOMException('already gone', 'AbortError'));
+    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+    await expect(
+      runProxiedRequest(config, target, { signal: ac.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+// `unused` is here to silence ProxyDialError-import-only lint noise.
+void ProxyDialError;

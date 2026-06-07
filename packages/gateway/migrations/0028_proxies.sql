@@ -25,8 +25,9 @@ CREATE TABLE proxy_upstream_backoffs (
   last_error_at INTEGER,
   PRIMARY KEY (proxy_id, upstream_id)
 );
-CREATE INDEX idx_proxy_upstream_backoffs_expires_at
-  ON proxy_upstream_backoffs (expires_at);
+-- The (proxy_id, upstream_id) PK already covers every read (always keyed
+-- by one of the two id columns); no scheduled GC sweeps the table by
+-- expires_at, so an additional index would be dead weight.
 
 ALTER TABLE upstreams
   ADD COLUMN proxy_fallback_list_json TEXT NOT NULL DEFAULT '[]';
