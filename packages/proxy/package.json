@@ -12,6 +12,10 @@
       "import": "./src/url.ts",
       "types": "./src/url.ts"
     },
+    "./url-kind": {
+      "import": "./src/url-kind.ts",
+      "types": "./src/url-kind.ts"
+    },
     "./proxy-config": {
       "import": "./src/proxy-config.ts",
       "types": "./src/proxy-config.ts"

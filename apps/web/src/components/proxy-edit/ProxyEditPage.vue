@@ -23,6 +23,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
+import { formatCountdown } from '../../utils/format-countdown.ts';
 
 const props = defineProps<{
   mode: 'create' | 'edit';
@@ -103,19 +104,6 @@ const upstreamNames = computed<Map<string, string>>(() => {
 // 1s tick to drive the backoff "in Xm Ys" countdown without a parent reload.
 const now = useNow({ interval: 1000 });
 
-const formatCountdown = (expiresAtSec: number): string => {
-  const ms = expiresAtSec * 1000 - now.value.getTime();
-  if (ms <= 0) return 'expiring';
-  const totalSec = Math.ceil(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m === 0) return `${s}s`;
-  if (m < 60) return `${m}m ${s}s`;
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  return `${h}h ${remM}m`;
-};
-
 const activeBackoffs = computed(() => {
   const nowSec = Math.floor(now.value.getTime() / 1000);
   return [...backoffsForProxy.value]
@@ -140,7 +128,7 @@ const lastTestedAgo = computed<string | null>(() => {
 // an edit-page test or after the parent re-fetches.
 watch(() => props.record, r => {
   if (!r) return;
-  lastEgressIp.value = r.last_egress_ip;
+  lastEgressIp.value = r.last_egress_ip ?? null;
   lastTestedAt.value = r.last_tested_at;
 }, { immediate: false });
 
@@ -204,7 +192,9 @@ const test = async () => {
     // egress state when the operator navigates back.
     emit('saved');
   } finally {
-    testing.value = false;
+    // Hold the disabled state for ~3s after a result lands so an operator
+    // can't unintentionally double-tap and double-spend the anchor's IP echo.
+    setTimeout(() => { testing.value = false; }, 3000);
   }
 };
 
@@ -344,7 +334,7 @@ const remove = async () => {
             <span class="min-w-0 flex-1 truncate text-sm text-gray-300" :title="row.last_error ?? undefined">
               {{ upstreamNames.get(row.upstream_id) ?? row.upstream_id }}
             </span>
-            <span class="text-xs text-accent-amber tabular-nums">in {{ formatCountdown(row.expires_at) }}</span>
+            <span class="text-xs text-accent-amber tabular-nums">in {{ formatCountdown(row.expires_at * 1000 - now.getTime()) }}</span>
             <span class="text-xs text-gray-500">fail #{{ row.fail_count }}</span>
             <button
               type="button"

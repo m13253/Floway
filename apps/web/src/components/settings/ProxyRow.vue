@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { kindFromUri } from '@floway-dev/proxy/url-kind';
+import { Spinner } from '@floway-dev/ui';
 import { useNow } from '@vueuse/core';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { Spinner } from '@floway-dev/ui';
 import { computed } from 'vue';
 
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
+import { formatCountdown } from '../../utils/format-countdown.ts';
 
 dayjs.extend(relativeTime);
 
@@ -32,42 +34,6 @@ defineEmits<{
 // 1s granularity matches the "in Xm Ys" precision we render.
 const now = useNow({ interval: 1000 });
 
-// Best-effort proxy-kind label derived from the URL scheme. The editor uses
-// the real `parseProxyUri` for live validation, but the settings card just
-// needs a stable colour-code per row — the scheme alone is enough, and the
-// regex-free dispatch keeps the list cheap to render even with many rows.
-const kindOf = (url: string): string => {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return 'PROXY';
-  }
-  switch (parsed.protocol) {
-  case 'http:': return 'HTTP';
-  case 'https:': return 'HTTPS';
-  case 'socks5:':
-  case 'socks5h:': return 'SOCKS5';
-  case 'ss:': {
-    // ss2022 ciphers begin with `2022-blake3-`; the userinfo carries either
-    // `method:password` (legacy SS) or the same with a 2022 cipher prefix.
-    const userinfo = decodeURIComponent(parsed.username || '');
-    return userinfo.startsWith('2022-blake3-') ? 'SS-2022' : 'SS';
-  }
-  case 'trojan:': return 'TROJAN';
-  case 'vless:': {
-    // REALITY uses `security=reality`; vless-over-WS uses `type=ws`. Anything
-    // else falls back to the bare protocol label.
-    const security = parsed.searchParams.get('security');
-    const transport = parsed.searchParams.get('type');
-    if (security === 'reality') return 'REALITY';
-    if (transport === 'ws') return 'VLESS-WS';
-    return 'VLESS';
-  }
-  default: return parsed.protocol.replace(/:$/, '').toUpperCase() || 'PROXY';
-  }
-};
-
 // Palette is structured around a single rule: amber is reserved for the
 // backoff/warning semantic everywhere else in the dashboard, so no proxy-kind
 // label may use it. Tunneling protocols (HTTPS CONNECT, VLESS over TCP/WS)
@@ -89,7 +55,7 @@ const kindBadgeClass = (kind: string) => {
   }
 };
 
-const kind = computed(() => kindOf(props.proxy.url));
+const kind = computed(() => kindFromUri(props.proxy.url));
 
 // Strip userinfo before display: shadowsocks and trojan URIs embed the secret
 // as the userinfo segment, and we do not want it leaking into a tooltip.
@@ -111,18 +77,6 @@ const lastTestedAgo = computed(() => {
   return dayjs(props.proxy.last_tested_at * 1000).from(dayjs(now.value));
 });
 
-const formatCountdown = (ms: number): string => {
-  if (ms <= 0) return 'now';
-  const totalSec = Math.ceil(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m === 0) return `${s}s`;
-  if (m < 60) return `${m}m ${s}s`;
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  return `${h}h ${remM}m`;
-};
-
 const activeBackoffs = computed(() => {
   // expires_at is unix seconds.
   const nowSec = Math.floor(now.value.getTime() / 1000);
@@ -134,7 +88,7 @@ const activeBackoffs = computed(() => {
 const visibleBackoffs = computed(() => activeBackoffs.value.slice(0, 3));
 const extraBackoffCount = computed(() => Math.max(0, activeBackoffs.value.length - 3));
 const hasBackoffs = computed(() => activeBackoffs.value.length > 0);
-const hasEgressInfo = computed(() => props.proxy.last_egress_ip !== null || props.proxy.last_tested_at !== null);
+const hasEgressInfo = computed(() => (props.proxy.last_egress_ip ?? null) !== null || props.proxy.last_tested_at !== null);
 const showExpansion = computed(() => hasEgressInfo.value || hasBackoffs.value);
 
 const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;

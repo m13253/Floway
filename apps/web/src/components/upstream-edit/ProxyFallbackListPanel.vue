@@ -10,6 +10,7 @@ import { computed } from 'vue';
 
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
+import { formatCountdown } from '../../utils/format-countdown.ts';
 
 const DIRECT = 'direct';
 
@@ -56,18 +57,6 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
   }
   return map;
 });
-
-const formatCountdown = (ms: number): string => {
-  if (ms <= 0) return 'now';
-  const totalSec = Math.ceil(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m === 0) return `${s}s`;
-  if (m < 60) return `${m}m ${s}s`;
-  const h = Math.floor(m / 60);
-  const remM = m % 60;
-  return `${h}h ${remM}m`;
-};
 
 interface ActiveBackoff {
   expiresIn: string;

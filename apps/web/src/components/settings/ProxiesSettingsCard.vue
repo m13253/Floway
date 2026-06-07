@@ -91,16 +91,18 @@ const testProxy = async (record: ProxyRecord) => {
   const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
     () => api.api.proxies[':id'].test.$post({ param: { id: record.id }, json: {} }),
   );
-  testInFlight.value = setMapEntry(testInFlight.value, record.id, false);
   if (error) {
     testError.value = setMapEntry(testError.value, record.id, error.message);
-    return;
-  }
-  if (data && !data.ok) {
+  } else if (data && !data.ok) {
     testError.value = setMapEntry(testError.value, record.id, data.error ?? 'Test failed');
-    return;
+  } else {
+    emit('changed');
   }
-  emit('changed');
+  // Hold the disabled state for ~3s after a result lands so an operator
+  // can't unintentionally double-tap and double-spend the anchor's IP echo.
+  setTimeout(() => {
+    testInFlight.value = setMapEntry(testInFlight.value, record.id, false);
+  }, 3000);
 };
 
 const resetBackoffs = async (record: ProxyRecord) => {

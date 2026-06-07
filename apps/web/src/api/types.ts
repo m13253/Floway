@@ -168,12 +168,14 @@ export interface ProxyRecord {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  last_egress_ip: string | null;
+  // Wide enough to absorb a future repo refactor that surfaces `undefined`
+  // from a row mid-migration; consumers MUST `?? null` at the read site.
+  last_egress_ip: string | null | undefined;
   last_tested_at: number | null;
 }
 
 // Mirrors SerializedBackoffRow. `expires_at` and `last_error_at` are unix epoch
-// milliseconds; the dashboard formats them locally without a tz hop.
+// seconds; the UI converts via `* 1000` before handing them to dayjs / Date.
 export interface BackoffRow {
   proxy_id: string;
   upstream_id: string;
