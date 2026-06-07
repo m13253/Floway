@@ -125,7 +125,10 @@ const dialSocks5Inner = async (
 
   writer.releaseLock();
 
-  // Pump remaining transport bytes into the forward stream
+  // Pump remaining transport bytes into the forward stream. The dial's
+  // outer try/catch has already exited by the time this runs, so on error
+  // we ALSO close the socket — the orchestrator only holds wrapper streams
+  // and has no way to reach the raw fd otherwise.
   void (async () => {
     try {
       while (true) {
@@ -138,6 +141,7 @@ const dialSocks5Inner = async (
       }
     } catch (e) {
       fwdWriter.abort(e).catch(() => {});
+      void socket.close().catch(() => {});
     } finally {
       try { reader.releaseLock(); } catch { /* lock already released */ }
     }

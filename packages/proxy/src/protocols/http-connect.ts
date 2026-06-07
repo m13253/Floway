@@ -125,8 +125,14 @@ const dialHttpConnectInner = async (
   // Always-on terminal handler routes peel errors into the forward stream
   // so the orchestrator's next consumer (userspace TLS / fetchOnStream)
   // sees them as transport failures, and prevents an unhandled rejection
-  // on the failure path.
-  peelDone.catch(e => { fwdWriter.abort(e).catch(() => {}); });
+  // on the failure path. The outer dial-time try/catch has already exited
+  // by the time this fires, so we ALSO close the socket here — the
+  // orchestrator only holds wrapper streams and has no way to reach the
+  // raw fd otherwise.
+  peelDone.catch(e => {
+    fwdWriter.abort(e).catch(() => {});
+    void socket.close().catch(() => {});
+  });
 
   return { readable: postConnect, writable: socket.writable };
 };

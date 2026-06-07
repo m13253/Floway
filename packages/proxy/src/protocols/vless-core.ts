@@ -47,7 +47,7 @@ const parseUuid = (s: string): Uint8Array => {
     throw new ProxyDialError(`VLESS: malformed UUID ${JSON.stringify(s)}`, 'proxy-handshake');
   }
   const out = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  for (let i = 0; i < 16; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
 };
 
