@@ -85,6 +85,12 @@ async function runHttpConnectInner(
   // runHttpConnect closes the socket and the pump's reader.read() rejects;
   // we attach a noop terminal handler immediately so a pending rejection
   // never escapes as an unhandled rejection.
+  // Cap the CONNECT-response accumulation. A hostile or broken proxy that
+  // streams data without ever emitting the double-CRLF would otherwise grow
+  // `buf` until the Worker's heap cap (~128 MiB) kills the request. 64 KiB
+  // is two orders of magnitude over the real CONNECT-response size and
+  // still bounds the worst case.
+  const HEADER_BUFFER_CAP = 64 * 1024;
   const peelDone = (async () => {
     const reader = socket.readable.getReader();
     let buf = new Uint8Array(0);
@@ -116,6 +122,9 @@ async function runHttpConnectInner(
       next.set(buf, 0);
       next.set(value, buf.byteLength);
       buf = next;
+      if (buf.byteLength > HEADER_BUFFER_CAP) {
+        throw new ProxyDialError(`CONNECT response exceeded ${HEADER_BUFFER_CAP} bytes without a header terminator`, 'proxy-handshake');
+      }
     }
   })();
   // Always-on terminal handler routes peel errors into the forward stream

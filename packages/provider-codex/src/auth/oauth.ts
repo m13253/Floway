@@ -102,13 +102,12 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   return await codexTokenRequest(body, new Set(['app_session_terminated']), opts.fetcher ?? directFetcher);
 };
 
-// Refresh the Codex access token. The fetcher defaults to direct egress so
-// admin-side flows (initial import, operator-pressed Refresh button) keep
-// their existing behaviour, but the data-plane hot path passes the
-// upstream's proxy-aware Fetcher so a periodic ~5-minute refresh under
-// restricted egress goes through the same fallback chain as the request
-// it's serving.
-export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher = directFetcher): Promise<CodexOAuthTokens> => {
+// Refresh the Codex access token. `fetcher` is required so every refresh
+// — whether triggered by the data-plane hot path or by an operator-pressed
+// Refresh in the dashboard — flows through the upstream's proxy-aware
+// fallback chain. There is no implicit direct-egress default; an admin-
+// side call without an upstream context must construct one explicitly.
+export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,

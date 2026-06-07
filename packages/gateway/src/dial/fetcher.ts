@@ -53,6 +53,16 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const hasNonDirect = list.some(id => id !== 'direct');
   const directBeforeProxy = hasNonDirect && list.includes('direct') && list.indexOf('direct') < list.length - 1;
   return async (url, init) => {
+    // Reject streaming bodies upfront whenever any non-direct entry is in
+    // play. Without this the rejection would land inside collectBody, which
+    // only fires when a proxy attempt is actually reached — for a list like
+    // ['a','direct'] where 'a' is in active backoff, pass 1 hits direct and
+    // the runtime consumes the stream, then pass 2 throws far too late. We
+    // mirror collectBody's error message verbatim so callers see the same
+    // failure mode regardless of which pass would have surfaced it.
+    if (hasNonDirect && init.body instanceof ReadableStream) {
+      throw new Error('streaming request bodies are not yet supported through proxies');
+    }
     let target: TargetSpec | undefined;
     let effectiveInit = init;
     if (directBeforeProxy) {

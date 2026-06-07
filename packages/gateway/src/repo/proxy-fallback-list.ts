@@ -1,3 +1,9 @@
+// Sentinel value used in `proxy_fallback_list` for "no proxy — connect
+// directly". The only legal non-id entry. Centralised here so the
+// validator, the dial layer, and the wire serializer can all reference
+// the same string instead of repeating a literal.
+export const DIRECT_PROXY_ID = 'direct';
+
 // Defensive copy of `proxyFallbackList`: trimmed, with empty entries dropped
 // and duplicates removed while preserving first-seen order. Entries are bare
 // proxy ids or the literal 'direct' marker; we do not validate references

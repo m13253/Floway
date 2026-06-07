@@ -167,14 +167,14 @@ export async function userspaceTls(
     // a teardown path and the next reclaim-driven onApplicationData would
     // throw ERR_INVALID_STATE. The teardown reason is the source of truth
     // for the consumer; silently dropping post-close bytes here is correct.
-    // BEFORE plainClosed, an enqueue throw means a different invariant
-    // violation — surface it instead of latching to closed.
+    // BEFORE plainClosed, an enqueue throw is a real invariant violation —
+    // route it through closePlain so the consumer's reader unsticks with
+    // the actual error rather than hanging forever.
     if (plainClosed) return;
     try {
       plainController?.enqueue(chunk);
     } catch (err) {
-      plainClosed = true;
-      logTlsTeardownError(err);
+      closePlain(err);
     }
   };
   const closePlain = (error?: unknown): void => {
@@ -237,6 +237,11 @@ export async function userspaceTls(
         const { value, done } = await reader.read();
         if (done) {
           await tlsClient?.end().catch(logTlsTeardownError);
+          // Reclaim's onTlsEnd usually fires for clean close-notify, but
+          // a raw transport EOF without an alert wouldn't trigger it.
+          // Drive closePlain ourselves so the consumer's reader unsticks
+          // when the transport simply hangs up.
+          closePlain();
           return;
         }
         await tlsClient?.handleReceivedBytes(value);

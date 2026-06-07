@@ -94,12 +94,19 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   const reader = readable.getReader();
   let buffer = new Uint8Array(0);
 
+  // Cap accumulation so a misbehaving upstream that streams headers
+  // forever can't OOM the Worker. 64 KiB is two orders of magnitude over
+  // any sane response-header block.
+  const HEADER_BUFFER_CAP = 64 * 1024;
   let headerEnd = -1;
   while (headerEnd < 0) {
     const { value, done } = await reader.read();
     if (done) throw new Error(`unexpected EOF before headers; got ${buffer.byteLength} bytes`);
     buffer = concat(buffer, copy(value));
     headerEnd = findDoubleCrlf(buffer);
+    if (headerEnd < 0 && buffer.byteLength > HEADER_BUFFER_CAP) {
+      throw new Error(`HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`);
+    }
   }
 
   const headerBytes = buffer.subarray(0, headerEnd);
@@ -277,8 +284,16 @@ function chunkedBody(
           const sizeLine = new TextDecoder().decode(buf.subarray(0, idx));
           const semi = sizeLine.indexOf(';');
           const hex = (semi < 0 ? sizeLine : sizeLine.slice(0, semi)).trim();
+          // Strict hex validation. parseInt('1f garbage', 16) returns 31 —
+          // a smuggling-adjacent path. Require a pure run of hex digits;
+          // chunk extensions (after the `;`) are dropped by the slice
+          // above before we get here.
+          if (hex.length === 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
+            controller.error(new Error(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
+            return;
+          }
           need = parseInt(hex, 16);
-          if (Number.isNaN(need)) {
+          if (!Number.isFinite(need) || need < 0) {
             controller.error(new Error(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
             return;
           }

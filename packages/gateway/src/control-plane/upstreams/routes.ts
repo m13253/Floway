@@ -6,7 +6,7 @@ import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { clearModelsStore, directFetcher, getProviderRepo, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
@@ -147,7 +147,7 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 // and persistence layers dedupe via normalizeProxyFallbackList before
 // storing.
 const validateProxyFallbackList = async (list: readonly string[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = list.filter(id => id !== 'direct');
+  const ids = list.filter(id => id !== DIRECT_PROXY_ID);
   if (ids.length === 0) return { ok: true };
   const proxies = await getRepo().proxies.list();
   const known = new Set(proxies.map(p => p.id));
@@ -602,7 +602,12 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
   }
 
   try {
-    const tokens = await refreshCodexAccessToken(account.refresh_token);
+    // Thread the per-upstream proxy-aware fetcher so the operator-pressed
+    // Refresh button respects the same fallback chain as the data-plane hot
+    // path. Without this, a Codex upstream behind a corporate proxy would
+    // dial direct here and silently fail under restricted egress.
+    const fetcher = (await createPerRequestFetcher())(id);
+    const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
     const nextAccount = { ...account, refresh_token: tokens.refresh_token, state_updated_at: new Date().toISOString() };
     const nextState: CodexUpstreamState = { accounts: [nextAccount] };
     // CAS keyed on the just-read state. A losing race here means a concurrent

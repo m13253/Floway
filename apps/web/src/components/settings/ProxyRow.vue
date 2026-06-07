@@ -48,14 +48,19 @@ const kindBadgeClass = (kind: string) => {
 
 const kind = computed(() => kindFromUri(props.proxy.url));
 
-// Strip userinfo before display: shadowsocks and trojan URIs embed the secret
-// as the userinfo segment, and we do not want it leaking into a tooltip.
+// Strip userinfo before display: shadowsocks and trojan URIs embed the
+// secret as the userinfo segment, and we do not want it leaking into a
+// tooltip. URL parsing is preferred — but on parse failure we still scrub
+// the raw string with a minimal scheme://userinfo@ regex so a malformed
+// row (e.g. one our parser rejects but contains userinfo anyway) cannot
+// leak credentials through the fallback path.
 const urlPreview = computed(() => {
+  const raw = props.proxy.url;
   let parsed: URL;
   try {
-    parsed = new URL(props.proxy.url);
+    parsed = new URL(raw);
   } catch {
-    return props.proxy.url;
+    return raw.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^@/]*@/, '$1');
   }
   const host = parsed.hostname.includes(':') ? `[${parsed.hostname}]` : parsed.hostname;
   const port = parsed.port ? `:${parsed.port}` : '';

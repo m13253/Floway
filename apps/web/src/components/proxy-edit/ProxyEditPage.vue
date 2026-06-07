@@ -13,7 +13,7 @@ import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import { Button, Input, Spinner } from '@floway-dev/ui';
 import { useNow, useTimeoutFn } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
@@ -38,38 +38,8 @@ const upstreamsStore = useUpstreamsStore();
 
 const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
-// Local "fresh test result" override. The page's parent re-derives `record`
-// from the proxies-store array on every store reload, which means any
-// sibling action (sibling card refresh, the useNow tick driving an upstream
-// component, ...) hands us a new `record` object identity. Reading these
-// fields straight from `props.record` would otherwise be fine; the override
-// exists so a successful Test() click reflects the new IP immediately,
-// before the next store reload pulls it in from the server.
-const localEgressIp = ref<string | null>(null);
-const localTestedAt = ref<number | null>(null);
-const lastEgressIp = computed(() => localEgressIp.value ?? props.record?.last_egress_ip ?? null);
-const lastTestedAt = computed(() => localTestedAt.value ?? props.record?.last_tested_at ?? null);
-
-// Drop the local override when the server confirms (or supersedes) the
-// local test result. Two cases:
-//   * server-side reset / re-test by another action: server's last_tested_at
-//     transitions to null OR moves to a value >= our local timestamp;
-//   * the operator's reset on this page or a sibling component: same.
-// Only this narrow watcher touches the local refs — `dialTimeoutInput` is
-// seeded once at mount and never resyncs, so a parent reload never
-// clobbers an in-progress edit.
-watch(() => props.record?.last_tested_at, (serverTs) => {
-  if (localTestedAt.value === null) return;
-  if (serverTs === null || serverTs === undefined) {
-    localEgressIp.value = null;
-    localTestedAt.value = null;
-    return;
-  }
-  if (serverTs >= localTestedAt.value) {
-    localEgressIp.value = null;
-    localTestedAt.value = null;
-  }
-}, { immediate: false });
+const lastEgressIp = computed(() => props.record?.last_egress_ip ?? null);
+const lastTestedAt = computed(() => props.record?.last_tested_at ?? null);
 
 // Per-proxy dial-stage deadline. Stored as a string to make "empty" the
 // canonical "use default" signal; coerced to a number on save. The
@@ -159,8 +129,11 @@ const lastTestedAgo = computed<string | null>(() => {
 const { start: startTestCooldown } = useTimeoutFn(
   () => { testCoolingDown.value = false; },
   3000,
-  // The cooldown is a Test-button-only debounce. Save must NOT inherit it
-  // — `testing` (in-flight) is the right gate for Save's :disabled.
+  // The cooldown blocks both Test (anti double-spend on the anchor) and
+  // Save: a save during the post-test window would race the parent's
+  // store reload that's bringing in the just-persisted egress_ip /
+  // last_tested_at, and a save before that lands could overwrite the
+  // freshly-tested URL with a stale display.
   { immediate: false },
 );
 
@@ -225,12 +198,11 @@ const test = async () => {
     );
     if (error) { testError.value = error.message; return; }
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
-    if (data?.egress_ip) {
-      // Wire format is unix seconds, not millis; the next store reload
-      // overwrites these from the server-confirmed value.
-      localEgressIp.value = data.egress_ip;
-      localTestedAt.value = Math.floor(Date.now() / 1000);
-    }
+    // The test endpoint persists the egress IP and last_tested_at into the
+    // proxy row; emitting `saved` triggers the parent's store reload, which
+    // surfaces the new test result through `props.record`. No local mirror
+    // is needed — and avoiding one closes a stale-cache hazard where a
+    // local override would outlive a subsequent URL edit.
     emit('saved');
   } finally {
     // The Test request is no longer in flight — Save unblocks immediately.
@@ -404,7 +376,7 @@ const remove = async () => {
     </template>
 
     <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
-      <Button :loading="saving" :disabled="testing" @click="save">Save</Button>
+      <Button :loading="saving" :disabled="testing || testCoolingDown" @click="save">Save</Button>
       <Button variant="secondary" :disabled="saving" @click="cancel">Cancel</Button>
 
       <template v-if="mode === 'edit' && record">

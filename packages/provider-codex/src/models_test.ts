@@ -5,6 +5,11 @@ import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
+// `fetchCodexCatalog` requires an explicit fetcher; the test surface uses
+// the runtime `fetch` directly so we can spy on outbound requests without
+// pulling in the full per-request dial chain.
+const directFetcher: typeof fetch = (input, init) => fetch(input as string, init);
+
 afterEach(() => vi.restoreAllMocks());
 
 describe('fetchCodexCatalog', () => {
@@ -16,7 +21,7 @@ describe('fetchCodexCatalog', () => {
         { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
       ],
     }));
-    const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc' });
+    const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
     expect(catalog).toHaveLength(3);
     expect(catalog[0]).toEqual({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, max_context_window: 1000000 });
     expect(catalog[2]).toEqual({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000, max_context_window: 1000000 });
@@ -33,17 +38,17 @@ describe('fetchCodexCatalog', () => {
 
   test('throws when upstream returns non-2xx (caller handles 401 retry)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"error":"unauthorized"}', { status: 401 }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc' })).rejects.toThrow(/401/);
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/401/);
   });
 
   test('throws on missing models key (forward-compatible shape guard)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ data: [] }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc' })).rejects.toThrow(/models array/);
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/models array/);
   });
 
   test('throws on entry missing slug', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [{ display_name: 'no slug here' }] }));
-    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc' })).rejects.toThrow(/slug/);
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/slug/);
   });
 });
 

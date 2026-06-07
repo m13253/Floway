@@ -4,7 +4,7 @@ import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
-import { parseProxyUri, runProxiedRequest, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
+import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
 const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
@@ -125,12 +125,59 @@ const ANCHORS = {
 // IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
 // hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
 // chars before sniffing — a misbehaving anchor could otherwise feed an
-// arbitrary HTML page into `last_egress_ip`. The regex tightens each
-// branch enough to reject obvious junk: octets are 1-3 digits, the v6
-// branch requires at least one colon so an `aaaa`-style hex blob can't
-// masquerade as an IP. We don't claim octet-range validity here; that's
-// what the dashboard's display logic can do later.
-const IP_LIKE_RE = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]*:[0-9a-fA-F:.]*[0-9a-fA-F])$/;
+// arbitrary HTML page into `last_egress_ip`. We validate octet ranges and
+// canonical v6 shape (one optional `::` shorthand, 1-4 hex digits per
+// group, RFC 4291 group counts), so anchor strings like `999.999.999.999`
+// or `aaaa::bbbb::cccc` cannot pass.
+const isIpV4 = (s: string): boolean => {
+  const octets = s.split('.');
+  if (octets.length !== 4) return false;
+  for (const o of octets) {
+    if (!/^\d{1,3}$/.test(o)) return false;
+    // Reject leading zeros (e.g. `01`) — RFC 3986 forbids them and some
+    // resolvers interpret the value as octal, so accepting them invites
+    // ambiguity.
+    if (o.length > 1 && o[0] === '0') return false;
+    const n = Number(o);
+    if (n > 255) return false;
+  }
+  return true;
+};
+
+const isIpV6 = (s: string): boolean => {
+  if (!s.includes(':')) return false;
+  // At most one `::` shorthand (per RFC 4291 §2.2).
+  if ((s.match(/::/g) ?? []).length > 1) return false;
+  if (/:::/.test(s)) return false;
+
+  // Normalize an embedded v4 tail to two synthetic hex groups so the rest
+  // of the validation runs on a pure-hex shape.
+  let normalized = s;
+  const lastColon = s.lastIndexOf(':');
+  const afterLastColon = s.slice(lastColon + 1);
+  if (afterLastColon.includes('.')) {
+    if (!isIpV4(afterLastColon)) return false;
+    normalized = `${s.slice(0, lastColon + 1)}0:0`;
+  }
+
+  const validGroup = (g: string): boolean => /^[0-9a-fA-F]{1,4}$/.test(g);
+
+  if (normalized.includes('::')) {
+    const [leftRaw, rightRaw] = normalized.split('::');
+    const left = leftRaw === '' ? [] : leftRaw.split(':');
+    const right = rightRaw === '' ? [] : rightRaw.split(':');
+    if (!left.every(validGroup) || !right.every(validGroup)) return false;
+    // `::` must elide at least one group, so the explicit group total
+    // is strictly less than 8.
+    return left.length + right.length < 8;
+  }
+
+  const groups = normalized.split(':');
+  if (groups.length !== 8) return false;
+  return groups.every(validGroup);
+};
+
+const isIpLike = (s: string): boolean => isIpV4(s) || isIpV6(s);
 
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const id = c.req.param('id') ?? '';
@@ -170,7 +217,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       return c.json({ ok: false, error: `Anchor returned status ${response.status}` });
     }
     const truncated = (await response.text()).slice(0, 256).trim();
-    if (!IP_LIKE_RE.test(truncated)) {
+    if (!isIpLike(truncated)) {
       return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
     }
     // The v6 anchor exists specifically to confirm an operator has a v6
@@ -184,7 +231,21 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     await repo.proxies.recordTestSuccess(id, truncated);
     return c.json({ ok: true, egress_ip: truncated });
   } catch (err) {
-    return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    // Narrow the catch to dial-shaped failures: ProxyDialError surfaces
+    // proxy-handshake / inner-tls / tcp-connect, and a runtime fetch
+    // error from the underlying socket layer presents as a TypeError or
+    // generic Error with a network-shaped message. Programmer errors
+    // (TypeError from a typo, RangeError, etc.) MUST propagate to the
+    // framework's top-level handler instead of getting flattened into a
+    // green-channel ok:false reply.
+    if (err instanceof ProxyDialError) {
+      return c.json({ ok: false, error: `[${err.stage}] ${err.message}` });
+    }
+    if (err instanceof Error && err.name === 'AbortError') throw err;
+    if (err instanceof Error && /tcp connect to|fetch failed|network|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(err.message)) {
+      return c.json({ ok: false, error: err.message });
+    }
+    throw err;
   }
 };
 

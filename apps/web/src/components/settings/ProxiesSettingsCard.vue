@@ -57,26 +57,39 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
 // any failure, re-fetch the live order from the server (a local-snapshot
 // rollback would now diverge from the partially-applied server state) and
 // surface the error.
+//
+// `reorderInFlight` guards `moveProxy` so a rapid sequence of arrow clicks
+// can't fan out into overlapping per-row patches, which would otherwise
+// race the server-side rewrite of `sort_order` against a stale client
+// snapshot. Dropping the click is fine: the move-arrow buttons reflect
+// `reorderInFlight` and the user retries once the operation lands.
+const reorderInFlight = ref(false);
 const persistReorder = async (next: ProxyRecord[]) => {
   const patches = next
     .map((p, i) => ({ id: p.id, oldOrder: p.sort_order, newOrder: i }))
     .filter(({ oldOrder, newOrder }) => oldOrder !== newOrder);
   if (patches.length === 0) return;
-  for (const { id, newOrder } of patches) {
-    const { error } = await callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } }));
-    if (error) {
-      window.alert(`Reorder failed: ${error.message}`);
-      // Reload from server so the local UI matches whatever rows have
-      // already been written before the failure point.
-      await proxiesStore.load();
-      emit('changed');
-      return;
+  reorderInFlight.value = true;
+  try {
+    for (const { id, newOrder } of patches) {
+      const { error } = await callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } }));
+      if (error) {
+        window.alert(`Reorder failed: ${error.message}`);
+        // Reload from server so the local UI matches whatever rows have
+        // already been written before the failure point.
+        await proxiesStore.load();
+        emit('changed');
+        return;
+      }
     }
+    emit('changed');
+  } finally {
+    reorderInFlight.value = false;
   }
-  emit('changed');
 };
 
 const moveProxy = async (id: string, direction: -1 | 1) => {
+  if (reorderInFlight.value) return;
   const list = [...ordered.value];
   const idx = list.findIndex(p => p.id === id);
   const target = idx + direction;
@@ -89,6 +102,7 @@ const moveProxy = async (id: string, direction: -1 | 1) => {
 };
 
 const moveDisabled = (id: string, direction: -1 | 1) => {
+  if (reorderInFlight.value) return true;
   const idx = ordered.value.findIndex(p => p.id === id);
   const target = idx + direction;
   return idx === -1 || target < 0 || target >= ordered.value.length;

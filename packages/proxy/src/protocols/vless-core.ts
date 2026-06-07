@@ -63,7 +63,9 @@ function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
 
 function parseUuid(s: string): Uint8Array {
   const hex = s.replace(/-/g, '');
-  if (hex.length !== 32) throw new Error('bad UUID');
+  if (hex.length !== 32 || !/^[0-9a-fA-F]+$/.test(hex)) {
+    throw new ProxyDialError(`VLESS: malformed UUID ${JSON.stringify(s)}`, 'proxy-handshake');
+  }
   const out = new Uint8Array(16);
   for (let i = 0; i < 16; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
   return out;
