@@ -358,14 +358,11 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   return items;
 });
 
-// Sum the right pane's children — the Models card + the Model Editor card,
-// each at its own intrinsic height. We deliberately do NOT measure the
-// ModelsPanel root itself, because the grid stretches it to row height (the
-// taller of the two columns), which would feed itself back into the aside's
-// max-h and lock the value high forever — selecting a smaller model would
-// never let it shrink. The children of the panel are NOT stretched, so their
-// summed height is the true intrinsic content height regardless of grid
-// stretch.
+// Measure the right pane's intrinsic content height (sum of its children, not
+// the root, which the grid stretches). The aside caps its max-h at this value
+// so the rail and the editor reach the same bottom; the cap is overridden by
+// the aside's own intrinsic-floor min-h when the rail's children would not
+// otherwise fit (see UpstreamConfigPanel).
 const modelsPanelRef = useTemplateRef<{ $el: HTMLElement } | null>('modelsPanelRef');
 const rightContentH = ref(0);
 let rightObserver: ResizeObserver | undefined;
@@ -409,14 +406,15 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
     <p v-if="saveError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">{{ saveError }}</p>
     <p v-if="upstreamModelsError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">Failed to fetch upstream model list: {{ upstreamModelsError }}</p>
 
-    <!-- Two-column workbench. Default grid stretch makes both columns reach
-         the same y at the row's bottom. The aside's max-h is the larger of
-         (viewport-bound, right-pane's intrinsic content height) — so a
-         long flag list scrolls inside the rail when the right pane is
-         shorter than the viewport, and grows with the right pane when the
-         editor is taller. The right intrinsic height comes from summing
-         ModelsPanel's children (see measureRight) rather than the root
-         element, which is itself stretched by the grid. -->
+    <!-- Two-column workbench. Default behavior: aside max-h matches the
+         right pane (or viewport, whichever is taller) so the rail and the
+         editor reach the same bottom; flag editor flex-1 + OverlayScrollbars
+         soaks up internal slack. The cap is OVERRIDDEN by the aside's
+         intrinsic-floor min-h (computed inside UpstreamConfigPanel: every
+         non-flag section's height + flag editor's min-h-[16rem]) so when
+         the other sections plus the flag editor's minimum would not fit
+         under the cap, the aside grows past it. The rail itself never
+         clips or scrolls; the page does. -->
     <div :style="workbenchStyle" class="grid grid-cols-1 gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
       <UpstreamConfigPanel
         :provider="activeProvider"
@@ -438,7 +436,6 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :available-model-items="availableModelItems"
         :initial-copilot-quota="initialCopilotQuota"
         :initial-copilot-quota-error="initialCopilotQuotaError"
-        class="lg:max-h-[max(calc(100vh-7rem),var(--right-pane-h,0px))]"
         @update:provider="setActiveProvider"
         @fetch-models="fetchModels"
         @copilot-completed="onCopilotCompleted"
