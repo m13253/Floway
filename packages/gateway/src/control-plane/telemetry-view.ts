@@ -23,7 +23,6 @@ export const resolveTelemetryView = (
   rawKeyId: string | undefined,
 ): ResolvedTelemetryView | TelemetryViewError => {
   const userId = c.get('userId') as number;
-  const isAdmin = c.get('isAdmin') === true;
   const canViewGlobal = c.get('canViewGlobalTelemetry') === true;
 
   const defaultView: TelemetryView = canViewGlobal ? 'all-by-user' : 'self-by-key';
@@ -45,7 +44,5 @@ export const resolveTelemetryView = (
   return {
     view,
     scopeUserId: view === 'self-by-key' ? userId : null,
-    // isAdmin reserved for future per-user (`user:42`) drilldown queries.
-    ...(isAdmin ? {} : {}),
   };
 };

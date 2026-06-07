@@ -1,14 +1,14 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
-import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
-import type { ApiKey as LoaderApiKey } from '../../api/types.ts';
+import { callApi, useApi } from '../../api/client.ts';
+import type { ApiKey } from '../../api/types.ts';
 import { useModelsStore } from '../../composables/useModels.ts';
 
 export const useModelsPageData = defineBasicLoader(async () => {
-  const api = useApiForLoader();
+  const api = useApi();
   const [keysRes] = await Promise.all([
-    callApiForLoader<LoaderApiKey[]>(() => api.api.keys.$get()),
+    callApi<ApiKey[]>(() => api.api.keys.$get()),
     useModelsStore().load(),
   ]);
   return { keys: keysRes.data ?? [] };
@@ -47,8 +47,7 @@ const selectChatModel = (id: string) => { chatModelId.value = id; };
 
 if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filteredChatModels.value[0].id;
 
-// Playground requires a real API key (the per-user one). Default to the first
-// active key on load and keep the selection sticky across model changes.
+// Playground requires a real per-user API key, not the admin key.
 const selectedKeyId = ref<string | null>(keys.value[0]?.id ?? null);
 watch(keys, list => {
   if (selectedKeyId.value && list.some(k => k.id === selectedKeyId.value)) return;

@@ -194,9 +194,6 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
   return { type: 'ok', records };
 };
 
-// v4 only: validate the users[] block. Each entry must have a positive integer
-// id, a username matching the canonical regex, and a password_hash that is
-// either null or starts with the supported scheme prefix.
 const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'users must be an array' };
 

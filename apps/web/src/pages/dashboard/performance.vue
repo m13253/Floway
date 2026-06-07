@@ -24,13 +24,10 @@ interface LoaderOverviewResponse {
   runtimeRows: LoaderPerformanceRecord[];
 }
 
-const initialPerformanceView = (canViewGlobal: boolean): 'all-by-user' | 'self-by-key' =>
-  canViewGlobal ? 'all-by-user' : 'self-by-key';
-
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const auth = useAuthStoreForLoader();
-  const view = initialPerformanceView(auth.canViewGlobalTelemetry);
+  const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
   const { data } = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
@@ -84,8 +81,7 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
-// `view` mirrors the Token Usage page: hidden picker for callers without
-// `canViewGlobalTelemetry`, defaults to `all-by-user` for everyone with the flag.
+// Mirrors the Token Usage page picker; hidden when canViewGlobalTelemetry is false.
 const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
 
 const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);

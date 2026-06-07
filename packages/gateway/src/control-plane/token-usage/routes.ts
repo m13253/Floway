@@ -1,11 +1,10 @@
 // GET /api/token-usage — query per-key or per-user token usage records.
 //
 // The `view` query parameter selects between two shapes: `self-by-key` returns
-// the actor's own keys (the historical default for non-admin callers) while
-// `all-by-user` aggregates across users for admins and users granted the
-// `canViewGlobalTelemetry` flag. The default view is determined by capability:
-// callers who can see global telemetry default to all-by-user, everyone else
-// to self-by-key.
+// the actor's own keys, while `all-by-user` aggregates across users for admins
+// and users granted the `canViewGlobalTelemetry` flag. The default view is
+// determined by capability: callers who can see global telemetry default to
+// all-by-user, everyone else to self-by-key.
 
 import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';

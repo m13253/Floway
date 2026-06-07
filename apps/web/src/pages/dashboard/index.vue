@@ -2,8 +2,6 @@
 import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 
-// `/dashboard` resolves to the Settings tab — the My Account panel there is
-// visible to every identity, and admin-only sections light up for admins.
 const router = useRouter();
 
 onMounted(() => {

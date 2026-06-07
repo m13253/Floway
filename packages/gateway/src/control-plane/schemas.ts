@@ -141,11 +141,10 @@ export const authLoginBody = z.object({
 const usernameSchema = z.string().regex(/^[a-zA-Z0-9_.\-]{1,64}$/, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 const passwordSchema = z.string().min(1);
 
-// upstream_ids reuses the api-key value semantics: null means unrestricted,
-// non-empty unique array narrows the user-level cap. Empty array is rejected.
-// Defined ahead of upstreamIdsValueSchema below so users + keys both reference
-// the same shape.
-const userUpstreamIdsValueSchema = z.array(z.string().min(1))
+// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
+// Empty array is rejected because a key that allows zero upstreams cannot serve
+// any model and the UI has no affordance to express that intent.
+const upstreamIdsValueSchema = z.array(z.string().min(1))
   .min(1, 'upstreamIds must contain at least one upstream id; use null for unrestricted')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
@@ -154,7 +153,7 @@ export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
   isAdmin: z.boolean().optional(),
-  upstreamIds: userUpstreamIdsValueSchema.optional(),
+  upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),
 });
 
@@ -162,7 +161,7 @@ export const updateUserBody = z.object({
   username: usernameSchema.optional(),
   password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
-  upstreamIds: userUpstreamIdsValueSchema.optional(),
+  upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),
 });
 
@@ -175,13 +174,8 @@ export const changeOwnPasswordBody = z.object({
 
 export const createKeyBody = z.object({
   name: z.string().min(1),
-  upstream_ids: userUpstreamIdsValueSchema.optional(),
+  upstream_ids: upstreamIdsValueSchema.optional(),
 });
-
-// upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because a key that allows zero upstreams cannot serve
-// any model and the UI has no affordance to express that intent.
-const upstreamIdsValueSchema = userUpstreamIdsValueSchema;
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),

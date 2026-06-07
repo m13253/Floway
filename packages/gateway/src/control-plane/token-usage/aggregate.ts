@@ -13,8 +13,7 @@ export interface DisplayUsageRecord {
   cost: number;
 }
 
-// Per-user shape returned by the all-by-user telemetry view; mirrors the per-key
-// shape but keyed on userId so the dashboard can render one row per owner.
+// Per-(user, model, hour) shape for the all-by-user telemetry view.
 export interface DisplayUsageByUserRecord {
   userId: number;
   model: string;

@@ -139,9 +139,9 @@ package scripts. When deploying, do not pass `--dry-run`.
 For manual data-plane validation, log into the dashboard with the
 `ADMIN_KEY` backdoor (leave the username field blank) or with your own
 user, then create or pick an API key under your account and use it as
-`x-api-key`. The `ADMIN_KEY` is no longer accepted on data-plane routes;
-its only purpose is to let an operator who lost the admin password log
-in via `POST /auth/login`.
+`x-api-key`. `ADMIN_KEY` is not a data-plane credential; its only
+purpose is to let an operator who lost the admin password log in via
+`POST /auth/login`.
 
 Database exports include the `password_hash` for every user (active and
 soft-deleted) so a restore reconstructs login state. Treat exported

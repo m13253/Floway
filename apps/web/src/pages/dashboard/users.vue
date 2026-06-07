@@ -43,8 +43,7 @@ const createOpen = ref(false);
 const passwordOpen = ref(false);
 const passwordTarget = ref<WireUser | null>(null);
 
-interface RevealedKey { name: string; key: string }
-const revealedKey = ref<RevealedKey | null>(null);
+const revealedKey = ref<{ name: string; key: string } | null>(null);
 
 const reload = async () => {
   const { data, error: err } = await callApi<WireUser[]>(() => api.api.users.$get());
@@ -54,7 +53,7 @@ const reload = async () => {
 };
 
 const onCreated = ({ user, defaultKey }: { user: WireUser; defaultKey: { name: string; key: string } }) => {
-  revealedKey.value = { name: defaultKey.name, key: defaultKey.key };
+  revealedKey.value = defaultKey;
   void reload();
   // Bring the just-created user into the local list optimistically.
   if (!users.value.find(u => u.id === user.id)) users.value = [...users.value, user];

@@ -32,8 +32,8 @@ interface PerformanceQueryParams {
 }
 
 // Schema-validated query → handler-facing params. Returns the canonical
-// "start and end query parameters are required" message rather than a generic
-// zod-shaped error to preserve the existing dashboard inline-error UX.
+// 'start and end query parameters are required' message rather than a generic
+// zod-shaped error so the dashboard's inline-error rendering stays intact.
 const readPerformanceQuery = (
   c: Ctx,
   defaults: { bucket: PerformanceBucketGranularity; groupBy: PerformanceGroupBy },
@@ -106,8 +106,8 @@ const queryRecordsForView = async (
   return params.keyId ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
-// Lazy keyId → userId map for groupBy=userId. Built from active + soft-deleted
-// rows so historical telemetry on a since-deleted key still resolves.
+// keyId → userId map. Includes soft-deleted keys so historical telemetry on a
+// since-deleted key still resolves.
 const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
   const keys = await getRepo().apiKeys.list();
   return new Map(keys.map(k => [k.id, k.userId] as const));

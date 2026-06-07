@@ -2,8 +2,6 @@ import { useLocalStorage } from '@vueuse/core';
 import { defineStore } from 'pinia';
 import { computed } from 'vue';
 
-// Persists the dashboard's session token plus the user payload from /auth/login.
-// Refreshes are handled on bootstrap via /auth/me.
 export interface AuthUser {
   id: number;
   username: string;

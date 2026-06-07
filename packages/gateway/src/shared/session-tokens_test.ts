@@ -1,7 +1,6 @@
-import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 
-import { extractSessionToken, generateSessionToken } from './session-tokens.ts';
+import { generateSessionToken } from './session-tokens.ts';
 
 describe('session-tokens', () => {
   test('generateSessionToken returns 64 lowercase hex characters', () => {
@@ -11,17 +10,5 @@ describe('session-tokens', () => {
 
   test('successive tokens differ', () => {
     expect(generateSessionToken()).not.toBe(generateSessionToken());
-  });
-
-  test('extractSessionToken reads the x-floway-session header', async () => {
-    const app = new Hono().get('/probe', c => c.json({ token: extractSessionToken(c) }));
-    const res = await app.request('/probe', { headers: { 'x-floway-session': 'abc' } });
-    expect(await res.json()).toEqual({ token: 'abc' });
-  });
-
-  test('extractSessionToken returns null when header is absent', async () => {
-    const app = new Hono().get('/probe', c => c.json({ token: extractSessionToken(c) }));
-    const res = await app.request('/probe');
-    expect(await res.json()).toEqual({ token: null });
   });
 });

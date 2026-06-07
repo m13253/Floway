@@ -30,9 +30,7 @@ interface LoaderSearchUsageResponse {
   activeProvider: string;
 }
 
-// All-by-user response payload — `userId` replaces `keyId`, `users` replaces
-// `keys`. The page normalizes both shapes into the per-key shape so the chart
-// and summary code can stay shape-agnostic.
+// The page normalizes the by-user payload into the by-key shape so the chart and summary code can stay shape-agnostic.
 interface LoaderUsageByUserResponse {
   records: Array<{
     userId: number;
@@ -61,12 +59,10 @@ const userRecordsAsKeyShape = (records: LoaderUsageByUserResponse['records']) =>
 const userSearchRecordsAsKeyShape = (records: LoaderSearchUsageByUserResponse['records']) =>
   records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests }));
 
-const initialView = (canViewGlobal: boolean): 'all-by-user' | 'self-by-key' => canViewGlobal ? 'all-by-user' : 'self-by-key';
-
 export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const auth = useAuthStoreForLoader();
-  const view = initialView(auth.canViewGlobalTelemetry);
+  const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end } = dashboardRangeQueryForLoader('today');
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([

@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
@@ -20,20 +21,17 @@ const apiKeyToJson = (key: ApiKey) => ({
   upstream_ids: key.upstreamIds,
 });
 
-const userUpstreamIdsFromCtx = (c: Context): readonly string[] | null =>
-  (c.get('userUpstreamIds') as readonly string[] | null | undefined) ?? null;
-
 const validateUpstreamIds = async (
   c: Context,
-  proposed: readonly string[] | null | undefined,
+  proposed: readonly string[] | null,
 ): Promise<string | null> => {
-  if (proposed === null || proposed === undefined) return null;
+  if (proposed === null) return null;
   const upstreams = await getRepo().upstreams.list();
   const known = new Set(upstreams.map(u => u.id));
   const unknown = proposed.filter(id => !known.has(id));
   if (unknown.length) return `unknown upstream id(s): ${unknown.join(', ')}`;
 
-  const userCap = userUpstreamIdsFromCtx(c);
+  const userCap = userUpstreamIdsFromContext(c);
   if (userCap === null) return null;
   const userSet = new Set(userCap);
   const blocked = proposed.filter(id => !userSet.has(id));

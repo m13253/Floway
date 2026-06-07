@@ -11,7 +11,6 @@ dayjs.extend(relativeTime);
 
 const props = defineProps<{
   keys: ApiKey[];
-  loading: boolean;
   upstreams: UpstreamOption[];
   selectedId: string;
   copied: string | null;

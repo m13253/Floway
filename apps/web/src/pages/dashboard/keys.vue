@@ -149,7 +149,6 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value ?? [])
 
       <KeysTable
         :keys="keys"
-        :loading="loading"
         :upstreams="upstreamOptions"
         :selected-id="selectedKeyId"
         :copied="copied"

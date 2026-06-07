@@ -1,7 +1,6 @@
 import type { Context, Next } from 'hono';
 
 import { getRepo } from '../repo/index.ts';
-import { extractSessionToken } from '../shared/session-tokens.ts';
 import { getEnv } from '@floway-dev/platform';
 
 // `/` and `/dashboard` are served by Workers Static Assets (apps/web/dist)
@@ -19,7 +18,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
   if (PUBLIC_PATHS.has(path) && c.req.method === 'GET') return await next();
   if (AUTH_VALIDATE_PATHS.has(path) && c.req.method === 'POST') return await next();
 
-  const sessionToken = extractSessionToken(c);
+  const sessionToken = c.req.header('x-floway-session');
   if (sessionToken) {
     if (!isControlPlanePath(path)) {
       return c.json({ error: 'Session tokens are only valid on dashboard routes; data-plane requests must use an API key.' }, 401);

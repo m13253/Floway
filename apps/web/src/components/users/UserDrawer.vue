@@ -49,8 +49,7 @@ watch(open, v => {
   error.value = null;
 });
 
-const usernameRegex = /^[a-zA-Z0-9_.\-]{1,64}$/;
-const usernameValid = computed(() => usernameRegex.test(username.value));
+const usernameValid = computed(() => /^[a-zA-Z0-9_.\-]{1,64}$/.test(username.value));
 
 const submit = async () => {
   if (!usernameValid.value) {

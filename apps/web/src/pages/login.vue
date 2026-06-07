@@ -19,11 +19,6 @@ const usernameInput = ref('');
 const passwordInput = ref('');
 const errorMessage = ref<string | null>(null);
 
-interface LoginResponse {
-  token: string;
-  user: AuthUser;
-}
-
 const [loading, submit] = useLoading(async () => {
   errorMessage.value = null;
   if (!passwordInput.value) {
@@ -31,7 +26,7 @@ const [loading, submit] = useLoading(async () => {
     return;
   }
 
-  const { data, error } = await callApi<LoginResponse>(
+  const { data, error } = await callApi<{ token: string; user: AuthUser }>(
     () => api.auth.login.$post({ json: { username: usernameInput.value.trim(), password: passwordInput.value } }),
   );
   if (error) {

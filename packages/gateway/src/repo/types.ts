@@ -126,8 +126,7 @@ export interface UsersRepo {
 }
 
 export interface SessionsRepo {
-  // Touches last_seen_at on hit so the dashboard can surface "last active"
-  // and any future cleanup logic has a freshness signal.
+  // Touches last_seen_at on hit so the dashboard can surface "last active".
   getByIdAndTouch(id: string): Promise<Session | null>;
   create(userId: number): Promise<Session>;
   deleteById(id: string): Promise<boolean>;

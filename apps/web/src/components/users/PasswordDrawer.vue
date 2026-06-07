@@ -5,18 +5,11 @@ import { ref, watch } from 'vue';
 import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
 
-// Two-mode password change drawer.
-//   - mode="self"   pairs `currentPassword` and `newPassword` and posts to
-//                   /api/users/me/password.
-//   - mode="admin"  takes only `newPassword` and posts to
-//                   /api/users/:id (admin password reset).
 const open = defineModel<boolean>('open');
 
 const props = defineProps<{
   mode: 'self' | 'admin';
-  // Required only for admin mode.
   targetUserId?: number;
-  // Display name of the target — admin-mode title only.
   targetUsername?: string;
 }>();
 

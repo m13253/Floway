@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { OverlayScrollbars, Switch } from '@floway-dev/ui';
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-
-dayjs.extend(relativeTime);
 
 interface WireUser {
   id: number;
@@ -27,8 +24,8 @@ defineEmits<{
   remove: [user: WireUser];
 }>();
 
-const shortDate = (s: string | null | undefined) => s ? dayjs(s).format('MMM D, YYYY') : '';
-const fullDateTime = (s: string | null | undefined) => s ? dayjs(s).format('YYYY-MM-DD HH:mm:ss') : '';
+const shortDate = (s: string) => dayjs(s).format('MMM D, YYYY');
+const fullDateTime = (s: string) => dayjs(s).format('YYYY-MM-DD HH:mm:ss');
 
 const isProtected = (id: number, actor: number) => id === 1 || id === actor;
 </script>
