@@ -52,7 +52,16 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
     }
   }
 
-  const record = await getRepo().proxies.patch(id, {
+  const repo = getRepo();
+  // Capture the existing URL before patch so we know whether to sweep
+  // backoff state — the patch itself only signals URL change via clearing
+  // the test-result fields, which would otherwise leave operators waiting
+  // for the geometric schedule to recover after they fixed a broken proxy.
+  const existing = await repo.proxies.getById(id);
+  if (!existing) return c.json({ error: 'Proxy not found' }, 404);
+  const urlChanged = body.url !== undefined && body.url !== existing.url;
+
+  const record = await repo.proxies.patch(id, {
     name: body.name,
     url: body.url,
     sortOrder: body.sort_order,
@@ -62,6 +71,13 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
     ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds ?? null } : {}),
   });
   if (!record) return c.json({ error: 'Proxy not found' }, 404);
+
+  if (urlChanged) {
+    // The new URL might point at a healthy server; the old URL's backoff
+    // state must not stop the dial layer from retrying immediately.
+    await repo.proxyBackoffs.resetForProxy(id);
+  }
+
   return c.json(proxyRecordToJson(record));
 };
 

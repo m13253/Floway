@@ -1197,7 +1197,12 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
     // SQLite reads RHS column references at the start of the UPDATE, before
     // the increment is applied. So `1 << fail_count` resolves against the
     // pre-increment value, yielding the 60 * 2^(n-1) schedule when this
-    // call records the n-th consecutive failure.
+    // call records the n-th consecutive failure. The exponent is clamped
+    // at 6 because anything larger already exceeds the 3600s cap and would
+    // risk integer overflow if a runaway proxy stays broken for thousands
+    // of consecutive calls (the JS mirror in memory.ts wraps at 2^31; SQL
+    // is wider but still finite — capping the exponent keeps both impls
+    // bounded by construction).
     await this.db
       .prepare(
         `INSERT INTO proxy_upstream_backoffs
@@ -1205,7 +1210,7 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
          VALUES (?, ?, 1, ? + 60, ?, ?)
          ON CONFLICT (proxy_id, upstream_id) DO UPDATE SET
            fail_count = fail_count + 1,
-           expires_at = ? + min(60 * (1 << fail_count), 3600),
+           expires_at = ? + min(60 * (1 << min(fail_count, 6)), 3600),
            last_error = excluded.last_error,
            last_error_at = excluded.last_error_at`,
       )

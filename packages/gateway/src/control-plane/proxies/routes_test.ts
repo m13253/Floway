@@ -133,6 +133,71 @@ test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async 
   assertEquals(after?.lastTestedAt, null);
 });
 
+test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  // Two upstreams have already escalated this proxy through several failures.
+  // After the URL changes the operator expects an immediate retry; the dial
+  // layer must not keep skipping the row up to an hour against stale state.
+  for (let n = 0; n < 5; n++) await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
+  for (let n = 0; n < 5; n++) await repo.proxyBackoffs.recordDialFailure('p1', 'up_b', 'boom');
+
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { url: SOCKS_URL }));
+  assertEquals(resp.status, 200);
+
+  assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 0);
+});
+
+test('PATCH /api/proxies/:id without changing the url leaves backoff rows intact', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
+
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
+  assertEquals(resp.status, 200);
+
+  assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 1);
+});
+
+test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: 120 }));
+  assertEquals(resp.status, 200);
+  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  assertEquals(updated.dial_timeout_seconds, 120);
+
+  const stored = await repo.proxies.getById('p1');
+  assertEquals(stored?.dialTimeoutSeconds, 120);
+});
+
+test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existing value', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
+
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
+  assertEquals(resp.status, 200);
+  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  assertEquals(updated.dial_timeout_seconds, 90);
+
+  const stored = await repo.proxies.getById('p1');
+  assertEquals(stored?.dialTimeoutSeconds, 90);
+});
+
+test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to default', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
+
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: null }));
+  assertEquals(resp.status, 200);
+  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  assertEquals(updated.dial_timeout_seconds, null);
+
+  const stored = await repo.proxies.getById('p1');
+  assertEquals(stored?.dialTimeoutSeconds, null);
+});
+
 test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy', async () => {
   const { repo, adminKey } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });

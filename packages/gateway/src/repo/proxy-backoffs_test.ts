@@ -38,6 +38,19 @@ describe('proxy_upstream_backoffs repo', () => {
     }
   });
 
+  it('saturates at 3600s even after thousands of failures (no JS shift overflow)', async () => {
+    const repo = new InMemoryRepo();
+    // Force the row to a fail_count well past 31 — without the exponent
+    // clamp the next recordDialFailure would compute `1 << 31 = -2^31` and
+    // collapse `Math.min(neg, 3600)` to a negative expiresAt.
+    for (let n = 0; n < 50; n++) {
+      await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
+    }
+    const [row] = await repo.proxyBackoffs.listForUpstream('u');
+    expect(row!.failCount).toBe(50);
+    expect(row!.expiresAt - baseUnix).toBe(3600);
+  });
+
   it('clears the row on dial success', async () => {
     const repo = new InMemoryRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'u', 'x');

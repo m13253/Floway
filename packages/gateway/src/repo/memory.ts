@@ -682,12 +682,15 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
       return Promise.resolve();
     }
     // Mirror the SQL UPSERT schedule (see SqlProxyBackoffRepo.recordDialFailure).
+    // The exponent is clamped at 6 to stay within JS's 32-bit signed shift
+    // semantics — `1 << 31` wraps to negative and would resolve `Math.min`
+    // to a far-past expiresAt, effectively voiding the backoff.
     const previousFailCount = existing.failCount;
     this.rows.set(k, {
       proxyId,
       upstreamId,
       failCount: previousFailCount + 1,
-      expiresAt: now + Math.min(60 * (1 << previousFailCount), 3600),
+      expiresAt: now + Math.min(60 * (1 << Math.min(previousFailCount, 6)), 3600),
       lastError: errorMessage,
       lastErrorAt: now,
     });
