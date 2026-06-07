@@ -202,8 +202,8 @@ const config: Linter.Config[] = [
       'vitest.config.ts',
       'packages/*/vitest.config.ts',
       'scripts/**',
-      // Local proxy-protocol experiments — integration test scaffold and
-      // historical perf bench, not production code.
+      // Throwaway integration test scaffold for the proxy-protocol work; not
+      // production code. See docs/superpowers/specs/2026-06-07-proxy-management-design.md.
       'experiments/**',
     ],
   },

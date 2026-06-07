@@ -142,8 +142,9 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 
 // `'direct'` is the sentinel for "dial without a proxy" and is always valid;
 // any other entry must reference a proxy row that currently exists. The list
-// is otherwise free-form (duplicates and ordering are the operator's choice
-// and meaningful at dial time — see createUpstreamFetch).
+// is meaningful at dial time in its given order (see createUpstreamFetch),
+// but we treat it as a SET in semantics: duplicates and empty entries are
+// silently dropped during normalization (see normalizeProxyFallbackList).
 const validateProxyFallbackList = async (list: readonly string[]): Promise<{ ok: true } | { ok: false; error: string }> => {
   const ids = list.filter(id => id !== 'direct');
   if (ids.length === 0) return { ok: true };
