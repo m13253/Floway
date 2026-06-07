@@ -88,18 +88,7 @@ const runRealityHandshake = async (
   signal: AbortSignal | undefined,
 ): Promise<{ readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }> => {
   // Build the unsealed session_id payload
-  const ts = Math.floor(Date.now() / 1000);
-  const sessionIdPlain = new Uint8Array(32);
-  sessionIdPlain[0] = ver[0];
-  sessionIdPlain[1] = ver[1];
-  sessionIdPlain[2] = ver[2];
-  sessionIdPlain[3] = 0x00;
-  sessionIdPlain[4] = (ts >>> 24) & 0xff;
-  sessionIdPlain[5] = (ts >>> 16) & 0xff;
-  sessionIdPlain[6] = (ts >>> 8) & 0xff;
-  sessionIdPlain[7] = ts & 0xff;
-  sessionIdPlain.set(shortId, 8);
-  // bytes 16..31 left as zero (they'll be overwritten by the AEAD tag)
+  const sessionIdPlain = buildRealitySessionId(ver, Math.floor(Date.now() / 1000), shortId);
 
   // Pre-generate the client random so we know it before packClientHello uses it
   const clientRandom = randomBytes(32);
@@ -203,16 +192,7 @@ const runRealityHandshake = async (
           throw new Error(`REALITY: session_id placeholder mismatch at byte ${i}`);
         }
       }
-      // Xray's AAD is hello.Raw with the session_id slot ZEROED OUT
-      // (xray copies the freshly-allocated zero sessionId into hello.Raw
-      // BEFORE filling sessionId with version/ts/shortId, then seals with
-      // that zero-filled hello.Raw as AAD).
-      const aad = new Uint8Array(clientHelloBytes.byteLength);
-      aad.set(clientHelloBytes);
-      for (let i = 0; i < 32; i++) aad[sidStart + i] = 0;
-      // AEAD seal: input = sessionIdPlain[0..16]; AAD = aad; output = 16-byte
-      // ciphertext + 16-byte tag = 32 bytes. Xray uses AES-256-GCM with the
-      // full 32-byte authKey.
+      const aad = buildRealityAad(clientHelloBytes);
       const sealed = gcm(authKey, sealNonce, aad).encrypt(sessionIdPlain.subarray(0, 16));
       if (sealed.byteLength !== 32) throw new Error(`REALITY: sealed length ${sealed.byteLength}`);
       const out = new Uint8Array(clientHelloBytes.byteLength);
@@ -308,4 +288,49 @@ const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+};
+
+/**
+ * Build the 32-byte unsealed REALITY session_id payload for the ClientHello.
+ * Layout:
+ *
+ *   [0..3]   Xray version triplet + a zero byte
+ *   [4..8]   timestamp (u32 BE seconds since epoch)
+ *   [8..16]  short id (8 bytes)
+ *   [16..32] zero — overwritten by the AEAD ciphertext+tag in place
+ *
+ * Exported for tests.
+ */
+export const buildRealitySessionId = (
+  ver: [number, number, number],
+  tsSec: number,
+  shortId: Uint8Array,
+): Uint8Array => {
+  if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`);
+  const out = new Uint8Array(32);
+  out[0] = ver[0];
+  out[1] = ver[1];
+  out[2] = ver[2];
+  out[3] = 0x00;
+  out[4] = (tsSec >>> 24) & 0xff;
+  out[5] = (tsSec >>> 16) & 0xff;
+  out[6] = (tsSec >>> 8) & 0xff;
+  out[7] = tsSec & 0xff;
+  out.set(shortId, 8);
+  return out;
+};
+
+/**
+ * REALITY's AAD is the ClientHello bytes with the 32-byte session_id slot
+ * (offset 39..71) zeroed. Xray fills the slot with the unsealed session_id
+ * before sealing, then re-zeros for AAD; we keep them separate from the
+ * start so the sealing step is a pure mapping over inputs.
+ *
+ * Exported for tests.
+ */
+export const buildRealityAad = (clientHello: Uint8Array): Uint8Array => {
+  const aad = new Uint8Array(clientHello.byteLength);
+  aad.set(clientHello);
+  for (let i = 0; i < 32; i++) aad[39 + i] = 0;
+  return aad;
 };

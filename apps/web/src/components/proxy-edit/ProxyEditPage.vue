@@ -76,13 +76,17 @@ watch(url, next => {
   if (lastSource === 'form') { lastSource = null; return; }
   const parsed = tryParse(next);
   if (parsed === null) {
+    lastSource = 'url';
     config.value = null;
     urlError.value = null;
+    void nextTick(() => { if (lastSource === 'url') lastSource = null; });
     return;
   }
   if (parsed.ok) {
+    lastSource = 'url';
     config.value = parsed.config;
     urlError.value = null;
+    void nextTick(() => { if (lastSource === 'url') lastSource = null; });
   } else {
     // Keep the last good config so the form does not reset mid-keystroke.
     urlError.value = parsed.error;
