@@ -11,7 +11,7 @@
 import { sha224 } from '@noble/hashes/sha2.js';
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
 import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
@@ -73,12 +73,12 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
       // sniffing the inner record framing — flag both as inner-tls.
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(innerTls, target);
+    return await runHttp1(innerTls, target);
   } else {
     const writer = outerTls.writable.getWriter();
     await writer.write(header);
     writer.releaseLock();
-    return await runHttp1Stream(outerTls, target);
+    return await runHttp1(outerTls, target);
   }
 }
 

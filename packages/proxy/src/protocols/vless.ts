@@ -12,7 +12,7 @@
 // followed by transparent payload. We parse and discard the reply prefix.
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
 import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
@@ -66,9 +66,9 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: stripped, writable: socket.writable }, target);
+    return await runHttp1({ readable: stripped, writable: socket.writable }, target);
   }
 }
 
@@ -123,9 +123,9 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: stripped, writable: transport.writable }, target);
+    return await runHttp1({ readable: stripped, writable: transport.writable }, target);
   }
 }
 

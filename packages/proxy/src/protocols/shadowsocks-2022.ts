@@ -16,7 +16,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import type { Ss2022Method } from '../proxy-config.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
@@ -172,9 +172,9 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target);
+    return await runHttp1({ readable: ssReadable, writable: ssWritable }, target);
   }
 }
 

@@ -9,7 +9,7 @@
 //      handshake. This avoids `startTls()` entirely.
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
 import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
@@ -107,14 +107,14 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    const resp = await runHttp1Stream(tls, target);
+    const resp = await runHttp1(tls, target);
     // Run peelDone in the background; if it throws after handshake the body
     // stream will surface the error.
     peelDone.catch(() => {});
     return resp;
   } else {
     // Plain HTTP upstream — the post-CONNECT stream is the upstream socket.
-    const resp = await runHttp1Stream({ readable: postConnect, writable: socket.writable }, target);
+    const resp = await runHttp1({ readable: postConnect, writable: socket.writable }, target);
     peelDone.catch(() => {});
     return resp;
   }

@@ -5,7 +5,7 @@
 // TLS for the upstream's HTTPS handshake.
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
 import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
@@ -138,9 +138,9 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: postHandshake, writable: socket.writable }, target);
+    return await runHttp1({ readable: postHandshake, writable: socket.writable }, target);
   }
 }
 

@@ -9,7 +9,7 @@ export interface DuplexBytes {
   writable: WritableStream<Uint8Array>;
 }
 
-export async function runHttp1Stream(stream: DuplexBytes, target: TargetSpec): Promise<Response> {
+export async function runHttp1(stream: DuplexBytes, target: TargetSpec): Promise<Response> {
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();
   const headers = { ...target.headers };

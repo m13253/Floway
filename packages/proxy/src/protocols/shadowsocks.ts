@@ -22,7 +22,7 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import type { SsMethod } from '../proxy-config.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
@@ -162,9 +162,9 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: ssReadable, writable: ssWritable }, target);
+    return await runHttp1({ readable: ssReadable, writable: ssWritable }, target);
   }
 }
 

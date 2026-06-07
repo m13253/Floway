@@ -5,7 +5,7 @@
 // reused by vless.ts in a refactor.
 
 import { ProxyDialError } from '../errors.js';
-import { runHttp1Stream } from '../http1-stream.js';
+import { runHttp1 } from '../http1.js';
 import { userspaceTls, type TlsStream } from '../tls.js';
 import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
 
@@ -31,9 +31,9 @@ export async function runVlessCoreOverStream(
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    return await runHttp1Stream(tls, target);
+    return await runHttp1(tls, target);
   } else {
-    return await runHttp1Stream({ readable: stripped, writable: transport.writable }, target);
+    return await runHttp1({ readable: stripped, writable: transport.writable }, target);
   }
 }
 

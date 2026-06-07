@@ -60,5 +60,5 @@ export type { RealityOptions } from './protocols/reality.js';
 export { userspaceTls } from './tls.js';
 export type { UserspaceTlsOptions, TlsStream } from './tls.js';
 
-export { runHttp1Stream } from './http1-stream.js';
-export type { DuplexBytes } from './http1-stream.js';
+export { runHttp1 } from './http1.js';
+export type { DuplexBytes } from './http1.js';
