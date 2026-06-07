@@ -192,7 +192,6 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       const out = new Uint8Array(clientHelloBytes.byteLength);
       out.set(clientHelloBytes);
       out.set(sealed, sidStart);
-      console.log(`[reality] sealed session_id sent (authKey[:16]=${bytesToHex(authKey.subarray(0, 16))})`);
       return out;
     },
     onRecvCertificateVerify() {
@@ -269,10 +268,4 @@ function base64UrlDecode(s: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
-}
-
-function bytesToHex(b: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i < b.byteLength; i++) s += b[i]!.toString(16).padStart(2, '0');
-  return s;
 }
