@@ -108,10 +108,12 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
 
   const apiKey = options.apiKey ?? {
     id: `key_${crypto.randomUUID()}`,
+    userId: 1,
     name: 'Primary key',
     key: `raw_${crypto.randomUUID().replace(/-/g, '')}`,
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
+    deletedAt: null,
   };
   await repo.apiKeys.save(apiKey);
 

@@ -164,11 +164,14 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
     try {
       records.push({
         id: nonEmptyString(record.id, 'id'),
+        // Legacy v3 exports never carried per-key ownership; everything lands on user 1.
+        userId: typeof record.userId === 'number' && Number.isInteger(record.userId) && record.userId >= 1 ? record.userId : 1,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
+        deletedAt: typeof record.deletedAt === 'string' ? record.deletedAt : null,
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };

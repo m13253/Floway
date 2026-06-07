@@ -17,14 +17,19 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  Session,
+  SessionsRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
   UsageRepo,
+  User,
+  UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
@@ -43,37 +48,101 @@ const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]
   return results;
 };
 
+interface ApiKeyRow {
+  id: string;
+  user_id: number;
+  name: string;
+  key: string;
+  created_at: string;
+  last_used_at: string | null;
+  upstream_ids: string | null;
+  deleted_at: string | null;
+}
+
+const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at';
+
 class SqlApiKeyRepo implements ApiKeyRepo {
   constructor(private db: SqlDatabase) {}
 
   async list(): Promise<ApiKey[]> {
-    const { results } = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys ORDER BY created_at').all<ApiKeyRow>();
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE deleted_at IS NULL ORDER BY created_at`)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
+  async listByUserId(userId: number): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at`)
+      .bind(userId)
+      .all<ApiKeyRow>();
     return results.map(toApiKey);
   }
 
   async findByRawKey(rawKey: string): Promise<ApiKey | null> {
-    const row = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys WHERE key = ?').bind(rawKey).first<ApiKeyRow>();
+    const row = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE key = ? AND deleted_at IS NULL`)
+      .bind(rawKey)
+      .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
   }
 
   async getById(id: string): Promise<ApiKey | null> {
-    const row = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys WHERE id = ?').bind(id).first<ApiKeyRow>();
+    const row = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE id = ? AND deleted_at IS NULL`)
+      .bind(id)
+      .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
   }
 
+  async idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]> {
+    const sql = options?.includeDeleted
+      ? 'SELECT id FROM api_keys WHERE user_id = ?'
+      : 'SELECT id FROM api_keys WHERE user_id = ? AND deleted_at IS NULL';
+    const { results } = await this.db.prepare(sql).bind(userId).all<{ id: string }>();
+    return results.map(r => r.id);
+  }
+
   async save(key: ApiKey): Promise<void> {
+    if (!Number.isInteger(key.userId) || key.userId < 1) throw new Error('apiKey.userId must be a positive integer');
     await this.db
       .prepare(
-        `INSERT INTO api_keys (id, name, key, created_at, last_used_at, upstream_ids) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET name = excluded.name, key = excluded.key, last_used_at = excluded.last_used_at, upstream_ids = excluded.upstream_ids`,
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           user_id = excluded.user_id,
+           name = excluded.name,
+           key = excluded.key,
+           last_used_at = excluded.last_used_at,
+           upstream_ids = excluded.upstream_ids,
+           deleted_at = excluded.deleted_at`,
       )
-      .bind(key.id, key.name, key.key, key.createdAt, key.lastUsedAt ?? null, serializeUpstreamIds(key.upstreamIds))
+      .bind(
+        key.id,
+        key.userId,
+        key.name,
+        key.key,
+        key.createdAt,
+        key.lastUsedAt ?? null,
+        serializeUpstreamIds(key.upstreamIds),
+        key.deletedAt,
+      )
       .run();
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await this.db.prepare('DELETE FROM api_keys WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number) ?? 0) > 0;
+  async softDelete(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare('UPDATE api_keys SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id)
+      .run();
+    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+  }
+
+  async softDeleteByUserId(userId: number): Promise<number> {
+    const result = await this.db
+      .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), userId)
+      .run();
+    return (result.meta.changes as number | undefined) ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -81,41 +150,193 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   }
 }
 
-interface ApiKeyRow {
-  id: string;
-  name: string;
-  key: string;
-  created_at: string;
-  last_used_at: string | null;
-  upstream_ids: string | null;
-}
-
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
 // Throws rather than returning null on bad data: a silent downgrade to Default
-// would grant the key broader provider access than the admin intended.
-const parseUpstreamIds = (raw: string | null, keyId: string): string[] | null => {
+// would grant the row broader access than the admin intended. Used by both
+// api_keys.upstream_ids and users.upstream_ids — `label` identifies the row
+// and column so a malformed value can be located in the database.
+const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (cause) {
-    throw new Error(`api_keys.upstream_ids JSON is malformed for id=${keyId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    throw new Error(`upstream_ids JSON is malformed for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
-  if (!Array.isArray(parsed)) throw new Error(`api_keys.upstream_ids is not an array for id=${keyId}`);
-  if (!parsed.every(item => typeof item === 'string')) throw new Error(`api_keys.upstream_ids contains non-string entries for id=${keyId}`);
+  if (!Array.isArray(parsed)) throw new Error(`upstream_ids is not an array for ${label}`);
+  if (!parsed.every(item => typeof item === 'string')) throw new Error(`upstream_ids contains non-string entries for ${label}`);
   return parsed as string[];
 };
 
 function toApiKey(row: ApiKeyRow): ApiKey {
   return {
     id: row.id,
+    userId: row.user_id,
     name: row.name,
     key: row.key,
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at ?? undefined,
-    upstreamIds: parseUpstreamIds(row.upstream_ids, row.id),
+    upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `api_keys.id=${row.id}`),
+    deletedAt: row.deleted_at,
   };
+}
+
+interface UserRow {
+  id: number;
+  username: string;
+  password_hash: string | null;
+  is_admin: number;
+  upstream_ids: string | null;
+  can_view_global_telemetry: number;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at';
+
+const toUser = (row: UserRow): User => ({
+  id: row.id,
+  username: row.username,
+  passwordHash: row.password_hash,
+  isAdmin: row.is_admin === 1,
+  upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `users.id=${row.id}`),
+  canViewGlobalTelemetry: row.can_view_global_telemetry === 1,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+class SqlUsersRepo implements UsersRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<User[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE deleted_at IS NULL ORDER BY id`)
+      .all<UserRow>();
+    return results.map(toUser);
+  }
+
+  async listIncludingDeleted(): Promise<User[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY id`)
+      .all<UserRow>();
+    return results.map(toUser);
+  }
+
+  async getById(id: number): Promise<User | null> {
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND deleted_at IS NULL`)
+      .bind(id)
+      .first<UserRow>();
+    return row ? toUser(row) : null;
+  }
+
+  async getByIdIncludingDeleted(id: number): Promise<User | null> {
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
+      .bind(id)
+      .first<UserRow>();
+    return row ? toUser(row) : null;
+  }
+
+  async findByUsernameActive(username: string): Promise<User | null> {
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE username = ? AND deleted_at IS NULL`)
+      .bind(username)
+      .first<UserRow>();
+    return row ? toUser(row) : null;
+  }
+
+  async save(user: User): Promise<void> {
+    if (!Number.isInteger(user.id) || user.id < 1) throw new Error('user.id must be a positive integer');
+    await this.db
+      .prepare(
+        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           username = excluded.username,
+           password_hash = excluded.password_hash,
+           is_admin = excluded.is_admin,
+           upstream_ids = excluded.upstream_ids,
+           can_view_global_telemetry = excluded.can_view_global_telemetry,
+           deleted_at = excluded.deleted_at`,
+      )
+      .bind(
+        user.id,
+        user.username,
+        user.passwordHash,
+        user.isAdmin ? 1 : 0,
+        serializeUpstreamIds(user.upstreamIds),
+        user.canViewGlobalTelemetry ? 1 : 0,
+        user.createdAt,
+        user.deletedAt,
+      )
+      .run();
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    if (id === 1) throw new Error('user 1 cannot be deleted');
+    const result = await this.db
+      .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id)
+      .run();
+    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+  }
+}
+
+interface SessionRow {
+  id: string;
+  user_id: number;
+  created_at: string;
+  last_seen_at: string;
+}
+
+const SESSION_COLUMNS = 'id, user_id, created_at, last_seen_at';
+
+class SqlSessionsRepo implements SessionsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async getByIdAndTouch(id: string): Promise<Session | null> {
+    const row = await this.db
+      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
+      .bind(id)
+      .first<SessionRow>();
+    if (!row) return null;
+    const now = new Date().toISOString();
+    await this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, id).run();
+    return { id: row.id, userId: row.user_id, createdAt: row.created_at, lastSeenAt: now };
+  }
+
+  async create(userId: number): Promise<Session> {
+    const id = generateSessionToken();
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(`INSERT INTO sessions (${SESSION_COLUMNS}) VALUES (?, ?, ?, ?)`)
+      .bind(id, userId, now, now)
+      .run();
+    return { id, userId, createdAt: now, lastSeenAt: now };
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM sessions WHERE id = ?').bind(id).run();
+    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+  }
+
+  async deleteByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
+    const result = await this.db
+      .prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?')
+      .bind(userId, exceptId)
+      .run();
+    return (result.meta.changes as number | undefined) ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM sessions').run();
+  }
 }
 
 const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
@@ -1030,6 +1251,8 @@ const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
 
 export class SqlRepo implements Repo {
   apiKeys: ApiKeyRepo;
+  users: UsersRepo;
+  sessions: SessionsRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
@@ -1040,6 +1263,8 @@ export class SqlRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor(db: SqlDatabase) {
+    this.users = new SqlUsersRepo(db);
+    this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
     this.searchUsage = new SqlSearchUsageRepo(db);

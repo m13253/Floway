@@ -33,12 +33,15 @@ export const listKeys = async (c: Context) => {
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   const body = c.req.valid('json');
+  const userId = (c.get('userId') as number | undefined) ?? 1;
   const key = {
     id: crypto.randomUUID(),
+    userId,
     name: body.name,
     key: generateKey(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
+    deletedAt: null,
   } satisfies ApiKey;
   await getRepo().apiKeys.save(key);
   return c.json(apiKeyToJson(key), 201);
@@ -46,7 +49,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 
 export const deleteKey = async (c: Context) => {
   const id = c.req.param('id') ?? '';
-  const deleted = await getRepo().apiKeys.delete(id);
+  const deleted = await getRepo().apiKeys.softDelete(id);
   if (!deleted) return c.json({ error: 'Key not found' }, 404);
   return c.json({ ok: true });
 };

@@ -18,49 +18,167 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  Session,
+  SessionsRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
   UsageRepo,
+  User,
+  UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
 
-class MemoryApiKeyRepo implements ApiKeyRepo {
-  private store = new Map<string, ApiKey>();
+class MemoryUsersRepo implements UsersRepo {
+  private users: User[] = [];
 
-  list(): Promise<ApiKey[]> {
-    return Promise.resolve([...this.store.values()]);
+  list(): Promise<User[]> {
+    return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
   }
 
-  findByRawKey(rawKey: string): Promise<ApiKey | null> {
-    for (const key of this.store.values()) {
-      if (key.key === rawKey) return Promise.resolve(key);
-    }
-    return Promise.resolve(null);
+  listIncludingDeleted(): Promise<User[]> {
+    return Promise.resolve(this.users.map(u => ({ ...u })));
   }
 
-  getById(id: string): Promise<ApiKey | null> {
-    return Promise.resolve(this.store.get(id) ?? null);
+  getById(id: number): Promise<User | null> {
+    const u = this.users.find(u => u.id === id && u.deletedAt === null);
+    return Promise.resolve(u ? { ...u } : null);
   }
 
-  save(key: ApiKey): Promise<void> {
-    this.store.set(key.id, { ...key });
-    return Promise.resolve();
+  getByIdIncludingDeleted(id: number): Promise<User | null> {
+    const u = this.users.find(u => u.id === id);
+    return Promise.resolve(u ? { ...u } : null);
   }
 
-  delete(id: string): Promise<boolean> {
-    return Promise.resolve(this.store.delete(id));
+  findByUsernameActive(username: string): Promise<User | null> {
+    const u = this.users.find(u => u.username === username && u.deletedAt === null);
+    return Promise.resolve(u ? { ...u } : null);
+  }
+
+  async save(user: User): Promise<void> {
+    if (!Number.isInteger(user.id) || user.id < 1) throw new Error('user.id must be a positive integer');
+    const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
+    if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);
+    const i = this.users.findIndex(u => u.id === user.id);
+    if (i >= 0) this.users[i] = { ...user };
+    else this.users.push({ ...user });
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    if (id === 1) throw new Error('user 1 cannot be deleted');
+    const i = this.users.findIndex(u => u.id === id && u.deletedAt === null);
+    if (i < 0) return false;
+    this.users[i] = { ...this.users[i], deletedAt: new Date().toISOString() };
+    return true;
+  }
+}
+
+class MemorySessionsRepo implements SessionsRepo {
+  private sessions: Session[] = [];
+
+  getByIdAndTouch(id: string): Promise<Session | null> {
+    const i = this.sessions.findIndex(s => s.id === id);
+    if (i < 0) return Promise.resolve(null);
+    const now = new Date().toISOString();
+    this.sessions[i] = { ...this.sessions[i], lastSeenAt: now };
+    return Promise.resolve({ ...this.sessions[i] });
+  }
+
+  create(userId: number): Promise<Session> {
+    const now = new Date().toISOString();
+    const session: Session = { id: generateSessionToken(), userId, createdAt: now, lastSeenAt: now };
+    this.sessions.push(session);
+    return Promise.resolve({ ...session });
+  }
+
+  deleteById(id: string): Promise<boolean> {
+    const before = this.sessions.length;
+    this.sessions = this.sessions.filter(s => s.id !== id);
+    return Promise.resolve(this.sessions.length < before);
+  }
+
+  deleteByUserId(userId: number): Promise<number> {
+    const before = this.sessions.length;
+    this.sessions = this.sessions.filter(s => s.userId !== userId);
+    return Promise.resolve(before - this.sessions.length);
+  }
+
+  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
+    const before = this.sessions.length;
+    this.sessions = this.sessions.filter(s => s.userId !== userId || s.id === exceptId);
+    return Promise.resolve(before - this.sessions.length);
   }
 
   deleteAll(): Promise<void> {
-    this.store.clear();
+    this.sessions = [];
+    return Promise.resolve();
+  }
+}
+
+class MemoryApiKeyRepo implements ApiKeyRepo {
+  private keys: ApiKey[] = [];
+
+  list(): Promise<ApiKey[]> {
+    return Promise.resolve(this.keys.filter(k => k.deletedAt === null).map(k => ({ ...k })));
+  }
+
+  listByUserId(userId: number): Promise<ApiKey[]> {
+    return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => ({ ...k })));
+  }
+
+  findByRawKey(rawKey: string): Promise<ApiKey | null> {
+    const k = this.keys.find(k => k.key === rawKey && k.deletedAt === null);
+    return Promise.resolve(k ? { ...k } : null);
+  }
+
+  getById(id: string): Promise<ApiKey | null> {
+    const k = this.keys.find(k => k.id === id && k.deletedAt === null);
+    return Promise.resolve(k ? { ...k } : null);
+  }
+
+  idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]> {
+    const includeDeleted = options?.includeDeleted === true;
+    return Promise.resolve(
+      this.keys.filter(k => k.userId === userId && (includeDeleted || k.deletedAt === null)).map(k => k.id),
+    );
+  }
+
+  async save(key: ApiKey): Promise<void> {
+    if (!Number.isInteger(key.userId) || key.userId < 1) throw new Error('apiKey.userId must be a positive integer');
+    const i = this.keys.findIndex(k => k.id === key.id);
+    if (i >= 0) this.keys[i] = { ...key };
+    else this.keys.push({ ...key });
+  }
+
+  async softDelete(id: string): Promise<boolean> {
+    const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
+    if (i < 0) return false;
+    this.keys[i] = { ...this.keys[i], deletedAt: new Date().toISOString() };
+    return true;
+  }
+
+  async softDeleteByUserId(userId: number): Promise<number> {
+    const now = new Date().toISOString();
+    let n = 0;
+    for (let i = 0; i < this.keys.length; i++) {
+      if (this.keys[i].userId === userId && this.keys[i].deletedAt === null) {
+        this.keys[i] = { ...this.keys[i], deletedAt: now };
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  deleteAll(): Promise<void> {
+    this.keys = [];
     return Promise.resolve();
   }
 }
@@ -578,6 +696,8 @@ const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `
 
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
+  users: UsersRepo;
+  sessions: SessionsRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
@@ -588,6 +708,8 @@ export class InMemoryRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor() {
+    this.users = new MemoryUsersRepo();
+    this.sessions = new MemorySessionsRepo();
     this.apiKeys = new MemoryApiKeyRepo();
     this.usage = new MemoryUsageRepo();
     this.searchUsage = new MemorySearchUsageRepo();
@@ -597,5 +719,18 @@ export class InMemoryRepo implements Repo {
     this.upstreams = new MemoryUpstreamRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
+
+    // Seed the default admin user 1 to match the SQL migration's behavior. Tests
+    // and any in-memory deployment start with the same baseline as a fresh DB.
+    void this.users.save({
+      id: 1,
+      username: 'admin',
+      passwordHash: null,
+      isAdmin: true,
+      upstreamIds: null,
+      canViewGlobalTelemetry: true,
+      createdAt: new Date(0).toISOString(),
+      deletedAt: null,
+    });
   }
 }

@@ -16,19 +16,23 @@ const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.c
 
 const KEY_A: ApiKey = {
   id: 'key-a',
+  userId: 1,
   name: 'Alice',
   key: 'raw-a',
   createdAt: '2026-01-01T00:00:00.000Z',
   lastUsedAt: '2026-01-02T00:00:00.000Z',
   upstreamIds: null,
+  deletedAt: null,
 };
 
 const KEY_B: ApiKey = {
   id: 'key-b',
+  userId: 1,
   name: 'Bob',
   key: 'raw-b',
   createdAt: '2026-02-01T00:00:00.000Z',
   upstreamIds: null,
+  deletedAt: null,
 };
 
 const CUSTOM_UPSTREAM: UpstreamRecord = {

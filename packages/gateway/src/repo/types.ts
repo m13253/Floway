@@ -5,12 +5,36 @@ import type { PerformanceApiName, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
+  userId: number;
   name: string;
   key: string;
   createdAt: string;
   lastUsedAt?: string;
   // null = inherit global upstream order; array = whitelist + priority order.
   upstreamIds: string[] | null;
+  deletedAt: string | null;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  // null = the row is not a credential — it can only be entered through the
+  // ADMIN_KEY backdoor (the default state of user 1 right after migration).
+  passwordHash: string | null;
+  isAdmin: boolean;
+  // null = unrestricted at the user level; an array intersects with the
+  // per-key whitelist when both are present.
+  upstreamIds: string[] | null;
+  canViewGlobalTelemetry: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+export interface Session {
+  id: string;
+  userId: number;
+  createdAt: string;
+  lastSeenAt: string;
 }
 
 export interface UsageRecord {
@@ -73,10 +97,39 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
+  listByUserId(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
+  // Telemetry scope: historical rows belong to the user even after the key is
+  // soft-deleted, so callers opt in to include those via includeDeleted.
+  idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]>;
   save(key: ApiKey): Promise<void>;
-  delete(id: string): Promise<boolean>;
+  softDelete(id: string): Promise<boolean>;
+  softDeleteByUserId(userId: number): Promise<number>;
+  deleteAll(): Promise<void>;
+}
+
+export interface UsersRepo {
+  list(): Promise<User[]>;
+  listIncludingDeleted(): Promise<User[]>;
+  getById(id: number): Promise<User | null>;
+  getByIdIncludingDeleted(id: number): Promise<User | null>;
+  findByUsernameActive(username: string): Promise<User | null>;
+  // Upsert by id; the caller owns id allocation. Throws when the username is
+  // already taken by another active row, so duplicate-username races surface
+  // instead of silently overwriting state.
+  save(user: User): Promise<void>;
+  softDelete(id: number): Promise<boolean>;
+}
+
+export interface SessionsRepo {
+  // Touches last_seen_at on hit so the dashboard can surface "last active"
+  // and any future cleanup logic has a freshness signal.
+  getByIdAndTouch(id: string): Promise<Session | null>;
+  create(userId: number): Promise<Session>;
+  deleteById(id: string): Promise<boolean>;
+  deleteByUserId(userId: number): Promise<number>;
+  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -192,6 +245,8 @@ export interface ResponsesSnapshotsRepo {
 
 export interface Repo {
   apiKeys: ApiKeyRepo;
+  users: UsersRepo;
+  sessions: SessionsRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
