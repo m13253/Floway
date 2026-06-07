@@ -102,23 +102,20 @@ const runRealityHandshake = async (
   let tlsX25519Priv: CryptoKey | null = null;
 
   // Streams that will be returned to the caller (VLESS framing) after the TLS
-  // handshake completes.
+  // handshake completes. The teardown latches and abort-listener handle are
+  // declared together so closePlain (which both ReadableStream.cancel and
+  // every other teardown path route through) can run in any order against
+  // the same state machine.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
-  const plainReadable = new ReadableStream<Uint8Array>({
-    start(c) { plainController = c; },
-    cancel() {
-      plainClosed = true;
-      detachAbortListener?.();
-      detachAbortListener = null;
-      void tlsClient?.end().catch(() => {});
-      void reader.cancel().catch(() => {});
-      void writer.close().catch(() => {});
-    },
-  });
+  let plainClosed = false;
+  let detachAbortListener: (() => void) | null = null;
+  let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
+
+  const writer = socket.writable.getWriter();
+  const reader = socket.readable.getReader();
 
   // Latch teardown so a follow-up onTlsEnd / EOF can't double-close the
   // controller (Node throws ERR_INVALID_STATE on a second close/error).
-  let plainClosed = false;
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
@@ -131,7 +128,18 @@ const runRealityHandshake = async (
     void writer.close().catch(() => {});
   };
 
-  let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
+  const plainReadable = new ReadableStream<Uint8Array>({
+    start(c) { plainController = c; },
+    cancel() {
+      plainClosed = true;
+      detachAbortListener?.();
+      detachAbortListener = null;
+      void tlsClient?.end().catch(() => {});
+      void reader.cancel().catch(() => {});
+      void writer.close().catch(() => {});
+    },
+  });
+
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
       if (!tlsClient) throw new Error('TLS not ready');
@@ -158,10 +166,6 @@ const runRealityHandshake = async (
     handshakeReject = reject;
   });
   let handshakeOk = false;
-  let detachAbortListener: (() => void) | null = null;
-
-  const writer = socket.writable.getWriter();
-  const reader = socket.readable.getReader();
 
   tlsClient = makeTLSClient(({
     host: config.serverName,
