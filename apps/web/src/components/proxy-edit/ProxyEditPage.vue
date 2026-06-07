@@ -334,7 +334,7 @@ const remove = async () => {
             <span class="min-w-0 flex-1 truncate text-sm text-gray-300" :title="row.last_error ?? undefined">
               {{ upstreamNames.get(row.upstream_id) ?? row.upstream_id }}
             </span>
-            <span class="text-xs text-accent-amber tabular-nums">in {{ formatCountdown(row.expires_at * 1000 - now.getTime()) }}</span>
+            <span class="text-xs text-accent-amber tabular-nums">in {{ formatCountdown(row.expires_at * 1000 - now.getTime(), 'expiring') }}</span>
             <span class="text-xs text-gray-500">fail #{{ row.fail_count }}</span>
             <button
               type="button"
