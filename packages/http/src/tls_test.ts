@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vitest';
+
+import { makeFakeDuplex } from './test-utils.ts';
+import { userspaceTls } from './tls.ts';
+
+describe('userspaceTls — input validation', () => {
+  it('rejects synchronously when the supplied AbortSignal is already aborted', async () => {
+    const ac = new AbortController();
+    ac.abort(new DOMException('client gone', 'AbortError'));
+    const fake = makeFakeDuplex();
+    await expect(
+      userspaceTls(
+        { readable: fake.readable, writable: fake.writable },
+        { host: 'example.com', signal: ac.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('client gone') });
+  });
+
+  it('aborts a mid-handshake handshake and surfaces the abort reason', async () => {
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const promise = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal },
+    );
+    setTimeout(() => ac.abort(new DOMException('cancelled', 'AbortError')), 30);
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('cancelled') });
+  });
+});
+
+describe('userspaceTls — ClientHello on the wire', () => {
+  it('emits a TLS 1.0+ handshake record (0x16 0x03 0x01) as the very first bytes', async () => {
+    const fake = makeFakeDuplex();
+    // Handshake will never complete — the test just observes the
+    // ClientHello byte shape. Detach the promise and read the wire.
+    const ac = new AbortController();
+    const handshake = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal },
+    );
+    handshake.catch(() => { /* expected — we abort below */ });
+
+    // Wait one tick for the synchronous startHandshake() to drain the first
+    // record into our writable buffer.
+    await new Promise(r => setTimeout(r, 5));
+    const written = fake.written();
+    expect(written.byteLength).toBeGreaterThanOrEqual(5);
+    // TLS record header: type=Handshake(0x16), legacy_record_version=TLS1.2(0x0303)
+    // for TLS 1.3 ClientHellos (RFC 8446 §5.1).
+    expect(written[0]).toBe(0x16);
+    expect(written[1]).toBe(0x03);
+    expect([0x01, 0x03]).toContain(written[2]); // 0x01 if reclaim emits TLS 1.0 framing, 0x03 for TLS 1.2 framing.
+    // First handshake message is ClientHello (msg_type 0x01).
+    expect(written[5]).toBe(0x01);
+
+    ac.abort(new DOMException('done observing', 'AbortError'));
+    await handshake.catch(() => { /* swallow expected abort */ });
+  });
+});
+
+describe('userspaceTls — handshake failure', () => {
+  it('rejects when the server returns junk instead of a ServerHello', async () => {
+    const fake = makeFakeDuplex();
+    const promise = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com' },
+    );
+    // Wait for the ClientHello to be sent.
+    await new Promise(r => setTimeout(r, 5));
+    // Reply with bytes that don't form a TLS record at all.
+    fake.respond(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff]));
+    fake.endResponse();
+
+    await expect(promise).rejects.toBeInstanceOf(Error);
+  });
+
+  it('rejects when the transport EOFs before the handshake completes', async () => {
+    const fake = makeFakeDuplex();
+    const promise = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com' },
+    );
+    await new Promise(r => setTimeout(r, 5));
+    fake.endResponse();
+    await expect(promise).rejects.toBeInstanceOf(Error);
+  });
+});
