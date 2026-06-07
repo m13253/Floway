@@ -213,6 +213,41 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
   assertEquals(forbidden.status, 403);
 });
 
+test('GET /api/upstream-options returns the minimal picker shape to admin and non-admin callers', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  await repo.upstreams.save({
+    id: 'up_disabled_custom',
+    provider: 'custom',
+    name: 'Disabled Custom',
+    enabled: false,
+    sortOrder: 5,
+    createdAt: '2026-05-01T00:00:00.000Z',
+    updatedAt: '2026-05-01T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-secret', endpoints: { chatCompletions: {} } },
+    state: null,
+  });
+
+  const expected = [
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', provider: 'copilot', enabled: true },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', provider: 'custom', enabled: false },
+  ];
+
+  const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
+  assertEquals(adminResp.status, 200);
+  assertEquals(await adminResp.json(), expected);
+
+  const userResp = await requestApp('/api/upstream-options', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(userResp.status, 200);
+  const userBody = await userResp.json() as Array<Record<string, unknown>>;
+  assertEquals(userBody, expected);
+  // No secret-bearing or operator-only fields leak through this endpoint.
+  for (const row of userBody) {
+    assertEquals(Object.keys(row).sort(), ['enabled', 'id', 'name', 'provider']);
+  }
+});
+
 test('POST /api/upstreams/fetch-models fetches a draft custom upstream model list', async () => {
   const { adminSession } = await setupAppTest();
 

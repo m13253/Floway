@@ -145,6 +145,24 @@ export const listUpstreams = async (c: Context) => {
   return c.json(await Promise.all(items.map(serializeForResponse)));
 };
 
+// Picker dataset for the per-key upstream whitelist editor. Non-admin users
+// need to know which upstreams exist to scope their keys, but they must not
+// see operator-tuned config (model lists, flag overrides, copilot user info,
+// etc.). This minimal projection is the only upstream surface mounted outside
+// the admin zone.
+export const listUpstreamOptions = async (c: Context) => {
+  const items = await getRepo().upstreams.list();
+  return c.json(items
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(u => ({
+      id: u.id,
+      name: u.name,
+      provider: u.provider,
+      enabled: u.enabled,
+    })));
+};
+
 export const listOptionalFlags = (c: Context) => c.json(getFlagCatalog());
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {

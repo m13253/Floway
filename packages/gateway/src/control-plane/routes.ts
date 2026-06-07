@@ -10,7 +10,7 @@ import { authLoginBody, changeOwnPasswordBody, codexImportBody, codexPkceStartBo
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
@@ -48,6 +48,12 @@ export const controlPlaneRoutes = new Hono()
   .get('/api/performance', zValidator('query', performanceQuery), performanceTelemetry)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/models', controlPlaneModels)
+  // Minimal upstream picker exposed to non-admin users so they can scope a key
+  // to specific upstreams. Returns id/name/provider/enabled only — no config,
+  // no flag overrides, no model lists. Server-side validation (api-keys'
+  // `upstream_ids ⊆ user.upstreamIds` check) is the real authorization gate;
+  // this endpoint just feeds the picker UI.
+  .get('/api/upstream-options', listUpstreamOptions)
   // Self-service password change is session-only (the current-password check
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.

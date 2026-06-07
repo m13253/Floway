@@ -4,18 +4,15 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed } from 'vue';
 
-import type { ApiKey, UpstreamRecord } from '../../api/types.ts';
+import type { ApiKey } from '../../api/types.ts';
+import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 
 dayjs.extend(relativeTime);
 
 const props = defineProps<{
   keys: ApiKey[];
   loading: boolean;
-  // Edit dialog needs the full upstreams list, which only admins can fetch
-  // today. When false, the row's edit / rotate / delete actions are still
-  // available but the upstream column is hidden.
-  canEditUpstreams: boolean;
-  upstreams: UpstreamRecord[];
+  upstreams: UpstreamOption[];
   selectedId: string;
   copied: string | null;
 }>();
@@ -29,7 +26,7 @@ defineEmits<{
 }>();
 
 const upstreamById = computed(() => {
-  const map = new Map<string, UpstreamRecord>();
+  const map = new Map<string, UpstreamOption>();
   for (const u of props.upstreams) map.set(u.id, u);
   return map;
 });
@@ -71,7 +68,7 @@ const upstreamsTextClass = (k: ApiKey) => {
         <tr class="border-b border-white/5">
           <th class="text-left py-2 pr-4 pl-7 text-xs font-medium text-gray-500 uppercase tracking-widest">Name</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Key</th>
-          <th v-if="canEditUpstreams" class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Upstreams</th>
+          <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Upstreams</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Created</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Last Used</th>
           <th class="text-right py-2 pr-2 text-xs font-medium text-gray-500 uppercase tracking-widest">Actions</th>
@@ -97,7 +94,7 @@ const upstreamsTextClass = (k: ApiKey) => {
           <td class="py-3 pr-4">
             <code class="text-xs font-mono text-gray-500 bg-surface-800 rounded px-2 py-1">{{ truncateKey(k.key) }}</code>
           </td>
-          <td v-if="canEditUpstreams" class="py-3 pr-4">
+          <td class="py-3 pr-4">
             <span class="text-xs cursor-default" :class="upstreamsTextClass(k)" :title="upstreamsTitle(k)">
               {{ upstreamsText(k) }}
             </span>
@@ -126,7 +123,6 @@ const upstreamsTextClass = (k: ApiKey) => {
                 </svg>
               </button>
               <button
-                v-if="canEditUpstreams"
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
                 aria-label="Edit API key"
                 title="Edit key"

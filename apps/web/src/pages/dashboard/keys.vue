@@ -4,17 +4,13 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
 import type { ApiKey as LoaderApiKey } from '../../api/types.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
-import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../composables/useUpstreams.ts';
-import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
+import { useUpstreamOptionsStore as useUpstreamOptionsStoreForLoader } from '../../composables/useUpstreamOptions.ts';
 
 export const useKeysPageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
-  const auth = useAuthStoreForLoader();
   const [keysRes] = await Promise.all([
     callApiForLoader<LoaderApiKey[]>(() => api.api.keys.$get()),
-    // Upstreams listing is admin-only on the gateway; non-admin users skip the
-    // round-trip and edit their keys without an upstream override picker.
-    auth.isAdmin ? useUpstreamsStoreForLoader().load() : Promise.resolve(),
+    useUpstreamOptionsStoreForLoader().load(),
     useModelsStoreForLoader().load(),
   ]);
   return {
@@ -34,12 +30,10 @@ import CliSnippet from '../../components/keys/CliSnippet.vue';
 import EditKeyDialog from '../../components/keys/EditKeyDialog.vue';
 import KeysTable from '../../components/keys/KeysTable.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
-import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import { useAuthStore } from '../../stores/auth.ts';
+import { useUpstreamOptionsStore } from '../../composables/useUpstreamOptions.ts';
 
 const api = useApi();
-const auth = useAuthStore();
-const upstreamsStore = useUpstreamsStore();
+const upstreamOptionsStore = useUpstreamOptionsStore();
 const modelsStore = useModelsStore();
 const initialData = useKeysPageData();
 
@@ -58,7 +52,7 @@ const loadAll = async () => {
   error.value = null;
   const [keysRes] = await Promise.all([
     callApi<ApiKey[]>(() => api.api.keys.$get()),
-    auth.isAdmin ? upstreamsStore.load() : Promise.resolve(),
+    upstreamOptionsStore.load(),
     modelsStore.load(),
   ]);
   loading.value = false;
@@ -121,6 +115,7 @@ const copyToClipboard = async (text: string, tag: string) => {
 const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));
 const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
 const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
+const upstreamOptions = computed(() => upstreamOptionsStore.options.value ?? []);
 </script>
 
 <template>
@@ -155,10 +150,9 @@ const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
       <KeysTable
         :keys="keys"
         :loading="loading"
-        :upstreams="upstreamsStore.upstreams.value ?? []"
+        :upstreams="upstreamOptions"
         :selected-id="selectedKeyId"
         :copied="copied"
-        :can-edit-upstreams="auth.isAdmin"
         @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
@@ -187,7 +181,7 @@ const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
     <EditKeyDialog
       v-model:open="editOpen"
       :api-key="editTarget"
-      :upstreams="upstreamsStore.upstreams.value ?? []"
+      :upstreams="upstreamOptions"
       @saved="loadAll"
     />
   </div>

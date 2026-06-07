@@ -3,13 +3,14 @@ import { Badge, Button, Dialog, Input, Sortable, Spinner, Switch } from '@floway
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { ApiKey, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { ApiKey, UpstreamProviderKind } from '../../api/types.ts';
+import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 
 const open = defineModel<boolean>('open');
 
 const props = defineProps<{
   apiKey?: ApiKey;
-  upstreams: UpstreamRecord[];
+  upstreams: UpstreamOption[];
 }>();
 
 const emit = defineEmits<{ saved: [] }>();
