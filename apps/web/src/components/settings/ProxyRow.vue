@@ -2,14 +2,10 @@
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 import { Spinner } from '@floway-dev/ui';
 import { useNow } from '@vueuse/core';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed } from 'vue';
 
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
-import { formatCountdown } from '../../utils/format-countdown.ts';
-
-dayjs.extend(relativeTime);
+import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
 
 const props = defineProps<{
   proxy: ProxyRecord;
@@ -34,12 +30,7 @@ defineEmits<{
 // 1s granularity matches the "in Xm Ys" precision we render.
 const now = useNow({ interval: 1000 });
 
-// Palette is structured around a single rule: amber is reserved for the
-// backoff/warning semantic everywhere else in the dashboard, so no proxy-kind
-// label may use it. Tunneling protocols (HTTPS CONNECT, VLESS over TCP/WS)
-// share cyan; encrypted-userinfo protocols (SS family, Trojan, REALITY) share
-// violet. Plain HTTP CONNECT is the least-secure option and reads neutral
-// gray. SOCKS5 stays emerald because it is the simplest "just works" option.
+// Amber is reserved for backoff/warning everywhere in the dashboard, so no proxy-kind label uses it.
 const kindBadgeClass = (kind: string) => {
   switch (kind) {
   case 'HTTP': return 'border-white/10 bg-white/5 text-gray-400';
@@ -73,12 +64,10 @@ const urlPreview = computed(() => {
 
 const lastTestedAgo = computed(() => {
   if (props.proxy.last_tested_at == null) return null;
-  // last_tested_at is unix seconds; dayjs takes milliseconds.
-  return dayjs(props.proxy.last_tested_at * 1000).from(dayjs(now.value));
+  return formatRelativeAgo(now.value.getTime() - props.proxy.last_tested_at * 1000);
 });
 
 const activeBackoffs = computed(() => {
-  // expires_at is unix seconds.
   const nowSec = Math.floor(now.value.getTime() / 1000);
   return props.backoffsForProxy
     .filter(b => b.expires_at > nowSec)
@@ -88,7 +77,7 @@ const activeBackoffs = computed(() => {
 const visibleBackoffs = computed(() => activeBackoffs.value.slice(0, 3));
 const extraBackoffCount = computed(() => Math.max(0, activeBackoffs.value.length - 3));
 const hasBackoffs = computed(() => activeBackoffs.value.length > 0);
-const hasEgressInfo = computed(() => (props.proxy.last_egress_ip ?? null) !== null || props.proxy.last_tested_at !== null);
+const hasEgressInfo = computed(() => props.proxy.last_egress_ip !== null || props.proxy.last_tested_at !== null);
 const showExpansion = computed(() => hasEgressInfo.value || hasBackoffs.value);
 
 const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;

@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Per-upstream proxy fallback list editor. Lives inside UpstreamConfigPanel,
-// not its own card — the surrounding aside already provides the card frame.
-// Each entry is either a proxy id or the literal sentinel `direct`. An empty
-// list defers to the gateway's default behaviour ("always direct").
-
 import { useNow } from '@vueuse/core';
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui';
 import { computed } from 'vue';
@@ -16,8 +11,7 @@ const DIRECT = 'direct';
 
 const props = defineProps<{
   modelValue: string[];
-  // null in create mode — backoff rows are keyed on a saved upstream id, so
-  // there is nothing to render until the upstream exists.
+  // null in create mode; backoff rows need a saved upstream id.
   upstreamId: string | null;
 }>();
 
@@ -64,16 +58,12 @@ interface ActiveBackoff {
   lastError: string | null;
 }
 
-// Resolve every list entry's active backoff once per tick. Recomputed via
-// `now` so the countdown label refreshes every second; entries without a
-// matching row map to null.
 const activeBackoffByEntry = computed<Map<string, ActiveBackoff | null>>(() => {
   const map = new Map<string, ActiveBackoff | null>();
   if (props.upstreamId === null) {
     for (const entry of props.modelValue) map.set(entry, null);
     return map;
   }
-  // expires_at is unix seconds; now is ms.
   const nowSec = Math.floor(now.value.getTime() / 1000);
   for (const entry of props.modelValue) {
     if (entry === DIRECT) { map.set(entry, null); continue; }

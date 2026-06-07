@@ -4,10 +4,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { useProxiesStore as useProxiesStoreForLoader } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../../composables/useUpstreams.ts';
 
-// The control plane does not expose GET /api/proxies/:id — only the list
-// endpoint. We pre-warm both stores in parallel and look the record up by
-// id from the list cache; a missing id means the proxy was deleted (or the
-// route was deep-linked to a stale id) and the page bounces back.
+// No GET /api/proxies/:id — look up the record from the list cache.
 export const useEditProxyData = defineBasicLoader('/dashboard/proxies/[id]', async route => {
   const id = route.params.id;
   const proxiesStore = useProxiesStoreForLoader();

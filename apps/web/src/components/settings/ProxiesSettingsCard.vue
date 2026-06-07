@@ -23,8 +23,7 @@ const emit = defineEmits<{
 const api = useApi();
 
 // Per-proxy in-flight + last error for the Test button. Plain Maps keyed by id;
-// Vue tracks reassignments rather than internal mutation, so we replace the
-// Map on every update.
+// Vue tracks Map reassignments rather than internal mutation, so replace on every update.
 const testInFlight = ref<Map<string, boolean>>(new Map());
 const testError = ref<Map<string, string | null>>(new Map());
 
@@ -86,8 +85,7 @@ const moveDisabled = (id: string, direction: -1 | 1) => {
 const testProxy = async (record: ProxyRecord) => {
   testInFlight.value = setMapEntry(testInFlight.value, record.id, true);
   testError.value = setMapEntry(testError.value, record.id, null);
-  // Anchor defaults to ipify on the server when omitted; we send an empty body
-  // so the operator can switch anchors later from the editor page.
+  // Anchor defaults to ipify on the server when the body is empty.
   const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
     () => api.api.proxies[':id'].test.$post({ param: { id: record.id }, json: {} }),
   );
@@ -98,8 +96,7 @@ const testProxy = async (record: ProxyRecord) => {
   } else {
     emit('changed');
   }
-  // Hold the disabled state for ~3s after a result lands so an operator
-  // can't unintentionally double-tap and double-spend the anchor's IP echo.
+  // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
   setTimeout(() => {
     testInFlight.value = setMapEntry(testInFlight.value, record.id, false);
   }, 3000);

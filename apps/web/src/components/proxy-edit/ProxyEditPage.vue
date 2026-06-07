@@ -1,16 +1,12 @@
 <script setup lang="ts">
-// Proxy editor — single shared component used by both /dashboard/proxies/new
-// and /dashboard/proxies/:id. Owns the entire draft (name, url) plus the
-// edit-mode-only side panels: live test trigger, backoff state, and delete.
-//
-// URL validation runs on every keystroke via `parseProxyUri`. We import from
-// the package's `/url` and `/proxy-config` subpath exports rather than the
-// barrel — the barrel pulls in `runProxiedRequest` and the userspace TLS
-// stack, which both transitively depend on Node's `crypto` and inflate the
-// dashboard bundle. The parser itself is pure (no SocketDial, no TLS), so
-// the subpath gives us live feedback without dragging in dial-time code.
-// The gateway re-parses on POST/PATCH, so the dashboard cannot bypass
-// validation by skipping this client check.
+// URL validation runs on every keystroke via parseProxyUri. Import from
+// the package's /url and /proxy-config subpaths rather than the barrel —
+// the barrel pulls in runProxiedRequest and the userspace TLS stack,
+// which transitively depend on Node's crypto and inflate the dashboard
+// bundle. The parser itself is pure (no SocketDial, no TLS), so the
+// subpath gives live feedback without dial-time code. The gateway re-
+// parses on POST/PATCH, so this client check is not load-bearing for
+// security.
 
 import { parseProxyUri } from '@floway-dev/proxy/url';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
@@ -23,7 +19,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import { formatCountdown } from '../../utils/format-countdown.ts';
+import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
 
 const props = defineProps<{
   mode: 'create' | 'edit';
@@ -53,9 +49,7 @@ const testError = ref<string | null>(null);
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
 
-// Live URL parse — pure, runs on every keystroke. Empty string is treated
-// as "neutral" so the field reads as a fresh draft rather than an error
-// before the user has typed anything.
+// Empty string returns null (neutral) so a fresh draft does not flash an error before the user types.
 const parsed = computed<{ ok: true; config: ProxyConfig } | { ok: false; error: string } | null>(() => {
   const trimmed = url.value.trim();
   if (!trimmed) return null;
@@ -86,9 +80,6 @@ const parseLabel = computed(() => {
   return `${kindLabel} · ${c.host}:${c.port}`;
 });
 
-// Backoff rows referencing the proxy currently being edited. Until the
-// record exists (create mode) or is loaded, this is empty and the section
-// stays hidden.
 const backoffsForProxy = computed<BackoffRow[]>(() => {
   if (!props.record) return [];
   const all = proxiesStore.backoffs.value ?? [];
@@ -113,22 +104,12 @@ const activeBackoffs = computed(() => {
 
 const lastTestedAgo = computed<string | null>(() => {
   if (lastTestedAt.value === null) return null;
-  const ms = now.value.getTime() - lastTestedAt.value * 1000;
-  if (ms < 0) return 'just now';
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s ago`;
-  const m = Math.floor(totalSec / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  return formatRelativeAgo(now.value.getTime() - lastTestedAt.value * 1000);
 });
 
-// Refresh local egress fields from the live store so the badge updates after
-// an edit-page test or after the parent re-fetches.
 watch(() => props.record, r => {
   if (!r) return;
-  lastEgressIp.value = r.last_egress_ip ?? null;
+  lastEgressIp.value = r.last_egress_ip;
   lastTestedAt.value = r.last_tested_at;
 }, { immediate: false });
 
@@ -184,16 +165,12 @@ const test = async () => {
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
     if (data?.egress_ip) {
       lastEgressIp.value = data.egress_ip;
-      // Match the wire format — unix seconds, not millis. The parent re-fetch
-      // below will overwrite this from the server's authoritative value.
+      // Wire format is unix seconds, not millis; the parent re-fetch will overwrite this with the server value.
       lastTestedAt.value = Math.floor(Date.now() / 1000);
     }
-    // Tell the parent to re-fetch so the settings card mirrors the new
-    // egress state when the operator navigates back.
     emit('saved');
   } finally {
-    // Hold the disabled state for ~3s after a result lands so an operator
-    // can't unintentionally double-tap and double-spend the anchor's IP echo.
+    // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
     setTimeout(() => { testing.value = false; }, 3000);
   }
 };
@@ -298,10 +275,6 @@ const remove = async () => {
         </svg>
         {{ parsed.error }}
       </div>
-      <!-- Egress reads as inline meta under the URL — the IP echo is one
-           short value, not enough to deserve a section header of its own.
-           The backoff list below stays on the section ladder because its
-           countdown table demands more visual real estate. -->
       <div v-if="mode === 'edit' && record" class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
         <span>Egress:</span>
         <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>

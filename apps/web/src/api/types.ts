@@ -168,9 +168,7 @@ export interface ProxyRecord {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  // Wide enough to absorb a future repo refactor that surfaces `undefined`
-  // from a row mid-migration; consumers MUST `?? null` at the read site.
-  last_egress_ip: string | null | undefined;
+  last_egress_ip: string | null;
   last_tested_at: number | null;
 }
 

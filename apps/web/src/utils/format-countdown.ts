@@ -1,12 +1,4 @@
-// Compact countdown formatter for the proxy backoff badges. Takes an
-// already-computed millisecond delta so callers stay in control of which
-// `now` they sample against (most pair this with a `useNow` ref so the
-// label re-renders on the dashboard's 1s tick).
-//
-// `expiredLabel` controls the wording when the delta is non-positive. The
-// row-level callers say "now" (the badge is about to disappear); the edit
-// page's per-upstream backoff list says "expiring" (the row is on its last
-// tick before the timer clears).
+// Compact "in Xm Ys" formatter for backoff badges. Pass the precomputed delta (callers control which 'now' they sample, usually a useNow ref). expiredLabel = 'now' for list-row badges (about to disappear) vs 'expiring' for the edit-page row (last tick before clear).
 
 export const formatCountdown = (ms: number, expiredLabel: 'now' | 'expiring' = 'now'): string => {
   if (ms <= 0) return expiredLabel;
@@ -18,4 +10,15 @@ export const formatCountdown = (ms: number, expiredLabel: 'now' | 'expiring' = '
   const h = Math.floor(m / 60);
   const remM = m % 60;
   return `${h}h ${remM}m`;
+};
+
+export const formatRelativeAgo = (deltaMs: number): string => {
+  if (deltaMs < 0) return 'just now';
+  const totalSec = Math.floor(deltaMs / 1000);
+  if (totalSec < 60) return `${totalSec}s ago`;
+  const m = Math.floor(totalSec / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 };

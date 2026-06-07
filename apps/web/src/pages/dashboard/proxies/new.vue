@@ -3,9 +3,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../../composables/useUpstreams.ts';
 
-// The create page only needs the upstream list pre-warmed so the post-save
-// navigation into /dashboard/proxies/:id can render its (initially empty)
-// backoff section without a flicker.
+// Pre-warm upstreams so post-save navigation to /dashboard/proxies/:id renders without flicker.
 export const useNewProxyData = defineBasicLoader(async () => {
   await useUpstreamsStoreForLoader().load();
   return {};

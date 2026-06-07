@@ -3,10 +3,7 @@ import { ref, shallowRef } from 'vue';
 import { callApi, useApi } from '../api/client.ts';
 import type { BackoffRow, ProxyRecord } from '../api/types.ts';
 
-// Module-scoped cache mirrors useUpstreams: the settings card and the
-// upstream-edit fallback widget both read the same list, so a single fetch on
-// page entry serves both surfaces. Backoff rows are loaded alongside so each
-// row can render its current pause state without a follow-up request.
+// Module-scoped cache mirrors useUpstreams; settings card and fallback editor share one fetch.
 const proxies = shallowRef<ProxyRecord[] | null>(null);
 const backoffs = shallowRef<BackoffRow[] | null>(null);
 const loading = ref(false);
