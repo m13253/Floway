@@ -26,9 +26,10 @@ export const nodeSocketDial: SocketDial = {
     // 'secureConnect' without us having to race anything ourselves.
     // We don't request `allowHalfOpen` on TLS — close-notify makes
     // half-close fragile across TLS 1.3 implementations.
+    const signal = opts?.signal;
     const socket = opts?.tls
-      ? tls.connect({ host, port, servername: host, signal: opts.signal })
-      : net.connect({ host, port, allowHalfOpen: true, signal: opts.signal });
+      ? tls.connect({ host, port, servername: host, signal })
+      : net.connect({ host, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
       const onReady = (): void => {
