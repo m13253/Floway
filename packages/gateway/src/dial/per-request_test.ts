@@ -33,7 +33,7 @@ describe('createPerRequestFetcher', () => {
     // the proxies table is operator-actionable D1 drift. Surface the parse
     // error rather than silently dropping the proxy.
     await repo.upstreams.save(upstream('u_ok', ['p_bad']));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0 });
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
 
     await expect(createPerRequestFetcher()).rejects.toThrow();
   });
@@ -45,7 +45,7 @@ describe('createPerRequestFetcher', () => {
     // direct-only upstreams: we only parse rows that are reachable via some
     // upstream's fallback list.
     await repo.upstreams.save(upstream('u_direct', []));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0 });
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
 
     const fetcherFor = await createPerRequestFetcher();
     const directFetcher = fetcherFor('u_direct');

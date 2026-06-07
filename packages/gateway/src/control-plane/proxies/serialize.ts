@@ -14,6 +14,7 @@ export interface SerializedProxyRecord {
   updated_at: string;
   last_egress_ip: string | null;
   last_tested_at: number | null;
+  dial_timeout_seconds: number | null;
 }
 
 export interface SerializedBackoffRow {
@@ -34,6 +35,7 @@ export const proxyRecordToJson = (record: ProxyRecord): SerializedProxyRecord =>
   updated_at: record.updatedAt,
   last_egress_ip: record.lastEgressIp,
   last_tested_at: record.lastTestedAt,
+  dial_timeout_seconds: record.dialTimeoutSeconds,
 });
 
 export const backoffRowToJson = (row: BackoffRow): SerializedBackoffRow => ({

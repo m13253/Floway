@@ -278,15 +278,23 @@ export const codexRefreshNowBody = z.object({});
 // runs `parseProxyUri` and returns its error message verbatim so the operator
 // sees the canonical "unsupported scheme" / "missing password" feedback.
 
+// Per-proxy dial-stage timeout. Bound to a 1s..600s window because the
+// dialer's hard ceiling above ~10min would just stall the fallback chain
+// without ever giving up. nullable so the operator can clear it back to
+// the gateway-wide default; absent vs. null is meaningful in PATCH.
+export const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
+
 export const createProxyBody = z.object({
   name: z.string().min(1).max(200),
   url: z.string().min(1),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
 });
 
 export const updateProxyBody = z.object({
   name: z.string().min(1).max(200).optional(),
   url: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
 });
 
 // Anchor names the test endpoint maps to known IP-echo HTTPS services. Three

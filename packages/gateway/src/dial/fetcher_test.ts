@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createFetcher } from './fetcher.ts';
+import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
@@ -11,8 +11,8 @@ describe('createFetcher', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  const proxyA: ProxyConfig = { kind: 'socks5', host: 'a', port: 1, name: 'a' };
-  const proxyB: ProxyConfig = { kind: 'socks5', host: 'b', port: 1, name: 'b' };
+  const proxyA: ProxyEntry = { config: { kind: 'socks5', host: 'a', port: 1, name: 'a' }, dialTimeoutMs: null };
+  const proxyB: ProxyEntry = { config: { kind: 'socks5', host: 'b', port: 1, name: 'b' }, dialTimeoutMs: null };
 
   it('first-pass tries each non-backoff entry in order and short-circuits on success', async () => {
     const repo = new InMemoryRepo();

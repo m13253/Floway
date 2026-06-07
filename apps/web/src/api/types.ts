@@ -170,6 +170,9 @@ export interface ProxyRecord {
   updated_at: string;
   last_egress_ip: string | null;
   last_tested_at: number | null;
+  // null = use the gateway-wide dial deadline default. Operator-set
+  // override is whole seconds.
+  dial_timeout_seconds: number | null;
 }
 
 // Mirrors SerializedBackoffRow. `expires_at` and `last_error_at` are unix epoch

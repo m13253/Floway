@@ -1060,24 +1060,24 @@ class SqlProxyRepo implements ProxyRepo {
 
   async list(): Promise<ProxyRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at FROM proxies ORDER BY sort_order, created_at')
+      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds FROM proxies ORDER BY sort_order, created_at')
       .all<ProxyRow>();
     return results.map(toProxyRecord);
   }
 
   async getById(id: string): Promise<ProxyRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at FROM proxies WHERE id = ?')
+      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds FROM proxies WHERE id = ?')
       .bind(id)
       .first<ProxyRow>();
     return row ? toProxyRecord(row) : null;
   }
 
-  async insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord> {
+  async insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
     const now = new Date().toISOString();
     await this.db
-      .prepare('INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)')
-      .bind(input.id, input.name, input.url, input.sortOrder, now, now)
+      .prepare('INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)')
+      .bind(input.id, input.name, input.url, input.sortOrder, now, now, input.dialTimeoutSeconds)
       .run();
     return {
       id: input.id,
@@ -1088,16 +1088,20 @@ class SqlProxyRepo implements ProxyRepo {
       updatedAt: now,
       lastEgressIp: null,
       lastTestedAt: null,
+      dialTimeoutSeconds: input.dialTimeoutSeconds,
     };
   }
 
-  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null> {
+  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
     const existing = await this.getById(id);
     if (!existing) return null;
 
     const nextName = patch.name ?? existing.name;
     const nextUrl = patch.url ?? existing.url;
     const nextSortOrder = patch.sortOrder ?? existing.sortOrder;
+    // dialTimeoutSeconds is nullable, so distinguish "not in patch" from
+    // "set to null" by hasOwn — `??` would collapse a deliberate clear.
+    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? (patch.dialTimeoutSeconds ?? null) : existing.dialTimeoutSeconds;
     const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     const updatedAt = new Date().toISOString();
 
@@ -1107,6 +1111,7 @@ class SqlProxyRepo implements ProxyRepo {
            name = ?,
            url = ?,
            sort_order = ?,
+           dial_timeout_seconds = ?,
            updated_at = ?,
            last_egress_ip = CASE WHEN ? THEN NULL ELSE last_egress_ip END,
            last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END
@@ -1116,6 +1121,7 @@ class SqlProxyRepo implements ProxyRepo {
         nextName,
         nextUrl,
         nextSortOrder,
+        nextDialTimeout,
         updatedAt,
         urlChanged ? 1 : 0,
         urlChanged ? 1 : 0,
@@ -1128,6 +1134,7 @@ class SqlProxyRepo implements ProxyRepo {
       name: nextName,
       url: nextUrl,
       sortOrder: nextSortOrder,
+      dialTimeoutSeconds: nextDialTimeout,
       updatedAt,
       lastEgressIp: urlChanged ? null : existing.lastEgressIp,
       lastTestedAt: urlChanged ? null : existing.lastTestedAt,
@@ -1167,6 +1174,7 @@ interface ProxyRow {
   updated_at: string;
   last_egress_ip: string | null;
   last_tested_at: number | null;
+  dial_timeout_seconds: number | null;
 }
 
 const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
@@ -1178,6 +1186,7 @@ const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
   updatedAt: row.updated_at,
   lastEgressIp: row.last_egress_ip,
   lastTestedAt: row.last_tested_at,
+  dialTimeoutSeconds: row.dial_timeout_seconds,
 });
 
 class SqlProxyBackoffRepo implements ProxyBackoffRepo {

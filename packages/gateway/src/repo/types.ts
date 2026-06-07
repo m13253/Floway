@@ -149,13 +149,17 @@ export interface ProxyRecord {
   // SQLite stores in the integer column.
   lastEgressIp: string | null;
   lastTestedAt: number | null;
+  // Operator-set per-proxy override of the dial-stage deadline (seconds).
+  // null falls back to the gateway-wide default in @floway-dev/proxy so an
+  // unconfigured row keeps behaving like one that pre-dates this column.
+  dialTimeoutSeconds: number | null;
 }
 
 export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;
-  insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord>;
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null>;
+  insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
   delete(id: string): Promise<boolean>;
   // Records the egress IP observed by a successful proxy test, alongside the
   // current timestamp. Pairs with `patch`'s url-change detection: a url edit

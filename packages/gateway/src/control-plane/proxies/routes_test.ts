@@ -63,8 +63,8 @@ interface ProxyJson {
 
 test('GET /api/proxies returns rows ordered by sort_order', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, sortOrder: 2 });
-  await repo.proxies.insert({ id: 'p_a', name: 'First', url: HTTP_URL, sortOrder: 1 });
+  await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, sortOrder: 2, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_a', name: 'First', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies', authed(adminKey));
   assertEquals(resp.status, 200);
@@ -78,7 +78,7 @@ test('GET /api/proxies returns rows ordered by sort_order', async () => {
 
 test('POST /api/proxies creates a row and assigns the next sort_order', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_first', name: 'First', url: HTTP_URL, sortOrder: 7 });
+  await repo.proxies.insert({ id: 'p_first', name: 'First', url: HTTP_URL, sortOrder: 7, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies', authed(adminKey, { name: 'New', url: SOCKS_URL }));
   assertEquals(resp.status, 201);
@@ -104,7 +104,7 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
 
 test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
@@ -115,7 +115,7 @@ test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
 
 test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('p1', '203.0.113.1');
 
   const before = await repo.proxies.getById('p1');
@@ -135,7 +135,7 @@ test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async 
 
 test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p_del', deleteAuthed(adminKey));
   assertEquals(resp.status, 204);
@@ -144,7 +144,7 @@ test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy'
 
 test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy', async () => {
   const { repo, adminKey, copilotUpstream } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.upstreams.save({ ...copilotUpstream, proxyFallbackList: ['p_ref'] });
 
   const resp = await requestApp('/api/proxies/p_ref', deleteAuthed(adminKey));
@@ -156,7 +156,7 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
 
 test('POST /api/proxies/:id/test surfaces the dial error in the ok:false response shape', async () => {
   const { repo, adminKey } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p_test/test', authed(adminKey, {}));
   assertEquals(resp.status, 200);

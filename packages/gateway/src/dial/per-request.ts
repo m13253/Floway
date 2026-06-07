@@ -1,8 +1,8 @@
-import { createFetcher } from './fetcher.ts';
+import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
 import type { Fetcher } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { parseProxyUri, runProxiedRequest, type ProxyConfig } from '@floway-dev/proxy';
+import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
 
 // Build a per-request mapper that hands each upstream id its own
 // proxy-aware Fetcher. The proxies catalog and the request's set of
@@ -24,12 +24,18 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
     }
   }
 
-  const proxyById = new Map<string, ProxyConfig>();
+  const proxyById = new Map<string, ProxyEntry>();
   if (referencedProxyIds.size > 0) {
     const proxies = await repo.proxies.list();
     for (const p of proxies) {
       if (!referencedProxyIds.has(p.id)) continue;
-      proxyById.set(p.id, parseProxyUri(p.url));
+      proxyById.set(p.id, {
+        config: parseProxyUri(p.url),
+        // Carry the per-proxy timeout (seconds → ms) so the dial layer can
+        // honour an operator's override; null preserves the gateway default
+        // baked into @floway-dev/proxy.
+        dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
+      });
     }
   }
 

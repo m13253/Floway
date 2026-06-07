@@ -1,16 +1,27 @@
 import type { Repo } from '../repo/types.ts';
 import type { Fetcher } from '@floway-dev/provider';
-import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
+import { ProxyDialError, type ProxyConfig, type RunProxiedRequestOptions, type TargetSpec } from '@floway-dev/proxy';
+
+// Per-proxy dial parameters loaded once per request and looked up by
+// fallback-list entry. Carries both the parsed wire config and the
+// optional per-proxy dial deadline override so a slow but real proxy can
+// be granted more time than the gateway default without raising the bar
+// for everyone.
+export interface ProxyEntry {
+  config: ProxyConfig;
+  /** ms; null means "use the dialer's default". */
+  dialTimeoutMs: number | null;
+}
 
 export interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
   upstreamId: string;
   fallbackList: string[];
-  proxyById: Map<string, ProxyConfig>;
+  proxyById: Map<string, ProxyEntry>;
   // Inject runProxied/runDirect so the gateway-side fetcher stays free of
   // any direct dependency on a runtime fetch implementation; the data-plane
   // composition root supplies both.
-  runProxied: (config: ProxyConfig, target: TargetSpec) => Promise<Response>;
+  runProxied: (config: ProxyConfig, target: TargetSpec, options?: RunProxiedRequestOptions) => Promise<Response>;
   // Per-request indirection for the 'direct' sentinel.
   runDirect: (url: string, init: RequestInit) => Promise<Response>;
 }
@@ -82,7 +93,11 @@ const tryOne = async (
     if (!config) {
       throw new Error(`unknown proxy id in fallback list: ${id}`);
     }
-    const response = await input.runProxied(config, await targetForProxy());
+    const response = await input.runProxied(
+      config.config,
+      await targetForProxy(),
+      config.dialTimeoutMs === null ? undefined : { dialTimeoutMs: config.dialTimeoutMs },
+    );
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
     // schedule from where it left off.

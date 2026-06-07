@@ -39,6 +39,20 @@ const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
 const lastEgressIp = ref<string | null>(props.record?.last_egress_ip ?? null);
 const lastTestedAt = ref<number | null>(props.record?.last_tested_at ?? null);
+// Per-proxy dial-stage deadline. Stored as a string to make "empty" the
+// canonical "use default" signal; coerced to a number on save. Must stay
+// in sync with DEFAULT_DIAL_DEADLINE_MS in @floway-dev/proxy.
+const DEFAULT_DIAL_TIMEOUT_SECONDS = 30;
+const dialTimeoutInput = ref<string>(props.record?.dial_timeout_seconds === null || props.record?.dial_timeout_seconds === undefined ? '' : String(props.record.dial_timeout_seconds));
+
+const dialTimeoutParsed = computed<{ value: number | null } | { error: string } | null>(() => {
+  const raw = dialTimeoutInput.value.trim();
+  if (raw === '') return { value: null };
+  if (!/^[1-9][0-9]*$/.test(raw)) return { error: 'Whole seconds, > 0' };
+  const n = Number(raw);
+  if (n < 1 || n > 600) return { error: 'Must be between 1 and 600 seconds' };
+  return { value: n };
+});
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -111,6 +125,7 @@ watch(() => props.record, r => {
   if (!r) return;
   lastEgressIp.value = r.last_egress_ip;
   lastTestedAt.value = r.last_tested_at;
+  dialTimeoutInput.value = r.dial_timeout_seconds === null ? '' : String(r.dial_timeout_seconds);
 }, { immediate: false });
 
 const save = async () => {
@@ -123,12 +138,17 @@ const save = async () => {
     saveError.value = `Invalid proxy URI: ${parsed.value.error}`;
     return;
   }
+  if (dialTimeoutParsed.value && 'error' in dialTimeoutParsed.value) {
+    saveError.value = `Dial timeout: ${dialTimeoutParsed.value.error}`;
+    return;
+  }
+  const dialTimeoutSeconds = dialTimeoutParsed.value && 'value' in dialTimeoutParsed.value ? dialTimeoutParsed.value.value : null;
 
   saving.value = true;
   try {
     if (props.mode === 'create') {
       const { data, error } = await callApi<ProxyRecord>(
-        () => api.api.proxies.$post({ json: { name: trimmedName, url: trimmedUrl } }),
+        () => api.api.proxies.$post({ json: { name: trimmedName, url: trimmedUrl, dial_timeout_seconds: dialTimeoutSeconds } }),
       );
       if (error) { saveError.value = error.message; return; }
       emit('saved');
@@ -137,7 +157,7 @@ const save = async () => {
       const { error } = await callApi(
         () => api.api.proxies[':id'].$patch({
           param: { id: props.record!.id },
-          json: { name: trimmedName, url: trimmedUrl },
+          json: { name: trimmedName, url: trimmedUrl, dial_timeout_seconds: dialTimeoutSeconds },
         }),
       );
       if (error) { saveError.value = error.message; return; }
@@ -283,6 +303,23 @@ const remove = async () => {
         <Button variant="secondary" size="sm" :loading="testing" class="ml-auto" @click="test">Test</Button>
       </div>
       <p v-if="mode === 'edit' && testError" class="text-xs text-accent-rose">{{ testError }}</p>
+    </div>
+
+    <div class="space-y-1.5">
+      <label class="block text-xs font-medium text-gray-500">
+        Dial timeout <span class="text-gray-600">(seconds, leave empty for default)</span>
+      </label>
+      <Input
+        v-model="dialTimeoutInput"
+        :placeholder="`${DEFAULT_DIAL_TIMEOUT_SECONDS} (default)`"
+        :invalid="dialTimeoutParsed !== null && 'error' in dialTimeoutParsed"
+        inputmode="numeric"
+        class="font-mono"
+      />
+      <p v-if="dialTimeoutParsed && 'error' in dialTimeoutParsed" class="text-xs text-accent-rose">{{ dialTimeoutParsed.error }}</p>
+      <p v-else class="text-xs text-gray-600">
+        Hard ceiling on TCP-connect + handshake time before the fallback chain advances and the proxy enters backoff.
+      </p>
     </div>
 
     <template v-if="mode === 'edit' && record">

@@ -32,7 +32,8 @@ export type {
 
 export { ProxyDialError } from './errors.js';
 
-export { runProxiedRequest } from './dialer.js';
+export { runProxiedRequest, DEFAULT_DIAL_DEADLINE_MS } from './dialer.js';
+export type { RunProxiedRequestOptions } from './dialer.js';
 
 export { runHttpConnect } from './protocols/http-connect.js';
 export type { HttpConnectOptions } from './protocols/http-connect.js';

@@ -21,17 +21,17 @@ const upstreamFixture = (id: string, proxyFallbackList: string[]): UpstreamRecor
 
 test('proxies repo inserts and lists ordered by sortOrder, then createdAt', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 1 });
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 1, dialTimeoutSeconds: null });
   // Sleep to guarantee a distinct createdAt for tie-breaks within the same sort_order bucket.
   await new Promise(resolve => setTimeout(resolve, 5));
-  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 0 });
+  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 0, dialTimeoutSeconds: null });
   const list = await repo.proxies.list();
   assertEquals(list.map(p => p.id), ['b', 'a']);
 });
 
 test('proxies repo clears lastEgressIp and lastTestedAt when url changes', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0 });
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('a', '1.2.3.4');
   const before = await repo.proxies.getById('a');
   assertEquals(before?.lastEgressIp, '1.2.3.4');
@@ -48,7 +48,7 @@ test('proxies repo clears lastEgressIp and lastTestedAt when url changes', async
 
 test('proxies repo keeps lastEgressIp when patching name only', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0 });
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('a', '1.2.3.4');
 
   await repo.proxies.patch('a', { name: 'A2' });
@@ -59,7 +59,7 @@ test('proxies repo keeps lastEgressIp when patching name only', async () => {
 
 test('proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', sortOrder: 0 });
+  await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.upstreams.save(upstreamFixture('up_1', ['p', 'direct']));
   await repo.upstreams.save(upstreamFixture('up_2', ['direct', 'p']));
   await repo.upstreams.save(upstreamFixture('up_3', ['direct']));
@@ -75,7 +75,7 @@ test('proxies repo delete returns false when id is unknown', async () => {
 
 test('proxies repo delete returns true and removes the row', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0 });
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
   assertEquals(await repo.proxies.delete('a'), true);
   assertEquals(await repo.proxies.getById('a'), null);
 });

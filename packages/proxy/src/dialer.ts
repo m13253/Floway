@@ -20,18 +20,27 @@ import type { TargetSpec } from './types.js';
 // real-world latency-bound link can take 8-15s for outer-TCP + outer-TLS
 // + proxy-handshake + inner-TLS combined; 30s leaves ~2× headroom on top
 // of that without letting a black-holed proxy entry stall the call for a
-// minute+.
-const DIAL_DEADLINE_MS = 30_000;
+// minute+. Operators can override per-proxy via the `dial_timeout_seconds`
+// column; runProxiedRequest's options.dialTimeoutMs takes the override.
+export const DEFAULT_DIAL_DEADLINE_MS = 30_000;
+
+export interface RunProxiedRequestOptions {
+  /** Per-call dial-stage deadline override (ms). Falls back to
+   *  DEFAULT_DIAL_DEADLINE_MS when absent. */
+  dialTimeoutMs?: number;
+}
 
 export const runProxiedRequest = async (
   config: ProxyConfig,
   target: TargetSpec,
+  options?: RunProxiedRequestOptions,
 ): Promise<Response> => {
+  const deadlineMs = options?.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(
-      () => reject(new ProxyDialError(`dial deadline exceeded after ${DIAL_DEADLINE_MS}ms`, 'tcp-connect')),
-      DIAL_DEADLINE_MS,
+      () => reject(new ProxyDialError(`dial deadline exceeded after ${deadlineMs}ms`, 'tcp-connect')),
+      deadlineMs,
     );
   });
   try {

@@ -600,7 +600,7 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(found ? cloneProxyRecord(found) : null);
   }
 
-  insert(input: { id: string; name: string; url: string; sortOrder: number }): Promise<ProxyRecord> {
+  insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
     const now = new Date().toISOString();
     const record: ProxyRecord = {
       id: input.id,
@@ -611,21 +611,26 @@ class MemoryProxyRepo implements ProxyRepo {
       updatedAt: now,
       lastEgressIp: null,
       lastTestedAt: null,
+      dialTimeoutSeconds: input.dialTimeoutSeconds,
     };
     this.store.set(record.id, record);
     return Promise.resolve(cloneProxyRecord(record));
   }
 
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number }): Promise<ProxyRecord | null> {
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve(null);
 
     const urlChanged = patch.url !== undefined && patch.url !== existing.url;
+    // Distinguish "absent" from "explicit null" — `??` would collapse a
+    // deliberate clear back to the existing value.
+    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? (patch.dialTimeoutSeconds ?? null) : existing.dialTimeoutSeconds;
     const updated: ProxyRecord = {
       ...existing,
       name: patch.name ?? existing.name,
       url: patch.url ?? existing.url,
       sortOrder: patch.sortOrder ?? existing.sortOrder,
+      dialTimeoutSeconds: nextDialTimeout,
       updatedAt: new Date().toISOString(),
       lastEgressIp: urlChanged ? null : existing.lastEgressIp,
       lastTestedAt: urlChanged ? null : existing.lastTestedAt,

@@ -35,6 +35,7 @@ export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
     name: body.name,
     url: body.url,
     sortOrder,
+    dialTimeoutSeconds: body.dial_timeout_seconds ?? null,
   });
   return c.json(proxyRecordToJson(record), 201);
 };
@@ -55,6 +56,10 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
     name: body.name,
     url: body.url,
     sortOrder: body.sort_order,
+    // Forward the absent / null distinction so the repo can tell "leave it"
+    // from "clear it back to default" — Object.hasOwn carries the bit
+    // through the spread below.
+    ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds ?? null } : {}),
   });
   if (!record) return c.json({ error: 'Proxy not found' }, 404);
   return c.json(proxyRecordToJson(record));
@@ -117,7 +122,11 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       path: anchor.path,
       headers: { 'Host': anchor.host, 'User-Agent': 'floway-proxy-test/1' },
     };
-    const response = await runProxiedRequest(config, target);
+    const response = await runProxiedRequest(
+      config,
+      target,
+      proxy.dialTimeoutSeconds === null ? undefined : { dialTimeoutMs: proxy.dialTimeoutSeconds * 1000 },
+    );
     if (!response.ok) {
       return c.json({ ok: false, error: `Anchor returned status ${response.status}` });
     }
