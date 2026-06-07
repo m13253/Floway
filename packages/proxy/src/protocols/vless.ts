@@ -1,4 +1,4 @@
-// VLESS client (TCP+TLS or WebSocket+TLS transports).
+// VLESS dialer (TCP+TLS or WebSocket+TLS transports).
 //
 // VLESS spec (https://xtls.github.io/development/protocols/vless.html):
 //   ver[1=0x00] | UUID[16] | addonsLen[1] | addons[N=0]
@@ -11,10 +11,10 @@
 // The reply prefix from the server is `ver[1] | addonsLen[1] | addons[M]`,
 // followed by transparent payload. We parse and discard the reply prefix.
 
-import { ProxyDialError } from '../errors.js';
-import { type TargetSpec } from '../types.js';
-import { runVlessCoreOverStream } from './vless-core.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
+import { ProxyDialError } from '../errors.ts';
+import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { vlessFrameOverStream } from './vless-core.ts';
 
 // Workerd-only WebSocket surface used for the WS transport. We re-declare the
 // two members we touch (`accept`, `send`) here instead of pulling
@@ -25,64 +25,49 @@ type WorkerdWebSocket = WebSocket & {
   accept: () => void;
 };
 
-export interface VlessTcpTlsOptions {
-  serverHost: string;
-  serverPort: number;
-  uuid: string;
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
-
-export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response> {
-  const { serverHost, serverPort, uuid, target, signal } = opts;
-
+export const dialVlessTcpTls = async (
+  config: VlessTcpTlsProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
   // we can't distinguish a TCP RST from a TLS handshake failure here, so any
   // dial-time error is reported as tcp-connect.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { tls: true, signal });
+    socket = await options.socketDial.connect(config.host, config.port, { tls: true, signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${serverHost}:${serverPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runVlessCoreOverStream(socket, uuid, target, signal);
+    return await vlessFrameOverStream(socket, config.uuid, target);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-export interface VlessWsTlsOptions {
-  serverHost: string;
-  serverPort: number;
-  uuid: string;
-  path: string;
-  /** Optional Host header for domain fronting; defaults to serverHost. */
-  wsHost?: string;
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
-
-export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> {
-  const { serverHost, serverPort, uuid, path, wsHost, target, signal } = opts;
-
+export const dialVlessWsTls = async (
+  config: VlessWsTlsProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
   // Use Worker fetch() to do the WS upgrade — workerd handles outer TLS for us.
-  const wsUrl = `https://${serverHost}:${serverPort}${path}`;
+  const wsUrl = `https://${config.host}:${config.port}${config.path}`;
   let resp: Response;
   try {
     resp = await fetch(wsUrl, {
-      headers: { Upgrade: 'websocket', Host: wsHost ?? serverHost },
-      signal,
+      headers: { Upgrade: 'websocket', Host: config.wsHost ?? config.host },
+      signal: options.signal,
     });
   } catch (cause) {
     throw new ProxyDialError(
-      `ws upgrade fetch to ${serverHost}:${serverPort} failed`,
+      `ws upgrade fetch to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
@@ -97,28 +82,29 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   const transport = wsAsDuplex(ws);
   ws.accept();
 
-  // The signal listener fires during the dial + handshake legs; once
-  // runVlessCoreOverStream returns, response-time cancellation propagates
-  // through the inner TLS layer's own signal-aware streams. Detach the
-  // listener before returning so a long-lived caller signal doesn't
-  // accumulate one closure per dial.
+  // The signal listener fires during the dial + handshake legs; once the
+  // VLESS framing returns, response-time cancellation propagates through
+  // the inner TLS layer's own signal-aware streams. Detach the listener
+  // before returning so a long-lived caller signal doesn't accumulate one
+  // closure per dial.
   let detachAbortListener: (() => void) | null = null;
-  if (signal) {
+  if (options.signal) {
+    const signal = options.signal;
     const onAbort = (): void => { try { ws.close(1000, 'aborted'); } catch { /* WS already closed */ } };
     signal.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => signal.removeEventListener('abort', onAbort);
   }
 
   try {
-    const response = await runVlessCoreOverStream(transport, uuid, target, signal);
+    const result = await vlessFrameOverStream(transport, config.uuid, target);
     detachAbortListener?.();
-    return response;
+    return result;
   } catch (err) {
     detachAbortListener?.();
     try { ws.close(1011, 'dial failed'); } catch { /* WS already closed */ }
     throw err;
   }
-}
+};
 
 // Hard cap on the queued-but-not-yet-pulled bytes from the WS. LLM responses
 // rarely exceed a few MiB; 64 MiB is well past any legitimate single
@@ -126,7 +112,7 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
 // our inner-TLS pump pulls.
 const WS_QUEUE_CAP_BYTES = 64 * 1024 * 1024;
 
-function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } {
+const wsAsDuplex = (ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } => {
   const buffer: Uint8Array[] = [];
   let queueSize = 0;
   let pending: ((v: { value: Uint8Array | undefined; done: boolean }) => void) | null = null;
@@ -248,4 +234,4 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
   });
 
   return { readable, writable };
-}
+};

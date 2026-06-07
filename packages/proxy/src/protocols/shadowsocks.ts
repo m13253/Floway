@@ -1,4 +1,4 @@
-// Shadowsocks AEAD-2018 client.
+// Shadowsocks AEAD-2018 dialer.
 //
 // Spec: https://shadowsocks.org/doc/aead.html (SIP004 + SIP007).
 //
@@ -21,23 +21,9 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
-import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import type { SsMethod } from '../proxy-config.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
-
-export type { SsMethod };
-
-export interface ShadowsocksOptions {
-  serverHost: string;
-  serverPort: number;
-  method: SsMethod;
-  password: string;
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
+import { ProxyDialError } from '../errors.ts';
+import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -49,38 +35,40 @@ const TAG_LEN = 16;
 const NONCE_LEN = 12;
 const MAX_PAYLOAD = 0x3fff;
 
-export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response> {
-  const { serverHost, serverPort, method, password, target, signal } = opts;
-  const keyLen = METHOD_KEY_LEN[method];
-  if (!keyLen) throw new Error(`unsupported method: ${method}`);
+export const dialShadowsocks = async (
+  config: ShadowsocksProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
+  const keyLen = METHOD_KEY_LEN[config.method];
+  if (!keyLen) throw new Error(`unsupported method: ${config.method}`);
 
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { signal });
+    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${serverHost}:${serverPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runShadowsocksInner(socket, method, password, keyLen, target, signal);
+    return await dialShadowsocksInner(socket, config.method, config.password, keyLen, target);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-async function runShadowsocksInner(
+const dialShadowsocksInner = async (
   socket: DialedSocket,
   method: SsMethod,
   password: string,
   keyLen: number,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
+  target: DialTarget,
+): Promise<DialResult> => {
   const masterKey = evpBytesToKey(password, keyLen);
 
   // Per-direction salts and subkeys
@@ -122,7 +110,7 @@ async function runShadowsocksInner(
   };
 
   // Build the SS address header for the first payload chunk.
-  const addrBytes = buildSocksAddress(target.dialHost, target.port);
+  const addrBytes = buildSocksAddress(target.host, target.port);
 
   // Encrypt and send: [salt] + frame(addr+initialPayload). For an AEAD frame,
   // we encrypt up to MAX_PAYLOAD plaintext bytes per record. The first record
@@ -131,9 +119,9 @@ async function runShadowsocksInner(
   sendNonce += 2n;
   const initialOut = concat(sendSalt, initialFrame);
   await writer.write(initialOut);
-  // We're about to hand the writer off via the userspace-TLS wrapper.
-  // Construct a wrapping WritableStream that frames each chunk as an SS AEAD
-  // record before forwarding to the underlying socket.
+  // We're about to hand the writer off via the SS-encrypting WritableStream
+  // wrapper. Construct a wrapping WritableStream that frames each chunk as
+  // an SS AEAD record before forwarding to the underlying socket.
   writer.releaseLock();
 
   // Track whether the SS receive side has produced any successful payload
@@ -207,25 +195,15 @@ async function runShadowsocksInner(
     },
   });
 
-  if (target.tls) {
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
-    } catch (cause) {
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    return await runHttp1({ readable: ssReadable, writable: ssWritable }, target);
-  }
-}
+  return { readable: ssReadable, writable: ssWritable };
+};
 
 interface Aead {
   encrypt(nonce: Uint8Array, plaintext: Uint8Array): Uint8Array;
   decrypt(nonce: Uint8Array, ciphertext: Uint8Array): Uint8Array;
 }
 
-function makeAead(method: SsMethod, key: Uint8Array): Aead {
+const makeAead = (method: SsMethod, key: Uint8Array): Aead => {
   if (method === 'chacha20-ietf-poly1305') {
     return {
       encrypt: (nonce, pt) => chacha20poly1305(key, nonce).encrypt(pt),
@@ -238,9 +216,9 @@ function makeAead(method: SsMethod, key: Uint8Array): Aead {
     };
   }
   throw new Error(`unsupported method ${method}`);
-}
+};
 
-function encryptFrame(cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> {
+const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {
   if (payload.byteLength > MAX_PAYLOAD) throw new Error('payload exceeds MAX_PAYLOAD');
   const lenBytes = new Uint8Array(2);
   lenBytes[0] = (payload.byteLength >> 8) & 0xff;
@@ -251,9 +229,9 @@ function encryptFrame(cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uin
   out.set(lenSealed, 0);
   out.set(payloadSealed, lenSealed.byteLength);
   return out;
-}
+};
 
-function nonceBytes(counter: bigint): Uint8Array<ArrayBuffer> {
+const nonceBytes = (counter: bigint): Uint8Array<ArrayBuffer> => {
   const out = new Uint8Array(NONCE_LEN);
   let c = counter;
   for (let i = 0; i < NONCE_LEN; i++) {
@@ -261,9 +239,9 @@ function nonceBytes(counter: bigint): Uint8Array<ArrayBuffer> {
     c >>= 8n;
   }
   return out;
-}
+};
 
-function evpBytesToKey(password: string, keyLen: number): Uint8Array<ArrayBuffer> {
+const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer> => {
   const pw = asciiBytes(password);
   const out = new Uint8Array(keyLen);
   let prev = new Uint8Array(0);
@@ -277,13 +255,12 @@ function evpBytesToKey(password: string, keyLen: number): Uint8Array<ArrayBuffer
     prev = m;
   }
   return out;
-}
+};
 
-function asciiBytes(s: string): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
-}
+const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
 
-function buildSocksAddress(host: string, port: number): Uint8Array<ArrayBuffer> {
+const buildSocksAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   if (dom.byteLength > 255) throw new Error('SS: address too long');
@@ -294,17 +271,17 @@ function buildSocksAddress(host: string, port: number): Uint8Array<ArrayBuffer> 
   out[2 + dom.byteLength] = (port >> 8) & 0xff;
   out[2 + dom.byteLength + 1] = port & 0xff;
   return out;
-}
+};
 
-function randomBytes(n: number): Uint8Array<ArrayBuffer> {
+const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
   const buf = new Uint8Array(n);
   crypto.getRandomValues(buf);
   return buf;
-}
+};
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
+const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(a.byteLength + b.byteLength);
   r.set(a, 0);
   r.set(b, a.byteLength);
   return r;
-}
+};

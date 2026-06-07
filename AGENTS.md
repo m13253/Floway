@@ -52,6 +52,7 @@ contracts and is ESLint-prohibited from reaching into any `apps/platform-*`.
 floway/
 ├── packages/
 │   ├── gateway/             # @floway-dev/gateway — Hono app, control/data planes, repo, migrations
+│   ├── http/                # @floway-dev/http — HTTP/1.1 + userspace TLS over a duplex byte stream
 │   ├── interceptor/         # @floway-dev/interceptor — generic interceptor framework
 │   ├── platform/            # @floway-dev/platform — runtime contracts + portable helpers
 │   ├── protocols/           # @floway-dev/protocols — protocol type defs
@@ -60,6 +61,7 @@ floway/
 │   ├── provider-codex/      # @floway-dev/provider-codex — ChatGPT Codex (subscription) provider
 │   ├── provider-copilot/    # @floway-dev/provider-copilot — GitHub Copilot provider
 │   ├── provider-custom/     # @floway-dev/provider-custom — generic OpenAI-compatible
+│   ├── proxy/               # @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
 │   ├── translate/           # @floway-dev/translate — cross-protocol translation pairs
 │   └── ui/                  # @floway-dev/ui — internal Vue component library
 └── apps/
@@ -68,15 +70,24 @@ floway/
     └── web/                 # @floway-dev/web — Vue + Vite SPA dashboard
 ```
 
-Dependency direction is strict. The leaf-most packages are `protocols` and
-`interceptor`. `translate` depends on `protocols`. `provider` depends on
-`platform` + `protocols` + `interceptor`; the per-vendor `provider-*` packages
-depend on `provider`. `gateway` depends on `platform` + `protocols` + `translate`
-+ all `provider-*`, and is the runtime-agnostic gateway core. `apps/platform-*`
-depend on `platform` + `gateway` plus their target's runtime libraries
-(`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the only
-places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext, sharp,
-node:sqlite, fs) appear. `apps/web` depends on `ui` and type-imports
+Dependency direction is strict. The leaf-most packages are `protocols`,
+`interceptor`, and `http` (HTTP/1.1 over a duplex byte stream + userspace
+TLS, no runtime dependencies). `translate` depends on `protocols`. `proxy`
+depends on `http`; it parses subscription-style proxy URIs, dispatches to
+per-protocol byte-stream dialers, and exposes a `runProxiedRequest`
+orchestrator that composes dial → optional userspace TLS → fetch-on-stream.
+The `proxy` package is runtime-agnostic — every dialer takes the raw TCP
+`socketDial` primitive through `DialOptions`, so it never imports
+`@floway-dev/platform`. `provider` depends on `platform` + `protocols` +
+`interceptor`; the per-vendor `provider-*` packages depend on `provider`.
+`gateway` depends on `platform` + `protocols` + `translate` + `http` +
+`proxy` + all `provider-*`, and is the runtime-agnostic gateway core; it
+threads `getSocketDial()` from `@floway-dev/platform` into the proxy
+library at the dial-layer composition root. `apps/platform-*` depend on
+`platform` + `gateway` plus their target's runtime libraries
+(`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the
+only places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext,
+sharp, node:sqlite, fs) appear. `apps/web` depends on `ui` and type-imports
 `@floway-dev/gateway/app-type` for Hono RPC client typing.
 
 ESLint forbids any workspace file from importing `@floway-dev/platform-*`

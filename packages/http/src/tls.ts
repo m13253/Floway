@@ -2,10 +2,10 @@
 //
 // On Cloudflare Workers, `Socket.startTls()` on the production edge fails with
 // "TLS Handshake Failed." after any plain bytes have been read or written
-// (workerd issue #2712, unresolved). The same bug means our HTTP CONNECT and
+// (workerd issue #2712, unresolved). The same bug means HTTP CONNECT and
 // SOCKS5 paths cannot complete the upstream TLS handshake natively. We
-// therefore use a userspace TLS client uniformly across all runtimes so the
-// proxy library does not depend on any runtime-specific TLS upgrade.
+// therefore use a userspace TLS client uniformly across all runtimes so this
+// package does not depend on any runtime-specific TLS upgrade.
 //
 // `@reclaimprotocol/tls` provides a TLS 1.2/1.3 client implemented in JS using
 // Web Crypto + @noble. We wrap it as an adapter that takes a duplex byte
@@ -15,12 +15,14 @@
 import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
+import type { DuplexStream } from './types.ts';
+
 let cryptoInstalled = false;
-function ensureCrypto(): void {
+const ensureCrypto = (): void => {
   if (cryptoInstalled) return;
   setCryptoImplementation(webcryptoCrypto);
   cryptoInstalled = true;
-}
+};
 
 export interface UserspaceTlsOptions {
   /**
@@ -41,7 +43,7 @@ export interface UserspaceTlsOptions {
   insecure?: boolean;
   /**
    * Optional bytes prepended to our first record write to the transport.
-   * Used when the proxy protocol's request header must be transmitted in
+   * Used when a proxy protocol's request header must be transmitted in
    * the same TCP segment as our first TLS ClientHello (e.g. sing-box's
    * Trojan inbound uses `conn.Read(key[56])` and short-reads if the proxy
    * header arrives in a separate TLS fragment from the rest of the stream).
@@ -63,21 +65,17 @@ export interface UserspaceTlsOptions {
   signal?: AbortSignal;
 }
 
-export interface TlsStream {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-}
+export type TlsStream = DuplexStream;
 
-// Wrap a duplex byte transport (typically a `DialedSocket` after the proxy
-// handshake completes) with a TLS 1.3 client and emit an application-data
-// duplex stream.
+// Wrap a duplex byte transport with a TLS 1.3 client and emit an
+// application-data duplex stream.
 //
 // On error the returned promise rejects; on TLS clean-end the readable closes;
 // on any error after handshake the readable errors.
-export async function userspaceTls(
-  transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
+export const userspaceTls = async (
+  transport: DuplexStream,
   opts: UserspaceTlsOptions,
-): Promise<TlsStream> {
+): Promise<TlsStream> => {
   ensureCrypto();
 
   if (opts.signal?.aborted) {
@@ -283,7 +281,7 @@ export async function userspaceTls(
   }
 
   return { readable: plainReadable, writable: plainWritable };
-}
+};
 
 // Keep teardown errors visible at debug level — they're usually "peer
 // already closed" but a real bug would otherwise be silenced. Gate behind
@@ -298,8 +296,8 @@ const logTlsTeardownError = (e: unknown): void => {
   }
 };
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};

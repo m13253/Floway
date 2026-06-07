@@ -1,24 +1,26 @@
-// Run an HTTP/1.1 request over an already-TLS-wrapped or plain duplex stream.
-// Used both for native Workers Sockets (which expose readable/writable directly)
-// and for our userspace-TLS-wrapped streams.
+// Run an HTTP/1.1 request over an already-established duplex byte stream.
+// Used both for native sockets that expose readable/writable directly and
+// for our userspace-TLS-wrapped streams.
 
-import { type TargetSpec } from './types.js';
+import { HttpProtocolError } from './errors.ts';
+import type { DuplexStream, HttpRequest } from './types.ts';
 
-export interface DuplexBytes {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-}
-
-export interface RunHttp1Options {
-  /** Bytes to prepend to the very first write — concatenated with the
-   *  HTTP/1.1 request head into a single writer.write() call. Trojan's
-   *  plain-HTTP path uses this to ride its 56-byte auth header in the
-   *  same record as the request line, avoiding sing-box's
-   *  fallback-disabled short-read on the leading record. */
+export interface FetchOnStreamOptions {
+  /**
+   * Bytes to prepend to the very first write — concatenated with the
+   * HTTP/1.1 request head into a single writer.write() call. Trojan's
+   * plain-HTTP path uses this to ride its 56-byte auth header in the
+   * same record as the request line, avoiding sing-box's
+   * fallback-disabled short-read on the leading record.
+   */
   prefix?: Uint8Array;
 }
 
-export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: RunHttp1Options): Promise<Response> {
+export const fetchOnStream = async (
+  stream: DuplexStream,
+  request: HttpRequest,
+  opts?: FetchOnStreamOptions,
+): Promise<Response> => {
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();
   // Strip any caller-supplied framing headers — the buffered body's exact
@@ -26,12 +28,11 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: R
   // the runtime fetch path would leave the body wrapped in chunk markers
   // we cannot decode here.
   const headers: Record<string, string> = {};
-  for (const [k, v] of Object.entries(target.headers)) {
+  for (const [k, v] of Object.entries(request.headers)) {
     const lk = k.toLowerCase();
     if (lk === 'content-length' || lk === 'transfer-encoding') continue;
     headers[k] = v;
   }
-  if (!('host' in lowerKeys(headers))) headers.Host = target.dialHost;
   // The gateway is one-shot per dial — there's no keep-alive state machine
   // here, and a caller-supplied `Connection: keep-alive` would mislead the
   // upstream into reusing a socket we plan to tear down after the response.
@@ -45,17 +46,17 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: R
   // server treat the message as zero-length — that's how Copilot's
   // `invalid_request_body` surfaces when our serialized POST goes out with
   // no framing at all.
-  const bodyLen = target.requestBody?.byteLength ?? 0;
+  const bodyLen = request.body?.byteLength ?? 0;
   if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
 
-  const requestLine = `${target.method} ${target.path} HTTP/1.1\r\n`;
+  const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
   head += '\r\n';
   const headBytes = enc.encode(head);
   // Prepend the optional prefix into the same write so the leading record
   // contains both the prefix and the request head (Trojan plain-HTTP
-  // depends on this; see RunHttp1Options.prefix).
+  // depends on this; see FetchOnStreamOptions.prefix).
   if (opts?.prefix && opts.prefix.byteLength > 0) {
     const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
     merged.set(opts.prefix, 0);
@@ -64,7 +65,7 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: R
   } else {
     await writer.write(headBytes);
   }
-  if (target.requestBody?.byteLength) {
+  if (request.body?.byteLength) {
     // Match the inner TLS record size (16 KiB plaintext, per RFC 8446 §5.1).
     // Each call to writer.write() on the userspace-TLS stream maps 1:1 to
     // an AEAD-sealed record, so larger chunks just trigger reclaim's own
@@ -73,24 +74,27 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: R
     // sockets are insensitive to chunk size.
     const CHUNK = 16384;
     let off = 0;
-    while (off < target.requestBody.byteLength) {
-      const slice = target.requestBody.subarray(off, Math.min(off + CHUNK, target.requestBody.byteLength));
+    while (off < request.body.byteLength) {
+      const slice = request.body.subarray(off, Math.min(off + CHUNK, request.body.byteLength));
       await writer.write(slice);
       off += slice.byteLength;
     }
   }
   writer.releaseLock();
 
-  return await parseResponse(stream.readable);
-}
+  return await parseHttpResponse(stream.readable);
+};
 
-function lowerKeys(o: Record<string, string>): Record<string, string> {
+const lowerKeys = (o: Record<string, string>): Record<string, string> => {
   const r: Record<string, string> = {};
   for (const k in o) r[k.toLowerCase()] = o[k]!;
   return r;
-}
+};
 
-async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Response> {
+// Parse an HTTP/1.1 response off a byte-stream reader. Exported for advanced
+// callers that already own the readable (e.g. tests, or transports that
+// pre-process the response head before re-injecting bytes).
+export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<Response> => {
   const reader = readable.getReader();
   let buffer = new Uint8Array(0);
 
@@ -101,11 +105,11 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   let headerEnd = -1;
   while (headerEnd < 0) {
     const { value, done } = await reader.read();
-    if (done) throw new Error(`unexpected EOF before headers; got ${buffer.byteLength} bytes`);
+    if (done) throw new HttpProtocolError(`unexpected EOF before headers; got ${buffer.byteLength} bytes`);
     buffer = concat(buffer, copy(value));
     headerEnd = findDoubleCrlf(buffer);
     if (headerEnd < 0 && buffer.byteLength > HEADER_BUFFER_CAP) {
-      throw new Error(`HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`);
+      throw new HttpProtocolError(`HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`);
     }
   }
 
@@ -116,7 +120,7 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   const lines = headerText.split('\r\n');
   const statusLine = lines.shift()!;
   const m = /^HTTP\/(1\.[01]) (\d{3}) ?(.*)$/.exec(statusLine);
-  if (!m) throw new Error(`bad status line: ${JSON.stringify(statusLine)}`);
+  if (!m) throw new HttpProtocolError(`bad status line: ${JSON.stringify(statusLine)}`);
   const status = parseInt(m[2]!, 10);
 
   const respHeaders = new Headers();
@@ -143,12 +147,12 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   // Content-Length is an error (the sender is broken or actively
   // smuggling). Reject loud rather than picking one.
   if (rawTransferEncodings.length > 0 && rawContentLengths.length > 0) {
-    throw new Error('HTTP/1.1 response has both Transfer-Encoding and Content-Length');
+    throw new HttpProtocolError('HTTP/1.1 response has both Transfer-Encoding and Content-Length');
   }
   // RFC 9112 §6.3: multiple Content-Length values are an error unless
   // every value is the same single token. We forbid duplicates outright.
   if (rawContentLengths.length > 1) {
-    throw new Error(`HTTP/1.1 response has ${rawContentLengths.length} Content-Length headers`);
+    throw new HttpProtocolError(`HTTP/1.1 response has ${rawContentLengths.length} Content-Length headers`);
   }
 
   // Parse Transfer-Encoding as a token list; `chunked` MUST be the final
@@ -160,23 +164,23 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
     .filter(t => t !== '');
   const teIsChunked = teTokens.length > 0 && teTokens[teTokens.length - 1] === 'chunked';
   if (teTokens.length > 0 && !teIsChunked) {
-    throw new Error(`HTTP/1.1 response has Transfer-Encoding without chunked: ${teTokens.join(',')}`);
+    throw new HttpProtocolError(`HTTP/1.1 response has Transfer-Encoding without chunked: ${teTokens.join(',')}`);
   }
   if (teTokens.filter(t => t === 'chunked').length > 1) {
-    throw new Error('HTTP/1.1 response has chunked listed more than once in Transfer-Encoding');
+    throw new HttpProtocolError('HTTP/1.1 response has chunked listed more than once in Transfer-Encoding');
   }
   const contentLength = rawContentLengths[0] ?? null;
 
   let body: ReadableStream<Uint8Array>;
   let mode: 'chunked' | 'length' | 'eof';
   if (teIsChunked) {
-    body = chunkedBody(reader, remainder);
+    body = decodeChunked(reader, remainder);
     mode = 'chunked';
     respHeaders.delete('transfer-encoding');
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
     if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
-      throw new Error(`HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`);
+      throw new HttpProtocolError(`HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`);
     }
     body = lengthBody(reader, remainder, total);
     mode = 'length';
@@ -187,19 +191,19 @@ async function parseResponse(readable: ReadableStream<Uint8Array>): Promise<Resp
   respHeaders.set('x-content-stream-mode', mode);
 
   return new Response(body, { status, headers: respHeaders });
-}
+};
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};
 
-function lengthBody(
+const lengthBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
   total: number,
-): ReadableStream<Uint8Array> {
+): ReadableStream<Uint8Array> => {
   let consumed = 0;
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -217,7 +221,7 @@ function lengthBody(
       while (consumed < total) {
         const { value, done } = await reader.read();
         if (done) {
-          controller.error(new Error(`upstream EOF after ${consumed}/${total} body bytes`));
+          controller.error(new HttpProtocolError(`upstream EOF after ${consumed}/${total} body bytes`));
           return;
         }
         const remain = total - consumed;
@@ -239,12 +243,12 @@ function lengthBody(
       reader.cancel().catch(() => {});
     },
   });
-}
+};
 
-function untilEofBody(
+const untilEofBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
-): ReadableStream<Uint8Array> {
+): ReadableStream<Uint8Array> => {
   return new ReadableStream<Uint8Array>({
     start(controller) {
       if (head.byteLength) controller.enqueue(head);
@@ -258,12 +262,14 @@ function untilEofBody(
       reader.cancel().catch(() => {});
     },
   });
-}
+};
 
-function chunkedBody(
+// Decode an HTTP/1.1 chunked transfer-encoding body. Exported for advanced
+// callers that already hold a reader into a chunked stream.
+export const decodeChunked = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
-): ReadableStream<Uint8Array> {
+): ReadableStream<Uint8Array> => {
   let buf = head;
   let state: 'size' | 'data' | 'after-data-crlf' | 'trailers' | 'done' = 'size';
   let need = 0;
@@ -275,7 +281,7 @@ function chunkedBody(
           if (idx < 0) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new Error('chunked: EOF in size'));
+              controller.error(new HttpProtocolError('chunked: EOF in size'));
               return;
             }
             buf = concat(buf, copy(more.value));
@@ -289,12 +295,12 @@ function chunkedBody(
           // chunk extensions (after the `;`) are dropped by the slice
           // above before we get here.
           if (hex.length === 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
-            controller.error(new Error(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
+            controller.error(new HttpProtocolError(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
             return;
           }
           need = parseInt(hex, 16);
           if (!Number.isFinite(need) || need < 0) {
-            controller.error(new Error(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
+            controller.error(new HttpProtocolError(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
             return;
           }
           buf = buf.subarray(idx + 2);
@@ -303,7 +309,7 @@ function chunkedBody(
           if (buf.byteLength === 0) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new Error('chunked: EOF mid-data'));
+              controller.error(new HttpProtocolError('chunked: EOF mid-data'));
               return;
             }
             buf = copy(more.value);
@@ -319,13 +325,13 @@ function chunkedBody(
           while (buf.byteLength < 2) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new Error('chunked: EOF before CRLF after data'));
+              controller.error(new HttpProtocolError('chunked: EOF before CRLF after data'));
               return;
             }
             buf = concat(buf, copy(more.value));
           }
           if (buf[0] !== 0x0d || buf[1] !== 0x0a) {
-            controller.error(new Error('chunked: missing CRLF after data'));
+            controller.error(new HttpProtocolError('chunked: missing CRLF after data'));
             return;
           }
           buf = buf.subarray(2);
@@ -335,7 +341,7 @@ function chunkedBody(
           if (idx < 0) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new Error('chunked: EOF in trailers'));
+              controller.error(new HttpProtocolError('chunked: EOF in trailers'));
               return;
             }
             buf = concat(buf, copy(more.value));
@@ -359,27 +365,27 @@ function chunkedBody(
       reader.cancel().catch(() => {});
     },
   });
-}
+};
 
-function findCrlf(buf: Uint8Array): number {
+const findCrlf = (buf: Uint8Array): number => {
   for (let i = 0; i + 1 < buf.byteLength; i++) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a) return i;
   }
   return -1;
-}
+};
 
-function findDoubleCrlf(buf: Uint8Array): number {
+const findDoubleCrlf = (buf: Uint8Array): number => {
   for (let i = 0; i + 3 < buf.byteLength; i++) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
   }
   return -1;
-}
+};
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
+const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
   if (a.byteLength === 0) return copy(b);
   if (b.byteLength === 0) return copy(a);
   const r = new Uint8Array(a.byteLength + b.byteLength);
   r.set(a, 0);
   r.set(b, a.byteLength);
   return r;
-}
+};

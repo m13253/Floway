@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
+import type { HttpRequest } from '@floway-dev/http';
+import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
+
+const stubSocketDial: SocketDial = {
+  connect: async () => {
+    throw new Error('stub socket dial — runProxied is mocked, this should not be called');
+  },
+};
 
 describe('createFetcher', () => {
   beforeEach(() => {
@@ -23,7 +30,7 @@ describe('createFetcher', () => {
       upstreamId: 'u',
       fallbackList: ['a', 'b', 'direct'],
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
-      runProxied: async (config: ProxyConfig, _target: TargetSpec) => {
+      runProxied: async (config: ProxyConfig) => {
         calls.push(config.host);
         return new Response('ok');
       },
@@ -31,6 +38,7 @@ describe('createFetcher', () => {
         calls.push('direct');
         return new Response('direct');
       },
+      socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com/v1/models', { method: 'GET' });
     expect(await res.text()).toBe('ok');
@@ -46,6 +54,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('boom', 'tcp-connect'); },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
     const [row] = await repo.proxyBackoffs.listForUpstream('u');
@@ -66,6 +75,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     // first-pass skips a (in backoff). second-pass ignores backoff and succeeds.
     await fetcher('https://api.openai.com', { method: 'GET' });
@@ -88,6 +98,7 @@ describe('createFetcher', () => {
         return new Response('ok');
       },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await fetcher('https://api.openai.com', { method: 'GET' });
     expect(order).toEqual(['a', 'b']);
@@ -105,6 +116,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('still bad', 'tcp-connect'); },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     // Pass 1 skips 'a' (in backoff). Pass 2 retries it and fails — the
     // retry must increment failCount by exactly 1 so the geometric
@@ -127,6 +139,7 @@ describe('createFetcher', () => {
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
       runDirect: async () => { directCalls++; return new Response('direct'); },
+      socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
     expect(await res.text()).toBe('direct');
@@ -146,6 +159,7 @@ describe('createFetcher', () => {
         throw new ProxyDialError('fail', 'tcp-connect');
       },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(AggregateError);
     expect(calls).toEqual(['a', 'b']);
@@ -163,6 +177,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new Error('upstream 500'); },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toThrow('upstream 500');
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
@@ -178,6 +193,7 @@ describe('createFetcher', () => {
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
       runDirect: async () => { directCalled = true; return new Response('direct'); },
+      socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
     expect(directCalled).toBe(true);
@@ -193,6 +209,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async () => { throw new ProxyDialError('fail', 'tcp-connect'); },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' }))
       .rejects.toBeInstanceOf(AggregateError);
@@ -214,6 +231,7 @@ describe('createFetcher', () => {
         calls.push('direct');
         throw new DOMException('client gone', 'AbortError');
       },
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' }))
       .rejects.toMatchObject({ name: 'AbortError' });
@@ -230,11 +248,12 @@ describe('createFetcher', () => {
       upstreamId: 'u',
       fallbackList: ['a'],
       proxyById: new Map([['a', proxyA]]),
-      runProxied: async (_c, _t, options) => {
-        observedSignal = options?.signal;
+      runProxied: async (_c, _t, _r, options) => {
+        observedSignal = options.signal;
         return new Response('ok');
       },
       runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
     });
     const ac = new AbortController();
     await fetcher('https://api.openai.com', { method: 'GET', signal: ac.signal });
@@ -243,14 +262,15 @@ describe('createFetcher', () => {
 
   it('captures the runtime-synthesized multipart Content-Type when posting FormData', async () => {
     const repo = new InMemoryRepo();
-    const captured: TargetSpec[] = [];
+    const captured: HttpRequest[] = [];
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
       proxyById: new Map([['a', proxyA]]),
-      runProxied: async (_config, target) => { captured.push(target); return new Response('ok'); },
+      runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
       runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
     });
     const fd = new FormData();
     fd.append('field', 'value');
@@ -262,14 +282,15 @@ describe('createFetcher', () => {
 
   it('lets the caller override the FormData-synthesized Content-Type', async () => {
     const repo = new InMemoryRepo();
-    const captured: TargetSpec[] = [];
+    const captured: HttpRequest[] = [];
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
       proxyById: new Map([['a', proxyA]]),
-      runProxied: async (_config, target) => { captured.push(target); return new Response('ok'); },
+      runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
       runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
     });
     const fd = new FormData();
     fd.append('field', 'value');
@@ -290,6 +311,7 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
       runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
     });
     const stream = new ReadableStream({
       start(controller) {
@@ -310,9 +332,14 @@ describe('createFetcher', () => {
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('cert mismatch', 'inner-tls'); },
       runDirect: async () => new Response('ok'),
+      socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
     const [row] = await repo.proxyBackoffs.listForUpstream('u');
     expect(row!.lastError).toBe('[inner-tls] cert mismatch');
   });
 });
+
+// Surface ProxyRequestTarget so the import isn't elided to a type-only
+// no-op when this file is run.
+void (null as ProxyRequestTarget | null);

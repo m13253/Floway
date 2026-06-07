@@ -4,7 +4,8 @@ import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { createProxyBody, reorderProxiesBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
-import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
+import { getSocketDial } from '@floway-dev/platform';
+import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
 const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
@@ -153,7 +154,7 @@ const isIpV4 = (s: string): boolean => {
     // Reject leading zeros (e.g. `01`) — RFC 3986 forbids them and some
     // resolvers interpret the value as octal, so accepting them invites
     // ambiguity.
-    if (o.length > 1 && o[0] === '0') return false;
+    if (o.length > 1 && o.startsWith('0')) return false;
     const n = Number(o);
     if (n > 255) return false;
   }
@@ -164,7 +165,7 @@ const isIpV6 = (s: string): boolean => {
   if (!s.includes(':')) return false;
   // At most one `::` shorthand (per RFC 4291 §2.2).
   if ((s.match(/::/g) ?? []).length > 1) return false;
-  if (/:::/.test(s)) return false;
+  if (s.includes(':::')) return false;
 
   // Normalize an embedded v4 tail to two synthetic hex groups so the rest
   // of the validation runs on a pure-hex shape.
@@ -216,18 +217,23 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   }
 
   try {
-    const target: TargetSpec = {
-      dialHost: anchor.host,
+    const target: ProxyRequestTarget = {
+      host: anchor.host,
       port: anchor.port,
       tls: true,
-      method: 'GET',
-      path: anchor.path,
-      headers: { 'Host': anchor.host, 'User-Agent': 'floway-proxy-test/1' },
     };
     const response = await runProxiedRequest(
       config,
       target,
-      proxy.dialTimeoutSeconds === null ? undefined : { dialTimeoutMs: proxy.dialTimeoutSeconds * 1000 },
+      {
+        method: 'GET',
+        path: anchor.path,
+        headers: { 'Host': anchor.host, 'User-Agent': 'floway-proxy-test/1' },
+      },
+      {
+        socketDial: getSocketDial(),
+        ...(proxy.dialTimeoutSeconds === null ? {} : { dialTimeoutMs: proxy.dialTimeoutSeconds * 1000 }),
+      },
     );
     if (!response.ok) {
       return c.json({ ok: false, error: `Anchor returned status ${response.status}` });

@@ -1,6 +1,7 @@
 import type { Repo } from '../repo/types.ts';
+import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher } from '@floway-dev/provider';
-import { ProxyDialError, type ProxyConfig, type RunProxiedRequestOptions, type TargetSpec } from '@floway-dev/proxy';
+import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
 // Per-proxy dial parameters loaded once per request and looked up by
 // fallback-list entry. Carries both the parsed wire config and the
@@ -18,12 +19,35 @@ export interface CreateFetcherInput {
   upstreamId: string;
   fallbackList: string[];
   proxyById: Map<string, ProxyEntry>;
-  // Inject runProxied/runDirect so the gateway-side fetcher stays free of
-  // any direct dependency on a runtime fetch implementation; the data-plane
-  // composition root supplies both.
-  runProxied: (config: ProxyConfig, target: TargetSpec, options?: RunProxiedRequestOptions) => Promise<Response>;
+  // Inject runProxied/runDirect/socketDial so the gateway-side fetcher
+  // stays free of any direct dependency on a runtime fetch implementation;
+  // the data-plane composition root supplies them.
+  runProxied: (
+    config: ProxyConfig,
+    target: ProxyRequestTarget,
+    request: HttpRequest,
+    options: RunProxiedRequestOptions,
+  ) => Promise<Response>;
   // Per-request indirection for the 'direct' sentinel.
   runDirect: (url: string, init: RequestInit) => Promise<Response>;
+  /**
+   * Platform-injected raw TCP dial primitive, threaded into runProxied.
+   * Lazily evaluated — only invoked when a non-direct fallback entry is
+   * actually attempted, so direct-only call sites can run without an
+   * installed SocketDial impl.
+   */
+  socketDial: () => SocketDial;
+}
+
+/**
+ * Buffered request shape extracted from a Fetcher call. Splits the
+ * transport target (host/port/tls/sni) from the HTTP-shaped request
+ * (method/path/headers/body) so each layer of @floway-dev/proxy and
+ * @floway-dev/http receives only what it needs.
+ */
+interface ProxiedRequest {
+  target: ProxyRequestTarget;
+  request: HttpRequest;
 }
 
 // Two-pass dial strategy. First pass walks the fallback list skipping any
@@ -63,17 +87,17 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     if (hasNonDirect && init.body instanceof ReadableStream) {
       throw new Error('streaming request bodies are not yet supported through proxies');
     }
-    let target: TargetSpec | undefined;
+    let proxied: ProxiedRequest | undefined;
     let effectiveInit = init;
     if (directBeforeProxy) {
-      // Pre-build the TargetSpec so the same buffered bytes feed both the
-      // direct path (via a synthesised init) and any proxy retry.
-      target = await buildTargetSpec(url, init);
-      effectiveInit = rebuildInitFromTarget(init, target);
+      // Pre-build the proxied request so the same buffered bytes feed both
+      // the direct path (via a synthesised init) and any proxy retry.
+      proxied = await buildProxiedRequest(url, init);
+      effectiveInit = rebuildInitFromProxied(init, proxied);
     }
-    const targetForProxy = async (): Promise<TargetSpec> => {
-      target ??= await buildTargetSpec(url, effectiveInit);
-      return target;
+    const proxiedFor = async (): Promise<ProxiedRequest> => {
+      proxied ??= await buildProxiedRequest(url, effectiveInit);
+      return proxied;
     };
     const errors: unknown[] = [];
 
@@ -90,13 +114,13 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     for (const id of list) {
       if (skip.has(id)) continue;
       triedThisCall.add(id);
-      const result = await tryOne(id, input, targetForProxy, url, effectiveInit, errors);
+      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
       if (result) return result;
     }
 
     for (const id of list) {
       if (triedThisCall.has(id)) continue;
-      const result = await tryOne(id, input, targetForProxy, url, effectiveInit, errors);
+      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
       if (result) return result;
     }
 
@@ -114,9 +138,9 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
 // (a stable, multi-readable shape) and whose synthesised Content-Type
 // matches the original FormData/URLSearchParams body. Other init fields
 // (method, signal, headers) ride through unchanged.
-const rebuildInitFromTarget = (original: RequestInit, target: TargetSpec): RequestInit => {
+const rebuildInitFromProxied = (original: RequestInit, proxied: ProxiedRequest): RequestInit => {
   const headers = new Headers(original.headers);
-  const targetCt = target.headers['content-type'];
+  const targetCt = proxied.request.headers['content-type'];
   if (targetCt !== undefined && !headers.has('content-type')) {
     headers.set('content-type', targetCt);
   }
@@ -125,9 +149,9 @@ const rebuildInitFromTarget = (original: RequestInit, target: TargetSpec): Reque
   // the buffer we hand to runtime fetch never aliases a backing buffer
   // that's also referenced elsewhere.
   let body: Uint8Array<ArrayBuffer> | null = null;
-  if (target.requestBody) {
-    const owned = new Uint8Array(target.requestBody.byteLength);
-    owned.set(target.requestBody);
+  if (proxied.request.body) {
+    const owned = new Uint8Array(proxied.request.body.byteLength);
+    owned.set(proxied.request.body);
     body = owned;
   }
   return {
@@ -140,7 +164,7 @@ const rebuildInitFromTarget = (original: RequestInit, target: TargetSpec): Reque
 const tryOne = async (
   id: string,
   input: CreateFetcherInput,
-  targetForProxy: () => Promise<TargetSpec>,
+  proxiedFor: () => Promise<ProxiedRequest>,
   url: string,
   init: RequestInit,
   errors: unknown[],
@@ -163,16 +187,19 @@ const tryOne = async (
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'tcp-connect'));
       return null;
     }
+    const proxied = await proxiedFor();
     // Caller cancellation flows through init.signal into the dialer's
     // combined controller so a disconnected client tears down any
     // in-flight handshake instead of waiting for the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
+      socketDial: input.socketDial(),
       signal: init.signal ?? undefined,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
     const response = await input.runProxied(
       config.config,
-      await targetForProxy(),
+      proxied.target,
+      proxied.request,
       options,
     );
     // A successful dial after a previous failure must clear the backoff so
@@ -230,7 +257,7 @@ const isAbortError = (err: unknown): boolean => {
   return false;
 };
 
-const buildTargetSpec = async (url: string, init: RequestInit): Promise<TargetSpec> => {
+const buildProxiedRequest = async (url: string, init: RequestInit): Promise<ProxiedRequest> => {
   const u = new URL(url);
   const collected = await collectBody(init.body);
   const headers = extractHeaders(init.headers);
@@ -240,19 +267,22 @@ const buildTargetSpec = async (url: string, init: RequestInit): Promise<TargetSp
   if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
     headers['content-type'] = collected.contentType;
   }
-  return {
-    dialHost: u.hostname,
+  const target: ProxyRequestTarget = {
+    host: u.hostname,
     port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
     tls: u.protocol === 'https:',
+  };
+  const request: HttpRequest = {
     method: init.method ?? 'GET',
     path: `${u.pathname}${u.search}`,
     headers,
-    requestBody: collected?.body,
+    body: collected?.body,
   };
+  return { target, request };
 };
 
-// Lower-case keys here so the TargetSpec is canonical at the seam; the
-// proxy lib also lowercases internally, but normalizing at the boundary
+// Lower-case keys here so the request is canonical at the seam; the http
+// package also lowercases internally, but normalizing at the boundary
 // keeps the contract simple.
 const extractHeaders = (input: HeadersInit | undefined): Record<string, string> => {
   if (!input) return {};

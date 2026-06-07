@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createPerRequestFetcher } from './per-request.ts';
 import { initRepo } from '../repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
+import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
+
+const stubSocketDial: SocketDial = {
+  connect: async () => {
+    throw new Error('stub: per-request_test should not reach a real dial');
+  },
+};
 
 const COPILOT_CONFIG = {
   githubToken: 'tok',
@@ -26,6 +33,13 @@ const upstream = (id: string, proxyFallbackList: string[]) => ({
 });
 
 describe('createPerRequestFetcher', () => {
+  beforeEach(() => {
+    initSocketDial(stubSocketDial);
+  });
+  afterEach(() => {
+    resetSocketDialForTesting();
+  });
+
   it('isolates a malformed proxy URL to upstreams that reference it', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);

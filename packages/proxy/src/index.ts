@@ -1,19 +1,22 @@
-// @floway-dev/proxy — outbound proxy-dialing library.
+// @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
+// + a fetch-shaped orchestrator.
 //
-// Each `runXxx(opts)` function dials through the named proxy protocol and
-// issues an HTTP/1.1 request against the upstream described by `opts.target`.
-// Returns a Web `Response` whose body is a `ReadableStream<Uint8Array>` of the
-// upstream's response body (decrypted, transfer-encoding decoded).
+// The dial layer is transport-only: `dial(config, target, options)` returns
+// a duplex byte stream that lands at `target.host:target.port`. Inner TLS
+// to the upstream and HTTP/1.1 framing live in @floway-dev/http; the
+// orchestrator `runProxiedRequest` composes the three for callers that
+// just want a Response.
 //
-// All variants use a single hand-rolled HTTP/1.1 client over a userspace
-// TLS implementation built on `@reclaimprotocol/tls` (see `tls.ts`). TCP
-// dialing goes through `getSocketDial()` from `@floway-dev/platform`, so the
-// host runtime — Cloudflare Workers (`cloudflare:sockets`), Node (`node:net`),
-// or any future target — only needs to ship a `SocketDial` impl at boot.
+// The proxy package does NOT depend on any specific runtime — every dialer
+// takes `socketDial` through DialOptions, so the same library runs on
+// Workers (`cloudflare:sockets`), Node (`node:net`), or any future target
+// that supplies a SocketDial impl.
 
-export type { TargetSpec } from './types.js';
+export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, SocketDialOptions, DialedSocket } from './types.ts';
+export { resolveSni, resolveVerifyHost } from './types.ts';
 
-export { formatProxyUri, parseProxyUri } from './url.js';
+export { formatProxyUri, parseProxyUri } from './url.ts';
+export { kindFromUri } from './url-kind.ts';
 
 export type {
   ProxyConfig,
@@ -28,37 +31,9 @@ export type {
   RealityProxyConfig,
   SsMethod,
   Ss2022Method,
-} from './proxy-config.js';
+} from './proxy-config.ts';
 
-export { ProxyDialError } from './errors.js';
+export { ProxyDialError } from './errors.ts';
 
-export { runProxiedRequest, DEFAULT_DIAL_DEADLINE_MS } from './dialer.js';
-export type { RunProxiedRequestOptions } from './dialer.js';
-
-export { runHttpConnect } from './protocols/http-connect.js';
-export type { HttpConnectOptions } from './protocols/http-connect.js';
-
-export { runSocks5 } from './protocols/socks5.js';
-export type { Socks5Options } from './protocols/socks5.js';
-
-export { runTrojan } from './protocols/trojan.js';
-export type { TrojanOptions } from './protocols/trojan.js';
-
-export { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js';
-export type { VlessTcpTlsOptions, VlessWsTlsOptions } from './protocols/vless.js';
-
-export { runShadowsocks } from './protocols/shadowsocks.js';
-export type { ShadowsocksOptions } from './protocols/shadowsocks.js';
-
-export { runShadowsocks2022 } from './protocols/shadowsocks-2022.js';
-export type { Shadowsocks2022Options } from './protocols/shadowsocks-2022.js';
-
-export { runReality } from './protocols/reality.js';
-export type { RealityOptions } from './protocols/reality.js';
-
-// Lower-level building blocks exposed for advanced composition.
-export { userspaceTls } from './tls.js';
-export type { UserspaceTlsOptions, TlsStream } from './tls.js';
-
-export { runHttp1 } from './http1.js';
-export type { DuplexBytes } from './http1.js';
+export { dial, runProxiedRequest, DEFAULT_DIAL_DEADLINE_MS } from './dialer.ts';
+export type { RunProxiedRequestOptions } from './dialer.ts';

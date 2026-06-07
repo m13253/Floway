@@ -1,6 +1,7 @@
 import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
 import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
+import { getSocketDial } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
@@ -42,7 +43,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
           config: parseProxyUri(p.url),
           // Carry the per-proxy timeout (seconds → ms) so the dial layer can
           // honour an operator's override; null preserves the gateway default
-          // baked into @floway-dev/proxy.
+          // baked into the proxy library.
           dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
         });
       } catch (err) {
@@ -50,6 +51,16 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
       }
     }
   }
+
+  // Resolve the platform's socket-dial impl lazily so a direct-only
+  // data-plane call (no fallback list references a proxy) can run without
+  // an installed SocketDial — that path never reaches a dialer, and many
+  // tests stop at `direct` without ever wiring one in.
+  let cachedSocketDial: ReturnType<typeof getSocketDial> | null = null;
+  const lazySocketDial = (): ReturnType<typeof getSocketDial> => {
+    cachedSocketDial ??= getSocketDial();
+    return cachedSocketDial;
+  };
 
   return upstreamId => {
     // Fail loud on an unknown upstream id. Silently substituting `[]`
@@ -78,6 +89,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
       proxyById,
       runProxied: runProxiedRequest,
       runDirect: directFetcher,
+      socketDial: lazySocketDial,
     });
   };
 };

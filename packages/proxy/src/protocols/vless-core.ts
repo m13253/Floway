@@ -1,19 +1,17 @@
-// Shared VLESS core: write VLESS header + strip server reply prefix + layer
-// userspace TLS for the upstream HTTPS handshake.
+// Shared VLESS core: write VLESS header to a transport, peel the server's
+// reply prefix off the readable, and return the post-framing duplex stream.
 //
-// Used by reality.ts (after the REALITY-tls is established).
+// Used by reality.ts (after the REALITY-tls is established) and by vless.ts
+// (after the outer TLS / outer fetch+WS upgrade).
 
-import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
+import { ProxyDialError } from '../errors.ts';
+import type { DialResult, DialTarget } from '../types.ts';
 
-export async function runVlessCoreOverStream(
+export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
   uuid: string,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
+  target: DialTarget,
+): Promise<DialResult> => {
   const header = buildVlessHeader(uuid, target);
   const writer = transport.writable.getWriter();
   await writer.write(header);
@@ -21,30 +19,12 @@ export async function runVlessCoreOverStream(
 
   const stripped = stripVlessReplyPrefix(transport.readable);
 
-  if (target.tls) {
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls(
-        { readable: stripped, writable: transport.writable },
-        { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal },
-      );
-    } catch (cause) {
-      // The reply-prefix strip can surface a typed ProxyDialError
-      // (e.g. bad version byte) through the readable that userspaceTls
-      // consumes. Preserve it so the dial layer's stage-aware backoff
-      // classifies it as `proxy-handshake` instead of `inner-tls`.
-      if (cause instanceof ProxyDialError) throw cause;
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    return await runHttp1({ readable: stripped, writable: transport.writable }, target);
-  }
-}
+  return { readable: stripped, writable: transport.writable };
+};
 
-function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
+const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
   const enc = new TextEncoder();
-  const dom = enc.encode(target.dialHost);
+  const dom = enc.encode(target.host);
   if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake');
   const uuidBytes = parseUuid(uuid);
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength);
@@ -59,9 +39,9 @@ function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
   header[off++] = dom.byteLength;
   header.set(dom, off);
   return header;
-}
+};
 
-function parseUuid(s: string): Uint8Array {
+const parseUuid = (s: string): Uint8Array => {
   const hex = s.replace(/-/g, '');
   if (hex.length !== 32 || !/^[0-9a-fA-F]+$/.test(hex)) {
     throw new ProxyDialError(`VLESS: malformed UUID ${JSON.stringify(s)}`, 'proxy-handshake');
@@ -69,9 +49,9 @@ function parseUuid(s: string): Uint8Array {
   const out = new Uint8Array(16);
   for (let i = 0; i < 16; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
   return out;
-}
+};
 
-function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
   const reader = source.getReader();
   let stripped = false;
   let buf = new Uint8Array(0);
@@ -86,9 +66,9 @@ function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStre
           }
           buf = concat(buf, r.value);
         }
-        // Same fail-closed check as runVlessTcpInner — fail with a typed
-        // proxy-handshake error rather than letting non-VLESS bytes flow into
-        // the inner TLS handshake and surface as an opaque TLS failure.
+        // Fail closed with a typed proxy-handshake error rather than letting
+        // non-VLESS bytes flow into the inner TLS handshake and surface as
+        // an opaque TLS failure.
         if (buf[0] !== 0x00) {
           controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
           return;
@@ -117,17 +97,17 @@ function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStre
       reader.cancel().catch(() => {});
     },
   });
-}
+};
 
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
+const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(a.byteLength + b.byteLength);
   r.set(a, 0);
   r.set(b, a.byteLength);
   return r;
-}
+};
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};

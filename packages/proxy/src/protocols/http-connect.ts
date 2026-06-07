@@ -1,67 +1,63 @@
-// HTTP CONNECT proxy client.
+// HTTP CONNECT proxy dialer.
 //
 // Native `socket.startTls()` is broken on Workers production edge after any
 // pre-handshake bytes are exchanged (workerd #2712). We therefore:
 //   1. Open a plain TCP socket to the proxy (or, if the proxy is HTTPS, ask
 //      the runtime to wrap the proxy hop in TLS via the dial `tls` option).
 //   2. Write CONNECT + auth, parse 2xx response.
-//   3. Hand the post-CONNECT byte stream to our userspace TLS for the upstream
-//      handshake. This avoids `startTls()` entirely.
+//   3. Hand the post-CONNECT byte stream back to the orchestrator, which
+//      layers userspace TLS for the upstream's HTTPS handshake. This avoids
+//      `startTls()` entirely.
 
-import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
+import { ProxyDialError } from '../errors.ts';
+import type { HttpProxyConfig } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
-export interface HttpConnectOptions {
-  proxyHost: string;
-  proxyPort: number;
-  proxyTls: boolean;
-  auth?: { username: string; password: string };
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
+export const dialHttpConnect = async (
+  config: HttpProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
+  const auth = config.username !== undefined
+    ? { username: config.username, password: config.password ?? '' }
+    : undefined;
 
-export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response> {
-  const { proxyHost, proxyPort, proxyTls, auth, target, signal } = opts;
   // workerd performs the outer TLS handshake inside connect() when tls=true,
   // so a TLS handshake error to the proxy surfaces as a connect failure here
   // — we can't tell the two apart from this layer.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort, { tls: proxyTls, signal });
+    socket = await options.socketDial.connect(config.host, config.port, { tls: config.tls, signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${proxyHost}:${proxyPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runHttpConnectInner(socket, auth, target, signal);
+    return await dialHttpConnectInner(socket, auth, target);
   } catch (err) {
-    // Any throw past `connect()` means the runner won't be returning a
-    // Response — the response-body lifecycle that normally drives socket
+    // Any throw past `connect()` means the dial won't be returning a
+    // stream — the response-body lifecycle that normally drives socket
     // teardown never starts. Close the socket explicitly so we don't leak
     // an FD on the Node side / a connection slot on Workers.
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-async function runHttpConnectInner(
+const dialHttpConnectInner = async (
   socket: DialedSocket,
   auth: { username: string; password: string } | undefined,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
+  target: DialTarget,
+): Promise<DialResult> => {
   const writer = socket.writable.getWriter();
   const enc = new TextEncoder();
   const lines = [
-    `CONNECT ${target.dialHost}:${target.port} HTTP/1.1`,
-    `Host: ${target.dialHost}:${target.port}`,
+    `CONNECT ${target.host}:${target.port} HTTP/1.1`,
+    `Host: ${target.host}:${target.port}`,
     'Proxy-Connection: keep-alive',
   ];
   if (auth) {
@@ -74,17 +70,12 @@ async function runHttpConnectInner(
   // Drain the CONNECT response from the readable. We can't use getReader here
   // because we'd then have to release/replay any buffered post-header bytes
   // into a brand-new stream. Use a TransformStream to peel off the CONNECT
-  // response and forward the rest to a downstream stream that we hand to TLS.
+  // response and forward the rest to a downstream stream that we hand back
+  // to the orchestrator.
 
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
 
-  // The peel pump runs in the background after we return a Response — body-
-  // stream errors are surfaced via fwdWriter.abort. On the failure path
-  // (inner-tls or runHttp1 throws BEFORE we return), the outer try/catch in
-  // runHttpConnect closes the socket and the pump's reader.read() rejects;
-  // we attach a noop terminal handler immediately so a pending rejection
-  // never escapes as an unhandled rejection.
   // Cap the CONNECT-response accumulation. A hostile or broken proxy that
   // streams data without ever emitting the double-CRLF would otherwise grow
   // `buf` until the Worker's heap cap (~128 MiB) kills the request. 64 KiB
@@ -128,41 +119,23 @@ async function runHttpConnectInner(
     }
   })();
   // Always-on terminal handler routes peel errors into the forward stream
-  // so the consumer (userspace TLS / runHttp1) sees them as transport
-  // failures, and prevents an unhandled rejection on the failure path.
+  // so the orchestrator's next consumer (userspace TLS / fetchOnStream)
+  // sees them as transport failures, and prevents an unhandled rejection
+  // on the failure path.
   peelDone.catch(e => { fwdWriter.abort(e).catch(() => {}); });
 
-  // Now wrap the post-CONNECT byte stream with userspace TLS for the upstream.
-  if (target.tls) {
-    const transport = { readable: postConnect, writable: socket.writable };
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
-    } catch (cause) {
-      // peelDone errors flow through the TransformStream into userspaceTls,
-      // surfacing as a handshake-time rejection here. Preserve the original
-      // ProxyDialError so the dial layer's stage-aware backoff classifies a
-      // CONNECT 4xx as `proxy-handshake` rather than mis-tagging it as
-      // `inner-tls`.
-      if (cause instanceof ProxyDialError) throw cause;
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    // Plain HTTP upstream — the post-CONNECT stream is the upstream socket.
-    return await runHttp1({ readable: postConnect, writable: socket.writable }, target);
-  }
-}
+  return { readable: postConnect, writable: socket.writable };
+};
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};
 
-function findDoubleCrlf(buf: Uint8Array): number {
+const findDoubleCrlf = (buf: Uint8Array): number => {
   for (let i = 0; i + 3 < buf.byteLength; i++) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
   }
   return -1;
-}
+};

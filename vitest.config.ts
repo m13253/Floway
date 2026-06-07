@@ -7,6 +7,7 @@ export default defineConfig({
       'apps/platform-node/vitest.config.ts',
       'apps/web/vitest.config.ts',
       'packages/gateway/vitest.config.ts',
+      'packages/http/vitest.config.ts',
       'packages/platform/vitest.config.ts',
       'packages/protocols/vitest.config.ts',
       'packages/provider/vitest.config.ts',

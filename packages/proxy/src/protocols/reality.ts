@@ -1,4 +1,4 @@
-// REALITY client.
+// REALITY dialer.
 //
 // Spec/reference: github.com/XTLS/REALITY  +  XTLS/Xray-core/transport/internet/reality/reality.go
 //
@@ -21,6 +21,8 @@
 //     ClientHello bytes are built.
 //   - onRecvCertificateVerify: lets us replace the standard signature check
 //     with the REALITY HMAC check, returning false to skip the default check.
+//
+// After REALITY auth completes, the inner protocol is VLESS by convention.
 
 import { gcm } from '@noble/ciphers/aes.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
@@ -28,65 +30,63 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { ProxyDialError } from '../errors.js';
-import { type TargetSpec } from '../types.js';
-import { runVlessCoreOverStream } from './vless-core.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
+import { ProxyDialError } from '../errors.ts';
+import type { RealityProxyConfig } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { vlessFrameOverStream } from './vless-core.ts';
 
 let cryptoInstalled = false;
-function ensureCrypto(): void {
+const ensureCrypto = (): void => {
   if (cryptoInstalled) return;
   setCryptoImplementation(webcryptoCrypto);
   cryptoInstalled = true;
-}
+};
 
-export interface RealityOptions {
-  serverHost: string;
-  serverPort: number;
-  publicKeyB64Url: string; // server's X25519 public key (base64url, 43 chars)
-  shortIdHex?: string; // 8 hex bytes (16 chars); defaults to all-zero shortId
-  spoofSni: string; // SNI presented in ClientHello, e.g. "www.cloudflare.com"
-  uuid: string; // VLESS user UUID
-  version?: [number, number, number]; // Xray version in session_id, default [25,4,30]
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
+/** Xray version stamp baked into the REALITY session_id payload. */
+const DEFAULT_XRAY_VERSION: [number, number, number] = [25, 4, 30];
+const DEFAULT_SHORT_ID_HEX = '0000000000000000';
 
-export async function runReality(opts: RealityOptions): Promise<Response> {
+export const dialReality = async (
+  config: RealityProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
   ensureCrypto();
-  const ver = opts.version ?? [25, 4, 30];
-  const serverPub = base64UrlDecode(opts.publicKeyB64Url);
+  const ver = DEFAULT_XRAY_VERSION;
+  const serverPub = base64UrlDecode(config.publicKey);
   if (serverPub.byteLength !== 32) throw new Error(`REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`);
-  const shortId = hexDecode(opts.shortIdHex ?? '0000000000000000');
+  const shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
   if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`);
 
   // Plain TCP — userspace TLS will do the entire handshake.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { signal: opts.signal });
+    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${opts.serverHost}:${opts.serverPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runRealityInner(socket, opts, ver, serverPub, shortId);
+    const post = await runRealityHandshake(socket, config, ver, serverPub, shortId, options.signal);
+    return await vlessFrameOverStream(post, config.uuid, target);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-async function runRealityInner(
+const runRealityHandshake = async (
   socket: DialedSocket,
-  opts: RealityOptions,
+  config: RealityProxyConfig,
   ver: [number, number, number],
   serverPub: Uint8Array<ArrayBuffer>,
   shortId: Uint8Array<ArrayBuffer>,
-): Promise<Response> {
+  signal: AbortSignal | undefined,
+): Promise<{ readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }> => {
   // Build the unsealed session_id payload
   const ts = Math.floor(Date.now() / 1000);
   const sessionIdPlain = new Uint8Array(32);
@@ -112,7 +112,7 @@ async function runRealityInner(
   // reuse it via Web Crypto deriveBits inside onClientHelloPack.
   let tlsX25519Priv: CryptoKey | null = null;
 
-  // Streams that will be returned to the inner protocol (VLESS) after the TLS
+  // Streams that will be returned to the caller (VLESS framing) after the TLS
   // handshake completes.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   const plainReadable = new ReadableStream<Uint8Array>({ start(c) { plainController = c; } });
@@ -124,16 +124,14 @@ async function runRealityInner(
       await tlsClient.write(chunk);
     },
     async close() {
-      // Mirror tls.ts's teardown shape: end the TLS layer AND close the
-      // underlying transport writer so the socket's write half is shut
-      // explicitly rather than waiting on the runReality outer catch to
-      // close the whole socket on error.
+      // Mirror the userspace TLS teardown shape: end the TLS layer AND
+      // close the underlying transport writer so the socket's write half
+      // is shut explicitly rather than waiting on the outer dial catch
+      // to close the whole socket on error.
       try { await tlsClient?.end(); } catch { /* TLS already ended */ }
       try { await writer.close(); } catch { /* transport already closed */ }
     },
     async abort(reason) {
-      // Was synchronous before — discarded the tls.end() promise and let
-      // an unhandled rejection escape on Node when end() failed.
       try { await tlsClient?.end(); } catch { /* TLS already ended */ }
       try { await writer.abort(reason); } catch { /* transport already aborted */ }
     },
@@ -151,7 +149,7 @@ async function runRealityInner(
   const reader = socket.readable.getReader();
 
   tlsClient = makeTLSClient(({
-    host: opts.spoofSni,
+    host: config.serverName,
     namedCurves: ['X25519'],
     verifyServerCertificate: false, // REALITY auth replaces chain validation
     write({ header, content }) {
@@ -250,8 +248,8 @@ async function runRealityInner(
   })();
 
   let detachAbortListener: (() => void) | null = null;
-  if (opts.signal) {
-    const captured = opts.signal;
+  if (signal) {
+    const captured = signal;
     const onAbort = (): void => {
       const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
       if (!handshakeOk) handshakeReject(reason);
@@ -277,44 +275,37 @@ async function runRealityInner(
   }
   detachAbortListener?.();
 
-  // After REALITY auth, the inner protocol is VLESS by convention.
-  return await runVlessCoreOverStream(
-    { readable: plainReadable, writable: plainWritable },
-    opts.uuid,
-    opts.target,
-    opts.signal,
-  );
-}
+  return { readable: plainReadable, writable: plainWritable };
+};
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};
 
-function asciiBytes(s: string): Uint8Array<ArrayBuffer> {
-  return new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
-}
+const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
 
-function randomBytes(n: number): Uint8Array<ArrayBuffer> {
+const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
   const buf = new Uint8Array(n);
   crypto.getRandomValues(buf);
   return buf;
-}
+};
 
-function hexDecode(s: string): Uint8Array<ArrayBuffer> {
+const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
   if (s.length % 2 !== 0) throw new Error('hex: odd length');
   const out = new Uint8Array(s.length / 2);
   for (let i = 0; i < out.byteLength; i++) {
     out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
-}
+};
 
-function base64UrlDecode(s: string): Uint8Array<ArrayBuffer> {
+const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(s.length + ((4 - (s.length % 4)) % 4), '=');
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
-}
+};

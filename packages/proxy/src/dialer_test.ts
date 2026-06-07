@@ -1,41 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { runProxiedRequest } from './dialer.js';
-import { ProxyDialError } from './errors.js';
-import type { ProxyConfig } from './proxy-config.js';
-import type { TargetSpec } from './types.js';
+import { dial, runProxiedRequest } from './dialer.ts';
+import { ProxyDialError } from './errors.ts';
+import type { ProxyConfig } from './proxy-config.ts';
+import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from './types.ts';
 
-vi.mock('./protocols/http-connect.js', () => ({
-  runHttpConnect: vi.fn(async () => new Response('ok')),
+const noopStream = (): DialResult => {
+  const readable = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
+  const writable = new WritableStream<Uint8Array>();
+  return { readable, writable };
+};
+
+vi.mock('./protocols/http-connect.ts', () => ({
+  dialHttpConnect: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/socks5.js', () => ({
-  runSocks5: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/socks5.ts', () => ({
+  dialSocks5: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/trojan.js', () => ({
-  runTrojan: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/trojan.ts', () => ({
+  dialTrojan: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/vless.js', () => ({
-  runVlessTcpTls: vi.fn(async () => new Response('ok')),
-  runVlessWsTls: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/vless.ts', () => ({
+  dialVlessTcpTls: vi.fn(async () => noopStream()),
+  dialVlessWsTls: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/shadowsocks.js', () => ({
-  runShadowsocks: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/shadowsocks.ts', () => ({
+  dialShadowsocks: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/shadowsocks-2022.js', () => ({
-  runShadowsocks2022: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/shadowsocks-2022.ts', () => ({
+  dialShadowsocks2022: vi.fn(async () => noopStream()),
 }));
-vi.mock('./protocols/reality.js', () => ({
-  runReality: vi.fn(async () => new Response('ok')),
+vi.mock('./protocols/reality.ts', () => ({
+  dialReality: vi.fn(async () => noopStream()),
 }));
 
-const target: TargetSpec = {
-  dialHost: 'api.openai.com',
+const target: ProxyRequestTarget = {
+  host: 'api.openai.com',
   port: 443,
   tls: true,
-  method: 'GET',
-  path: '/v1/models',
-  headers: {},
+  alpn: undefined,
 };
+
+const stubSocketDial: SocketDial = {
+  connect: async () => {
+    throw new Error('stub socket dial — tests should not reach here');
+  },
+};
+
+const baseOptions = (): DialOptions => ({ socketDial: stubSocketDial });
 
 const cases: Array<[ProxyConfig['kind'], ProxyConfig]> = [
   ['http', { kind: 'http', tls: false, host: 'h', port: 1, name: 'h' }],
@@ -48,30 +60,31 @@ const cases: Array<[ProxyConfig['kind'], ProxyConfig]> = [
   ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', fingerprint: 'chrome', serverName: 's', host: 'h', port: 1, name: 'h' }],
 ];
 
-describe('runProxiedRequest dispatch', () => {
-  it.each(cases)('routes kind=%s to its runner', async (_kind, config) => {
-    const res = await runProxiedRequest(config, target);
-    expect(await res.text()).toBe('ok');
+describe('dial dispatch', () => {
+  it.each(cases)('routes kind=%s to its dialer', async (_kind, config) => {
+    const result = await dial(config, target, baseOptions());
+    expect(result.readable).toBeInstanceOf(ReadableStream);
+    expect(result.writable).toBeInstanceOf(WritableStream);
   });
 });
 
-describe('runProxiedRequest deadline', () => {
+describe('dial deadline', () => {
   it('rejects with a tcp-connect ProxyDialError when the per-call timeout fires', async () => {
-    // Wire socks5 to a runner that never resolves so only the deadline can
-    // unstick the call. The dialer's combined controller signals abort
+    // Wire socks5 to a dialer that never resolves so only the deadline can
+    // unstick the call. The dial wrapper's combined controller signals abort
     // through to dispatch on timeout.
-    const { runSocks5 } = await import('./protocols/socks5.js');
-    vi.mocked(runSocks5).mockImplementationOnce(async opts => {
+    const { dialSocks5 } = await import('./protocols/socks5.ts');
+    vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
       // Hold open until the caller signal aborts; reject with the abort
-      // reason so the dialer can surface the deadline error.
-      await new Promise<void>((_, reject) => {
+      // reason so the dial wrapper can surface the deadline error.
+      await new Promise<DialResult>((_, reject) => {
         opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
       });
-      return new Response();
+      throw new Error('unreachable');
     });
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     await expect(
-      runProxiedRequest(config, target, { dialTimeoutMs: 50 }),
+      dial(config, target, { ...baseOptions(), dialTimeoutMs: 50 }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'tcp-connect',
@@ -80,18 +93,18 @@ describe('runProxiedRequest deadline', () => {
   });
 
   it('rethrows the caller-driven AbortError when the external signal aborts mid-dial', async () => {
-    const { runSocks5 } = await import('./protocols/socks5.js');
-    vi.mocked(runSocks5).mockImplementationOnce(async opts => {
-      await new Promise<void>((_, reject) => {
+    const { dialSocks5 } = await import('./protocols/socks5.ts');
+    vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
+      await new Promise<DialResult>((_, reject) => {
         opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
       });
-      return new Response();
+      throw new Error('unreachable');
     });
     const ac = new AbortController();
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     setTimeout(() => ac.abort(new DOMException('client gone', 'AbortError')), 30);
     await expect(
-      runProxiedRequest(config, target, { signal: ac.signal, dialTimeoutMs: 5_000 }),
+      dial(config, target, { ...baseOptions(), signal: ac.signal, dialTimeoutMs: 5_000 }),
     ).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
   });
 
@@ -100,10 +113,12 @@ describe('runProxiedRequest deadline', () => {
     ac.abort(new DOMException('already gone', 'AbortError'));
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     await expect(
-      runProxiedRequest(config, target, { signal: ac.signal }),
+      dial(config, target, { ...baseOptions(), signal: ac.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
 
-// `unused` is here to silence ProxyDialError-import-only lint noise.
+// `unused` is here to silence import-only lint noise for the orchestrator
+// surface and the error type — both are part of the package contract.
+void runProxiedRequest;
 void ProxyDialError;

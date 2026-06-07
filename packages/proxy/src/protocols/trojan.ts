@@ -7,65 +7,64 @@
 // which short-reads on the 4-byte first record and rejects with
 // "bad request size: fallback disabled". Doing the outer TLS in userspace
 // gives us full control of record framing.
+//
+// The Trojan request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-
+// like address) MUST land in the same record as the first inner-protocol
+// bytes — the inner-TLS ClientHello when target.tls=true, or the HTTP/1.1
+// request line when target.tls=false. We surface the header as `prefix` on
+// the DialResult so the orchestrator passes it to whichever wrapper consumes
+// the next bytes (userspaceTls.prefix or fetchOnStream.prefix).
 
 import { sha224 } from '@noble/hashes/sha2.js';
 
-import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
+import { ProxyDialError } from '../errors.ts';
+import type { TrojanProxyConfig } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { userspaceTls, type TlsStream } from '@floway-dev/http';
 
-export interface TrojanOptions {
-  serverHost: string;
-  serverPort: number;
-  password: string;
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
-
-export async function runTrojan(opts: TrojanOptions): Promise<Response> {
-  const { serverHost, serverPort, password, target, signal } = opts;
-
+export const dialTrojan = async (
+  config: TrojanProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
   // Plain TCP to Trojan server; outer TLS done in userspace.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { signal });
+    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${serverHost}:${serverPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runTrojanInner(socket, serverHost, password, target, signal);
+    return await dialTrojanInner(socket, config, target, options.signal);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-async function runTrojanInner(
+const dialTrojanInner = async (
   socket: DialedSocket,
-  serverHost: string,
-  password: string,
-  target: TargetSpec,
+  config: TrojanProxyConfig,
+  target: DialTarget,
   signal: AbortSignal | undefined,
-): Promise<Response> {
+): Promise<DialResult> => {
   let outerTls: TlsStream;
   try {
-    outerTls = await userspaceTls(socket, { host: serverHost, signal });
+    outerTls = await userspaceTls(socket, { host: config.sni ?? config.host, signal });
   } catch (cause) {
     throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
   }
 
   const enc = new TextEncoder();
-  const hash = sha224(enc.encode(password));
+  const hash = sha224(enc.encode(config.password));
   const hashHex = bytesToHex(hash);
 
-  const dom = enc.encode(target.dialHost);
+  const dom = enc.encode(target.host);
   if (dom.byteLength > 255) throw new ProxyDialError('hostname too long for Trojan', 'proxy-handshake');
   const header = new Uint8Array(56 + 2 + 1 + 1 + 1 + dom.byteLength + 2 + 2);
   let off = 0;
@@ -79,32 +78,15 @@ async function runTrojanInner(
   header[off++] = target.port & 0xff;
   header[off++] = 0x0d; header[off++] = 0x0a;
 
-  if (target.tls) {
-    let innerTls: TlsStream;
-    try {
-      innerTls = await userspaceTls(outerTls, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), prefix: header, signal });
-    } catch (cause) {
-      // The Trojan header rides as the prefix bytes of the inner TLS
-      // ClientHello, so a server-side password rejection or a real upstream
-      // TLS failure both surface here. We can't tell them apart without
-      // sniffing the inner record framing — flag both as inner-tls.
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(innerTls, target);
-  } else {
-    // Plain-HTTP upstream: the Trojan header MUST land in the same TLS
-    // record as the first application bytes (sing-box reads the 56-byte
-    // password key with conn.Read and short-reads on a separate first
-    // record — REPORT.md Finding 2). Pass the header as runHttp1's
-    // prefix so it's concatenated with the request head into a single
-    // writer.write(), which the userspace TLS layer below seals as one
-    // record.
-    return await runHttp1(outerTls, target, { prefix: header });
-  }
-}
+  return {
+    readable: outerTls.readable,
+    writable: outerTls.writable,
+    prefix: header,
+  };
+};
 
-function bytesToHex(b: Uint8Array): string {
+const bytesToHex = (b: Uint8Array): string => {
   let s = '';
   for (let i = 0; i < b.byteLength; i++) s += b[i]!.toString(16).padStart(2, '0');
   return s;
-}
+};

@@ -1,50 +1,46 @@
 // SOCKS5 client (TCP CONNECT only).
 //
 // We avoid `socket.startTls()` because of the workerd #2712 edge bug. After
-// the SOCKS5 handshake we hand the post-handshake byte stream to userspace
-// TLS for the upstream's HTTPS handshake.
+// the SOCKS5 handshake we hand the post-handshake byte stream back to the
+// orchestrator, which layers userspace TLS for the upstream's HTTPS handshake.
 
-import { ProxyDialError } from '../errors.js';
-import { runHttp1 } from '../http1.js';
-import { userspaceTls, type TlsStream } from '../tls.js';
-import { type TargetSpec, resolveTlsSni, resolveTlsVerifyHost } from '../types.js';
-import { type DialedSocket, getSocketDial } from '@floway-dev/platform';
+import { ProxyDialError } from '../errors.ts';
+import type { Socks5ProxyConfig } from '../proxy-config.ts';
+import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
-export interface Socks5Options {
-  proxyHost: string;
-  proxyPort: number;
-  auth?: { username: string; password: string };
-  target: TargetSpec;
-  signal?: AbortSignal;
-}
+export const dialSocks5 = async (
+  config: Socks5ProxyConfig,
+  target: DialTarget,
+  options: DialOptions,
+): Promise<DialResult> => {
+  const auth = config.username !== undefined
+    ? { username: config.username, password: config.password ?? '' }
+    : undefined;
 
-export async function runSocks5(opts: Socks5Options): Promise<Response> {
-  const { proxyHost, proxyPort, auth, target, signal } = opts;
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort, { signal });
+    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
   } catch (cause) {
     throw new ProxyDialError(
-      `tcp connect to ${proxyHost}:${proxyPort} failed`,
+      `tcp connect to ${config.host}:${config.port} failed`,
       'tcp-connect',
       { cause },
     );
   }
 
   try {
-    return await runSocks5Inner(socket, auth, target, signal);
+    return await dialSocks5Inner(socket, auth, target);
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
   }
-}
+};
 
-async function runSocks5Inner(
+const dialSocks5Inner = async (
   socket: DialedSocket,
   auth: { username: string; password: string } | undefined,
-  target: TargetSpec,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
+  target: DialTarget,
+): Promise<DialResult> => {
   const writer = socket.writable.getWriter();
 
   const { readable: postHandshake, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
@@ -97,7 +93,7 @@ async function runSocks5Inner(
 
   // 3. CONNECT request (ATYP=domain)
   const enc = new TextEncoder();
-  const dom = enc.encode(target.dialHost);
+  const dom = enc.encode(target.host);
   if (dom.byteLength > 255) throw new ProxyDialError('hostname too long for SOCKS5', 'proxy-handshake');
   const req = new Uint8Array(7 + dom.byteLength);
   req[0] = 0x05;
@@ -145,22 +141,11 @@ async function runSocks5Inner(
     }
   })();
 
-  if (target.tls) {
-    const transport = { readable: postHandshake, writable: socket.writable };
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
-    } catch (cause) {
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
-    }
-    return await runHttp1(tls, target);
-  } else {
-    return await runHttp1({ readable: postHandshake, writable: socket.writable }, target);
-  }
-}
+  return { readable: postHandshake, writable: socket.writable };
+};
 
-function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
+const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
   r.set(u);
   return r;
-}
+};
