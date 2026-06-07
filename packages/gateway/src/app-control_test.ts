@@ -91,7 +91,7 @@ test('API key users cannot mutate /api/search-config routes', async () => {
   assertEquals(await response.json(), { error: 'Admin privileges required' });
 });
 
-test('/api/token-usage is visible to any authenticated user and includes all keys', async () => {
+test('/api/token-usage scopes to the actor\'s keys when called with an API key', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_other',
@@ -129,34 +129,28 @@ test('/api/token-usage is visible to any authenticated user and includes all key
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.length, 2);
+  // Non-admin actor sees only their own key's rows; the other user's row is excluded.
+  assertEquals(body.length, 1);
+  assertEquals(body[0].keyId, apiKey.id);
   assertEquals(body[0].keyName, 'Primary key');
-  assertEquals(body[1].keyName, 'Other key');
-  assertEquals(body[0].keyCreatedAt, apiKey.createdAt);
-  assertEquals(body[1].keyCreatedAt, '2026-03-15T00:00:00.000Z');
-  const ownRecord = body.find((record: { keyId: string }) => record.keyId === apiKey.id);
-  const otherRecord = body.find((record: { keyId: string }) => record.keyId === 'key_other');
-  assertExists(ownRecord);
-  assertExists(otherRecord);
-  assertEquals(ownRecord.tokens.input_cache_read, 4);
-  assertEquals(ownRecord.tokens.input_cache_write, 1);
-  assertEquals(otherRecord.tokens.input_cache_read, 6);
-  assertEquals(otherRecord.tokens.input_cache_write, 2);
+  assertEquals(body[0].tokens.input_cache_read, 4);
+  assertEquals(body[0].tokens.input_cache_write, 1);
 });
 
-test('/api/token-usage can include all key metadata for stable dashboard color slots', async () => {
+test('/api/token-usage in self-by-key mode includes per-key metadata for the actor only', async () => {
   const { repo, apiKey } = await setupAppTest();
+  // Add a second key under the same user; they should both surface.
   await repo.apiKeys.save({
-    id: 'key_other',
-    userId: 1,
-    name: 'Other key',
-    key: 'raw_other_key',
+    id: 'key_actor_secondary',
+    userId: apiKey.userId,
+    name: 'Actor secondary',
+    key: 'raw_actor_secondary',
     createdAt: '2026-03-16T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
   });
   await repo.usage.set({
-    keyId: 'key_other',
+    keyId: 'key_actor_secondary',
     model: 'gpt-5',
     upstream: null,
     modelKey: 'gpt-5',
@@ -173,6 +167,11 @@ test('/api/token-usage can include all key metadata for stable dashboard color s
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.records.length, 1);
+  assertEquals(body.records[0].keyId, 'key_actor_secondary');
+  assertEquals(body.keys, [
+    { id: apiKey.id, name: apiKey.name, createdAt: apiKey.createdAt },
+    { id: 'key_actor_secondary', name: 'Actor secondary', createdAt: '2026-03-16T00:00:00.000Z' },
+  ]);
   assertEquals(body.keyColorOrder, [
     '46360b74-2457-4a38-a116-7afdb2894632',
     '4969165b-3412-436c-87d9-3fd4770164b5',
@@ -185,18 +184,39 @@ test('/api/token-usage can include all key metadata for stable dashboard color s
     'future-2',
     'future-4',
   ]);
-  assertEquals(body.keys, [
-    {
-      id: apiKey.id,
-      name: apiKey.name,
-      createdAt: apiKey.createdAt,
-    },
-    {
-      id: 'key_other',
-      name: 'Other key',
-      createdAt: '2026-03-16T00:00:00.000Z',
-    },
-  ]);
+});
+
+test('/api/token-usage all-by-user view aggregates across keys per user', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  await repo.usage.set({
+    keyId: apiKey.id,
+    model: 'gpt-5',
+    upstream: null,
+    modelKey: 'gpt-5',
+    hour: '2026-03-15T10',
+    requests: 1,
+    tokens: { input: 10, output: 5 },
+    cost: null,
+  });
+
+  const response = await requestApp(
+    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user',
+    { headers: { 'x-floway-session': adminSession } },
+  );
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.length, 1);
+  assertEquals(body[0].userId, apiKey.userId);
+  assertEquals(body[0].tokens.input, 10);
+});
+
+test('/api/token-usage rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp(
+    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user',
+    { headers: { 'x-api-key': apiKey.key } },
+  );
+  assertEquals(response.status, 403);
 });
 
 test('/api/token-usage merges Claude variants into backend base model records', async () => {

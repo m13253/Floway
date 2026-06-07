@@ -331,6 +331,8 @@ const usageBaseQuery = {
   end: z.string().optional(),
   key_id: z.string().optional(),
   include_key_metadata: z.string().optional(),
+  include_user_metadata: z.string().optional(),
+  view: z.enum(['all-by-user', 'self-by-key']).optional(),
 };
 
 export const tokenUsageQuery = z.object(usageBaseQuery);
