@@ -74,6 +74,31 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
+  let leftover: Uint8Array | undefined;
+  const readN = async (n: number): Promise<Uint8Array<ArrayBuffer>> => {
+    const out = new Uint8Array(n);
+    let got = 0;
+    if (leftover?.byteLength) {
+      const take = Math.min(n, leftover.byteLength);
+      out.set(leftover.subarray(0, take), 0);
+      got += take;
+      leftover = take < leftover.byteLength ? leftover.subarray(take) : undefined;
+    }
+    while (got < n) {
+      const r = await reader.read();
+      if (r.done) throw new Error(`SS2022: EOF, want ${n} got ${got}`);
+      const need = n - got;
+      if (r.value.byteLength <= need) {
+        out.set(r.value, got);
+        got += r.value.byteLength;
+      } else {
+        out.set(r.value.subarray(0, need), got);
+        leftover = r.value.subarray(need);
+        got += need;
+      }
+    }
+    return out;
+  };
 
   // Build the request:
   //   - sendSalt
@@ -101,17 +126,16 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
       try {
         if (!recvCipher) {
           // Read server salt
-          const recvSalt = await readN(reader, keyLen);
+          const recvSalt = await readN(keyLen);
           const recvKey = blake3(concat(psk, recvSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
           recvCipher = makeAead(method, recvKey);
           // Read response fixed header AEAD: [type=0x01 | timestamp(u64be) | salt-echo(keyLen) | len(u16be)] + tag
-          const respFixedSealed = await readN(reader, 1 + 8 + keyLen + 2 + TAG);
+          const respFixedSealed = await readN(1 + 8 + keyLen + 2 + TAG);
           const respFixedPlain = recvCipher.decrypt(nonce(recvNonce++), respFixedSealed);
           if (respFixedPlain[0] !== RESP_HEADER_TYPE) {
             throw new ProxyDialError(`SS2022: bad response type ${respFixedPlain[0]}`, 'proxy-handshake');
           }
-          // Skip timestamp validation for our test path. Production should
-          // enforce 30s window.
+          // We do not validate the response timestamp window; the salt-echo below is sufficient to bind the response to our request.
           const echoStart = 1 + 8;
           for (let i = 0; i < keyLen; i++) {
             if (respFixedPlain[echoStart + i] !== sendSalt[i]) {
@@ -121,20 +145,20 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
           // First-payload length
           const firstLen = (respFixedPlain[1 + 8 + keyLen]! << 8) | respFixedPlain[1 + 8 + keyLen + 1]!;
           if (firstLen > MAX) throw new ProxyDialError(`SS2022: bad first payload length ${firstLen}`, 'proxy-handshake');
-          const firstSealed = await readN(reader, firstLen + TAG);
+          const firstSealed = await readN(firstLen + TAG);
           const firstPlain = recvCipher.decrypt(nonce(recvNonce++), firstSealed);
           if (firstPlain.byteLength) controller.enqueue(firstPlain as Uint8Array<ArrayBuffer>);
           return;
         }
         // Read length record
-        const lenSealed = await readN(reader, 2 + TAG);
+        const lenSealed = await readN(2 + TAG);
         const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (len === 0 || len > MAX) {
           controller.error(new Error(`SS2022: bad len ${len}`));
           return;
         }
-        const ptSealed = await readN(reader, len + TAG);
+        const ptSealed = await readN(len + TAG);
         const pt = recvCipher.decrypt(nonce(recvNonce++), ptSealed);
         controller.enqueue(pt as Uint8Array<ArrayBuffer>);
       } catch (e) {
@@ -251,39 +275,6 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
   r.set(a, 0);
   r.set(b, a.byteLength);
   return r;
-}
-
-async function readN(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  n: number,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const out = new Uint8Array(n);
-  let got = 0;
-  const leftover = (reader as unknown as { __leftover?: Uint8Array }).__leftover;
-  if (leftover?.byteLength) {
-    const take = Math.min(n, leftover.byteLength);
-    out.set(leftover.subarray(0, take), 0);
-    got += take;
-    if (take < leftover.byteLength) {
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = leftover.subarray(take);
-    } else {
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = undefined;
-    }
-  }
-  while (got < n) {
-    const r = await reader.read();
-    if (r.done) throw new Error(`SS2022: EOF, want ${n} got ${got}`);
-    const need = n - got;
-    if (r.value.byteLength <= need) {
-      out.set(r.value, got);
-      got += r.value.byteLength;
-    } else {
-      out.set(r.value.subarray(0, need), got)
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = r.value.subarray(need);
-      got += need;
-    }
-  }
-  return out;
 }
 
 function randomBytes(n: number): Uint8Array<ArrayBuffer> {

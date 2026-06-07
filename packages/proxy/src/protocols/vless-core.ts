@@ -1,8 +1,7 @@
 // Shared VLESS core: write VLESS header + strip server reply prefix + layer
 // userspace TLS for the upstream HTTPS handshake.
 //
-// Used by reality.ts (after the REALITY-tls is established) and could be
-// reused by vless.ts in a refactor.
+// Used by reality.ts (after the REALITY-tls is established).
 
 import { ProxyDialError } from '../errors.js';
 import { runHttp1 } from '../http1.js';

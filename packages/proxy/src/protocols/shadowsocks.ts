@@ -78,6 +78,31 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
+  let leftover: Uint8Array | undefined;
+  const readExactly = async (n: number): Promise<Uint8Array<ArrayBuffer>> => {
+    const out = new Uint8Array(n);
+    let got = 0;
+    if (leftover?.byteLength) {
+      const take = Math.min(n, leftover.byteLength);
+      out.set(leftover.subarray(0, take), 0);
+      got += take;
+      leftover = take < leftover.byteLength ? leftover.subarray(take) : undefined;
+    }
+    while (got < n) {
+      const r = await reader.read();
+      if (r.done) throw new Error(`SS: EOF, want ${n} got ${got}`);
+      const need = n - got;
+      if (r.value.byteLength <= need) {
+        out.set(r.value, got);
+        got += r.value.byteLength;
+      } else {
+        out.set(r.value.subarray(0, need), got);
+        leftover = r.value.subarray(need);
+        got += need;
+      }
+    }
+    return out;
+  };
 
   // Build the SS address header for the first payload chunk.
   const addrBytes = buildSocksAddress(target.dialHost, target.port);
@@ -100,12 +125,12 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
       try {
         if (!recvCipher) {
           // Read the server's salt
-          const saltBuf = await readExactly(reader, keyLen);
+          const saltBuf = await readExactly(keyLen);
           const recvSubkey = hkdf(sha1, masterKey, saltBuf, asciiBytes('ss-subkey'), keyLen);
           recvCipher = makeAead(method, recvSubkey);
         }
         // Read length record (2-byte len + 16-byte tag)
-        const lenSealed = await readExactly(reader, 2 + TAG_LEN);
+        const lenSealed = await readExactly(2 + TAG_LEN);
         const lenPlain = recvCipher.decrypt(nonceBytes(recvNonce), lenSealed);
         recvNonce++;
         const payloadLen = (lenPlain[0]! << 8) | lenPlain[1]!;
@@ -113,7 +138,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
           controller.error(new ProxyDialError(`SS: bad payload length ${payloadLen}`, 'proxy-handshake'));
           return;
         }
-        const payloadSealed = await readExactly(reader, payloadLen + TAG_LEN);
+        const payloadSealed = await readExactly(payloadLen + TAG_LEN);
         const payloadPlain = recvCipher.decrypt(nonceBytes(recvNonce), payloadSealed);
         recvNonce++;
         controller.enqueue(payloadPlain as Uint8Array<ArrayBuffer>);
@@ -129,9 +154,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   // SS-encrypting writable
   const ssWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      // Re-acquire writer briefly per frame; this simplifies lifetime since we
-      // already released the lock above. (workerd's WritableStream allows
-      // re-acquire.)
+      // Re-acquire the writer per frame so the SS-encrypting writable owns the underlying lock only while it actively writes a record.
       const w = socket.writable.getWriter();
       try {
         // Split into MAX_PAYLOAD-sized records.
@@ -241,39 +264,6 @@ function buildSocksAddress(host: string, port: number): Uint8Array<ArrayBuffer> 
   out.set(dom, 2);
   out[2 + dom.byteLength] = (port >> 8) & 0xff;
   out[2 + dom.byteLength + 1] = port & 0xff;
-  return out;
-}
-
-async function readExactly(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  n: number,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const out = new Uint8Array(n);
-  let got = 0;
-  const leftover = (reader as unknown as { __leftover?: Uint8Array }).__leftover;
-  if (leftover?.byteLength) {
-    const take = Math.min(n, leftover.byteLength);
-    out.set(leftover.subarray(0, take), 0);
-    got += take;
-    if (take < leftover.byteLength) {
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = leftover.subarray(take);
-    } else {
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = undefined;
-    }
-  }
-  while (got < n) {
-    const r = await reader.read();
-    if (r.done) throw new Error(`SS: EOF, want ${n} got ${got}`);
-    const need = n - got;
-    if (r.value.byteLength <= need) {
-      out.set(r.value, got);
-      got += r.value.byteLength;
-    } else {
-      out.set(r.value.subarray(0, need), got)
-      ;(reader as unknown as { __leftover?: Uint8Array }).__leftover = r.value.subarray(need);
-      got += need;
-    }
-  }
   return out;
 }
 

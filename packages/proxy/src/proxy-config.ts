@@ -1,7 +1,7 @@
 // Discriminated union over every proxy protocol packages/proxy supports.
-// `kind` matches the canonical scheme used in the URI form (see url.ts in
-// task 6). Adding a new protocol = add a variant here, a parser branch in
-// url.ts, and a dispatch branch in dialer.ts.
+// kind matches the canonical scheme used in the URI form (see url.ts).
+// Adding a new protocol = add a variant here, a parser branch in url.ts,
+// and a dispatch branch in dialer.ts.
 
 export type ProxyConfig =
   | HttpProxyConfig

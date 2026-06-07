@@ -55,8 +55,7 @@ export type { Shadowsocks2022Options } from './protocols/shadowsocks-2022.js';
 export { runReality } from './protocols/reality.js';
 export type { RealityOptions } from './protocols/reality.js';
 
-// Lower-level building blocks, exported for advanced use cases (e.g. wrapping
-// an arbitrary plain-TCP transport with TLS without going through a proxy).
+// Lower-level building blocks exposed for advanced composition.
 export { userspaceTls } from './tls.js';
 export type { UserspaceTlsOptions, TlsStream } from './tls.js';
 

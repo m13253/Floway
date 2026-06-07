@@ -124,7 +124,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
 
   tlsClient = makeTLSClient(({
     host: opts.spoofSni,
-    namedCurves: ['X25519'], // REALITY needs only X25519 keyshare
+    namedCurves: ['X25519'],
     verifyServerCertificate: false, // REALITY auth replaces chain validation
     write({ header, content }) {
       const out = new Uint8Array(header.byteLength + content.byteLength);

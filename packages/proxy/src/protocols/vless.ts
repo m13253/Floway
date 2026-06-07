@@ -136,13 +136,13 @@ function buildVlessHeader(uuid: string, target: TargetSpec): Uint8Array {
   const uuidBytes = parseUuid(uuid);
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + 1 + 1 + dom.byteLength);
   let off = 0;
-  header[off++] = 0x00; // version
+  header[off++] = 0x00;
   header.set(uuidBytes, off); off += 16;
-  header[off++] = 0x00; // addons length
-  header[off++] = 0x01; // CMD = TCP
+  header[off++] = 0x00;
+  header[off++] = 0x01;
   header[off++] = (target.port >> 8) & 0xff;
   header[off++] = target.port & 0xff;
-  header[off++] = 0x02; // ATYP = domain (per current Xray-core)
+  header[off++] = 0x02;
   header[off++] = dom.byteLength;
   header.set(dom, off); off += dom.byteLength;
   return header;

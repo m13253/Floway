@@ -1,7 +1,7 @@
 // Surfaced by every protocol runner when the dial / proxy-handshake /
 // inner-TLS handshake fails — i.e. when the upstream server has not
 // observed any byte of our request yet. The gateway uses this signal to
-// drive proxy_upstream_backoffs (see spec §6.1).
+// drive proxy_upstream_backoffs.
 //
 // Anything thrown after the upstream sees our request is NOT a
 // ProxyDialError — that's the upstream's problem.
