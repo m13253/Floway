@@ -141,6 +141,12 @@ export const userspaceTls = async (
     handshakeResolve = resolve;
     handshakeReject = reject;
   });
+  // Register a sink for the rejection so it never lands as an unhandled
+  // rejection if the pump's transport-EOF / abort path rejects before the
+  // outer `await handshakeDone` (further down) attaches its own handler.
+  // The real consumer of the rejection is still the await — this catch is
+  // a passive observer.
+  handshakeDone.catch(() => { /* main handler is the await below */ });
 
   let handshakeOk = false;
   // Two independent paths can drop the plaintext stream out from under us:

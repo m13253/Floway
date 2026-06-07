@@ -40,9 +40,14 @@ describe('userspaceTls — ClientHello on the wire', () => {
     );
     handshake.catch(() => { /* expected — we abort below */ });
 
-    // Wait one tick for the synchronous startHandshake() to drain the first
-    // record into our writable buffer.
-    await new Promise(r => setTimeout(r, 5));
+    // Poll the fake duplex's write buffer until the ClientHello lands. The
+    // first byte is enough to discriminate a TLS handshake record from
+    // anything else; we read more once it's there. Polling avoids a hard-
+    // coded sleep that races reclaim's synchronous startup path under load.
+    const deadline = Date.now() + 1000;
+    while (fake.written().byteLength < 5 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5));
+    }
     const written = fake.written();
     expect(written.byteLength).toBeGreaterThanOrEqual(5);
     // TLS record header: type=Handshake(0x16), legacy_record_version=TLS1.2(0x0303)

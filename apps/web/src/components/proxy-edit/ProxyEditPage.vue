@@ -108,7 +108,8 @@ watch(config, next => {
 // :key="record.id") whenever the row changes, so a parent-store reload
 // against the SAME id must not clobber whatever the operator is typing.
 const DEFAULT_DIAL_TIMEOUT_SECONDS = Math.floor(DEFAULT_DIAL_DEADLINE_MS / 1000);
-const dialTimeoutInput = ref<string>(props.record?.dial_timeout_seconds === null || props.record?.dial_timeout_seconds === undefined ? '' : String(props.record.dial_timeout_seconds));
+const initialDialTimeout = props.record?.dial_timeout_seconds;
+const dialTimeoutInput = ref<string>(initialDialTimeout == null ? '' : String(initialDialTimeout));
 
 const dialTimeoutParsed = computed<{ value: number | null } | { error: string } | null>(() => {
   const raw = dialTimeoutInput.value.trim();
