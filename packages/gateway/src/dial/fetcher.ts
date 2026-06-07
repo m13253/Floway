@@ -37,7 +37,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
       target ??= await buildTargetSpec(url, init);
       return target;
     };
-    const errors: ProxyDialError[] = [];
+    const errors: unknown[] = [];
 
     const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
     const now = Math.floor(Date.now() / 1000);
@@ -70,7 +70,7 @@ const tryOne = async (
   targetForProxy: () => Promise<TargetSpec>,
   url: string,
   init: RequestInit,
-  errors: ProxyDialError[],
+  errors: unknown[],
 ): Promise<Response | null> => {
   try {
     if (id === 'direct') {
@@ -89,6 +89,17 @@ const tryOne = async (
     await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
     return response;
   } catch (err) {
+    if (id === 'direct') {
+      // Direct egress can fail for the same dial-shaped reasons a proxy can
+      // (TCP refused, GFW SNI reset, DNS, connect timeout). Runtime fetch
+      // surfaces those as plain Errors / TypeErrors, not ProxyDialError, but
+      // for fallback semantics they ARE dial failures — request bytes never
+      // reached an upstream. Advance to the next entry like we would for a
+      // proxy, just without touching the backoff table (no proxy entity to
+      // throttle here).
+      errors.push(err);
+      return null;
+    }
     if (err instanceof ProxyDialError) {
       errors.push(err);
       // Tag the persisted message with the dial stage so a dashboard reader

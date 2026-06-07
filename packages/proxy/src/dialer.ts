@@ -16,11 +16,12 @@ import type { TargetSpec } from './types.js';
 // Hard ceiling on the time the dial layer is allowed to spend before the
 // fallback chain moves on. Counts TCP connect + every handshake leg, but
 // not the upstream response — once the request bytes have been written we
-// expect normal response streaming. Picked to stay above slow-but-real
-// dials (handshake to a regional REALITY anchor) while still rescuing the
-// dashboard from a black-holed proxy entry that would otherwise hang the
-// whole call.
-const DIAL_DEADLINE_MS = 10_000;
+// expect normal response streaming. Reality / VLESS-WS / Trojan over a
+// real-world latency-bound link can take 8-15s for outer-TCP + outer-TLS
+// + proxy-handshake + inner-TLS combined; 30s leaves ~2× headroom on top
+// of that without letting a black-holed proxy entry stall the call for a
+// minute+.
+const DIAL_DEADLINE_MS = 30_000;
 
 export const runProxiedRequest = async (
   config: ProxyConfig,
