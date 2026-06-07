@@ -67,7 +67,7 @@ export const mountCodexRoutes = (app: Hono) => {
   app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
   app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);
 
-  app.get(`${CODEX_BASE_PATH}/codex/models`, codexModels);
+  app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
 
   app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);

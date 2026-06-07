@@ -7,7 +7,6 @@ describe('applyCodexOverrides', () => {
   const ONE_M = {
     context_window: 1050000,
     max_context_window: 1050000,
-    effective_context_window_percent: 100,
     auto_compact_token_limit: 945000,
   };
 
