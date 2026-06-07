@@ -13,11 +13,11 @@ import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import { Button, Input, Spinner } from '@floway-dev/ui';
 import { useNow, useTimeoutFn } from '@vueuse/core';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
+import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
@@ -49,6 +49,27 @@ const localEgressIp = ref<string | null>(null);
 const localTestedAt = ref<number | null>(null);
 const lastEgressIp = computed(() => localEgressIp.value ?? props.record?.last_egress_ip ?? null);
 const lastTestedAt = computed(() => localTestedAt.value ?? props.record?.last_tested_at ?? null);
+
+// Drop the local override when the server confirms (or supersedes) the
+// local test result. Two cases:
+//   * server-side reset / re-test by another action: server's last_tested_at
+//     transitions to null OR moves to a value >= our local timestamp;
+//   * the operator's reset on this page or a sibling component: same.
+// Only this narrow watcher touches the local refs — `dialTimeoutInput` is
+// seeded once at mount and never resyncs, so a parent reload never
+// clobbers an in-progress edit.
+watch(() => props.record?.last_tested_at, (serverTs) => {
+  if (localTestedAt.value === null) return;
+  if (serverTs === null || serverTs === undefined) {
+    localEgressIp.value = null;
+    localTestedAt.value = null;
+    return;
+  }
+  if (serverTs >= localTestedAt.value) {
+    localEgressIp.value = null;
+    localTestedAt.value = null;
+  }
+}, { immediate: false });
 
 // Per-proxy dial-stage deadline. Stored as a string to make "empty" the
 // canonical "use default" signal; coerced to a number on save. The
@@ -249,7 +270,7 @@ const remove = async () => {
     );
     if (error) {
       if (error.status === 409) {
-        const refs = (error.raw as { referencing_upstream_ids?: string[] })?.referencing_upstream_ids ?? [];
+        const refs = (error.raw as ProxyConflictBody | undefined)?.referencing_upstream_ids ?? [];
         deleteError.value = {
           message: 'Cannot delete: referenced by upstream(s)',
           referencingUpstreamIds: refs,
@@ -316,7 +337,7 @@ const remove = async () => {
         <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
         <span v-else class="italic">untested</span>
         <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
-        <Button variant="secondary" size="sm" :loading="testing" class="ml-auto" @click="test">Test</Button>
+        <Button variant="secondary" size="sm" :loading="testing" :disabled="saving" class="ml-auto" @click="test">Test</Button>
       </div>
       <p v-if="mode === 'edit' && testError" class="text-xs text-accent-rose">{{ testError }}</p>
     </div>
@@ -373,7 +394,7 @@ const remove = async () => {
     </template>
 
     <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
-      <Button :loading="saving" @click="save">Save</Button>
+      <Button :loading="saving" :disabled="testing" @click="save">Save</Button>
       <Button variant="secondary" :disabled="saving" @click="cancel">Cancel</Button>
 
       <template v-if="mode === 'edit' && record">

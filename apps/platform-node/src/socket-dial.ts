@@ -27,13 +27,15 @@ export const nodeSocketDial: SocketDial = {
     // We don't request `allowHalfOpen` on TLS — close-notify makes
     // half-close fragile across TLS 1.3 implementations.
     //
-    // tls.ConnectionOptions inherits from net.SocketConnectOpts at runtime
-    // but @types/node hasn't surfaced `signal` on the public ConnectionOptions
-    // shape yet, so we widen via `as` so the deliberate signal forwarding
-    // typechecks. The cast disappears the day the types catch up.
+    // tls.connect honours `signal` at runtime but @types/node hasn't yet
+    // surfaced it on tls.ConnectionOptions; @ts-expect-error makes the
+    // type lag visible (the line will start failing the day the type is
+    // added) so we can drop the suppression instead of letting an `as`
+    // cast silently absorb future shape changes.
     const signal = opts?.signal;
     const socket = opts?.tls
-      ? tls.connect({ host, port, servername: host, signal } as tls.ConnectionOptions)
+      // @ts-expect-error – tls.ConnectionOptions does not yet declare `signal` in @types/node, but tls.connect accepts and honours it at runtime.
+      ? tls.connect({ host, port, servername: host, signal })
       : net.connect({ host, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {

@@ -3,7 +3,7 @@ import { Spinner } from '@floway-dev/ui';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
+import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import ProxyRow from './ProxyRow.vue';
@@ -146,7 +146,7 @@ const deleteProxy = async (record: ProxyRecord) => {
   const { error } = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: record.id } }));
   if (error) {
     if (error.status === 409) {
-      const refs = (error.raw as { referencing_upstream_ids?: string[] })?.referencing_upstream_ids ?? [];
+      const refs = (error.raw as ProxyConflictBody | undefined)?.referencing_upstream_ids ?? [];
       const names = refs.map(id => upstreamNames.value.get(id) ?? id).join(', ');
       window.alert(`This proxy is referenced by upstreams: ${names}. Remove it from those upstreams first.`);
       return;
