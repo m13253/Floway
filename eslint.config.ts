@@ -202,8 +202,7 @@ const config: Linter.Config[] = [
       'vitest.config.ts',
       'packages/*/vitest.config.ts',
       'scripts/**',
-      // Throwaway integration test scaffold for the proxy-protocol work;
-      // not production code.
+      // Throwaway scratch space; not production code.
       'experiments/**',
     ],
   },
