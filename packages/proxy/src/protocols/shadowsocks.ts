@@ -36,6 +36,7 @@ export interface ShadowsocksOptions {
   method: SsMethod;
   password: string;
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
@@ -49,13 +50,13 @@ const NONCE_LEN = 12;
 const MAX_PAYLOAD = 0x3fff;
 
 export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response> {
-  const { serverHost, serverPort, method, password, target } = opts;
+  const { serverHost, serverPort, method, password, target, signal } = opts;
   const keyLen = METHOD_KEY_LEN[method];
   if (!keyLen) throw new Error(`unsupported method: ${method}`);
 
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort);
+    socket = await getSocketDial().connect(serverHost, serverPort, { signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,
@@ -64,6 +65,22 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
     );
   }
 
+  try {
+    return await runShadowsocksInner(socket, method, password, keyLen, target, signal);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runShadowsocksInner(
+  socket: DialedSocket,
+  method: SsMethod,
+  password: string,
+  keyLen: number,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const masterKey = evpBytesToKey(password, keyLen);
 
   // Per-direction salts and subkeys
@@ -181,7 +198,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
   if (target.tls) {
     let tls: TlsStream;
     try {
-      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }

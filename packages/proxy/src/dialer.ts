@@ -28,6 +28,9 @@ export interface RunProxiedRequestOptions {
   /** Per-call dial-stage deadline override (ms). Falls back to
    *  DEFAULT_DIAL_DEADLINE_MS when absent. */
   dialTimeoutMs?: number;
+  /** Caller-supplied cancellation. Aborting tears down any in-flight
+   *  socket and rejects the runProxiedRequest promise immediately. */
+  signal?: AbortSignal;
 }
 
 export const runProxiedRequest = async (
@@ -36,21 +39,38 @@ export const runProxiedRequest = async (
   options?: RunProxiedRequestOptions,
 ): Promise<Response> => {
   const deadlineMs = options?.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new ProxyDialError(`dial deadline exceeded after ${deadlineMs}ms`, 'tcp-connect')),
-      deadlineMs,
-    );
-  });
+  const callerSignal = options?.signal;
+  if (callerSignal?.aborted) {
+    throw new DOMException(String(callerSignal.reason ?? 'aborted'), 'AbortError');
+  }
+  // We multiplex the caller signal and our deadline into a single internal
+  // AbortController. Setting the abort `reason` to a ProxyDialError on
+  // deadline lets us surface the deadline as a typed error after dispatch
+  // unwinds — even if the underlying runner returned a different exception
+  // because abort propagation was racy.
+  const internal = new AbortController();
+  const onCallerAbort = (): void => {
+    internal.abort(callerSignal!.reason ?? new DOMException('aborted', 'AbortError'));
+  };
+  if (callerSignal) callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  const timer = setTimeout(
+    () => internal.abort(new ProxyDialError(`dial deadline exceeded after ${deadlineMs}ms`, 'tcp-connect')),
+    deadlineMs,
+  );
   try {
-    return await Promise.race([dispatch(config, target), deadline]);
+    return await dispatch(config, target, internal.signal);
+  } catch (err) {
+    if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
+      throw internal.signal.reason;
+    }
+    throw err;
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
+    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   }
 };
 
-const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Response> => {
+const dispatch = async (config: ProxyConfig, target: TargetSpec, signal: AbortSignal): Promise<Response> => {
   switch (config.kind) {
   case 'http':
     return await runHttpConnect({
@@ -61,6 +81,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
         ? { username: config.username, password: config.password ?? '' }
         : undefined,
       target,
+      signal,
     });
   case 'socks5':
     return await runSocks5({
@@ -70,6 +91,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
         ? { username: config.username, password: config.password ?? '' }
         : undefined,
       target,
+      signal,
     });
   case 'ss':
     return await runShadowsocks({
@@ -78,6 +100,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       method: config.method,
       password: config.password,
       target,
+      signal,
     });
   case 'ss2022':
     return await runShadowsocks2022({
@@ -86,6 +109,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       method: config.method,
       password: config.passwordBase64,
       target,
+      signal,
     });
   case 'trojan':
     return await runTrojan({
@@ -93,6 +117,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       serverPort: config.port,
       password: config.password,
       target,
+      signal,
     });
   case 'vless-tcp':
     return await runVlessTcpTls({
@@ -100,6 +125,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       serverPort: config.port,
       uuid: config.uuid,
       target,
+      signal,
     });
   case 'vless-ws':
     return await runVlessWsTls({
@@ -108,6 +134,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       uuid: config.uuid,
       path: config.path,
       target,
+      signal,
     });
   case 'reality':
     return await runReality({
@@ -118,6 +145,7 @@ const dispatch = async (config: ProxyConfig, target: TargetSpec): Promise<Respon
       spoofSni: config.serverName,
       uuid: config.uuid,
       target,
+      signal,
     });
   default: {
     const _: never = config;

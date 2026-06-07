@@ -5,17 +5,16 @@
 // REALITY is a TLS 1.3 client that:
 //   1. Spoofs SNI as a real domain (e.g. www.cloudflare.com).
 //   2. Overwrites the 32-byte ClientHello.session_id with an authentication
-//      payload sealed in-place with AES-128-GCM:
+//      payload sealed in-place with AEAD:
 //        plaintext = [version_x, version_y, version_z, 0x00, ts(4 BE), shortId(8)]
-//        key       = HKDF-SHA256(ECDHE(ephPriv, serverPub), salt=random[0:20], info="REALITY", L=16)
+//        key       = HKDF-SHA256(ECDHE(ephPriv, serverPub), salt=random[0:20], info="REALITY", L=32)
 //        nonce     = random[20:32]
-//        AAD       = ClientHello bytes (with plaintext session_id still in place)
+//        AAD       = ClientHello bytes (with session_id slot zeroed before the seal)
 //        output    = 16-byte ciphertext + 16-byte tag, written back into session_id slot.
 //   3. Validates the server cert by its CertificateVerify "signature" field —
 //      which is actually HMAC-SHA512(authKey, leafCertEd25519Pub).
-//        authKey = HKDF-SHA256(shared_secret, salt=random[0:20], info="REALITY", L=32)
-//      (Same HKDF call as the seal key but with L=32 — first 16 bytes are the
-//      seal key, full 32 bytes are the auth key.)
+//      Same 32-byte authKey from the HKDF call above; Xray's reality.go uses
+//      Go's `aes.NewCipher(authKey)` which yields AES-256-GCM.
 //
 // We layer this on top of @reclaimprotocol/tls via two patched hooks:
 //   - onClientHelloPack: lets us seal the session_id in-place after the
@@ -50,6 +49,7 @@ export interface RealityOptions {
   uuid: string; // VLESS user UUID
   version?: [number, number, number]; // Xray version in session_id, default [25,4,30]
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runReality(opts: RealityOptions): Promise<Response> {
@@ -63,7 +63,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   // Plain TCP — userspace TLS will do the entire handshake.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort);
+    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { signal: opts.signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${opts.serverHost}:${opts.serverPort} failed`,
@@ -72,6 +72,21 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     );
   }
 
+  try {
+    return await runRealityInner(socket, opts, ver, serverPub, shortId);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runRealityInner(
+  socket: DialedSocket,
+  opts: RealityOptions,
+  ver: [number, number, number],
+  serverPub: Uint8Array<ArrayBuffer>,
+  shortId: Uint8Array<ArrayBuffer>,
+): Promise<Response> {
   // Build the unsealed session_id payload
   const ts = Math.floor(Date.now() / 1000);
   const sessionIdPlain = new Uint8Array(32);
@@ -108,8 +123,8 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       if (!tlsClient) throw new Error('TLS not ready');
       await tlsClient.write(chunk);
     },
-    async close() { try { await tlsClient?.end(); } catch {} },
-    abort() { try { void tlsClient?.end(); } catch {} },
+    async close() { try { await tlsClient?.end(); } catch { /* TLS already ended */ } },
+    abort() { try { void tlsClient?.end(); } catch { /* TLS already ended */ } },
   });
 
   let handshakeResolve!: () => void;
@@ -121,6 +136,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   let handshakeOk = false;
 
   const writer = socket.writable.getWriter();
+  const reader = socket.readable.getReader();
 
   tlsClient = makeTLSClient(({
     host: opts.spoofSni,
@@ -163,6 +179,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
       if (!tlsX25519Priv) throw new Error('REALITY: X25519 privKey not captured');
       const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sharedSecret = new Uint8Array(
         await crypto.subtle.deriveBits({ name: 'X25519', public: serverPubKey } as any, tlsX25519Priv, 256),
       );
@@ -200,9 +217,10 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     },
   }) as Parameters<typeof makeTLSClient>[0]);
 
-  // Pump bytes from transport → tls.handleReceivedBytes
+  // Pump bytes from transport → tls.handleReceivedBytes. The finally block
+  // releases the reader's lock so a handshake-failure path can reach the
+  // outer try/catch and close the socket cleanly without an orphaned lock.
   void (async () => {
-    const reader = socket.readable.getReader();
     try {
       while (true) {
         const { value, done } = await reader.read();
@@ -215,8 +233,23 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
       else plainController?.error(e);
+    } finally {
+      try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
+
+  if (opts.signal) {
+    opts.signal.addEventListener(
+      'abort',
+      () => {
+        const reason = opts.signal!.reason ?? new DOMException('aborted', 'AbortError');
+        if (!handshakeOk) handshakeReject(reason);
+        else plainController?.error(reason);
+        void reader.cancel(reason).catch(() => {});
+      },
+      { once: true },
+    );
+  }
 
   // Trigger the handshake with our pre-built sessionId and random.
   await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<NonNullable<typeof tlsClient>['startHandshake']>[0]);
@@ -226,6 +259,8 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     // The REALITY handshake combines outer TLS framing with the auth seal in
     // session_id; we can't tell whether the server rejected the seal or the
     // TLS handshake itself failed, so we tag the whole leg as outer-tls.
+    void reader.cancel(cause).catch(() => {});
+    try { writer.releaseLock(); } catch { /* lock already released */ }
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
 
@@ -234,6 +269,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     { readable: plainReadable, writable: plainWritable },
     opts.uuid,
     opts.target,
+    opts.signal,
   );
 }
 

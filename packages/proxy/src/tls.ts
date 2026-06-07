@@ -54,6 +54,13 @@ export interface UserspaceTlsOptions {
    * slower for the typical record sizes our HTTP/1.1 traffic produces.
    */
   cipherSuites?: Array<'TLS_AES_256_GCM_SHA384' | 'TLS_AES_128_GCM_SHA256' | 'TLS_CHACHA20_POLY1305_SHA256'>;
+  /**
+   * Cancellation. Aborting before or during the handshake rejects the
+   * userspaceTls promise, cancels the read pump, and releases the writer
+   * lock so the caller can close the transport. After the handshake, the
+   * caller's ReadableStream cancel/WritableStream abort drive teardown.
+   */
+  signal?: AbortSignal;
 }
 
 export interface TlsStream {
@@ -73,7 +80,12 @@ export async function userspaceTls(
 ): Promise<TlsStream> {
   ensureCrypto();
 
+  if (opts.signal?.aborted) {
+    throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
+  }
+
   const writer = transport.writable.getWriter();
+  const reader = transport.readable.getReader();
 
   // App-data downward stream (TLS plaintext → consumer)
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
@@ -84,8 +96,9 @@ export async function userspaceTls(
     // skip their controller calls, and signal end-of-stream upward.
     cancel() {
       plainClosed = true;
-      tlsClient?.end().catch(() => {});
-      writer.close().catch(() => {});
+      void tlsClient?.end().catch(logTlsTeardownError);
+      void reader.cancel().catch(() => {});
+      void writer.close().catch(logTlsTeardownError);
     },
   });
 
@@ -99,15 +112,17 @@ export async function userspaceTls(
       await tlsClient.write(chunk);
     },
     async close() {
-      // Both promises must be awaited or attached with .catch — a bare
-      // `void promise` discards rejection and crashes Node with
-      // unhandled-rejection when the underlying stream is already closed.
-      await tlsClient?.end().catch(() => {});
-      await writer.close().catch(() => {});
+      // Both promises must be awaited — a bare `void promise` discards
+      // rejection and crashes Node with unhandled-rejection when the
+      // underlying stream is already closed. Surface teardown errors via
+      // a debug log so genuine bugs aren't silenced, but never let one
+      // mask the close itself (peer already gone is normal here).
+      try { await tlsClient?.end(); } catch (e) { logTlsTeardownError(e); }
+      try { await writer.close(); } catch (e) { logTlsTeardownError(e); }
     },
     async abort(reason) {
-      await tlsClient?.end().catch(() => {});
-      await writer.abort(reason).catch(() => {});
+      try { await tlsClient?.end(); } catch (e) { logTlsTeardownError(e); }
+      try { await writer.abort(reason); } catch (e) { logTlsTeardownError(e); }
     },
   });
 
@@ -132,10 +147,10 @@ export async function userspaceTls(
   //     "already closed by the consumer."
   let plainClosed = false;
   const safeClose = (): void => {
-    try { plainController?.close(); } catch {}
+    try { plainController?.close(); } catch { /* already closed/errored */ }
   };
   const safeError = (error: unknown): void => {
-    try { plainController?.error(error); } catch {}
+    try { plainController?.error(error); } catch { /* already closed/errored */ }
   };
   const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
     try { plainController?.enqueue(chunk); } catch { plainClosed = true; }
@@ -145,7 +160,7 @@ export async function userspaceTls(
     plainClosed = true;
     if (error) safeError(error);
     else safeClose();
-    writer.close().catch(() => {});
+    void writer.close().catch(logTlsTeardownError);
   };
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
@@ -193,13 +208,12 @@ export async function userspaceTls(
   } as Parameters<typeof makeTLSClient>[0]));
 
   // Pump bytes from transport → tls.handleReceivedBytes
-  void (async () => {
-    const reader = transport.readable.getReader();
+  const pump = (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          tlsClient?.end().catch(() => {});
+          await tlsClient?.end().catch(logTlsTeardownError);
           return;
         }
         await tlsClient?.handleReceivedBytes(value);
@@ -208,15 +222,50 @@ export async function userspaceTls(
       if (!handshakeOk) handshakeReject(e);
       else closePlain(e);
     } finally {
-      try { reader.releaseLock(); } catch {}
+      try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
+  // Detach the pump's microtask chain from the handshake await; teardown
+  // calls below cancel the reader and the pump exits via its finally.
+  void pump;
 
-  await tlsClient.startHandshake();
-  await handshakeDone;
+  if (opts.signal) {
+    const onAbort = (): void => {
+      const reason = opts.signal!.reason ?? new DOMException('aborted', 'AbortError');
+      if (!handshakeOk) handshakeReject(reason);
+      else closePlain(reason);
+      void reader.cancel(reason).catch(() => {});
+    };
+    opts.signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  try {
+    await tlsClient.startHandshake();
+    await handshakeDone;
+  } catch (err) {
+    // Handshake never completed: the reader still holds the transport.readable
+    // lock and the writer holds transport.writable. Cancel both so the caller
+    // can close the underlying socket cleanly without an orphaned stream lock.
+    void reader.cancel(err).catch(() => {});
+    try { writer.releaseLock(); } catch { /* lock already released */ }
+    throw err;
+  }
 
   return { readable: plainReadable, writable: plainWritable };
 }
+
+// Keep teardown errors visible at debug level — they're usually "peer
+// already closed" but a real bug would otherwise be silenced. Gate behind
+// an env flag so we don't log on Workers (where we don't want any noise on
+// the hot path).
+const logTlsTeardownError = (e: unknown): void => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const env = (globalThis as any).process?.env;
+  if (env?.FLOWAY_DEBUG_TLS) {
+    // eslint-disable-next-line no-console
+    console.debug('[userspace-tls] teardown:', e);
+  }
+};
 
 function copy(u: Uint8Array): Uint8Array<ArrayBuffer> {
   const r = new Uint8Array(u.byteLength);

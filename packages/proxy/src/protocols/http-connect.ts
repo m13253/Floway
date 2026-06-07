@@ -20,16 +20,17 @@ export interface HttpConnectOptions {
   proxyTls: boolean;
   auth?: { username: string; password: string };
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response> {
-  const { proxyHost, proxyPort, proxyTls, auth, target } = opts;
+  const { proxyHost, proxyPort, proxyTls, auth, target, signal } = opts;
   // workerd performs the outer TLS handshake inside connect() when tls=true,
   // so a TLS handshake error to the proxy surfaces as a connect failure here
   // — we can't tell the two apart from this layer.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort, { tls: proxyTls });
+    socket = await getSocketDial().connect(proxyHost, proxyPort, { tls: proxyTls, signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${proxyHost}:${proxyPort} failed`,
@@ -38,6 +39,24 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
     );
   }
 
+  try {
+    return await runHttpConnectInner(socket, auth, target, signal);
+  } catch (err) {
+    // Any throw past `connect()` means the runner won't be returning a
+    // Response — the response-body lifecycle that normally drives socket
+    // teardown never starts. Close the socket explicitly so we don't leak
+    // an FD on the Node side / a connection slot on Workers.
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runHttpConnectInner(
+  socket: DialedSocket,
+  auth: { username: string; password: string } | undefined,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const writer = socket.writable.getWriter();
   const enc = new TextEncoder();
   const lines = [
@@ -79,7 +98,7 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
         while (true) {
           const r = await reader.read();
           if (r.done) {
-            try { await fwdWriter.close(); } catch {}
+            try { await fwdWriter.close(); } catch { /* fwd already closed */ }
             return;
           }
           await fwdWriter.write(copy(r.value));
@@ -102,13 +121,13 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
     const transport = { readable: postConnect, writable: socket.writable };
     let tls: TlsStream;
     try {
-      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
     const resp = await runHttp1(tls, target);
-    // Run peelDone in the background; if it throws after handshake the body
-    // stream will surface the error.
+    // Once we have a response, the body stream owns the socket lifecycle —
+    // peelDone errors after this point surface as body-stream errors.
     peelDone.catch(() => {});
     return resp;
   } else {

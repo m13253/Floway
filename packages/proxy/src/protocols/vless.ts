@@ -31,17 +31,18 @@ export interface VlessTcpTlsOptions {
   serverPort: number;
   uuid: string;
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response> {
-  const { serverHost, serverPort, uuid, target } = opts;
+  const { serverHost, serverPort, uuid, target, signal } = opts;
 
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
   // we can't distinguish a TCP RST from a TLS handshake failure here, so any
   // dial-time error is reported as tcp-connect.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { tls: true });
+    socket = await getSocketDial().connect(serverHost, serverPort, { tls: true, signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,
@@ -50,6 +51,20 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
     );
   }
 
+  try {
+    return await runVlessTcpInner(socket, uuid, target, signal);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runVlessTcpInner(
+  socket: DialedSocket,
+  uuid: string,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const header = buildVlessHeader(uuid, target);
   const writer = socket.writable.getWriter();
   await writer.write(header);
@@ -62,7 +77,7 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
   if (target.tls) {
     let tls: TlsStream;
     try {
-      tls = await userspaceTls({ readable: stripped, writable: socket.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls({ readable: stripped, writable: socket.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
@@ -78,10 +93,11 @@ export interface VlessWsTlsOptions {
   uuid: string;
   path: string;
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> {
-  const { serverHost, serverPort, uuid, path, target } = opts;
+  const { serverHost, serverPort, uuid, path, target, signal } = opts;
 
   // Use Worker fetch() to do the WS upgrade — workerd handles outer TLS for us.
   const wsUrl = `https://${serverHost}:${serverPort}${path}`;
@@ -89,6 +105,7 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   try {
     resp = await fetch(wsUrl, {
       headers: { Upgrade: 'websocket', Host: serverHost },
+      signal,
     });
   } catch (cause) {
     throw new ProxyDialError(
@@ -106,20 +123,39 @@ export async function runVlessWsTls(opts: VlessWsTlsOptions): Promise<Response> 
   // ws.accept() so we don't miss any early messages.
   const transport = wsAsDuplex(ws);
   ws.accept();
+  if (signal) {
+    signal.addEventListener(
+      'abort',
+      () => { try { ws.close(1000, 'aborted'); } catch { /* WS already closed */ } },
+      { once: true },
+    );
+  }
 
-  // Write the VLESS header as the first message on the WS
+  try {
+    return await runVlessWsInner(transport, uuid, target, signal);
+  } catch (err) {
+    try { ws.close(1011, 'dial failed'); } catch { /* WS already closed */ }
+    throw err;
+  }
+}
+
+async function runVlessWsInner(
+  transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
+  uuid: string,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const header = buildVlessHeader(uuid, target);
   const wsWriter = transport.writable.getWriter();
   await wsWriter.write(header);
   wsWriter.releaseLock();
 
-  // Strip reply prefix lazily
   const stripped = stripVlessReplyPrefix(transport.readable);
 
   if (target.tls) {
     let tls: TlsStream;
     try {
-      tls = await userspaceTls({ readable: stripped, writable: transport.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls({ readable: stripped, writable: transport.writable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
@@ -178,6 +214,15 @@ function stripVlessReplyPrefix(
           }
           buf = concat(buf, r.value);
         }
+        // The version echo MUST be 0x00 — anything else is a server that
+        // didn't speak VLESS. Without this check, a misconfigured peer's
+        // reply would be silently fed to the inner TLS handshake and the
+        // failure would surface as an opaque TLS error rather than a
+        // typed proxy-handshake error the dial layer can classify.
+        if (buf[0] !== 0x00) {
+          controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
+          return;
+        }
         const addonsLen = buf[1]!;
         while (buf.byteLength < 2 + addonsLen) {
           const r = await reader.read();
@@ -204,24 +249,46 @@ function stripVlessReplyPrefix(
   });
 }
 
+// Hard cap on the queued-but-not-yet-pulled bytes from the WS. LLM responses
+// rarely exceed a few MiB; 64 MiB is well past any legitimate single
+// response and bounds the worst case where an upstream pushes faster than
+// our inner-TLS pump pulls.
+const WS_QUEUE_CAP_BYTES = 64 * 1024 * 1024;
+
 function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> } {
   const buffer: Uint8Array[] = [];
+  let queueSize = 0;
   let pending: ((v: { value: Uint8Array | undefined; done: boolean }) => void) | null = null;
   let closed = false;
   let errored: unknown = null;
 
-  const enqueue = (chunk: Uint8Array) => {
+  const failStream = (err: unknown): void => {
+    errored = err;
+    if (pending) {
+      const cb = pending;
+      pending = null;
+      cb({ value: undefined, done: true });
+    }
+  };
+
+  const enqueue = (chunk: Uint8Array): void => {
     if (chunk.byteLength === 0) return;
+    if (queueSize + chunk.byteLength > WS_QUEUE_CAP_BYTES) {
+      failStream(new Error(`ws inbound queue exceeded ${WS_QUEUE_CAP_BYTES} bytes; consumer is too slow`));
+      try { ws.close(1009, 'queue overflow'); } catch { /* WS already closed */ }
+      return;
+    }
     if (pending) {
       const cb = pending;
       pending = null;
       cb({ value: chunk, done: false });
     } else {
+      queueSize += chunk.byteLength;
       buffer.push(chunk);
     }
   };
 
-  const onMsg = (e: MessageEvent) => {
+  const onMsg = (e: MessageEvent): void => {
     void (async () => {
       const data = e.data;
       let chunk: Uint8Array;
@@ -233,13 +300,17 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
       } else if (data && typeof (data as Blob).arrayBuffer === 'function') {
         chunk = new Uint8Array(await (data as Blob).arrayBuffer());
       } else {
-        console.log(`[ws] unhandled message data type: ${(data as object)?.constructor?.name}`);
-        return;
+        throw new Error(`unhandled ws message data type: ${(data as object)?.constructor?.name}`);
       }
       enqueue(chunk);
-    })();
+    })().catch(err => {
+      // Without a catch, an unwrap failure (e.g. Blob.arrayBuffer rejection)
+      // silently drops the message and the inner reader hangs forever. Surface
+      // as a stream error instead.
+      failStream(err);
+    });
   };
-  const onClose = () => {
+  const onClose = (): void => {
     closed = true;
     if (pending) {
       const cb = pending;
@@ -247,13 +318,8 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
       cb({ value: undefined, done: true });
     }
   };
-  const onError = (e: Event) => {
-    errored = new Error(`ws error: ${(e as ErrorEvent).message ?? 'unknown'}`);
-    if (pending) {
-      const cb = pending;
-      pending = null;
-      cb({ value: undefined, done: true });
-    }
+  const onError = (e: Event): void => {
+    failStream(new Error(`ws error: ${(e as ErrorEvent).message ?? 'unknown'}`));
   };
 
   ws.addEventListener('message', onMsg);
@@ -267,7 +333,9 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
         return;
       }
       if (buffer.length) {
-        controller.enqueue(buffer.shift()!);
+        const chunk = buffer.shift()!;
+        queueSize -= chunk.byteLength;
+        controller.enqueue(chunk);
         return;
       }
       if (closed) {
@@ -276,14 +344,15 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
       }
       return new Promise<void>(resolve => {
         pending = v => {
-          if (v.done) controller.close();
+          if (errored) controller.error(errored);
+          else if (v.done) controller.close();
           else controller.enqueue(v.value!);
           resolve();
         };
       });
     },
     cancel() {
-      try { ws.close(); } catch {}
+      try { ws.close(); } catch { /* WS already closed */ }
     },
   });
 
@@ -292,10 +361,10 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
       ws.send(chunk);
     },
     close() {
-      try { ws.close(); } catch {}
+      try { ws.close(); } catch { /* WS already closed */ }
     },
     abort(reason) {
-      try { ws.close(1006, String(reason).slice(0, 120)); } catch {}
+      try { ws.close(1006, String(reason).slice(0, 120)); } catch { /* WS already closed */ }
     },
   });
 

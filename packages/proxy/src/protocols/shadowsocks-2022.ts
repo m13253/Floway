@@ -30,6 +30,7 @@ export interface Shadowsocks2022Options {
   method: Ss2022Method;
   password: string; // base64-encoded PSK
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
@@ -49,14 +50,14 @@ const REQ_HEADER_TYPE = 0x00;
 const RESP_HEADER_TYPE = 0x01;
 
 export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<Response> {
-  const { serverHost, serverPort, method, password, target } = opts;
+  const { serverHost, serverPort, method, password, target, signal } = opts;
   const keyLen = KEY_LEN_2022[method];
   const psk = base64Decode(password);
   if (psk.byteLength !== keyLen) throw new Error(`SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`);
 
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort);
+    socket = await getSocketDial().connect(serverHost, serverPort, { signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,
@@ -65,6 +66,22 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
     );
   }
 
+  try {
+    return await runShadowsocks2022Inner(socket, method, psk, keyLen, target, signal);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runShadowsocks2022Inner(
+  socket: DialedSocket,
+  method: Ss2022Method,
+  psk: Uint8Array,
+  keyLen: number,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const sendSalt = randomBytes(keyLen);
   const sendKey = blake3(concat(psk, sendSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
   const sendCipher = makeAead(method, sendKey);
@@ -192,7 +209,7 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
   if (target.tls) {
     let tls: TlsStream;
     try {
-      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls({ readable: ssReadable, writable: ssWritable }, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }

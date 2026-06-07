@@ -15,13 +15,14 @@ export interface Socks5Options {
   proxyPort: number;
   auth?: { username: string; password: string };
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runSocks5(opts: Socks5Options): Promise<Response> {
-  const { proxyHost, proxyPort, auth, target } = opts;
+  const { proxyHost, proxyPort, auth, target, signal } = opts;
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort);
+    socket = await getSocketDial().connect(proxyHost, proxyPort, { signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${proxyHost}:${proxyPort} failed`,
@@ -30,6 +31,20 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
     );
   }
 
+  try {
+    return await runSocks5Inner(socket, auth, target, signal);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runSocks5Inner(
+  socket: DialedSocket,
+  auth: { username: string; password: string } | undefined,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   const writer = socket.writable.getWriter();
 
   const { readable: postHandshake, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
@@ -120,7 +135,7 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
       while (true) {
         const r = await reader.read();
         if (r.done) {
-          try { await fwdWriter.close(); } catch {}
+          try { await fwdWriter.close(); } catch { /* fwd already closed */ }
           return;
         }
         await fwdWriter.write(copy(r.value));
@@ -134,7 +149,7 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
     const transport = { readable: postHandshake, writable: socket.writable };
     let tls: TlsStream;
     try {
-      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) });
+      tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }

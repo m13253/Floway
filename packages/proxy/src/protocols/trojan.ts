@@ -21,15 +21,16 @@ export interface TrojanOptions {
   serverPort: number;
   password: string;
   target: TargetSpec;
+  signal?: AbortSignal;
 }
 
 export async function runTrojan(opts: TrojanOptions): Promise<Response> {
-  const { serverHost, serverPort, password, target } = opts;
+  const { serverHost, serverPort, password, target, signal } = opts;
 
   // Plain TCP to Trojan server; outer TLS done in userspace.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort);
+    socket = await getSocketDial().connect(serverHost, serverPort, { signal });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,
@@ -37,9 +38,25 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
       { cause },
     );
   }
+
+  try {
+    return await runTrojanInner(socket, serverHost, password, target, signal);
+  } catch (err) {
+    void socket.close().catch(() => {});
+    throw err;
+  }
+}
+
+async function runTrojanInner(
+  socket: DialedSocket,
+  serverHost: string,
+  password: string,
+  target: TargetSpec,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
   let outerTls: TlsStream;
   try {
-    outerTls = await userspaceTls(socket, { host: serverHost });
+    outerTls = await userspaceTls(socket, { host: serverHost, signal });
   } catch (cause) {
     throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
   }
@@ -65,7 +82,7 @@ export async function runTrojan(opts: TrojanOptions): Promise<Response> {
   if (target.tls) {
     let innerTls: TlsStream;
     try {
-      innerTls = await userspaceTls(outerTls, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), prefix: header });
+      innerTls = await userspaceTls(outerTls, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), prefix: header, signal });
     } catch (cause) {
       // The Trojan header rides as the prefix bytes of the inner TLS
       // ClientHello, so a server-side password rejection or a real upstream

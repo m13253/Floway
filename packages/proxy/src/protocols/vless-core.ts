@@ -12,6 +12,7 @@ export async function runVlessCoreOverStream(
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
   uuid: string,
   target: TargetSpec,
+  signal: AbortSignal | undefined,
 ): Promise<Response> {
   const header = buildVlessHeader(uuid, target);
   const writer = transport.writable.getWriter();
@@ -25,7 +26,7 @@ export async function runVlessCoreOverStream(
     try {
       tls = await userspaceTls(
         { readable: stripped, writable: transport.writable },
-        { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target) },
+        { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal },
       );
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
@@ -77,6 +78,13 @@ function stripVlessReplyPrefix(source: ReadableStream<Uint8Array>): ReadableStre
             return;
           }
           buf = concat(buf, r.value);
+        }
+        // Same fail-closed check as runVlessTcpInner — fail with a typed
+        // proxy-handshake error rather than letting non-VLESS bytes flow into
+        // the inner TLS handshake and surface as an opaque TLS failure.
+        if (buf[0] !== 0x00) {
+          controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
+          return;
         }
         const addonsLen = buf[1]!;
         while (buf.byteLength < 2 + addonsLen) {
