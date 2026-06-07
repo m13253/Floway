@@ -9,7 +9,9 @@ import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
 // before opening a socket; once opened, an abort closes the socket — the
-// proxy runners observe that as a read/write rejection.
+// proxy runners observe that as a read/write rejection. The listener is
+// detached on close() so a long-lived caller signal doesn't accumulate one
+// pinned closure per dial.
 export const cloudflareSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) {
@@ -27,17 +29,25 @@ export const cloudflareSocketDial: SocketDial = {
     const safeClose = async (): Promise<void> => {
       try { await socket.close(); } catch { /* already closed/errored */ }
     };
+    let abortListener: (() => void) | null = null;
     if (opts?.signal) {
-      opts.signal.addEventListener(
-        'abort',
-        () => { void safeClose(); },
-        { once: true },
-      );
+      const signal = opts.signal;
+      abortListener = (): void => { void safeClose(); };
+      signal.addEventListener('abort', abortListener, { once: true });
     }
+    const removeAbortListener = (): void => {
+      if (abortListener && opts?.signal) {
+        opts.signal.removeEventListener('abort', abortListener);
+        abortListener = null;
+      }
+    };
     return {
       readable: socket.readable,
       writable: socket.writable,
-      close: safeClose,
+      close: async () => {
+        removeAbortListener();
+        await safeClose();
+      },
     };
   },
 };

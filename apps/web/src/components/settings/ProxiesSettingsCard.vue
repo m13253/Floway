@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Spinner } from '@floway-dev/ui';
-import { useTimeoutFn } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
@@ -92,21 +91,26 @@ const moveDisabled = (id: string, direction: -1 | 1) => {
   return idx === -1 || target < 0 || target >= ordered.value.length;
 };
 
-// Per-row cooldown timer. Each Test() click drives an entry in this Map so
-// the unmount-time auto-cancel from useTimeoutFn doesn't leak across an
-// SPA navigation that lands while a cooldown is in flight.
-const cooldownTimers = new Map<string, ReturnType<typeof useTimeoutFn>>();
+// Per-row cooldown timer. Plain setTimeout because useTimeoutFn started
+// inside a click handler runs OUTSIDE setup's EffectScope and so wouldn't
+// auto-cancel on unmount; explicit clearTimeout in onBeforeUnmount keeps
+// the lifecycle deterministic.
+const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const startTestCooldown = (id: string): void => {
   const existing = cooldownTimers.get(id);
-  if (existing) existing.stop();
+  if (existing) clearTimeout(existing);
   cooldownTimers.set(
     id,
-    useTimeoutFn(() => {
+    setTimeout(() => {
       testInFlight.value = setMapEntry(testInFlight.value, id, false);
       cooldownTimers.delete(id);
     }, 3000),
   );
 };
+onBeforeUnmount(() => {
+  for (const t of cooldownTimers.values()) clearTimeout(t);
+  cooldownTimers.clear();
+});
 
 const testProxy = async (record: ProxyRecord) => {
   testInFlight.value = setMapEntry(testInFlight.value, record.id, true);

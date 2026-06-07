@@ -96,7 +96,11 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
           // toggles them per-upstream when needed.
           await writeModelsStore<CodexModelsLedger>(record.id, { fetchedAt: Date.now(), models: raw });
           return raw.map(codexRawToUpstreamModel);
-        } catch {
+        } catch (err) {
+          // AbortError is a deliberate caller-driven cancellation — propagate
+          // so the data-plane request unwinds cleanly instead of falling back
+          // to a stale ledger and pretending the call succeeded.
+          if (err instanceof Error && err.name === 'AbortError') throw err;
           return fallback();
         }
       }),

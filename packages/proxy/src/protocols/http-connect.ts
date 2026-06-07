@@ -79,6 +79,12 @@ async function runHttpConnectInner(
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
 
+  // The peel pump runs in the background after we return a Response — body-
+  // stream errors are surfaced via fwdWriter.abort. On the failure path
+  // (inner-tls or runHttp1 throws BEFORE we return), the outer try/catch in
+  // runHttpConnect closes the socket and the pump's reader.read() rejects;
+  // we attach a noop terminal handler immediately so a pending rejection
+  // never escapes as an unhandled rejection.
   const peelDone = (async () => {
     const reader = socket.readable.getReader();
     let buf = new Uint8Array(0);
@@ -86,11 +92,11 @@ async function runHttpConnectInner(
       const idx = findDoubleCrlf(buf);
       if (idx >= 0) {
         const head = new TextDecoder().decode(buf.subarray(0, idx));
-        const m = /^HTTP\/1\.[01] (\d{3}) (.*)\r\n/.exec(`${head}\r\n`);
+        const m = /^HTTP\/1\.[01] (\d{3})(?: (.*))?\r\n/.exec(`${head}\r\n`);
         if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`, 'proxy-handshake');
         const status = parseInt(m[1]!, 10);
         if (status < 200 || status >= 300) {
-          throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2]}`, 'proxy-handshake');
+          throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2] ?? ''}`.trimEnd(), 'proxy-handshake');
         }
         const trailing = buf.subarray(idx + 4);
         if (trailing.byteLength) await fwdWriter.write(copy(trailing));
@@ -111,10 +117,11 @@ async function runHttpConnectInner(
       next.set(value, buf.byteLength);
       buf = next;
     }
-  })().catch(e => {
-    fwdWriter.abort(e).catch(() => {});
-    throw e;
-  });
+  })();
+  // Always-on terminal handler routes peel errors into the forward stream
+  // so the consumer (userspace TLS / runHttp1) sees them as transport
+  // failures, and prevents an unhandled rejection on the failure path.
+  peelDone.catch(e => { fwdWriter.abort(e).catch(() => {}); });
 
   // Now wrap the post-CONNECT byte stream with userspace TLS for the upstream.
   if (target.tls) {
@@ -125,16 +132,10 @@ async function runHttpConnectInner(
     } catch (cause) {
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
-    const resp = await runHttp1(tls, target);
-    // Once we have a response, the body stream owns the socket lifecycle —
-    // peelDone errors after this point surface as body-stream errors.
-    peelDone.catch(() => {});
-    return resp;
+    return await runHttp1(tls, target);
   } else {
     // Plain HTTP upstream — the post-CONNECT stream is the upstream socket.
-    const resp = await runHttp1({ readable: postConnect, writable: socket.writable }, target);
-    peelDone.catch(() => {});
-    return resp;
+    return await runHttp1({ readable: postConnect, writable: socket.writable }, target);
   }
 }
 

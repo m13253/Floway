@@ -288,9 +288,17 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
     }
   };
 
+  // Each onMsg fires synchronously when a frame arrives, but a binary frame
+  // arrives as a Blob whose arrayBuffer() is async — without serialisation
+  // two frames in quick succession can resolve out of order, scrambling the
+  // byte stream feeding the inner TLS layer. Inner TLS rejects every record
+  // after the first inversion as a bad MAC. Chain unwraps through `tail` so
+  // enqueue order matches the WS dispatch order even when the unwraps are
+  // async.
+  let tail: Promise<void> = Promise.resolve();
   const onMsg = (e: MessageEvent): void => {
-    void (async () => {
-      const data = e.data;
+    const data = e.data;
+    tail = tail.then(async () => {
       let chunk: Uint8Array;
       if (typeof data === 'string') chunk = new TextEncoder().encode(data);
       else if (data instanceof ArrayBuffer) chunk = new Uint8Array(data);
@@ -303,10 +311,10 @@ function wsAsDuplex(ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
         throw new Error(`unhandled ws message data type: ${(data as object)?.constructor?.name}`);
       }
       enqueue(chunk);
-    })().catch(err => {
-      // Without a catch, an unwrap failure (e.g. Blob.arrayBuffer rejection)
-      // silently drops the message and the inner reader hangs forever. Surface
-      // as a stream error instead.
+    }).catch(err => {
+      // Surface unwrap failures (e.g. Blob.arrayBuffer rejection) on the
+      // stream rather than silently dropping the message and hanging the
+      // inner reader.
       failStream(err);
     });
   };

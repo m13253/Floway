@@ -75,11 +75,15 @@ export const nodeSocketDial: SocketDial = {
     });
 
     if (opts?.signal) {
-      opts.signal.addEventListener(
-        'abort',
-        () => { socket.destroy(); },
-        { once: true },
-      );
+      const captured = opts.signal;
+      const onAbort = (): void => { socket.destroy(); };
+      captured.addEventListener('abort', onAbort, { once: true });
+      // Drop the listener on natural socket close so a long-lived caller
+      // signal (e.g. a request controller shared across dials) doesn't
+      // accumulate one closure per dial pinning the destroyed socket.
+      socket.once('close', () => {
+        captured.removeEventListener('abort', onAbort);
+      });
     }
 
     return {
