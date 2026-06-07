@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { dial, runProxiedRequest } from './dialer.ts';
-import { ProxyDialError } from './errors.ts';
+import { dial } from './dialer.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from './types.ts';
 
@@ -117,8 +116,3 @@ describe('dial deadline', () => {
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
-
-// `unused` is here to silence import-only lint noise for the orchestrator
-// surface and the error type — both are part of the package contract.
-void runProxiedRequest;
-void ProxyDialError;

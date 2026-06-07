@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
+import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
@@ -339,7 +339,3 @@ describe('createFetcher', () => {
     expect(row!.lastError).toBe('[inner-tls] cert mismatch');
   });
 });
-
-// Surface ProxyRequestTarget so the import isn't elided to a type-only
-// no-op when this file is run.
-void (null as ProxyRequestTarget | null);
