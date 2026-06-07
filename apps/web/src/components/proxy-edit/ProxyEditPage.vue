@@ -92,6 +92,7 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 
 const testing = ref(false);
+const testCoolingDown = ref(false);
 const testError = ref<string | null>(null);
 
 const deleting = ref(false);
@@ -156,11 +157,10 @@ const lastTestedAgo = computed<string | null>(() => {
 });
 
 const { start: startTestCooldown } = useTimeoutFn(
-  () => { testing.value = false; },
+  () => { testCoolingDown.value = false; },
   3000,
-  // Manually triggered after the request resolves; useTimeoutFn auto-
-  // cancels on unmount so a navigation mid-cooldown doesn't write to a
-  // gone component.
+  // The cooldown is a Test-button-only debounce. Save must NOT inherit it
+  // — `testing` (in-flight) is the right gate for Save's :disabled.
   { immediate: false },
 );
 
@@ -227,7 +227,11 @@ const test = async () => {
     }
     emit('saved');
   } finally {
+    // The Test request is no longer in flight — Save unblocks immediately.
+    testing.value = false;
     // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
+    // This blocks the Test button alone (Save ignores it).
+    testCoolingDown.value = true;
     startTestCooldown();
   }
 };
@@ -337,7 +341,7 @@ const remove = async () => {
         <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
         <span v-else class="italic">untested</span>
         <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
-        <Button variant="secondary" size="sm" :loading="testing" :disabled="saving" class="ml-auto" @click="test">Test</Button>
+        <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" class="ml-auto" @click="test">Test</Button>
       </div>
       <p v-if="mode === 'edit' && testError" class="text-xs text-accent-rose">{{ testError }}</p>
     </div>

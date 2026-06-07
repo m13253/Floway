@@ -23,7 +23,14 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec): Promise
     headers[k] = v;
   }
   if (!('host' in lowerKeys(headers))) headers.Host = target.dialHost;
-  if (!('connection' in lowerKeys(headers))) headers.Connection = 'close';
+  // The gateway is one-shot per dial — there's no keep-alive state machine
+  // here, and a caller-supplied `Connection: keep-alive` would mislead the
+  // upstream into reusing a socket we plan to tear down after the response.
+  // Strip any case-variant the caller passed and set the canonical value.
+  for (const k of Object.keys(headers)) {
+    if (k.toLowerCase() === 'connection') delete headers[k];
+  }
+  headers.Connection = 'close';
   if (!('accept-encoding' in lowerKeys(headers))) headers['Accept-Encoding'] = 'identity';
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — that's how Copilot's

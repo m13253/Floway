@@ -125,7 +125,7 @@ const append = (entry: string) => {
     <ul v-else class="divide-y divide-white/[0.06]">
       <li
         v-for="(entry, index) in modelValue"
-        :key="`${entry}-${index}`"
+        :key="entry"
         class="flex items-center gap-2 px-1 py-2 text-sm"
       >
         <div class="flex shrink-0 items-center gap-0.5">

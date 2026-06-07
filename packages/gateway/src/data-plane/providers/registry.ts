@@ -119,6 +119,11 @@ const collectProviderModels = async (providers: readonly ModelProviderInstance[]
         });
       }
     } catch (error) {
+      // Caller-driven cancellation must propagate. Burying it in lastError
+      // and letting an earlier sawSuccess return a partially-populated
+      // model list would mask the abort and let the rest of the data-plane
+      // request build a Response against a stale catalog.
+      if (error instanceof Error && error.name === 'AbortError') throw error;
       lastError = error;
     }
   }

@@ -123,8 +123,20 @@ async function runRealityInner(
       if (!tlsClient) throw new Error('TLS not ready');
       await tlsClient.write(chunk);
     },
-    async close() { try { await tlsClient?.end(); } catch { /* TLS already ended */ } },
-    abort() { try { void tlsClient?.end(); } catch { /* TLS already ended */ } },
+    async close() {
+      // Mirror tls.ts's teardown shape: end the TLS layer AND close the
+      // underlying transport writer so the socket's write half is shut
+      // explicitly rather than waiting on the runReality outer catch to
+      // close the whole socket on error.
+      try { await tlsClient?.end(); } catch { /* TLS already ended */ }
+      try { await writer.close(); } catch { /* transport already closed */ }
+    },
+    async abort(reason) {
+      // Was synchronous before — discarded the tls.end() promise and let
+      // an unhandled rejection escape on Node when end() failed.
+      try { await tlsClient?.end(); } catch { /* TLS already ended */ }
+      try { await writer.abort(reason); } catch { /* transport already aborted */ }
+    },
   });
 
   let handshakeResolve!: () => void;

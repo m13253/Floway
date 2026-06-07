@@ -51,7 +51,15 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
   }
 
   return upstreamId => {
-    const list = fallbackById.get(upstreamId) ?? [];
+    // Fail loud on an unknown upstream id. Silently substituting `[]`
+    // would route the request through `direct` only, masking a stale
+    // api-key→upstream binding or a typo in the caller as a working
+    // proxy-bypass — exactly the "fake robustness" the project rules
+    // forbid.
+    const list = fallbackById.get(upstreamId);
+    if (list === undefined) {
+      throw new Error(`unknown upstream id requested from per-request fetcher: ${upstreamId}`);
+    }
     // Hold off the throw until the upstream is actually fetched so an
     // unrelated bad row can't take down the whole data-plane call.
     const badRefs = list.filter(id => proxyParseErrors.has(id));

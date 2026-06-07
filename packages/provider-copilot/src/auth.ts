@@ -81,11 +81,15 @@ function copilotBaseUrl(accountType: CopilotAccountType): string {
   return COPILOT_BASE_URLS[accountType];
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefined, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (e) {
+      // AbortError is a deliberate caller cancellation — propagate
+      // immediately rather than walk N retries with the same already-
+      // aborted signal, which would burn the proxy chain on each cycle.
+      if (e instanceof Error && e.name === 'AbortError') throw e;
       // Don't retry client errors (4xx) — they won't change on retry
       if (isCopilotTokenFetchError(e) && isCopilotTokenFetchTerminalStatus(e.status)) {
         throw e;
@@ -94,7 +98,18 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 
       if (attempt >= maxRetries) throw e;
       const delay = baseDelayMs * Math.pow(2, attempt);
       console.warn(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${e instanceof Error ? e.message : String(e)}`);
-      await new Promise(r => setTimeout(r, delay));
+      // Honour the signal during backoff so a cancellation that fires
+      // mid-sleep also unwinds promptly.
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, delay);
+        if (signal) {
+          const onAbort = (): void => {
+            clearTimeout(timer);
+            reject(signal.reason ?? new DOMException('aborted', 'AbortError'));
+          };
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      });
     }
   }
   throw new Error('Unreachable');
@@ -175,7 +190,7 @@ async function getCopilotToken(githubToken: string, fetcher: Fetcher, signal: Ab
       .catch(() => {});
 
     return data.token;
-  });
+  }, signal);
 }
 
 export interface CopilotFetchOptions {

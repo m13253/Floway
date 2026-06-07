@@ -157,7 +157,19 @@ async function runShadowsocks2022Inner(
           if (respFixedPlain[0] !== RESP_HEADER_TYPE) {
             throw new ProxyDialError(`SS2022: bad response type ${respFixedPlain[0]}`, 'proxy-handshake');
           }
-          // We do not validate the response timestamp window; the salt-echo below is sufficient to bind the response to our request.
+          // SIP022's replay defense rests on TWO checks: the salt-echo
+          // (binds the response to our specific request) AND the
+          // timestamp window (rejects a recorded-and-replayed response
+          // older than the spec's 30-second window). Skipping the
+          // window would weaken our SIP022 connection to AEAD-2018-like
+          // strength.
+          let respTs = 0n;
+          for (let i = 0; i < 8; i++) respTs = (respTs << 8n) | BigInt(respFixedPlain[1 + i]!);
+          const nowSec = BigInt(Math.floor(Date.now() / 1000));
+          const skew = nowSec - respTs;
+          if (skew > 30n || skew < -30n) {
+            throw new ProxyDialError(`SS2022: response timestamp skew ${skew}s outside ±30s window`, 'proxy-handshake');
+          }
           const echoStart = 1 + 8;
           for (let i = 0; i < keyLen; i++) {
             if (respFixedPlain[echoStart + i] !== sendSalt[i]) {
