@@ -1,4 +1,5 @@
 import net from 'node:net';
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { nodeSocketDial } from './socket-dial.ts';
@@ -73,6 +74,6 @@ describe('nodeSocketDial', () => {
     await new Promise(r => setTimeout(r, 20));
 
     const remote = server.lastSocket();
-    expect(remote?.destroyed || remote?.readableEnded).toBeTruthy();
+    expect(remote?.destroyed ?? remote?.readableEnded).toBeTruthy();
   });
 });

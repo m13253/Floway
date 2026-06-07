@@ -26,9 +26,14 @@ export const nodeSocketDial: SocketDial = {
     // 'secureConnect' without us having to race anything ourselves.
     // We don't request `allowHalfOpen` on TLS — close-notify makes
     // half-close fragile across TLS 1.3 implementations.
+    //
+    // tls.ConnectionOptions inherits from net.SocketConnectOpts at runtime
+    // but @types/node hasn't surfaced `signal` on the public ConnectionOptions
+    // shape yet, so we widen via `as` so the deliberate signal forwarding
+    // typechecks. The cast disappears the day the types catch up.
     const signal = opts?.signal;
     const socket = opts?.tls
-      ? tls.connect({ host, port, servername: host, signal })
+      ? tls.connect({ host, port, servername: host, signal } as tls.ConnectionOptions)
       : net.connect({ host, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
@@ -64,7 +69,7 @@ export const nodeSocketDial: SocketDial = {
     // post-teardown resets stay observable to operators.
     socket.on('error', err => {
       if (process.env.FLOWAY_DEBUG_SOCKET) {
-        // eslint-disable-next-line no-console
+
         console.debug('[socket-dial] post-connect error:', err);
       }
     });

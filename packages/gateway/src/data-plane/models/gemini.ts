@@ -3,10 +3,9 @@ import type { Context } from 'hono';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getInternalModels } from '../providers/registry.ts';
-import type { Fetcher } from '@floway-dev/provider';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { InternalModel } from '@floway-dev/provider';
+import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
 

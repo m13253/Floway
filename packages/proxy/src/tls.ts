@@ -259,10 +259,10 @@ export async function userspaceTls(
 // an env flag so we don't log on Workers (where we don't want any noise on
 // the hot path).
 const logTlsTeardownError = (e: unknown): void => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   const env = (globalThis as any).process?.env;
   if (env?.FLOWAY_DEBUG_TLS) {
-    // eslint-disable-next-line no-console
+
     console.debug('[userspace-tls] teardown:', e);
   }
 };

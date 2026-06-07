@@ -179,7 +179,6 @@ async function runRealityInner(
       if (!tlsX25519Priv) throw new Error('REALITY: X25519 privKey not captured');
       const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sharedSecret = new Uint8Array(
         await crypto.subtle.deriveBits({ name: 'X25519', public: serverPubKey } as any, tlsX25519Priv, 256),
       );

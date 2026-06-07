@@ -1,7 +1,6 @@
 import { getInternalModels } from '../providers/registry.ts';
-import type { Fetcher } from '@floway-dev/provider';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel } from '@floway-dev/provider';
+import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
