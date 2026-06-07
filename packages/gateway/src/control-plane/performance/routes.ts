@@ -2,18 +2,19 @@
 //
 // View semantics mirror /api/token-usage and /api/search-usage:
 // - `self-by-key` scopes rows to the actor's keys (active + soft-deleted) and
-//   keeps the existing per-key groupBy options.
+//   keeps the existing per-key groupBy options. `group_by=userId` is rejected
+//   in this mode — every row already belongs to the actor.
 // - `all-by-user` aggregates across every row (callers must have
-//   `canViewGlobalTelemetry`). The handler does not introduce a `userId`
-//   groupBy in this iteration; instead the dashboard groups by model /
-//   sourceApi / runtimeLocation / etc., which all stay meaningful cross-user.
-//   `group_by=keyId` is rejected in all-by-user mode so we never leak another
-//   user's key id into a global response.
+//   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
+//   another user's key id into a global response; `group_by=userId` is the
+//   symmetric grouping operators reach for. The /overview series defaults to
+//   the userId grouping so the dashboard renders one line per user — model
+//   and runtime tables stay grouped by their respective dimensions.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { PerformanceMetricScope } from '../../repo/types.ts';
+import type { PerformanceMetricScope, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
 import { resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
 import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
@@ -72,13 +73,16 @@ const resolveView = (
   if (resolved.view === 'all-by-user' && params.groupBy === 'keyId') {
     return { error: 'bad_request', message: 'group_by=keyId is not allowed in all-by-user mode' };
   }
+  if (resolved.view === 'self-by-key' && params.groupBy === 'userId') {
+    return { error: 'bad_request', message: 'group_by=userId is not allowed in self-by-key mode' };
+  }
   return resolved;
 };
 
 const queryRecordsForView = async (
   resolved: ResolvedTelemetryView,
   params: PerformanceQueryParams,
-) => {
+): Promise<readonly PerformanceTelemetryRecord[] | null> => {
   const repo = getRepo();
   if (resolved.view === 'all-by-user') {
     return await repo.performance.query({
@@ -102,6 +106,13 @@ const queryRecordsForView = async (
   return params.keyId ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
+// Lazy keyId → userId map for groupBy=userId. Built from active + soft-deleted
+// rows so historical telemetry on a since-deleted key still resolves.
+const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
+  const keys = await getRepo().apiKeys.list();
+  return new Map(keys.map(k => [k.id, k.userId] as const));
+};
+
 export const performanceTelemetry = async (c: Ctx) => {
   const params = readPerformanceQuery(c, { bucket: 'hour', groupBy: 'model' });
   if (params.type === 'error') return c.json({ error: params.error }, 400);
@@ -112,10 +123,12 @@ export const performanceTelemetry = async (c: Ctx) => {
   const rawRecords = await queryRecordsForView(resolved, params.value);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
+  const keyToUser = params.value.groupBy === 'userId' ? await buildKeyToUserMap() : undefined;
   const records = aggregatePerformanceForDisplay(rawRecords, {
     bucket: params.value.bucket,
     groupBy: params.value.groupBy,
     timezoneOffsetMinutes: params.value.timezoneOffsetMinutes,
+    keyToUser,
   });
 
   const query = c.req.valid('query');
@@ -148,11 +161,28 @@ export const performanceOverview = async (c: Ctx) => {
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
   const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
+  // The series chart on the dashboard pivots its grouping with the view: under
+  // all-by-user, the by-model line chart is replaced by a per-user one so the
+  // operator sees latency split by who is generating it. The model and runtime
+  // tables remain grouped by their respective dimensions in both views.
+  const seriesGroupBy: PerformanceGroupBy = resolved.view === 'all-by-user' ? 'userId' : 'model';
+  const keyToUser = resolved.view === 'all-by-user' ? await buildKeyToUserMap() : undefined;
 
-  return c.json({
-    series: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' }),
-    summaryRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' }),
-    modelRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' }),
-    runtimeRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' }),
-  });
+  const series = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: seriesGroupBy, keyToUser });
+  const summaryRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' });
+  const modelRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' });
+  const runtimeRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });
+
+  const query = c.req.valid('query');
+
+  if (resolved.view === 'all-by-user') {
+    if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, runtimeRows });
+    const users = await getRepo().users.listIncludingDeleted();
+    const userMetadata = users
+      .map(u => ({ id: u.id, username: u.username, deletedAt: u.deletedAt }))
+      .sort((a, b) => a.id - b.id);
+    return c.json({ series, summaryRows, modelRows, runtimeRows, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
+  }
+
+  return c.json({ series, summaryRows, modelRows, runtimeRows });
 };
