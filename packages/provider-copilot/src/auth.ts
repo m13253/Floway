@@ -212,7 +212,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, github
   // otherwise pin. An interceptor that wants to clear an arbitrary downstream
   // header value must do so by name through this sentinel; the layer does not
   // otherwise expose a per-header delete API.
-  if (options?.headers) {
+  if (options.headers) {
     for (const [name, value] of Object.entries(options.headers)) {
       if (value === '') headers.delete(name);
       else headers.set(name, value);

@@ -62,7 +62,7 @@ const azureFetchInternal = async (
   if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
-  if (options?.extraHeaders) {
+  if (options.extraHeaders) {
     for (const [key, value] of Object.entries(options.extraHeaders)) headers.set(key, value);
   }
   const url = joinBaseAndPath(baseUrl, path);

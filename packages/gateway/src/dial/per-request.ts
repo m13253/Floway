@@ -1,6 +1,7 @@
 import { createFetcher } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
 import type { Fetcher } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 import { parseProxyUri, runProxiedRequest, type ProxyConfig } from '@floway-dev/proxy';
 
 // Build a per-request mapper that hands each upstream id its own
@@ -38,6 +39,6 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
     fallbackList: fallbackById.get(upstreamId) ?? [],
     proxyById,
     runProxied: runProxiedRequest,
-    runDirect: (url, init) => fetch(url, init),
+    runDirect: directFetcher,
   });
 };

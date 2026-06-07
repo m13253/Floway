@@ -26,8 +26,9 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 };
 
 // Build a single provider instance for one upstream record. Used by the
-// control plane to list a saved upstream's resolved catalog; the control
-// plane never proxies, so this transport always uses runtime fetch.
+// control plane to list a saved upstream's resolved catalog. The control
+// plane never proxies, so the instance is built with `directFetcher` and
+// never sees the per-upstream proxy chain.
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record, { fetcher: directFetcher });
 

@@ -45,7 +45,7 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   cache: CacheRepo;
   effects: CodexCallEffects;
-  // Optional proxy-aware indirection for the upstream Codex call. The OAuth
+  // Proxy-aware indirection for the upstream Codex call. The OAuth
   // refresh and the /codex/models bootstrap deliberately stay on
   // `globalThis.fetch`; only the per-request data-plane call goes through
   // the upstream's proxy fallback list.

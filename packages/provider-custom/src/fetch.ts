@@ -39,7 +39,7 @@ const customFetchInternal = async (
   if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
-  if (options?.extraHeaders) {
+  if (options.extraHeaders) {
     for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
   }
   const dispatch = options.fetcher;

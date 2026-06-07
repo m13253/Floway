@@ -5,9 +5,8 @@
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 // Default fetcher for any code path that has no proxy story (control-plane
-// /models listings, catalog refreshes, OAuth bootstrap). Pass it explicitly
-// rather than letting transports fall back to globalThis.fetch — every
-// caller has to declare whether it wants the proxy chain.
+// /models listings, catalog refreshes, OAuth bootstrap). Every call site
+// declares whether it wants the proxy chain by passing a fetcher explicitly.
 export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 
 export interface FetchOptions {
