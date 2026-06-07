@@ -110,14 +110,18 @@ export const userspaceTls = async (
     },
   });
 
-  // App-data upward stream (consumer → TLS encrypt → transport)
-  // We construct the writable AFTER the TLS client exists so its write hook can
-  // call tls.write directly. Use a placeholder; reassigned below.
+  // App-data upward stream (consumer → TLS encrypt → transport). Declared
+  // before makeTLSClient so its write hook can capture this writer; the
+  // hooks below close over the let-bound `tlsClient` slot, which is filled
+  // synchronously below before the function awaits the handshake. By the
+  // time the consumer ever calls write/close/abort, the duplex pair has
+  // already been returned (see `await handshakeDone` further down), so the
+  // tlsClient reference is guaranteed non-null for write and the optional
+  // chains in close/abort cover the synchronous-teardown paths only.
   let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      if (!tlsClient) throw new Error('TLS not ready');
-      await tlsClient.write(chunk);
+      await tlsClient!.write(chunk);
     },
     async close() {
       // Both promises must be awaited — a bare `void promise` discards

@@ -155,8 +155,11 @@ const runRealityHandshake = async (
 
   const plainWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      if (!tlsClient) throw new Error('TLS not ready');
-      await tlsClient.write(chunk);
+      // tlsClient is filled synchronously below (before the outer `await
+      // handshakeDone`) and the duplex pair is returned only after that
+      // await succeeds, so by the time a consumer calls write the slot is
+      // guaranteed non-null.
+      await tlsClient!.write(chunk);
     },
     async close() {
       // Mirror the userspace TLS teardown shape: end the TLS layer AND
