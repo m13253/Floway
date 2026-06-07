@@ -60,8 +60,25 @@ const dialTrojanInner = async (
     throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
   }
 
+  const header = buildTrojanRequestHeader(config.password, target);
+
+  return {
+    readable: outerTls.readable,
+    writable: outerTls.writable,
+    prefix: header,
+  };
+};
+
+/**
+ * Trojan request header (exported for tests).
+ *
+ *   hex(SHA-224(password))[56] | CRLF | CMD=0x01 | ATYP=0x03 | dom_len | dom | port[BE] | CRLF
+ *
+ * Spec: https://trojan-gfw.github.io/trojan/protocol
+ */
+export const buildTrojanRequestHeader = (password: string, target: DialTarget): Uint8Array => {
   const enc = new TextEncoder();
-  const hash = sha224(enc.encode(config.password));
+  const hash = sha224(enc.encode(password));
   const hashHex = bytesToHex(hash);
 
   const dom = enc.encode(target.host);
@@ -77,12 +94,7 @@ const dialTrojanInner = async (
   header[off++] = (target.port >> 8) & 0xff;
   header[off++] = target.port & 0xff;
   header[off++] = 0x0d; header[off++] = 0x0a;
-
-  return {
-    readable: outerTls.readable,
-    writable: outerTls.writable,
-    prefix: header,
-  };
+  return header;
 };
 
 const bytesToHex = (b: Uint8Array): string => {
