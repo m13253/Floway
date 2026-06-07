@@ -57,13 +57,17 @@ test('PATCH /api/users/1 cannot demote, rename, or be deleted', async () => {
 });
 
 test('PATCH /api/users/:self cannot demote yourself but may change password', async () => {
-  const { adminSession } = await setupAppTest();
+  const { adminSession, repo } = await setupAppTest();
   const demote = await adminPatch(adminSession, 1, { isAdmin: false });
   assertEquals(demote.status, 400);
   // Admin self-PATCH may set password (this is the bootstrap path for user 1
-  // to set an initial password after the migration).
+  // to set an initial password after the migration). The acting session
+  // survives; any other session of the same user is signed out.
+  const otherSession = await repo.sessions.create(1);
   const setPw = await adminPatch(adminSession, 1, { password: 'new-admin-pw' });
   assertEquals(setPw.status, 200);
+  expect(await repo.sessions.getByIdAndTouch(adminSession)).not.toBeNull();
+  expect(await repo.sessions.getByIdAndTouch(otherSession.id)).toBeNull();
 });
 
 test('admin password reset on another user revokes that user\'s sessions', async () => {

@@ -137,12 +137,17 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   };
   await repo.users.save(next);
 
-  // Admin reset of someone else's password kicks every device that user is
-  // logged in on. Self-update via this admin route does not (the actor's
-  // current session is intentionally preserved; the self-service flow is
-  // /api/users/me/password and revokes other devices on its own).
-  if (body.password !== undefined && id !== actorId) {
-    await repo.sessions.deleteByUserId(id);
+  // Any password change kicks every other device the target user is logged in
+  // on, preserving only the actor's current session. When the actor patches
+  // someone else, that "current session" belongs to the actor and never
+  // matches the target's rows, so the target is fully signed out. When the
+  // actor patches themselves, the dashboard tab they're acting from stays
+  // alive. API-key callers have no session at all, so the target loses every
+  // session unconditionally.
+  if (body.password !== undefined) {
+    const sessionId = c.get('sessionId') as string | undefined;
+    if (sessionId) await repo.sessions.deleteByUserIdExcept(id, sessionId);
+    else await repo.sessions.deleteByUserId(id);
   }
 
   return c.json(userToWire(next));
