@@ -25,11 +25,11 @@ interface CodexModelsLedger {
   models: CodexRawModel[];
 }
 
-export const createCodexProvider = async (record: UpstreamRecord, options?: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
+export const createCodexProvider = async (record: UpstreamRecord, options: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
-  const fetcher = options?.fetcher;
+  const { fetcher } = options;
   // v1 of the codex provider always operates on the first account in the
   // pool. The schema carries an array so a future fan-out can pick a
   // different active account per call without a wire migration.

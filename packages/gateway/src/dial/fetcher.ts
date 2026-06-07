@@ -1,5 +1,5 @@
 import type { Repo } from '../repo/types.ts';
-import type { UpstreamFetch } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
 export interface CreateUpstreamFetchInput {
@@ -29,7 +29,7 @@ export interface CreateUpstreamFetchInput {
 // Streaming bodies (`init.body instanceof ReadableStream`) are rejected
 // upfront because the two-pass dial can replay a request, and a stream is
 // single-shot. Buffer streaming bodies in the caller before reaching here.
-export const createUpstreamFetch = (input: CreateUpstreamFetchInput): UpstreamFetch => {
+export const createFetcher = (input: CreateUpstreamFetchInput): Fetcher => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : ['direct'];
   return async (url, init) => {
     let target: TargetSpec | undefined;

@@ -5,7 +5,7 @@ import { createCopilotProvider } from './provider.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { clearModelsStore, initProviderRepo, ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { directFetcher, clearModelsStore, initProviderRepo, ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { assertEquals, assertRejects, jsonResponse, memoryCacheRepo, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
@@ -78,7 +78,7 @@ const copilotModels = (models: CopilotModelFixture[]) => ({
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
 
   assertEquals(instance.supportsResponsesItemReference, false);
@@ -124,7 +124,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
 
 test('Copilot provider exposes only Responses for Claude when available', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
 
   await withMockedFetch(
@@ -172,7 +172,7 @@ test('Copilot provider exposes only Responses for Claude when available', async 
 
 test('Copilot provider owns the claude-* Messages capability workaround', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   let upstreamBody: Record<string, unknown> | undefined;
 
@@ -225,7 +225,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
 
 test('Copilot provider selects raw variants that support the target endpoint', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   let responsesBody: Record<string, unknown> | undefined;
 
@@ -287,7 +287,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
   // request headers, and the compact-shaped envelope still comes back through
   // `compactionResponse`.
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   let responsesBody: Record<string, unknown> | undefined;
   let visionHeader: string | null = null;
@@ -366,7 +366,7 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
     ...copilotUpstream,
     flagOverrides: { 'messages-web-search-shim': true },
     disabledPublicModelIds: [],
-  });
+  }, { fetcher: directFetcher });
 
   assertEquals(instance.upstream, 'up_copilot');
   assertEquals(instance.name, copilotUpstream.name);
@@ -410,7 +410,7 @@ test('Copilot provider rejects malformed account type instead of falling back', 
           ...(copilotUpstream.config as Record<string, unknown>),
           accountType: 'toString',
         },
-      }),
+      }, { fetcher: directFetcher }),
     Error,
     'accountType must be one of individual, business, enterprise',
   );
@@ -418,7 +418,7 @@ test('Copilot provider rejects malformed account type instead of falling back', 
 
 test('Copilot provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
 
@@ -489,7 +489,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
 
 test('Copilot provider sets copilot-vision-request when an image is nested inside tool_result.content', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   const visionHeaders: string[] = [];
 
@@ -583,7 +583,7 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
   // chat-completions wire — that path runs `COPILOT_CHATCOMPLETIONS_BOUNDARY`,
   // which has no Messages-source headers in it.
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider(copilotUpstream);
+  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
   const provider = instance.provider;
   const observedInteractionType: (string | null)[] = [];
 
@@ -663,7 +663,7 @@ test('Copilot provider keeps a model in the ledger for 24 h even when the next f
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
+      const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
       await withMutableNow(1_000_000, async setNow => {
         const first = await instance.provider.getProvidedModels();
         assertEquals(first.map(m => m.id).sort(), ['a', 'b']);
@@ -697,7 +697,7 @@ test('Copilot provider drops a model after 24 h of continuous absence', async ()
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
+      const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
       await withMutableNow(1_000_000, async setNow => {
         await instance.provider.getProvidedModels();
         setNow(1_000_000 + 25 * 60 * 60_000); // 25h after first fetch
@@ -728,7 +728,7 @@ test('Copilot provider returns ledger projection when fetch fails but ledger is 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
+      const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
       await withMutableNow(1_000_000, async setNow => {
         await instance.provider.getProvidedModels();
         setNow(1_000_000 + 11 * 60_000);
@@ -754,7 +754,7 @@ test('Copilot provider throws ProviderModelsUnavailableError when ledger is empt
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
+      const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
       try { await instance.provider.getProvidedModels(); } catch (e) { thrown = e; }
     },
   );

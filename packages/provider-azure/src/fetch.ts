@@ -1,5 +1,5 @@
 import { type AzureUpstreamConfig, isFoundryProjectRootPath, trimTrailingSlash } from './config.ts';
-import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { type FetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
@@ -48,7 +48,7 @@ const azureFetchInternal = async (
   surface: 'openai' | 'anthropic',
   path: string,
   init: RequestInit,
-  options?: UpstreamFetchOptions,
+  options: FetchOptions,
   query?: string,
 ): Promise<Response> => {
   const baseUrl = surface === 'openai' ? azureOpenAiV1BaseUrl(config.endpoint) : azureAnthropicBaseUrl(config.endpoint);
@@ -66,7 +66,7 @@ const azureFetchInternal = async (
     for (const [key, value] of Object.entries(options.extraHeaders)) headers.set(key, value);
   }
   const url = joinBaseAndPath(baseUrl, path);
-  const dispatch = options?.fetcher ?? fetch;
+  const dispatch = options.fetcher;
   if (!query) return await dispatch(url, { ...init, headers });
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
@@ -79,24 +79,24 @@ const azureFetchInternal = async (
 // non-streaming alike return a raw Response; per-endpoint return-type
 // wrapping (event stream parse, compaction envelope parse) lives in the
 // provider call methods that consume these.
-export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/chat/completions', init, options);
-export const azureFetchResponses = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchResponses = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/responses', init, options);
-export const azureFetchResponsesCompact = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchResponsesCompact = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/responses/compact', init, options);
-export const azureFetchEmbeddings = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchEmbeddings = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/embeddings', init, options);
 // gpt-image-2 (released 2026-04-21) and the gpt-image-1 family are exposed
 // only under Azure's preview lifecycle today. We will drop the query suffix
 // once Azure promotes the image endpoints to the GA default.
-export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
-export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
-export const azureFetchModels = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchModels = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/models', init, options);
-export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
-export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response> =>
+export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages/count_tokens', init, options);

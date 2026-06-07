@@ -18,7 +18,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderFactoryOptions, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderFactoryOptions, type ProviderStreamResult, type TelemetryModelIdentity, type FetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -170,16 +170,16 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
   return models;
 };
 
-export const createCopilotProvider = async (record: UpstreamRecord, options?: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
+export const createCopilotProvider = async (record: UpstreamRecord, options: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const fetcher = options?.fetcher;
+  const { fetcher } = options;
   const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
   const call = async (
-    transport: (config: typeof upstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -190,7 +190,7 @@ export const createCopilotProvider = async (record: UpstreamRecord, options?: Pr
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: typeof upstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
@@ -264,7 +264,7 @@ export const createCopilotProvider = async (record: UpstreamRecord, options?: Pr
           return finalizeCopilotModels(initial, upstreamFlags);
         }
         try {
-          const response = await fetchCopilotModels(upstreamConfig);
+          const response = await fetchCopilotModels(upstreamConfig, fetcher);
           const merged = mergeLedger(ledger, response, now);
           await writeModelsStore<CopilotLedger>(copilot.id, merged);
           return finalizeCopilotModels(projectLedger(merged, now), upstreamFlags);

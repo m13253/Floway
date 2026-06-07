@@ -6,7 +6,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderFactoryOptions, type ProviderStreamParser, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderFactoryOptions, type ProviderStreamParser, type FetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CustomProviderData {
   rawModelId: string;
@@ -83,9 +83,9 @@ const finalizeCustomModels = (
   return models;
 };
 
-export const createCustomProvider = (record: UpstreamRecord, options?: ProviderFactoryOptions): ModelProviderInstance => {
+export const createCustomProvider = (record: UpstreamRecord, options: ProviderFactoryOptions): ModelProviderInstance => {
   const { config } = assertCustomUpstreamRecord(record);
-  const fetcher = options?.fetcher;
+  const { fetcher } = options;
   const configuredEndpoints = config.endpoints;
   // Computed once for the auto-fetch layer: only the upstream layer applies to
   // auto models (no per-model override layer). Manual models layer their own
@@ -143,7 +143,7 @@ export const createCustomProvider = (record: UpstreamRecord, options?: ProviderF
   const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
   const call = (
-    transport: (config: CustomUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: CustomUpstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
     model: UpstreamModel,
     body: Record<string, unknown>,
     signal?: AbortSignal,
@@ -156,7 +156,7 @@ export const createCustomProvider = (record: UpstreamRecord, options?: ProviderF
       }));
 
   const callStreaming = <TEvent>(
-    transport: (config: CustomUpstreamConfig, init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>,
+    transport: (config: CustomUpstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
     model: UpstreamModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
@@ -190,7 +190,7 @@ export const createCustomProvider = (record: UpstreamRecord, options?: ProviderF
           return withManual(autoFromResponse(stored.response));
         }
         try {
-          const response = await fetchCustomModels(config);
+          const response = await fetchCustomModels(config, fetcher);
           await writeModelsStore<CustomModelsBlob>(record.id, { response, fetchedAt: now });
           rememberPricing(response);
           return withManual(autoFromResponse(response));

@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { assertEquals, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -43,7 +44,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
 };
 
 test('createAzureProvider projects configured models into upstream models', async () => {
-  const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));
+  const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }), { fetcher: directFetcher });
   const models = await instance.provider.getProvidedModels();
 
   assertEquals(instance.upstream, 'up_azure');
@@ -71,7 +72,7 @@ test('createAzureProvider projects configured models into upstream models', asyn
 });
 
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
-  const instance = createAzureProvider(azureRecord());
+  const instance = createAzureProvider(azureRecord(), { fetcher: directFetcher });
   const [model] = await instance.provider.getProvidedModels();
   const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
 
@@ -127,6 +128,7 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   const [chatModel, responsesModel] = await instance.provider.getProvidedModels();
   const seen: Array<{ url: string; apiKey: string | null; body: Record<string, unknown> }> = [];
@@ -190,6 +192,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   const [model] = await instance.provider.getProvidedModels();
   const seen: Array<{ url: string; xApiKey: string | null; body: Record<string, unknown>; beta: string | null }> = [];
@@ -240,6 +243,7 @@ test('createAzureProvider forwards the source-derived anthropicBeta slice as the
         models: [{ upstreamModelId: 'claude-prod', endpoints: { messages: {} } }],
       },
     }),
+    { fetcher: directFetcher },
   );
   const [model] = await instance.provider.getProvidedModels();
   const seen: Array<string | null> = [];
@@ -283,6 +287,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   const models = await instance.provider.getProvidedModels();
   const d1 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd1');
@@ -312,6 +317,7 @@ test('createAzureProvider skips the per-model layer when flagOverrides.enabled i
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   const [model] = await instance.provider.getProvidedModels();
 
@@ -338,6 +344,7 @@ test('createAzureProvider attaches cost field from model config', async () => {
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   const models = await instance.provider.getProvidedModels();
   assertEquals(models[0].cost, { input: 2.5, output: 15, input_cache_read: 0.25 });
@@ -363,6 +370,7 @@ test('createAzureProvider getPricingForModelKey resolves by upstream model id', 
         ],
       },
     }),
+    { fetcher: directFetcher },
   );
   assertEquals(instance.provider.getPricingForModelKey('gpt-prod'), { input: 2.5, output: 15 });
   assertEquals(instance.provider.getPricingForModelKey('gpt-small'), null);
@@ -401,7 +409,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       return new Response(JSON.stringify({ data: [{ b64_json: 'x' }], usage: { input_tokens: 1, output_tokens: 2 } }), { status: 200, headers: { 'content-type': 'application/json' } });
     },
     async () => {
-      const provider = createAzureProvider(record).provider;
+      const provider = createAzureProvider(record, { fetcher: directFetcher }).provider;
       const models = await provider.getProvidedModels();
       assertEquals(models[0].kind, 'image');
       assertEquals(models[0].endpoints, { imagesGenerations: {}, imagesEdits: {} });
@@ -447,7 +455,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
       return new Response(JSON.stringify({ data: [{ b64_json: 'x' }], usage: { input_tokens: 3, output_tokens: 4 } }), { status: 200, headers: { 'content-type': 'application/json' } });
     },
     async () => {
-      const provider = createAzureProvider(record).provider;
+      const provider = createAzureProvider(record, { fetcher: directFetcher }).provider;
       const models = await provider.getProvidedModels();
       const form = new FormData();
       form.append('prompt', 'replace sky');

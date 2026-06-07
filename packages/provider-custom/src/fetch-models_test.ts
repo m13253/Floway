@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from './index.ts';
-import { isProviderModelsHttpStatus, ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { isProviderModelsHttpStatus, ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstreamRecord = () => ({
@@ -28,7 +28,7 @@ test('fetchCustomModels returns the parsed response on 2xx', async () => {
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1' }] }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data[0].id, 'm-1');
     },
   );
@@ -44,7 +44,7 @@ test('fetchCustomModels accepts an Anthropic-shape response with no top-level `o
       last_id: 'claude-opus-4-5',
     }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data.length, 1);
       assertEquals(result.data[0].id, 'claude-opus-4-5');
       assertEquals(result.data[0].display_name, 'Claude Opus 4.5');
@@ -77,7 +77,7 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
       ],
     }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       const model = result.data[0];
       assertEquals(model.id, 'm-1');
       assertEquals(model.display_name, 'Model One');
@@ -99,7 +99,7 @@ test('fetchCustomModels keeps a `cost` block with any subset of billing dimensio
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { input: 1 } }] }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data[0].cost, { input: 1 });
     },
   );
@@ -110,7 +110,7 @@ test('fetchCustomModels drops a `cost` block with no recognized dimensions', asy
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { reasoning: 5 } }] }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data[0].cost, undefined);
     },
   );
@@ -121,7 +121,7 @@ test('fetchCustomModels skips entries whose id is not a non-empty string', async
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'ok' }, { id: '' }, { id: 123 }, { display_name: 'no id' }] }),
     async () => {
-      const result = await fetchCustomModels(config);
+      const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data.length, 1);
       assertEquals(result.data[0].id, 'ok');
     },
@@ -134,7 +134,7 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse 
   await withMockedFetch(
     () => new Response('rate limit', { status: 429, headers: { 'retry-after': '5' } }),
     async () => {
-      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -151,7 +151,7 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   await withMockedFetch(
     () => { throw new TypeError('network down'); },
     async () => {
-      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -165,7 +165,7 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: 'oops' }),
     async () => {
-      try { await fetchCustomModels(config); } catch (e) { thrown = e; }
+      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');

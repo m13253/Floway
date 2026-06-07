@@ -16,7 +16,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -118,10 +118,10 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
   return { data };
 };
 
-export const fetchCustomModels = async (config: CustomUpstreamConfig): Promise<CustomModelsResponse> => {
+export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
   let response: Response;
   try {
-    response = await customFetchModels(config, { method: 'GET' });
+    response = await customFetchModels(config, { method: 'GET' }, { fetcher });
   } catch (cause) {
     throw new ProviderModelsUnavailableError(null, cause);
   }

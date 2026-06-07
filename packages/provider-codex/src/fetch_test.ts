@@ -5,6 +5,7 @@ import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import { codexQuotaKey } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
 import type { CacheRepo, UpstreamModel } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
   const store = new Map<string, string>();
@@ -58,7 +59,7 @@ describe('callCodexResponses — gates', () => {
     const cache = makeMemoryCache();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(),
+      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -76,7 +77,7 @@ describe('callCodexResponses — gates', () => {
     vi.useFakeTimers().setSystemTime(new Date('2026-06-05T00:30:00.000Z'));
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(),
+      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -95,7 +96,7 @@ describe('callCodexResponses — token freshness', () => {
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects,
+      model, body: { input: [], stream: true }, headers: {}, cache, effects, fetcher: directFetcher,
     });
     expect(result.ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -112,7 +113,7 @@ describe('callCodexResponses — token freshness', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(),
+      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_kv');
@@ -124,7 +125,7 @@ describe('callCodexResponses — token freshness', () => {
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects,
+      model, body: { input: [], stream: true }, headers: {}, cache, effects, fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/));
@@ -139,7 +140,7 @@ describe('callCodexResponses — upstream classification', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(),
+      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     expect(result.ok).toBe(true);
     const stored = cache._store.get(codexQuotaKey('up_a'));
@@ -155,7 +156,7 @@ describe('callCodexResponses — upstream classification', () => {
     await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
       model, body: { input: [], stream: false as unknown as true, store: true } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
-      headers: {}, cache, effects: makeEffects(),
+      headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.model).toBe('gpt-5.4');
@@ -171,7 +172,7 @@ describe('callCodexResponses — upstream classification', () => {
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects,
+      model, body: { input: [], stream: true }, headers: {}, cache, effects, fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
@@ -189,7 +190,7 @@ describe('callCodexResponses — upstream classification', () => {
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects,
+      model, body: { input: [], stream: true }, headers: {}, cache, effects, fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
@@ -206,7 +207,7 @@ describe('callCodexResponses — upstream classification', () => {
     }));
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(),
+      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
@@ -222,7 +223,7 @@ describe('callCodexResponses — upstream classification', () => {
     const effects = makeEffects();
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects,
+      model, body: { input: [], stream: true }, headers: {}, cache, effects, fetcher: directFetcher,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);

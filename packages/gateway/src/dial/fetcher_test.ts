@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createUpstreamFetch } from './upstream-fetch.ts';
+import { createFetcher } from './fetcher.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { ProxyDialError, type ProxyConfig, type TargetSpec } from '@floway-dev/proxy';
 
-describe('createUpstreamFetch', () => {
+describe('createFetcher', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
@@ -18,7 +18,7 @@ describe('createUpstreamFetch', () => {
     const repo = new InMemoryRepo();
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
     const calls: string[] = [];
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a', 'b', 'direct'],
@@ -39,7 +39,7 @@ describe('createUpstreamFetch', () => {
 
   it('records dial failures', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -57,7 +57,7 @@ describe('createUpstreamFetch', () => {
     const repo = new InMemoryRepo();
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -75,7 +75,7 @@ describe('createUpstreamFetch', () => {
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
     await repo.proxyBackoffs.recordDialFailure('b', 'u', 'x');
     const order: string[] = [];
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a', 'b'],
@@ -93,7 +93,7 @@ describe('createUpstreamFetch', () => {
 
   it('non-ProxyDialError errors propagate immediately and do not update backoff', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -108,7 +108,7 @@ describe('createUpstreamFetch', () => {
   it('empty fallback list defaults to ["direct"]', async () => {
     const repo = new InMemoryRepo();
     let directCalled = false;
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: [],
@@ -123,7 +123,7 @@ describe('createUpstreamFetch', () => {
 
   it('aggregates errors when both passes exhaust with multiple entries failing', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a', 'b'],
@@ -138,7 +138,7 @@ describe('createUpstreamFetch', () => {
   it('captures the runtime-synthesized multipart Content-Type when posting FormData', async () => {
     const repo = new InMemoryRepo();
     const captured: TargetSpec[] = [];
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -157,7 +157,7 @@ describe('createUpstreamFetch', () => {
   it('lets the caller override the FormData-synthesized Content-Type', async () => {
     const repo = new InMemoryRepo();
     const captured: TargetSpec[] = [];
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -177,7 +177,7 @@ describe('createUpstreamFetch', () => {
 
   it('rejects ReadableStream bodies upfront', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],
@@ -197,7 +197,7 @@ describe('createUpstreamFetch', () => {
 
   it('persists the failed dial stage in the backoff lastError tag', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createUpstreamFetch({
+    const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: ['a'],

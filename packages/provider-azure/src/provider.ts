@@ -4,7 +4,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ModelProvider, type ModelProviderInstance, type ProviderFactoryOptions, type ProviderStreamParser, type UpstreamFetchOptions, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { type ModelProvider, type ModelProviderInstance, type ProviderFactoryOptions, type ProviderStreamParser, type FetchOptions, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 interface AzureProviderData {
   upstreamModelId: string;
@@ -24,11 +24,11 @@ const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'ki
   return internal;
 };
 
-type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options?: UpstreamFetchOptions) => Promise<Response>;
+type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options: FetchOptions) => Promise<Response>;
 
-export const createAzureProvider = (record: UpstreamRecord, options?: ProviderFactoryOptions): ModelProviderInstance => {
+export const createAzureProvider = (record: UpstreamRecord, options: ProviderFactoryOptions): ModelProviderInstance => {
   const azure = assertAzureUpstreamRecord(record);
-  const fetcher = options?.fetcher;
+  const { fetcher } = options;
 
   const callStreaming = <TEvent>(
     transport: AzureTypedFetch,

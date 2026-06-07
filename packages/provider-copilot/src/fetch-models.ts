@@ -1,7 +1,7 @@
 import type { CopilotUpstreamConfig } from './config.ts';
 import { copilotFetchModels } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;
@@ -26,10 +26,10 @@ const MODELS_HEADER_OVERRIDES: Record<string, string> = {
   'content-type': '',
 };
 
-export const fetchCopilotModels = async (config: Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>): Promise<CopilotModelsResponse> => {
+export const fetchCopilotModels = async (config: Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>, fetcher: Fetcher): Promise<CopilotModelsResponse> => {
   let response: Response;
   try {
-    response = await copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES });
+    response = await copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher });
   } catch (cause) {
     throw new ProviderModelsUnavailableError(null, cause);
   }

@@ -21,7 +21,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type UpstreamFetch, type UpstreamModel } from '@floway-dev/provider';
+import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type Fetcher, type UpstreamModel } from '@floway-dev/provider';
 
 // Hooks for D1 state transitions, applied with optimistic concurrency. Only
 // refresh-token rotations and terminal-state transitions go through D1;
@@ -49,7 +49,7 @@ export interface CallCodexResponsesOptions {
   // refresh and the /codex/models bootstrap deliberately stay on
   // `globalThis.fetch`; only the per-request data-plane call goes through
   // the upstream's proxy fallback list.
-  fetcher?: UpstreamFetch;
+  fetcher: Fetcher;
 }
 
 // Refresh window: refresh proactively if the cached access_token expires within
@@ -131,7 +131,7 @@ const performUpstreamCall = async (
     'content-type': 'application/json',
   };
 
-  const upstreamFetch = (opts.fetcher ?? fetch)(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
+  const upstreamFetch = opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...opts.body, model: opts.model.id, store: false, stream: true }),
