@@ -639,8 +639,6 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   recordTestSuccess(id: string, egressIp: string): Promise<void> {
-    // Test results don't bump `updated_at` — only operator edits to
-    // name/url/sort_order do.
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve();
     existing.lastEgressIp = egressIp;
@@ -678,11 +676,7 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
       });
       return Promise.resolve();
     }
-    // Mirror the SQL UPSERT: SQLite reads `fail_count` on the RHS at the
-    // start of the UPDATE, before the increment lands. So expires_at is
-    // computed against the pre-increment count, which gives the
-    // 60 * 2^(n-1) schedule when the row already represents n-1 failures
-    // and we're recording the n-th.
+    // Mirror the SQL UPSERT schedule (see SqlProxyBackoffRepo.recordDialFailure).
     const previousFailCount = existing.failCount;
     this.rows.set(k, {
       proxyId,

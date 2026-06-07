@@ -1,8 +1,7 @@
-// Wire-format projection for proxy and backoff repo records. Snake-case keys
-// match the rest of the control-plane API surface; the repo-side types stay
-// camelCase. Proxy URLs are returned verbatim — the URI itself carries the
-// secret material (password / shadowsocks key) and the dashboard needs the
-// canonical form to render a "copy" affordance and re-edit existing rows.
+// Wire-format projection for proxy and backoff repo records. Proxy URLs are
+// returned verbatim — the URI itself carries the secret material (password /
+// shadowsocks key) and the dashboard needs the canonical form to render a
+// copy affordance and re-edit existing rows.
 
 import type { BackoffRow, ProxyRecord } from '../../repo/types.ts';
 

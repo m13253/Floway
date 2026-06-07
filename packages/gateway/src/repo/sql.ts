@@ -1101,9 +1101,6 @@ class SqlProxyRepo implements ProxyRepo {
     const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     const updatedAt = new Date().toISOString();
 
-    // CASE WHEN ? evaluates the urlChanged flag at write time so url-edit clears
-    // the test snapshot in the same statement; a name-only patch leaves both
-    // fields untouched.
     await this.db
       .prepare(
         `UPDATE proxies SET
@@ -1143,8 +1140,6 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async recordTestSuccess(id: string, egressIp: string): Promise<void> {
-    // Test results don't bump `updated_at` — only operator edits to
-    // name/url/sort_order do.
     await this.db
       .prepare('UPDATE proxies SET last_egress_ip = ?, last_tested_at = ? WHERE id = ?')
       .bind(egressIp, Math.floor(Date.now() / 1000), id)

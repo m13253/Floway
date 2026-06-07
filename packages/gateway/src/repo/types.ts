@@ -159,7 +159,8 @@ export interface ProxyRepo {
   delete(id: string): Promise<boolean>;
   // Records the egress IP observed by a successful proxy test, alongside the
   // current timestamp. Pairs with `patch`'s url-change detection: a url edit
-  // wipes both fields back to null in the same statement.
+  // wipes both fields back to null in the same statement. Test results do
+  // not bump `updated_at` — only operator edits to name/url/sort_order do.
   recordTestSuccess(id: string, egressIp: string): Promise<void>;
   // Returns the ids of every upstream whose `proxyFallbackList` currently
   // includes the given proxy id. The control-plane DELETE handler reads this

@@ -7,7 +7,9 @@ export interface CreateUpstreamFetchInput {
   upstreamId: string;
   fallbackList: string[];
   proxyById: Map<string, ProxyConfig>;
-  // Per-request indirection so tests can mock the proxy library.
+  // Inject runProxied/runDirect so the gateway-side fetcher stays free of
+  // any direct dependency on a runtime fetch implementation; the data-plane
+  // composition root supplies both.
   runProxied: (config: ProxyConfig, target: TargetSpec) => Promise<Response>;
   // Per-request indirection for the 'direct' sentinel.
   runDirect: (url: string, init: RequestInit) => Promise<Response>;
@@ -120,9 +122,9 @@ const buildTargetSpec = async (url: string, init: RequestInit): Promise<TargetSp
   };
 };
 
-// Header keys are lowercased so downstream emit-stage code (HTTP/1.1
-// formatter, header dedup) sees a single canonical casing regardless of
-// what the caller used.
+// Lower-case keys here so the TargetSpec is canonical at the seam; the
+// proxy lib also lowercases internally, but normalizing at the boundary
+// keeps the contract simple.
 const extractHeaders = (input: HeadersInit | undefined): Record<string, string> => {
   if (!input) return {};
   if (input instanceof Headers) {

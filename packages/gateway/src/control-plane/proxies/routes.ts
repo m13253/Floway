@@ -1,9 +1,3 @@
-// Control-plane handlers for /api/proxies/*. Each endpoint is a named export so
-// the route registry in ../routes.ts can wire them up directly with zValidator
-// middleware, mirroring the per-domain layout under upstreams/. Handlers
-// translate between the wire JSON shape (snake_case, camelCase config) and
-// the camelCase repo types via ./serialize.ts.
-
 import type { Context } from 'hono';
 
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
