@@ -101,6 +101,12 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
           // so the data-plane request unwinds cleanly instead of falling back
           // to a stale ledger and pretending the call succeeded.
           if (err instanceof Error && err.name === 'AbortError') throw err;
+          // Falling back to a stale-but-fresh-enough ledger is the right
+          // resilience story; falling back to an EMPTY catalog because we
+          // never had a ledger silently turns this upstream into "no
+          // models available" — the operator sees an apparently-healthy
+          // upstream serving zero models. Surface the failure instead.
+          if (!ledgerFresh) throw err;
           return fallback();
         }
       }),

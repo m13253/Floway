@@ -19,7 +19,9 @@ import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 export const nodeSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) {
-      throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
+      const reason = opts.signal.reason;
+      if (reason instanceof Error) throw reason;
+      throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
     }
     // node:net / node:tls accept `signal` natively; passing it lets the
     // runtime tear down a connect that has not yet fired 'connect' /

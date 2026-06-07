@@ -16,11 +16,18 @@ import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 // We `await socket.opened` before resolving so a TLS handshake error or
 // connect-refused surfaces as a connect-time rejection (with `cause`)
 // rather than as an opaque first-read failure later.
+// Convert a caller-supplied abort signal's reason into a thrown AbortError.
+// Preserve a structured Error reason as-is so its stack/cause survives;
+// stringify only when the reason is a primitive or absent.
+const throwAbort = (signal: AbortSignal): never => {
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
+};
+
 export const cloudflareSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
-    if (opts?.signal?.aborted) {
-      throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
-    }
+    if (opts?.signal?.aborted) throwAbort(opts.signal);
     const socket = connect(
       { hostname: host, port },
       {
@@ -46,22 +53,27 @@ export const cloudflareSocketDial: SocketDial = {
       signal.addEventListener('abort', abortListener, { once: true });
     }
     // Drop the abort listener on natural close as well, so a signal that
-    // outlives this dial doesn't accumulate stale closures.
-    void socket.closed.finally(removeAbortListener);
+    // outlives this dial doesn't accumulate stale closures. The catch is
+    // explicit so an unhandled-rejection observer doesn't see the
+    // socket.closed rejection that fires on every connect failure.
+    void socket.closed.catch(() => { /* errors observed via opened/streams */ }).finally(removeAbortListener);
 
     try {
       await socket.opened;
     } catch (cause) {
       removeAbortListener();
       await safeClose();
+      // If the failure was caused by the caller's abort, surface as
+      // AbortError (preserving the original reason if it was an Error)
+      // so the dial chain's AbortError fast-path classifies it correctly
+      // instead of treating it as a generic connect failure.
+      if (opts?.signal?.aborted) throwAbort(opts.signal);
       throw new Error(`dial ${host}:${port} failed`, { cause });
     }
 
-    // The signal may have aborted during the await above; recheck so we
-    // don't return a socket that we already torn down.
     if (opts?.signal?.aborted) {
       await safeClose();
-      throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
+      throwAbort(opts.signal);
     }
 
     return {

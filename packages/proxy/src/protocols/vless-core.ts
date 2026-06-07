@@ -29,6 +29,11 @@ export async function runVlessCoreOverStream(
         { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal },
       );
     } catch (cause) {
+      // The reply-prefix strip can surface a typed ProxyDialError
+      // (e.g. bad version byte) through the readable that userspaceTls
+      // consumes. Preserve it so the dial layer's stage-aware backoff
+      // classifies it as `proxy-handshake` instead of `inner-tls`.
+      if (cause instanceof ProxyDialError) throw cause;
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
     return await runHttp1(tls, target);

@@ -150,8 +150,15 @@ const tryOne = async (
       errors.push(err);
       // Tag the persisted message with the dial stage so a dashboard reader
       // can tell a tcp-connect refusal from an inner-tls cert mismatch
-      // without cracking the proxy library open.
-      await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
+      // without cracking the proxy library open. A transient backoff-store
+      // failure must not shadow the real dial error — log and swallow so
+      // `errors[]` carries the original cause up to the caller.
+      try {
+        await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
+      } catch (recordErr) {
+
+        console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
+      }
       return null;
     }
     throw err;
@@ -160,10 +167,14 @@ const tryOne = async (
 
 // AbortError can land as a DOMException (Web Streams / fetch / browsers /
 // modern Node) or, when the caller manually wraps it, as any object whose
-// `name === 'AbortError'`. Treat both as cancellation.
+// `name === 'AbortError'`. Some runtimes (notably Workers and undici)
+// further wrap aborts as `TypeError` with `{ cause: AbortError }`, so we
+// walk the cause chain too. Treat all of them as cancellation.
 const isAbortError = (err: unknown): boolean => {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof Error && err.name === 'AbortError') return true;
+  for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {
+    if (cur instanceof DOMException && cur.name === 'AbortError') return true;
+    if (cur instanceof Error && cur.name === 'AbortError') return true;
+  }
   return false;
 };
 

@@ -21,7 +21,7 @@ export const useEditProxyData = defineBasicLoader('/dashboard/proxies/[id]', asy
 </script>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import ProxyEditPage from '../../../components/proxy-edit/ProxyEditPage.vue';
@@ -41,9 +41,19 @@ const record = computed(() => {
   return (store.proxies.value ?? []).find(p => p.id === id) ?? null;
 });
 
-if (record.value === null) {
-  void router.replace('/dashboard/settings');
-}
+// Redirect both at mount AND on subsequent transitions to null. A row
+// deleted by a sibling action while this page is mounted previously left
+// the user staring at a blank glass card — the watcher takes them home.
+const goBackToSettings = (): void => { void router.replace('/dashboard/settings'); };
+watch(
+  record,
+  // Skip the redirect while the store is still loading for the first time.
+  // store.proxies.value is null until load() resolves, so a null record
+  // before that simply means "not loaded yet"; once the store is non-null
+  // and our record is null, the row truly does not exist.
+  next => { if (next === null && store.proxies.value !== null) goBackToSettings(); },
+  { immediate: true },
+);
 
 const onSaved = async () => {
   await store.load();
@@ -51,8 +61,21 @@ const onSaved = async () => {
 </script>
 
 <template>
+  <!-- Surface a list-load failure as a clear error card so a deep-link to
+       /dashboard/proxies/<id> doesn't silently bounce when the proxies
+       endpoint errors. -->
+  <div
+    v-if="store.error.value && !record"
+    class="glass-card p-5 sm:p-6 space-y-3 animate-in"
+  >
+    <h2 class="text-lg font-semibold text-white">Cannot load proxy</h2>
+    <p class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+      {{ store.error.value }}
+    </p>
+    <button class="btn-secondary !py-2 !px-3 text-xs" @click="goBackToSettings">Back to settings</button>
+  </div>
   <ProxyEditPage
-    v-if="record"
+    v-else-if="record"
     :key="record.id"
     mode="edit"
     :record="record"

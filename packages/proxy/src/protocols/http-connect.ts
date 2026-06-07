@@ -130,6 +130,12 @@ async function runHttpConnectInner(
     try {
       tls = await userspaceTls(transport, { host: resolveTlsSni(target), verifyHost: resolveTlsVerifyHost(target), signal });
     } catch (cause) {
+      // peelDone errors flow through the TransformStream into userspaceTls,
+      // surfacing as a handshake-time rejection here. Preserve the original
+      // ProxyDialError so the dial layer's stage-aware backoff classifies a
+      // CONNECT 4xx as `proxy-handshake` rather than mis-tagging it as
+      // `inner-tls`.
+      if (cause instanceof ProxyDialError) throw cause;
       throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
     }
     return await runHttp1(tls, target);

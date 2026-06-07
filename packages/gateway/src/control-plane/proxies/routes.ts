@@ -125,10 +125,12 @@ const ANCHORS = {
 // IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
 // hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
 // chars before sniffing — a misbehaving anchor could otherwise feed an
-// arbitrary HTML page into `last_egress_ip`. The regex is tight enough to
-// reject anything obviously not an IP without trying to be a strict
-// validator (we only need a "this looks plausible" gate).
-const IP_LIKE_RE = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)$/;
+// arbitrary HTML page into `last_egress_ip`. The regex tightens each
+// branch enough to reject obvious junk: octets are 1-3 digits, the v6
+// branch requires at least one colon so an `aaaa`-style hex blob can't
+// masquerade as an IP. We don't claim octet-range validity here; that's
+// what the dashboard's display logic can do later.
+const IP_LIKE_RE = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]*:[0-9a-fA-F:.]*[0-9a-fA-F])$/;
 
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const id = c.req.param('id') ?? '';
@@ -170,6 +172,14 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     const truncated = (await response.text()).slice(0, 256).trim();
     if (!IP_LIKE_RE.test(truncated)) {
       return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
+    }
+    // The v6 anchor exists specifically to confirm an operator has a v6
+    // egress path. 6.ident.me has both A and AAAA records, so a v4-only
+    // proxy still gets a routable answer — but reporting that v4 back as
+    // a "v6" check would silently mislead. Reject the v4 shape on the v6
+    // anchor explicitly.
+    if ((body.anchor ?? 'ipify') === 'ident.me-v6' && !truncated.includes(':')) {
+      return c.json({ ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` });
     }
     await repo.proxies.recordTestSuccess(id, truncated);
     return c.json({ ok: true, egress_ip: truncated });

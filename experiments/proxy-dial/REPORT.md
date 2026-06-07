@@ -136,8 +136,9 @@ required for the server's AEAD-Open to succeed.
 
 ## reclaim-tls patches (cumulative)
 
-`patches/@reclaimprotocol__tls.patch` ships five surface changes — three
-new hooks, a `verifyHost` plumbing fix, and a hot-path performance stub:
+`patches/@reclaimprotocol__tls.patch` ships six surface changes — three
+new hooks, a `startHandshake` override, a `verifyHost` plumbing fix, and
+a hot-path performance stub:
 
 - `onClientHelloPack(bytes, ctx) → bytes?` — mutate the ClientHello after
   pack but before transcript hash. REALITY uses this to seal session_id.

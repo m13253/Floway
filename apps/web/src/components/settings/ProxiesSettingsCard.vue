@@ -54,8 +54,10 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
 // column has no uniqueness constraint at the DB layer — racing two PATCH
 // /api/proxies/:id sort_order writes is safe in isolation, but a mid-flight
 // failure on row N would leave a hybrid order that's hard to recover. On
-// any failure, snapshot-restore the local order and surface the error.
-const persistReorder = async (next: ProxyRecord[], snapshot: ProxyRecord[]) => {
+// any failure, re-fetch the live order from the server (a local-snapshot
+// rollback would now diverge from the partially-applied server state) and
+// surface the error.
+const persistReorder = async (next: ProxyRecord[]) => {
   const patches = next
     .map((p, i) => ({ id: p.id, oldOrder: p.sort_order, newOrder: i }))
     .filter(({ oldOrder, newOrder }) => oldOrder !== newOrder);
@@ -63,8 +65,10 @@ const persistReorder = async (next: ProxyRecord[], snapshot: ProxyRecord[]) => {
   for (const { id, newOrder } of patches) {
     const { error } = await callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } }));
     if (error) {
-      ordered.value = snapshot;
       window.alert(`Reorder failed: ${error.message}`);
+      // Reload from server so the local UI matches whatever rows have
+      // already been written before the failure point.
+      await proxiesStore.load();
       emit('changed');
       return;
     }
@@ -73,7 +77,6 @@ const persistReorder = async (next: ProxyRecord[], snapshot: ProxyRecord[]) => {
 };
 
 const moveProxy = async (id: string, direction: -1 | 1) => {
-  const snapshot = [...ordered.value];
   const list = [...ordered.value];
   const idx = list.findIndex(p => p.id === id);
   const target = idx + direction;
@@ -82,7 +85,7 @@ const moveProxy = async (id: string, direction: -1 | 1) => {
   list[idx] = list[target]!;
   list[target] = tmp;
   ordered.value = list;
-  await persistReorder(list, snapshot);
+  await persistReorder(list);
 };
 
 const moveDisabled = (id: string, direction: -1 | 1) => {
