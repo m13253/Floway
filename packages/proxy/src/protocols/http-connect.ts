@@ -29,7 +29,7 @@ export async function runHttpConnect(opts: HttpConnectOptions): Promise<Response
   // — we can't tell the two apart from this layer.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true, tls: proxyTls });
+    socket = await getSocketDial().connect(proxyHost, proxyPort, { tls: proxyTls });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${proxyHost}:${proxyPort} failed`,

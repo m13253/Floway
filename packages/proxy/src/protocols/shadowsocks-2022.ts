@@ -56,7 +56,7 @@ export async function runShadowsocks2022(opts: Shadowsocks2022Options): Promise<
 
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true });
+    socket = await getSocketDial().connect(serverHost, serverPort);
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,
@@ -257,10 +257,6 @@ function writeU64BE(buf: Uint8Array, off: number, value: bigint): void {
     buf[off + i] = Number(value & 0xffn);
     value >>= 8n;
   }
-}
-
-function currentTimeMs(): number {
-  return Date.now();
 }
 
 function base64Decode(s: string): Uint8Array<ArrayBuffer> {

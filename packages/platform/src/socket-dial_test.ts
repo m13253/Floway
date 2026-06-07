@@ -9,7 +9,6 @@ import {
 
 describe('SocketDial singleton', () => {
   beforeEach(() => {
-    // The module keeps its own state; reset by re-init with a stub.
     initSocketDial({
       connect: async () => {
         throw new Error('stub');
@@ -28,7 +27,6 @@ describe('SocketDial singleton', () => {
       connect: async (_host, _port): Promise<DialedSocket> => ({
         readable: new ReadableStream(),
         writable: new WritableStream(),
-        closed: Promise.resolve(),
         close: async () => {},
       }),
     };

@@ -55,7 +55,7 @@ export async function runShadowsocks(opts: ShadowsocksOptions): Promise<Response
 
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true });
+    socket = await getSocketDial().connect(serverHost, serverPort);
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,

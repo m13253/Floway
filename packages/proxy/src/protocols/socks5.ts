@@ -21,7 +21,7 @@ export async function runSocks5(opts: Socks5Options): Promise<Response> {
   const { proxyHost, proxyPort, auth, target } = opts;
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(proxyHost, proxyPort, { allowHalfOpen: true });
+    socket = await getSocketDial().connect(proxyHost, proxyPort);
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${proxyHost}:${proxyPort} failed`,

@@ -41,7 +41,7 @@ export async function runVlessTcpTls(opts: VlessTcpTlsOptions): Promise<Response
   // dial-time error is reported as tcp-connect.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(serverHost, serverPort, { allowHalfOpen: true, tls: true });
+    socket = await getSocketDial().connect(serverHost, serverPort, { tls: true });
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${serverHost}:${serverPort} failed`,

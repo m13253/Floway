@@ -63,7 +63,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
   // Plain TCP — userspace TLS will do the entire handshake.
   let socket: DialedSocket;
   try {
-    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort, { allowHalfOpen: true });
+    socket = await getSocketDial().connect(opts.serverHost, opts.serverPort);
   } catch (cause) {
     throw new ProxyDialError(
       `tcp connect to ${opts.serverHost}:${opts.serverPort} failed`,
@@ -196,7 +196,7 @@ export async function runReality(opts: RealityOptions): Promise<Response> {
     },
     onRecvCertificateVerify() {
       // REALITY authenticates via the AEAD-sealed session_id; the cert-chain signature is forged and unverifiable.
-      return false
+      return false;
     },
   }) as Parameters<typeof makeTLSClient>[0]);
 

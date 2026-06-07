@@ -4,8 +4,6 @@
 // proxy library runs on Workers (cloudflare:sockets) and Node (node:net).
 
 export interface DialOptions {
-  /** TCP-level. Forwarded to the underlying transport when supported. */
-  allowHalfOpen?: boolean;
   /**
    * Wrap the connection with the runtime's native TLS implementation.
    * The hostname is reused as SNI and as the certificate-verify name.
@@ -18,8 +16,6 @@ export interface DialOptions {
 export interface DialedSocket {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
-  /** Resolves when the underlying transport closes. */
-  closed: Promise<void>;
   /** Idempotent close. */
   close(): Promise<void>;
 }
@@ -39,8 +35,7 @@ export const getSocketDial = (): SocketDial => {
   return current;
 };
 
-/** Test-only: resets the module-level singleton. Pair with `initSocketDial`
- *  in `afterEach` to keep the dial implementation from leaking across suites. */
+/** Test-only: clears the module singleton. */
 export const resetSocketDialForTesting = (): void => {
   current = null;
 };
