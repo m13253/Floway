@@ -42,7 +42,17 @@ export const dialShadowsocks2022 = async (
 ): Promise<DialResult> => {
   const keyLen = KEY_LEN_2022[config.method];
   const psk = base64Decode(config.passwordBase64);
-  if (psk.byteLength !== keyLen) throw new Error(`SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`);
+  // PSK byte-length is part of the SIP022 wire contract: a key shorter or
+  // longer than the cipher demands derives a wrong subkey and the very first
+  // record fails AEAD auth. Tag as a typed dial error so a single misconfigured
+  // proxy entry doesn't escape ProxyDialError handling and kill the whole
+  // fallback chain — the next entry is allowed to try.
+  if (psk.byteLength !== keyLen) {
+    throw new ProxyDialError(
+      `SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`,
+      'tcp-connect',
+    );
+  }
 
   let socket: DialedSocket;
   try {

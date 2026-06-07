@@ -54,9 +54,22 @@ export const dialReality = async (
   ensureCrypto();
   const ver = DEFAULT_XRAY_VERSION;
   const serverPub = base64UrlDecode(config.publicKey);
-  if (serverPub.byteLength !== 32) throw new Error(`REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`);
+  // Wire-shape config checks raise typed dial errors so a single malformed
+  // REALITY entry doesn't escape ProxyDialError handling and kill the whole
+  // fallback chain — the next entry is allowed to try.
+  if (serverPub.byteLength !== 32) {
+    throw new ProxyDialError(
+      `REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`,
+      'tcp-connect',
+    );
+  }
   const shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
-  if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`);
+  if (shortId.byteLength !== 8) {
+    throw new ProxyDialError(
+      `REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`,
+      'tcp-connect',
+    );
+  }
 
   // Plain TCP — userspace TLS will do the entire handshake.
   let socket: DialedSocket;
@@ -165,6 +178,10 @@ const runRealityHandshake = async (
     handshakeResolve = resolve;
     handshakeReject = reject;
   });
+  // Register a passive sink so a pump-driven rejection never lands as
+  // unhandled if it fires before the outer `await handshakeDone` attaches
+  // its real handler. Same pattern as @floway-dev/http's userspaceTls.
+  handshakeDone.catch(() => { /* main handler is the await below */ });
   let handshakeOk = false;
 
   tlsClient = makeTLSClient(({

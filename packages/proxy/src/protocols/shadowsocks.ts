@@ -41,7 +41,6 @@ export const dialShadowsocks = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   const keyLen = METHOD_KEY_LEN[config.method];
-  if (!keyLen) throw new Error(`unsupported method: ${config.method}`);
 
   let socket: DialedSocket;
   try {
