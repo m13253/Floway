@@ -45,10 +45,10 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   cache: CacheRepo;
   effects: CodexCallEffects;
-  // Proxy-aware indirection for the upstream Codex call. The OAuth
-  // refresh and the /codex/models bootstrap deliberately stay on
-  // `globalThis.fetch`; only the per-request data-plane call goes through
-  // the upstream's proxy fallback list.
+  /** Proxy-aware indirection for the upstream Codex call AND for the
+   *  data-plane OAuth refresh. The /codex/models bootstrap stays on direct
+   *  egress (admin-side, runs in setup/refresh routes that don't have an
+   *  upstream context). */
   fetcher: Fetcher;
 }
 
@@ -96,7 +96,7 @@ const ensureAccessToken = async (opts: CallCodexResponsesOptions, now: Date): Pr
 };
 
 const refreshAndCache = async (opts: CallCodexResponsesOptions): Promise<string> => {
-  const tokens = await refreshCodexAccessToken(opts.account.refresh_token);
+  const tokens = await refreshCodexAccessToken(opts.account.refresh_token, opts.fetcher);
   const newCache: CodexAccessTokenCache = {
     access_token: tokens.access_token,
     expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,

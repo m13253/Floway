@@ -113,7 +113,7 @@ async function copilotTokenCacheKey(githubToken: string, accountType: string): P
   return `${COPILOT_TOKEN_KV_KEY_PREFIX}:${hash}`;
 }
 
-async function getCopilotToken(githubToken: string): Promise<string> {
+async function getCopilotToken(githubToken: string, fetcher: Fetcher): Promise<string> {
   const cacheKey = await copilotTokenCacheKey(githubToken, 'copilot');
 
   // Level 1: in-process cache (avoids KV read on hot path)
@@ -137,11 +137,16 @@ async function getCopilotToken(githubToken: string): Promise<string> {
     // KV read failure is non-fatal — fall through to fetch
   }
 
-  // Level 3: fetch from GitHub API
+  // Level 3: fetch from GitHub API. Routed through the upstream's Fetcher
+  // so deployments behind a network egress restriction (e.g. GFW) keep
+  // refreshing tokens through the same proxy chain that carries the
+  // data-plane traffic; without this, a working Copilot proxy would still
+  // see periodic auth-refresh failures every ~25 minutes per isolate.
   return await withRetry(async () => {
     // Token exchange is a GET against api.github.com (not POST); matches
     // VSCode Copilot Chat and caozhiyuan/copilot-api. A POST returns 404.
-    const resp = await fetch('https://api.github.com/copilot_internal/v2/token', {
+    const resp = await fetcher('https://api.github.com/copilot_internal/v2/token', {
+      method: 'GET',
       headers: githubHeaders(githubToken),
     });
 
@@ -171,15 +176,14 @@ async function getCopilotToken(githubToken: string): Promise<string> {
 
 export interface CopilotFetchOptions {
   headers?: Record<string, string>;
-  // Per-request proxy-aware indirection. Only the Copilot data-plane call
-  // routes through this; the api.github.com token exchange in
-  // `getCopilotToken` is admin-side bootstrap that intentionally bypasses
-  // the upstream proxy fallback.
+  /** Per-request proxy-aware indirection. Used for both the data-plane
+   *  request and the api.github.com token exchange so a single fallback
+   *  chain covers both paths under restricted egress. */
   fetcher: Fetcher;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options: CopilotFetchOptions): Promise<Response> {
-  const token = await getCopilotToken(githubToken);
+  const token = await getCopilotToken(githubToken, options.fetcher);
   const baseUrl = copilotBaseUrl(accountType);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring

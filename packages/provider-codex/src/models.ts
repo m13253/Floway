@@ -6,7 +6,7 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
-import type { UpstreamModel } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type UpstreamModel } from '@floway-dev/provider';
 
 // Narrowed shape from /codex/models. Upstream returns
 // `{ models: [{ slug, display_name, visibility, context_window, max_context_window, ... }] }`;
@@ -21,8 +21,14 @@ export interface CodexRawModel {
   max_context_window: number;
 }
 
-export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal }): Promise<CodexRawModel[]> => {
-  const response = await fetch(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
+// The fetcher defaults to direct egress so the existing tests (and any
+// admin-side caller without an upstream context) keep their old behaviour;
+// the data-plane provider passes the upstream's proxy-aware Fetcher so this
+// catalog refresh follows the same fallback chain as the request that
+// triggered it.
+export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher?: Fetcher }): Promise<CodexRawModel[]> => {
+  const fetcher = opts.fetcher ?? directFetcher;
+  const response = await fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {
     method: 'GET',
     headers: {
       authorization: `Bearer ${opts.accessToken}`,

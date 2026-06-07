@@ -5,6 +5,7 @@ import {
   CODEX_OAUTH_USER_AGENT,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 export interface CodexOAuthTokens {
   access_token: string;
@@ -24,8 +25,12 @@ export class CodexOAuthSessionTerminatedError extends Error {
   }
 }
 
-const codexTokenRequest = async (body: URLSearchParams, terminalCodes: ReadonlySet<string>): Promise<CodexOAuthTokens> => {
-  const response = await fetch(CODEX_OAUTH_TOKEN_URL, {
+const codexTokenRequest = async (
+  body: URLSearchParams,
+  terminalCodes: ReadonlySet<string>,
+  fetcher: Fetcher,
+): Promise<CodexOAuthTokens> => {
+  const response = await fetcher(CODEX_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -82,7 +87,7 @@ const codexTokenRequest = async (body: URLSearchParams, terminalCodes: ReadonlyS
   };
 };
 
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string }): Promise<CodexOAuthTokens> => {
+export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher?: Fetcher }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: CODEX_CLIENT_ID,
@@ -94,10 +99,16 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   // exchange typically means the operator pasted a stale or wrong callback
   // URL, which is recoverable by restarting the PKCE flow rather than
   // re-importing.
-  return await codexTokenRequest(body, new Set(['app_session_terminated']));
+  return await codexTokenRequest(body, new Set(['app_session_terminated']), opts.fetcher ?? directFetcher);
 };
 
-export const refreshCodexAccessToken = async (refreshToken: string): Promise<CodexOAuthTokens> => {
+// Refresh the Codex access token. The fetcher defaults to direct egress so
+// admin-side flows (initial import, operator-pressed Refresh button) keep
+// their existing behaviour, but the data-plane hot path passes the
+// upstream's proxy-aware Fetcher so a periodic ~5-minute refresh under
+// restricted egress goes through the same fallback chain as the request
+// it's serving.
+export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher = directFetcher): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
@@ -110,5 +121,5 @@ export const refreshCodexAccessToken = async (refreshToken: string): Promise<Cod
   // The error text varies ("Your refresh token has already been used to
   // generate a new access token", "Token is no longer valid", etc.); the code
   // is the stable signal.
-  return await codexTokenRequest(body, new Set(['app_session_terminated', 'invalid_grant']));
+  return await codexTokenRequest(body, new Set(['app_session_terminated', 'invalid_grant']), fetcher);
 };

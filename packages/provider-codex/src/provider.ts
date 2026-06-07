@@ -88,7 +88,7 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
           const access = await getCodexAccessToken(getProviderRepo().cache, record.id);
           if (!access) return fallback();
 
-          const raw = await fetchCodexCatalog({ accessToken: access.access_token, accountId: accountIdentity.chatgptAccountId });
+          const raw = await fetchCodexCatalog({ accessToken: access.access_token, accountId: accountIdentity.chatgptAccountId, fetcher });
           // Surface every model the upstream returns, including ones whose
           // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
           // operator's gateway is its own surface — they can dispatch to those
