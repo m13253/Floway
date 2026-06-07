@@ -120,6 +120,9 @@ export interface UsersRepo {
   // instead of silently overwriting state.
   save(user: User): Promise<void>;
   softDelete(id: number): Promise<boolean>;
+  // Used exclusively by the v4 replace-import path; soft-delete semantics are
+  // bypassed because the caller is about to re-seed the table from the payload.
+  deleteAll(): Promise<void>;
 }
 
 export interface SessionsRepo {

@@ -281,6 +281,10 @@ class SqlUsersRepo implements UsersRepo {
       .run();
     return ((result.meta.changes as number | undefined) ?? 0) > 0;
   }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM users').run();
+  }
 }
 
 interface SessionRow {

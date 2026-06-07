@@ -79,6 +79,11 @@ class MemoryUsersRepo implements UsersRepo {
     this.users[i] = { ...this.users[i], deletedAt: new Date().toISOString() };
     return true;
   }
+
+  deleteAll(): Promise<void> {
+    this.users = [];
+    return Promise.resolve();
+  }
 }
 
 class MemorySessionsRepo implements SessionsRepo {

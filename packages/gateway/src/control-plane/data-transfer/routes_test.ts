@@ -6,7 +6,7 @@ import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-
 import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -32,6 +32,28 @@ const KEY_B: ApiKey = {
   key: 'raw-b',
   createdAt: '2026-02-01T00:00:00.000Z',
   upstreamIds: null,
+  deletedAt: null,
+};
+
+const SEED_ADMIN: User = {
+  id: 1,
+  username: 'admin',
+  passwordHash: null,
+  isAdmin: true,
+  upstreamIds: null,
+  canViewGlobalTelemetry: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  deletedAt: null,
+};
+
+const USER_BOB: User = {
+  id: 2,
+  username: 'bob',
+  passwordHash: 'pbkdf2-sha256$600000$c2FsdA==$aGFzaA==',
+  isAdmin: false,
+  upstreamIds: null,
+  canViewGlobalTelemetry: false,
+  createdAt: '2026-02-01T00:00:00.000Z',
   deletedAt: null,
 };
 
@@ -255,13 +277,16 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-test('export emits latest v2 structure with upstreams only', async () => {
-  const { app } = setup();
+test('export emits the v4 envelope with users and upstreams', async () => {
+  const { app, repo } = setup();
+  // Seed the admin user 1 — exports always carry the users table.
+  await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);
 
-  assertEquals(result.version, 3);
+  assertEquals(result.version, 4);
   assertEquals(typeof result.exportedAt, 'string');
+  assertEquals(result.data.users, [SEED_ADMIN]);
   assertEquals(result.data.apiKeys, []);
   assertEquals(result.data.upstreams, []);
   assertEquals(result.data.usage, []);
@@ -326,9 +351,9 @@ test('import rejects missing or mismatched version before deleting data', async 
   const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
   assertEquals(oldVersion.status, 400);
-  assertEquals(oldVersion.body.error, 'version must be 3');
+  assertEquals(oldVersion.body.error, 'version must be 3 or 4');
   assertEquals(missingVersion.status, 400);
-  assertEquals(missingVersion.body.error, 'version must be 3');
+  assertEquals(missingVersion.body.error, 'version must be 3 or 4');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.upstreams.list()).map(upstream => upstream.id), ['up_custom_a']);
 });
@@ -352,7 +377,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   });
 
   assertEquals(result.status, 200);
-  assertEquals(result.body.imported, { apiKeys: 1, upstreams: 1, usage: 1, searchUsage: 1, performance: 0 });
+  assertEquals(result.body.imported, { users: 0, apiKeys: 1, upstreams: 1, usage: 1, searchUsage: 1, performance: 0 });
   assertEquals(await repo.apiKeys.list(), [KEY_B]);
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
@@ -657,5 +682,125 @@ test('import validates mode and data before mutating', async () => {
   assertEquals(missingUpstreams.status, 400);
   assertEquals(missingUpstreams.body.error, 'invalid apiKeys: apiKeys must be an array');
   assertEquals(emptyMerge.status, 200);
-  assertEquals(emptyMerge.body.imported, { apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 });
+  assertEquals(emptyMerge.body.imported, { users: 0, apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 });
+});
+
+test('v4 export/import round-trips users and per-key user_id', async () => {
+  const { app, repo } = setup();
+  await repo.users.save(SEED_ADMIN);
+  await repo.users.save(USER_BOB);
+  await repo.apiKeys.save(KEY_A);
+  await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
+
+  const exportResult = await doExport(app);
+  assertEquals(exportResult.version, 4);
+  assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
+
+  // Wipe and round-trip.
+  const result = await doImport(app, 'replace', exportResult.data, 4);
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported.users, 2);
+  assertEquals(result.body.imported.apiKeys, 2);
+
+  const restoredUsers = await repo.users.listIncludingDeleted();
+  assertEquals(restoredUsers.find(u => u.id === USER_BOB.id)?.passwordHash, USER_BOB.passwordHash);
+  const restoredKey = await repo.apiKeys.getById(KEY_B.id);
+  assertEquals(restoredKey?.userId, USER_BOB.id);
+});
+
+test('v4 import rejects api_keys whose user_id does not appear in the payload', async () => {
+  const { app, repo } = setup();
+  await repo.users.save(SEED_ADMIN);
+
+  const result = await doImport(app, 'replace', {
+    users: [SEED_ADMIN],
+    apiKeys: [{ ...KEY_A, userId: 99 }],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, 'invalid apiKeys at index 0: user_id 99 does not match any user in the payload');
+});
+
+test('v4 import rejects malformed users (bad username, bad password_hash)', async () => {
+  const { app } = setup();
+
+  const badUsername = await doImport(app, 'replace', {
+    users: [{ ...USER_BOB, username: 'has space' }],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+  assertEquals(badUsername.status, 400);
+  assertEquals(String(badUsername.body.error).startsWith('invalid users at index 0:'), true);
+
+  const badHash = await doImport(app, 'replace', {
+    users: [{ ...USER_BOB, passwordHash: 'argon2$10000$$' }],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+  assertEquals(badHash.status, 400);
+  assertEquals(String(badHash.body.error).includes('passwordHash'), true);
+});
+
+test('v3 import lands every legacy api_key on user 1', async () => {
+  const { app, repo } = setup();
+  await repo.users.save(SEED_ADMIN);
+
+  // Strip the userId field so the payload looks like a real legacy v3 export.
+  const { userId: _userIdA, ...legacyKeyA } = KEY_A;
+  const { userId: _userIdB, ...legacyKeyB } = KEY_B;
+
+  const result = await doImport(app, 'replace', {
+    apiKeys: [legacyKeyA, legacyKeyB],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 3);
+
+  assertEquals(result.status, 200);
+  const restored = await repo.apiKeys.list();
+  assertEquals(restored.length, 2);
+  for (const key of restored) {
+    assertEquals(key.userId, 1);
+  }
+  // The seed admin was preserved (v3 replace does not reset users).
+  assertEquals((await repo.users.list()).map(u => u.id), [SEED_ADMIN.id]);
+});
+
+test('replace-mode import clears sessions before writing users', async () => {
+  const { app, repo } = setup();
+  await repo.users.save(SEED_ADMIN);
+  await repo.users.save(USER_BOB);
+  await repo.sessions.create(SEED_ADMIN.id);
+  await repo.sessions.create(USER_BOB.id);
+
+  const result = await doImport(app, 'replace', {
+    users: [SEED_ADMIN, USER_BOB],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+
+  assertEquals(result.status, 200);
+  // No public listAll on sessions; create a fresh session and check the
+  // deletion happened by directly calling deleteByUserId — both should report 0.
+  assertEquals(await repo.sessions.deleteByUserId(SEED_ADMIN.id), 0);
+  assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });

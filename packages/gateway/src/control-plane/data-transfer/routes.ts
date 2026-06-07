@@ -7,7 +7,7 @@ import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import type { exportQuery, importBody } from '../schemas.ts';
@@ -21,9 +21,10 @@ import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
 interface ExportPayload {
-  version: 3;
+  version: 4;
   exportedAt: string;
   data: {
+    users: User[];
     apiKeys: ApiKey[];
     upstreams: SerializedUpstreamRecord[];
     usage: UsageRecord[];
@@ -34,7 +35,9 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 3;
+const EXPORT_VERSION = 4;
+const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
+const PASSWORD_HASH_PREFIX = 'pbkdf2-sha256$';
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
@@ -150,7 +153,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
   return { type: 'ok', records };
 };
 
-const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
+const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
   const records: ApiKey[] = [];
@@ -162,15 +165,74 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
     const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
     if (!upstreamIdsParsed.ok) return { type: 'invalid', index: i, error: upstreamIdsParsed.error };
     try {
+      let userId: number;
+      if (version === 3) {
+        // Legacy v3 exports never carried per-key ownership — every row lands
+        // on the seed admin (user 1) so historical telemetry attributes there.
+        userId = 1;
+      } else {
+        if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
+          throw new Error('userId must be a positive integer');
+        }
+        userId = record.userId;
+      }
       records.push({
         id: nonEmptyString(record.id, 'id'),
-        // Legacy v3 exports never carried per-key ownership; everything lands on user 1.
-        userId: typeof record.userId === 'number' && Number.isInteger(record.userId) && record.userId >= 1 ? record.userId : 1,
+        userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
+        deletedAt: typeof record.deletedAt === 'string' ? record.deletedAt : null,
+      });
+    } catch (error) {
+      return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  return { type: 'ok', records };
+};
+
+// v4 only: validate the users[] block. Each entry must have a positive integer
+// id, a username matching the canonical regex, and a password_hash that is
+// either null or starts with the supported scheme prefix.
+const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { type: 'invalid'; index: number; error: string } => {
+  if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'users must be an array' };
+
+  const records: User[] = [];
+  const seenIds = new Set<number>();
+  for (let i = 0; i < value.length; i++) {
+    const record = value[i];
+    if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
+    try {
+      if (typeof record.id !== 'number' || !Number.isInteger(record.id) || record.id < 1) {
+        throw new Error('id must be a positive integer');
+      }
+      if (seenIds.has(record.id)) throw new Error(`duplicate user id ${record.id}`);
+      seenIds.add(record.id);
+
+      if (typeof record.username !== 'string' || !USERNAME_PATTERN.test(record.username)) {
+        throw new Error('username must match ^[a-zA-Z0-9_.-]{1,64}$');
+      }
+      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith(PASSWORD_HASH_PREFIX))) {
+        throw new Error('passwordHash must be null or start with pbkdf2-sha256$');
+      }
+      if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
+      if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
+
+      const upstreamIdsRaw = record.upstreamIds === undefined ? null : record.upstreamIds;
+      const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
+      if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
+
+      records.push({
+        id: record.id,
+        username: record.username,
+        passwordHash: record.passwordHash,
+        isAdmin: record.isAdmin,
+        upstreamIds: upstreamIdsParsed.value,
+        canViewGlobalTelemetry: record.canViewGlobalTelemetry,
+        createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         deletedAt: typeof record.deletedAt === 'string' ? record.deletedAt : null,
       });
     } catch (error) {
@@ -403,7 +465,8 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams] = await Promise.all([
+  const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams] = await Promise.all([
+    repo.users.listIncludingDeleted(),
     repo.apiKeys.list(),
     repo.usage.listAll(),
     repo.searchUsage.listAll(),
@@ -412,10 +475,14 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     repo.upstreams.list(),
   ]);
 
+  // Exports include password_hash and every soft-deleted row so an operator
+  // restoring this payload reconstructs both credentials and historical
+  // attribution. Treat the file as a credential bundle.
   const payload: ExportPayload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     data: {
+      users,
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       usage,
@@ -432,16 +499,35 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
 /** POST /api/import — import data with merge or replace mode */
 export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const body = c.req.valid('json');
-  const { mode, data } = body;
+  const { mode, data, version } = body;
 
   if (!isRecord(data)) return c.json({ error: 'data is required' }, 400);
 
-  const apiKeysResult = parseApiKeyRecords(data.apiKeys);
+  const apiKeysResult = parseApiKeyRecords(data.apiKeys, version);
   if (apiKeysResult.type === 'invalid') {
     const location = apiKeysResult.index >= 0 ? ` at index ${apiKeysResult.index}` : '';
     return c.json({ error: `invalid apiKeys${location}: ${apiKeysResult.error}` }, 400);
   }
   const apiKeys = apiKeysResult.records;
+
+  // v3 has no users[]; v4 carries them and they must validate before anything
+  // else mutates. v3 imports leave the existing users table untouched (user 1
+  // is always present from migration) — every imported key lands on user 1.
+  let users: User[] = [];
+  if (version === 4) {
+    const usersResult = parseUserRecords(data.users);
+    if (usersResult.type === 'invalid') {
+      const location = usersResult.index >= 0 ? ` at index ${usersResult.index}` : '';
+      return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
+    }
+    users = usersResult.records;
+    const known = new Set(users.map(u => u.id));
+    for (let i = 0; i < apiKeys.length; i++) {
+      if (!known.has(apiKeys[i].userId)) {
+        return c.json({ error: `invalid apiKeys at index ${i}: user_id ${apiKeys[i].userId} does not match any user in the payload` }, 400);
+      }
+    }
+  }
 
   const usageResult = parseUsageRecords(data.usage);
   if (usageResult.type === 'invalid') {
@@ -490,13 +576,31 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
+    //
+    // Sessions are wiped first and unconditionally because their user_id
+    // foreign-key references are about to change (v4) or because the api-key
+    // table is being recreated (both v3 and v4). Users are only wiped when the
+    // payload carries a replacement set (v4) — a v3 replace import preserves
+    // the existing users table.
     const existingUpstreams = await repo.upstreams.list();
-    const deletes = [repo.apiKeys.deleteAll(), repo.usage.deleteAll(), repo.searchUsage.deleteAll(), repo.upstreams.deleteAll(), repo.responsesSnapshots.deleteAll(), repo.responsesItems.deleteAll()];
+    const deletes: Promise<unknown>[] = [
+      repo.sessions.deleteAll(),
+      repo.apiKeys.deleteAll(),
+      repo.usage.deleteAll(),
+      repo.searchUsage.deleteAll(),
+      repo.upstreams.deleteAll(),
+      repo.responsesSnapshots.deleteAll(),
+      repo.responsesItems.deleteAll(),
+    ];
+    if (version === 4) deletes.push(repo.users.deleteAll());
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
+  // Users land first in v4 so api_keys' user_id references resolve. v3
+  // skips the users loop entirely.
+  for (const user of users) await repo.users.save(user);
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
@@ -510,6 +614,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   return c.json({
     ok: true,
     imported: {
+      users: users.length,
       apiKeys: apiKeys.length,
       upstreams: upstreams.length,
       usage: usage.length,

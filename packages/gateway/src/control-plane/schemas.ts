@@ -309,7 +309,7 @@ export const searchConfigSchema = z.object({
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(3, { error: 'version must be 3' }),
+  version: z.union([z.literal(3), z.literal(4)], { error: 'version must be 3 or 4' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
