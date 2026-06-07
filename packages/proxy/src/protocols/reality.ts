@@ -104,7 +104,32 @@ const runRealityHandshake = async (
   // Streams that will be returned to the caller (VLESS framing) after the TLS
   // handshake completes.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
-  const plainReadable = new ReadableStream<Uint8Array>({ start(c) { plainController = c; } });
+  const plainReadable = new ReadableStream<Uint8Array>({
+    start(c) { plainController = c; },
+    cancel() {
+      plainClosed = true;
+      detachAbortListener?.();
+      detachAbortListener = null;
+      void tlsClient?.end().catch(() => {});
+      void reader.cancel().catch(() => {});
+      void writer.close().catch(() => {});
+    },
+  });
+
+  // Latch teardown so a follow-up onTlsEnd / EOF can't double-close the
+  // controller (Node throws ERR_INVALID_STATE on a second close/error).
+  let plainClosed = false;
+  const closePlain = (error?: unknown): void => {
+    if (plainClosed) return;
+    plainClosed = true;
+    detachAbortListener?.();
+    detachAbortListener = null;
+    try {
+      if (error) plainController.error(error);
+      else plainController.close();
+    } catch { /* already closed/errored */ }
+    void writer.close().catch(() => {});
+  };
 
   let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
   const plainWritable = new WritableStream<Uint8Array>({
@@ -133,6 +158,7 @@ const runRealityHandshake = async (
     handshakeReject = reject;
   });
   let handshakeOk = false;
+  let detachAbortListener: (() => void) | null = null;
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
@@ -147,7 +173,7 @@ const runRealityHandshake = async (
       out.set(content, header.byteLength);
       writer.write(out).catch(e => {
         if (!handshakeOk) handshakeReject(e);
-        else plainController?.error(e);
+        else closePlain(e);
       });
     },
     onHandshake() {
@@ -155,15 +181,22 @@ const runRealityHandshake = async (
       handshakeResolve();
     },
     onApplicationData(plaintext) {
-      if (plainController) plainController.enqueue(copy(plaintext));
+      if (plainClosed) return;
+      try {
+        plainController.enqueue(copy(plaintext));
+      } catch (err) {
+        // Pre-close enqueue can only fail if the consumer cancelled mid-flight;
+        // route through closePlain so the consumer sees the error rather than
+        // hanging on a never-closed stream.
+        closePlain(err);
+      }
     },
     onTlsEnd(error) {
       if (!handshakeOk) {
         handshakeReject(error ?? new Error('TLS ended before handshake'));
         return;
       }
-      if (error) plainController?.error(error);
-      else plainController?.close();
+      closePlain(error);
     },
     onKeyPairGenerated(keyType: string, keyPair: { privKey: CryptoKey; pubKey: CryptoKey }) {
       if (keyType === 'X25519') {
@@ -214,26 +247,30 @@ const runRealityHandshake = async (
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          tlsClient?.end().catch(() => {});
+          await tlsClient?.end().catch(() => {});
+          // Reclaim's onTlsEnd usually fires for a clean close-notify, but a
+          // raw transport EOF without an alert wouldn't trigger it. Drive
+          // closePlain ourselves so the consumer's reader unsticks when the
+          // peer simply hangs up.
+          closePlain();
           return;
         }
         await tlsClient?.handleReceivedBytes(value);
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
-      else plainController?.error(e);
+      else closePlain(e);
     } finally {
       try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
 
-  let detachAbortListener: (() => void) | null = null;
   if (signal) {
     const captured = signal;
     const onAbort = (): void => {
       const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
       if (!handshakeOk) handshakeReject(reason);
-      else plainController?.error(reason);
+      else closePlain(reason);
       void reader.cancel(reason).catch(() => {});
     };
     captured.addEventListener('abort', onAbort, { once: true });
@@ -246,6 +283,7 @@ const runRealityHandshake = async (
     await handshakeDone;
   } catch (cause) {
     detachAbortListener?.();
+    detachAbortListener = null;
     // The REALITY handshake combines outer TLS framing with the auth seal in
     // session_id; we can't tell whether the server rejected the seal or the
     // TLS handshake itself failed, so we tag the whole leg as outer-tls.
@@ -253,7 +291,9 @@ const runRealityHandshake = async (
     try { writer.releaseLock(); } catch { /* lock already released */ }
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
-  detachAbortListener?.();
+  // Leave the abort listener live for the streaming session so a caller-
+  // driven abort still tears down the established stream; closePlain detaches
+  // it on the next teardown event.
 
   return { readable: plainReadable, writable: plainWritable };
 };

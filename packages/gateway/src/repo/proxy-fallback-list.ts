@@ -17,9 +17,6 @@ export const normalizeProxyFallbackList = (ids: readonly string[]): string[] => 
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of ids) {
-    if (typeof raw !== 'string') {
-      throw new Error(`proxyFallbackList entries must be strings, got ${typeof raw}`);
-    }
     const id = raw.trim();
     if (id === '' || seen.has(id)) continue;
     seen.add(id);

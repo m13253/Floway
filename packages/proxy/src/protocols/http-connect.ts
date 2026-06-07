@@ -82,40 +82,44 @@ const dialHttpConnectInner = async (
   // is two orders of magnitude over the real CONNECT-response size and
   // still bounds the worst case.
   const HEADER_BUFFER_CAP = 64 * 1024;
+  const reader = socket.readable.getReader();
   const peelDone = (async () => {
-    const reader = socket.readable.getReader();
-    let buf = new Uint8Array(0);
-    while (true) {
-      const idx = findDoubleCrlf(buf);
-      if (idx >= 0) {
-        const head = new TextDecoder().decode(buf.subarray(0, idx));
-        const m = /^HTTP\/1\.[01] (\d{3})(?: (.*))?\r\n/.exec(`${head}\r\n`);
-        if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`, 'proxy-handshake');
-        const status = parseInt(m[1]!, 10);
-        if (status < 200 || status >= 300) {
-          throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2] ?? ''}`.trimEnd(), 'proxy-handshake');
-        }
-        const trailing = buf.subarray(idx + 4);
-        if (trailing.byteLength) await fwdWriter.write(copy(trailing));
-        // Pump the rest of the socket into the forward stream
-        while (true) {
-          const r = await reader.read();
-          if (r.done) {
-            try { await fwdWriter.close(); } catch { /* fwd already closed */ }
-            return;
+    try {
+      let buf = new Uint8Array(0);
+      while (true) {
+        const idx = findDoubleCrlf(buf);
+        if (idx >= 0) {
+          const head = new TextDecoder().decode(buf.subarray(0, idx));
+          const m = /^HTTP\/1\.[01] (\d{3})(?: (.*))?\r\n/.exec(`${head}\r\n`);
+          if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`, 'proxy-handshake');
+          const status = parseInt(m[1]!, 10);
+          if (status < 200 || status >= 300) {
+            throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2] ?? ''}`.trimEnd(), 'proxy-handshake');
           }
-          await fwdWriter.write(copy(r.value));
+          const trailing = buf.subarray(idx + 4);
+          if (trailing.byteLength) await fwdWriter.write(copy(trailing));
+          // Pump the rest of the socket into the forward stream
+          while (true) {
+            const r = await reader.read();
+            if (r.done) {
+              try { await fwdWriter.close(); } catch { /* fwd already closed */ }
+              return;
+            }
+            await fwdWriter.write(copy(r.value));
+          }
+        }
+        const { value, done } = await reader.read();
+        if (done) throw new ProxyDialError(`CONNECT: EOF before status (${buf.byteLength} bytes read)`, 'proxy-handshake');
+        const next = new Uint8Array(buf.byteLength + value.byteLength);
+        next.set(buf, 0);
+        next.set(value, buf.byteLength);
+        buf = next;
+        if (buf.byteLength > HEADER_BUFFER_CAP) {
+          throw new ProxyDialError(`CONNECT response exceeded ${HEADER_BUFFER_CAP} bytes without a header terminator`, 'proxy-handshake');
         }
       }
-      const { value, done } = await reader.read();
-      if (done) throw new ProxyDialError(`CONNECT: EOF before status (${buf.byteLength} bytes read)`, 'proxy-handshake');
-      const next = new Uint8Array(buf.byteLength + value.byteLength);
-      next.set(buf, 0);
-      next.set(value, buf.byteLength);
-      buf = next;
-      if (buf.byteLength > HEADER_BUFFER_CAP) {
-        throw new ProxyDialError(`CONNECT response exceeded ${HEADER_BUFFER_CAP} bytes without a header terminator`, 'proxy-handshake');
-      }
+    } finally {
+      try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
   // Always-on terminal handler routes peel errors into the forward stream

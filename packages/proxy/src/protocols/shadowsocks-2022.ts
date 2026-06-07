@@ -178,7 +178,7 @@ const dialShadowsocks2022Inner = async (
         const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (len === 0 || len > MAX) {
-          controller.error(new Error(`SS2022: bad len ${len}`));
+          controller.error(new ProxyDialError(`SS2022: bad payload length ${len}`, 'proxy-handshake'));
           return;
         }
         const ptSealed = await readN(len + TAG);
@@ -212,8 +212,8 @@ const dialShadowsocks2022Inner = async (
         w.releaseLock();
       }
     },
-    async close() { try { await socket.close(); } catch {} },
-    abort() { try { void socket.close(); } catch {} },
+    async close() { try { await socket.close(); } catch { /* socket already closed */ } },
+    async abort() { try { await socket.close(); } catch { /* socket already closed */ } },
   });
 
   return { readable: ssReadable, writable: ssWritable };

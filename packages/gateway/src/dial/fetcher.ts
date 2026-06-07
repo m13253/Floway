@@ -235,7 +235,6 @@ const tryOne = async (
       try {
         await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
       } catch (recordErr) {
-
         console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
       }
       return null;

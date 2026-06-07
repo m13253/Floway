@@ -291,7 +291,6 @@ interface NodeProcessShape { env?: { FLOWAY_DEBUG_TLS?: string } }
 const logTlsTeardownError = (e: unknown): void => {
   const proc = (globalThis as unknown as { process?: NodeProcessShape }).process;
   if (proc?.env?.FLOWAY_DEBUG_TLS) {
-
     console.debug('[userspace-tls] teardown:', e);
   }
 };

@@ -102,7 +102,7 @@ const dispatchDial = async (config: ProxyConfig, target: DialTarget, options: Di
   }
 };
 
-export interface RunProxiedRequestOptions extends DialOptions {}
+export type RunProxiedRequestOptions = DialOptions;
 
 /**
  * Compose `dial` → optional `userspaceTls` → `fetchOnStream` into a single

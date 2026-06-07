@@ -188,10 +188,10 @@ const dialShadowsocksInner = async (
       }
     },
     async close() {
-      try { await socket.close(); } catch {}
+      try { await socket.close(); } catch { /* socket already closed */ }
     },
-    abort() {
-      try { void socket.close(); } catch {}
+    async abort() {
+      try { await socket.close(); } catch { /* socket already closed */ }
     },
   });
 

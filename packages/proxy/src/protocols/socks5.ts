@@ -138,6 +138,8 @@ const dialSocks5Inner = async (
       }
     } catch (e) {
       fwdWriter.abort(e).catch(() => {});
+    } finally {
+      try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
 

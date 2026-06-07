@@ -130,7 +130,6 @@ export const nodeSocketDial: SocketDial = {
     // post-teardown resets stay observable to operators.
     socket.on('error', err => {
       if (process.env.FLOWAY_DEBUG_SOCKET) {
-
         console.debug('[socket-dial] post-connect error:', err);
       }
     });
