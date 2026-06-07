@@ -79,6 +79,14 @@ export async function userspaceTls(
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   const plainReadable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
+    // Consumer-initiated cancel (response body fully read or aborted) tears
+    // down our side of the duplex — flag so subsequent TLS-end callbacks
+    // skip their controller calls, and signal end-of-stream upward.
+    cancel() {
+      plainClosed = true;
+      tlsClient?.end().catch(() => {});
+      writer.close().catch(() => {});
+    },
   });
 
   // App-data upward stream (consumer → TLS encrypt → transport)
@@ -91,12 +99,15 @@ export async function userspaceTls(
       await tlsClient.write(chunk);
     },
     async close() {
-      try { await tlsClient?.end(); } catch {}
-      try { void writer.close(); } catch {}
+      // Both promises must be awaited or attached with .catch — a bare
+      // `void promise` discards rejection and crashes Node with
+      // unhandled-rejection when the underlying stream is already closed.
+      await tlsClient?.end().catch(() => {});
+      await writer.close().catch(() => {});
     },
-    abort(reason) {
-      try { void tlsClient?.end(); } catch {}
-      try { void writer.abort(reason); } catch {}
+    async abort(reason) {
+      await tlsClient?.end().catch(() => {});
+      await writer.abort(reason).catch(() => {});
     },
   });
 
@@ -109,6 +120,33 @@ export async function userspaceTls(
   });
 
   let handshakeOk = false;
+  // Two independent paths can drop the plaintext stream out from under us:
+  // (1) reclaim's TLS client fires `onTlsEnd` once for the peer CLOSE_NOTIFY
+  //     alert and again when the underlying transport reader returns done;
+  // (2) the consumer (Hono / fetch) cancels the readable after it has the
+  //     full response, which closes the controller from the outside. Either
+  //     way, a follow-up `controller.close()` / `controller.error()` /
+  //     `controller.enqueue()` throws ERR_INVALID_STATE — and on Node there
+  //     is no error event to swallow it, so the whole worker crashes. Latch
+  //     the close on our side, and treat any throw from the controller as
+  //     "already closed by the consumer."
+  let plainClosed = false;
+  const safeClose = (): void => {
+    try { plainController?.close(); } catch {}
+  };
+  const safeError = (error: unknown): void => {
+    try { plainController?.error(error); } catch {}
+  };
+  const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
+    try { plainController?.enqueue(chunk); } catch { plainClosed = true; }
+  };
+  const closePlain = (error?: unknown): void => {
+    if (plainClosed) return;
+    plainClosed = true;
+    if (error) safeError(error);
+    else safeClose();
+    writer.close().catch(() => {});
+  };
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
@@ -134,7 +172,7 @@ export async function userspaceTls(
       out.set(content, off);
       writer.write(out).catch(e => {
         if (!handshakeOk) handshakeReject(e);
-        else plainController?.error(e);
+        else closePlain(e);
       });
     },
     onHandshake() {
@@ -142,16 +180,15 @@ export async function userspaceTls(
       handshakeResolve();
     },
     onApplicationData(plaintext) {
-      if (plainController) plainController.enqueue(copy(plaintext));
+      if (plainClosed) return;
+      safeEnqueue(copy(plaintext));
     },
     onTlsEnd(error) {
       if (!handshakeOk) {
         handshakeReject(error ?? new Error('TLS ended before handshake'));
         return;
       }
-      if (error) plainController?.error(error);
-      else plainController?.close();
-      try { void writer.close(); } catch {}
+      closePlain(error);
     },
   } as Parameters<typeof makeTLSClient>[0]));
 
@@ -169,7 +206,7 @@ export async function userspaceTls(
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
-      else plainController?.error(e);
+      else closePlain(e);
     } finally {
       try { reader.releaseLock(); } catch {}
     }
