@@ -9,7 +9,16 @@ export interface DuplexBytes {
   writable: WritableStream<Uint8Array>;
 }
 
-export async function runHttp1(stream: DuplexBytes, target: TargetSpec): Promise<Response> {
+export interface RunHttp1Options {
+  /** Bytes to prepend to the very first write — concatenated with the
+   *  HTTP/1.1 request head into a single writer.write() call. Trojan's
+   *  plain-HTTP path uses this to ride its 56-byte auth header in the
+   *  same record as the request line, avoiding sing-box's
+   *  fallback-disabled short-read on the leading record. */
+  prefix?: Uint8Array;
+}
+
+export async function runHttp1(stream: DuplexBytes, target: TargetSpec, opts?: RunHttp1Options): Promise<Response> {
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();
   // Strip any caller-supplied framing headers — the buffered body's exact
@@ -43,7 +52,18 @@ export async function runHttp1(stream: DuplexBytes, target: TargetSpec): Promise
   let head = requestLine;
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
   head += '\r\n';
-  await writer.write(enc.encode(head));
+  const headBytes = enc.encode(head);
+  // Prepend the optional prefix into the same write so the leading record
+  // contains both the prefix and the request head (Trojan plain-HTTP
+  // depends on this; see RunHttp1Options.prefix).
+  if (opts?.prefix && opts.prefix.byteLength > 0) {
+    const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
+    merged.set(opts.prefix, 0);
+    merged.set(headBytes, opts.prefix.byteLength);
+    await writer.write(merged);
+  } else {
+    await writer.write(headBytes);
+  }
   if (target.requestBody?.byteLength) {
     // Match the inner TLS record size (16 KiB plaintext, per RFC 8446 §5.1).
     // Each call to writer.write() on the userspace-TLS stream maps 1:1 to

@@ -92,10 +92,14 @@ async function runTrojanInner(
     }
     return await runHttp1(innerTls, target);
   } else {
-    const writer = outerTls.writable.getWriter();
-    await writer.write(header);
-    writer.releaseLock();
-    return await runHttp1(outerTls, target);
+    // Plain-HTTP upstream: the Trojan header MUST land in the same TLS
+    // record as the first application bytes (sing-box reads the 56-byte
+    // password key with conn.Read and short-reads on a separate first
+    // record — REPORT.md Finding 2). Pass the header as runHttp1's
+    // prefix so it's concatenated with the request head into a single
+    // writer.write(), which the userspace TLS layer below seals as one
+    // record.
+    return await runHttp1(outerTls, target, { prefix: header });
   }
 }
 

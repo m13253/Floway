@@ -53,8 +53,22 @@ export const nodeSocketDial: SocketDial = {
       socket.once('error', onError);
     });
 
-    // toWeb's Buffer | Uint8Array typing is wider than runtime — chunks are Buffers, which are Uint8Arrays.
-    const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
+    // Readable.toWeb hands out the Buffer chunks the underlying socket
+    // emits, and net.Socket recycles those Buffers from a shared pool —
+    // any retention across an `await` (e.g. our handshake state machines
+    // accumulate bytes into a rolling buffer) can read overwritten bytes.
+    // Wrap with a copying transform so each chunk handed to consumers
+    // owns its memory. The cost is one Uint8Array allocation per chunk,
+    // which is negligible against the syscalls and TLS work each chunk
+    // already pays for.
+    const rawReadable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
+    const readable = rawReadable.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        const owned = new Uint8Array(chunk.byteLength);
+        owned.set(chunk);
+        controller.enqueue(owned);
+      },
+    }));
     const writable = Writable.toWeb(socket) as WritableStream<Uint8Array>;
 
     // Listen on 'close' rather than the toWeb readable's own close signal:

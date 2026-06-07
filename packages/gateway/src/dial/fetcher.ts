@@ -44,10 +44,25 @@ export interface CreateFetcherInput {
 // single-shot. Buffer streaming bodies in the caller before reaching here.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : ['direct'];
+  // If `direct` precedes any non-direct entry, runtime fetch may take
+  // ownership of `init.body` and consume its underlying stream/Blob.
+  // Buffer the body up-front so a runtime that re-streams a Blob can't
+  // strand a later proxy attempt with empty bytes. The fast path
+  // (direct-only list) keeps the runtime's native body handling intact —
+  // FormData, Blob, etc. don't need to be buffered.
+  const hasNonDirect = list.some(id => id !== 'direct');
+  const directBeforeProxy = hasNonDirect && list.includes('direct') && list.indexOf('direct') < list.length - 1;
   return async (url, init) => {
     let target: TargetSpec | undefined;
+    let effectiveInit = init;
+    if (directBeforeProxy) {
+      // Pre-build the TargetSpec so the same buffered bytes feed both the
+      // direct path (via a synthesised init) and any proxy retry.
+      target = await buildTargetSpec(url, init);
+      effectiveInit = rebuildInitFromTarget(init, target);
+    }
     const targetForProxy = async (): Promise<TargetSpec> => {
-      target ??= await buildTargetSpec(url, init);
+      target ??= await buildTargetSpec(url, effectiveInit);
       return target;
     };
     const errors: unknown[] = [];
@@ -65,13 +80,13 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     for (const id of list) {
       if (skip.has(id)) continue;
       triedThisCall.add(id);
-      const result = await tryOne(id, input, targetForProxy, url, init, errors);
+      const result = await tryOne(id, input, targetForProxy, url, effectiveInit, errors);
       if (result) return result;
     }
 
     for (const id of list) {
       if (triedThisCall.has(id)) continue;
-      const result = await tryOne(id, input, targetForProxy, url, init, errors);
+      const result = await tryOne(id, input, targetForProxy, url, effectiveInit, errors);
       if (result) return result;
     }
 
@@ -82,6 +97,33 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
       throw errors[0];
     }
     throw new AggregateError(errors, 'all proxies failed at the dial layer');
+  };
+};
+
+// Synthesise a fresh RequestInit whose body is the buffered Uint8Array
+// (a stable, multi-readable shape) and whose synthesised Content-Type
+// matches the original FormData/URLSearchParams body. Other init fields
+// (method, signal, headers) ride through unchanged.
+const rebuildInitFromTarget = (original: RequestInit, target: TargetSpec): RequestInit => {
+  const headers = new Headers(original.headers);
+  const targetCt = target.headers['content-type'];
+  if (targetCt !== undefined && !headers.has('content-type')) {
+    headers.set('content-type', targetCt);
+  }
+  // Copy into a freshly-allocated ArrayBuffer-backed Uint8Array so the
+  // BodyInit slot accepts it under TypeScript's stricter typing — and so
+  // the buffer we hand to runtime fetch never aliases a backing buffer
+  // that's also referenced elsewhere.
+  let body: Uint8Array<ArrayBuffer> | null = null;
+  if (target.requestBody) {
+    const owned = new Uint8Array(target.requestBody.byteLength);
+    owned.set(target.requestBody);
+    body = owned;
+  }
+  return {
+    ...original,
+    headers,
+    body,
   };
 };
 
