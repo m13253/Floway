@@ -77,7 +77,10 @@ const seedFromRecord = (r: UpstreamRecord) => {
   sortOrder.value = r.sort_order;
   flagOverrides.value = { ...r.flag_overrides };
   disabledPublicModelIds.value = [...r.disabled_public_model_ids];
-  proxyFallbackList.value = [...r.proxy_fallback_list];
+  // Defensive spread: a stale Worker version mid-deploy could in theory
+  // return a record without proxy_fallback_list. Guard the spread so a
+  // wire-format hiccup doesn't crash the upstream edit page.
+  proxyFallbackList.value = r.proxy_fallback_list ? [...r.proxy_fallback_list] : [];
 
   if (r.provider === 'custom') {
     const cfg = r.config as CustomUpstreamConfig;
