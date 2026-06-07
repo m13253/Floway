@@ -33,5 +33,6 @@ export type {
 
 export { ProxyDialError } from './errors.ts';
 
-export { dial, runProxiedRequest, DEFAULT_DIAL_DEADLINE_MS } from './dialer.ts';
+export { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
+export { dial, runProxiedRequest } from './dialer.ts';
 export type { RunProxiedRequestOptions } from './dialer.ts';

@@ -25,8 +25,6 @@ import type { DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './
 import { resolveSni, resolveVerifyHost } from './types.ts';
 import { fetchOnStream, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
-export { DEFAULT_DIAL_DEADLINE_MS };
-
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
  * through the named proxy. The returned stream is plain bytes — no inner
