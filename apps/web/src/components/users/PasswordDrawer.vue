@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Button, Dialog, Input, Spinner } from '@floway-dev/ui';
+import { Button, Dialog, Spinner } from '@floway-dev/ui';
 import { ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
+import SecretInput from '../shared/SecretInput.vue';
 
 // Two-mode password change drawer.
 //   - mode="self"   pairs `currentPassword` and `newPassword` and posts to
@@ -92,15 +93,15 @@ const title = (() => {
     <form class="space-y-4" @submit.prevent="submit">
       <div v-if="mode === 'self'" class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Current password</label>
-        <Input v-model="currentPassword" type="password" autocomplete="current-password" />
+        <SecretInput v-model="currentPassword" />
       </div>
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">New password</label>
-        <Input v-model="newPassword" type="password" autocomplete="new-password" />
+        <SecretInput v-model="newPassword" />
       </div>
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Confirm new password</label>
-        <Input v-model="confirmPassword" type="password" autocomplete="new-password" />
+        <SecretInput v-model="confirmPassword" />
       </div>
 
       <p v-if="error" class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ error }}</p>

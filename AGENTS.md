@@ -136,9 +136,17 @@ target serves no SPA.
 Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.
 
-For manual data-plane validation, use `ADMIN_KEY` with the
-`x-models-playground: 1` header on approved playground routes. Do not
-reuse or create normal API keys for manual testing.
+For manual data-plane validation, log into the dashboard with the
+`ADMIN_KEY` backdoor (leave the username field blank) or with your own
+user, then create or pick an API key under your account and use it as
+`x-api-key`. The `ADMIN_KEY` is no longer accepted on data-plane routes;
+its only purpose is to let an operator who lost the admin password log
+in via `POST /auth/login`.
+
+Database exports include the `password_hash` for every user (active and
+soft-deleted) so a restore reconstructs login state. Treat exported
+payloads as credential bundles — anyone with the file can sign in as
+every user whose password has not rotated since the export.
 
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic

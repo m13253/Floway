@@ -3,6 +3,7 @@ import { Button, Dialog, Input, Spinner, Switch } from '@floway-dev/ui';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
+import SecretInput from '../shared/SecretInput.vue';
 
 // Create-only drawer for /api/users. The response includes the synthesized
 // Default API key in cleartext, which the parent surfaces in a one-shot
@@ -93,7 +94,7 @@ const submit = async () => {
       </div>
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Initial password</label>
-        <Input v-model="password" type="password" autocomplete="new-password" />
+        <SecretInput v-model="password" />
       </div>
       <label class="flex items-center justify-between rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2.5">
         <span>
