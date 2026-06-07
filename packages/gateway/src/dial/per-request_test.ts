@@ -26,16 +26,22 @@ const upstream = (id: string, proxyFallbackList: string[]) => ({
 });
 
 describe('createPerRequestFetcher', () => {
-  it('throws when a referenced proxy row carries a malformed URL', async () => {
+  it('isolates a malformed proxy URL to upstreams that reference it', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    // The dashboard validates URLs at POST/PATCH time, so a malformed row in
-    // the proxies table is operator-actionable D1 drift. Surface the parse
-    // error rather than silently dropping the proxy.
-    await repo.upstreams.save(upstream('u_ok', ['p_bad']));
+    // u_bad references the malformed row; u_ok shares the request but does
+    // not. The whole-request build must still succeed; only u_bad's fetcher
+    // surfaces the parse error, and only when actually called.
+    await repo.upstreams.save(upstream('u_bad', ['p_bad']));
+    await repo.upstreams.save(upstream('u_ok', []));
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
 
-    await expect(createPerRequestFetcher()).rejects.toThrow();
+    const fetcherFor = await createPerRequestFetcher();
+    const okFetcher = fetcherFor('u_ok');
+    expect(typeof okFetcher).toBe('function');
+    const badFetcher = fetcherFor('u_bad');
+    await expect(badFetcher('https://example.com', { method: 'GET' }))
+      .rejects.toThrow(/u_bad references malformed proxy p_bad/);
   });
 
   it('does not load the proxy catalog when no upstream references one', async () => {

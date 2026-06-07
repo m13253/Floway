@@ -12,6 +12,12 @@ import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
 // receive a fetcher that walks the implicit ['direct'] list — i.e. plain
 // runtime `fetch`, but still through the same instrumentation seam so a
 // future global default proxy hook only has to land here.
+//
+// Parse failures on individual proxy rows are isolated to the upstreams
+// that actually reference them: a single malformed URL must not take down
+// every other upstream in the same request. Per-upstream fetchers built
+// against a bad row throw at call time rather than at build time, mirroring
+// how the dial layer surfaces other dial-time failures.
 export const createPerRequestFetcher = async (): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
   const upstreams = await repo.upstreams.list();
@@ -25,26 +31,44 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
   }
 
   const proxyById = new Map<string, ProxyEntry>();
+  const proxyParseErrors = new Map<string, Error>();
   if (referencedProxyIds.size > 0) {
     const proxies = await repo.proxies.list();
     for (const p of proxies) {
       if (!referencedProxyIds.has(p.id)) continue;
-      proxyById.set(p.id, {
-        config: parseProxyUri(p.url),
-        // Carry the per-proxy timeout (seconds → ms) so the dial layer can
-        // honour an operator's override; null preserves the gateway default
-        // baked into @floway-dev/proxy.
-        dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
-      });
+      try {
+        proxyById.set(p.id, {
+          config: parseProxyUri(p.url),
+          // Carry the per-proxy timeout (seconds → ms) so the dial layer can
+          // honour an operator's override; null preserves the gateway default
+          // baked into @floway-dev/proxy.
+          dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
+        });
+      } catch (err) {
+        proxyParseErrors.set(p.id, err instanceof Error ? err : new Error(String(err)));
+      }
     }
   }
 
-  return upstreamId => createFetcher({
-    repo,
-    upstreamId,
-    fallbackList: fallbackById.get(upstreamId) ?? [],
-    proxyById,
-    runProxied: runProxiedRequest,
-    runDirect: directFetcher,
-  });
+  return upstreamId => {
+    const list = fallbackById.get(upstreamId) ?? [];
+    // Hold off the throw until the upstream is actually fetched so an
+    // unrelated bad row can't take down the whole data-plane call.
+    const badRefs = list.filter(id => proxyParseErrors.has(id));
+    if (badRefs.length > 0) {
+      const first = badRefs[0]!;
+      const err = proxyParseErrors.get(first)!;
+      return async () => {
+        throw new Error(`upstream ${upstreamId} references malformed proxy ${first}: ${err.message}`);
+      };
+    }
+    return createFetcher({
+      repo,
+      upstreamId,
+      fallbackList: list,
+      proxyById,
+      runProxied: runProxiedRequest,
+      runDirect: directFetcher,
+    });
+  };
 };
