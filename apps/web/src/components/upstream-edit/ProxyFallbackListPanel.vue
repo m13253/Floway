@@ -39,6 +39,13 @@ const labelFor = (entry: string): string => {
   return proxiesById.value.get(entry)?.name ?? entry;
 };
 
+// True for entries that name a proxy id we don't know about — typically a
+// row that was hand-removed from the proxies table after this upstream
+// referenced it. We render these distinctively and let the operator
+// remove them in one click instead of silently masquerading as a normal
+// entry whose label happens to be a UUID.
+const isOrphan = (entry: string): boolean => entry !== DIRECT && !proxiesById.value.has(entry);
+
 // Live tick so the badge countdown ticks visibly without the parent reloading.
 const now = useNow({ interval: 1000 });
 
@@ -150,9 +157,14 @@ const append = (entry: string) => {
 
         <span
           class="min-w-0 flex-1 truncate"
-          :class="entry === DIRECT ? 'font-mono text-gray-300' : 'text-white'"
+          :class="[
+            entry === DIRECT ? 'font-mono text-gray-300' : (isOrphan(entry) ? 'font-mono text-accent-rose' : 'text-white'),
+          ]"
           :title="entry === DIRECT ? 'No proxy — connect directly' : entry"
-        >{{ labelFor(entry) }}</span>
+        >
+          <template v-if="isOrphan(entry)">Unknown proxy · {{ entry }}</template>
+          <template v-else>{{ labelFor(entry) }}</template>
+        </span>
 
         <span
           v-if="activeBackoffByEntry.get(entry)"

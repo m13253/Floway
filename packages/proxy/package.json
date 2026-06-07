@@ -8,6 +8,10 @@
       "import": "./src/index.ts",
       "types": "./src/index.ts"
     },
+    "./constants": {
+      "import": "./src/constants.ts",
+      "types": "./src/constants.ts"
+    },
     "./url": {
       "import": "./src/url.ts",
       "types": "./src/url.ts"

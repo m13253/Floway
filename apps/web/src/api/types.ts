@@ -161,30 +161,10 @@ export interface FlagDef {
 
 // Mirrors SerializedProxyRecord from packages/gateway/src/control-plane/proxies/serialize.ts.
 // Field names stay snake_case to match the wire format the dashboard receives.
-export interface ProxyRecord {
-  id: string;
-  name: string;
-  url: string;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  last_egress_ip: string | null;
-  last_tested_at: number | null;
-  // null = use the gateway-wide dial deadline default. Operator-set
-  // override is whole seconds.
-  dial_timeout_seconds: number | null;
-}
-
-// Mirrors SerializedBackoffRow. `expires_at` and `last_error_at` are unix epoch
-// seconds; the UI converts via `* 1000` before handing them to dayjs / Date.
-export interface BackoffRow {
-  proxy_id: string;
-  upstream_id: string;
-  fail_count: number;
-  expires_at: number;
-  last_error: string | null;
-  last_error_at: number | null;
-}
+// Importing the gateway's source-of-truth type as the actual definition (rather
+// than redeclaring the shape) makes any future field rename a compile error
+// here instead of a runtime mismatch the next time someone refreshes the page.
+export type { SerializedProxyRecord as ProxyRecord, SerializedBackoffRow as BackoffRow } from '@floway-dev/gateway/control-plane/proxies/serialize';
 
 export interface ApiKey {
   id: string;

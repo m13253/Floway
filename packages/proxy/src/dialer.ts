@@ -2,6 +2,7 @@
 // new protocol = add a variant to ProxyConfig, a parser branch in url.ts,
 // and a case here.
 
+import { DEFAULT_DIAL_DEADLINE_MS } from './constants.js';
 import { ProxyDialError } from './errors.js';
 import { runHttpConnect } from './protocols/http-connect.js';
 import { runReality } from './protocols/reality.js';
@@ -13,16 +14,7 @@ import { runVlessTcpTls, runVlessWsTls } from './protocols/vless.js';
 import type { ProxyConfig } from './proxy-config.js';
 import type { TargetSpec } from './types.js';
 
-// Hard ceiling on the time the dial layer is allowed to spend before the
-// fallback chain moves on. Counts TCP connect + every handshake leg, but
-// not the upstream response — once the request bytes have been written we
-// expect normal response streaming. Reality / VLESS-WS / Trojan over a
-// real-world latency-bound link can take 8-15s for outer-TCP + outer-TLS
-// + proxy-handshake + inner-TLS combined; 30s leaves ~2× headroom on top
-// of that without letting a black-holed proxy entry stall the call for a
-// minute+. Operators can override per-proxy via the `dial_timeout_seconds`
-// column; runProxiedRequest's options.dialTimeoutMs takes the override.
-export const DEFAULT_DIAL_DEADLINE_MS = 30_000;
+export { DEFAULT_DIAL_DEADLINE_MS };
 
 export interface RunProxiedRequestOptions {
   /** Per-call dial-stage deadline override (ms). Falls back to

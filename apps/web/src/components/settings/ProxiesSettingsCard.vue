@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Spinner } from '@floway-dev/ui';
+import { useTimeoutFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
@@ -50,22 +51,30 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
   return map;
 });
 
-const persistReorder = async (next: ProxyRecord[]) => {
+// Reorder is persisted serially, not in parallel, because the sort_order
+// column has no uniqueness constraint at the DB layer — racing two PATCH
+// /api/proxies/:id sort_order writes is safe in isolation, but a mid-flight
+// failure on row N would leave a hybrid order that's hard to recover. On
+// any failure, snapshot-restore the local order and surface the error.
+const persistReorder = async (next: ProxyRecord[], snapshot: ProxyRecord[]) => {
   const patches = next
     .map((p, i) => ({ id: p.id, oldOrder: p.sort_order, newOrder: i }))
     .filter(({ oldOrder, newOrder }) => oldOrder !== newOrder);
   if (patches.length === 0) return;
-  const results = await Promise.all(
-    patches.map(({ id, newOrder }) =>
-      callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } })),
-    ),
-  );
-  const failed = results.find(r => r.error);
-  if (failed?.error) window.alert(`Reorder failed: ${failed.error.message}`);
+  for (const { id, newOrder } of patches) {
+    const { error } = await callApi(() => api.api.proxies[':id'].$patch({ param: { id }, json: { sort_order: newOrder } }));
+    if (error) {
+      ordered.value = snapshot;
+      window.alert(`Reorder failed: ${error.message}`);
+      emit('changed');
+      return;
+    }
+  }
   emit('changed');
 };
 
 const moveProxy = async (id: string, direction: -1 | 1) => {
+  const snapshot = [...ordered.value];
   const list = [...ordered.value];
   const idx = list.findIndex(p => p.id === id);
   const target = idx + direction;
@@ -74,13 +83,29 @@ const moveProxy = async (id: string, direction: -1 | 1) => {
   list[idx] = list[target]!;
   list[target] = tmp;
   ordered.value = list;
-  await persistReorder(list);
+  await persistReorder(list, snapshot);
 };
 
 const moveDisabled = (id: string, direction: -1 | 1) => {
   const idx = ordered.value.findIndex(p => p.id === id);
   const target = idx + direction;
   return idx === -1 || target < 0 || target >= ordered.value.length;
+};
+
+// Per-row cooldown timer. Each Test() click drives an entry in this Map so
+// the unmount-time auto-cancel from useTimeoutFn doesn't leak across an
+// SPA navigation that lands while a cooldown is in flight.
+const cooldownTimers = new Map<string, ReturnType<typeof useTimeoutFn>>();
+const startTestCooldown = (id: string): void => {
+  const existing = cooldownTimers.get(id);
+  if (existing) existing.stop();
+  cooldownTimers.set(
+    id,
+    useTimeoutFn(() => {
+      testInFlight.value = setMapEntry(testInFlight.value, id, false);
+      cooldownTimers.delete(id);
+    }, 3000),
+  );
 };
 
 const testProxy = async (record: ProxyRecord) => {
@@ -98,9 +123,7 @@ const testProxy = async (record: ProxyRecord) => {
     emit('changed');
   }
   // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
-  setTimeout(() => {
-    testInFlight.value = setMapEntry(testInFlight.value, record.id, false);
-  }, 3000);
+  startTestCooldown(record.id);
 };
 
 const resetBackoffs = async (record: ProxyRecord) => {
@@ -141,11 +164,18 @@ const deleteProxy = async (record: ProxyRecord) => {
       <button class="btn-primary !py-2.5 !px-3 text-xs whitespace-nowrap" @click="emit('add')">Add Proxy</button>
     </div>
 
-    <p v-if="ordered.length === 0" class="text-sm text-gray-500">
+    <!-- Surface a list-load error so an empty render after a failure isn't
+         confused with the "no proxies configured" empty state. The store
+         already exposes the message; this card is its only consumer. -->
+    <p v-if="proxiesStore.error.value" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+      Failed to load proxies: {{ proxiesStore.error.value }}
+    </p>
+
+    <p v-if="!proxiesStore.error.value && ordered.length === 0" class="text-sm text-gray-500">
       No proxies configured. Add a proxy to route upstream traffic through it.
     </p>
 
-    <div v-else class="space-y-2">
+    <div v-else-if="ordered.length > 0" class="space-y-2">
       <ProxyRow
         v-for="proxy in ordered"
         :key="proxy.id"

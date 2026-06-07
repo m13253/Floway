@@ -10,9 +10,10 @@
 
 import { parseProxyUri } from '@floway-dev/proxy/url';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
+import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import { Button, Input, Spinner } from '@floway-dev/ui';
-import { useNow } from '@vueuse/core';
-import { computed, ref, watch } from 'vue';
+import { useNow, useTimeoutFn } from '@vueuse/core';
+import { computed, ref } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
@@ -37,12 +38,24 @@ const upstreamsStore = useUpstreamsStore();
 
 const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
-const lastEgressIp = ref<string | null>(props.record?.last_egress_ip ?? null);
-const lastTestedAt = ref<number | null>(props.record?.last_tested_at ?? null);
+// Local "fresh test result" override. The page's parent re-derives `record`
+// from the proxies-store array on every store reload, which means any
+// sibling action (sibling card refresh, the useNow tick driving an upstream
+// component, ...) hands us a new `record` object identity. Reading these
+// fields straight from `props.record` would otherwise be fine; the override
+// exists so a successful Test() click reflects the new IP immediately,
+// before the next store reload pulls it in from the server.
+const localEgressIp = ref<string | null>(null);
+const localTestedAt = ref<number | null>(null);
+const lastEgressIp = computed(() => localEgressIp.value ?? props.record?.last_egress_ip ?? null);
+const lastTestedAt = computed(() => localTestedAt.value ?? props.record?.last_tested_at ?? null);
+
 // Per-proxy dial-stage deadline. Stored as a string to make "empty" the
-// canonical "use default" signal; coerced to a number on save. Must stay
-// in sync with DEFAULT_DIAL_DEADLINE_MS in @floway-dev/proxy.
-const DEFAULT_DIAL_TIMEOUT_SECONDS = 30;
+// canonical "use default" signal; coerced to a number on save. The
+// initial seed runs once: the parent re-mounts the component (via
+// :key="record.id") whenever the row changes, so a parent-store reload
+// against the SAME id must not clobber whatever the operator is typing.
+const DEFAULT_DIAL_TIMEOUT_SECONDS = Math.floor(DEFAULT_DIAL_DEADLINE_MS / 1000);
 const dialTimeoutInput = ref<string>(props.record?.dial_timeout_seconds === null || props.record?.dial_timeout_seconds === undefined ? '' : String(props.record.dial_timeout_seconds));
 
 const dialTimeoutParsed = computed<{ value: number | null } | { error: string } | null>(() => {
@@ -121,12 +134,14 @@ const lastTestedAgo = computed<string | null>(() => {
   return formatRelativeAgo(now.value.getTime() - lastTestedAt.value * 1000);
 });
 
-watch(() => props.record, r => {
-  if (!r) return;
-  lastEgressIp.value = r.last_egress_ip;
-  lastTestedAt.value = r.last_tested_at;
-  dialTimeoutInput.value = r.dial_timeout_seconds === null ? '' : String(r.dial_timeout_seconds);
-}, { immediate: false });
+const { start: startTestCooldown } = useTimeoutFn(
+  () => { testing.value = false; },
+  3000,
+  // Manually triggered after the request resolves; useTimeoutFn auto-
+  // cancels on unmount so a navigation mid-cooldown doesn't write to a
+  // gone component.
+  { immediate: false },
+);
 
 const save = async () => {
   saveError.value = null;
@@ -184,14 +199,15 @@ const test = async () => {
     if (error) { testError.value = error.message; return; }
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
     if (data?.egress_ip) {
-      lastEgressIp.value = data.egress_ip;
-      // Wire format is unix seconds, not millis; the parent re-fetch will overwrite this with the server value.
-      lastTestedAt.value = Math.floor(Date.now() / 1000);
+      // Wire format is unix seconds, not millis; the next store reload
+      // overwrites these from the server-confirmed value.
+      localEgressIp.value = data.egress_ip;
+      localTestedAt.value = Math.floor(Date.now() / 1000);
     }
     emit('saved');
   } finally {
     // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
-    setTimeout(() => { testing.value = false; }, 3000);
+    startTestCooldown();
   }
 };
 
