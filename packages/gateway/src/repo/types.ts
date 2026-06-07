@@ -172,10 +172,7 @@ export interface BackoffRow {
   proxyId: string;
   upstreamId: string;
   failCount: number;
-  // Unix seconds. Schedule: after the n-th consecutive failure for a
-  // (proxy, upstream) pair, expires_at = now + min(60 * 2^(n-1), 3600)
-  // (so n=1 → 60s, n=7+ → 3600s capped). A successful dial deletes the
-  // row, so the next failure restarts at n=1.
+  // Unix seconds. Set by recordDialFailure; cleared by recordDialSuccess.
   expiresAt: number;
   lastError: string | null;
   lastErrorAt: number | null;

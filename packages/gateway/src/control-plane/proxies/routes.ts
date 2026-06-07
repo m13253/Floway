@@ -96,7 +96,7 @@ const ANCHORS = {
 // arbitrary HTML page into `last_egress_ip`. The regex is tight enough to
 // reject anything obviously not an IP without trying to be a strict
 // validator (we only need a "this looks plausible" gate).
-const IP_LIKE_RE = /^[0-9a-fA-F:.]{1,45}$/;
+const IP_LIKE_RE = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)$/;
 
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const id = c.req.param('id') ?? '';
