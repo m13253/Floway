@@ -85,7 +85,7 @@ const performanceModel = ref<string>('');
 const view = ref<View>(initialOverview.data.value.view);
 
 const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);
-const overview = ref<OverviewResponse | null>(initialOverview.data.value.overview);
+const overview = ref<OverviewResponse>(initialOverview.data.value.overview);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
 
@@ -101,7 +101,6 @@ const switchPerformanceChartView = (v: ChartView) => {
   if (performanceChartView.value === v) return;
   performanceChartView.value = v;
 };
-const switchPerformancePercentile = (p: PercentileKey) => { performancePercentile.value = p; };
 
 const load = async () => {
   const requestId = ++performanceRequestId;
@@ -124,8 +123,6 @@ const load = async () => {
 
 watch([performanceRange, performanceMetricScope, view], load);
 useIntervalFn(load, 60_000);
-
-const seriesValue = (r: DisplayRecord, p: PercentileKey) => r[p];
 
 const performancePercentileLabel = computed(() => {
   switch (performancePercentile.value) {
@@ -150,7 +147,7 @@ watchEffect(() => {
   if (!options.includes(performanceModel.value)) performanceModel.value = options[0]!;
 });
 
-const formatDurationMs = (ms: number | null | undefined) => {
+const formatDuration = (ms: number | null | undefined) => {
   if (ms === null || ms === undefined) return '—';
   if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`;
@@ -165,7 +162,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
       const groups = new Map<string, Map<string, number | null>>();
       for (const r of series.value) {
         const inner = groups.get(r.group) ?? new Map<string, number | null>();
-        inner.set(r.bucket, seriesValue(r, performancePercentile.value));
+        inner.set(r.bucket, r[performancePercentile.value]);
         groups.set(r.group, inner);
       }
       return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
@@ -185,7 +182,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
       });
     })()
     : (['p50Ms', 'p95Ms', 'p99Ms'] as PercentileKey[]).map((p, i) => {
-      const byBucket = new Map(series.value.filter(r => r.group === performanceModel.value).map(r => [r.bucket, seriesValue(r, p)]));
+      const byBucket = new Map(series.value.filter(r => r.group === performanceModel.value).map(r => [r.bucket, r[p]]));
       const color = chartColor(i);
       return {
         label: p.replace('Ms', ''),
@@ -227,7 +224,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
           padding: 12,
           bodyFont: { family: chartFont.mono, size: 11 },
           filter: item => item.parsed.y !== null,
-          callbacks: { label: (ctx: TooltipItem<'line'>) => `${ctx.dataset.label}: ${formatDurationMs(Number(ctx.parsed.y))}` },
+          callbacks: { label: (ctx: TooltipItem<'line'>) => `${ctx.dataset.label}: ${formatDuration(Number(ctx.parsed.y))}` },
         },
       },
       scales: {
@@ -247,7 +244,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
           beginAtZero: false,
           title: { display: true, text: yTitle, color: '#9e9e9e', font: { size: 10, family: chartFont.sans } },
           grid: { color: 'rgba(255,255,255,0.04)' },
-          ticks: { color: '#9e9e9e', font: { size: 10, family: chartFont.mono }, callback: v => formatDurationMs(Number(v)) },
+          ticks: { color: '#9e9e9e', font: { size: 10, family: chartFont.mono }, callback: v => formatDuration(Number(v)) },
           border: { color: 'rgba(255,255,255,0.06)' },
         },
       },
@@ -256,7 +253,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 });
 
 const performanceSummary = computed(() => {
-  const row = overview.value?.summaryRows[0];
+  const row = overview.value.summaryRows[0];
   return {
     requests: row?.requests ?? 0,
     errors: row?.errors ?? 0,
@@ -267,10 +264,8 @@ const performanceSummary = computed(() => {
   };
 });
 
-const performanceModelRows = computed(() => overview.value?.modelRows ?? []);
-const performanceRuntimeRows = computed(() => overview.value?.runtimeRows ?? []);
-
-const formatDuration = formatDurationMs;
+const performanceModelRows = computed(() => overview.value.modelRows);
+const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
 </script>
 
 <template>
@@ -347,7 +342,7 @@ const formatDuration = formatDurationMs;
               :key="p"
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performancePercentile === p ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformancePercentile(p)"
+              @click="performancePercentile = p"
             >
               {{ p.replace('Ms', '') }}
             </button>

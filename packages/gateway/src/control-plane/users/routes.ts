@@ -60,7 +60,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
   // Includes soft-deleted rows so a recreated username never collides with
-  // an old id. The seed admin occupies id 1.
+  // an old id.
   const all = await repo.users.listIncludingDeleted();
   const newId = all.reduce((max, u) => Math.max(max, u.id), 0) + 1;
 
