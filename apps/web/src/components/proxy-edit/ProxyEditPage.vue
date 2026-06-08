@@ -117,7 +117,7 @@ const dialTimeoutParsed = computed<{ value: number | null } | { error: string }>
   if (raw === '') return { value: null };
   if (!/^[1-9][0-9]*$/.test(raw)) return { error: 'Whole seconds, > 0' };
   const n = Number(raw);
-  if (n < 1 || n > 600) return { error: 'Must be between 1 and 600 seconds' };
+  if (n > 600) return { error: 'Must be at most 600 seconds' };
   return { value: n };
 });
 
