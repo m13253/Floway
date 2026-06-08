@@ -4,9 +4,9 @@
 // Used by reality.ts (after the REALITY-tls is established) and by vless.ts
 // (after the outer TLS / outer fetch+WS upgrade).
 
+import { concat, copy, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { DialResult, DialTarget } from '../types.ts';
-import { concat, copy, hexDecode } from '../bytes.ts';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },

@@ -30,11 +30,11 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
+import { copy, asciiBytes, randomBytes, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
-import { copy, asciiBytes, randomBytes, hexDecode } from '../bytes.ts';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {

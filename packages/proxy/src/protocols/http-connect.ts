@@ -9,10 +9,10 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
+import { copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { copy, findDoubleCrlf } from '../bytes.ts';
 
 export const dialHttpConnect = async (
   config: HttpProxyConfig,

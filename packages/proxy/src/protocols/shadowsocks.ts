@@ -21,11 +21,11 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
+import { asciiBytes, concat, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
+import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { asciiBytes, concat, randomBytes } from '../bytes.ts';
-import { makeExactReader } from '../exact-reader.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,

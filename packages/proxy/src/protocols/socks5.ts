@@ -4,10 +4,10 @@
 // the SOCKS5 handshake we hand the post-handshake byte stream back to the
 // orchestrator, which layers userspace TLS for the upstream's HTTPS handshake.
 
+import { copy } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { copy } from '../bytes.ts';
 
 export const dialSocks5 = async (
   config: Socks5ProxyConfig,

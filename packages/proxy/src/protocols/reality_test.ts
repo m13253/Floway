@@ -2,10 +2,10 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { describe, expect, it } from 'vitest';
 
 import { buildRealityAad, buildRealitySessionId, dialReality } from './reality.ts';
+import { hexDecode } from '../bytes.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
-import { hexDecode } from '../bytes.ts';
 
 describe('buildRealitySessionId', () => {
   it('packs version, timestamp, and short id into 32 bytes', () => {
