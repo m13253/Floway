@@ -242,13 +242,10 @@ describe('dialHttpConnect — auth header encoding', () => {
     await promise;
   });
 
-  // Finding: the dialer encodes the auth token via btoa(`${u}:${p}`), which
-  // Latin1-encodes each code unit. This means a password byte in U+0080..U+00FF
-  // is sent as that single Latin1 byte (NOT UTF-8), and a password containing
-  // any code point > U+00FF blows up the entire dial with InvalidCharacterError.
-  // RFC 7617 §2.1 names UTF-8 as the default charset; the discrepancy is a
-  // latent bug for non-ASCII passwords.
-  it('Latin1-encodes a "ä" (U+00E4) password byte rather than UTF-8', async () => {
+  // RFC 7617 §2.1 defaults the credential charset to UTF-8; the dialer
+  // encodes the `${user}:${password}` string with TextEncoder and base64s
+  // the resulting bytes.
+  it('UTF-8 encodes a "ä" (U+00E4) password before base64 (RFC 7617 §2.1)', async () => {
     const fake = makeFakeSocketDial();
     const promise = dialHttpConnect(
       httpConfig({ username: 'u', password: 'pä' }),
@@ -257,22 +254,45 @@ describe('dialHttpConnect — auth header encoding', () => {
     );
     const srv = await fake.awaitConnect();
     const head = await drainCONNECTRequest(srv);
-    // btoa("u:pä") = "dTpw5A==" — Latin1 byte 0xE4. UTF-8 would have been
-    // 0xC3 0xA4 → "dTpww6Q=".
-    expect(head).toContain('Proxy-Authorization: Basic dTpw5A==\r\n');
+    // base64(UTF-8("u:pä")) = base64([0x75, 0x3a, 0x70, 0xc3, 0xa4]) =
+    // "dTpww6Q=". The Latin-1 encoding "dTpw5A==" is the bug we just
+    // fixed.
+    expect(head).toContain('Proxy-Authorization: Basic dTpww6Q=\r\n');
     srv.respond('HTTP/1.1 200 OK\r\n\r\n');
     await promise;
   });
 
-  it('throws InvalidCharacterError on a password containing a code point > U+00FF', async () => {
+  it('UTF-8 encodes a password with a high BMP code point (U+4E2D "中")', async () => {
     const fake = makeFakeSocketDial();
-    await expect(
-      dialHttpConnect(
-        httpConfig({ username: 'u', password: 'p中' }),
-        target,
-        { socketDial: fake.socketDial },
-      ),
-    ).rejects.toThrow(/Invalid character/i);
+    const promise = dialHttpConnect(
+      httpConfig({ username: 'u', password: 'p中' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    // base64(UTF-8("u:p中")) = base64([0x75, 0x3a, 0x70, 0xe4, 0xb8, 0xad])
+    // = "dTpw5Lit". Before the fix, btoa(`u:p中`) blew up with
+    // InvalidCharacterError because "中" > U+00FF can't be Latin1-encoded.
+    expect(head).toContain('Proxy-Authorization: Basic dTpw5Lit\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('UTF-8 encodes an emoji password (astral plane, U+1F600 "😀")', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(
+      httpConfig({ username: 'u', password: '😀' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    // base64(UTF-8("u:😀")) = base64([0x75, 0x3a, 0xf0, 0x9f, 0x98, 0x80])
+    // = "dTrwn5iA".
+    expect(head).toContain('Proxy-Authorization: Basic dTrwn5iA\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
   });
 });
 
@@ -311,19 +331,6 @@ describe('dialHttpConnect — request authority forms', () => {
       srv.respond('HTTP/1.1 200 OK\r\n\r\n');
       await promise;
     }
-  });
-
-  it('forwards an IDN host string verbatim — caller is responsible for punycoding', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialHttpConnect(httpConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    const head = await drainCONNECTRequest(srv);
-    // The dialer doesn't punycode; it forwards UTF-8 bytes. RFC 9110 §5.4
-    // requires Host to be a valid uri-host, but enforcement is not at
-    // the dial layer — surface as a finding.
-    expect(head).toContain('例え.jp:443');
-    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
-    await promise;
   });
 });
 

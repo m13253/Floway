@@ -9,7 +9,7 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
-import { copy, findDoubleCrlf } from '../bytes.ts';
+import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
@@ -62,7 +62,13 @@ const dialHttpConnectInner = async (
     'Proxy-Connection: keep-alive',
   ];
   if (auth) {
-    const token = btoa(`${auth.username}:${auth.password}`);
+    // RFC 7617 §2.1 defaults the credential charset to UTF-8. `btoa` on a
+    // JS string Latin-1-encodes each code unit, so a password byte in
+    // U+0080..U+00FF would go on the wire as that single Latin-1 byte
+    // and a code point > U+00FF would throw InvalidCharacterError mid-
+    // dial. Encode to UTF-8 bytes first, then base64.
+    const credBytes = new TextEncoder().encode(`${auth.username}:${auth.password}`);
+    const token = base64EncodeBytes(credBytes);
     lines.push(`Proxy-Authorization: Basic ${token}`);
   }
   await writer.write(enc.encode(`${lines.join('\r\n')}\r\n\r\n`));

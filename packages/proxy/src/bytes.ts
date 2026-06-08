@@ -72,3 +72,18 @@ export const findDoubleCrlf = (buf: Uint8Array): number => {
   }
   return -1;
 };
+
+/**
+ * Base64-encode a raw byte buffer. `btoa` requires a binary-string input
+ * (one code-unit per byte), so we map each byte to its corresponding
+ * Latin-1 code unit via `String.fromCharCode` before calling btoa. Used
+ * for HTTP CONNECT Basic-auth where RFC 7617 §2.1 mandates UTF-8 bytes —
+ * the caller encodes credentials to UTF-8 with TextEncoder, then base64s
+ * those bytes (NOT the JS string code units of the original credentials,
+ * which would emit Latin-1 bytes and crash on code points > U+00FF).
+ */
+export const base64EncodeBytes = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+};
