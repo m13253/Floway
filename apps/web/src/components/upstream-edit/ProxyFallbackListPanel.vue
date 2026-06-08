@@ -36,7 +36,10 @@ const directInList = computed(() => props.modelValue.includes(DIRECT));
 
 const labelFor = (entry: string): string => {
   if (entry === DIRECT) return 'direct';
-  return proxiesById.value.get(entry)?.name ?? entry;
+  // Non-direct, non-orphan entries reach this path: the template only
+  // renders the labelFor branch when isOrphan(entry) is false, which
+  // means proxiesById has the row.
+  return proxiesById.value.get(entry)!.name;
 };
 
 // True for entries that name a proxy id we don't know about — typically a
