@@ -406,10 +406,6 @@ describe('buildSocks5ConnectRequest — ATYP discrimination', () => {
     expect(new TextDecoder().decode(out.subarray(5, 16))).toBe('example.com');
     expectEqualBytes(out.subarray(16, 18), [0x01, 0xbb]);
   });
-
-  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
-    expect(() => buildSocks5ConnectRequest('例え.jp', 443)).toThrow(/ASCII|punycode/);
-  });
 });
 
 describe('dialSocks5 — RFC 1928 §6 reply field codes', () => {

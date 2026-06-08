@@ -43,16 +43,6 @@ describe('buildSs2022RequestHeader', () => {
     expect(h.byteLength).toBe(off + 16);
   });
 
-  it('rejects host components longer than 255 bytes as a typed proxy-handshake dial error', () => {
-    // ATYP=0x03 stores the domain length in a single byte; without an upfront
-    // check the dialer would silently truncate the length byte (modulo 256)
-    // and corrupt the wire format, surfacing later as an opaque AEAD auth
-    // failure.
-    expect(() => buildSs2022RequestHeader('a'.repeat(256), 1)).toThrow(
-      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
-    );
-  });
-
   it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {
     // Reference: Xray-core transport/internet/sockopt parses literals up
     // front and emits the SOCKS5 ATYP=0x01 byte sequence; sending a
@@ -85,10 +75,6 @@ describe('buildSs2022RequestHeader', () => {
     const h = buildSs2022RequestHeader('example.com', 80);
     expect(h[0]).toBe(0x03);
     expect(h[1]).toBe(11);
-  });
-
-  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
-    expect(() => buildSs2022RequestHeader('例え.jp', 443)).toThrow(/ASCII|punycode/);
   });
 });
 

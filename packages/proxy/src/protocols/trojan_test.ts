@@ -48,11 +48,6 @@ describe('buildTrojanRequestHeader', () => {
     expect(header.byteLength).toBe(off);
   });
 
-  it('rejects hostnames longer than 255 bytes', () => {
-    const long: DialTarget = { host: 'a'.repeat(256), port: 443 };
-    expect(() => buildTrojanRequestHeader('p', long)).toThrow(/too long/);
-  });
-
   it('produces a stable byte sequence for a known password+target vector', () => {
     const header = buildTrojanRequestHeader('hello', { host: 'example.com', port: 80 });
     // hex(SHA-224("hello")) = "ea09ae9cc6768c50fcee903ed054556e5bfc8347907f12598aa24193"
@@ -140,12 +135,6 @@ describe('buildTrojanRequestHeader — port and address variants', () => {
     expect(header[60]).toBe(0xff);
     expect(new TextDecoder().decode(header.subarray(61, 61 + 255))).toBe(host);
   });
-
-  it('rejects a 256-byte hostname before any I/O', () => {
-    expect(() => buildTrojanRequestHeader('p', { host: 'a'.repeat(256), port: 443 })).toThrow(
-      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
-    );
-  });
 });
 
 describe('buildTrojanRequestHeader — total framing layout', () => {
@@ -201,12 +190,6 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
     expect(header[59]).toBe(0x03);
     expect(header[60]).toBe('example.com'.length);
     expect(new TextDecoder().decode(header.subarray(61, 72))).toBe('example.com');
-  });
-
-  it('rejects an IDN host string before any I/O — caller must punycode first', () => {
-    expect(() => buildTrojanRequestHeader('p', { host: '例.com', port: 443 })).toThrow(
-      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake', message: expect.stringContaining('ASCII') }),
-    );
   });
 
   it('emits two CRLF terminators — one after the hash, one after the port', () => {

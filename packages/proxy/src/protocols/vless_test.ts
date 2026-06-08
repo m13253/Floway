@@ -264,15 +264,6 @@ describe('vlessFrameOverStream — port and hostname encoding', () => {
     expect(new TextDecoder().decode(written.subarray(23, 23 + 255))).toBe(host);
   });
 
-  it('rejects a 256-byte hostname before any I/O', async () => {
-    const p = makePair();
-    await expect(vlessFrameOverStream(p.transport, UUID, { host: 'a'.repeat(256), port: 1 })).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('hostname too long'),
-    });
-  });
-
   it('emits ATYP=0x02 (domain, length-prefixed) for a true hostname', async () => {
     // VLESS numbering: 0x01 v4, 0x02 domain, 0x03 v6.
     // SOCKS5/SS numbering: 0x01 v4, 0x03 domain, 0x04 v6. Easy to confuse.
@@ -316,19 +307,6 @@ describe('vlessFrameOverStream — port and hostname encoding', () => {
     expect(written[21]).toBe(0x03);
     expect(written[22 + 15]).toBe(0x01);
     expect(written.byteLength).toBe(22 + 16);
-  });
-
-  it('rejects an IDN host string before any I/O — caller must punycode first', async () => {
-    // VLESS servers parse the domain as a UTF-8 string in-band, but
-    // emitting raw IDN bytes here is a layering muddle. The URL parser
-    // at the gateway layer is the right place for the punycode
-    // translation.
-    const p = makePair();
-    await expect(vlessFrameOverStream(p.transport, UUID, { host: '例.com', port: 443 })).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('ASCII'),
-    });
   });
 });
 

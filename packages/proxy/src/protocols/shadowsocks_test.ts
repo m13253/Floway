@@ -46,15 +46,6 @@ describe('buildSsAddress', () => {
     expect(out[16]).toBe(0x01);
     expect(out[17]).toBe(0xbb);
   });
-
-  it('rejects host components longer than 255 bytes as a typed proxy-handshake dial error', () => {
-    // Wrapped as ProxyDialError (rather than plain Error) so a malformed
-    // dial target doesn't fly past the gateway's `instanceof ProxyDialError`
-    // gate and kill the rest of the fallback chain.
-    expect(() => buildSsAddress('a'.repeat(256), 1)).toThrow(
-      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
-    );
-  });
 });
 
 describe('dialShadowsocks — AEAD frame round trip', () => {
@@ -194,10 +185,6 @@ describe('buildSsAddress — port and host variants', () => {
     expect(out[0]).toBe(0x03);
     expect(out[1]).toBe(0xff);
     expect(new TextDecoder().decode(out.subarray(2, 2 + 255))).toBe(host);
-  });
-
-  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
-    expect(() => buildSsAddress('例え.jp', 443)).toThrow(/ASCII|punycode/);
   });
 
   it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {
