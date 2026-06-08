@@ -7,6 +7,7 @@ export {
   initSocketDial,
   getSocketDial,
   resetSocketDialForTesting,
+  throwAbort,
   type SocketDial,
   type DialedSocket,
   type DialOptions,

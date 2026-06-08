@@ -2,7 +2,7 @@ import net from 'node:net';
 import { Readable } from 'node:stream';
 import tls from 'node:tls';
 
-import type { DialedSocket, SocketDial } from '@floway-dev/platform';
+import { throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // Hand-rolled adapter from a node:net.Socket to a WritableStream<Uint8Array>.
 // Writable.toWeb only wires `close()` to socket.end(); writer.abort() is
@@ -61,11 +61,7 @@ const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
 // connect socket.destroy() so subsequent reads/writes reject.
 export const nodeSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
-    if (opts?.signal?.aborted) {
-      const reason = opts.signal.reason;
-      if (reason instanceof Error) throw reason;
-      throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
-    }
+    if (opts?.signal?.aborted) throwAbort(opts.signal);
     // node:net / node:tls accept `signal` natively; passing it lets the
     // runtime tear down a connect that has not yet fired 'connect' /
     // 'secureConnect' without us having to race anything ourselves.

@@ -50,3 +50,17 @@ export const getSocketDial = (): SocketDial => {
 export const resetSocketDialForTesting = (): void => {
   current = null;
 };
+
+/**
+ * Convert a caller-supplied abort signal into a thrown error, matching the
+ * shape every SocketDial impl needs at three points: a pre-connect short-
+ * circuit, a connect-failure narrowing, and a post-connect re-check. A
+ * structured Error reason is rethrown as-is so its stack/cause survives;
+ * a primitive or absent reason becomes a DOMException('AbortError') so
+ * the dial chain's AbortError fast-path classifies it correctly.
+ */
+export const throwAbort = (signal: AbortSignal): never => {
+  const reason = signal.reason;
+  if (reason instanceof Error) throw reason;
+  throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
+};
