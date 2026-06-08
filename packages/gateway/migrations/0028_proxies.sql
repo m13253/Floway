@@ -28,9 +28,12 @@ CREATE TABLE proxy_upstream_backoffs (
   last_error_at INTEGER,
   PRIMARY KEY (proxy_id, upstream_id)
 );
--- The (proxy_id, upstream_id) PK already covers every read (always keyed
--- by one of the two id columns); no scheduled GC sweeps the table by
--- expires_at, so an additional index would be dead weight.
+-- listForUpstream is called on every proxied dial and queries by
+-- upstream_id alone, which is the right column of the composite PK and
+-- not covered by it. The table stays small in practice (one row per
+-- failing (proxy, upstream) pair, cleared on success), so a full scan
+-- is microseconds at the scales we ship; if that stops being true we
+-- should add an index on upstream_id.
 
 ALTER TABLE upstreams
   ADD COLUMN proxy_fallback_list_json TEXT NOT NULL DEFAULT '[]';

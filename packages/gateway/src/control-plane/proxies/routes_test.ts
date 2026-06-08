@@ -59,6 +59,7 @@ interface ProxyJson {
   updated_at: string;
   last_egress_ip: string | null;
   last_tested_at: number | null;
+  dial_timeout_seconds: number | null;
 }
 
 test('GET /api/proxies returns rows ordered by sort_order', async () => {
@@ -187,7 +188,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override',
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: 120 }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, 120);
 
   const stored = await repo.proxies.getById('p1');
@@ -200,7 +201,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existin
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, 90);
 
   const stored = await repo.proxies.getById('p1');
@@ -213,7 +214,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to de
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: null }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson & { dial_timeout_seconds: number | null };
+  const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, null);
 
   const stored = await repo.proxies.getById('p1');
