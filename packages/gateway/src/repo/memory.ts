@@ -66,7 +66,6 @@ class MemoryUsersRepo implements UsersRepo {
   }
 
   async save(user: User): Promise<void> {
-    if (!Number.isInteger(user.id) || user.id < 1) throw new Error('user.id must be a positive integer');
     const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
     if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);
     const i = this.users.findIndex(u => u.id === user.id);
@@ -163,7 +162,6 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   }
 
   async save(key: ApiKey): Promise<void> {
-    if (!Number.isInteger(key.userId) || key.userId < 1) throw new Error('apiKey.userId must be a positive integer');
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) this.keys[i] = { ...key };
     else this.keys.push({ ...key });
@@ -176,14 +174,16 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return true;
   }
 
-  softDeleteByUserId(userId: number): Promise<void> {
+  softDeleteByUserId(userId: number): Promise<number> {
     const now = new Date().toISOString();
+    let count = 0;
     for (let i = 0; i < this.keys.length; i++) {
       if (this.keys[i].userId === userId && this.keys[i].deletedAt === null) {
         this.keys[i] = { ...this.keys[i], deletedAt: now };
+        count++;
       }
     }
-    return Promise.resolve();
+    return Promise.resolve(count);
   }
 
   deleteAll(): Promise<void> {

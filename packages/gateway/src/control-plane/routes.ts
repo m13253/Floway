@@ -29,9 +29,7 @@ const adminOnlyMiddleware = async (c: Context, next: Next) => {
 // ./schemas.ts and double as the RPC client's input contract.
 export const controlPlaneRoutes = new Hono()
   .get('/api/health', c => c.json({ status: 'ok', service: 'floway' }))
-  // Fallback while no static favicon is committed to apps/web/src/. Once
-  // Vite copies a real favicon into apps/web/dist/, Workers Static Assets
-  // will match first and this handler becomes dead code.
+  // Fallback 204 until a static favicon is committed and shadows this route.
   .get('/favicon.ico', () => new Response(null, { status: 204 }))
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)

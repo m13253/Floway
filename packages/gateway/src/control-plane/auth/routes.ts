@@ -6,21 +6,10 @@ import type { Context } from 'hono';
 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { User } from '../../repo/types.ts';
 import { verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
+import { userToEffectiveWire } from '../users/wire.ts';
 import { getEnv } from '@floway-dev/platform';
-
-// Distinct from users/routes.ts userToWire: this shape exposes the effective
-// capability (admin implies canViewGlobalTelemetry) for the dashboard, while
-// the admin-editor surface there shows the raw stored flags.
-const userToWire = (user: User) => ({
-  id: user.id,
-  username: user.username,
-  isAdmin: user.isAdmin,
-  canViewGlobalTelemetry: user.isAdmin || user.canViewGlobalTelemetry,
-  upstreamIds: user.upstreamIds,
-});
 
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
   const { username, password } = c.req.valid('json');
@@ -34,7 +23,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
     const user = await repo.users.getById(1);
     if (!user) return c.json({ error: 'Invalid username or password' }, 401);
     const session = await repo.sessions.create(user.id);
-    return c.json({ token: session.id, user: userToWire(user) });
+    return c.json({ token: session.id, user: userToEffectiveWire(user) });
   }
 
   const user = await repo.users.findByUsernameActive(username);
@@ -43,7 +32,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
     return c.json({ error: 'Invalid username or password' }, 401);
   }
   const session = await repo.sessions.create(user.id);
-  return c.json({ token: session.id, user: userToWire(user) });
+  return c.json({ token: session.id, user: userToEffectiveWire(user) });
 };
 
 export const authLogout = async (c: Context) => {
@@ -65,7 +54,7 @@ export const authMe = async (c: Context) => {
     apiKey = k ? { id: k.id, name: k.name } : null;
   }
   return c.json({
-    user: userToWire(user),
+    user: userToEffectiveWire(user),
     viaApiKey: !sessionId,
     apiKey,
   });

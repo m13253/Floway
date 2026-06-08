@@ -14,7 +14,7 @@ export interface UpstreamOption {
   enabled: boolean;
 }
 
-const options = shallowRef<UpstreamOption[] | null>(null);
+const options = shallowRef<UpstreamOption[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 

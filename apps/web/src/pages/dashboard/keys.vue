@@ -113,7 +113,7 @@ const copyToClipboard = async (text: string, tag: string) => {
 const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));
 const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
 const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
-const upstreamOptions = computed(() => upstreamOptionsStore.options.value ?? []);
+const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
 </script>
 
 <template>

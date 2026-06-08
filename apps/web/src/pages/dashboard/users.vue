@@ -12,7 +12,7 @@ export const useUsersPageData = defineBasicLoader(async () => {
     callApi<WireUser[]>(() => api.api.users.$get()),
     upstreamOptions.load(),
   ]);
-  const error = usersRes.error?.message ?? upstreamOptions.error.value ?? null;
+  const error = usersRes.error?.message ?? upstreamOptions.error.value;
   return { users: usersRes.data ?? [], error };
 });
 </script>
@@ -41,7 +41,7 @@ const actorUserId = computed(() => {
 
 const users = ref<WireUser[]>(initial.data.value.users);
 const error = ref<string | null>(initial.data.value.error);
-const upstreamOptions = computed(() => upstreamOptionsStore.options.value ?? []);
+const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
 
 const userDialogOpen = ref(false);
 const userDialogMode = ref<'create' | 'edit'>('create');

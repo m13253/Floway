@@ -3,33 +3,15 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
+import type { PerformanceOverviewResponse } from './performance-types.ts';
 import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
-
-interface LoaderPerformanceRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  errors: number;
-  totalMsSum: number;
-  avgMs: number | null;
-  p50Ms: number | null;
-  p95Ms: number | null;
-  p99Ms: number | null;
-}
-
-interface LoaderOverviewResponse {
-  series: LoaderPerformanceRecord[];
-  summaryRows: LoaderPerformanceRecord[];
-  modelRows: LoaderPerformanceRecord[];
-  runtimeRows: LoaderPerformanceRecord[];
-}
 
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const auth = useAuthStoreForLoader();
   const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
-  const overviewRes = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
+  const overviewRes = await callApiForLoader<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
   }));
   return {
@@ -50,31 +32,13 @@ import { computed, ref, watch, watchEffect } from 'vue';
 import { callApi, useApi } from '../../api/client.ts';
 import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import type { PerformanceDisplayRecord } from './performance-types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
-
-interface DisplayRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  errors: number;
-  totalMsSum: number;
-  avgMs: number | null;
-  p50Ms: number | null;
-  p95Ms: number | null;
-  p99Ms: number | null;
-}
-interface OverviewResponse {
-  series: DisplayRecord[];
-  summaryRows: DisplayRecord[];
-  modelRows: DisplayRecord[];
-  runtimeRows: DisplayRecord[];
-}
 
 type Range = DashboardRange;
 type Scope = 'request_total' | 'upstream_success';
 type ChartView = 'model' | 'percentile';
 type PercentileKey = 'p50Ms' | 'p95Ms' | 'p99Ms';
-type View = 'all-by-user' | 'self-by-key';
 
 const api = useApi();
 const auth = useAuthStore();
@@ -86,10 +50,10 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
-const view = ref<View>(initialOverview.data.value.view);
+const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
 
-const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);
-const overview = ref<OverviewResponse>(initialOverview.data.value.overview);
+const series = ref<PerformanceDisplayRecord[]>(initialOverview.data.value.overview.series);
+const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
 const performanceError = ref<string | null>(initialOverview.data.value.error);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
@@ -101,7 +65,7 @@ const load = async () => {
   const requestedView = view.value;
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
-  const { data, error: err } = await callApi<OverviewResponse>(() => api.api.performance.overview.$get({
+  const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView },
   }));
   if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope || view.value !== requestedView) return;

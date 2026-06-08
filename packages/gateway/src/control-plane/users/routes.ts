@@ -4,26 +4,13 @@
 
 import type { Context } from 'hono';
 
+import { userToRawWire } from './wire.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
-
-// Surfaces the raw stored isAdmin / canViewGlobalTelemetry flags so admin
-// edits round-trip exactly what's persisted. The /auth/me wire shape in
-// auth/routes.ts ORs isAdmin into canViewGlobalTelemetry to model the
-// effective capability instead.
-const userToWire = (u: User) => ({
-  id: u.id,
-  username: u.username,
-  isAdmin: u.isAdmin,
-  upstreamIds: u.upstreamIds,
-  canViewGlobalTelemetry: u.canViewGlobalTelemetry,
-  createdAt: u.createdAt,
-  deletedAt: u.deletedAt,
-});
 
 const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
   if (ids === null) return null;
@@ -41,7 +28,7 @@ const parseUserId = (raw: string | undefined): number | null => {
 
 export const listUsers = async (c: Context) => {
   const users = await getRepo().users.list();
-  return c.json(users.map(userToWire));
+  return c.json(users.map(userToRawWire));
 };
 
 export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
@@ -88,7 +75,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.apiKeys.save(defaultKey);
 
-  return c.json({ user: userToWire(user) }, 201);
+  return c.json({ user: userToRawWire(user) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -137,7 +124,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     else await repo.sessions.deleteByUserId(id);
   }
 
-  return c.json(userToWire(next));
+  return c.json(userToRawWire(next));
 };
 
 export const deleteUser = async (c: Context) => {

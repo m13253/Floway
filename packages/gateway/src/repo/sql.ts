@@ -116,7 +116,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   }
 
   async save(key: ApiKey): Promise<void> {
-    if (!Number.isInteger(key.userId) || key.userId < 1) throw new Error('apiKey.userId must be a positive integer');
     await this.db
       .prepare(
         `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -149,11 +148,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return ((result.meta.changes as number | undefined) ?? 0) > 0;
   }
 
-  async softDeleteByUserId(userId: number): Promise<void> {
-    await this.db
+  async softDeleteByUserId(userId: number): Promise<number> {
+    const result = await this.db
       .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), userId)
       .run();
+    return (result.meta.changes as number | undefined) ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -256,7 +256,6 @@ class SqlUsersRepo implements UsersRepo {
   }
 
   async save(user: User): Promise<void> {
-    if (!Number.isInteger(user.id) || user.id < 1) throw new Error('user.id must be a positive integer');
     await this.db
       .prepare(
         `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

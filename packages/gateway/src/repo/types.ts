@@ -112,7 +112,7 @@ export interface ApiKeyRepo {
   idsByUserIdIncludingDeleted(userId: number): Promise<string[]>;
   save(key: ApiKey): Promise<void>;
   softDelete(id: string): Promise<boolean>;
-  softDeleteByUserId(userId: number): Promise<void>;
+  softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 

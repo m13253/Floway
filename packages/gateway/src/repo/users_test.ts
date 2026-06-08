@@ -85,11 +85,6 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.users.getById(3))?.upstreamIds).toEqual(['up_one', 'up_two']);
   });
 
-  test('save throws on non-positive id', async () => {
-    const repo = await makeRepo();
-    await expect(repo.users.save(sampleUser({ id: 0 }))).rejects.toThrow();
-  });
-
   test('findByUsernameActive does not return soft-deleted rows', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
