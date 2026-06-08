@@ -155,11 +155,11 @@ export const listUpstreamOptions = async (c: Context) => {
   return c.json(items
     .slice()
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map(u => ({
-      id: u.id,
-      name: u.name,
-      provider: u.provider,
-      enabled: u.enabled,
+    .map(upstream => ({
+      id: upstream.id,
+      name: upstream.name,
+      provider: upstream.provider,
+      enabled: upstream.enabled,
     })));
 };
 

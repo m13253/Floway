@@ -15,8 +15,7 @@ defineEmits<{
   remove: [user: WireUser];
 }>();
 
-// User 1 is the seed admin (migration 0028) and may not be deleted or demoted;
-// the actor may not delete themselves.
+// User 1 (seed admin) and the actor themselves cannot be deleted.
 const isProtected = (id: number, actor: number) => id === 1 || id === actor;
 </script>
 

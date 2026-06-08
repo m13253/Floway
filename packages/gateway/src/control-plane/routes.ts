@@ -34,7 +34,6 @@ export const controlPlaneRoutes = new Hono()
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
-  // Defensive admin guard for any /auth/* path not registered above.
   .route('/auth', new Hono().use('*', adminOnlyMiddleware))
   .get('/api/keys', listKeys)
   .post('/api/keys', zValidator('json', createKeyBody), createKey)
