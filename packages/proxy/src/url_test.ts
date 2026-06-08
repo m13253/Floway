@@ -39,6 +39,19 @@ describe('parseProxyUri', () => {
     expect(() => parseProxyUri('http://example.com')).toThrow(/port/);
   });
 
+  it('preserves an explicit http port=80 that the URL constructor strips', () => {
+    // `new URL('http://host:80/').port === ''` — same shape as a port-omitted
+    // URI. The parser reaches into the raw input so an HTTP proxy literally
+    // listening on 80 isn't mis-rejected as "port required".
+    expect(parseProxyUri('http://example.com:80')).toEqual({
+      kind: 'http',
+      tls: false,
+      host: 'example.com',
+      port: 80,
+      name: 'example.com:80',
+    });
+  });
+
   it('parses SOCKS5 with auth', () => {
     expect(parseProxyUri('socks5://u:p@1.2.3.4:1080#jp')).toEqual({
       kind: 'socks5',

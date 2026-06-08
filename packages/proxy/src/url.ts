@@ -66,8 +66,35 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
 
 const resolvePort = (url: URL, uri: string): number => {
   if (url.port) return Number(url.port);
+  // The URL constructor strips a scheme's default port from `url.port`, so
+  // `http://host:80` and `http://host` both produce `url.port === ''`.
+  // Re-read the authority's port slot from the raw URI so an explicit `:80`
+  // on an HTTP proxy isn't misread as "port omitted" and rejected below.
+  const explicit = explicitAuthorityPort(uri);
+  if (explicit !== null) return explicit;
   if (url.protocol === 'https:') return 443;
   throw new Error(`port required: ${uri}`);
+};
+
+const explicitAuthorityPort = (uri: string): number | null => {
+  const schemeEnd = uri.indexOf('://');
+  if (schemeEnd < 0) return null;
+  let authority = uri.slice(schemeEnd + 3);
+  for (const sep of '/?#') {
+    const i = authority.indexOf(sep);
+    if (i >= 0) authority = authority.slice(0, i);
+  }
+  const at = authority.lastIndexOf('@');
+  if (at >= 0) authority = authority.slice(at + 1);
+  // Skip the IPv6 literal envelope (`[::1]`) before scanning for the port
+  // colon; the colons inside the brackets aren't separators.
+  const hostEnd = authority.startsWith('[') ? authority.indexOf(']') + 1 : 0;
+  if (hostEnd < 0) return null;
+  const colon = authority.indexOf(':', hostEnd);
+  if (colon < 0) return null;
+  const portStr = authority.slice(colon + 1);
+  if (!/^\d+$/.test(portStr)) return null;
+  return Number(portStr);
 };
 
 const parseHttp = (
