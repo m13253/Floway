@@ -144,6 +144,14 @@ export const nodeSocketDial: SocketDial = {
       socket.once('close', () => {
         captured.removeEventListener('abort', onAbort);
       });
+      // Node's native `signal` for net.connect / tls.connect only honours
+      // aborts during the connect phase; once 'connect' / 'secureConnect'
+      // has fired, post-connect aborts are entirely up to the listener
+      // installed above. addEventListener('abort') on an already-aborted
+      // signal does not fire, so an abort that landed between the
+      // entry-point pre-check and this listener install would otherwise
+      // be lost. Drive onAbort synchronously to close that TOCTOU window.
+      if (captured.aborted) onAbort();
     }
 
     return {
