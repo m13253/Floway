@@ -42,8 +42,7 @@ import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 definePage({ meta: { requiresAdmin: true } });
 
 const router = useRouter();
-const store = useUpstreamsStore();
-const { upstreams, loading: storeLoading, error: storeError, load } = store;
+const { upstreams, loading: storeLoading, error: storeError, load } = useUpstreamsStore();
 const modelsStore = useModelsStore();
 const settingsData = useSettingsPageData();
 

@@ -224,9 +224,6 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
       if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
 
-      // v4 requires upstreamIds and deletedAt to be present and well-typed; a
-      // forgiving import would silently turn corrupt rows into "active user
-      // with Default cap", which is the wrong default. Fail closed.
       if (record.upstreamIds === undefined) throw new Error('upstreamIds must be present (null or array)');
       const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
       if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
@@ -342,8 +339,6 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      // Imported payloads may omit cost (older exports) — null is the
-      // canonical "no pricing recorded" value; aggregation treats it as 0.
       cost: parseImportedCost(record.cost),
     });
   }
@@ -484,9 +479,6 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     repo.upstreams.list(),
   ]);
 
-  // Exports include password_hash and every soft-deleted row so an operator
-  // restoring this payload reconstructs both credentials and historical
-  // attribution. Treat the file as a credential bundle.
   const payload: ExportPayload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
@@ -519,9 +511,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   const apiKeys = apiKeysResult.records;
 
-  // v3 has no users[]; v4 carries them and they must validate before anything
-  // else mutates. v3 imports leave the existing users table untouched (user 1
-  // is always present from migration) — every imported key lands on user 1.
+  // v4 users[] must validate before anything mutates; parseApiKeyRecords pins v3 keys to user 1.
   let users: User[] = [];
   if (version === 4) {
     const usersResult = parseUserRecords(data.users);

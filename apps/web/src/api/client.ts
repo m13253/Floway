@@ -16,10 +16,9 @@ const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<
   return response;
 };
 
-// The Hono RPC client. Every control-plane route declares its request shape via
-// zValidator in packages/gateway/src/control-plane/routes.ts, so the client types both
-// the path/method and the JSON body / query for the SPA — no extra wrapper
-// needed for mutations.
+// The Hono RPC client. Control-plane routes declare their request shape via
+// zValidator, so the client types both path/method and JSON body / query for
+// the SPA.
 const client = hc<AppType>('/', { fetch: authFetch });
 
 export type ApiClient = typeof client;

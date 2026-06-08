@@ -10,9 +10,8 @@ export const userToEffectiveWire = (user: User) => ({
   upstreamIds: user.upstreamIds,
 });
 
-// Raw shape carries `createdAt` so the admin list can sort/display creation
-// time; the effective shape (for /auth/me + login) omits it because the
-// dashboard doesn't render the actor's own creation date.
+// Raw shape (admin list): includes createdAt for sort/display; the effective
+// shape omits it.
 export const userToRawWire = (user: User) => ({
   id: user.id,
   username: user.username,

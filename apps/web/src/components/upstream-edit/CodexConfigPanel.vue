@@ -19,9 +19,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  // Bubbled up after a successful create / re-import / refresh-now. The
-  // parent re-routes to /dashboard/upstreams/:id so the loader picks up
-  // the freshly-rotated state.
   imported: [record: UpstreamRecord];
   error: [message: string];
 }>();
