@@ -129,7 +129,9 @@ describe('dialReality — pre-connect config validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
+});
 
+describe('dialReality — pre-dial target validation', () => {
   it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();
     await expect(

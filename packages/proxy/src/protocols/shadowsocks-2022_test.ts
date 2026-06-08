@@ -166,18 +166,6 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
     expect(fake.connectCount()).toBe(0);
   });
 
-  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialShadowsocks2022(config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
   it('rejects a PSK whose decoded byte length disagrees with the cipher', async () => {
     const fake = makeFakeSocketDial();
     // 2022-blake3-aes-128-gcm wants 16 bytes; a 15-byte PSK fails up-front.
@@ -231,6 +219,20 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
     );
     await fake.awaitConnect();
     expect(fake.connectCount()).toBe(1);
+  });
+});
+
+describe('dialShadowsocks2022 — pre-dial target validation', () => {
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialShadowsocks2022(config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
   });
 });
 

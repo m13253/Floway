@@ -451,7 +451,9 @@ describe('dialShadowsocks — pre-handshake plumbing', () => {
       message: expect.stringContaining('tcp connect to proxy.example:8388 failed'),
     });
   });
+});
 
+describe('dialShadowsocks — pre-dial target validation', () => {
   it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();
     await expect(
