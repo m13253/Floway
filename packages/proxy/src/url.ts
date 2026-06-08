@@ -63,7 +63,7 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   case 'trojan:': return parseTrojan(url, host, port, name);
   case 'vless:': return parseVless(url, host, port, name);
   default:
-    throw new ProxyUriError(`Unknown scheme: ${url.protocol.replace(/:$/, '')}`);
+    throw new ProxyUriError(`unknown scheme: ${url.protocol.replace(/:$/, '')}`);
   }
 };
 

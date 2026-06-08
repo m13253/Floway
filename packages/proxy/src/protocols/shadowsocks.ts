@@ -89,7 +89,6 @@ const dialShadowsocksInner = async (
   const reader = socket.readable.getReader();
   const readExactly = makeExactReader(reader, 'SS');
 
-  // Build the SS address header for the first payload chunk.
   const addrBytes = buildSsAddress(target.host, target.port);
 
   // Encrypt and send: [salt] + frame(addr+initialPayload). For an AEAD frame,

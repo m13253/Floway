@@ -165,7 +165,6 @@ const dialShadowsocks2022Inner = async (
           }
           // First-payload length
           const firstLen = (respFixedPlain[1 + 8 + keyLen]! << 8) | respFixedPlain[1 + 8 + keyLen + 1]!;
-          if (firstLen > MAX) throw new ProxyDialError(`SS2022: bad first payload length ${firstLen}`, 'proxy-handshake');
           const firstSealed = await readN(firstLen + TAG);
           const firstPlain = recvCipher.decrypt(nonce(recvNonce++), firstSealed);
           recvBootstrapped = true;
@@ -176,8 +175,8 @@ const dialShadowsocks2022Inner = async (
         const lenSealed = await readN(2 + TAG);
         const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
-        if (len === 0 || len > MAX) {
-          controller.error(new ProxyDialError(`SS2022: bad payload length ${len}`, 'proxy-handshake'));
+        if (len === 0) {
+          controller.error(new ProxyDialError('SS2022: zero-length payload', 'proxy-handshake'));
           return;
         }
         const ptSealed = await readN(len + TAG);
