@@ -127,7 +127,7 @@ export const performanceTelemetry = async (c: Ctx) => {
     if (query.include_user_metadata !== '1') return c.json({ records });
     const users = await repo.users.listIncludingDeleted();
     const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username, deletedAt: u.deletedAt }))
+      .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
     return c.json({ records, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
   }
@@ -165,7 +165,7 @@ export const performanceOverview = async (c: Ctx) => {
     if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, runtimeRows });
     const users = await getRepo().users.listIncludingDeleted();
     const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username, deletedAt: u.deletedAt }))
+      .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
     return c.json({ series, summaryRows, modelRows, runtimeRows, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
   }

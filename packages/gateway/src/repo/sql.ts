@@ -904,7 +904,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      // Cross-session collisions of the random body id are ~2^-128.
+      // Two writers minting the same response id collide at ~2^-128, so
+      // ON CONFLICT DO NOTHING is a silent no-op.
       return this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

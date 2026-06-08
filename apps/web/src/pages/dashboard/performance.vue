@@ -3,10 +3,28 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
 import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
-import type { PerformanceOverviewResponse } from './performance-types.ts';
 import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
+
+export interface PerformanceDisplayRecord {
+  bucket: string;
+  group: string;
+  requests: number;
+  errors: number;
+  totalMsSum: number;
+  avgMs: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
+export interface PerformanceOverviewResponse {
+  series: PerformanceDisplayRecord[];
+  summaryRows: PerformanceDisplayRecord[];
+  modelRows: PerformanceDisplayRecord[];
+  runtimeRows: PerformanceDisplayRecord[];
+}
 
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
@@ -34,7 +52,6 @@ import { computed, ref, watch, watchEffect } from 'vue';
 import { callApi, useApi } from '../../api/client.ts';
 import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
-import type { PerformanceDisplayRecord } from './performance-types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 
 type Range = DashboardRange;

@@ -9,15 +9,11 @@ export type ResolvedTelemetryView =
   | { view: 'self-by-key'; scopeUserId: number }
   | { view: 'all-by-user' };
 
-export type TelemetryViewError =
-  | { error: 'forbidden'; message: string }
-  | { error: 'bad_request'; message: string };
-
 export const resolveTelemetryView = (
   c: Context,
   rawView: TelemetryView | undefined,
   rawKeyId: string | undefined,
-): ResolvedTelemetryView | TelemetryViewError => {
+): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
   const userId = c.get('userId') as number;
   const canViewGlobal = c.get('canViewGlobalTelemetry') === true;
 

@@ -5,7 +5,6 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 
 export interface GatewayCtx {
   readonly apiKeyId: string | null;
-  // Effective per-request upstream cap; see effectiveUpstreamIdsFromContext.
   readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;

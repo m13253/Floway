@@ -45,7 +45,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username, deletedAt: u.deletedAt }))
+      .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
     const searchConfig = await loadSearchConfig();
     return c.json({

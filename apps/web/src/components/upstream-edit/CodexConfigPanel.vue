@@ -33,7 +33,6 @@ const draft = ref<{ activeTab: CodexImportTab; authJsonText: string; callbackUrl
 );
 const submitting = ref(false);
 const refreshing = ref(false);
-// Collapsed by default in edit mode; operators surface the paste UI explicitly.
 const reimportOpen = ref(false);
 
 const pkce = ref<CodexPkceStartResult | null>(null);

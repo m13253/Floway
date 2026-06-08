@@ -38,7 +38,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username, deletedAt: u.deletedAt }))
+      .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
     return c.json({ records, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
   }
