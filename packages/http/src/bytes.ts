@@ -30,3 +30,33 @@ export const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> =>
   r.set(b, a.byteLength);
   return r;
 };
+
+/**
+ * UTF-8-encode an ASCII string. Equivalent to `new TextEncoder().encode(s)`
+ * but short enough to use inline in HKDF info / context-binding literals
+ * without forcing each caller to keep its own encoder around.
+ */
+export const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
+
+/** Fill a fresh `n`-byte buffer from the Web Crypto CSPRNG. */
+export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
+  const buf = new Uint8Array(n);
+  crypto.getRandomValues(buf);
+  return buf;
+};
+
+/**
+ * Parse a hex string into bytes. Throws on odd length; the caller is
+ * responsible for validating the character set up front when the input is
+ * untrusted, since `parseInt('zz', 16)` returns NaN and the byte slot is
+ * then written as 0.
+ */
+export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
+  if (s.length % 2 !== 0) throw new Error(`hex: odd length ${s.length}`);
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.byteLength; i++) {
+    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+};

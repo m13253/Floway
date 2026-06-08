@@ -19,4 +19,4 @@ export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 
 export { HttpProtocolError } from './errors.ts';
 
-export { copy, concat } from './bytes.ts';
+export { copy, concat, asciiBytes, randomBytes, hexDecode } from './bytes.ts';

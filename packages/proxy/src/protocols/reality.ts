@@ -34,7 +34,7 @@ import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
-import { copy } from '@floway-dev/http';
+import { copy, asciiBytes, randomBytes, hexDecode } from '@floway-dev/http';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {
@@ -335,24 +335,6 @@ const runRealityHandshake = async (
   // it on the next teardown event.
 
   return { readable: plainReadable, writable: plainWritable };
-};
-
-const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
-  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
-
-const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
-  const buf = new Uint8Array(n);
-  crypto.getRandomValues(buf);
-  return buf;
-};
-
-const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
-  if (s.length % 2 !== 0) throw new Error('hex: odd length');
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.byteLength; i++) {
-    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
 };
 
 const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {

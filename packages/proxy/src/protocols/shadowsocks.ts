@@ -24,7 +24,7 @@ import { md5, sha1 } from '@noble/hashes/legacy.js';
 import { ProxyDialError } from '../errors.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { concat } from '@floway-dev/http';
+import { asciiBytes, concat, randomBytes } from '@floway-dev/http';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -267,9 +267,6 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
   return out;
 };
 
-const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
-  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
-
 /**
  * Build the SS-style request address: ATYP | addr | port[BE].
  *
@@ -291,10 +288,4 @@ export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuff
   out[2 + dom.byteLength] = (port >> 8) & 0xff;
   out[2 + dom.byteLength + 1] = port & 0xff;
   return out;
-};
-
-const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
-  const buf = new Uint8Array(n);
-  crypto.getRandomValues(buf);
-  return buf;
 };

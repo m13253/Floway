@@ -6,7 +6,7 @@
 
 import { ProxyDialError } from '../errors.ts';
 import type { DialResult, DialTarget } from '../types.ts';
-import { concat, copy } from '@floway-dev/http';
+import { concat, copy, hexDecode } from '@floway-dev/http';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
@@ -47,9 +47,7 @@ const parseUuid = (s: string): Uint8Array => {
   if (hex.length !== 32 || !/^[0-9a-fA-F]+$/.test(hex)) {
     throw new ProxyDialError(`VLESS: malformed UUID ${JSON.stringify(s)}`, 'proxy-handshake');
   }
-  const out = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  return out;
+  return hexDecode(hex);
 };
 
 const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
