@@ -358,9 +358,23 @@ const readResponseHead = async (
       );
     }
     const value = line.slice(idx + 1).replace(/^[\t ]+|[\t ]+$/g, '');
+    // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold,
+    // field-vchar = VCHAR / obs-text. After the §5 ASCII-only check above
+    // strips obs-text, valid bytes inside a field value are HTAB (0x09),
+    // SP (0x20), and VCHAR (0x21-0x7E). Anything else — NUL, the rest of
+    // the C0 control set (0x01-0x08, 0x0B-0x1F; CR/LF already split the
+    // line), and DEL (0x7F) — violates the grammar and points at either a
+    // smuggling shape (CR/LF/NUL) or a transport-level garbage byte.
     for (let i = 0; i < value.length; i++) {
       const c = value.charCodeAt(i);
-      if (c === 0 || c === 0x7f) {
+      if (c < 0x20 && c !== 0x09) {
+        throw new HttpProtocolError(
+          `invalid control byte 0x${c.toString(16).padStart(2, '0')} in header value for ${JSON.stringify(name)}`,
+          'BAD_HEADERS',
+          { rfc: 'RFC 9110 §5.5' },
+        );
+      }
+      if (c === 0x7f) {
         throw new HttpProtocolError(
           `invalid byte in header value for ${JSON.stringify(name)}`,
           'BAD_HEADERS',

@@ -355,6 +355,24 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
     });
   });
 
+  it('rejects every C0 control byte except HTAB (0x09) in the value (RFC 9110 §5.5 field-vchar)', async () => {
+    // VCHAR is %x21-7E; the only control byte field-content lets through is
+    // HTAB. CR and LF would have already split the line by the time we get
+    // here, so the gap this test pins is the rest of the C0 range
+    // (0x01-0x08, 0x0B-0x1F).
+    for (let b = 0x01; b <= 0x1f; b++) {
+      if (b === 0x09 || b === 0x0a || b === 0x0d) continue;
+      const fake = makeFakeDuplex();
+      fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: a'));
+      fake.respond(new Uint8Array([b]));
+      fake.respond('b\r\nContent-Length: 0\r\n\r\n');
+      fake.endResponse();
+      await expect(parseHttpResponse(fake.readable), `byte 0x${b.toString(16)}`).rejects.toMatchObject({
+        code: 'BAD_HEADERS',
+      });
+    }
+  });
+
   it('rejects bytes ≥ 0x80 in the response header section (RFC 9112 §5: ASCII only)', async () => {
     // RFC 9112 §5 forbids non-ASCII bytes in the header section. A
     // fatal-UTF-8 decoder alone is not enough — valid UTF-8 sequences
