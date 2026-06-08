@@ -57,7 +57,10 @@ export const dial = async (
     callerSignal.addEventListener('abort', onCallerAbort, { once: true });
   }
   const timer = setTimeout(
-    () => internal.abort(new ProxyDialError(`dial deadline exceeded after ${deadlineMs}ms`, 'tcp-connect')),
+    () => internal.abort(new ProxyDialError(
+      `${config.kind}: dial to ${config.host}:${config.port} → ${target.host}:${target.port} exceeded deadline of ${deadlineMs}ms`,
+      'tcp-connect',
+    )),
     deadlineMs,
   );
   const innerOptions: DialOptions = {

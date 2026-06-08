@@ -226,7 +226,11 @@ const runRealityHandshake = async (
       const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
 
       const sharedSecret = new Uint8Array(
-        await crypto.subtle.deriveBits({ name: 'X25519', public: serverPubKey } as any, tlsX25519Priv, 256),
+        await crypto.subtle.deriveBits(
+          { name: 'X25519', public: serverPubKey } satisfies EcdhKeyDeriveParams,
+          tlsX25519Priv,
+          256,
+        ),
       );
       // Xray runs HKDF-SHA256 over the shared secret in place (writing 32
       // output bytes back into the 32-byte input buffer). We just call hkdf

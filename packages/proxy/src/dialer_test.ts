@@ -87,7 +87,7 @@ describe('dial deadline', () => {
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'tcp-connect',
-      message: expect.stringContaining('dial deadline exceeded'),
+      message: expect.stringContaining('exceeded deadline'),
     });
   });
 

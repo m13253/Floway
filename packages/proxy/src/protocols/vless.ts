@@ -203,7 +203,13 @@ const wsAsDuplex = (ws: WorkerdWebSocket): { readable: ReadableStream<Uint8Array
     }
   };
   const onError = (e: Event): void => {
-    failStream(new Error(`ws error: ${(e as ErrorEvent).message ?? 'unknown'}`));
+    // ErrorEvent isn't universal in workerd; fall back to a generic label
+    // rather than reading a property the runtime may not expose, then carry
+    // the raw event on cause so a debug log still has the original object.
+    const message = e instanceof ErrorEvent && typeof e.message === 'string'
+      ? e.message
+      : 'unknown WebSocket error';
+    failStream(new Error(`ws error: ${message}`, { cause: e }));
   };
 
   ws.addEventListener('message', onMsg);
