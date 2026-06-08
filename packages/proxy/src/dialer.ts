@@ -120,39 +120,51 @@ export const runProxiedRequest = async (
   options: RunProxiedRequestOptions,
 ): Promise<Response> => {
   const dialed = await dial(config, target, options);
-  // Trojan plain-HTTP needs its 56-byte auth header to ride in the same
-  // TLS record as the request line; Trojan TLS-upstream needs it as the
-  // outer prefix to the inner-TLS ClientHello. Route the prefix to
-  // whichever wrapper consumes the next bytes.
-  let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
-  let fetchPrefix: Uint8Array | undefined;
-  if (target.tls) {
-    let tls: TlsStream;
-    try {
-      tls = await userspaceTls(stream, {
-        host: resolveSni(target),
-        verifyHost: resolveVerifyHost(target),
-        alpn: target.alpn,
-        prefix: dialed.prefix,
-        signal: options.signal,
-      });
-    } catch (cause) {
-      // The dialer's framing pump can surface a typed ProxyDialError
-      // (CONNECT 4xx, VLESS bad-version, SS auth fail, …) into the
-      // userspace-TLS handshake as the underlying transport error.
-      // Preserve the original stage rather than mis-tagging it as inner-tls.
-      if (cause instanceof ProxyDialError) throw cause;
-      throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+  try {
+    // Trojan plain-HTTP needs its 56-byte auth header to ride in the same
+    // TLS record as the request line; Trojan TLS-upstream needs it as the
+    // outer prefix to the inner-TLS ClientHello. Route the prefix to
+    // whichever wrapper consumes the next bytes.
+    let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
+    let fetchPrefix: Uint8Array | undefined;
+    if (target.tls) {
+      let tls: TlsStream;
+      try {
+        tls = await userspaceTls(stream, {
+          host: resolveSni(target),
+          verifyHost: resolveVerifyHost(target),
+          alpn: target.alpn,
+          prefix: dialed.prefix,
+          signal: options.signal,
+        });
+      } catch (cause) {
+        // The dialer's framing pump can surface a typed ProxyDialError
+        // (CONNECT 4xx, VLESS bad-version, SS auth fail, …) into the
+        // userspace-TLS handshake as the underlying transport error.
+        // Preserve the original stage rather than mis-tagging it as inner-tls.
+        if (cause instanceof ProxyDialError) throw cause;
+        throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+      }
+      stream = tls;
+    } else {
+      fetchPrefix = dialed.prefix;
     }
-    stream = tls;
-  } else {
-    fetchPrefix = dialed.prefix;
+    // Synthesize a Host header from the dial target if the caller didn't
+    // provide one. The proxy package owns the host-vs-Host distinction —
+    // @floway-dev/http stays transport-target-agnostic.
+    const headers = ensureHostHeader(request.headers, target);
+    return await fetchOnStream(stream, { ...request, headers }, { prefix: fetchPrefix });
+  } catch (err) {
+    // Any throw past `dial()` means the dialed transport will never be
+    // returned to the caller. userspaceTls's own teardown only fires once
+    // it has acquired the transport's reader/writer; an abort that fires
+    // between dial returning and userspaceTls's pre-check leaves the
+    // underlying socket alive with the dialer's wrapper streams still
+    // pumping. Cancel the readable so the cancel cascade reaches every
+    // protocol's IIFE / TLS pump and ends with the socket destroyed.
+    void dialed.readable.cancel(err).catch(() => {});
+    throw err;
   }
-  // Synthesize a Host header from the dial target if the caller didn't
-  // provide one. The proxy package owns the host-vs-Host distinction —
-  // @floway-dev/http stays transport-target-agnostic.
-  const headers = ensureHostHeader(request.headers, target);
-  return await fetchOnStream(stream, { ...request, headers }, { prefix: fetchPrefix });
 };
 
 const ensureHostHeader = (headers: Record<string, string>, target: ProxyRequestTarget): Record<string, string> => {
