@@ -105,7 +105,7 @@ export const base64EncodeBytes = (bytes: Uint8Array): string => {
  * "0123" being read as 123 — some resolvers interpret leading zeros as
  * octal). Used to switch a SOCKS-family address to ATYP=0x01.
  */
-export const parseIpv4Literal = (s: string): Uint8Array | null => {
+const parseIpv4Literal = (s: string): Uint8Array | null => {
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s)) return null;
   const parts = s.split('.');
   const out = new Uint8Array(4);
@@ -126,7 +126,7 @@ export const parseIpv4Literal = (s: string): Uint8Array | null => {
  * `::`, IPv4-mapped suffixes (`::ffff:1.2.3.4`), and the all-the-shapes
  * cases that a regex couldn't cover.
  */
-export const parseIpv6Literal = (s: string): Uint8Array | null => {
+const parseIpv6Literal = (s: string): Uint8Array | null => {
   // `URL` reads bracketed IPv6 hostnames. Strip the brackets if the
   // caller passed them in literal form; add them otherwise. A plain IPv4
   // would parse too but with a colon-less hostname — we filter that out
@@ -185,7 +185,7 @@ const ipv6StringToBytes = (s: string): Uint8Array | null => {
  * IP-literal / domain discrimination + non-ASCII reject + 255-byte cap
  * stays in one place.
  */
-export interface AtypBytes {
+interface AtypBytes {
   v4: number;
   domain: number;
   v6: number;

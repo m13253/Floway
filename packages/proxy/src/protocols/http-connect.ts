@@ -31,7 +31,7 @@ export const dialHttpConnect = async (
     if (target.host.charCodeAt(i) > 0x7f) {
       throw new ProxyDialError(
         `CONNECT target host must be ASCII (punycode IDN before dial): ${target.host}`,
-        'proxy-handshake',
+        'config',
       );
     }
   }

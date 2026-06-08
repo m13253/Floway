@@ -345,7 +345,7 @@ describe('dialHttpConnect — request authority forms', () => {
       dialHttpConnect(httpConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'proxy-handshake',
+      stage: 'config',
       message: expect.stringContaining('ASCII'),
     });
     expect(fake.connectCount()).toBe(0);
