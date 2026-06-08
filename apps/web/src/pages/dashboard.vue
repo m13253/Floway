@@ -44,6 +44,15 @@ const headerInnerClass = 'mx-auto w-full max-w-[1408px] flex flex-wrap items-cen
 const passwordDialogOpen = ref(false);
 const passwordToast = ref<string | null>(null);
 
+// Route guard makes currentUser non-null on the dashboard layout, but a 401
+// from any data-plane fetch can clear identity synchronously between renders;
+// surfacing the invariant via a throw-on-null computed matches the
+// users.vue / EditKeyDialog.vue convention.
+const currentUsername = computed(() => {
+  if (!auth.currentUser) throw new Error('dashboard rendered without an authenticated user');
+  return auth.currentUser.username;
+});
+
 const onPasswordChanged = () => {
   passwordToast.value = 'Password updated. Other devices have been signed out.';
   window.setTimeout(() => { passwordToast.value = null; }, 4000);
@@ -91,7 +100,7 @@ const logout = async () => {
             type="button"
             class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-gray-300 hover:bg-surface-800 hover:text-white"
           >
-            <span class="font-medium">{{ auth.currentUser!.username }}</span>
+            <span class="font-medium">{{ currentUsername }}</span>
             <svg class="h-3 w-3 text-gray-500 transition-transform group-hover:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M6 9l6 6 6-6" />
             </svg>

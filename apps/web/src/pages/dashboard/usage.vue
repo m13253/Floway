@@ -8,23 +8,27 @@ import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
 
-interface UsageByKeyResponse {
-  records: Array<{
-    keyId: string;
-    keyName?: string;
-    keyCreatedAt?: string;
-    model: string;
-    hour: string;
-    requests: number;
-    tokens: Partial<Record<BillingDimension, number>>;
-    cost: number;
-  }>;
+interface DisplayUsageRecord {
+  keyId: string;
+  keyName?: string;
+  keyCreatedAt?: string;
+  model: string;
+  hour: string;
+  requests: number;
+  tokens: Partial<Record<BillingDimension, number>>;
+  cost: number;
+}
+
+interface UsageResponse {
+  records: DisplayUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt: string }>;
   keyColorOrder: string[];
 }
 
-interface SearchUsageByKeyResponse {
-  records: Array<{ provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }>;
+interface SearchUsageRecord { provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }
+
+interface SearchUsageResponse {
+  records: SearchUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt: string }>;
   keyColorOrder: string[];
   activeProvider: string;
@@ -84,8 +88,8 @@ export const useUsagePageData = defineBasicLoader(async () => {
     };
   }
   const [usageRes, searchRes] = await Promise.all([
-    callApiForLoader<UsageByKeyResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
-    callApiForLoader<SearchUsageByKeyResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApiForLoader<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApiForLoader<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     useModelsStoreForLoader().load(),
   ]);
   return {
@@ -109,29 +113,6 @@ import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useAuthStore } from '../../stores/auth.ts';
-
-interface DisplayUsageRecord {
-  keyId: string;
-  keyName?: string;
-  keyCreatedAt?: string;
-  model: string;
-  hour: string;
-  requests: number;
-  tokens: Partial<Record<BillingDimension, number>>;
-  cost: number;
-}
-interface UsageResponse {
-  records: DisplayUsageRecord[];
-  keys: Array<{ id: string; name: string; createdAt: string }>;
-  keyColorOrder: string[];
-}
-interface SearchUsageRecord { provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }
-interface SearchUsageResponse {
-  records: SearchUsageRecord[];
-  keys: Array<{ id: string; name: string; createdAt: string }>;
-  keyColorOrder: string[];
-  activeProvider: string;
-}
 
 type Metric =
   | 'requests' | 'cost'

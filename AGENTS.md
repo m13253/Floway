@@ -149,11 +149,6 @@ is left with no Default key; the operator must create one by hand or
 recreate the user. The cleartext key is not returned in the response;
 the user retrieves it from the Keys page.
 
-Database exports include the `password_hash` for every user (active and
-soft-deleted) so a restore reconstructs login state. Treat exported
-payloads as credential bundles — anyone with the file can sign in as
-every user whose password has not rotated since the export.
-
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic
 adapter behavior, compare at least one Copilot gateway and one general LLM
@@ -215,6 +210,10 @@ outside the repo so the working tree stays clean:
 pnpm wrangler d1 export <DB_NAME> --remote \
   --output "${TMPDIR:-/tmp}/<DB_NAME>-$(date -u +%Y%m%dT%H%M%SZ).sql"
 ```
+
+The export includes `password_hash` for every user (active and
+soft-deleted) — treat the file as a credential bundle. Anyone with it
+can sign in as every user whose password has not rotated since.
 
 Report the resolved backup path, then give the user two rollback commands,
 in this order:

@@ -1,7 +1,3 @@
-// /api/users CRUD plus the self-service password change. The seed admin
-// (id 1) and the actor are protected from foot-gun mutations (cannot demote,
-// cannot delete).
-
 import type { Context } from 'hono';
 
 import { userToRawWire } from './wire.ts';
@@ -59,11 +55,10 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   await repo.users.save(user);
 
   // Every user starts with a Default API key so they can use the gateway
-  // straight after their first login. The cleartext key is not returned
-  // here; the user retrieves it from the Keys page on first sign-in.
-  // Best-effort: a failure between users.save and apiKeys.save leaves the
-  // user without a Default key; the operator must create one by hand or
-  // delete and recreate the user.
+  // immediately. The cleartext key is not returned here; the user retrieves
+  // it from the Keys page. Best-effort: a failure between users.save and
+  // apiKeys.save leaves the user without a Default key; the operator must
+  // create one by hand or delete and recreate the user.
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
     userId: newId,

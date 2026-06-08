@@ -713,7 +713,6 @@ export class InMemoryRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor() {
-    // Mirror the SQL migration's seed of admin user 1.
     this.users = new MemoryUsersRepo([{
       id: 1,
       username: 'admin',
