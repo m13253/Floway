@@ -251,6 +251,25 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     expect((err as HttpProtocolError).code).toBe('TRAILERS_TOO_LONG');
   });
 
+  it('still accepts a 50 KiB trailer block delivered one byte at a time', async () => {
+    // Regression: the trailer-cap check used to add `buf.byteLength` per
+    // iteration of the outer pull loop, so drip-feeding the trailers byte-
+    // by-byte made the cap fire after O(sqrt(MAX_TRAILERS_BYTES)) bytes
+    // instead of MAX_TRAILERS_BYTES. 50 KiB is well under the 64 KiB cap on
+    // total trailer size; the test passes if no error is raised.
+    const big = Array.from({ length: 600 }, (_, i) => `X-Trailer-${i}: ${'p'.repeat(70)}`).join('\r\n');
+    const input = `5\r\nhello\r\n0\r\n${big}\r\n\r\n`;
+    expect(input.length).toBeLessThan(64 * 1024);
+    const bytes = enc(input);
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < bytes.byteLength; i++) c.enqueue(bytes.subarray(i, i + 1));
+        c.close();
+      },
+    });
+    expect(await drain(decodeChunked(stream.getReader(), new Uint8Array(0)))).toBe('hello');
+  });
+
   it('rejects when the chunk-size line exceeds the 1 KiB cap due to a runaway extension', async () => {
     const input = `5;ext=${'a'.repeat(2000)}\r\nhello\r\n0\r\n\r\n`;
     const { reader, head } = fromString(input);

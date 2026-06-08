@@ -654,8 +654,11 @@ export const decodeChunked = (
         } else if (state === 'trailers') {
           const idx = findCrlfFrom(buf, scanFrom);
           if (idx < 0) {
-            trailerBytesSeen += buf.byteLength;
-            if (trailerBytesSeen > MAX_TRAILERS_BYTES) {
+            // Bound the unconsumed buffer + already-consumed lines against
+            // the cap, rather than accumulating buf.byteLength per iteration
+            // (which double-counts the same bytes on every drip-fed read and
+            // collapses the effective cap to O(sqrt(MAX_TRAILERS_BYTES))).
+            if (trailerBytesSeen + buf.byteLength > MAX_TRAILERS_BYTES) {
               controller.error(new HttpProtocolError(
                 `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
                 'TRAILERS_TOO_LONG',
