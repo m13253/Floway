@@ -51,7 +51,12 @@ const ensureCrypto = (): void => {
 
 /** Xray version stamp baked into the REALITY session_id payload. */
 const DEFAULT_XRAY_VERSION: [number, number, number] = [25, 4, 30];
-const DEFAULT_SHORT_ID_HEX = '0000000000000000';
+
+// Reality shortIds: per Xray-core's `copy(hello.SessionId[8:], config.ShortId)`,
+// any byte slice up to 8 bytes is accepted and the remainder of the 8-byte
+// slot stays zero. The URI form encodes the slice as hex (even-length string,
+// 0..16 chars → 0..8 bytes). An empty `sid` is valid and packs as all-zeros.
+const MAX_SHORT_ID_BYTES = 8;
 
 export const dialReality = async (
   config: RealityProxyConfig,
@@ -80,15 +85,10 @@ export const dialReality = async (
   }
   let shortId: Uint8Array<ArrayBuffer>;
   try {
-    shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
+    shortId = parseShortId(config.shortId);
   } catch (cause) {
-    throw new ProxyDialError('REALITY: invalid hex in sid', 'tcp-connect', { cause });
-  }
-  if (shortId.byteLength !== 8) {
-    throw new ProxyDialError(
-      `REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`,
-      'tcp-connect',
-    );
+    if (cause instanceof ProxyDialError) throw cause;
+    throw new ProxyDialError('REALITY: invalid sid', 'tcp-connect', { cause });
   }
 
   // Plain TCP — userspace TLS will do the entire handshake.
@@ -381,12 +381,41 @@ const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {
 };
 
 /**
+ * Parse REALITY's `sid` URI parameter into the 8-byte slice that fills the
+ * second half of the 32-byte session_id payload. Spec allows 0..16 hex
+ * chars (0..8 bytes); the slice is zero-padded on the right to 8 bytes,
+ * matching Xray-core's `copy(hello.SessionId[8:], config.ShortId)`. An
+ * empty / undefined sid is valid and packs as all-zeros — the documented
+ * default.
+ *
+ * Exported for tests.
+ */
+export const parseShortId = (sid: string | undefined): Uint8Array<ArrayBuffer> => {
+  const hex = sid ?? '';
+  if (hex.length > MAX_SHORT_ID_BYTES * 2) {
+    throw new ProxyDialError(
+      `REALITY: shortId hex must be 0..${MAX_SHORT_ID_BYTES * 2} chars, got ${hex.length}`,
+      'tcp-connect',
+    );
+  }
+  let raw: Uint8Array<ArrayBuffer>;
+  try {
+    raw = hexDecode(hex);
+  } catch (cause) {
+    throw new ProxyDialError('REALITY: invalid hex in sid', 'tcp-connect', { cause });
+  }
+  const padded = new Uint8Array(MAX_SHORT_ID_BYTES);
+  padded.set(raw);
+  return padded;
+};
+
+/**
  * Build the 32-byte unsealed REALITY session_id payload for the ClientHello.
  * Layout:
  *
  *   [0..3]   Xray version triplet + a zero byte
  *   [4..8]   timestamp (u32 BE seconds since epoch)
- *   [8..16]  short id (8 bytes)
+ *   [8..16]  short id (8 bytes, zero-padded from the URI's `sid` hex)
  *   [16..32] zero — overwritten by the AEAD ciphertext+tag in place
  *
  * Exported for tests.
@@ -396,7 +425,9 @@ export const buildRealitySessionId = (
   tsSec: number,
   shortId: Uint8Array,
 ): Uint8Array => {
-  if (shortId.byteLength !== 8) throw new Error(`REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`);
+  if (shortId.byteLength !== MAX_SHORT_ID_BYTES) {
+    throw new Error(`REALITY: shortId must be ${MAX_SHORT_ID_BYTES} bytes, got ${shortId.byteLength}`);
+  }
   const out = new Uint8Array(32);
   out[0] = ver[0];
   out[1] = ver[1];

@@ -9,6 +9,7 @@ import {
   constantTimeEqual,
   dialReality,
   extractEd25519RawPubKey,
+  parseShortId,
 } from './reality.ts';
 import { hexDecode } from '../bytes.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
@@ -128,18 +129,6 @@ describe('dialReality — pre-connect config validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
-
-  it('rejects a sid whose decoded length is not 8 bytes', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialReality(realityConfig({ shortId: 'aabb' }), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('shortId must be 8 bytes'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
 });
 
 describe('buildRealitySessionId — timestamp and shortId encoding', () => {
@@ -239,7 +228,7 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
 });
 
 describe('dialReality — shortId hex decoder corner cases', () => {
-  const verifyReachesConnect = async (shortId: string): Promise<void> => {
+  const verifyReachesConnect = async (shortId: string | undefined): Promise<void> => {
     const fake = makeFakeSocketDial();
     const ctrl = new AbortController();
     const p = dialReality(realityConfig({ shortId }), target, { socketDial: fake.socketDial, signal: ctrl.signal });
@@ -254,29 +243,53 @@ describe('dialReality — shortId hex decoder corner cases', () => {
     await verifyReachesConnect('AABBCCDDEEFF1122');
   });
 
-  it('accepts the all-zeros default shortId', async () => {
+  it('accepts the all-zeros 16-char shortId', async () => {
     await verifyReachesConnect('0000000000000000');
   });
 
-  it('rejects a 6-byte hex shortId (12 chars) — too short for 8 bytes', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialReality(realityConfig({ shortId: 'aabbccddeeff' }), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('shortId must be 8 bytes'),
-    });
+  it('accepts an empty sid (the documented default — zero-pads to all-zeros)', async () => {
+    await verifyReachesConnect('');
   });
 
-  it('rejects a 9-byte hex shortId (18 chars) — too long for 8 bytes', async () => {
+  it('accepts an undefined sid (treated as empty)', async () => {
+    await verifyReachesConnect(undefined);
+  });
+
+  it('accepts shorter hex slices — Xray-core copy(SessionId[8:], shortId) leaves the tail zero', async () => {
+    await verifyReachesConnect('aabb');
+    await verifyReachesConnect('aabbccddeeff');
+  });
+
+  it('rejects a 17-char hex shortId — exceeds the 8-byte (16 hex char) slot', async () => {
     const fake = makeFakeSocketDial();
     await expect(
       dialReality(realityConfig({ shortId: '0011223344556677889' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'tcp-connect',
+      message: expect.stringContaining('shortId hex must be 0..16 chars'),
     });
+  });
+});
+
+describe('parseShortId', () => {
+  it('zero-pads an empty sid to 8 bytes', () => {
+    const padded = parseShortId('');
+    expect(padded.byteLength).toBe(8);
+    expect(Array.from(padded)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('zero-pads an undefined sid to 8 bytes', () => {
+    const padded = parseShortId(undefined);
+    expect(Array.from(padded)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('zero-pads a 2-char hex sid into the leading byte, leaving the tail zero', () => {
+    expect(Array.from(parseShortId('aa'))).toEqual([0xaa, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('packs a full 16-char hex sid into all 8 bytes verbatim', () => {
+    expect(Array.from(parseShortId('0011223344556677'))).toEqual([0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]);
   });
 });
 
