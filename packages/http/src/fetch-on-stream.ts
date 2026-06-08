@@ -298,11 +298,10 @@ export const decodeChunked = (
             controller.error(new HttpProtocolError(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
             return;
           }
+          // The regex above guarantees a non-empty pure-hex run, so parseInt
+          // always yields a non-negative finite number — no further range
+          // check is needed here.
           need = parseInt(hex, 16);
-          if (!Number.isFinite(need) || need < 0) {
-            controller.error(new HttpProtocolError(`chunked: bad size line ${JSON.stringify(sizeLine)}`));
-            return;
-          }
           buf = buf.subarray(idx + 2);
           state = need === 0 ? 'trailers' : 'data';
         } else if (state === 'data') {
