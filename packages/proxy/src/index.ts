@@ -12,25 +12,11 @@
 
 export type { ProxyRequestTarget, SocketDial } from './types.ts';
 
-export { formatProxyUri, parseProxyUri } from './url.ts';
-export { kindFromUri } from './url-kind.ts';
+export { parseProxyUri } from './url.ts';
 
-export type {
-  ProxyConfig,
-  HttpProxyConfig,
-  Socks5ProxyConfig,
-  ShadowsocksProxyConfig,
-  Shadowsocks2022ProxyConfig,
-  TrojanProxyConfig,
-  VlessTcpTlsProxyConfig,
-  VlessWsTlsProxyConfig,
-  RealityProxyConfig,
-  SsMethod,
-  Ss2022Method,
-} from './proxy-config.ts';
+export type { ProxyConfig } from './proxy-config.ts';
 
-export { ProxyDialError, ProxyUriError } from './errors.ts';
+export { ProxyDialError } from './errors.ts';
 
-export { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
-export { dial, runProxiedRequest } from './dialer.ts';
+export { runProxiedRequest } from './dialer.ts';
 export type { RunProxiedRequestOptions } from './dialer.ts';
