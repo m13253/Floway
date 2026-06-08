@@ -4,6 +4,12 @@ import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
+// Surfaced both at the upfront gate (when a non-direct entry is in play)
+// and from collectBody (where the actual buffer step would fail), so
+// streaming-body callers see the same message regardless of which gate
+// fires first.
+const STREAMING_BODY_ERROR_MESSAGE = 'streaming request bodies are not yet supported through proxies';
+
 // Per-proxy dial parameters loaded once per request and looked up by
 // fallback-list entry. Carries both the parsed wire config and the
 // optional per-proxy dial deadline override so a slow but real proxy can
@@ -82,11 +88,9 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     // play. Without this the rejection would land inside collectBody, which
     // only fires when a proxy attempt is actually reached — for a list like
     // ['a','direct'] where 'a' is in active backoff, pass 1 hits direct and
-    // the runtime consumes the stream, then pass 2 throws far too late. We
-    // mirror collectBody's error message verbatim so callers see the same
-    // failure mode regardless of which pass would have surfaced it.
+    // the runtime consumes the stream, then pass 2 throws far too late.
     if (hasNonDirect && init.body instanceof ReadableStream) {
-      throw new Error('streaming request bodies are not yet supported through proxies');
+      throw new Error(STREAMING_BODY_ERROR_MESSAGE);
     }
     let proxied: ProxiedRequest | undefined;
     let effectiveInit = init;
@@ -321,7 +325,7 @@ const collectBody = async (
     // The two-pass dial can replay a request, and a stream is single-shot.
     // Surface this constraint as an explicit error — the caller must buffer
     // streaming bodies before they reach the proxy fetcher.
-    throw new Error('streaming request bodies are not yet supported through proxies');
+    throw new Error(STREAMING_BODY_ERROR_MESSAGE);
   }
   // FormData / URLSearchParams: round-trip through Request so the runtime
   // produces a canonical multipart/url-encoded byte stream we can buffer
