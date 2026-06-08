@@ -104,8 +104,6 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   };
   await repo.users.save(next);
 
-  // A password change revokes every session for the target user except the
-  // actor's own. API-key callers have no session, so the target loses all.
   if (body.password !== undefined) {
     const sessionId = c.get('sessionId') as string | undefined;
     if (sessionId) await repo.sessions.deleteByUserIdExcept(id, sessionId);

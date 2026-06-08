@@ -1,7 +1,7 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
-import { callApi as callApiForLoader, useApi as useApiForLoader, type ApiClient, type ApiResult } from '../../api/client.ts';
+import { callApi, useApi as useApiForLoader, type ApiClient } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
 import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
@@ -59,12 +59,6 @@ interface SearchUsageByUserResponse {
 type UsageView = 'all-by-user' | 'self-by-key';
 
 const userBucketId = (userId: number): string => `user-${userId}`;
-const usersAsKeys = (users: ReadonlyArray<{ id: number; username: string }>) =>
-  users.map(u => ({ id: userBucketId(u.id), name: u.username }));
-const userRecordsAsKeyShape = (records: UsageByUserResponse['records']) =>
-  records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost }));
-const userSearchRecordsAsKeyShape = (records: SearchUsageByUserResponse['records']) =>
-  records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests }));
 
 // Single source of truth for the view → query → normalize pipeline. Both the
 // loader and the in-component refresh path call it, so request shape and
@@ -74,25 +68,24 @@ const fetchUsageForView = async (
   view: UsageView,
   start: string,
   end: string,
-  callApiImpl: <T>(fn: () => Promise<Response>) => Promise<ApiResult<T>>,
 ): Promise<{ usage: UsageResponse | null; search: SearchUsageResponse | null }> => {
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
-      callApiImpl<UsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
-      callApiImpl<SearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApi<UsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApi<SearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
     ]);
     return {
       usage: usageRes.data
-        ? { records: userRecordsAsKeyShape(usageRes.data.records), keys: usersAsKeys(usageRes.data.users), keyColorOrder: usageRes.data.keyColorOrder }
+        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: usageRes.data.keyColorOrder }
         : null,
       search: searchRes.data
-        ? { records: userSearchRecordsAsKeyShape(searchRes.data.records), keys: usersAsKeys(searchRes.data.users), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider }
+        ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider }
         : null,
     };
   }
   const [usageRes, searchRes] = await Promise.all([
-    callApiImpl<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
-    callApiImpl<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
   ]);
   return { usage: usageRes.data ?? null, search: searchRes.data ?? null };
 };
@@ -103,7 +96,7 @@ export const useUsagePageData = defineBasicLoader(async () => {
   const view: UsageView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end } = dashboardRangeQueryForLoader('today');
   const [{ usage, search }] = await Promise.all([
-    fetchUsageForView(api, view, start, end, callApiForLoader),
+    fetchUsageForView(api, view, start, end),
     useModelsStoreForLoader().load(),
   ]);
   return {
@@ -121,7 +114,7 @@ import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { computed, ref, watch } from 'vue';
 
-import { callApi, useApi } from '../../api/client.ts';
+import { useApi } from '../../api/client.ts';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
@@ -175,7 +168,7 @@ const load = async () => {
   searchUsageLoading.value = true;
   const { start, end } = dashboardRangeQuery(requestedRange);
   try {
-    const { usage, search } = await fetchUsageForView(api, requestedView, start, end, callApi);
+    const { usage, search } = await fetchUsageForView(api, requestedView, start, end);
     if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
     if (usage) data.value = usage;
     if (search) searchData.value = search;

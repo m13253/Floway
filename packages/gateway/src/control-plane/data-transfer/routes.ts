@@ -511,7 +511,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   const apiKeys = apiKeysResult.records;
 
-  // v4 users[] must validate before anything mutates; parseApiKeyRecords pins v3 keys to user 1.
   let users: User[] = [];
   if (version === 4) {
     const usersResult = parseUserRecords(data.users);
@@ -583,11 +582,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     //
-    // Sessions are wiped first and unconditionally: their user_id foreign-key
-    // references would be invalidated by either an api-key recreation (v3 + v4)
-    // or a users-table replacement (v4 only). Users are only wiped when the
-    // payload carries a replacement set (v4); a v3 replace import preserves the
-    // existing users table.
+    // Sessions wipe first because their user_id FK references break under
+    // either an api-key recreation or a users-table replacement. Users wipe
+    // only when the payload carries a replacement set (v4).
     const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),

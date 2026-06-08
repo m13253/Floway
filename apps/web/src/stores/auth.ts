@@ -22,7 +22,11 @@ const isAuthIdentity = (value: unknown): value is AuthIdentity => {
   const v = value as { token?: unknown; user?: unknown };
   if (typeof v.token !== 'string') return false;
   if (typeof v.user !== 'object' || v.user === null) return false;
-  return typeof (v.user as { id?: unknown }).id === 'number';
+  const u = v.user as { id?: unknown; username?: unknown; isAdmin?: unknown; canViewGlobalTelemetry?: unknown; upstreamIds?: unknown };
+  if (typeof u.id !== 'number' || typeof u.username !== 'string') return false;
+  if (typeof u.isAdmin !== 'boolean' || typeof u.canViewGlobalTelemetry !== 'boolean') return false;
+  if (u.upstreamIds !== null && !(Array.isArray(u.upstreamIds) && u.upstreamIds.every(x => typeof x === 'string'))) return false;
+  return true;
 };
 
 export const useAuthStore = defineStore('auth', () => {
