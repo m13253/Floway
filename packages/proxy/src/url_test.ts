@@ -177,6 +177,10 @@ describe('parseProxyUri', () => {
       'vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s',
       'vless://u@h:443?type=quic&security=tls',
       'ss://invalid-base64@h:443',
+      // `new URL` failure: bare string with no scheme. Wrapped so callers
+      // never have to special-case TypeError from the URL constructor.
+      'not-a-url',
+      '',
     ];
     for (const uri of cases) {
       expect(() => parseProxyUri(uri)).toThrow(ProxyUriError);

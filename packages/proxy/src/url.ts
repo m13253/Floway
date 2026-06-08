@@ -39,7 +39,16 @@ const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>(SS_METHODS);
 const SS2022_METHOD_SET: ReadonlySet<string> = new Set<Ss2022Method>(SS2022_METHODS);
 
 export const parseProxyUri = (uri: string): ProxyConfig => {
-  const url = new URL(uri);
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch (cause) {
+    // The URL constructor throws TypeError for any malformed authority,
+    // missing scheme, etc. Re-shape as ProxyUriError so callers can
+    // `instanceof`-discriminate URI failures from arbitrary upstream
+    // errors via a single class, per the documented contract.
+    throw new ProxyUriError(`malformed proxy URI: ${uri}`, { cause });
+  }
   const host = url.hostname;
   const port = resolvePort(url, uri);
   const name = url.hash
