@@ -123,11 +123,10 @@ export const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig =
 };
 
 // Switching protocols preserves transport coordinates (host, port, name)
-// and resets every kind-specific field so the form starts in the new
-// kind's canonical shape. Port carries over only when the previous one
-// is still meaningful for the new kind — for now we keep whatever the
-// user already typed, since clobbering it would surprise an operator
-// who is just toggling between vless-tcp and vless-ws.
+// and resets every kind-specific field. Any port the operator already
+// typed carries over verbatim — clobbering it would surprise someone who
+// is just toggling between vless-tcp and vless-ws — and only an unset
+// port (0) is replaced with the new kind's canonical default.
 export const switchKind = (current: ProxyConfig, next: FormKind): ProxyConfig => {
   return defaultsFor(next, {
     host: current.host,
