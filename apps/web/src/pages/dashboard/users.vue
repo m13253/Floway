@@ -69,9 +69,6 @@ const editUser = (u: WireUser) => {
   userDialogOpen.value = true;
 };
 
-const onCreated = async () => {
-  await reload();
-};
 
 const resetPassword = (u: WireUser) => {
   passwordTarget.value = u;
@@ -127,7 +124,7 @@ const remove = async (u: WireUser) => {
       mode="create"
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
-      @created="onCreated"
+      @created="reload"
       @saved="onUserSaved"
     />
     <UserDialog
@@ -137,7 +134,7 @@ const remove = async (u: WireUser) => {
       :user="editTarget"
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
-      @created="onCreated"
+      @created="reload"
       @saved="onUserSaved"
     />
     <PasswordDialog

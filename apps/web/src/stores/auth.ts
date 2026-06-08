@@ -52,7 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const setAuth = (next: AuthIdentity) => { identity.value = next; };
   const setUser = (user: AuthUser) => {
-    if (!identity.value) return;
+    if (!identity.value) throw new Error('setUser called without an authenticated identity');
     identity.value = { token: identity.value.token, user };
   };
   const clearAuth = () => { identity.value = null; };

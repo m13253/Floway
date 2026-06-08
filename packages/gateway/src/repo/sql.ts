@@ -1158,7 +1158,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async delete(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number) ?? 0) > 0;
+    return ((result.meta.changes as number | undefined) ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
