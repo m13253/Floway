@@ -59,11 +59,11 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const records = aggregateUsageForDisplay(filtered);
 
   const keyMap = new Map(keys.map(k => [k.id, k]));
-  const recordsWithKeyMetadata = records.map(r => ({
-    ...r,
-    keyName: keyMap.get(r.keyId)?.name ?? r.keyId.slice(0, 8),
-    keyCreatedAt: keyMap.get(r.keyId)?.createdAt ?? null,
-  }));
+  const recordsWithKeyMetadata = records.map(r => {
+    const k = keyMap.get(r.keyId);
+    if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
+    return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
+  });
 
   if (query.include_key_metadata !== '1') return c.json(recordsWithKeyMetadata);
 

@@ -175,16 +175,14 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return true;
   }
 
-  async softDeleteByUserId(userId: number): Promise<number> {
+  softDeleteByUserId(userId: number): Promise<void> {
     const now = new Date().toISOString();
-    let n = 0;
     for (let i = 0; i < this.keys.length; i++) {
       if (this.keys[i].userId === userId && this.keys[i].deletedAt === null) {
         this.keys[i] = { ...this.keys[i], deletedAt: now };
-        n += 1;
       }
     }
-    return n;
+    return Promise.resolve();
   }
 
   deleteAll(): Promise<void> {
@@ -252,8 +250,7 @@ class MemoryUsageRepo implements UsageRepo {
     state.requests += record.requests;
     for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
       state.tokens[dimension] = (state.tokens[dimension] ?? 0) + tokens;
-      // COALESCE(unit_price, excluded.unit_price): keep the existing snapshot
-      // once set, otherwise adopt the incoming price.
+      // Keep the first unit price set for this dimension; do not overwrite.
       if (state.unitPrices[dimension] === undefined && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }
     return Promise.resolve();
@@ -730,7 +727,7 @@ export class InMemoryRepo implements Repo {
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
 
-    // Seed the default admin user 1 to match the SQL migration's behavior.
+    // Mirror the SQL migration's seed of admin user 1.
     void this.users.save({
       id: 1,
       username: 'admin',

@@ -67,7 +67,7 @@ const reloadAll = async () => {
   await Promise.all([load(), modelsStore.load()]);
 };
 
-const passwordDrawerOpen = ref(false);
+const passwordDialogOpen = ref(false);
 const passwordToast = ref<string | null>(null);
 
 const onPasswordChanged = () => {
@@ -89,7 +89,7 @@ const onPasswordChanged = () => {
       v-if="!auth.isAdmin"
       :username="auth.currentUser!.username"
       role-label="Standard user"
-      @change-password="passwordDrawerOpen = true"
+      @change-password="passwordDialogOpen = true"
     />
 
     <div v-if="auth.isAdmin" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -112,7 +112,7 @@ const onPasswordChanged = () => {
         <MyAccountCard
           :username="auth.currentUser!.username"
           role-label="Administrator"
-          @change-password="passwordDrawerOpen = true"
+          @change-password="passwordDialogOpen = true"
         />
         <ApiEndpointsSection />
         <div class="glass-card p-5 sm:p-6 animate-in delay-2">
@@ -124,7 +124,7 @@ const onPasswordChanged = () => {
     </div>
 
     <PasswordDialog
-      v-model:open="passwordDrawerOpen"
+      v-model:open="passwordDialogOpen"
       mode="self"
       @saved="onPasswordChanged"
     />

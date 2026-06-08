@@ -91,11 +91,11 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     loadSearchConfig(),
   ]);
   const keyMap = new Map(keys.map(k => [k.id, k]));
-  const recordsWithKeyMetadata = aggregated.map(r => ({
-    ...r,
-    keyName: keyMap.get(r.keyId)?.name ?? r.keyId.slice(0, 8),
-    keyCreatedAt: keyMap.get(r.keyId)?.createdAt ?? null,
-  }));
+  const recordsWithKeyMetadata = aggregated.map(r => {
+    const k = keyMap.get(r.keyId);
+    if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
+    return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
+  });
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({

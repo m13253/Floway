@@ -25,7 +25,7 @@ test('GET /api/users requires admin', async () => {
   assertEquals(response.status, 403);
 });
 
-test('POST /api/users creates the user and provisions a Default key in one transaction', async () => {
+test('POST /api/users creates the user and provisions a Default key', async () => {
   const { adminSession, repo } = await setupAppTest();
   const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22' });
   assertEquals(response.status, 201);

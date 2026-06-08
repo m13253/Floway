@@ -97,11 +97,10 @@ const submit = async () => {
   }
 
   const target = props.user;
-  const body: { username?: string; isAdmin?: boolean; canViewGlobalTelemetry?: boolean; upstreamIds?: string[] | null } = {};
+  const body: { username?: string; isAdmin?: boolean; canViewGlobalTelemetry?: boolean; upstreamIds: string[] | null } = { upstreamIds };
   if (username.value.trim() !== target.username) body.username = username.value.trim();
   if (!adminLocked.value && isAdmin.value !== target.isAdmin) body.isAdmin = isAdmin.value;
   if (canViewGlobalTelemetry.value !== target.canViewGlobalTelemetry) body.canViewGlobalTelemetry = canViewGlobalTelemetry.value;
-  body.upstreamIds = upstreamIds;
   const { error: err } = await callApi(
     () => api.api.users[':id'].$patch({ param: { id: String(target.id) }, json: body }),
   );

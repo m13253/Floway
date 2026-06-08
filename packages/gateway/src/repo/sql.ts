@@ -152,12 +152,11 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return ((result.meta.changes as number | undefined) ?? 0) > 0;
   }
 
-  async softDeleteByUserId(userId: number): Promise<number> {
-    const result = await this.db
+  async softDeleteByUserId(userId: number): Promise<void> {
+    await this.db
       .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), userId)
       .run();
-    return (result.meta.changes as number | undefined) ?? 0;
   }
 
   async deleteAll(): Promise<void> {

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { exportData, importData } from './routes.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
@@ -803,4 +803,49 @@ test('replace-mode import clears sessions before writing users', async () => {
   // deletion happened by directly calling deleteByUserId — both should report 0.
   assertEquals(await repo.sessions.deleteByUserId(SEED_ADMIN.id), 0);
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
+});
+
+test('v4 import rejects users[i].upstreamIds === undefined', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', {
+    users: [SEED_ADMIN, { ...USER_BOB, upstreamIds: undefined }],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+  assertEquals(result.status, 400);
+  expect(result.body.error).toMatch(/upstreamIds/);
+});
+
+test('v4 import rejects users[i].deletedAt of non-string non-null type', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', {
+    users: [SEED_ADMIN, { ...USER_BOB, deletedAt: 42 }],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+  assertEquals(result.status, 400);
+  expect(result.body.error).toMatch(/deletedAt/);
+});
+
+test('v4 replace import refuses payload missing user 1', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', {
+    users: [USER_BOB],
+    apiKeys: [],
+    upstreams: [],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  }, 4);
+  assertEquals(result.status, 400);
+  expect(result.body.error).toMatch(/user 1/);
 });

@@ -25,8 +25,9 @@ const auth = useAuthStore();
 // A non-admin actor can only see / pick upstreams that fall inside their
 // per-user cap. Admins see the full list.
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
-  const cap = auth.currentUser?.upstreamIds;
-  if (!cap) return props.upstreams;
+  if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
+  const cap = auth.currentUser.upstreamIds;
+  if (cap === null) return props.upstreams;
   const allowed = new Set(cap);
   return props.upstreams.filter(u => allowed.has(u.id));
 });
