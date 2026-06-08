@@ -34,7 +34,7 @@ export type {
   Ss2022Method,
 } from './proxy-config.ts';
 
-export { ProxyDialError } from './errors.ts';
+export { ProxyDialError, ProxyUriError } from './errors.ts';
 
 export { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
 export { dial, runProxiedRequest } from './dialer.ts';

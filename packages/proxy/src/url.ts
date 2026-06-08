@@ -18,6 +18,7 @@
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // percent-encoding, and SS-2022 base64 padding may vary.
 
+import { ProxyUriError } from './errors.ts';
 import type {
   HttpProxyConfig,
   ProxyConfig,
@@ -60,7 +61,7 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   case 'trojan:': return parseTrojan(url, host, port, name);
   case 'vless:': return parseVless(url, host, port, name);
   default:
-    throw new Error(`Unknown scheme: ${url.protocol.replace(/:$/, '')}`);
+    throw new ProxyUriError(`Unknown scheme: ${url.protocol.replace(/:$/, '')}`);
   }
 };
 
@@ -73,7 +74,7 @@ const resolvePort = (url: URL, uri: string): number => {
   const explicit = explicitAuthorityPort(uri);
   if (explicit !== null) return explicit;
   if (url.protocol === 'https:') return 443;
-  throw new Error(`port required: ${uri}`);
+  throw new ProxyUriError(`port required: ${uri}`);
 };
 
 const explicitAuthorityPort = (uri: string): number | null => {
@@ -150,12 +151,17 @@ const parseSs = (
   const userinfo = url.password
     ? `${url.username}:${decodeURIComponent(url.password)}`
     : url.username;
-  const decoded = base64Decode(userinfo);
+  let decoded: string;
+  try {
+    decoded = base64Decode(userinfo);
+  } catch (cause) {
+    throw new ProxyUriError(`malformed ss userinfo (invalid base64)`, { cause });
+  }
   const sep = decoded.indexOf(':');
-  if (sep < 0) throw new Error(`malformed ss userinfo: ${url.username}`);
+  if (sep < 0) throw new ProxyUriError(`malformed ss userinfo: ${url.username}`);
   const method = decoded.slice(0, sep);
   if (!SS_METHODS.has(method)) {
-    throw new Error(`unknown ss method: ${method}`);
+    throw new ProxyUriError(`unknown ss method: ${method}`);
   }
   return {
     kind: 'ss',
@@ -230,7 +236,7 @@ const parseVless = (
     if (wsHost) config.wsHost = wsHost;
     return config;
   }
-  throw new Error(
+  throw new ProxyUriError(
     `unsupported vless transport: type=${type}, security=${security}`,
   );
 };
@@ -245,9 +251,9 @@ const parseReality = (
   sni: string | undefined,
 ): RealityProxyConfig => {
   const pbk = url.searchParams.get('pbk');
-  if (!pbk) throw new Error('reality requires pbk');
-  if (!fp) throw new Error('reality requires fp');
-  if (!sni) throw new Error('reality requires sni');
+  if (!pbk) throw new ProxyUriError('reality requires pbk');
+  if (!fp) throw new ProxyUriError('reality requires fp');
+  if (!sni) throw new ProxyUriError('reality requires sni');
   const config: RealityProxyConfig = {
     kind: 'reality',
     uuid,

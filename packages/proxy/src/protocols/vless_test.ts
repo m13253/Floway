@@ -98,7 +98,10 @@ describe('vlessFrameOverStream — request header', () => {
   it('redacts the malformed UUID value from the dial error message (credential hygiene)', async () => {
     const p = makePair();
     const secret = 'super-secret-credential-leak-vector';
-    const err = await vlessFrameOverStream(p.transport, secret, target).catch(e => e as Error);
+    const err = await vlessFrameOverStream(p.transport, secret, target).then(
+      () => { throw new Error('expected the dial to reject'); },
+      e => e as Error,
+    );
     expect(err.message).not.toContain(secret);
     // The raw value still rides on `cause` so a deliberate debug log can
     // recover it without forcing every log line that prints `.message` to

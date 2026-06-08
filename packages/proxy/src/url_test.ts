@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { ProxyUriError } from './errors.ts';
 import { formatProxyUri, parseProxyUri } from './url.ts';
 
 describe('parseProxyUri', () => {
@@ -167,6 +168,19 @@ describe('parseProxyUri', () => {
   it('throws on missing required REALITY pbk', () => {
     expect(() =>
       parseProxyUri('vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s')).toThrow(/pbk/);
+  });
+
+  it('every parser failure surfaces as ProxyUriError (so callers can discriminate it from arbitrary upstream Errors)', () => {
+    const cases: string[] = [
+      'weird://x:1',
+      'http://example.com',
+      'vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s',
+      'vless://u@h:443?type=quic&security=tls',
+      'ss://invalid-base64@h:443',
+    ];
+    for (const uri of cases) {
+      expect(() => parseProxyUri(uri)).toThrow(ProxyUriError);
+    }
   });
 });
 
