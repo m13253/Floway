@@ -4,29 +4,35 @@
 //
 // REALITY is a TLS 1.3 client that:
 //   1. Spoofs SNI as a real domain (e.g. www.cloudflare.com).
-//   2. Overwrites the 32-byte ClientHello.session_id with an authentication
-//      payload sealed in-place with AEAD:
+//   2. Overwrites the 32-byte ClientHello.session_id with a client-to-server
+//      authentication payload sealed in-place with AES-256-GCM:
 //        plaintext = [version_x, version_y, version_z, 0x00, ts(4 BE), shortId(8)]
 //        key       = HKDF-SHA256(ECDHE(ephPriv, serverPub), salt=random[0:20], info="REALITY", L=32)
 //        nonce     = random[20:32]
 //        AAD       = ClientHello bytes (with session_id slot zeroed before the seal)
 //        output    = 16-byte ciphertext + 16-byte tag, written back into session_id slot.
-//   3. Validates the server cert by its CertificateVerify "signature" field —
-//      which is actually HMAC-SHA512(authKey, leafCertEd25519Pub).
-//      Same 32-byte authKey from the HKDF call above; Xray's reality.go uses
-//      Go's `aes.NewCipher(authKey)` which yields AES-256-GCM.
+//   3. Validates the server's identity in CertificateVerify with a
+//      server-to-client check:
+//        HMAC-SHA512(authKey, leafEd25519Pub) == certs[0].Signature
+//      Same 32-byte authKey from step 2; the leaf cert is forged so X.509
+//      chain validation is intentionally skipped — only the HMAC tag in the
+//      cert's signature slot proves the server holds the REALITY private key.
 //
-// We layer this on top of @reclaimprotocol/tls via two patched hooks:
-//   - onClientHelloPack: lets us seal the session_id in-place after the
-//     ClientHello bytes are built.
-//   - onRecvCertificateVerify: lets us replace the standard signature check
-//     with the REALITY HMAC check, returning false to skip the default check.
+// We layer this on top of @reclaimprotocol/tls via three patched hooks:
+//   - onKeyPairGenerated: capture the TLS keyshare X25519 private key so
+//     onClientHelloPack can derive authKey via the same ECDH the server runs.
+//   - onClientHelloPack: seal the session_id in-place after the ClientHello
+//     bytes are built; latch authKey for the cert-verify hook below.
+//   - onRecvCertificateVerify: replace the standard CertificateVerify
+//     signature check with the REALITY HMAC check, returning false to skip
+//     the default check on match, throwing to abort the handshake on miss.
 //
 // After REALITY auth completes, the inner protocol is VLESS by convention.
 
 import { gcm } from '@noble/ciphers/aes.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
-import { sha256 } from '@noble/hashes/sha2.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
@@ -127,6 +133,11 @@ const runRealityHandshake = async (
   // and that's the basis of authKey). We capture it via onKeyPairGenerated and
   // reuse it via Web Crypto deriveBits inside onClientHelloPack.
   let tlsX25519Priv: CryptoKey | null = null;
+  // The 32-byte symmetric authKey shared by the session_id seal AND the
+  // server-side CertificateVerify HMAC. Built inside onClientHelloPack
+  // because that's where we have access to the ECDHE output; latched out so
+  // onRecvCertificateVerify can read it without re-running HKDF.
+  let authKey: Uint8Array | null = null;
 
   // The plaintext stream returned to the caller (VLESS framing) after the
   // TLS handshake completes. plainController is wired by the
@@ -219,7 +230,7 @@ const runRealityHandshake = async (
       // Xray runs HKDF-SHA256 over the shared secret in place (writing 32
       // output bytes back into the 32-byte input buffer). We just call hkdf
       // for 32 bytes.
-      const authKey = hkdf(sha256, sharedSecret, clientRandom.subarray(0, 20), asciiBytes('REALITY'), 32);
+      authKey = hkdf(sha256, sharedSecret, clientRandom.subarray(0, 20), asciiBytes('REALITY'), 32);
 
       const sidStart = 39;
       for (let i = 0; i < 32; i++) {
@@ -235,8 +246,26 @@ const runRealityHandshake = async (
       out.set(sealed, sidStart);
       return out;
     },
-    onRecvCertificateVerify() {
-      // REALITY authenticates via the AEAD-sealed session_id; the cert-chain signature is forged and unverifiable.
+    onRecvCertificateVerify(args: { signature: Uint8Array; certificates: Array<{ getPublicKey(): { buffer: Uint8Array; algorithm: string } }> }) {
+      // REALITY repurposes the CertificateVerify signature slot as an
+      // HMAC-SHA512 tag over the leaf cert's raw Ed25519 pubkey, keyed by
+      // the shared authKey. Match → skip the default sig check (the chain
+      // is forged so the standard check would always fail). Miss → throw
+      // so the handshake aborts; returning false alone only suppresses the
+      // default check and would let an attacker bypass server auth entirely.
+      if (!authKey) throw new ProxyDialError('REALITY: authKey not derived before CertificateVerify', 'proxy-handshake');
+      const leaf = args.certificates[0];
+      if (!leaf) throw new ProxyDialError('REALITY: no leaf certificate', 'proxy-handshake');
+      let leafPub: Uint8Array;
+      try {
+        leafPub = extractEd25519RawPubKey(leaf.getPublicKey().buffer);
+      } catch (cause) {
+        throw new ProxyDialError('REALITY: leaf cert is not Ed25519 (REALITY servers always present an Ed25519 leaf)', 'proxy-handshake', { cause });
+      }
+      const tag = hmac(sha512, authKey, leafPub);
+      if (!constantTimeEqual(tag, args.signature)) {
+        throw new ProxyDialError('REALITY: server HMAC-SHA512 over leaf pubkey did not match cert-verify signature', 'proxy-handshake');
+      }
       return false;
     },
   }) as Parameters<typeof makeTLSClient>[0]);
@@ -323,11 +352,17 @@ const runRealityHandshake = async (
   } catch (cause) {
     detachAbortListener?.();
     detachAbortListener = null;
-    // The REALITY handshake combines outer TLS framing with the auth seal in
-    // session_id; we can't tell whether the server rejected the seal or the
-    // TLS handshake itself failed, so we tag the whole leg as outer-tls.
     void reader.cancel(cause).catch(() => {});
     try { writer.releaseLock(); } catch { /* lock already released */ }
+    // A ProxyDialError raised by onRecvCertificateVerify (HMAC mismatch,
+    // wrong leaf cert type) must surface with its original 'proxy-handshake'
+    // stage rather than be rewrapped as 'outer-tls' — the gateway's backoff
+    // loop distinguishes auth-shaped rejections from transport-shaped ones.
+    if (cause instanceof ProxyDialError) throw cause;
+    // The REALITY handshake combines outer TLS framing with the auth seal in
+    // session_id; for everything else we can't tell whether the server
+    // rejected the seal or the TLS handshake itself failed, so we tag the
+    // whole leg as outer-tls.
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
   // Leave the abort listener live for the streaming session so a caller-
@@ -388,4 +423,56 @@ export const buildRealityAad = (clientHello: Uint8Array): Uint8Array => {
   aad.set(clientHello);
   for (let i = 0; i < 32; i++) aad[39 + i] = 0;
   return aad;
+};
+
+// Fixed DER prefix for an Ed25519 SubjectPublicKeyInfo: a SEQUENCE wrapping
+// an AlgorithmIdentifier whose OID is 1.3.101.112 (id-Ed25519) and a BIT
+// STRING that holds the 32-byte raw key with 0 unused bits.
+//   30 2a       SEQUENCE (42 bytes)
+//   30 05       SEQUENCE (5 bytes)        — AlgorithmIdentifier
+//   06 03 2b 65 70   OID id-Ed25519
+//   03 21 00    BIT STRING (33 bytes, 0 unused), followed by 32 raw bytes
+// RFC 8410 §4 fixes this exact 12-byte prefix shape.
+const ED25519_SPKI_PREFIX = new Uint8Array([
+  0x30, 0x2a,
+  0x30, 0x05,
+  0x06, 0x03, 0x2b, 0x65, 0x70,
+  0x03, 0x21, 0x00,
+]);
+
+/**
+ * Extract the raw 32-byte Ed25519 public key from a SubjectPublicKeyInfo
+ * DER buffer. Strict-validates the fixed 12-byte prefix from RFC 8410 §4 —
+ * anything else means the leaf cert is not an Ed25519 cert, which is a
+ * REALITY-server misconfiguration (REALITY's auth design assumes an
+ * Ed25519 leaf, per Xray-core's `certs[0].PublicKey.(ed25519.PublicKey)`).
+ *
+ * Exported for tests.
+ */
+export const extractEd25519RawPubKey = (spki: Uint8Array): Uint8Array => {
+  if (spki.byteLength !== ED25519_SPKI_PREFIX.byteLength + 32) {
+    throw new Error(`Ed25519 SPKI must be ${ED25519_SPKI_PREFIX.byteLength + 32} bytes, got ${spki.byteLength}`);
+  }
+  for (let i = 0; i < ED25519_SPKI_PREFIX.byteLength; i++) {
+    if (spki[i] !== ED25519_SPKI_PREFIX[i]) {
+      throw new Error(`Ed25519 SPKI prefix mismatch at byte ${i}`);
+    }
+  }
+  return spki.slice(ED25519_SPKI_PREFIX.byteLength);
+};
+
+/**
+ * Length-safe constant-time byte equality. Returns false immediately on
+ * length mismatch (length is not secret here — the HMAC output length is
+ * fixed at 64 bytes and the CertificateVerify signature slot is wire-
+ * visible — but the per-byte loop never short-circuits, so a partial-match
+ * attack can't read out which prefix matched.
+ *
+ * Exported for tests.
+ */
+export const constantTimeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
+  if (a.byteLength !== b.byteLength) return false;
+  let diff = 0;
+  for (let i = 0; i < a.byteLength; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
 };

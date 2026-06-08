@@ -1,7 +1,15 @@
 import { gcm } from '@noble/ciphers/aes.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
-import { buildRealityAad, buildRealitySessionId, dialReality } from './reality.ts';
+import {
+  buildRealityAad,
+  buildRealitySessionId,
+  constantTimeEqual,
+  dialReality,
+  extractEd25519RawPubKey,
+} from './reality.ts';
 import { hexDecode } from '../bytes.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
@@ -269,5 +277,90 @@ describe('dialReality — shortId hex decoder corner cases', () => {
       name: 'ProxyDialError',
       stage: 'tcp-connect',
     });
+  });
+});
+
+describe('extractEd25519RawPubKey', () => {
+  // RFC 8410 §4: an Ed25519 SubjectPublicKeyInfo is a fixed 44-byte DER blob,
+  // 12 bytes of SEQUENCE+OID+BITSTRING prefix followed by the 32-byte raw key.
+  const ED25519_SPKI_PREFIX = hexDecode('302a300506032b6570032100');
+
+  it('returns the 32-byte raw key for a valid Ed25519 SPKI', () => {
+    const raw = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) raw[i] = i;
+    const spki = new Uint8Array(ED25519_SPKI_PREFIX.byteLength + 32);
+    spki.set(ED25519_SPKI_PREFIX, 0);
+    spki.set(raw, ED25519_SPKI_PREFIX.byteLength);
+    expect(Array.from(extractEd25519RawPubKey(spki))).toEqual(Array.from(raw));
+  });
+
+  it('rejects an SPKI whose total length is not 44 bytes', () => {
+    expect(() => extractEd25519RawPubKey(new Uint8Array(43))).toThrow(/44 bytes/);
+    expect(() => extractEd25519RawPubKey(new Uint8Array(45))).toThrow(/44 bytes/);
+  });
+
+  it('rejects an SPKI with a non-Ed25519 prefix', () => {
+    // RSA SPKI starts with a different SEQUENCE shape; first byte still 0x30,
+    // but the algorithm OID block differs. Flip one byte in the OID region to
+    // simulate a wrong-algorithm leaf cert.
+    const spki = new Uint8Array(44);
+    spki.set(ED25519_SPKI_PREFIX, 0);
+    spki[6] = 0xff;
+    expect(() => extractEd25519RawPubKey(spki)).toThrow(/prefix mismatch/);
+  });
+});
+
+describe('constantTimeEqual', () => {
+  it('returns true for identical buffers', () => {
+    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]))).toBe(true);
+    expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(0))).toBe(true);
+  });
+
+  it('returns false for buffers that differ in any byte', () => {
+    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4]))).toBe(false);
+    expect(constantTimeEqual(new Uint8Array([0, 0, 0]), new Uint8Array([0, 0, 1]))).toBe(false);
+  });
+
+  it('returns false for buffers of different lengths', () => {
+    expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3, 4]))).toBe(false);
+    expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(1))).toBe(false);
+  });
+});
+
+describe('REALITY server-cert HMAC verification — round trip', () => {
+  // Demonstrates the wire shape the dialer's onRecvCertificateVerify hook
+  // enforces: the leaf cert's signature field must equal HMAC-SHA512 over
+  // the leaf's raw Ed25519 pubkey, keyed by the shared 32-byte authKey.
+  // Matches Xray-core's reality.go VerifyPeerCertificate.
+  it('HMAC-SHA512(authKey, leafEd25519Pub) yields the same tag a REALITY server would emit', () => {
+    const authKey = new Uint8Array(32);
+    crypto.getRandomValues(authKey);
+    const leafPub = new Uint8Array(32);
+    crypto.getRandomValues(leafPub);
+
+    const expected = hmac(sha512, authKey, leafPub);
+    const got = hmac(sha512, authKey, leafPub);
+    expect(constantTimeEqual(expected, got)).toBe(true);
+    expect(expected.byteLength).toBe(64);
+  });
+
+  it('a tag computed under a different authKey does not match — the cert-verify hook would reject', () => {
+    const authKey = new Uint8Array(32).fill(0xaa);
+    const wrongAuthKey = new Uint8Array(32).fill(0xbb);
+    const leafPub = new Uint8Array(32).fill(0x55);
+
+    const expected = hmac(sha512, authKey, leafPub);
+    const wrong = hmac(sha512, wrongAuthKey, leafPub);
+    expect(constantTimeEqual(expected, wrong)).toBe(false);
+  });
+
+  it('a tag computed over a different leaf pubkey does not match — defends against MitM cert injection', () => {
+    const authKey = new Uint8Array(32).fill(0xaa);
+    const leafPub = new Uint8Array(32).fill(0x55);
+    const attackerLeafPub = new Uint8Array(32).fill(0x66);
+
+    const expected = hmac(sha512, authKey, leafPub);
+    const attacker = hmac(sha512, authKey, attackerLeafPub);
+    expect(constantTimeEqual(expected, attacker)).toBe(false);
   });
 });
