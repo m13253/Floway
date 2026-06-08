@@ -569,7 +569,7 @@ export const decodeChunked = (
   // that turns into O(n²) total work. We track how far we've already
   // scanned so each new search resumes where the previous one left off.
   let scanFrom = 0;
-  let state: 'size' | 'data' | 'after-data-crlf' | 'trailers' | 'done' = 'size';
+  let state: 'size' | 'data' | 'after-data-crlf' | 'trailers' = 'size';
   let need = 0;
   // Bound how much the trailer block can grow before we give up. Trailers
   // are unusual in practice; 64 KiB matches the response-header cap.
@@ -622,9 +622,18 @@ export const decodeChunked = (
             ));
             return;
           }
-          // The regex above guarantees a non-empty pure-hex run, so parseInt
-          // always yields a non-negative finite number — no further range
-          // check is needed here.
+          // The regex bounds the digits to hex but not the magnitude:
+          // MAX_CHUNK_SIZE_LINE allows ~1024 digits, and parseInt overflows
+          // to Infinity past ~256 hex digits (2^1028 > Number.MAX_VALUE).
+          // An Infinity `need` would let a peer stream upstream bytes
+          // unbounded, so cap to a 64-bit-ish chunk size before parsing.
+          if (hex.length > 16) {
+            controller.error(new HttpProtocolError(
+              `chunked: size line exceeds 64-bit chunk size`,
+              'CHUNK_BAD_SIZE',
+            ));
+            return;
+          }
           need = parseInt(hex, 16);
           buf = buf.subarray(idx + 2);
           scanFrom = 0;
@@ -692,9 +701,6 @@ export const decodeChunked = (
             continue;
           }
           if (idx === 0) {
-            buf = buf.subarray(2);
-            scanFrom = 0;
-            state = 'done';
             controller.close();
             try { await reader.cancel(); } catch { /* reader already cancelled */ }
             return;
@@ -709,9 +715,6 @@ export const decodeChunked = (
           }
           buf = buf.subarray(idx + 2);
           scanFrom = 0;
-        } else {
-          controller.close();
-          return;
         }
       }
     },
