@@ -13,7 +13,7 @@ export type ProxyConfig =
   | VlessWsTlsProxyConfig
   | RealityProxyConfig;
 
-export interface ProxyConfigBase {
+interface ProxyConfigBase {
   /** Display label; equals the URI fragment if present, else "<host>:<port>". */
   name: string;
   host: string;
