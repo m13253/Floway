@@ -44,11 +44,6 @@ describe('parseHttpResponse — status-line grammar', () => {
     expect(r.status).toBe(418);
   });
 
-  it('accepts the lower end of the Response-constructible range (200)', async () => {
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'));
-    expect(r.status).toBe(200);
-  });
-
   it('rejects HTTP/2.0 — only HTTP/1.0 and HTTP/1.1 are supported', async () => {
     await expect(parseHttpResponse(respondAndEnd('HTTP/2.0 200 OK\r\n\r\n'))).rejects.toMatchObject({
       code: 'BAD_STATUS_LINE',

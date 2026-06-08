@@ -179,11 +179,6 @@ export const userspaceTls = async (
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
     applicationLayerProtocols: opts.alpn,
-    // Default to AES-GCM only because reclaim routes those through Web
-    // Crypto, which V8 hardware-accelerates (AES-NI on x86, the SHA
-    // extensions on ARM). ChaCha20-Poly1305 in reclaim falls back to
-    // @noble/ciphers' pure-JS impl, which is roughly an order of
-    // magnitude slower per byte.
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
       const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0;
