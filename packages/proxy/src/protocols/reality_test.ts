@@ -133,3 +133,141 @@ describe('dialReality — pre-connect config validation', () => {
     expect(fake.connectCount()).toBe(0);
   });
 });
+
+describe('buildRealitySessionId — timestamp and shortId encoding', () => {
+  it('packs ts=0 as four zero bytes', () => {
+    const sid = buildRealitySessionId([25, 4, 30], 0, new Uint8Array(8));
+    expect(Array.from(sid.subarray(4, 8))).toEqual([0, 0, 0, 0]);
+  });
+
+  it('packs ts=0xffffffff as four 0xff bytes', () => {
+    const sid = buildRealitySessionId([25, 4, 30], 0xffffffff, new Uint8Array(8));
+    expect(Array.from(sid.subarray(4, 8))).toEqual([0xff, 0xff, 0xff, 0xff]);
+  });
+
+  it('preserves arbitrary shortId byte values verbatim at offset 8', () => {
+    const sid = buildRealitySessionId([1, 2, 3], 42, hexDecode('deadbeefcafe1234'));
+    expect(Array.from(sid.subarray(8, 16))).toEqual([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0x12, 0x34]);
+  });
+
+  it('lays out the Xray version triplet at offsets 0..2 with the trailing zero at offset 3', () => {
+    const sid = buildRealitySessionId([99, 88, 77], 0, new Uint8Array(8));
+    expect(sid[0]).toBe(99);
+    expect(sid[1]).toBe(88);
+    expect(sid[2]).toBe(77);
+    expect(sid[3]).toBe(0);
+  });
+});
+
+describe('buildRealityAad — clientHello boundary cases', () => {
+  it('handles a clientHello exactly 71 bytes long (last byte is at session_id end)', () => {
+    const ch = new Uint8Array(71);
+    for (let i = 0; i < ch.byteLength; i++) ch[i] = i;
+    const aad = buildRealityAad(ch);
+    for (let i = 39; i < 71; i++) expect(aad[i]).toBe(0);
+    for (let i = 0; i < 39; i++) expect(aad[i]).toBe(i);
+  });
+
+  it('preserves bytes immediately adjacent to the zeroed slot (offsets 38 and 71)', () => {
+    const ch = new Uint8Array(100);
+    ch[38] = 0xaa;
+    ch[71] = 0xbb;
+    const aad = buildRealityAad(ch);
+    expect(aad[38]).toBe(0xaa);
+    expect(aad[71]).toBe(0xbb);
+    expect(aad[39]).toBe(0);
+    expect(aad[70]).toBe(0);
+  });
+
+  it('produces a buffer the same length as the input', () => {
+    const ch = new Uint8Array(300);
+    const aad = buildRealityAad(ch);
+    expect(aad.byteLength).toBe(300);
+  });
+});
+
+describe('dialReality — pre-connect base64 decoder corner cases', () => {
+  // base64url with padding stripped — common in URI form. The decoder
+  // re-adds '=' padding internally. We verify the decoder reaches the
+  // connect call without throwing; the actual TLS handshake doesn't happen
+  // because we abort right after.
+  const verifyReachesConnect = async (publicKey: string): Promise<void> => {
+    const fake = makeFakeSocketDial();
+    const ctrl = new AbortController();
+    const p = dialReality(realityConfig({ publicKey }), target, { socketDial: fake.socketDial, signal: ctrl.signal });
+    p.catch(() => { /* aborted dial — we only care that we reached connect */ });
+    await fake.awaitConnect();
+    ctrl.abort();
+    expect(fake.connectCount()).toBe(1);
+    await Promise.race([p, new Promise(r => setTimeout(r, 50))]).catch(() => {});
+  };
+
+  it('accepts a 43-char base64url string (no padding)', async () => {
+    // 'A'.repeat(43) decodes to 32 zero bytes (32-byte pubkey).
+    await verifyReachesConnect('A'.repeat(43));
+  });
+
+  it('accepts a 44-char base64 string with explicit padding', async () => {
+    await verifyReachesConnect(`${'A'.repeat(43)}=`);
+  });
+
+  it('accepts a base64url string with the URL-safe alphabet (- and _)', async () => {
+    // 32 bytes of 0xfe yields a 43-char base64url with '-' and '_' characters.
+    await verifyReachesConnect('_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v4');
+  });
+
+  it('rejects a 33-byte pubkey (one byte too long)', async () => {
+    const fake = makeFakeSocketDial();
+    // 33 bytes = 44 base64 chars without padding.
+    const tooLong = 'A'.repeat(44);
+    await expect(
+      dialReality(realityConfig({ publicKey: tooLong }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('pubkey must be 32 bytes'),
+    });
+  });
+});
+
+describe('dialReality — shortId hex decoder corner cases', () => {
+  const verifyReachesConnect = async (shortId: string): Promise<void> => {
+    const fake = makeFakeSocketDial();
+    const ctrl = new AbortController();
+    const p = dialReality(realityConfig({ shortId }), target, { socketDial: fake.socketDial, signal: ctrl.signal });
+    p.catch(() => { /* aborted dial — we only care that we reached connect */ });
+    await fake.awaitConnect();
+    ctrl.abort();
+    expect(fake.connectCount()).toBe(1);
+    await Promise.race([p, new Promise(r => setTimeout(r, 50))]).catch(() => {});
+  };
+
+  it('accepts uppercase hex characters', async () => {
+    await verifyReachesConnect('AABBCCDDEEFF1122');
+  });
+
+  it('accepts the all-zeros default shortId', async () => {
+    await verifyReachesConnect('0000000000000000');
+  });
+
+  it('rejects a 6-byte hex shortId (12 chars) — too short for 8 bytes', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ shortId: 'aabbccddeeff' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('shortId must be 8 bytes'),
+    });
+  });
+
+  it('rejects a 9-byte hex shortId (18 chars) — too long for 8 bytes', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ shortId: '0011223344556677889' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+    });
+  });
+});
