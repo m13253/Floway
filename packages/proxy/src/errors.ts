@@ -42,9 +42,9 @@ export class ProxyDialError extends Error {
 /**
  * URI parser failures. Distinct from `ProxyDialError` because URI parsing
  * runs ahead of any dial — there is no stage taxonomy that applies and the
- * gateway's backoff loop never sees this class. Exported so callers can
- * `instanceof`-discriminate parse errors from arbitrary `Error`s thrown
- * by upstream JSON / DB layers.
+ * gateway's backoff loop never sees this class. Re-exported from the
+ * package root so callers can `instanceof`-discriminate parse failures
+ * from arbitrary `Error`s thrown by upstream JSON / DB layers.
  */
 export class ProxyUriError extends Error {
   override readonly name = 'ProxyUriError';
