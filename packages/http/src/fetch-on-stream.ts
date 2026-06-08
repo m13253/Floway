@@ -25,16 +25,11 @@ export interface FetchOnStreamOptions {
   bodyWriteChunkSize?: number;
 }
 
-// The header-bytes decoder is fatal-UTF-8 — but UTF-8 alone is too lax,
-// because RFC 9112 §5 forbids any non-ASCII byte in the header section. A
-// byte sequence like 0xc3 0xa9 ("é") is valid UTF-8, yet the spec rejects
-// it. We therefore byte-scan for any value ≥ 0x80 before handing the bytes
-// to this decoder. The decoder still earns its keep on the back end by
-// rejecting invalid UTF-8 (e.g. lone 0xff), but the byte-scan is what
-// makes the path RFC-compliant. Stateless when used through single-shot
-// decode(); shared module-scope so the per-response parser never
-// allocates a fresh decoder.
-const ASCII_DECODER = new TextDecoder('utf-8', { fatal: true });
+// RFC 9112 §5 forbids any non-ASCII byte in the header section, so the
+// per-response parser byte-scans for ≥ 0x80 up front and only feeds
+// guaranteed-ASCII bytes here. Shared module-scope so the parser never
+// allocates a fresh decoder per response.
+const ASCII_DECODER = new TextDecoder('utf-8');
 const LENIENT_ASCII = new TextDecoder();
 
 // RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
@@ -261,8 +256,7 @@ const readResponseHead = async (
   // RFC 9112 §5: the header section MUST be ASCII. Reject any byte ≥ 0x80
   // up front — TextDecoder fatal-UTF-8 alone would accept valid UTF-8
   // sequences like 0xc3 0xa9 ("é") that the spec forbids in the header
-  // section. The fatal decoder still catches invalid UTF-8 (lone 0xff)
-  // post-scan, which keeps the message helpful on garbage bytes too.
+  // section.
   for (let i = 0; i < headerBytes.byteLength; i++) {
     if (headerBytes[i]! >= 0x80) {
       throw new HttpProtocolError(
@@ -272,16 +266,7 @@ const readResponseHead = async (
       );
     }
   }
-  let headerText: string;
-  try {
-    headerText = ASCII_DECODER.decode(headerBytes);
-  } catch (cause) {
-    throw new HttpProtocolError(
-      'invalid byte sequence in response headers',
-      'BAD_HEADERS',
-      { cause, rfc: 'RFC 9112 §5' },
-    );
-  }
+  const headerText = ASCII_DECODER.decode(headerBytes);
   const lines = headerText.split('\r\n');
   const statusLine = lines.shift()!;
   // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
