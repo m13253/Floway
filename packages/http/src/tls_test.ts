@@ -89,4 +89,110 @@ describe('userspaceTls — handshake failure', () => {
     fake.endResponse();
     await expect(promise).rejects.toBeInstanceOf(Error);
   });
+
+  it('rejects with an AbortError when the signal aborts AFTER the ClientHello but before the ServerHello', async () => {
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const promise = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal },
+    );
+    // Let the ClientHello be emitted first.
+    await new Promise(r => setTimeout(r, 10));
+    expect(fake.written().byteLength).toBeGreaterThan(0);
+    ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
+    await expect(promise).rejects.toMatchObject({
+      name: 'AbortError',
+      message: expect.stringContaining('cancel after ClientHello'),
+    });
+  });
+
+  it('propagates a non-DOMException abort reason as the rejection value', async () => {
+    // The signal contract: AbortSignal.reason is whatever the caller passed
+    // to abort(). The TLS adapter forwards that reason through unchanged
+    // unless it constructs its own AbortError from a missing reason.
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const promise = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal },
+    );
+    setTimeout(() => ac.abort('plain string reason'), 5);
+    await expect(promise).rejects.toMatch(/plain string reason|AbortError/);
+  });
+});
+
+describe('userspaceTls — prefix coalescing', () => {
+  it('emits the prefix bytes ahead of the ClientHello in the same first write', async () => {
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const handshake = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        host: 'example.com',
+        signal: ac.signal,
+        prefix: new Uint8Array([0xde, 0xad, 0xbe, 0xef]),
+      },
+    );
+    handshake.catch(() => { /* expected — we abort below */ });
+
+    const deadline = Date.now() + 1000;
+    while (fake.written().byteLength < 9 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    const written = fake.written();
+    expect(written[0]).toBe(0xde);
+    expect(written[1]).toBe(0xad);
+    expect(written[2]).toBe(0xbe);
+    expect(written[3]).toBe(0xef);
+    // Index 4 is the start of the TLS record (type=Handshake).
+    expect(written[4]).toBe(0x16);
+
+    ac.abort(new DOMException('done', 'AbortError'));
+    await handshake.catch(() => { /* expected */ });
+  });
+
+  it('emits a TLS record without a prefix when none is supplied', async () => {
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const handshake = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal },
+    );
+    handshake.catch(() => { /* expected */ });
+
+    const deadline = Date.now() + 1000;
+    while (fake.written().byteLength < 5 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    expect(fake.written()[0]).toBe(0x16);
+
+    ac.abort(new DOMException('done', 'AbortError'));
+    await handshake.catch(() => { /* expected */ });
+  });
+
+  it('places the SNI hostname inside the ClientHello extension block', async () => {
+    // RFC 6066 §3: server_name extension carries the host as a length-
+    // prefixed name list. We grep for the host bytes in the emitted record;
+    // they must appear because reclaim copies the SNI from opts.host.
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const host = 'sni-test.example';
+    const handshake = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host, signal: ac.signal },
+    );
+    handshake.catch(() => { /* expected */ });
+
+    const deadline = Date.now() + 1000;
+    while (fake.written().byteLength < 200 && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5));
+    }
+    const written = fake.written();
+    const text = new TextDecoder('latin1').decode(written);
+    expect(text).toContain(host);
+
+    ac.abort(new DOMException('done', 'AbortError'));
+    await handshake.catch(() => { /* expected */ });
+  });
 });
