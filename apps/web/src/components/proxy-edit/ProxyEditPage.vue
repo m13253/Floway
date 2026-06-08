@@ -101,7 +101,7 @@ watch(config, next => {
   url.value = formatProxyUri(next);
   urlError.value = null;
   void nextTick(() => { if (lastSource === 'form') lastSource = null; });
-}, { deep: true });
+});
 
 // Per-proxy dial-stage deadline. Stored as a string to make "empty" the
 // canonical "use default" signal; coerced to a number on save. The
@@ -132,8 +132,7 @@ const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
 
 const parseLabel = computed(() => {
-  const c = config.value;
-  if (!c || urlError.value) return '';
+  const c = config.value!;
   return `${FORM_KIND_LABELS[formKindOf(c)]} · ${c.host}:${c.port}`;
 });
 
