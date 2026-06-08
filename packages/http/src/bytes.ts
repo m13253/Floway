@@ -60,3 +60,16 @@ export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
   }
   return out;
 };
+
+/**
+ * Locate a CR/LF/CR/LF sequence — the HTTP/1.1 header-section terminator
+ * (RFC 9112 §2.2). Returns the index of the first CR, or -1 if the buffer
+ * doesn't contain a full terminator yet. Shared between the response parser
+ * in fetch-on-stream and the CONNECT-response peel in the HTTP proxy dialer.
+ */
+export const findDoubleCrlf = (buf: Uint8Array): number => {
+  for (let i = 0; i + 3 < buf.byteLength; i++) {
+    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
+  }
+  return -1;
+};

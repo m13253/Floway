@@ -2,7 +2,7 @@
 // Used both for native sockets that expose readable/writable directly and
 // for our userspace-TLS-wrapped streams.
 
-import { concat, copy } from './bytes.ts';
+import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
@@ -364,13 +364,6 @@ export const decodeChunked = (
 const findCrlf = (buf: Uint8Array): number => {
   for (let i = 0; i + 1 < buf.byteLength; i++) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a) return i;
-  }
-  return -1;
-};
-
-const findDoubleCrlf = (buf: Uint8Array): number => {
-  for (let i = 0; i + 3 < buf.byteLength; i++) {
-    if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
   }
   return -1;
 };
