@@ -43,8 +43,6 @@ export const dialShadowsocks = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Validate the target shape ahead of socketDial.connect so a bad
-  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'SS');
   assertValidTargetHost(target.host, 'SS');
   const keyLen = METHOD_KEY_LEN[config.method];

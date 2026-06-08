@@ -29,8 +29,6 @@ export const dialTrojan = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Validate the target shape ahead of socketDial.connect so a bad
-  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'Trojan');
   assertValidTargetHost(target.host, 'Trojan');
   // Plain TCP to Trojan server; outer TLS done in userspace.

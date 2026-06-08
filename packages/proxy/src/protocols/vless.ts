@@ -31,8 +31,6 @@ export const dialVlessTcpTls = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Validate the target shape ahead of socketDial.connect so a bad
-  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'VLESS');
   assertValidTargetHost(target.host, 'VLESS');
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
@@ -70,8 +68,6 @@ export const dialVlessWsTls = async (
   target: DialTarget,
   options: VlessWsDialOptions,
 ): Promise<DialResult> => {
-  // Validate the target shape ahead of the WebSocket upgrade fetch so a
-  // bad port or non-ASCII host doesn't burn a connection slot.
   assertValidTargetPort(target.port, 'VLESS');
   assertValidTargetHost(target.host, 'VLESS');
   // The WS path relies on workerd's non-standard `fetch()` behavior of

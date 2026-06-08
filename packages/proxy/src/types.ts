@@ -37,12 +37,9 @@ export const assertValidTargetPort = (port: number, protocol: string): void => {
 };
 
 /**
- * Reject a non-ASCII host before any I/O. Every proxy-protocol wire
- * format frames the target hostname as length-prefixed bytes and a raw
- * UTF-8 IDN would muddle Latin-1 / UTF-8 framing on the wire, so the
- * `DialTarget.host` contract requires callers to punycode IDN labels
- * upstream of the dial layer. Surface as 'config' so the gateway's
- * fallback chain can advance without burning a TCP slot. */
+ * Enforce the `DialTarget.host` ASCII contract before any I/O. Surfaces
+ * as 'config' so the gateway's fallback chain can advance to the next
+ * proxy entry without burning a TCP slot. */
 export const assertValidTargetHost = (host: string, protocol: string): void => {
   for (let i = 0; i < host.length; i++) {
     if (host.charCodeAt(i) > 0x7f) {
