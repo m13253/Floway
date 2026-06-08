@@ -25,13 +25,16 @@ export interface FetchOnStreamOptions {
   bodyWriteChunkSize?: number;
 }
 
-// ASCII text decoders are stateless when used with single-shot decode().
-// One module-scoped instance is shared so the per-response and per-chunk
-// parsers don't allocate a fresh decoder for each line. Strict mode on
-// the header-bytes decoder turns non-ASCII garbage into a thrown error
-// rather than silently mojibake'd Latin-1 (RFC 9112 §5 forbids non-ASCII
-// in header field bytes).
-const STRICT_ASCII = new TextDecoder('utf-8', { fatal: true });
+// The header-bytes decoder is fatal-UTF-8 — but UTF-8 alone is too lax,
+// because RFC 9112 §5 forbids any non-ASCII byte in the header section. A
+// byte sequence like 0xc3 0xa9 ("é") is valid UTF-8, yet the spec rejects
+// it. We therefore byte-scan for any value ≥ 0x80 before handing the bytes
+// to this decoder. The decoder still earns its keep on the back end by
+// rejecting invalid UTF-8 (e.g. lone 0xff), but the byte-scan is what
+// makes the path RFC-compliant. Stateless when used through single-shot
+// decode(); shared module-scope so the per-response parser never
+// allocates a fresh decoder.
+const ASCII_DECODER = new TextDecoder('utf-8', { fatal: true });
 const LENIENT_ASCII = new TextDecoder();
 
 // RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
@@ -182,12 +185,26 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   const headerBytes = buffer.subarray(0, headerEnd);
   const remainder = copy(buffer.subarray(headerEnd + 4));
 
+  // RFC 9112 §5: the header section MUST be ASCII. Reject any byte ≥ 0x80
+  // up front — TextDecoder fatal-UTF-8 alone would accept valid UTF-8
+  // sequences like 0xc3 0xa9 ("é") that the spec forbids in the header
+  // section. The fatal decoder still catches invalid UTF-8 (lone 0xff)
+  // post-scan, which keeps the message helpful on garbage bytes too.
+  for (let i = 0; i < headerBytes.byteLength; i++) {
+    if (headerBytes[i]! >= 0x80) {
+      throw new HttpProtocolError(
+        `non-ASCII byte 0x${headerBytes[i]!.toString(16).padStart(2, '0')} at offset ${i} in response headers`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9112 §5' },
+      );
+    }
+  }
   let headerText: string;
   try {
-    headerText = STRICT_ASCII.decode(headerBytes);
+    headerText = ASCII_DECODER.decode(headerBytes);
   } catch (cause) {
     throw new HttpProtocolError(
-      'non-ASCII bytes in response headers',
+      'invalid byte sequence in response headers',
       'BAD_HEADERS',
       { cause, rfc: 'RFC 9112 §5' },
     );

@@ -347,16 +347,26 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
     });
   });
 
-  it('rejects bytes that are not valid UTF-8 in the response header section (RFC 9112 §5)', async () => {
-    const fake = makeFakeDuplex();
-    fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
-    // 0xff is invalid as a UTF-8 lead byte. The fatal decoder will throw.
-    fake.respond(new Uint8Array([0xff]));
-    fake.respond('\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
-      code: 'BAD_HEADERS',
-    });
+  it('rejects bytes ≥ 0x80 in the response header section (RFC 9112 §5: ASCII only)', async () => {
+    // RFC 9112 §5 forbids non-ASCII bytes in the header section. A
+    // fatal-UTF-8 decoder alone is not enough — valid UTF-8 sequences
+    // like 0xc3 0xa9 ("é") decode cleanly but the spec still rejects
+    // them. The parser scans for any byte ≥ 0x80 before decoding.
+    for (const bytes of [
+      [0xff],                       // invalid UTF-8 lead
+      [0xc3, 0xa9],                 // valid UTF-8 for "é"
+      [0xe4, 0xb8, 0xad],           // valid UTF-8 for "中"
+      [0x80],                       // continuation byte in isolation
+    ]) {
+      const fake = makeFakeDuplex();
+      fake.respond(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX: '));
+      fake.respond(new Uint8Array(bytes));
+      fake.respond('\r\nContent-Length: 0\r\n\r\n');
+      fake.endResponse();
+      await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
+        code: 'BAD_HEADERS',
+      });
+    }
   });
 
   it('preserves duplicate-named headers as a comma-joined Headers entry', async () => {
