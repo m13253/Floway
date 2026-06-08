@@ -7,10 +7,13 @@
 // orchestrator `runProxiedRequest` composes the three for callers that
 // just want a Response.
 //
-// The proxy package does NOT depend on any specific runtime — every dialer
-// takes `socketDial` through DialOptions, so the same library runs on
-// Workers (`cloudflare:sockets`), Node (`node:net`), or any future target
-// that supplies a SocketDial impl.
+// Most dialers stay runtime-agnostic by taking the raw TCP `socketDial`
+// primitive through DialOptions, so the same library runs on Workers
+// (`cloudflare:sockets`), Node (`node:net`), or any future target that
+// supplies a SocketDial impl. The one exception is `vless-ws`, which goes
+// through the runtime's global `fetch()` to perform the WebSocket upgrade —
+// only workerd's fetch returns a `webSocket` handle on the Response, so
+// that variant is workerd-only by construction.
 
 export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, SocketDialOptions, DialedSocket } from './types.ts';
 

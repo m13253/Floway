@@ -76,10 +76,13 @@ TLS, no runtime dependencies). `translate` depends on `protocols`. `proxy`
 depends on `http`; it parses subscription-style proxy URIs, dispatches to
 per-protocol byte-stream dialers, and exposes a `runProxiedRequest`
 orchestrator that composes dial → optional userspace TLS → fetch-on-stream.
-The `proxy` package is runtime-agnostic — every dialer takes the raw TCP
-`socketDial` primitive through `DialOptions`, so it never imports
-`@floway-dev/platform`. `provider` depends on `platform` + `protocols` +
-`interceptor`; the per-vendor `provider-*` packages depend on `provider`.
+Most dialers stay runtime-agnostic by taking the raw TCP `socketDial`
+primitive through `DialOptions`, so they never import `@floway-dev/platform`;
+the one exception is `vless-ws`, which goes through the runtime's global
+`fetch()` to perform the WebSocket upgrade and is workerd-only because only
+workerd's fetch returns a `webSocket` handle on the Response. `provider`
+depends on `platform` + `protocols` + `interceptor`; the per-vendor
+`provider-*` packages depend on `provider`.
 `gateway` depends on `platform` + `protocols` + `translate` + `http` +
 `proxy` + all `provider-*`, and is the runtime-agnostic gateway core; it
 threads `getSocketDial()` from `@floway-dev/platform` into the proxy
