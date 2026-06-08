@@ -16,9 +16,10 @@ CREATE TABLE proxies (
 );
 CREATE INDEX idx_proxies_sort_order ON proxies (sort_order, created_at);
 
--- proxy_id is either a proxies.id OR the literal string 'direct'. We do
--- not foreign-key it: 'direct' has no row, and proxy DELETE is gated by a
--- reference check at the API layer.
+-- proxy_id always references a proxies.id. We omit the FK because the
+-- API layer sweeps backoff rows unconditionally on proxy/upstream DELETE
+-- (see resetForProxy / resetForUpstream) rather than relying on
+-- ON DELETE CASCADE.
 CREATE TABLE proxy_upstream_backoffs (
   proxy_id      TEXT NOT NULL,
   upstream_id   TEXT NOT NULL,
