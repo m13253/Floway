@@ -588,4 +588,19 @@ describe('dialSocks5 — pre-dial target validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
+
+  it('rejects an empty target host at stage=config, before any TCP connect', async () => {
+    // ATYP=domain framing would otherwise emit a zero-length length-prefixed
+    // domain, which strict upstreams reject opaquely after the TCP slot has
+    // already burned.
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialSocks5(socks5Config(), { host: '', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('empty'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });

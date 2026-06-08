@@ -37,10 +37,15 @@ export const assertValidTargetPort = (port: number, protocol: string): void => {
 };
 
 /**
- * Enforce the `DialTarget.host` ASCII contract before any I/O. Surfaces
- * as 'config' so the gateway's fallback chain can advance to the next
- * proxy entry without burning a TCP slot. */
+ * Enforce the `DialTarget.host` ASCII + non-empty contract before any I/O.
+ * Surfaces as 'config' so the gateway's fallback chain can advance to the
+ * next proxy entry without burning a TCP slot on a frame the upstream is
+ * guaranteed to reject (an empty length-prefixed domain in SOCKS-style
+ * framing, or a `CONNECT :PORT` request line). */
 export const assertValidTargetHost = (host: string, protocol: string): void => {
+  if (host.length === 0) {
+    throw new ProxyDialError(`${protocol}: target host is empty`, 'config');
+  }
   for (let i = 0; i < host.length; i++) {
     if (host.charCodeAt(i) > 0x7f) {
       throw new ProxyDialError(

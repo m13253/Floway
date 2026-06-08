@@ -185,5 +185,11 @@ const ensureHostHeader = (headers: Record<string, string>, target: ProxyRequestT
   for (const k of Object.keys(headers)) {
     if (k.toLowerCase() === 'host') return headers;
   }
-  return { ...headers, Host: target.host };
+  // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when it
+  // is the scheme's default (443 for HTTPS, 80 for plain HTTP) — strict
+  // virtual-host upstreams interpret a bare hostname as "client wants the
+  // default port" and route or reject accordingly.
+  const defaultPort = target.tls ? 443 : 80;
+  const hostValue = target.port === defaultPort ? target.host : `${target.host}:${target.port}`;
+  return { ...headers, Host: hostValue };
 };

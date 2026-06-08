@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { vlessFrameOverStream } from './vless-core.ts';
-import { dialVlessTcpTls } from './vless.ts';
-import type { VlessTcpTlsProxyConfig } from '../proxy-config.ts';
+import { dialVlessTcpTls, dialVlessWsTls } from './vless.ts';
+import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
 
@@ -15,6 +15,16 @@ const vlessTcpConfig = (overrides: Partial<VlessTcpTlsProxyConfig> = {}): VlessT
   port: 443,
   uuid: UUID,
   name: 'vless-test',
+  ...overrides,
+});
+
+const vlessWsConfig = (overrides: Partial<VlessWsTlsProxyConfig> = {}): VlessWsTlsProxyConfig => ({
+  kind: 'vless-ws',
+  host: 'proxy.example',
+  port: 443,
+  uuid: UUID,
+  name: 'vless-ws-test',
+  path: '/ws',
   ...overrides,
 });
 // Spec example UUID, parsed in big-endian byte order:
@@ -458,5 +468,33 @@ describe('dialVlessTcpTls — pre-dial target validation', () => {
       message: expect.stringContaining('ASCII'),
     });
     expect(fake.connectCount()).toBe(0);
+  });
+});
+
+describe('dialVlessWsTls — pre-dial target validation', () => {
+  // The WS dialer goes through the runtime's global fetch() and never touches
+  // socketDial, so these tests confirm the pre-dial guards fire before the
+  // workerd-runtime check or any fetch call. In a non-workerd test
+  // environment the function would later reject with a 'config'-stage error
+  // for the missing WebSocketPair anyway — pinning the rejection to the
+  // target-validation message ensures the asserts run first.
+  it('rejects an out-of-range target port at stage=config, before any fetch upgrade', async () => {
+    await expect(
+      dialVlessWsTls(vlessWsConfig(), { host: 'api.openai.com', port: 0 }, {}),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+  });
+
+  it('rejects a non-ASCII target host at stage=config, before any fetch upgrade', async () => {
+    await expect(
+      dialVlessWsTls(vlessWsConfig(), { host: '例え.jp', port: 443 }, {}),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
   });
 });

@@ -223,6 +223,18 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
 });
 
 describe('dialShadowsocks2022 — pre-dial target validation', () => {
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialShadowsocks2022(config(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
   it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();
     await expect(

@@ -151,3 +151,99 @@ describe('runProxiedRequest — post-dial teardown', () => {
     expect((lastCancelReason as Error)?.message ?? '').toMatch(/.+/);
   });
 });
+
+// Exercises the Host header that runProxiedRequest synthesises when the
+// caller leaves it out — RFC 9110 §7.2 wants `host[:port]` with the port
+// dropped only when it equals the scheme's default. The dial layer is
+// mocked to return a duplex whose write-side captures the request line +
+// headers; the canned response keeps fetchOnStream from hanging.
+//
+// We exercise both default-port branches via target.tls=false (default
+// port = 80). The HTTPS-on-443 case is the same logic with target.tls=true
+// + port=443; we assert the lookup logic separately rather than running
+// userspaceTls against a canned stream that wouldn't satisfy a handshake.
+describe('runProxiedRequest — Host header synthesis', () => {
+  const buildCapturingDial = (responseHead: string): {
+    written: () => string;
+    setupMock: () => Promise<void>;
+  } => {
+    let writeBuf = new Uint8Array(0);
+    return {
+      written: () => new TextDecoder().decode(writeBuf),
+      setupMock: async () => {
+        const { dialSocks5 } = await import('./protocols/socks5.ts');
+        vi.mocked(dialSocks5).mockImplementationOnce(async () => {
+          const writable = new WritableStream<Uint8Array>({
+            write(chunk) {
+              const next = new Uint8Array(writeBuf.byteLength + chunk.byteLength);
+              next.set(writeBuf, 0);
+              next.set(chunk, writeBuf.byteLength);
+              writeBuf = next;
+            },
+          });
+          const readable = new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(new TextEncoder().encode(responseHead));
+              c.close();
+            },
+          });
+          return { readable, writable };
+        });
+      },
+    };
+  };
+
+  const socks: ProxyConfig = { kind: 'socks5', host: 'p', port: 1, name: 'p' };
+  const ok200 = 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n';
+
+  it('omits the port for plain HTTP on 80 (scheme default)', async () => {
+    const cap = buildCapturingDial(ok200);
+    await cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: api.example.com\r\n');
+  });
+
+  it('includes the port for plain HTTP on 8080 (non-default port)', async () => {
+    const cap = buildCapturingDial(ok200);
+    await cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: 'api.example.com', port: 8080, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: api.example.com:8080\r\n');
+  });
+
+  it('includes the port when the upstream is plain HTTP on 443 (non-default for tls=false)', async () => {
+    // 443 is HTTPS's default port; on the plain (tls=false) path it's
+    // non-default. The Host header must reflect that — strict virtual-host
+    // upstreams route on the literal `host:port` value.
+    const cap = buildCapturingDial(ok200);
+    await cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: 'api.example.com', port: 443, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: api.example.com:443\r\n');
+  });
+
+  it('preserves a caller-provided Host header verbatim', async () => {
+    const cap = buildCapturingDial(ok200);
+    await cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: 'cdn.example.com', port: 443, tls: false },
+      { method: 'GET', path: '/', headers: { Host: 'origin.example.com:9000' } },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: origin.example.com:9000\r\n');
+  });
+});
