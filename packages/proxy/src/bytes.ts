@@ -138,7 +138,7 @@ const parseIpv6Literal = (s: string): Uint8Array | null => {
     return null;
   }
   // `url.hostname` is normalised — `[::1]` → `[::1]`. Strip the brackets,
-  // then expand to 16 octets via the canonical-form regex.
+  // then expand to 16 octets via `ipv6StringToBytes` below.
   const norm = url.hostname.slice(1, -1);
   return ipv6StringToBytes(norm);
 };

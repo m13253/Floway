@@ -10,6 +10,5 @@ export {
   throwAbort,
   type SocketDial,
   type DialedSocket,
-  type DialOptions,
 } from './socket-dial.ts';
 export * from './sql-database.ts';

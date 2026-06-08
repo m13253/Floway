@@ -5,7 +5,7 @@
 // imports a runtime module like `cloudflare:sockets` directly, so the same
 // dialers run on Workers (cloudflare:sockets) and Node (node:net).
 
-export interface DialOptions {
+interface SocketDialOptions {
   /**
    * Wrap the connection with the runtime's native TLS implementation.
    * The hostname is reused as SNI and as the certificate-verify name.
@@ -32,7 +32,7 @@ export interface DialedSocket {
 }
 
 export interface SocketDial {
-  connect(host: string, port: number, opts?: DialOptions): Promise<DialedSocket>;
+  connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
 }
 
 let current: SocketDial | null = null;

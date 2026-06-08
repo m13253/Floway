@@ -489,9 +489,9 @@ export const extractEd25519RawPubKey = (spki: Uint8Array): Uint8Array => {
 
 /**
  * Length-safe constant-time byte equality. Returns false immediately on
- * length mismatch (length is not secret here — the HMAC output length is
+ * length mismatch — length is not secret here (the HMAC output length is
  * fixed at 64 bytes and the CertificateVerify signature slot is wire-
- * visible — but the per-byte loop never short-circuits, so a partial-match
+ * visible). The per-byte loop never short-circuits, so a partial-match
  * attack can't read out which prefix matched.
  *
  * Exported for tests.

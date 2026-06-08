@@ -11,7 +11,7 @@
 //
 // Required-field validation lives here so callers receive a typed
 // `ProxyConfig` they can dial without re-checking, e.g. REALITY mandates
-// pbk / fp / sni up front.
+// pbk / sni up front.
 //
 // Round-trip guarantee: `parseProxyUri(formatProxyUri(c))` deep-equals `c`
 // for every supported variant. The serialized string is canonical-shaped
