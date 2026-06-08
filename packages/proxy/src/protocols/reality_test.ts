@@ -5,10 +5,11 @@ import { buildRealityAad, buildRealitySessionId, dialReality } from './reality.t
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
+import { hexDecode } from '@floway-dev/http';
 
 describe('buildRealitySessionId', () => {
   it('packs version, timestamp, and short id into 32 bytes', () => {
-    const sid = buildRealitySessionId([25, 4, 30], 0x12345678, hex('00112233445566aa'));
+    const sid = buildRealitySessionId([25, 4, 30], 0x12345678, hexDecode('00112233445566aa'));
     expect(Array.from(sid.subarray(0, 4))).toEqual([25, 4, 30, 0x00]);
     expect(Array.from(sid.subarray(4, 8))).toEqual([0x12, 0x34, 0x56, 0x78]);
     expect(Array.from(sid.subarray(8, 16))).toEqual([0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0xaa]);
@@ -63,12 +64,6 @@ describe('buildRealityAad — AEAD round trip', () => {
     expect(Array.from(opened)).toEqual(Array.from(sid.subarray(0, 16)));
   });
 });
-
-const hex = (s: string): Uint8Array => {
-  const out = new Uint8Array(s.length / 2);
-  for (let i = 0; i < out.byteLength; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
-  return out;
-};
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 
