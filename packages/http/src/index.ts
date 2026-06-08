@@ -9,9 +9,9 @@
 // plain bytes, and for protocols that need full control over TLS record
 // framing.
 
-export type { DuplexStream, HttpRequest } from './types.ts';
+export type { DuplexStream, HttpRequest, RawHttpResponse } from './types.ts';
 
-export { fetchOnStream, parseHttpResponse, decodeChunked } from './fetch-on-stream.ts';
+export { fetchOnStream, parseHttpResponse, toWebResponse, decodeChunked } from './fetch-on-stream.ts';
 export type { FetchOnStreamOptions } from './fetch-on-stream.ts';
 
 export { userspaceTls } from './tls.ts';

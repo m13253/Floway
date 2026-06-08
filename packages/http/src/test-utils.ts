@@ -57,7 +57,32 @@ export const makeFakeDuplex = (): FakeDuplex => {
   };
 };
 
-export const collectBody = async (resp: Response): Promise<string> => {
-  const buf = await resp.arrayBuffer();
+export const collectBody = async (resp: { body: ReadableStream<Uint8Array> } | Response): Promise<string> => {
+  if (resp instanceof Response) {
+    const buf = await resp.arrayBuffer();
+    return new TextDecoder().decode(buf);
+  }
+  const buf = await collectBodyBytes(resp);
   return new TextDecoder().decode(buf);
+};
+
+/** Drain a `ReadableStream<Uint8Array>` to a single `Uint8Array`. Rejects
+ *  with the stream's error if pull fires one. */
+export const collectBodyBytes = async (resp: { body: ReadableStream<Uint8Array> }): Promise<Uint8Array> => {
+  const reader = resp.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.byteLength;
+  }
+  return out;
 };

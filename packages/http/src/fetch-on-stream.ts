@@ -4,7 +4,7 @@
 
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import type { DuplexStream, HttpRequest } from './types.ts';
+import type { DuplexStream, HttpRequest, RawHttpResponse } from './types.ts';
 
 export interface FetchOnStreamOptions {
   /**
@@ -149,21 +149,91 @@ export const fetchOnStream = async (
   }
   writer.releaseLock();
 
-  return await parseHttpResponse(stream.readable);
+  return toWebResponse(await parseHttpResponse(stream.readable));
 };
 
-// Parse an HTTP/1.1 response off a byte-stream reader. Exported for advanced
-// callers that already own the readable (e.g. tests, or transports that
-// pre-process the response head before re-injecting bytes).
-export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<Response> => {
+/**
+ * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
+ * Web `Response` constructor rejects status outside 200..599 and rejects a
+ * non-null body for 204/304 — both of which the wire can legitimately
+ * carry — so the parser stays a pure wire decoder and this is the single
+ * place that maps the parsed shape onto the Fetch standard's constraints.
+ *
+ * `parseHttpResponse` transparently skips 1xx interim heads, so anything
+ * reaching this function should already be a final 2xx..5xx response.
+ */
+export const toWebResponse = (raw: RawHttpResponse): Response => {
+  if (raw.status < 200 || raw.status > 599) {
+    // Web Response only models the 200..599 final-status range. A 1xx
+    // slipped through is a programmer error inside this package, not an
+    // upstream-shaped failure — but the protocol-error class is still the
+    // right surface for the caller.
+    throw new HttpProtocolError(
+      `status ${raw.status} is outside the Web Response constructible range 200..599`,
+      'BAD_STATUS_LINE',
+      { rfc: 'WHATWG Fetch §response-class' },
+    );
+  }
+  // RFC 9110 §15.3.5 + §15.4.5: 204 No Content and 304 Not Modified MUST
+  // NOT carry a body. The Web Response constructor also refuses a non-null
+  // body for these statuses, so we cancel the body stream (in case the
+  // parser fell back to until-EOF framing on a misbehaving upstream) and
+  // construct with `null`.
+  if (raw.status === 204 || raw.status === 304) {
+    raw.body.cancel().catch(() => {});
+    return new Response(null, { status: raw.status, headers: raw.headers });
+  }
+  return new Response(raw.body, { status: raw.status, headers: raw.headers });
+};
+
+/**
+ * Parse an HTTP/1.1 response off a byte-stream reader. Returns a
+ * wire-faithful struct rather than a Web `Response`: Response rejects 1xx
+ * and refuses to carry a body for 204/304, but those are legal on the
+ * wire. Bridge to a Response with {@link toWebResponse} when the caller
+ * wants one.
+ *
+ * 1xx interim heads (100 Continue, 103 Early Hints, …) are read and
+ * discarded transparently — RFC 9112 §6 mandates no body on a 1xx, so any
+ * subsequent bytes are the next response head, which we re-parse on the
+ * spot. The returned struct is always a non-1xx final response.
+ */
+export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<RawHttpResponse> => {
   const reader = readable.getReader();
-  let buffer = new Uint8Array(0);
+  let buffer: Uint8Array = new Uint8Array(0);
+  while (true) {
+    const result = await readResponseHead(reader, buffer);
+    buffer = result.remainder;
+    if (result.status >= 100 && result.status < 200) {
+      // Interim response: no body to frame, no headers to surface. The
+      // remainder bytes belong to the next response; loop back into
+      // head-parsing with them already buffered.
+      continue;
+    }
+    return finalizeResponse(reader, result);
+  }
+};
+
+interface ResponseHead {
+  status: number;
+  statusText: string;
+  headers: Headers;
+  rawContentLengths: string[];
+  rawTransferEncodings: string[];
+  remainder: Uint8Array;
+}
+
+const readResponseHead = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  preBuffered: Uint8Array,
+): Promise<ResponseHead> => {
+  let buffer = preBuffered;
 
   // Cap accumulation so a misbehaving upstream that streams headers
   // forever can't exhaust the runtime's heap. 64 KiB is two orders of
   // magnitude over any sane response-header block.
   const HEADER_BUFFER_CAP = 64 * 1024;
-  let headerEnd = -1;
+  let headerEnd = findDoubleCrlf(buffer);
   while (headerEnd < 0) {
     const { value, done } = await reader.read();
     if (done) {
@@ -237,6 +307,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
     );
   }
   const status = parseInt(m[2]!, 10);
+  const statusText = m[3]!;
 
   const respHeaders = new Headers();
   // Track raw header lines so we can validate framing-related fields off
@@ -303,6 +374,15 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
     respHeaders.append(name, value);
   }
 
+  return { status, statusText, headers: respHeaders, rawContentLengths, rawTransferEncodings, remainder };
+};
+
+const finalizeResponse = (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  head: ResponseHead,
+): RawHttpResponse => {
+  const { status, statusText, headers, rawContentLengths, rawTransferEncodings, remainder } = head;
+
   // RFC 9112 §6.3: a message with both Transfer-Encoding and
   // Content-Length is an error (the sender is broken or actively
   // smuggling). Reject loud rather than picking one.
@@ -350,7 +430,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   let body: ReadableStream<Uint8Array>;
   if (teIsChunked) {
     body = decodeChunked(reader, remainder);
-    respHeaders.delete('transfer-encoding');
+    headers.delete('transfer-encoding');
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
     if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
@@ -365,7 +445,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
     body = untilEofBody(reader, remainder);
   }
 
-  return new Response(body, { status, headers: respHeaders });
+  return { status, statusText, headers, body };
 };
 
 // Body framing — Content-Length. The first chunk can be a partial of the

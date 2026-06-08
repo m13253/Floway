@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseHttpResponse } from './fetch-on-stream.ts';
+import { parseHttpResponse, toWebResponse } from './fetch-on-stream.ts';
 import { makeFakeDuplex } from './test-utils.ts';
 
 const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
@@ -464,5 +464,111 @@ describe('parseHttpResponse — DoS caps', () => {
   it('accepts a response with zero headers', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\n\r\n'));
     expect(r.status).toBe(200);
+  });
+});
+
+describe('parseHttpResponse — 1xx interim heads', () => {
+  // RFC 9112 §6 + RFC 9110 §15.2: a server may emit any number of 1xx
+  // interim responses before the final non-1xx. They MUST NOT carry a
+  // body. The parser consumes them transparently — the public API only
+  // ever surfaces a non-1xx final response.
+  it('skips a 100 Continue and returns the following 200', async () => {
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello',
+    ));
+    expect(r.status).toBe(200);
+    expect(r.statusText).toBe('OK');
+  });
+
+  it('skips a 103 Early Hints carrying preconnect Link headers', async () => {
+    // 103 typically carries Link: preconnect headers that an intermediary
+    // could legitimately set; we still discard the whole interim head.
+    const r = await parseHttpResponse(respondAndEnd([
+      'HTTP/1.1 103 Early Hints',
+      'Link: </a.css>; rel=preload',
+      '',
+      'HTTP/1.1 200 OK',
+      'Content-Length: 2',
+      '',
+      'OK',
+    ].join('\r\n')));
+    expect(r.status).toBe(200);
+    expect(r.headers.get('link')).toBeNull();
+  });
+
+  it('skips multiple stacked interim heads (100 then 103 then 200)', async () => {
+    const r = await parseHttpResponse(respondAndEnd([
+      'HTTP/1.1 100 Continue',
+      '',
+      'HTTP/1.1 103 Early Hints',
+      'Link: </a.css>; rel=preload',
+      '',
+      'HTTP/1.1 200 OK',
+      'Content-Length: 0',
+      '',
+      '',
+    ].join('\r\n')));
+    expect(r.status).toBe(200);
+  });
+});
+
+describe('parseHttpResponse — wire-faithful return shape', () => {
+  // parseHttpResponse returns a wire-faithful struct rather than a Web
+  // Response so 204/304 (which the Response constructor rejects with a
+  // non-null body) are representable. Bridging to a Response is
+  // toWebResponse's job.
+  it('parses a 204 No Content and exposes a (zero-length) body stream', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n'));
+    expect(r.status).toBe(204);
+    expect(r.body).toBeInstanceOf(ReadableStream);
+  });
+
+  it('parses a 304 Not Modified and exposes a (zero-length) body stream', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 304 Not Modified\r\nETag: "abc"\r\n\r\n'));
+    expect(r.status).toBe(304);
+    expect(r.headers.get('etag')).toBe('"abc"');
+  });
+
+  it('exposes the parsed reason-phrase via statusText', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 418 I\'m a teapot\r\nContent-Length: 0\r\n\r\n'));
+    expect(r.statusText).toBe('I\'m a teapot');
+  });
+
+  it('exposes an empty statusText when the reason-phrase is empty (RFC 7230 erratum 4087)', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 \r\nContent-Length: 0\r\n\r\n'));
+    expect(r.statusText).toBe('');
+  });
+});
+
+describe('toWebResponse', () => {
+  it('passes 200..599 through with the parsed status and headers', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 503 Service Unavailable\r\nRetry-After: 30\r\nContent-Length: 0\r\n\r\n',
+    )));
+    expect(r.status).toBe(503);
+    expect(r.headers.get('retry-after')).toBe('30');
+  });
+
+  it('returns a null-body Response for 204 No Content (Fetch standard refuses a body)', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
+    expect(r.status).toBe(204);
+    expect(r.body).toBeNull();
+  });
+
+  it('returns a null-body Response for 304 Not Modified', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 304 Not Modified\r\nETag: "abc"\r\n\r\n')));
+    expect(r.status).toBe(304);
+    expect(r.body).toBeNull();
+    expect(r.headers.get('etag')).toBe('"abc"');
+  });
+
+  it('throws BAD_STATUS_LINE when handed a status the Fetch standard refuses to model', () => {
+    // parseHttpResponse will never produce a 1xx (it skips them internally),
+    // but the bridge function still validates. A handcrafted struct mirrors
+    // what an out-of-spec caller could pass.
+    const fake = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
+    expect(() => toWebResponse({ status: 99, statusText: 'X', headers: new Headers(), body: fake })).toThrow(
+      expect.objectContaining({ name: 'HttpProtocolError', code: 'BAD_STATUS_LINE' }),
+    );
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HttpProtocolError } from './errors.ts';
 import { fetchOnStream, parseHttpResponse } from './fetch-on-stream.ts';
-import { collectBody, makeFakeDuplex } from './test-utils.ts';
+import { collectBody, collectBodyBytes, makeFakeDuplex } from './test-utils.ts';
 
 const decodeAscii = (b: Uint8Array): string => new TextDecoder().decode(b);
 
@@ -165,7 +165,7 @@ describe('parseHttpResponse — body framing modes', () => {
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nshort');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    await expect(resp.arrayBuffer()).rejects.toMatchObject({
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       name: 'HttpProtocolError',
       message: expect.stringContaining('upstream EOF after 5/10'),
     });
@@ -463,7 +463,7 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
     fake.respond(new Uint8Array(len).fill(0x61));
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    const buf = await resp.arrayBuffer();
+    const buf = await collectBodyBytes(resp);
     expect(buf.byteLength).toBe(len);
   });
 });
@@ -474,7 +474,7 @@ describe('parseHttpResponse — body framing (Content-Length boundaries)', () =>
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloEXTRA');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    await expect(resp.arrayBuffer()).rejects.toMatchObject({
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       code: 'TRAILING_BODY_BYTES',
     });
   });
@@ -484,7 +484,7 @@ describe('parseHttpResponse — body framing (Content-Length boundaries)', () =>
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\nX');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    await expect(resp.arrayBuffer()).rejects.toMatchObject({
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       code: 'TRAILING_BODY_BYTES',
     });
   });
@@ -494,7 +494,7 @@ describe('parseHttpResponse — body framing (Content-Length boundaries)', () =>
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    await expect(resp.arrayBuffer()).rejects.toMatchObject({
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       code: 'EOF',
     });
   });
