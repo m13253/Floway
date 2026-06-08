@@ -17,13 +17,25 @@ export interface AuthIdentity {
 
 const STORAGE_KEY = 'floway-auth';
 
+const isAuthIdentity = (value: unknown): value is AuthIdentity => {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as { token?: unknown; user?: unknown };
+  if (typeof v.token !== 'string') return false;
+  if (typeof v.user !== 'object' || v.user === null) return false;
+  return typeof (v.user as { id?: unknown }).id === 'number';
+};
+
 export const useAuthStore = defineStore('auth', () => {
   const identity = useLocalStorage<AuthIdentity | null>(STORAGE_KEY, null, {
     serializer: {
       read: raw => {
         if (!raw) return null;
         try {
-          return JSON.parse(raw) as AuthIdentity;
+          const parsed: unknown = JSON.parse(raw);
+          // Anything that does not match the current AuthIdentity shape — most
+          // commonly a payload written by an older version of the dashboard —
+          // is treated as "no valid identity" and the user lands on /login.
+          return isAuthIdentity(parsed) ? parsed : null;
         } catch {
           return null;
         }
