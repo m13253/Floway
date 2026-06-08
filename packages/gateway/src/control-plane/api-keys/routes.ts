@@ -71,7 +71,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
 };
 
 export const deleteKey = async (c: Context) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
   await getRepo().apiKeys.softDelete(id);
@@ -79,7 +79,7 @@ export const deleteKey = async (c: Context) => {
 };
 
 export const rotateKey = async (c: Context) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
 
@@ -89,7 +89,7 @@ export const rotateKey = async (c: Context) => {
 };
 
 export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
   if (body.name === undefined && body.upstream_ids === undefined) {

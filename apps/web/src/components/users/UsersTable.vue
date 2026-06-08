@@ -15,9 +15,6 @@ defineEmits<{
   remove: [user: WireUser];
 }>();
 
-const shortDate = (s: string) => dayjs(s).format('MMM D, YYYY');
-const fullDateTime = (s: string) => dayjs(s).format('YYYY-MM-DD HH:mm:ss');
-
 const isProtected = (id: number, actor: number) => id === 1 || id === actor;
 </script>
 
@@ -57,7 +54,7 @@ const isProtected = (id: number, actor: number) => id === 1 || id === actor;
             </span>
           </td>
           <td class="py-3 pr-4">
-            <span class="text-gray-500 text-xs cursor-default" :title="fullDateTime(u.createdAt)">{{ shortDate(u.createdAt) }}</span>
+            <span class="text-gray-500 text-xs cursor-default" :title="dayjs(u.createdAt).format('YYYY-MM-DD HH:mm:ss')">{{ dayjs(u.createdAt).format('MMM D, YYYY') }}</span>
           </td>
           <td class="py-3 pr-2 text-right">
             <div class="flex items-center justify-end gap-1">

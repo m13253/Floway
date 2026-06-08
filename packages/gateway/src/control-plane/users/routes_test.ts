@@ -88,6 +88,26 @@ test('admin password reset on another user revokes that user\'s sessions', async
   expect(await repo.sessions.getByIdAndTouch(bobSession.id)).toBeNull();
 });
 
+test('PATCH /api/users/:id can demote and revoke global-telemetry on a non-self admin', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.users.save({
+    id: 3,
+    username: 'bob',
+    passwordHash: await hashPassword('pw'),
+    isAdmin: true,
+    upstreamIds: null,
+    canViewGlobalTelemetry: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    deletedAt: null,
+  });
+
+  const response = await adminPatch(adminSession, 3, { isAdmin: false, canViewGlobalTelemetry: false });
+  assertEquals(response.status, 200);
+  const bob = await repo.users.getById(3);
+  expect(bob?.isAdmin).toBe(false);
+  expect(bob?.canViewGlobalTelemetry).toBe(false);
+});
+
 test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () => {
   const { adminSession, repo } = await setupAppTest();
   const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });

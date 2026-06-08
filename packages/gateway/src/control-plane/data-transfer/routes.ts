@@ -37,7 +37,6 @@ interface ExportPayload {
 
 const EXPORT_VERSION = 4;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
-const PASSWORD_HASH_PREFIX = 'pbkdf2-sha256$';
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
@@ -219,7 +218,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
       if (typeof record.username !== 'string' || !USERNAME_PATTERN.test(record.username)) {
         throw new Error('username must match ^[a-zA-Z0-9_.-]{1,64}$');
       }
-      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith(PASSWORD_HASH_PREFIX))) {
+      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith('pbkdf2-sha256$'))) {
         throw new Error('passwordHash must be null or start with pbkdf2-sha256$');
       }
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
@@ -532,10 +531,10 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
     }
     users = usersResult.records;
-    // v4 replace mode wipes the users table before re-inserting, so a payload
-    // that omits user 1 would leave the deployment with no seed admin and
-    // brick the ADMIN_KEY backdoor. A v4 export always includes user 1, so a
-    // missing entry here is operator pilot error.
+    // A v4 payload is a self-describing snapshot: it must include user 1 (else
+    // replace mode would brick the ADMIN_KEY backdoor) and every apiKeys.userId
+    // must resolve within the payload (else replace mode would leave dangling
+    // keys).
     if (!users.some(u => u.id === 1)) {
       return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
     }

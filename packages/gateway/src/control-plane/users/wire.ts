@@ -10,7 +10,9 @@ export const userToEffectiveWire = (user: User) => ({
   upstreamIds: user.upstreamIds,
 });
 
-// Raw shape: capability flags round-trip exactly as persisted.
+// Raw shape carries `createdAt` so the admin list can sort/display creation
+// time; the effective shape (for /auth/me + login) omits it because the
+// dashboard doesn't render the actor's own creation date.
 export const userToRawWire = (user: User) => ({
   id: user.id,
   username: user.username,

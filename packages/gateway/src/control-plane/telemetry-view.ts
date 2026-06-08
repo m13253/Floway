@@ -2,9 +2,7 @@ import type { Context } from 'hono';
 
 export type TelemetryView = 'all-by-user' | 'self-by-key';
 
-// scopeUserId narrows with view: self-by-key always carries the actor's id;
-// all-by-user has no per-user scope. The discriminated union lets callers
-// drop a row of `!` non-null assertions on the self-by-key branch.
+// Discriminated union so callers narrow scopeUserId without non-null assertions.
 export type ResolvedTelemetryView =
   | { view: 'self-by-key'; scopeUserId: number }
   | { view: 'all-by-user' };

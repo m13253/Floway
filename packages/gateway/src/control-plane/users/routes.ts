@@ -100,19 +100,18 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     ...existing,
     username: body.username ?? existing.username,
     passwordHash: body.password === undefined ? existing.passwordHash : await hashPassword(body.password),
-    isAdmin: body.isAdmin ?? existing.isAdmin,
+    // `??` is wrong for boolean fields here: an explicit `false` must demote /
+    // revoke, but `?? existing` would treat it as "keep existing".
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    isAdmin: body.isAdmin === undefined ? existing.isAdmin : body.isAdmin,
     upstreamIds: body.upstreamIds === undefined ? existing.upstreamIds : body.upstreamIds,
-    canViewGlobalTelemetry: body.canViewGlobalTelemetry ?? existing.canViewGlobalTelemetry,
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    canViewGlobalTelemetry: body.canViewGlobalTelemetry === undefined ? existing.canViewGlobalTelemetry : body.canViewGlobalTelemetry,
   };
   await repo.users.save(next);
 
-  // Any password change kicks every other device the target user is logged in
-  // on, preserving only the actor's current session. When the actor patches
-  // someone else, that "current session" belongs to the actor and never
-  // matches the target's rows, so the target is fully signed out. When the
-  // actor patches themselves, the dashboard tab they're acting from stays
-  // alive. API-key callers have no session at all, so the target loses every
-  // session unconditionally.
+  // A password change revokes every session for the target user except the
+  // actor's own. API-key callers have no session, so the target loses all.
   if (body.password !== undefined) {
     const sessionId = c.get('sessionId') as string | undefined;
     if (sessionId) await repo.sessions.deleteByUserIdExcept(id, sessionId);

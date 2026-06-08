@@ -44,10 +44,9 @@ const headerInnerClass = 'mx-auto w-full max-w-[1408px] flex flex-wrap items-cen
 const passwordDialogOpen = ref(false);
 const passwordToast = ref<string | null>(null);
 
-// Route guard makes currentUser non-null on the dashboard layout, but a 401
-// from any data-plane fetch can clear identity synchronously between renders;
-// surfacing the invariant via a throw-on-null computed matches the
-// users.vue / EditKeyDialog.vue convention.
+// Route guard keeps currentUser non-null on the dashboard layout, but a
+// synchronous 401 between renders can still clear it; surface the invariant
+// explicitly.
 const currentUsername = computed(() => {
   if (!auth.currentUser) throw new Error('dashboard rendered without an authenticated user');
   return auth.currentUser.username;

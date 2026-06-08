@@ -137,17 +137,10 @@ Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.
 
 For manual data-plane validation, log into the dashboard with the
-`ADMIN_KEY` backdoor (leave the username field blank) or with your own
-user, then create or pick an API key under your account and use it as
-`x-api-key`. `ADMIN_KEY` is not a data-plane credential; its only
-purpose is to let an operator who lost the admin password log in via
-`POST /auth/login`.
-
-`POST /api/users` also provisions a `Default` API key (`upstream_ids:
-null`) for the new user. If that secondary provisioning fails the user
-is left with no Default key; the operator must create one by hand or
-recreate the user. The cleartext key is not returned in the response;
-the user retrieves it from the Keys page.
+`ADMIN_KEY` backdoor or with your own user, then create or pick an API
+key under your account and use it as `x-api-key`. `ADMIN_KEY` is not a
+data-plane credential; its only purpose is to let an operator who lost
+the admin password log in via `POST /auth/login`.
 
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic
