@@ -168,10 +168,8 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   const contentLength = rawContentLengths[0] ?? null;
 
   let body: ReadableStream<Uint8Array>;
-  let mode: 'chunked' | 'length' | 'eof';
   if (teIsChunked) {
     body = decodeChunked(reader, remainder);
-    mode = 'chunked';
     respHeaders.delete('transfer-encoding');
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
@@ -179,12 +177,9 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
       throw new HttpProtocolError(`HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`);
     }
     body = lengthBody(reader, remainder, total);
-    mode = 'length';
   } else {
     body = untilEofBody(reader, remainder);
-    mode = 'eof';
   }
-  respHeaders.set('x-content-stream-mode', mode);
 
   return new Response(body, { status, headers: respHeaders });
 };

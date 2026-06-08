@@ -122,7 +122,6 @@ describe('parseHttpResponse — body framing modes', () => {
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    expect(resp.headers.get('x-content-stream-mode')).toBe('length');
     expect(await collectBody(resp)).toBe('hello');
   });
 
@@ -136,7 +135,6 @@ describe('parseHttpResponse — body framing modes', () => {
     ].join('\r\n'));
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    expect(resp.headers.get('x-content-stream-mode')).toBe('chunked');
     expect(await collectBody(resp)).toBe('hello');
     // The internal transfer-encoding header is stripped because it has been
     // decoded — re-exposing it would mislead downstream consumers.
@@ -148,7 +146,6 @@ describe('parseHttpResponse — body framing modes', () => {
     fake.respond('HTTP/1.0 200 OK\r\n\r\nhello world');
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
-    expect(resp.headers.get('x-content-stream-mode')).toBe('eof');
     expect(await collectBody(resp)).toBe('hello world');
   });
 
