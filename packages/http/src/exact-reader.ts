@@ -1,14 +1,9 @@
-// Buffered "read exactly N bytes" helper for the byte-framed AEAD proxy
-// dialers. Shadowsocks AEAD-2018 and Shadowsocks-2022 both walk
-// fixed-size handshake records off a transport reader and need the same
-// loop: pull until N bytes are buffered, hand N to the caller, keep the
-// rest for the next call.
-//
-// The label parameter only affects the EOF error message. Both callers
-// translate an early EOF inside the readable's pull() catch — the bare
-// Error from this helper bubbles up there and is rewrapped as a typed
-// proxy-handshake ProxyDialError before the recv side has bootstrapped,
-// or surfaced as a plain transport EOF after.
+// Buffered "read exactly N bytes" helper for byte-framed consumers on a
+// Web Streams reader. Shadowsocks AEAD-2018 and Shadowsocks-2022 both
+// walk fixed-size handshake records off a transport reader and need the
+// same loop: pull until N bytes are buffered, hand N to the caller, keep
+// the rest for the next call. Lives here so any byte-framed consumer on
+// a `ReadableStreamDefaultReader<Uint8Array>` can reuse it.
 
 export const makeExactReader = (
   reader: ReadableStreamDefaultReader<Uint8Array>,

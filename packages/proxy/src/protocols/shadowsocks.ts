@@ -24,8 +24,7 @@ import { md5, sha1 } from '@noble/hashes/legacy.js';
 import { ProxyDialError } from '../errors.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { makeExactReader } from './exact-reader.ts';
-import { asciiBytes, concat, randomBytes } from '@floway-dev/http';
+import { asciiBytes, concat, makeExactReader, randomBytes } from '@floway-dev/http';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,

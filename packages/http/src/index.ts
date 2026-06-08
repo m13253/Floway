@@ -20,3 +20,5 @@ export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 export { HttpProtocolError } from './errors.ts';
 
 export { copy, concat, asciiBytes, randomBytes, hexDecode, findDoubleCrlf } from './bytes.ts';
+
+export { makeExactReader } from './exact-reader.ts';
