@@ -79,6 +79,20 @@ const resetPassword = (u: WireUser) => {
   passwordOpen.value = true;
 };
 
+const onUserSaved = async (savedId: number) => {
+  await reload();
+  // Self-edits change the actor's own row, including their upstream cap. The
+  // auth store still holds the pre-save snapshot, so anything reading from it
+  // (e.g. the per-key UpstreamPicker filter) would stay stale until the next
+  // login. Pull /auth/me to keep the local identity in sync.
+  if (savedId === actorUserId.value) {
+    const { data } = await callApi<{ user: { id: number; username: string; isAdmin: boolean; canViewGlobalTelemetry: boolean; upstreamIds: string[] | null } }>(
+      () => api.auth.me.$get(),
+    );
+    if (data) auth.setUser(data.user);
+  }
+};
+
 const remove = async (u: WireUser) => {
   if (!window.confirm(`Delete user "${u.username}"? Their API keys are soft-deleted and their sessions are revoked.`)) return;
   const { error: err } = await callApi(
@@ -117,7 +131,7 @@ const remove = async (u: WireUser) => {
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
       @created="onCreated"
-      @saved="reload"
+      @saved="onUserSaved"
     />
     <PasswordDrawer
       v-model:open="passwordOpen"

@@ -22,7 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   created: [user: WireUser];
-  saved: [];
+  saved: [userId: number];
 }>();
 
 const api = useApi();
@@ -115,7 +115,7 @@ const submit = async () => {
   saving.value = false;
   if (err) { error.value = err.message; return; }
   open.value = false;
-  emit('saved');
+  emit('saved', target.id);
 };
 </script>
 

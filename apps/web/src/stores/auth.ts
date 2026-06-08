@@ -51,6 +51,10 @@ export const useAuthStore = defineStore('auth', () => {
   const canViewGlobalTelemetry = computed(() => identity.value?.user.canViewGlobalTelemetry === true);
 
   const setAuth = (next: AuthIdentity) => { identity.value = next; };
+  const setUser = (user: AuthUser) => {
+    if (!identity.value) return;
+    identity.value = { token: identity.value.token, user };
+  };
   const clearAuth = () => { identity.value = null; };
 
   return {
@@ -61,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser,
     canViewGlobalTelemetry,
     setAuth,
+    setUser,
     clearAuth,
   };
 });
