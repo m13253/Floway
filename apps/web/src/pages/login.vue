@@ -38,11 +38,6 @@ const [loading, submit] = useLoading(async () => {
   auth.setAuth({ token: data.token, user: data.user });
   await router.replace('/dashboard/settings');
 });
-
-const onSubmit = (e: Event) => {
-  e.preventDefault();
-  void submit();
-};
 </script>
 
 <template>
@@ -68,7 +63,7 @@ const onSubmit = (e: Event) => {
           Leave the username blank and use the deployment's <span class="text-gray-400">ADMIN_KEY</span> to log in as the default admin user.
         </p>
 
-        <form class="space-y-5" @submit="onSubmit">
+        <form class="space-y-5" @submit.prevent="submit">
           <div>
             <label for="username" class="mb-2 block text-xs font-medium uppercase tracking-widest text-gray-400">Username</label>
             <Input

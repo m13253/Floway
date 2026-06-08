@@ -1,8 +1,3 @@
-// Test-only helper: bootstrap an in-memory SQLite via sql.js with every
-// repo migration applied, exposed through the SqlDatabase interface so the
-// SqlRepo runs end-to-end against the same SQL the production platforms
-// execute.
-
 import initSqlJs from 'sql.js';
 
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';

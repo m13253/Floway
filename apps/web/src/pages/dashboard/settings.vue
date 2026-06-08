@@ -34,7 +34,6 @@ export const useSettingsPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-import { Button } from '@floway-dev/ui';
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
@@ -43,6 +42,7 @@ import PasswordDialog from '../../components/users/PasswordDialog.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
+import MyAccountCard from '../../components/settings/MyAccountCard.vue';
 import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
 import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
@@ -70,8 +70,6 @@ const reloadAll = async () => {
 const passwordDrawerOpen = ref(false);
 const passwordToast = ref<string | null>(null);
 
-const openChangePassword = () => { passwordDrawerOpen.value = true; };
-
 const onPasswordChanged = () => {
   passwordToast.value = 'Password updated. Other devices have been signed out.';
   window.setTimeout(() => { passwordToast.value = null; }, 4000);
@@ -87,16 +85,12 @@ const onPasswordChanged = () => {
       {{ passwordToast }}
     </div>
 
-    <div v-if="!auth.isAdmin" class="glass-card p-5 sm:p-6 animate-in">
-      <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
-      <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p class="text-sm text-white">{{ auth.currentUser!.username }}</p>
-          <p class="text-xs text-gray-500">Standard user</p>
-        </div>
-        <Button variant="secondary" @click="openChangePassword">Change my password</Button>
-      </div>
-    </div>
+    <MyAccountCard
+      v-if="!auth.isAdmin"
+      :username="auth.currentUser!.username"
+      role-label="Standard user"
+      @change-password="passwordDrawerOpen = true"
+    />
 
     <div v-if="auth.isAdmin" class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
@@ -115,16 +109,11 @@ const onPasswordChanged = () => {
       </div>
 
       <div class="flex flex-col gap-5">
-        <div class="glass-card p-5 sm:p-6 animate-in">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
-          <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p class="text-sm text-white">{{ auth.currentUser!.username }}</p>
-              <p class="text-xs text-gray-500">Administrator</p>
-            </div>
-            <Button variant="secondary" @click="openChangePassword">Change my password</Button>
-          </div>
-        </div>
+        <MyAccountCard
+          :username="auth.currentUser!.username"
+          role-label="Administrator"
+          @change-password="passwordDrawerOpen = true"
+        />
         <ApiEndpointsSection />
         <div class="glass-card p-5 sm:p-6 animate-in delay-2">
           <ExportSection :framed="false" />

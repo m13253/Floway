@@ -70,6 +70,7 @@ type Range = DashboardRange;
 type Scope = 'request_total' | 'upstream_success';
 type ChartView = 'model' | 'percentile';
 type PercentileKey = 'p50Ms' | 'p95Ms' | 'p99Ms';
+type View = 'all-by-user' | 'self-by-key';
 
 const api = useApi();
 const auth = useAuthStore();
@@ -81,7 +82,7 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
-const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
+const view = ref<View>(initialOverview.data.value.view);
 
 const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);
 const overview = ref<OverviewResponse | null>(initialOverview.data.value.overview);

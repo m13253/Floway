@@ -38,7 +38,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
   if (!rawKey) return c.json({ error: 'Unauthorized' }, 401);
 
   const adminKey = getEnv('ADMIN_KEY');
-  if (adminKey !== '' && rawKey === adminKey) {
+  if (rawKey === adminKey) {
     return c.json({ error: 'ADMIN_KEY is only valid via POST /auth/login (leave username blank).' }, 401);
   }
 

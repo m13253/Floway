@@ -5,13 +5,12 @@ import type { Context } from 'hono';
 
 export type TelemetryView = 'all-by-user' | 'self-by-key';
 
-export interface ResolvedTelemetryView {
-  view: TelemetryView;
-  // Set when the actor is in self-by-key mode; queries must scope to keys
-  // belonging to this user (including soft-deleted ones, so a user's "my keys"
-  // history still surfaces rows from rotated/removed keys).
-  scopeUserId: number | null;
-}
+// scopeUserId narrows with view: self-by-key always carries the actor's id;
+// all-by-user has no per-user scope. The discriminated union lets callers
+// drop a row of `!` non-null assertions on the self-by-key branch.
+export type ResolvedTelemetryView =
+  | { view: 'self-by-key'; scopeUserId: number }
+  | { view: 'all-by-user' };
 
 export type TelemetryViewError =
   | { error: 'forbidden'; message: string }
@@ -41,8 +40,7 @@ export const resolveTelemetryView = (
     };
   }
 
-  return {
-    view,
-    scopeUserId: view === 'self-by-key' ? userId : null,
-  };
+  return view === 'self-by-key'
+    ? { view: 'self-by-key', scopeUserId: userId }
+    : { view: 'all-by-user' };
 };

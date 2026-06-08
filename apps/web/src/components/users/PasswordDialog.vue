@@ -7,11 +7,10 @@ import SecretInput from '../shared/SecretInput.vue';
 
 const open = defineModel<boolean>('open');
 
-const props = defineProps<{
-  mode: 'self' | 'admin';
-  targetUserId?: number;
-  targetUsername?: string;
-}>();
+const props = defineProps<
+  | { mode: 'self'; targetUserId?: undefined; targetUsername?: undefined }
+  | { mode: 'admin'; targetUserId: number; targetUsername: string }
+>();
 
 const emit = defineEmits<{ saved: [] }>();
 
@@ -44,10 +43,6 @@ const submit = async () => {
     error.value = 'Current password is required';
     return;
   }
-  if (props.mode === 'admin' && props.targetUserId === undefined) {
-    error.value = 'Missing target user';
-    return;
-  }
   saving.value = true;
   error.value = null;
   try {
@@ -67,7 +62,7 @@ const submit = async () => {
 
 const title = computed(() => {
   if (props.mode === 'self') return 'Change my password';
-  return props.targetUsername ? `Reset password — ${props.targetUsername}` : 'Reset password';
+  return `Reset password — ${props.targetUsername}`;
 });
 </script>
 

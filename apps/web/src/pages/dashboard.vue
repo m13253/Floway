@@ -5,9 +5,9 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import { useAuthStore } from '../stores/auth.ts';
 
-// Tab labels and order mirror the prerender dashboard exactly. "API Keys" not
-// "Keys"; admin-only Settings hides for API-key users; rest are visible to
-// every authenticated identity.
+// Tab labels and order mirror the prerender dashboard exactly. "API Keys"
+// not "Keys"; the Users tab is admin-only, the rest are visible to every
+// authenticated identity.
 interface TabDef {
   path: string;
   label: string;

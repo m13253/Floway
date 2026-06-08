@@ -92,7 +92,7 @@ const queryRecordsForView = async (
     });
   }
 
-  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId!);
+  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId);
   const ownedSet = new Set(ownedIds);
   if (params.keyId !== undefined && !ownedSet.has(params.keyId)) {
     return null;
@@ -143,7 +143,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   }
 
   if (query.include_key_metadata !== '1') return c.json({ records });
-  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId!);
+  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({ records, keys: keyMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });

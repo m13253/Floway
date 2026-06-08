@@ -1,6 +1,6 @@
-// User management routes — admin CRUD on /api/users plus the self-service
-// password change. The seed admin (id 1) and the actor are protected from
-// foot-gun mutations (cannot demote, cannot delete).
+// /api/users CRUD plus the self-service password change. The seed admin
+// (id 1) and the actor are protected from foot-gun mutations (cannot demote,
+// cannot delete).
 
 import type { Context } from 'hono';
 
@@ -10,10 +10,10 @@ import type { ApiKey, User } from '../../repo/types.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
 
-// Surfaces the raw stored isAdmin / canViewGlobalTelemetry flags so admins
-// editing a user see exactly what's persisted. Distinct from auth/routes.ts'
-// userToWire, which OR's isAdmin into canViewGlobalTelemetry for the
-// /auth/me consumer's effective-capability view.
+// Surfaces the raw stored isAdmin / canViewGlobalTelemetry flags so admin
+// edits round-trip exactly what's persisted. The /auth/me wire shape in
+// auth/routes.ts ORs isAdmin into canViewGlobalTelemetry to model the
+// effective capability instead.
 const userToWire = (u: User) => ({
   id: u.id,
   username: u.username,
@@ -59,9 +59,8 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds ?? null);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
-  // Allocate the next id from the existing rows (including soft-deleted ones,
-  // so a recreated username never collides with an old id). The seed admin
-  // occupies id 1.
+  // Includes soft-deleted rows so a recreated username never collides with
+  // an old id. The seed admin occupies id 1.
   const all = await repo.users.listIncludingDeleted();
   const newId = all.reduce((max, u) => Math.max(max, u.id), 0) + 1;
 
@@ -77,10 +76,12 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.users.save(user);
 
-  // Every user starts with a Default API key so they can use the playground
-  // and CLI immediately after their first login. The cleartext key is not
-  // exposed in the create response — admins do not see other users' keys; the
-  // new user finds it themselves on the dashboard's Keys page.
+  // Every user starts with a Default API key so they can use the gateway
+  // straight after their first login. The cleartext key is not returned
+  // here; the user retrieves it from the Keys page on first sign-in.
+  // Best-effort: a failure between users.save and apiKeys.save leaves the
+  // user without a Default key; the operator must create one by hand or
+  // delete and recreate the user.
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
     userId: newId,

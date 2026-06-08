@@ -143,13 +143,14 @@ user, then create or pick an API key under your account and use it as
 purpose is to let an operator who lost the admin password log in via
 `POST /auth/login`.
 
-`POST /api/users` is a single transaction that creates the user and
-provisions a `Default` API key under them with `upstream_ids: null`.
-The cleartext key comes back in the response and is shown once in the
-dashboard's create flow. Operators who do not want this side effect
-should rotate or delete the Default key immediately after creation;
-the design favours "every freshly minted user can call the gateway
-without a second round-trip" over keeping the API orthogonal.
+`POST /api/users` creates the user and provisions a `Default` API key
+under them (`upstream_ids: null`) so the user can call the gateway
+immediately after their first login. The two writes happen in
+sequence rather than in a shared transaction — D1 has no multi-table
+transaction surface — so a failure between them leaves a user without
+a Default key; the operator must create one by hand or delete and
+recreate. The cleartext key is not returned in the response; the new
+user retrieves it from the Keys page after first login.
 
 Database exports include the `password_hash` for every user (active and
 soft-deleted) so a restore reconstructs login state. Treat exported

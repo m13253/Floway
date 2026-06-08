@@ -142,10 +142,11 @@ const remove = async (u: WireUser) => {
       @saved="onUserSaved"
     />
     <PasswordDialog
+      v-if="passwordTarget"
       v-model:open="passwordOpen"
       mode="admin"
-      :target-user-id="passwordTarget?.id"
-      :target-username="passwordTarget?.username"
+      :target-user-id="passwordTarget.id"
+      :target-username="passwordTarget.username"
       @saved="reload"
     />
   </div>
