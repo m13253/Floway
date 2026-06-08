@@ -52,13 +52,10 @@ export const resetSocketDialForTesting = (): void => {
 };
 
 /**
- * Convert a caller-supplied abort signal into a thrown error, shaped to
- * satisfy the dial chain's AbortError fast-path. A structured Error
- * reason is rethrown as-is so its stack/cause survives; a primitive or
- * absent reason becomes a DOMException('AbortError'). Used at the pre-
- * connect short-circuit on every SocketDial impl, and on workerd where
- * `cloudflare:sockets` doesn't take a native signal — at the
- * connect-failure narrowing and the post-connect re-check too.
+ * Convert a caller-supplied abort signal into a thrown error shaped for
+ * the dial chain's AbortError fast-path. A structured Error reason is
+ * rethrown as-is so its stack/cause survives; a primitive or absent
+ * reason becomes a DOMException('AbortError').
  */
 export const throwAbort = (signal: AbortSignal): never => {
   const reason = signal.reason;
