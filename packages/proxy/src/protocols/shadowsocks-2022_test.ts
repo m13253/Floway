@@ -86,6 +86,10 @@ describe('buildSs2022RequestHeader', () => {
     expect(h[0]).toBe(0x03);
     expect(h[1]).toBe(11);
   });
+
+  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
+    expect(() => buildSs2022RequestHeader('例え.jp', 443)).toThrow(/ASCII|punycode/);
+  });
 });
 
 describe('dialShadowsocks2022 — SIP022 happy path', () => {

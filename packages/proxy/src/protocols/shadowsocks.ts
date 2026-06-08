@@ -284,6 +284,19 @@ export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuff
     return out;
   }
   const enc = new TextEncoder();
+  // Domain path. SS servers (shadowsocks-rust, sing-box) parse the
+  // domain string in-band and run their own resolver, but raw IDN
+  // bytes on the wire muddle Latin-1 / UTF-8 framing — the dial
+  // layer's contract (see `DialTarget.host`) is ASCII-only and IDN
+  // punycoding belongs at the URL parser one layer up.
+  for (let i = 0; i < host.length; i++) {
+    if (host.charCodeAt(i) > 0x7f) {
+      throw new ProxyDialError(
+        `SS target host must be ASCII (punycode IDN before dial): ${host}`,
+        'proxy-handshake',
+      );
+    }
+  }
   const dom = enc.encode(host);
   if (dom.byteLength > 255) throw new ProxyDialError('SS: address too long', 'proxy-handshake');
   const out = new Uint8Array(1 + 1 + dom.byteLength + 2);

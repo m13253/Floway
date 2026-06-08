@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
-import { dialSocks5 } from './socks5.ts';
+import { buildSocks5ConnectRequest, dialSocks5 } from './socks5.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialOptions, DialTarget } from '../types.ts';
 
@@ -385,6 +385,44 @@ describe('dialSocks5 — CONNECT request address encoding', () => {
       srv.respond(arr(0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0));
       await promise;
     }
+  });
+});
+
+describe('buildSocks5ConnectRequest — ATYP discrimination', () => {
+  // RFC 1928 §4 defines ATYP=0x01 (4 raw v4 octets), 0x03 (length-prefixed
+  // domain), 0x04 (16 raw v6 octets). Reference clients (Xray-core,
+  // sing-box) emit the literal ATYP for literal targets rather than
+  // forcing the server to re-parse a string into an address.
+  it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {
+    const out = buildSocks5ConnectRequest('1.2.3.4', 80);
+    expectEqualBytes(out, [0x05, 0x01, 0x00, 0x01, 1, 2, 3, 4, 0x00, 0x50]);
+  });
+
+  it('emits ATYP=0x04 + 16 octets for an IPv6 literal target', () => {
+    const out = buildSocks5ConnectRequest('2001:db8::1', 443);
+    expect(out[3]).toBe(0x04);
+    expectEqualBytes(out.subarray(4, 20), [
+      0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    ]);
+    expectEqualBytes(out.subarray(20, 22), [0x01, 0xbb]);
+  });
+
+  it('accepts a bracketed IPv6 literal and strips the envelope before encoding', () => {
+    const bracketed = buildSocks5ConnectRequest('[2001:db8::1]', 443);
+    const bare = buildSocks5ConnectRequest('2001:db8::1', 443);
+    expectEqualBytes(bracketed, Array.from(bare));
+  });
+
+  it('still emits ATYP=0x03 for a true hostname', () => {
+    const out = buildSocks5ConnectRequest('example.com', 443);
+    expectEqualBytes(out.subarray(0, 5), [0x05, 0x01, 0x00, 0x03, 11]);
+    expect(new TextDecoder().decode(out.subarray(5, 16))).toBe('example.com');
+    expectEqualBytes(out.subarray(16, 18), [0x01, 0xbb]);
+  });
+
+  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
+    expect(() => buildSocks5ConnectRequest('例え.jp', 443)).toThrow(/ASCII|punycode/);
   });
 });
 

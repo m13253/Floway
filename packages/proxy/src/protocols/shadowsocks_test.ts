@@ -196,15 +196,8 @@ describe('buildSsAddress — port and host variants', () => {
     expect(new TextDecoder().decode(out.subarray(2, 2 + 255))).toBe(host);
   });
 
-  it('UTF-8-encodes a non-ASCII hostname (no punycoding by the dialer)', () => {
-    // SS dial forwards the byte sequence verbatim; servers parse the domain
-    // as a string and run their own resolver. Surface as a finding if a
-    // particular upstream rejects raw IDN bytes.
-    const out = buildSsAddress('例え.jp', 443);
-    expect(out[0]).toBe(0x03);
-    const utf8 = new TextEncoder().encode('例え.jp');
-    expect(out[1]).toBe(utf8.byteLength);
-    expect(Array.from(out.subarray(2, 2 + utf8.byteLength))).toEqual(Array.from(utf8));
+  it('rejects a non-ASCII hostname on the domain path (DialTarget.host contract — caller punycodes IDN)', () => {
+    expect(() => buildSsAddress('例え.jp', 443)).toThrow(/ASCII|punycode/);
   });
 
   it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {

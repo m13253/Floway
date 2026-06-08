@@ -273,6 +273,19 @@ export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array
     addrSection[0] = 0x04;
     addrSection.set(v6, 1);
   } else {
+    // Domain path. SS2022 servers (shadowsocks-rust, sing-box) parse
+    // the domain string in-band, but raw IDN bytes on the wire muddle
+    // Latin-1 / UTF-8 framing — the dial layer's contract (see
+    // `DialTarget.host`) is ASCII-only and IDN punycoding belongs at
+    // the URL parser one layer up.
+    for (let i = 0; i < host.length; i++) {
+      if (host.charCodeAt(i) > 0x7f) {
+        throw new ProxyDialError(
+          `SS2022 target host must be ASCII (punycode IDN before dial): ${host}`,
+          'proxy-handshake',
+        );
+      }
+    }
     const enc = new TextEncoder();
     const dom = enc.encode(host);
     // ATYP=0x03 encodes the domain length in a single byte; a hostname over
