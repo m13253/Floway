@@ -57,7 +57,6 @@ const isSelf = computed(() => props.mode === 'edit' && props.user.id === props.a
 const adminLocked = computed(() => isUserOne.value || isSelf.value);
 // Admins implicitly see global telemetry; the toggle is locked-on for them.
 const globalTelemetryLocked = computed(() => isAdmin.value);
-const effectiveCanViewGlobalTelemetry = computed(() => isAdmin.value || canViewGlobalTelemetry.value);
 const usernameValid = computed(() => /^[a-zA-Z0-9_.\-]{1,64}$/.test(username.value.trim()));
 
 const titleText = computed(() => props.mode === 'create' ? 'New user' : `Edit — ${props.user.username}`);
@@ -144,7 +143,7 @@ const submit = async () => {
             </p>
           </span>
           <Switch
-            :model-value="effectiveCanViewGlobalTelemetry"
+            :model-value="isAdmin || canViewGlobalTelemetry"
             :disabled="globalTelemetryLocked"
             @update:model-value="v => canViewGlobalTelemetry = !!v"
           />

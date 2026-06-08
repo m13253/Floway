@@ -8,14 +8,15 @@ import { useUpstreamOptionsStore as useUpstreamOptionsStoreForLoader } from '../
 
 export const useKeysPageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
+  const upstreamOptions = useUpstreamOptionsStoreForLoader();
   const [keysRes] = await Promise.all([
     callApiForLoader<LoaderApiKey[]>(() => api.api.keys.$get()),
-    useUpstreamOptionsStoreForLoader().load(),
+    upstreamOptions.load(),
     useModelsStoreForLoader().load(),
   ]);
   return {
     keys: keysRes.data ?? [],
-    error: keysRes.error?.message ?? null,
+    error: keysRes.error?.message ?? upstreamOptions.error.value ?? null,
   };
 });
 </script>

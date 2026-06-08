@@ -5,11 +5,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 
 export interface GatewayCtx {
   readonly apiKeyId: string | null;
-  // Intersection of the actor's per-user cap and the per-key whitelist
-  // (null on either side means unrestricted on that side; null here means
-  // unrestricted overall). The data plane consults this and never the raw
-  // per-key list — bypassing the user cap would break the headline
-  // multi-tenant promise.
+  // Effective per-request upstream cap; see effectiveUpstreamIdsFromContext.
   readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;

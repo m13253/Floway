@@ -56,6 +56,8 @@ const modelsStore = useModelsStore();
 const settingsData = useSettingsPageData();
 const auth = useAuthStore();
 
+const roleLabel = auth.isAdmin ? 'Administrator' : 'Standard user';
+
 // Local copy sorted by sort_order; the child card emits a reordered array
 // via update:ordered, and reloadAll re-syncs from the store after PATCH.
 const ordered = ref<UpstreamRecord[]>([]);
@@ -88,7 +90,7 @@ const onPasswordChanged = () => {
     <MyAccountCard
       v-if="!auth.isAdmin"
       :username="auth.currentUser!.username"
-      role-label="Standard user"
+      :role-label="roleLabel"
       @change-password="passwordDialogOpen = true"
     />
 
@@ -111,7 +113,7 @@ const onPasswordChanged = () => {
       <div class="flex flex-col gap-5">
         <MyAccountCard
           :username="auth.currentUser!.username"
-          role-label="Administrator"
+          :role-label="roleLabel"
           @change-password="passwordDialogOpen = true"
         />
         <ApiEndpointsSection />

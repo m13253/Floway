@@ -36,7 +36,11 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
 
 class MemoryUsersRepo implements UsersRepo {
-  private users: User[] = [];
+  private users: User[];
+
+  constructor(seed: User[] = []) {
+    this.users = seed.map(u => ({ ...u }));
+  }
 
   list(): Promise<User[]> {
     return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
@@ -708,7 +712,17 @@ export class InMemoryRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor() {
-    this.users = new MemoryUsersRepo();
+    // Mirror the SQL migration's seed of admin user 1.
+    this.users = new MemoryUsersRepo([{
+      id: 1,
+      username: 'admin',
+      passwordHash: null,
+      isAdmin: true,
+      upstreamIds: null,
+      canViewGlobalTelemetry: true,
+      createdAt: new Date(0).toISOString(),
+      deletedAt: null,
+    }]);
     this.sessions = new MemorySessionsRepo();
     this.apiKeys = new MemoryApiKeyRepo();
     this.usage = new MemoryUsageRepo();
@@ -719,17 +733,5 @@ export class InMemoryRepo implements Repo {
     this.upstreams = new MemoryUpstreamRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
-
-    // Mirror the SQL migration's seed of admin user 1.
-    void this.users.save({
-      id: 1,
-      username: 'admin',
-      passwordHash: null,
-      isAdmin: true,
-      upstreamIds: null,
-      canViewGlobalTelemetry: true,
-      createdAt: new Date(0).toISOString(),
-      deletedAt: null,
-    });
   }
 }

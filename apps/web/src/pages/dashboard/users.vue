@@ -7,11 +7,13 @@ import type { WireUser } from '../../components/users/types.ts';
 
 export const useUsersPageData = defineBasicLoader(async () => {
   const api = useApi();
+  const upstreamOptions = useUpstreamOptionsStore();
   const [usersRes] = await Promise.all([
     callApi<WireUser[]>(() => api.api.users.$get()),
-    useUpstreamOptionsStore().load(),
+    upstreamOptions.load(),
   ]);
-  return { users: usersRes.data ?? [], error: usersRes.error?.message ?? null };
+  const error = usersRes.error?.message ?? upstreamOptions.error.value ?? null;
+  return { users: usersRes.data ?? [], error };
 });
 </script>
 

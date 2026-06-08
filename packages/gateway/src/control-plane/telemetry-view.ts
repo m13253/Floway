@@ -1,5 +1,5 @@
-// Helper for /api/token-usage, /api/search-usage, /api/performance — resolves
-// the requested view + capability gates.
+// Resolves the requested telemetry view and gates it against the actor's
+// capabilities.
 
 import type { Context } from 'hono';
 
@@ -24,8 +24,7 @@ export const resolveTelemetryView = (
   const userId = c.get('userId') as number;
   const canViewGlobal = c.get('canViewGlobalTelemetry') === true;
 
-  const defaultView: TelemetryView = canViewGlobal ? 'all-by-user' : 'self-by-key';
-  const view = rawView ?? defaultView;
+  const view = rawView ?? (canViewGlobal ? 'all-by-user' : 'self-by-key');
 
   if (view === 'all-by-user' && !canViewGlobal) {
     return {
