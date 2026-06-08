@@ -112,7 +112,7 @@ const DEFAULT_DIAL_TIMEOUT_SECONDS = Math.floor(DEFAULT_DIAL_DEADLINE_MS / 1000)
 const initialDialTimeout = props.record?.dial_timeout_seconds;
 const dialTimeoutInput = ref<string>(initialDialTimeout == null ? '' : String(initialDialTimeout));
 
-const dialTimeoutParsed = computed<{ value: number | null } | { error: string } | null>(() => {
+const dialTimeoutParsed = computed<{ value: number | null } | { error: string }>(() => {
   const raw = dialTimeoutInput.value.trim();
   if (raw === '') return { value: null };
   if (!/^[1-9][0-9]*$/.test(raw)) return { error: 'Whole seconds, > 0' };
@@ -185,11 +185,11 @@ const save = async () => {
     saveError.value = `Invalid proxy URI: ${urlError.value}`;
     return;
   }
-  if (dialTimeoutParsed.value && 'error' in dialTimeoutParsed.value) {
+  if ('error' in dialTimeoutParsed.value) {
     saveError.value = `Dial timeout: ${dialTimeoutParsed.value.error}`;
     return;
   }
-  const dialTimeoutSeconds = dialTimeoutParsed.value && 'value' in dialTimeoutParsed.value ? dialTimeoutParsed.value.value : null;
+  const dialTimeoutSeconds = dialTimeoutParsed.value.value;
 
   saving.value = true;
   try {
@@ -369,11 +369,11 @@ const remove = async () => {
       <Input
         v-model="dialTimeoutInput"
         :placeholder="`${DEFAULT_DIAL_TIMEOUT_SECONDS} (default)`"
-        :invalid="dialTimeoutParsed !== null && 'error' in dialTimeoutParsed"
+        :invalid="'error' in dialTimeoutParsed"
         inputmode="numeric"
         class="font-mono"
       />
-      <p v-if="dialTimeoutParsed && 'error' in dialTimeoutParsed" class="text-xs text-accent-rose">{{ dialTimeoutParsed.error }}</p>
+      <p v-if="'error' in dialTimeoutParsed" class="text-xs text-accent-rose">{{ dialTimeoutParsed.error }}</p>
       <p v-else class="text-xs text-gray-600">
         Hard ceiling on TCP-connect + handshake time before the fallback chain advances and the proxy enters backoff.
       </p>
