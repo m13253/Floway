@@ -176,6 +176,7 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
     </div>
 
     <EditKeyDialog
+      v-if="editTarget"
       v-model:open="editOpen"
       :api-key="editTarget"
       :upstreams="upstreamOptions"

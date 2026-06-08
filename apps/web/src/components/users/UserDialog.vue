@@ -94,11 +94,9 @@ const submit = async () => {
   }
 
   const target = props.user;
-  // upstreamIds is always sent: UpstreamPicker treats its `override` toggle as
-  // the source of truth, so the admin's intent on it is explicit even when the
-  // value matches the existing row. The other three fields only ship on actual
-  // change to keep the audit (and the PATCH session-revoke side effect on
-  // password) minimal.
+  // upstreamIds is always sent: UpstreamPicker's `override` toggle is the
+  // source of truth, so the admin's intent is explicit even when the value
+  // matches the existing row. Other fields ship only on actual change.
   const body: { username?: string; isAdmin?: boolean; canViewGlobalTelemetry?: boolean; upstreamIds: string[] | null } = { upstreamIds };
   if (username.value.trim() !== target.username) body.username = username.value.trim();
   if (!adminLocked.value && isAdmin.value !== target.isAdmin) body.isAdmin = isAdmin.value;

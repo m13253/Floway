@@ -11,7 +11,7 @@ import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamP
 const open = defineModel<boolean>('open');
 
 const props = defineProps<{
-  apiKey?: ApiKey;
+  apiKey: ApiKey;
   upstreams: UpstreamOption[];
 }>();
 
@@ -36,7 +36,6 @@ const saving = ref(false);
 const error = ref<string | null>(null);
 
 const reset = () => {
-  if (!props.apiKey) return;
   name.value = props.apiKey.name;
   upstreamSelection.value = {
     override: props.apiKey.upstream_ids !== null,
@@ -48,7 +47,6 @@ const reset = () => {
 watch(open, v => { if (v) reset(); });
 
 const save = async () => {
-  if (!props.apiKey) return;
   const trimmed = name.value.trim();
   if (!trimmed) {
     error.value = 'Name is required';
@@ -61,7 +59,7 @@ const save = async () => {
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
   };
   const { error: err } = await callApi(
-    () => api.api.keys[':id'].$patch({ param: { id: props.apiKey!.id }, json: body }),
+    () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: body }),
   );
   saving.value = false;
   if (err) {
