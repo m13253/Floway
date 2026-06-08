@@ -224,10 +224,9 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
       if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
 
-      // v4 always writes upstreamIds and deletedAt. Forgiving missing or
-      // wrongly-typed values would silently turn corrupt rows into "active
-      // user with Default cap", which is exactly the wrong default — fail the
-      // import instead.
+      // v4 requires upstreamIds and deletedAt to be present and well-typed; a
+      // forgiving import would silently turn corrupt rows into "active user
+      // with Default cap", which is the wrong default. Fail closed.
       if (record.upstreamIds === undefined) throw new Error('upstreamIds must be present (null or array)');
       const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
       if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
@@ -594,11 +593,11 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     //
-    // Sessions are wiped first and unconditionally because their user_id
-    // foreign-key references are about to change (v4) or because the api-key
-    // table is being recreated (both v3 and v4). Users are only wiped when the
-    // payload carries a replacement set (v4) — a v3 replace import preserves
-    // the existing users table.
+    // Sessions are wiped first and unconditionally: their user_id foreign-key
+    // references would be invalidated by either an api-key recreation (v3 + v4)
+    // or a users-table replacement (v4 only). Users are only wiped when the
+    // payload carries a replacement set (v4); a v3 replace import preserves the
+    // existing users table.
     const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),
@@ -615,7 +614,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
-  // Users land first so api_keys' user_id references resolve.
   for (const user of users) await repo.users.save(user);
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);

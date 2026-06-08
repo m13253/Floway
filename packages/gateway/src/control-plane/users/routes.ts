@@ -54,11 +54,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.users.save(user);
 
-  // Every user starts with a Default API key so they can use the gateway
-  // immediately. The cleartext key is not returned here; the user retrieves
-  // it from the Keys page. Best-effort: a failure between users.save and
-  // apiKeys.save leaves the user without a Default key; the operator must
-  // create one by hand or delete and recreate the user.
+  // Best-effort: a failure between users.save and apiKeys.save leaves the
+  // user without a Default key; the operator must create one or recreate the
+  // user.
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
     userId: newId,
@@ -98,10 +96,13 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
   const next: User = {
     ...existing,
-    username: body.username ?? existing.username,
+    // All five fields use the same `=== undefined` shape so the safety doesn't
+    // depend on a downstream truthiness coincidence (e.g. an empty username
+    // would `??`-fall through to existing instead of erroring). `??` is wrong
+    // on the booleans below for the same reason — explicit `false` must apply.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    username: body.username === undefined ? existing.username : body.username,
     passwordHash: body.password === undefined ? existing.passwordHash : await hashPassword(body.password),
-    // `??` is wrong for boolean fields here: an explicit `false` must demote /
-    // revoke, but `?? existing` would treat it as "keep existing".
     // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     isAdmin: body.isAdmin === undefined ? existing.isAdmin : body.isAdmin,
     upstreamIds: body.upstreamIds === undefined ? existing.upstreamIds : body.upstreamIds,

@@ -66,9 +66,6 @@ const userRecordsAsKeyShape = (records: UsageByUserResponse['records']) =>
 const userSearchRecordsAsKeyShape = (records: SearchUsageByUserResponse['records']) =>
   records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests }));
 
-const emptyUsage: UsageResponse = { records: [], keys: [], keyColorOrder: [] };
-const emptySearch: SearchUsageResponse = { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' };
-
 // Single source of truth for the view → query → normalize pipeline. Both the
 // loader and the in-component refresh path call it, so request shape and
 // shape-normalization can never drift between them.
@@ -109,7 +106,11 @@ export const useUsagePageData = defineBasicLoader(async () => {
     fetchUsageForView(api, view, start, end, callApiForLoader),
     useModelsStoreForLoader().load(),
   ]);
-  return { view, usage: usage ?? emptyUsage, search: search ?? emptySearch };
+  return {
+    view,
+    usage: usage ?? { records: [], keys: [], keyColorOrder: [] },
+    search: search ?? { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
+  };
 });
 </script>
 
