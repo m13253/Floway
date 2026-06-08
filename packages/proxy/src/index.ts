@@ -10,7 +10,7 @@
 // The one exception is `vless-ws`, which is workerd-only because only
 // workerd's fetch returns a `webSocket` handle on the upgrade Response.
 
-export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, SocketDialOptions, DialedSocket } from './types.ts';
+export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, DialedSocket } from './types.ts';
 
 export { formatProxyUri, parseProxyUri } from './url.ts';
 export { kindFromUri } from './url-kind.ts';

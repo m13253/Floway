@@ -117,7 +117,18 @@ export const resolveVerifyHost = (target: ProxyRequestTarget): string =>
 // concrete impl (Workers' `cloudflare:sockets`, Node's `node:net`, etc.)
 // via DialOptions.socketDial.
 
-export interface SocketDialOptions {
+export interface SocketDial {
+  connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
+}
+
+export interface DialedSocket {
+  readable: ReadableStream<Uint8Array>;
+  writable: WritableStream<Uint8Array>;
+  /** Idempotent close. */
+  close(): Promise<void>;
+}
+
+interface SocketDialOptions {
   /**
    * Wrap the connection with the runtime's native TLS implementation.
    * The hostname is reused as SNI and as the certificate-verify name.
@@ -132,17 +143,6 @@ export interface SocketDialOptions {
    *     surfaces as read/write rejections to the proxy library.
    */
   signal?: AbortSignal;
-}
-
-export interface DialedSocket {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
-  /** Idempotent close. */
-  close(): Promise<void>;
-}
-
-export interface SocketDial {
-  connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
 }
 
 /**

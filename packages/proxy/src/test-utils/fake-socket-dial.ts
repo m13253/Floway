@@ -6,7 +6,12 @@
 // sequences and feed crafted server responses (including malformed framing)
 // to exercise dial-side error handling.
 
-import type { DialedSocket, SocketDial, SocketDialOptions } from '../types.ts';
+import type { DialedSocket, SocketDial } from '../types.ts';
+
+// Mirror SocketDial.connect's `opts` slot structurally; the proxy library
+// keeps the option-bag interface non-exported, so derive its shape from the
+// public method signature instead of duplicating it here.
+type SocketDialConnectOpts = Parameters<SocketDial['connect']>[2];
 
 export interface FakeServer {
   /**
@@ -25,7 +30,7 @@ export interface FakeServer {
   endResponse(): void;
   /** Reject any pending read on the dialer's readable with `err`. */
   errorResponse(err: unknown): void;
-  connect: { host: string; port: number; opts: SocketDialOptions | undefined };
+  connect: { host: string; port: number; opts: SocketDialConnectOpts };
 }
 
 export interface FakeSocketDial {
@@ -84,7 +89,7 @@ interface MakeFakeSocketResult {
 const makeFakeSocket = (
   host: string,
   port: number,
-  opts: SocketDialOptions | undefined,
+  opts: SocketDialConnectOpts,
 ): MakeFakeSocketResult => {
   // Dialer-side writable → server-side read buffer.
   let writeBuffer = new Uint8Array(0);
