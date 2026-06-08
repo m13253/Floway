@@ -257,8 +257,7 @@ export const userspaceTls = async (
   // Pump bytes from transport → tls.handleReceivedBytes. Errors and
   // teardown are handled inside the IIFE; the outer flow only awaits the
   // handshake, so the pump's promise is intentionally not awaited.
-  // eslint-disable-next-line @typescript-eslint/no-floating-promises
-  (async () => {
+  void (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
