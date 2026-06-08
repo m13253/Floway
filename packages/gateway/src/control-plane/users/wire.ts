@@ -1,7 +1,6 @@
 import type { User } from '../../repo/types.ts';
 
-// Effective shape: admin implies canViewGlobalTelemetry, so callers see one
-// composite capability instead of having to OR the flags themselves.
+// Admin implies canViewGlobalTelemetry.
 export const userToEffectiveWire = (user: User) => ({
   id: user.id,
   username: user.username,
@@ -10,8 +9,6 @@ export const userToEffectiveWire = (user: User) => ({
   upstreamIds: user.upstreamIds,
 });
 
-// Raw shape (admin list): includes createdAt for sort/display; the effective
-// shape omits it.
 export const userToRawWire = (user: User) => ({
   id: user.id,
   username: user.username,

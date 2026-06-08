@@ -164,8 +164,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
 // Throws rather than returning null on bad data: a silent downgrade to Default
-// would grant the row broader access than the admin intended. `label` identifies
-// the row and column so a malformed value can be located in the database.
+// would grant the row broader access than the admin intended.
 const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
   let parsed: unknown;

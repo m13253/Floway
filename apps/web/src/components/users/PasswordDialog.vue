@@ -28,7 +28,7 @@ watch(open, v => {
   newPassword.value = '';
   confirmPassword.value = '';
   error.value = null;
-});
+}, { immediate: true });
 
 const submit = async () => {
   if (!newPassword.value) {

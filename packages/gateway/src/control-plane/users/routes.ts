@@ -54,7 +54,6 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.users.save(user);
 
-  // Best-effort: a failure between users.save and apiKeys.save leaves a user without a Default key.
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
     userId: newId,
@@ -94,7 +93,6 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
   const next: User = {
     ...existing,
-    // Use `=== undefined` (not `??`) so explicit empty strings and `false` still apply.
     // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     username: body.username === undefined ? existing.username : body.username,
     passwordHash: body.password === undefined ? existing.passwordHash : await hashPassword(body.password),

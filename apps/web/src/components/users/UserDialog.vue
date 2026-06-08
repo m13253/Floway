@@ -50,7 +50,7 @@ const reset = () => {
   error.value = null;
 };
 
-watch(open, v => { if (v) reset(); });
+watch(open, v => { if (v) reset(); }, { immediate: true });
 
 const isUserOne = computed(() => props.mode === 'edit' && props.user.id === 1);
 const isSelf = computed(() => props.mode === 'edit' && props.user.id === props.actorUserId);

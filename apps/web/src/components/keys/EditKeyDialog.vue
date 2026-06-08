@@ -44,7 +44,7 @@ const reset = () => {
   error.value = null;
 };
 
-watch(open, v => { if (v) reset(); });
+watch(open, v => { if (v) reset(); }, { immediate: true });
 
 const save = async () => {
   const trimmed = name.value.trim();
