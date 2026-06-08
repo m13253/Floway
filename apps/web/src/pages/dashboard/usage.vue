@@ -39,13 +39,13 @@ interface LoaderUsageByUserResponse {
     tokens: Partial<Record<BillingDimension, number>>;
     cost: number;
   }>;
-  users: Array<{ id: number; username: string; deletedAt: string | null }>;
+  users: Array<{ id: number; username: string }>;
   keyColorOrder: string[];
 }
 
 interface LoaderSearchUsageByUserResponse {
   records: Array<{ provider: string; userId: number; hour: string; requests: number }>;
-  users: Array<{ id: number; username: string; deletedAt: string | null }>;
+  users: Array<{ id: number; username: string }>;
   keyColorOrder: string[];
   activeProvider: string;
 }

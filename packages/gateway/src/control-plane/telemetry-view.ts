@@ -1,6 +1,3 @@
-// Resolves the requested telemetry view and gates it against the actor's
-// capabilities.
-
 import type { Context } from 'hono';
 
 export type TelemetryView = 'all-by-user' | 'self-by-key';

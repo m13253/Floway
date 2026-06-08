@@ -1,11 +1,7 @@
 <script setup lang="ts">
-// Codex provider panel for the upstream-edit workbench. Drives the entire
-// codex import flow — both create and re-import — so the page-level Save
-// button stays out of the codex path (matching CopilotConfigPanel's
-// device-flow ownership). Edit mode wraps the same import form in an
-// account card + buttons row, and gates the form behind a "Re-import
-// credential" toggle so the operator only sees the paste UI when they
-// explicitly request it.
+// Owns codex create + re-import end-to-end so the page-level Save button
+// stays out of this provider's path, mirroring CopilotConfigPanel's
+// device-flow ownership.
 
 import { Button, Spinner } from '@floway-dev/ui';
 import { computed, ref, watch } from 'vue';
@@ -37,8 +33,7 @@ const draft = ref<{ activeTab: CodexImportTab; authJsonText: string; callbackUrl
 );
 const submitting = ref(false);
 const refreshing = ref(false);
-// In edit mode the import form is collapsed by default — operators don't
-// need the paste UI in their face every time they edit a codex row.
+// Collapsed by default in edit mode; operators surface the paste UI explicitly.
 const reimportOpen = ref(false);
 
 const pkce = ref<CodexPkceStartResult | null>(null);
@@ -135,8 +130,6 @@ const refreshTokenNow = async () => {
       </div>
     </template>
 
-    <!-- One import form drives both flows; only the surrounding chrome and
-         the submit button label differ. -->
     <template v-if="importFormVisible">
       <p v-if="mode === 'create'" class="text-xs text-gray-500">
         Codex credentials come from the official Codex CLI. Paste

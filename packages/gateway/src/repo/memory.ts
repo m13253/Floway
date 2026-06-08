@@ -38,7 +38,7 @@ const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_r
 class MemoryUsersRepo implements UsersRepo {
   private users: User[];
 
-  constructor(seed: User[] = []) {
+  constructor(seed: User[]) {
     this.users = seed.map(u => ({ ...u }));
   }
 
@@ -177,12 +177,13 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   softDeleteByUserId(userId: number): Promise<number> {
     const now = new Date().toISOString();
     let count = 0;
-    for (let i = 0; i < this.keys.length; i++) {
-      if (this.keys[i].userId === userId && this.keys[i].deletedAt === null) {
-        this.keys[i] = { ...this.keys[i], deletedAt: now };
-        count++;
+    this.keys = this.keys.map(k => {
+      if (k.userId === userId && k.deletedAt === null) {
+        count += 1;
+        return { ...k, deletedAt: now };
       }
-    }
+      return k;
+    });
     return Promise.resolve(count);
   }
 

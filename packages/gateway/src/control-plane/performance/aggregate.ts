@@ -26,9 +26,9 @@ type AggregateOptions =
     bucket: PerformanceBucketGranularity;
     groupBy: 'userId';
     timezoneOffsetMinutes: number;
-    // Records whose keyId no longer resolves to a user collapse into the
-    // synthetic userId 0 for the same reason aggregateUsageByUserForDisplay
-    // does so.
+    // Records whose keyId no longer resolves (operator hard-deleted the key)
+    // collapse into synthetic userId 0; soft-deleted keys still resolve
+    // because keyToUser includes them.
     keyToUser: ReadonlyMap<string, number>;
   };
 

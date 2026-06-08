@@ -6,10 +6,12 @@ import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../compo
 import type { PerformanceOverviewResponse } from './performance-types.ts';
 import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
+export type PerformanceView = 'all-by-user' | 'self-by-key';
+
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const auth = useAuthStoreForLoader();
-  const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
   const overviewRes = await callApiForLoader<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
@@ -50,7 +52,7 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
-const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
+const performanceView = ref<PerformanceView>(initialOverview.data.value.view);
 
 const series = ref<PerformanceDisplayRecord[]>(initialOverview.data.value.overview.series);
 const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
@@ -62,13 +64,13 @@ const load = async () => {
   const requestId = ++performanceRequestId;
   const requestedRange = performanceRange.value;
   const requestedScope = performanceMetricScope.value;
-  const requestedView = view.value;
+  const requestedView = performanceView.value;
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
   const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView },
   }));
-  if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope || view.value !== requestedView) return;
+  if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope || performanceView.value !== requestedView) return;
   performanceLoading.value = false;
   if (err) { performanceError.value = err.message; return; }
   performanceError.value = null;
@@ -77,7 +79,7 @@ const load = async () => {
   loadedPerformanceRange.value = requestedRange;
 };
 
-watch([performanceRange, performanceMetricScope, view], load);
+watch([performanceRange, performanceMetricScope, performanceView], load);
 useIntervalFn(load, 60_000);
 
 const performancePercentileLabel = computed(() => {
@@ -234,14 +236,14 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
             <button
               type="button"
               class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
-              :class="view === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="view = 'all-by-user'"
+              :class="performanceView === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="performanceView = 'all-by-user'"
             >All by user</button>
             <button
               type="button"
               class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
-              :class="view === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="view = 'self-by-key'"
+              :class="performanceView === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="performanceView = 'self-by-key'"
             >My keys</button>
           </div>
           <Spinner v-if="performanceLoading" class="h-3.5 w-3.5 text-gray-500" />
