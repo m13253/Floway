@@ -15,6 +15,7 @@
 import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
+import { copy } from './bytes.ts';
 import type { DuplexStream } from './types.ts';
 
 let cryptoInstalled = false;
@@ -307,10 +308,4 @@ const logTlsTeardownError = (e: unknown): void => {
   if (proc?.env?.FLOWAY_DEBUG_TLS) {
     console.debug('[userspace-tls] teardown:', e);
   }
-};
-
-const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
 };

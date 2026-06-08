@@ -34,6 +34,7 @@ import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
+import { copy } from '@floway-dev/http';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {
@@ -334,12 +335,6 @@ const runRealityHandshake = async (
   // it on the next teardown event.
 
   return { readable: plainReadable, writable: plainWritable };
-};
-
-const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
 };
 
 const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>

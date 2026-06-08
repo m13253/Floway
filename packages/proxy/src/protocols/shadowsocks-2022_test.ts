@@ -6,6 +6,7 @@ import type { Shadowsocks2022ProxyConfig } from '../proxy-config.ts';
 import { buildSs2022RequestHeader, dialShadowsocks2022 } from './shadowsocks-2022.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
+import { concat } from '@floway-dev/http';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 
@@ -212,11 +213,4 @@ const nonce = (counter: number): Uint8Array => {
     c = Math.floor(c / 256);
   }
   return out;
-};
-
-const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
 };

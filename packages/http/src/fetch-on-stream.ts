@@ -2,6 +2,7 @@
 // Used both for native sockets that expose readable/writable directly and
 // for our userspace-TLS-wrapped streams.
 
+import { concat, copy } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
@@ -193,12 +194,6 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   return new Response(body, { status, headers: respHeaders });
 };
 
-const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
-};
-
 const lengthBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
@@ -378,13 +373,4 @@ const findDoubleCrlf = (buf: Uint8Array): number => {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
   }
   return -1;
-};
-
-const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
-  if (a.byteLength === 0) return copy(b);
-  if (b.byteLength === 0) return copy(a);
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
 };

@@ -18,6 +18,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { ProxyDialError } from '../errors.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { concat } from '@floway-dev/http';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
   '2022-blake3-aes-128-gcm': 16,
@@ -313,13 +314,6 @@ const base64Decode = (s: string): Uint8Array<ArrayBuffer> => {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
-};
-
-const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
 };
 
 const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {

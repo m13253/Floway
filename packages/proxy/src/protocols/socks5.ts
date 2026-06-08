@@ -7,6 +7,7 @@
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { copy } from '@floway-dev/http';
 
 export const dialSocks5 = async (
   config: Socks5ProxyConfig,
@@ -148,10 +149,4 @@ const dialSocks5Inner = async (
   })();
 
   return { readable: postHandshake, writable: socket.writable };
-};
-
-const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
 };

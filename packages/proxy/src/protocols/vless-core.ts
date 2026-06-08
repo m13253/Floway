@@ -6,6 +6,7 @@
 
 import { ProxyDialError } from '../errors.ts';
 import type { DialResult, DialTarget } from '../types.ts';
+import { concat, copy } from '@floway-dev/http';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
@@ -97,17 +98,4 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
       reader.cancel().catch(() => {});
     },
   });
-};
-
-const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
-};
-
-const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(u.byteLength);
-  r.set(u);
-  return r;
 };

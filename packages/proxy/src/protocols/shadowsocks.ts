@@ -24,6 +24,7 @@ import { md5, sha1 } from '@noble/hashes/legacy.js';
 import { ProxyDialError } from '../errors.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { concat } from '@floway-dev/http';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -296,11 +297,4 @@ const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
   const buf = new Uint8Array(n);
   crypto.getRandomValues(buf);
   return buf;
-};
-
-const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => {
-  const r = new Uint8Array(a.byteLength + b.byteLength);
-  r.set(a, 0);
-  r.set(b, a.byteLength);
-  return r;
 };
