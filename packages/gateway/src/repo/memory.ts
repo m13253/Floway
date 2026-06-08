@@ -428,9 +428,8 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
-function comparePerformanceTelemetryRecords(a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number {
-  return (
-    a.hour.localeCompare(b.hour) ||
+const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
+  a.hour.localeCompare(b.hour) ||
     a.metricScope.localeCompare(b.metricScope) ||
     a.keyId.localeCompare(b.keyId) ||
     a.model.localeCompare(b.model) ||
@@ -439,9 +438,7 @@ function comparePerformanceTelemetryRecords(a: PerformanceTelemetryRecord, b: Pe
     a.sourceApi.localeCompare(b.sourceApi) ||
     a.targetApi.localeCompare(b.targetApi) ||
     Number(a.stream) - Number(b.stream) ||
-    a.runtimeLocation.localeCompare(b.runtimeLocation)
-  );
-}
+    a.runtimeLocation.localeCompare(b.runtimeLocation);
 
 class MemoryCacheRepo implements CacheRepo {
   private store = new Map<string, { value: string; expiresAt?: number }>();

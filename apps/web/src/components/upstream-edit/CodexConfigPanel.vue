@@ -54,7 +54,7 @@ const fetchPkceStart = async () => {
   );
   pkceLoading.value = false;
   if (error) { pkceError.value = error.message; return; }
-  pkce.value = data ?? null;
+  pkce.value = data;
 };
 
 const importFormVisible = computed(() => props.mode === 'create' || reimportOpen.value);
@@ -99,7 +99,7 @@ const submit = async () => {
     );
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
-  if (result.data) emit('imported', result.data);
+  emit('imported', result.data);
   // Reset draft + PKCE so a subsequent edit / re-open starts clean.
   draft.value = { activeTab: 'auth_json', authJsonText: '', callbackUrlText: '' };
   pkce.value = null;
@@ -114,7 +114,7 @@ const refreshTokenNow = async () => {
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }
-  if (data) emit('imported', data);
+  emit('imported', data);
 };
 </script>
 

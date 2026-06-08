@@ -27,9 +27,6 @@ interface PerformanceQueryParams {
   timezoneOffsetMinutes: number;
 }
 
-// Schema-validated query → handler-facing params. Returns the canonical
-// 'start and end query parameters are required' message rather than a generic
-// zod-shaped error so the dashboard's inline-error rendering stays intact.
 const readPerformanceQuery = (
   c: Ctx,
 ): { type: 'ok'; value: PerformanceQueryParams } | { type: 'error'; error: string } => {
@@ -99,8 +96,8 @@ const queryRecordsForView = async (
   return params.keyId ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
-// keyId → userId map. Includes soft-deleted keys so historical telemetry on a
-// since-deleted key still resolves.
+// Includes soft-deleted keys so historical telemetry on a since-deleted key
+// still resolves.
 const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
   const keys = await getRepo().apiKeys.listIncludingDeleted();
   return new Map(keys.map(k => [k.id, k.userId] as const));
@@ -153,10 +150,8 @@ export const performanceOverview = async (c: Ctx) => {
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
   const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
-  // The series chart on the dashboard pivots its grouping with the view: under
-  // all-by-user, the by-model line chart is replaced by a per-user one so the
-  // operator sees latency split by who is generating it. The model and runtime
-  // tables remain grouped by their respective dimensions in both views.
+  // Under all-by-user the series chart pivots from per-model to per-user so the
+  // operator sees latency split by who is generating it.
   const series = resolved.view === 'all-by-user'
     ? aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'userId', keyToUser: await buildKeyToUserMap() })
     : aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' });

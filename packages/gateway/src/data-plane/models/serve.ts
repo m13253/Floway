@@ -8,8 +8,6 @@ import { loadModels } from './load.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
-const modelListingFailureMessage = 'Upstream model listing failed';
-
 const apiErrorResponse = (message: string, status: number): Response => Response.json({ error: { message, type: 'api_error' } }, { status });
 
 // Upstream HTTP/parse failures are squashed to a generic 502 so we do not
@@ -17,7 +15,7 @@ const apiErrorResponse = (message: string, status: number): Response => Response
 // configured" hint) carry actionable operator guidance and surface verbatim.
 const modelLoadErrorResponse = (error: unknown): Response => {
   if (error instanceof ProviderModelsUnavailableError) {
-    return apiErrorResponse(modelListingFailureMessage, 502);
+    return apiErrorResponse('Upstream model listing failed', 502);
   }
   return apiErrorResponse(error instanceof Error ? error.message : String(error), 502);
 };

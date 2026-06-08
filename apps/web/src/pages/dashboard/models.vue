@@ -52,7 +52,7 @@ const selectedKeyId = ref<string | null>(keys[0]?.id ?? null);
 const selectedApiKey = computed(() => {
   const id = selectedKeyId.value;
   if (!id) return null;
-  return keys.find(k => k.id === id)?.key ?? null;
+  return keys.find(k => k.id === id)!.key;
 });
 
 const banner = computed(() => modelsError.value ?? initialData.data.value.keysError);

@@ -905,8 +905,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      // ON CONFLICT DO NOTHING handles cross-session collisions of the random
-      // body id (~2^-128, effectively impossible) as a silent no-op.
+      // Cross-session collisions of the random body id are ~2^-128.
       return this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1174,7 +1173,7 @@ interface UpstreamRow {
   disabled_public_model_ids: string;
 }
 
-function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
+const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   let config: unknown;
   try {
     config = JSON.parse(row.config_json) as unknown;
@@ -1203,7 +1202,7 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
   };
-}
+};
 
 const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
   if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex') return provider;
@@ -1250,9 +1249,9 @@ const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
 };
 
 export class SqlRepo implements Repo {
-  apiKeys: ApiKeyRepo;
   users: UsersRepo;
   sessions: SessionsRepo;
+  apiKeys: ApiKeyRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;

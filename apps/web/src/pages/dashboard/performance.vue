@@ -29,10 +29,14 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   const auth = useAuthStoreForLoader();
   const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQueryForLoader('today');
-  const { data } = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
+  const overviewRes = await callApiForLoader<LoaderOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
   }));
-  return { view, overview: data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] } };
+  return {
+    view,
+    overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] },
+    error: overviewRes.error?.message ?? null,
+  };
 });
 </script>
 
@@ -86,6 +90,7 @@ const view = ref<View>(initialOverview.data.value.view);
 
 const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);
 const overview = ref<OverviewResponse>(initialOverview.data.value.overview);
+const performanceError = ref<string | null>(initialOverview.data.value.error);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
 
@@ -96,16 +101,16 @@ const load = async () => {
   const requestedView = view.value;
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
-  const { data } = await callApi<OverviewResponse>(() => api.api.performance.overview.$get({
+  const { data, error: err } = await callApi<OverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView },
   }));
   if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceMetricScope.value !== requestedScope || view.value !== requestedView) return;
-  if (data) {
-    overview.value = data;
-    series.value = data.series;
-    loadedPerformanceRange.value = requestedRange;
-  }
   performanceLoading.value = false;
+  if (err) { performanceError.value = err.message; return; }
+  performanceError.value = null;
+  overview.value = data;
+  series.value = data.series;
+  loadedPerformanceRange.value = requestedRange;
 };
 
 watch([performanceRange, performanceMetricScope, view], load);
@@ -364,6 +369,10 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
             </button>
           </OverlayScrollbars>
         </div>
+      </div>
+
+      <div v-if="performanceError" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+        {{ performanceError }}
       </div>
 
       <div class="grid grid-cols-2 gap-3 mb-6 lg:grid-cols-6">

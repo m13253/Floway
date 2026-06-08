@@ -90,7 +90,7 @@ const submit = async () => {
     saving.value = false;
     if (err) { error.value = err.message; return; }
     open.value = false;
-    emit('created', data!.user);
+    emit('created', data.user);
     return;
   }
 

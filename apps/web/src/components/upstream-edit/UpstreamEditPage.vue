@@ -181,7 +181,7 @@ const fetchModels = async () => {
     // discard the late result rather than repopulating stale auto rows.
     if (!customDraft.value.modelsFetch.enabled) return;
     if (error) { fetchError.value = error.message; return; }
-    fetchedRaw.value = data?.data ?? [];
+    fetchedRaw.value = data.data;
     fetchedAtMs.value = Date.now();
   } finally {
     fetchLoading.value = false;
@@ -262,7 +262,7 @@ const save = async () => {
       }
       const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: body }));
       if (error) { saveError.value = error.message; return; }
-      emit('saved', data ?? null);
+      emit('saved', data);
     } else if (props.record) {
       const patch: PatchBody = baseFields();
       if (activeProvider.value === 'custom') patch.config = buildCustomConfig();

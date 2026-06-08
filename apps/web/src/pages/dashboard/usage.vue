@@ -184,31 +184,26 @@ const load = async () => {
   searchUsageLoading.value = true;
   const { start, end } = dashboardRangeQuery(requestedRange);
   try {
-    const [usageRes, searchRes] = requestedView === 'all-by-user'
-      ? await Promise.all([
+    if (requestedView === 'all-by-user') {
+      const [usageRes, searchRes] = await Promise.all([
         callApi<LoaderUsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
         callApi<LoaderSearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
-      ])
-      : await Promise.all([
+      ]);
+      if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
+      if (usageRes.data) {
+        data.value = { records: userRecordsAsKeyShape(usageRes.data.records), keys: usersAsKeys(usageRes.data.users), keyColorOrder: usageRes.data.keyColorOrder };
+      }
+      if (searchRes.data) {
+        searchData.value = { records: userSearchRecordsAsKeyShape(searchRes.data.records), keys: usersAsKeys(searchRes.data.users), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider };
+      }
+    } else {
+      const [usageRes, searchRes] = await Promise.all([
         callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
         callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
       ]);
-    if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
-    if (usageRes.data) {
-      if (requestedView === 'all-by-user') {
-        const d = usageRes.data as LoaderUsageByUserResponse;
-        data.value = { records: userRecordsAsKeyShape(d.records), keys: usersAsKeys(d.users), keyColorOrder: d.keyColorOrder };
-      } else {
-        data.value = usageRes.data as UsageResponse;
-      }
-    }
-    if (searchRes.data) {
-      if (requestedView === 'all-by-user') {
-        const d = searchRes.data as LoaderSearchUsageByUserResponse;
-        searchData.value = { records: userSearchRecordsAsKeyShape(d.records), keys: usersAsKeys(d.users), keyColorOrder: d.keyColorOrder, activeProvider: d.activeProvider };
-      } else {
-        searchData.value = searchRes.data as SearchUsageResponse;
-      }
+      if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
+      if (usageRes.data) data.value = usageRes.data;
+      if (searchRes.data) searchData.value = searchRes.data;
     }
     loadedTokenRange.value = requestedRange;
   } finally {

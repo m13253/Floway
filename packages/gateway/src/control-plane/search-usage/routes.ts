@@ -10,18 +10,10 @@ import { loadSearchConfig } from '../../data-plane/tools/web-search/search-confi
 import { queryWebSearchUsage } from '../../data-plane/tools/web-search/usage.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { isWebSearchProviderName, type WebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { searchUsageQuery } from '../schemas.ts';
 import { resolveTelemetryView } from '../telemetry-view.ts';
 import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
-
-const parseProvider = (provider: string | undefined): { type: 'ok'; provider?: WebSearchProviderName } | { type: 'invalid' } => {
-  if (provider === undefined) return { type: 'ok' };
-  if (isWebSearchProviderName(provider)) {
-    return { type: 'ok', provider };
-  }
-  return { type: 'invalid' };
-};
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -30,8 +22,8 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   }
   const { start, end } = query;
 
-  const providerResult = parseProvider(query.provider);
-  if (providerResult.type === 'invalid') {
+  const { provider } = query;
+  if (provider !== undefined && !isWebSearchProviderName(provider)) {
     return c.json({ error: "provider must be 'tavily' or 'microsoft-grounding'" }, 400);
   }
 
@@ -44,7 +36,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
 
   if (resolved.view === 'all-by-user') {
     const [rawRecords, users, keys] = await Promise.all([
-      queryWebSearchUsage({ provider: providerResult.provider, start, end }),
+      queryWebSearchUsage({ provider, start, end }),
       repo.users.listIncludingDeleted(),
       repo.apiKeys.listIncludingDeleted(),
     ]);
@@ -73,7 +65,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   }
 
   const rawRecords = await queryWebSearchUsage({
-    provider: providerResult.provider,
+    provider,
     keyId: explicitKeyId,
     start,
     end,
