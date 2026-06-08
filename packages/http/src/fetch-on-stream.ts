@@ -24,25 +24,26 @@ export const fetchOnStream = async (
 ): Promise<Response> => {
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();
-  // Strip any caller-supplied framing headers — the buffered body's exact
-  // length is the source of truth at this layer, and a chunked encoding from
-  // the runtime fetch path would leave the body wrapped in chunk markers
-  // we cannot decode here.
+  // Normalize the request header block in a single pass:
+  //   - drop Content-Length / Transfer-Encoding — the buffered body's
+  //     exact length is the source of truth at this layer, and a chunked
+  //     encoding from the runtime fetch path would leave the body wrapped
+  //     in chunk markers we cannot decode here.
+  //   - drop any Connection case-variant — the gateway is one-shot per
+  //     dial and a caller-supplied `keep-alive` would mislead the upstream
+  //     into reusing a socket we plan to tear down.
+  //   - track whether Accept-Encoding is set so we can default it to
+  //     `identity` below without a second pass over the header map.
   const headers: Record<string, string> = {};
+  let hasAcceptEncoding = false;
   for (const [k, v] of Object.entries(request.headers)) {
     const lk = k.toLowerCase();
-    if (lk === 'content-length' || lk === 'transfer-encoding') continue;
+    if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
+    if (lk === 'accept-encoding') hasAcceptEncoding = true;
     headers[k] = v;
   }
-  // The gateway is one-shot per dial — there's no keep-alive state machine
-  // here, and a caller-supplied `Connection: keep-alive` would mislead the
-  // upstream into reusing a socket we plan to tear down after the response.
-  // Strip any case-variant the caller passed and set the canonical value.
-  for (const k of Object.keys(headers)) {
-    if (k.toLowerCase() === 'connection') delete headers[k];
-  }
   headers.Connection = 'close';
-  if (!('accept-encoding' in lowerKeys(headers))) headers['Accept-Encoding'] = 'identity';
+  if (!hasAcceptEncoding) headers['Accept-Encoding'] = 'identity';
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
   // server treat the message as zero-length — that's how Copilot's
   // `invalid_request_body` surfaces when our serialized POST goes out with
@@ -84,12 +85,6 @@ export const fetchOnStream = async (
   writer.releaseLock();
 
   return await parseHttpResponse(stream.readable);
-};
-
-const lowerKeys = (o: Record<string, string>): Record<string, string> => {
-  const r: Record<string, string> = {};
-  for (const k in o) r[k.toLowerCase()] = o[k]!;
-  return r;
 };
 
 // Parse an HTTP/1.1 response off a byte-stream reader. Exported for advanced
