@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { dialVlessTcpTls } from './vless.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
+import { dialVlessTcpTls } from './vless.ts';
+import type { VlessTcpTlsProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
-import type { VlessTcpTlsProxyConfig } from '../proxy-config.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 const UUID = 'b831381d-6324-4d53-ad4f-8cda48b30811';
