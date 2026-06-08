@@ -94,48 +94,21 @@ export const userspaceTls = async (
     detachAbortListener = null;
   };
 
-  // App-data downward stream (TLS plaintext → consumer)
+  // plainController is wired by the ReadableStream's start() hook below,
+  // which fires synchronously the moment the constructor runs. Two
+  // independent paths can drop the plaintext stream out from under us:
+  // (1) reclaim's TLS client fires `onTlsEnd` once for the peer CLOSE_NOTIFY
+  //     alert and again when the underlying transport reader returns done;
+  // (2) the consumer (Hono / fetch) cancels the readable after it has the
+  //     full response, which closes the controller from the outside. Either
+  //     way, a follow-up `controller.close()` / `controller.error()` /
+  //     `controller.enqueue()` throws ERR_INVALID_STATE — and on Node there
+  //     is no error event to swallow it, so the whole worker crashes. Latch
+  //     the close on our side, and treat any throw from the controller as
+  //     "already closed by the consumer."
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
-  const plainReadable = new ReadableStream<Uint8Array>({
-    start(c) { plainController = c; },
-    // Consumer-initiated cancel (response body fully read or aborted) tears
-    // down our side of the duplex — flag so subsequent TLS-end callbacks
-    // skip their controller calls, and signal end-of-stream upward.
-    cancel() {
-      plainClosed = true;
-      cleanupSignal();
-      void tlsClient?.end().catch(logTlsTeardownError);
-      void reader.cancel().catch(() => {});
-      void writer.close().catch(logTlsTeardownError);
-    },
-  });
-
-  // App-data upward stream (consumer → TLS encrypt → transport). The
-  // hooks close over the let-bound `tlsClient` slot, filled by the
-  // synchronous makeTLSClient call below before the function awaits the
-  // handshake. The duplex pair is returned only after `await handshakeDone`
-  // resolves, so by the time a consumer hook fires, tlsClient is
-  // guaranteed non-null — the optional chains in close/abort cover the
-  // synchronous-teardown paths only.
-  let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
-  const plainWritable = new WritableStream<Uint8Array>({
-    async write(chunk) {
-      await tlsClient!.write(chunk);
-    },
-    async close() {
-      // Both promises must be awaited — a bare `void promise` discards
-      // rejection and crashes Node with unhandled-rejection when the
-      // underlying stream is already closed. Surface teardown errors via
-      // a debug log so genuine bugs aren't silenced, but never let one
-      // mask the close itself (peer already gone is normal here).
-      try { await tlsClient?.end(); } catch (e) { logTlsTeardownError(e); }
-      try { await writer.close(); } catch (e) { logTlsTeardownError(e); }
-    },
-    async abort(reason) {
-      try { await tlsClient?.end(); } catch (e) { logTlsTeardownError(e); }
-      try { await writer.abort(reason); } catch (e) { logTlsTeardownError(e); }
-    },
-  });
+  let plainClosed = false;
+  let handshakeOk = false;
 
   // Resolve when the handshake succeeds; reject on TLS-end or error before then.
   let handshakeResolve!: () => void;
@@ -151,23 +124,19 @@ export const userspaceTls = async (
   // a passive observer.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
-  let handshakeOk = false;
-  // Two independent paths can drop the plaintext stream out from under us:
-  // (1) reclaim's TLS client fires `onTlsEnd` once for the peer CLOSE_NOTIFY
-  //     alert and again when the underlying transport reader returns done;
-  // (2) the consumer (Hono / fetch) cancels the readable after it has the
-  //     full response, which closes the controller from the outside. Either
-  //     way, a follow-up `controller.close()` / `controller.error()` /
-  //     `controller.enqueue()` throws ERR_INVALID_STATE — and on Node there
-  //     is no error event to swallow it, so the whole worker crashes. Latch
-  //     the close on our side, and treat any throw from the controller as
-  //     "already closed by the consumer."
-  let plainClosed = false;
   const safeClose = (): void => {
-    try { plainController?.close(); } catch { /* already closed/errored */ }
+    try { plainController.close(); } catch { /* already closed/errored */ }
   };
   const safeError = (error: unknown): void => {
-    try { plainController?.error(error); } catch { /* already closed/errored */ }
+    try { plainController.error(error); } catch { /* already closed/errored */ }
+  };
+  const closePlain = (error?: unknown): void => {
+    if (plainClosed) return;
+    plainClosed = true;
+    cleanupSignal();
+    if (error) safeError(error);
+    else safeClose();
+    void writer.close().catch(logTlsTeardownError);
   };
   const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
     // Once `plainClosed` is set, the controller has been closed/errored by
@@ -179,23 +148,15 @@ export const userspaceTls = async (
     // the actual error rather than hanging forever.
     if (plainClosed) return;
     try {
-      plainController?.enqueue(chunk);
+      plainController.enqueue(chunk);
     } catch (err) {
       closePlain(err);
     }
   };
-  const closePlain = (error?: unknown): void => {
-    if (plainClosed) return;
-    plainClosed = true;
-    cleanupSignal();
-    if (error) safeError(error);
-    else safeClose();
-    void writer.close().catch(logTlsTeardownError);
-  };
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
-  tlsClient = makeTLSClient(({
+  const tlsClient = makeTLSClient(({
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
@@ -237,13 +198,52 @@ export const userspaceTls = async (
     },
   } as Parameters<typeof makeTLSClient>[0]));
 
+  // App-data downward stream (TLS plaintext → consumer). The cancel hook
+  // fires only after the duplex pair has been returned to the consumer,
+  // so by then tlsClient is fully initialized.
+  const plainReadable = new ReadableStream<Uint8Array>({
+    start(c) { plainController = c; },
+    // Consumer-initiated cancel (response body fully read or aborted) tears
+    // down our side of the duplex — flag so subsequent TLS-end callbacks
+    // skip their controller calls, and signal end-of-stream upward.
+    cancel() {
+      plainClosed = true;
+      cleanupSignal();
+      void tlsClient.end().catch(logTlsTeardownError);
+      void reader.cancel().catch(() => {});
+      void writer.close().catch(logTlsTeardownError);
+    },
+  });
+
+  // App-data upward stream (consumer → TLS encrypt → transport). Same
+  // post-return invariant applies — write/close/abort run only after the
+  // handshake await resolves and the duplex pair is handed back.
+  const plainWritable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      await tlsClient.write(chunk);
+    },
+    async close() {
+      // Both promises must be awaited — a bare `void promise` discards
+      // rejection and crashes Node with unhandled-rejection when the
+      // underlying stream is already closed. Surface teardown errors via
+      // a debug log so genuine bugs aren't silenced, but never let one
+      // mask the close itself (peer already gone is normal here).
+      try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
+      try { await writer.close(); } catch (e) { logTlsTeardownError(e); }
+    },
+    async abort(reason) {
+      try { await tlsClient.end(); } catch (e) { logTlsTeardownError(e); }
+      try { await writer.abort(reason); } catch (e) { logTlsTeardownError(e); }
+    },
+  });
+
   // Pump bytes from transport → tls.handleReceivedBytes
   const pump = (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          await tlsClient?.end().catch(logTlsTeardownError);
+          await tlsClient.end().catch(logTlsTeardownError);
           // Reclaim's onTlsEnd usually fires for clean close-notify, but
           // a raw transport EOF without an alert wouldn't trigger it.
           // Drive closePlain ourselves so the consumer's reader unsticks
@@ -251,7 +251,7 @@ export const userspaceTls = async (
           closePlain();
           return;
         }
-        await tlsClient?.handleReceivedBytes(value);
+        await tlsClient.handleReceivedBytes(value);
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);

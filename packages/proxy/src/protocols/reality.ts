@@ -127,18 +127,28 @@ const runRealityHandshake = async (
   // reuse it via Web Crypto deriveBits inside onClientHelloPack.
   let tlsX25519Priv: CryptoKey | null = null;
 
-  // Streams that will be returned to the caller (VLESS framing) after the TLS
-  // handshake completes. The teardown latches and abort-listener handle are
-  // declared together so closePlain (which both ReadableStream.cancel and
-  // every other teardown path route through) can run in any order against
-  // the same state machine.
+  // The plaintext stream returned to the caller (VLESS framing) after the
+  // TLS handshake completes. plainController is wired by the
+  // ReadableStream's start() hook below, which fires synchronously the
+  // moment the constructor runs.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
   let detachAbortListener: (() => void) | null = null;
-  let tlsClient: ReturnType<typeof makeTLSClient> | null = null;
+  let handshakeOk = false;
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
+
+  let handshakeResolve!: () => void;
+  let handshakeReject!: (e: unknown) => void;
+  const handshakeDone = new Promise<void>((resolve, reject) => {
+    handshakeResolve = resolve;
+    handshakeReject = reject;
+  });
+  // Register a passive sink so a pump-driven rejection never lands as
+  // unhandled if it fires before the outer `await handshakeDone` attaches
+  // its real handler. Same pattern as @floway-dev/http's userspaceTls.
+  handshakeDone.catch(() => { /* main handler is the await below */ });
 
   // Latch teardown so a follow-up onTlsEnd / EOF can't double-close the
   // controller (Node throws ERR_INVALID_STATE on a second close/error).
@@ -154,53 +164,7 @@ const runRealityHandshake = async (
     void writer.close().catch(() => {});
   };
 
-  const plainReadable = new ReadableStream<Uint8Array>({
-    start(c) { plainController = c; },
-    cancel() {
-      plainClosed = true;
-      detachAbortListener?.();
-      detachAbortListener = null;
-      void tlsClient?.end().catch(() => {});
-      void reader.cancel().catch(() => {});
-      void writer.close().catch(() => {});
-    },
-  });
-
-  const plainWritable = new WritableStream<Uint8Array>({
-    async write(chunk) {
-      // tlsClient is filled synchronously below (before the outer `await
-      // handshakeDone`) and the duplex pair is returned only after that
-      // await succeeds, so by the time a consumer calls write the slot is
-      // guaranteed non-null.
-      await tlsClient!.write(chunk);
-    },
-    async close() {
-      // Mirror the userspace TLS teardown shape: end the TLS layer AND
-      // close the underlying transport writer so the socket's write half
-      // is shut explicitly rather than waiting on the outer dial catch
-      // to close the whole socket on error.
-      try { await tlsClient?.end(); } catch { /* TLS already ended */ }
-      try { await writer.close(); } catch { /* transport already closed */ }
-    },
-    async abort(reason) {
-      try { await tlsClient?.end(); } catch { /* TLS already ended */ }
-      try { await writer.abort(reason); } catch { /* transport already aborted */ }
-    },
-  });
-
-  let handshakeResolve!: () => void;
-  let handshakeReject!: (e: unknown) => void;
-  const handshakeDone = new Promise<void>((resolve, reject) => {
-    handshakeResolve = resolve;
-    handshakeReject = reject;
-  });
-  // Register a passive sink so a pump-driven rejection never lands as
-  // unhandled if it fires before the outer `await handshakeDone` attaches
-  // its real handler. Same pattern as @floway-dev/http's userspaceTls.
-  handshakeDone.catch(() => { /* main handler is the await below */ });
-  let handshakeOk = false;
-
-  tlsClient = makeTLSClient(({
+  const tlsClient = makeTLSClient(({
     host: config.serverName,
     namedCurves: ['X25519'],
     verifyServerCertificate: false, // REALITY auth replaces chain validation
@@ -276,6 +240,39 @@ const runRealityHandshake = async (
     },
   }) as Parameters<typeof makeTLSClient>[0]);
 
+  // The duplex pair handed back to VLESS framing after the handshake.
+  // Hooks fire only after the pair has been returned to the consumer, so
+  // tlsClient is fully initialized by then.
+  const plainReadable = new ReadableStream<Uint8Array>({
+    start(c) { plainController = c; },
+    cancel() {
+      plainClosed = true;
+      detachAbortListener?.();
+      detachAbortListener = null;
+      void tlsClient.end().catch(() => {});
+      void reader.cancel().catch(() => {});
+      void writer.close().catch(() => {});
+    },
+  });
+
+  const plainWritable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      await tlsClient.write(chunk);
+    },
+    async close() {
+      // Mirror the userspace TLS teardown shape: end the TLS layer AND
+      // close the underlying transport writer so the socket's write half
+      // is shut explicitly rather than waiting on the outer dial catch
+      // to close the whole socket on error.
+      try { await tlsClient.end(); } catch { /* TLS already ended */ }
+      try { await writer.close(); } catch { /* transport already closed */ }
+    },
+    async abort(reason) {
+      try { await tlsClient.end(); } catch { /* TLS already ended */ }
+      try { await writer.abort(reason); } catch { /* transport already aborted */ }
+    },
+  });
+
   // Pump bytes from transport → tls.handleReceivedBytes. The finally block
   // releases the reader's lock so a handshake-failure path can reach the
   // outer try/catch and close the socket cleanly without an orphaned lock.
@@ -284,7 +281,7 @@ const runRealityHandshake = async (
       while (true) {
         const { value, done } = await reader.read();
         if (done) {
-          await tlsClient?.end().catch(() => {});
+          await tlsClient.end().catch(() => {});
           // Reclaim's onTlsEnd usually fires for a clean close-notify, but a
           // raw transport EOF without an alert wouldn't trigger it. Drive
           // closePlain ourselves so the consumer's reader unsticks when the
@@ -292,7 +289,7 @@ const runRealityHandshake = async (
           closePlain();
           return;
         }
-        await tlsClient?.handleReceivedBytes(value);
+        await tlsClient.handleReceivedBytes(value);
       }
     } catch (e) {
       if (!handshakeOk) handshakeReject(e);
@@ -319,7 +316,7 @@ const runRealityHandshake = async (
   }
 
   // Trigger the handshake with our pre-built sessionId and random.
-  await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<NonNullable<typeof tlsClient>['startHandshake']>[0]);
+  await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]);
   try {
     await handshakeDone;
   } catch (cause) {
