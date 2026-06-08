@@ -8,13 +8,21 @@ import type { DuplexStream, HttpRequest } from './types.ts';
 
 export interface FetchOnStreamOptions {
   /**
-   * Bytes to prepend to the very first write — concatenated with the
-   * HTTP/1.1 request head into a single writer.write() call. Trojan's
-   * plain-HTTP path uses this to ride its 56-byte auth header in the
-   * same record as the request line, avoiding sing-box's
-   * fallback-disabled short-read on the leading record.
+   * Bytes prepended to the very first network write — concatenated with the
+   * HTTP/1.1 request head into a single `writer.write()` call. Lets a
+   * caller coalesce a transport-handshake fragment with the request head
+   * into one packet when an inspecting peer expects them in the same
+   * record.
    */
   prefix?: Uint8Array;
+  /**
+   * Plaintext chunk size used when streaming the request body to the
+   * writer. Each `writer.write()` maps 1:1 to one userspace-TLS record
+   * (when the writer is a `userspaceTls` stream), so the value tunes the
+   * trade-off between AEAD-record overhead and per-write microtask cost.
+   * Defaults to 16384 bytes.
+   */
+  bodyWriteChunkSize?: number;
 }
 
 export const fetchOnStream = async (
@@ -29,9 +37,10 @@ export const fetchOnStream = async (
   //     exact length is the source of truth at this layer, and a chunked
   //     encoding from the runtime fetch path would leave the body wrapped
   //     in chunk markers we cannot decode here.
-  //   - drop any Connection case-variant — the gateway is one-shot per
-  //     dial and a caller-supplied `keep-alive` would mislead the upstream
-  //     into reusing a socket we plan to tear down.
+  //   - drop any Connection case-variant — this layer is one-shot per
+  //     duplex (we always emit Connection: close below) and a caller-
+  //     supplied `keep-alive` would mislead the upstream into reusing a
+  //     transport we plan to tear down.
   //   - track whether Accept-Encoding is set so we can default it to
   //     `identity` below without a second pass over the header map.
   const headers: Record<string, string> = {};
@@ -45,9 +54,8 @@ export const fetchOnStream = async (
   headers.Connection = 'close';
   if (!hasAcceptEncoding) headers['Accept-Encoding'] = 'identity';
   // Without Content-Length on a body-bearing request, RFC 9112 §6 has the
-  // server treat the message as zero-length — that's how Copilot's
-  // `invalid_request_body` surfaces when our serialized POST goes out with
-  // no framing at all.
+  // server treat the message as zero-length — a serialized POST emitted
+  // with no framing at all silently loses its body on strict upstreams.
   const bodyLen = request.body?.byteLength ?? 0;
   if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
 
@@ -57,8 +65,8 @@ export const fetchOnStream = async (
   head += '\r\n';
   const headBytes = enc.encode(head);
   // Prepend the optional prefix into the same write so the leading record
-  // contains both the prefix and the request head (Trojan plain-HTTP
-  // depends on this; see FetchOnStreamOptions.prefix).
+  // contains both the prefix and the request head (see
+  // FetchOnStreamOptions.prefix).
   if (opts?.prefix && opts.prefix.byteLength > 0) {
     const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
     merged.set(opts.prefix, 0);
@@ -68,16 +76,10 @@ export const fetchOnStream = async (
     await writer.write(headBytes);
   }
   if (request.body?.byteLength) {
-    // Match the inner TLS record size (16 KiB plaintext, per RFC 8446 §5.1).
-    // Each call to writer.write() on the userspace-TLS stream maps 1:1 to
-    // an AEAD-sealed record, so larger chunks just trigger reclaim's own
-    // chunkUint8Array re-split, while smaller chunks add per-call await
-    // overhead. 16 KiB is the sweet spot for the userspace path; native
-    // sockets are insensitive to chunk size.
-    const CHUNK = 16384;
+    const chunkSize = opts?.bodyWriteChunkSize ?? 16384;
     let off = 0;
     while (off < request.body.byteLength) {
-      const slice = request.body.subarray(off, Math.min(off + CHUNK, request.body.byteLength));
+      const slice = request.body.subarray(off, Math.min(off + chunkSize, request.body.byteLength));
       await writer.write(slice);
       off += slice.byteLength;
     }

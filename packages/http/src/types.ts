@@ -24,9 +24,9 @@ export interface DuplexStream {
  *
  * Caller-supplied `Content-Length`, `Transfer-Encoding`, and
  * `Connection` are stripped: the buffered body's exact length is the
- * source of truth, and the gateway is one-shot per dial so a
- * `keep-alive` would mislead the server into reusing a socket we plan
- * to tear down.
+ * source of truth, and this layer is one-shot per duplex (it always
+ * emits `Connection: close`) so a `keep-alive` would mislead the server
+ * into reusing a transport we plan to tear down.
  */
 export interface HttpRequest {
   method: string;

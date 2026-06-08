@@ -1,11 +1,11 @@
 // Userspace TLS adapter over a raw plain-TCP byte transport.
 //
-// On Cloudflare Workers, `Socket.startTls()` on the production edge fails with
-// "TLS Handshake Failed." after any plain bytes have been read or written
-// (workerd issue #2712, unresolved). The same bug means HTTP CONNECT and
-// SOCKS5 paths cannot complete the upstream TLS handshake natively. We
-// therefore use a userspace TLS client uniformly across all runtimes so this
-// package does not depend on any runtime-specific TLS upgrade.
+// Some runtimes' native `Socket.startTls()` cannot wrap a duplex that has
+// already exchanged plain bytes — workerd is one example (issue #2712),
+// which means proxy paths that finish a plaintext handshake (HTTP CONNECT,
+// SOCKS5, …) cannot upgrade through the runtime's TLS primitive there. A
+// userspace TLS client sidesteps the runtime entirely, so this package
+// can offer the same TLS upgrade on every target.
 //
 // `@reclaimprotocol/tls` provides a TLS 1.2/1.3 client implemented in JS using
 // Web Crypto + @noble. We wrap it as an adapter that takes a duplex byte
@@ -44,17 +44,18 @@ export interface UserspaceTlsOptions {
   insecure?: boolean;
   /**
    * Optional bytes prepended to our first record write to the transport.
-   * Used when a proxy protocol's request header must be transmitted in
-   * the same TCP segment as our first TLS ClientHello (e.g. sing-box's
-   * Trojan inbound uses `conn.Read(key[56])` and short-reads if the proxy
-   * header arrives in a separate TLS fragment from the rest of the stream).
+   * Lets the caller coalesce a transport-handshake fragment with the
+   * leading TLS ClientHello into one packet when an inspecting peer
+   * expects them in the same record.
    */
   prefix?: Uint8Array;
   /**
-   * Force TLS 1.3 cipher suites. Defaults to the AES-GCM suites which use
-   * Web Crypto's hardware-accelerated AES-NI path on Workers; ChaCha20-
-   * Poly1305 falls back to @noble/ciphers' pure-JS impl which is much
-   * slower for the typical record sizes our HTTP/1.1 traffic produces.
+   * Force TLS 1.3 cipher suites. Defaults to the AES-GCM suites because
+   * `@reclaimprotocol/tls` routes them through Web Crypto, which is
+   * hardware-accelerated by V8 (AES-NI on x86, the SHA extensions on
+   * ARM); ChaCha20-Poly1305 falls back to `@noble/ciphers`' pure-JS
+   * impl, which is roughly an order of magnitude slower per byte and
+   * dominates the cost on short-lived connections.
    */
   cipherSuites?: Array<'TLS_AES_256_GCM_SHA384' | 'TLS_AES_128_GCM_SHA256' | 'TLS_CHACHA20_POLY1305_SHA256'>;
   /**
@@ -163,9 +164,10 @@ export const userspaceTls = async (
     verifyServerCertificate: !opts.insecure,
     applicationLayerProtocols: opts.alpn,
     // Default to AES-GCM only because reclaim routes those through Web
-    // Crypto, which is hardware-accelerated by V8 (AES-NI on x86, the SHA
+    // Crypto, which V8 hardware-accelerates (AES-NI on x86, the SHA
     // extensions on ARM). ChaCha20-Poly1305 in reclaim falls back to
-    // @noble/ciphers' pure-JS impl, which is ~5-10× slower per byte.
+    // @noble/ciphers' pure-JS impl, which is roughly an order of
+    // magnitude slower per byte.
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
       const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0;
@@ -300,12 +302,12 @@ export const userspaceTls = async (
 
 // Keep teardown errors visible at debug level — they're usually "peer
 // already closed" but a real bug would otherwise be silenced. Gate behind
-// an env flag so we don't log on Workers (where we don't want any noise on
-// the hot path).
-interface NodeProcessShape { env?: { FLOWAY_DEBUG_TLS?: string } }
+// an env flag so we don't log on hot paths where any console output is
+// undesirable (e.g. inside a Worker request).
+interface NodeProcessShape { env?: { DEBUG_USERSPACE_TLS?: string } }
 const logTlsTeardownError = (e: unknown): void => {
   const proc = (globalThis as unknown as { process?: NodeProcessShape }).process;
-  if (proc?.env?.FLOWAY_DEBUG_TLS) {
+  if (proc?.env?.DEBUG_USERSPACE_TLS) {
     console.debug('[userspace-tls] teardown:', e);
   }
 };
