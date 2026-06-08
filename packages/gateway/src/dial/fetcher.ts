@@ -1,3 +1,4 @@
+import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher } from '@floway-dev/provider';
@@ -67,15 +68,15 @@ interface ProxiedRequest {
 // upfront because the two-pass dial can replay a request, and a stream is
 // single-shot. Buffer streaming bodies in the caller before reaching here.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
-  const list = input.fallbackList.length > 0 ? input.fallbackList : ['direct'];
+  const list = input.fallbackList.length > 0 ? input.fallbackList : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take
   // ownership of `init.body` and consume its underlying stream/Blob.
   // Buffer the body up-front so a runtime that re-streams a Blob can't
   // strand a later proxy attempt with empty bytes. The fast path
   // (direct-only list) keeps the runtime's native body handling intact —
   // FormData, Blob, etc. don't need to be buffered.
-  const hasNonDirect = list.some(id => id !== 'direct');
-  const directBeforeProxy = hasNonDirect && list.includes('direct') && list.indexOf('direct') < list.length - 1;
+  const hasNonDirect = list.some(id => id !== DIRECT_PROXY_ID);
+  const directBeforeProxy = hasNonDirect && list.includes(DIRECT_PROXY_ID) && list.indexOf(DIRECT_PROXY_ID) < list.length - 1;
   return async (url, init) => {
     // Reject streaming bodies upfront whenever any non-direct entry is in
     // play. Without this the rejection would land inside collectBody, which
@@ -170,7 +171,7 @@ const tryOne = async (
   errors: unknown[],
 ): Promise<Response | null> => {
   try {
-    if (id === 'direct') {
+    if (id === DIRECT_PROXY_ID) {
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
       return await input.runDirect(url, init);
@@ -214,7 +215,7 @@ const tryOne = async (
     if (isAbortError(err)) {
       throw err;
     }
-    if (id === 'direct') {
+    if (id === DIRECT_PROXY_ID) {
       // Direct egress can fail for the same dial-shaped reasons a proxy can
       // (TCP refused, GFW SNI reset, DNS, connect timeout). Runtime fetch
       // surfaces those as plain Errors / TypeErrors, not ProxyDialError, but
