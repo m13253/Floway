@@ -86,14 +86,12 @@ export interface VlessTcpTlsProxyConfig extends ProxyConfigBase {
   kind: 'vless-tcp';
   uuid: string;
   sni?: string;
-  fingerprint?: string;
 }
 
 export interface VlessWsTlsProxyConfig extends ProxyConfigBase {
   kind: 'vless-ws';
   uuid: string;
   sni?: string;
-  fingerprint?: string;
   /** WebSocket Host header; defaults to host. */
   wsHost?: string;
   /** WebSocket path. */
@@ -104,8 +102,6 @@ export interface RealityProxyConfig extends ProxyConfigBase {
   kind: 'reality';
   uuid: string;
   publicKey: string;        // pbk in URI form
-  fingerprint: string;      // fp
   serverName: string;       // sni — required for REALITY
   shortId?: string;         // sid
-  spiderX?: string;         // spx
 }

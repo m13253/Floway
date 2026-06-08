@@ -24,7 +24,6 @@ import { Input, Select, Switch } from '@floway-dev/ui';
 import { computed } from 'vue';
 
 import {
-  FINGERPRINT_PRESETS,
   FORM_KIND_LABELS,
   formKindOf,
   isValidPort,
@@ -56,14 +55,6 @@ const SS2022_METHOD_OPTIONS: { value: Ss2022Method; label: string }[] = [
   { value: '2022-blake3-aes-256-gcm', label: '2022-blake3-aes-256-gcm' },
   { value: '2022-blake3-chacha20-poly1305', label: '2022-blake3-chacha20-poly1305' },
 ];
-
-const FINGERPRINT_OPTIONS_OPTIONAL: { value: string; label: string }[] = [
-  { value: '', label: '(none)' },
-  ...FINGERPRINT_PRESETS.map(v => ({ value: v, label: v })),
-];
-
-const FINGERPRINT_OPTIONS_REQUIRED: { value: string; label: string }[] =
-  FINGERPRINT_PRESETS.map(v => ({ value: v, label: v }));
 
 const formKind = computed<FormKind>(() => formKindOf(config.value));
 
@@ -308,24 +299,14 @@ const reality = computed<RealityProxyConfig | null>(() =>
           @update:model-value="v => updateVlessTcp({ uuid: v })"
         />
       </div>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
-          <Input
-            :model-value="vlessTcp.sni ?? ''"
-            placeholder="defaults to host"
-            class="font-mono"
-            @update:model-value="v => updateVlessTcp({ sni: v === '' ? undefined : v })"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">uTLS fingerprint <span class="text-gray-600">(optional)</span></label>
-          <Select
-            :model-value="vlessTcp.fingerprint ?? ''"
-            :options="FINGERPRINT_OPTIONS_OPTIONAL"
-            @update:model-value="v => updateVlessTcp({ fingerprint: v === '' ? undefined : v })"
-          />
-        </div>
+      <div class="space-y-1.5">
+        <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
+        <Input
+          :model-value="vlessTcp.sni ?? ''"
+          placeholder="defaults to host"
+          class="font-mono"
+          @update:model-value="v => updateVlessTcp({ sni: v === '' ? undefined : v })"
+        />
       </div>
     </template>
 
@@ -340,24 +321,14 @@ const reality = computed<RealityProxyConfig | null>(() =>
           @update:model-value="v => updateVlessWs({ uuid: v })"
         />
       </div>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
-          <Input
-            :model-value="vlessWs.sni ?? ''"
-            placeholder="defaults to host"
-            class="font-mono"
-            @update:model-value="v => updateVlessWs({ sni: v === '' ? undefined : v })"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">uTLS fingerprint <span class="text-gray-600">(optional)</span></label>
-          <Select
-            :model-value="vlessWs.fingerprint ?? ''"
-            :options="FINGERPRINT_OPTIONS_OPTIONAL"
-            @update:model-value="v => updateVlessWs({ fingerprint: v === '' ? undefined : v })"
-          />
-        </div>
+      <div class="space-y-1.5">
+        <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
+        <Input
+          :model-value="vlessWs.sni ?? ''"
+          placeholder="defaults to host"
+          class="font-mono"
+          @update:model-value="v => updateVlessWs({ sni: v === '' ? undefined : v })"
+        />
       </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div class="space-y-1.5">
@@ -393,25 +364,15 @@ const reality = computed<RealityProxyConfig | null>(() =>
           @update:model-value="v => updateReality({ uuid: v })"
         />
       </div>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Server name (SNI)</label>
-          <Input
-            :model-value="reality.serverName"
-            :invalid="reality.serverName === ''"
-            placeholder="real.example.com"
-            class="font-mono"
-            @update:model-value="v => updateReality({ serverName: v })"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">uTLS fingerprint</label>
-          <Select
-            :model-value="reality.fingerprint"
-            :options="FINGERPRINT_OPTIONS_REQUIRED"
-            @update:model-value="v => updateReality({ fingerprint: v })"
-          />
-        </div>
+      <div class="space-y-1.5">
+        <label class="block text-xs font-medium text-gray-500">Server name (SNI)</label>
+        <Input
+          :model-value="reality.serverName"
+          :invalid="reality.serverName === ''"
+          placeholder="real.example.com"
+          class="font-mono"
+          @update:model-value="v => updateReality({ serverName: v })"
+        />
       </div>
       <div class="space-y-1.5">
         <label class="block text-xs font-medium text-gray-500">Public key</label>
@@ -423,25 +384,14 @@ const reality = computed<RealityProxyConfig | null>(() =>
           @update:model-value="v => updateReality({ publicKey: v })"
         />
       </div>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Short ID <span class="text-gray-600">(optional)</span></label>
-          <Input
-            :model-value="reality.shortId ?? ''"
-            placeholder="hex, up to 16 chars"
-            class="font-mono"
-            @update:model-value="v => updateReality({ shortId: v === '' ? undefined : v })"
-          />
-        </div>
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Spider X <span class="text-gray-600">(optional)</span></label>
-          <Input
-            :model-value="reality.spiderX ?? ''"
-            placeholder="/"
-            class="font-mono"
-            @update:model-value="v => updateReality({ spiderX: v === '' ? undefined : v })"
-          />
-        </div>
+      <div class="space-y-1.5">
+        <label class="block text-xs font-medium text-gray-500">Short ID <span class="text-gray-600">(optional)</span></label>
+        <Input
+          :model-value="reality.shortId ?? ''"
+          placeholder="hex, up to 16 chars"
+          class="font-mono"
+          @update:model-value="v => updateReality({ shortId: v === '' ? undefined : v })"
+        />
       </div>
     </template>
   </div>

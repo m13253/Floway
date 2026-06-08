@@ -40,21 +40,6 @@ export const FORM_KIND_LABELS: Record<FormKind, string> = {
   'reality': 'VLESS / REALITY',
 };
 
-// Curated list — `xray-core` accepts these strings as the `fp` parameter
-// for both REALITY and uTLS-fronted VLESS. We keep `chrome` first because
-// it's the most common production fingerprint.
-// Ref: https://xtls.github.io/config/transport.html (utlsImitate values).
-export const FINGERPRINT_PRESETS: ReadonlyArray<string> = [
-  'chrome',
-  'firefox',
-  'safari',
-  'ios',
-  'android',
-  'edge',
-  'random',
-  'randomized',
-];
-
 export const formKindOf = (config: ProxyConfig): FormKind => {
   if (config.kind === 'http') return config.tls ? 'https' : 'http';
   return config.kind;
@@ -129,7 +114,6 @@ export const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig =
       kind: 'reality',
       uuid: '',
       publicKey: '',
-      fingerprint: 'chrome',
       serverName: '',
       ...base,
     };

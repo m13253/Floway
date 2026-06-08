@@ -24,9 +24,9 @@ describe('defaultsFor', () => {
     expect(c).toMatchObject({ method: 'aes-256-gcm', password: '' });
   });
 
-  it('seeds reality with chrome fingerprint', () => {
+  it('seeds reality with empty required fields the operator must supply', () => {
     const c = defaultsFor('reality', ctx);
-    expect(c).toMatchObject({ kind: 'reality', fingerprint: 'chrome', uuid: '', publicKey: '', serverName: '' });
+    expect(c).toMatchObject({ kind: 'reality', uuid: '', publicKey: '', serverName: '' });
   });
 
   it('chooses canonical default ports per kind when current is 0', () => {
@@ -44,7 +44,7 @@ describe('defaultsFor', () => {
 
 describe('switchKind', () => {
   it('preserves host, port, name across the swap and resets kind-specific fields', () => {
-    const before = parseProxyUri('vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#mine');
+    const before = parseProxyUri('vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#mine');
     const after = switchKind(before, 'trojan');
     expect(after).toEqual({
       kind: 'trojan',

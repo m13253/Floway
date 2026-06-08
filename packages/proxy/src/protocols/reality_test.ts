@@ -79,7 +79,6 @@ const realityConfig = (overrides: Partial<RealityProxyConfig> = {}): RealityProx
   uuid: '11111111-2222-3333-4444-555555555555',
   // 32 well-formed base64url bytes — overridden in the bad-pbk case below.
   publicKey: 'A'.repeat(43),
-  fingerprint: 'chrome',
   serverName: 'www.cloudflare.com',
   host: 'h',
   port: 443,

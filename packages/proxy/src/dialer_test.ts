@@ -63,7 +63,7 @@ const cases: Array<[ProxyConfig['kind'], ProxyConfig, ReturnType<typeof vi.fn>]>
   ['vless-ws', { kind: 'vless-ws', uuid: 'u', host: 'h', port: 1, path: '/', name: 'h' }, vi.mocked(dialVlessWsTls)],
   ['ss', { kind: 'ss', method: 'aes-256-gcm', password: 'p', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks)],
   ['ss2022', { kind: 'ss2022', method: '2022-blake3-aes-128-gcm', passwordBase64: 'a', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks2022)],
-  ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', fingerprint: 'chrome', serverName: 's', host: 'h', port: 1, name: 'h' }, vi.mocked(dialReality)],
+  ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', serverName: 's', host: 'h', port: 1, name: 'h' }, vi.mocked(dialReality)],
 ];
 
 const allDialerMocks = [

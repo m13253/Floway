@@ -116,28 +116,26 @@ describe('parseProxyUri', () => {
 
   it('parses VLESS TCP+TLS', () => {
     const uri =
-      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v';
+      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#v';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-tcp',
       uuid: 'aaaa-uuid',
       host: 'h',
       port: 443,
       sni: 'h',
-      fingerprint: 'chrome',
       name: 'v',
     });
   });
 
   it('parses VLESS WS+TLS', () => {
     const uri =
-      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw';
+      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h#vw';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-ws',
       uuid: 'u',
       host: 'h',
       port: 443,
       sni: 'h',
-      fingerprint: 'chrome',
       wsHost: 'front',
       path: '/ws',
       name: 'vw',
@@ -146,19 +144,34 @@ describe('parseProxyUri', () => {
 
   it('parses VLESS REALITY', () => {
     const uri =
-      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r';
+      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&sni=site&sid=ab#r';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'reality',
       uuid: 'u',
       host: 'h',
       port: 443,
       publicKey: 'PUB',
-      fingerprint: 'chrome',
       serverName: 'site',
       shortId: 'ab',
-      spiderX: '/',
       name: 'r',
     });
+  });
+
+  it('drops unsupported VLESS knobs (fp, spx) on parse so they don\'t leak into the typed config', () => {
+    // Our reality dialer threads the ClientHello through @reclaimprotocol/tls
+    // and runs no spiderX probe, so neither knob has anywhere to land. We
+    // accept URIs that carry them (subscription generators add `fp` by
+    // default) but discard the values rather than retain a config field
+    // the dialer can't honor.
+    const reality = parseProxyUri(
+      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=s&spx=%2F',
+    );
+    expect(reality).not.toHaveProperty('fingerprint');
+    expect(reality).not.toHaveProperty('spiderX');
+    const tcp = parseProxyUri('vless://u@h:443?type=tcp&security=tls&sni=h&fp=chrome');
+    expect(tcp).not.toHaveProperty('fingerprint');
+    const ws = parseProxyUri('vless://u@h:443?type=ws&security=tls&path=%2F&fp=chrome');
+    expect(ws).not.toHaveProperty('fingerprint');
   });
 
   it('throws on unknown scheme', () => {
@@ -167,14 +180,14 @@ describe('parseProxyUri', () => {
 
   it('throws on missing required REALITY pbk', () => {
     expect(() =>
-      parseProxyUri('vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s')).toThrow(/pbk/);
+      parseProxyUri('vless://u@h:443?type=tcp&security=reality&sni=s')).toThrow(/pbk/);
   });
 
   it('every parser failure surfaces as ProxyUriError (so callers can discriminate it from arbitrary upstream Errors)', () => {
     const cases: string[] = [
       'weird://x:1',
       'http://example.com',
-      'vless://u@h:443?type=tcp&security=reality&fp=chrome&sni=s',
+      'vless://u@h:443?type=tcp&security=reality&sni=s',
       'vless://u@h:443?type=quic&security=tls',
       'ss://invalid-base64@h:443',
       // `new URL` failure: bare string with no scheme. Wrapped so callers
@@ -196,9 +209,9 @@ describe('formatProxyUri', () => {
     'ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#tag',
     'ss://2022-blake3-aes-128-gcm:MTIzNDU2Nzg5MGFiY2RlZg==@1.2.3.4:8388#tag',
     'trojan://pw@example.com:443?sni=example.com&allowInsecure=0#t',
-    'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h&fp=chrome#v',
-    'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h&fp=chrome#vw',
-    'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=site&sid=ab&spx=%2F#r',
+    'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#v',
+    'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h#vw',
+    'vless://u@h:443?type=tcp&security=reality&pbk=PUB&sni=site&sid=ab#r',
   ];
 
   it.each(cases)('round-trips %s', uri => {

@@ -205,10 +205,9 @@ const parseVless = (
   const type = url.searchParams.get('type') ?? 'tcp';
   const security = url.searchParams.get('security') ?? 'tls';
   const sni = url.searchParams.get('sni') ?? undefined;
-  const fp = url.searchParams.get('fp') ?? undefined;
 
   if (type === 'tcp' && security === 'reality') {
-    return parseReality(url, host, port, name, uuid, fp, sni);
+    return parseReality(url, host, port, name, uuid, sni);
   }
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
@@ -219,7 +218,6 @@ const parseVless = (
       name,
     };
     if (sni) config.sni = sni;
-    if (fp) config.fingerprint = fp;
     return config;
   }
   if (type === 'ws' && security === 'tls') {
@@ -233,7 +231,6 @@ const parseVless = (
       path,
     };
     if (sni) config.sni = sni;
-    if (fp) config.fingerprint = fp;
     const wsHost = url.searchParams.get('host');
     if (wsHost) config.wsHost = wsHost;
     return config;
@@ -249,12 +246,10 @@ const parseReality = (
   port: number,
   name: string,
   uuid: string,
-  fp: string | undefined,
   sni: string | undefined,
 ): RealityProxyConfig => {
   const pbk = url.searchParams.get('pbk');
   if (!pbk) throw new ProxyUriError('reality requires pbk');
-  if (!fp) throw new ProxyUriError('reality requires fp');
   if (!sni) throw new ProxyUriError('reality requires sni');
   const config: RealityProxyConfig = {
     kind: 'reality',
@@ -263,13 +258,10 @@ const parseReality = (
     port,
     name,
     publicKey: pbk,
-    fingerprint: fp,
     serverName: sni,
   };
   const sid = url.searchParams.get('sid');
   if (sid) config.shortId = sid;
-  const spx = url.searchParams.get('spx');
-  if (spx) config.spiderX = spx;
   return config;
 };
 
@@ -386,7 +378,6 @@ const formatVlessTcp = (config: VlessTcpTlsProxyConfig): string => {
     type: 'tcp',
     security: 'tls',
     sni: config.sni,
-    fp: config.fingerprint,
   });
   return `${authority}${query}${
     formatFragment(config.name, config.host, config.port)}`;
@@ -402,7 +393,6 @@ const formatVlessWs = (config: VlessWsTlsProxyConfig): string => {
     host: config.wsHost,
     path: config.path,
     sni: config.sni,
-    fp: config.fingerprint,
   });
   return `${authority}${query}${
     formatFragment(config.name, config.host, config.port)}`;
@@ -416,10 +406,8 @@ const formatReality = (config: RealityProxyConfig): string => {
     type: 'tcp',
     security: 'reality',
     pbk: config.publicKey,
-    fp: config.fingerprint,
     sni: config.serverName,
     sid: config.shortId,
-    spx: config.spiderX,
   });
   return `${authority}${query}${
     formatFragment(config.name, config.host, config.port)}`;
