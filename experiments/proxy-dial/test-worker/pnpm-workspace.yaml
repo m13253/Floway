@@ -1,2 +1,0 @@
-patchedDependencies:
-  '@reclaimprotocol/tls': patches/@reclaimprotocol__tls.patch

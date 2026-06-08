@@ -202,8 +202,6 @@ const config: Linter.Config[] = [
       'vitest.config.ts',
       'packages/*/vitest.config.ts',
       'scripts/**',
-      // Throwaway scratch space; not production code.
-      'experiments/**',
     ],
   },
 ];
