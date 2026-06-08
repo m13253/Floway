@@ -154,3 +154,208 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
     });
   });
 });
+
+describe('vlessFrameOverStream — UUID parsing', () => {
+  it('accepts mixed-case hex characters', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, 'B831381D-6324-4D53-AD4F-8CDA48B30811', target);
+    const written = await p.written;
+    expect(Array.from(written.subarray(1, 17))).toEqual(UUID_BYTES);
+  });
+
+  it('rejects a UUID of wrong length (31 hex chars)', async () => {
+    const p = makePair();
+    await expect(vlessFrameOverStream(p.transport, 'b831381d-6324-4d53-ad4f-8cda48b3081', target)).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('UUID'),
+    });
+  });
+
+  it('rejects a UUID with a non-hex character', async () => {
+    const p = makePair();
+    await expect(vlessFrameOverStream(p.transport, 'b831381d-6324-4d53-ad4f-8cda48b3081Z', target)).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('UUID'),
+    });
+  });
+
+  it('rejects an empty UUID string', async () => {
+    const p = makePair();
+    await expect(vlessFrameOverStream(p.transport, '', target)).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('UUID'),
+    });
+  });
+});
+
+describe('vlessFrameOverStream — port and hostname encoding', () => {
+  it('encodes port 80 (BE) as 0x00 0x50', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: 'h', port: 80 });
+    const written = await p.written;
+    // After version + UUID + addonsLen + cmd: bytes 19..20 = port BE.
+    expect(written[19]).toBe(0x00);
+    expect(written[20]).toBe(0x50);
+  });
+
+  it('encodes port 65535 as 0xff 0xff', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: 'h', port: 65535 });
+    const written = await p.written;
+    expect(written[19]).toBe(0xff);
+    expect(written[20]).toBe(0xff);
+  });
+
+  it('serializes a 1-byte hostname', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: 'h', port: 1 });
+    const written = await p.written;
+    // bytes 21=atyp, 22=dom_len, 23=dom char.
+    expect(written[21]).toBe(0x02);
+    expect(written[22]).toBe(0x01);
+    expect(written[23]).toBe('h'.charCodeAt(0));
+  });
+
+  it('serializes a 255-byte hostname (max atyp=0x02 dom_len)', async () => {
+    const p = makePair();
+    const host = 'a'.repeat(255);
+    void vlessFrameOverStream(p.transport, UUID, { host, port: 443 });
+    const written = await p.written;
+    expect(written[22]).toBe(0xff);
+    expect(new TextDecoder().decode(written.subarray(23, 23 + 255))).toBe(host);
+  });
+
+  it('rejects a 256-byte hostname before any I/O', async () => {
+    const p = makePair();
+    await expect(vlessFrameOverStream(p.transport, UUID, { host: 'a'.repeat(256), port: 1 })).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('hostname too long'),
+    });
+  });
+
+  it('emits ATYP=0x02 (domain, length-prefixed) — VLESS uses different ATYP numbering than SOCKS5', async () => {
+    // VLESS: 0x01 v4, 0x02 domain, 0x03 v6.
+    // SOCKS5/SS: 0x01 v4, 0x03 domain, 0x04 v6. Easy to confuse.
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, target);
+    const written = await p.written;
+    expect(written[21]).toBe(0x02);
+  });
+});
+
+describe('vlessFrameOverStream — reply prefix edge cases', () => {
+  it('handles addonsLen=255 (max u8) by reading the full prefix before exposing payload', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+
+    const addons = new Uint8Array(255);
+    for (let i = 0; i < addons.byteLength; i++) addons[i] = i & 0xff;
+    const payload = new Uint8Array([0xab, 0xcd]);
+    p.pushFromServer(new Uint8Array([0x00, 0xff, ...addons, ...payload]));
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    const { value } = await reader.read();
+    expect(Array.from(value!)).toEqual([0xab, 0xcd]);
+  });
+
+  it('buffers across multiple TCP segments — version arrives separately from addons', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+
+    p.pushFromServer(new Uint8Array([0x00]));
+    p.pushFromServer(new Uint8Array([0x02, 0x11, 0x22]));
+    p.pushFromServer(new Uint8Array([0xaa, 0xbb]));
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    const first = await reader.read();
+    expect(Array.from(first.value!)).toEqual([0xaa, 0xbb]);
+  });
+
+  it('errors the readable when EOF arrives mid-addons', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+
+    // addonsLen=5 but only 3 bytes follow, then EOF.
+    p.pushFromServer(new Uint8Array([0x00, 0x05, 0x11, 0x22, 0x33]));
+    p.endServer();
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    await expect(reader.read()).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('EOF in addons'),
+    });
+  });
+
+  it('forwards a long post-prefix payload chunk-by-chunk', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+
+    p.pushFromServer(new Uint8Array([0x00, 0x00]));
+    const big = new Uint8Array(8 * 1024);
+    for (let i = 0; i < big.byteLength; i++) big[i] = i & 0xff;
+    p.pushFromServer(big);
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    const { value } = await reader.read();
+    expect(value!.byteLength).toBeGreaterThan(0);
+    expect(Array.from(value!.subarray(0, 4))).toEqual([0, 1, 2, 3]);
+  });
+
+  it('errors the readable when the server replies with version 0xff', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+    p.pushFromServer(new Uint8Array([0xff, 0x00]));
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    await expect(reader.read()).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('bad version'),
+    });
+  });
+
+  it('completes prefix strip when the payload is empty (closes cleanly after addons)', async () => {
+    const p = makePair();
+    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
+    await p.written;
+    p.pushFromServer(new Uint8Array([0x00, 0x00]));
+    p.endServer();
+
+    const result = await dialPromise;
+    const reader = result.readable.getReader();
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+});
+
+describe('vlessFrameOverStream — fixed UUID byte order vector', () => {
+  // RFC 4122 §4.1.2 big-endian byte layout. xray-core's encoding/encoding_test.go
+  // uses this exact UUID to verify request-header byte order.
+  it('packs UUID v4 b831381d-6324-4d53-ad4f-8cda48b30811 in network byte order', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, target);
+    const written = await p.written;
+    expect(Array.from(written.subarray(1, 17))).toEqual([
+      0xb8, 0x31, 0x38, 0x1d,
+      0x63, 0x24,
+      0x4d, 0x53,
+      0xad, 0x4f,
+      0x8c, 0xda, 0x48, 0xb3, 0x08, 0x11,
+    ]);
+  });
+});
