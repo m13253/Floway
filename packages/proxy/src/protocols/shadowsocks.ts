@@ -21,7 +21,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
-import { asciiBytes, concat, randomBytes } from '../bytes.ts';
+import { asciiBytes, concat, parseIpv4Literal, parseIpv6Literal, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
@@ -248,15 +248,38 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
 /**
  * Build the SS-style request address: ATYP | addr | port[BE].
  *
- * SS only ever uses ATYP=0x03 (domain) on the dial side — the dialer
- * resolves nothing locally; the SS server runs the DNS lookup. v4/v6
- * literals would still pass through the domain-typed encoding because
- * SS servers parse them by string.
+ * Literal IPv4 / IPv6 targets go on the wire as ATYP=0x01 / 0x04 with
+ * the address octets — matching what Xray-core and sing-box emit. Only
+ * a non-literal host becomes ATYP=0x03 (domain). Sending a literal as
+ * a domain string works against most SS servers (they reparse) but
+ * needlessly forces a string-to-binary conversion on the far side and
+ * doesn't match what reference clients do.
  *
  * Exported for tests.
  */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS');
+  // Strip the optional IPv6 brackets so callers can pass either
+  // `2001:db8::1` or `[2001:db8::1]`.
+  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  const v4 = parseIpv4Literal(host);
+  if (v4) {
+    const out = new Uint8Array(1 + 4 + 2);
+    out[0] = 0x01;
+    out.set(v4, 1);
+    out[5] = (port >> 8) & 0xff;
+    out[6] = port & 0xff;
+    return out;
+  }
+  const v6 = parseIpv6Literal(unbracketed);
+  if (v6) {
+    const out = new Uint8Array(1 + 16 + 2);
+    out[0] = 0x04;
+    out.set(v6, 1);
+    out[17] = (port >> 8) & 0xff;
+    out[18] = port & 0xff;
+    return out;
+  }
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   if (dom.byteLength > 255) throw new ProxyDialError('SS: address too long', 'proxy-handshake');

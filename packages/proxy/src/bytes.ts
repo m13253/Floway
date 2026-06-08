@@ -87,3 +87,82 @@ export const base64EncodeBytes = (bytes: Uint8Array): string => {
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
   return btoa(bin);
 };
+
+/**
+ * Parse an IPv4 dotted-quad literal into 4 octets, or return null if `s`
+ * isn't a literal IPv4. Strict: each component must be a decimal in
+ * 0..255 with no leading zeros (the "no leading zeros" rule prevents
+ * "0123" being read as 123 — some resolvers interpret leading zeros as
+ * octal). Used to switch a SOCKS-family address to ATYP=0x01.
+ */
+export const parseIpv4Literal = (s: string): Uint8Array | null => {
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s)) return null;
+  const parts = s.split('.');
+  const out = new Uint8Array(4);
+  for (let i = 0; i < 4; i++) {
+    const p = parts[i]!;
+    if (p.length > 1 && p.startsWith('0')) return null;
+    const n = Number(p);
+    if (n < 0 || n > 255) return null;
+    out[i] = n;
+  }
+  return out;
+};
+
+/**
+ * Parse an IPv6 literal (with optional `[...]` brackets) into 16 octets,
+ * or return null if `s` isn't a literal IPv6. Defers to the WHATWG `URL`
+ * parser, which has a fully spec-compliant IPv6 grammar and handles
+ * `::`, IPv4-mapped suffixes (`::ffff:1.2.3.4`), and the all-the-shapes
+ * cases that a regex couldn't cover.
+ */
+export const parseIpv6Literal = (s: string): Uint8Array | null => {
+  // `URL` reads bracketed IPv6 hostnames. Strip the brackets if the
+  // caller passed them in literal form; add them otherwise. A plain IPv4
+  // would parse too but with a colon-less hostname — we filter that out
+  // with the colon check.
+  if (!s.includes(':')) return null;
+  const unbracketed = s.startsWith('[') && s.endsWith(']') ? s.slice(1, -1) : s;
+  let url: URL;
+  try {
+    url = new URL(`http://[${unbracketed}]/`);
+  } catch {
+    return null;
+  }
+  // `url.hostname` is normalised — `[::1]` → `[::1]`. Strip the brackets,
+  // then expand to 16 octets via the canonical-form regex.
+  const norm = url.hostname.slice(1, -1);
+  return ipv6StringToBytes(norm);
+};
+
+const ipv6StringToBytes = (s: string): Uint8Array | null => {
+  // Split at `::` once; each half is a sequence of hex groups.
+  const [left, right] = s.includes('::') ? s.split('::', 2) as [string, string] : [s, ''];
+  const leftParts = left === '' ? [] : left.split(':');
+  const rightParts = right === '' ? [] : right.split(':');
+  // IPv4-mapped suffix support: the last group can be a dotted-quad.
+  const tailIpv4 = rightParts.length > 0 && rightParts[rightParts.length - 1]!.includes('.')
+    ? parseIpv4Literal(rightParts.pop()!)
+    : leftParts.length > 0 && leftParts[leftParts.length - 1]!.includes('.')
+      ? parseIpv4Literal(leftParts.pop()!)
+      : null;
+  const groups: number[] = [];
+  for (const p of leftParts) groups.push(parseInt(p, 16));
+  const zerosNeeded = 8 - leftParts.length - rightParts.length - (tailIpv4 ? 2 : 0);
+  if (zerosNeeded < 0) return null;
+  for (let i = 0; i < zerosNeeded; i++) groups.push(0);
+  for (const p of rightParts) groups.push(parseInt(p, 16));
+  if (groups.length !== (tailIpv4 ? 6 : 8)) return null;
+  const out = new Uint8Array(16);
+  for (let i = 0; i < groups.length; i++) {
+    out[i * 2] = (groups[i]! >> 8) & 0xff;
+    out[i * 2 + 1] = groups[i]! & 0xff;
+  }
+  if (tailIpv4) {
+    out[12] = tailIpv4[0]!;
+    out[13] = tailIpv4[1]!;
+    out[14] = tailIpv4[2]!;
+    out[15] = tailIpv4[3]!;
+  }
+  return out;
+};

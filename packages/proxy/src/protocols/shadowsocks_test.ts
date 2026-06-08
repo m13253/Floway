@@ -207,13 +207,45 @@ describe('buildSsAddress — port and host variants', () => {
     expect(Array.from(out.subarray(2, 2 + utf8.byteLength))).toEqual(Array.from(utf8));
   });
 
-  it('forwards an IPv4 literal as a 7-byte domain string', () => {
-    // The dialer always emits ATYP=0x03 (domain). The SS server still
-    // resolves "1.2.3.4" successfully through its own gai loop.
+  it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {
+    // Reference clients (Xray-core, sing-box) detect the literal shape
+    // and emit ATYP=0x01 with the raw 4 octets — sending a literal as a
+    // domain string forces an unnecessary string→bytes conversion on
+    // the SS server.
     const out = buildSsAddress('1.2.3.4', 80);
+    expect(out[0]).toBe(0x01);
+    expect(Array.from(out.subarray(1, 5))).toEqual([1, 2, 3, 4]);
+    expect(out[5]).toBe(0x00);
+    expect(out[6]).toBe(0x50);
+    expect(out.byteLength).toBe(1 + 4 + 2);
+  });
+
+  it('emits ATYP=0x04 + 16 octets for a bracketed IPv6 literal target', () => {
+    const out = buildSsAddress('[2001:db8::1]', 443);
+    expect(out[0]).toBe(0x04);
+    expect(Array.from(out.subarray(1, 17))).toEqual([
+      0x20, 0x01, 0x0d, 0xb8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x01,
+    ]);
+    expect(out[17]).toBe(0x01);
+    expect(out[18]).toBe(0xbb);
+    expect(out.byteLength).toBe(1 + 16 + 2);
+  });
+
+  it('emits ATYP=0x04 + 16 octets for an unbracketed IPv6 literal target', () => {
+    const out = buildSsAddress('::1', 80);
+    expect(out[0]).toBe(0x04);
+    expect(out[16]).toBe(0x01);
+    expect(out[17]).toBe(0x00);
+    expect(out[18]).toBe(0x50);
+  });
+
+  it('still uses ATYP=0x03 (domain) for a non-literal hostname', () => {
+    const out = buildSsAddress('example.com', 80);
     expect(out[0]).toBe(0x03);
-    expect(out[1]).toBe(7);
-    expect(new TextDecoder().decode(out.subarray(2, 9))).toBe('1.2.3.4');
+    expect(out[1]).toBe(11);
   });
 });
 

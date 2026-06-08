@@ -15,7 +15,7 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 
-import { concat, randomBytes } from '../bytes.ts';
+import { concat, parseIpv4Literal, parseIpv6Literal, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
@@ -238,9 +238,15 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
 };
 
 /**
- * Build the SS2022 variable header for a domain target. Exported for tests.
+ * Build the SS2022 variable header for a target. Exported for tests.
  *
- *   ATYP=0x03 | dom_len | dom | port[BE] | padlen[BE u16] | pad | initial_payload
+ * Literal IPv4 / IPv6 targets are emitted with ATYP=0x01 / 0x04 and
+ * the address octets — matching what Xray-core and sing-box send.
+ * Domain hostnames use ATYP=0x03 (domain). Layout:
+ *
+ *   ATYP=0x01 | v4[4]    | port[BE] | padlen[BE u16] | pad | initial_payload
+ *   ATYP=0x03 | dom_len  | dom      | port[BE] | padlen[BE u16] | pad | initial_payload
+ *   ATYP=0x04 | v6[16]   | port[BE] | padlen[BE u16] | pad | initial_payload
  *
  * SIP022 requires either non-zero padding OR a non-empty initial_payload in
  * the very first request frame. The dialer has no application data to send
@@ -249,20 +255,36 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
  */
 export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS2022');
-  const enc = new TextEncoder();
-  const dom = enc.encode(host);
-  // ATYP=0x03 encodes the domain length in a single byte; a hostname over
-  // 255 bytes can't be addressed in this header. Throw a typed dial error
-  // so the fallback chain advances rather than silently truncating the
-  // length byte and corrupting the wire format.
-  if (dom.byteLength > 255) throw new ProxyDialError('SS2022: hostname too long', 'proxy-handshake');
+  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  const v4 = parseIpv4Literal(host);
+  const v6 = v4 ? null : parseIpv6Literal(unbracketed);
   const padLen = 16;
   const pad = randomBytes(padLen);
-  const out = new Uint8Array(1 + 1 + dom.byteLength + 2 + 2 + padLen);
+  let addrSection: Uint8Array;
+  if (v4) {
+    addrSection = new Uint8Array(1 + 4);
+    addrSection[0] = 0x01;
+    addrSection.set(v4, 1);
+  } else if (v6) {
+    addrSection = new Uint8Array(1 + 16);
+    addrSection[0] = 0x04;
+    addrSection.set(v6, 1);
+  } else {
+    const enc = new TextEncoder();
+    const dom = enc.encode(host);
+    // ATYP=0x03 encodes the domain length in a single byte; a hostname over
+    // 255 bytes can't be addressed in this header. Throw a typed dial error
+    // so the fallback chain advances rather than silently truncating the
+    // length byte and corrupting the wire format.
+    if (dom.byteLength > 255) throw new ProxyDialError('SS2022: hostname too long', 'proxy-handshake');
+    addrSection = new Uint8Array(1 + 1 + dom.byteLength);
+    addrSection[0] = 0x03;
+    addrSection[1] = dom.byteLength;
+    addrSection.set(dom, 2);
+  }
+  const out = new Uint8Array(addrSection.byteLength + 2 + 2 + padLen);
   let off = 0;
-  out[off++] = 0x03;
-  out[off++] = dom.byteLength;
-  out.set(dom, off); off += dom.byteLength;
+  out.set(addrSection, off); off += addrSection.byteLength;
   out[off++] = (port >> 8) & 0xff;
   out[off++] = port & 0xff;
   out[off++] = (padLen >> 8) & 0xff;
