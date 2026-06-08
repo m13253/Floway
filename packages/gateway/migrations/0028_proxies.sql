@@ -1,15 +1,18 @@
 -- Adds the proxies catalog, the per-(proxy, upstream) backoff table, and
--- the per-upstream proxy fallback list column.
+-- the per-upstream proxy fallback list column. dial_timeout_seconds is
+-- nullable: NULL means "use the gateway default" (DEFAULT_DIAL_DEADLINE_MS
+-- in @floway-dev/proxy); an explicit integer overrides it for that row.
 
 CREATE TABLE proxies (
-  id              TEXT PRIMARY KEY,
-  name            TEXT NOT NULL,
-  url             TEXT NOT NULL,
-  sort_order      INTEGER NOT NULL DEFAULT 0,
-  created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL,
-  last_egress_ip  TEXT,
-  last_tested_at  INTEGER
+  id                   TEXT PRIMARY KEY,
+  name                 TEXT NOT NULL,
+  url                  TEXT NOT NULL,
+  sort_order           INTEGER NOT NULL DEFAULT 0,
+  dial_timeout_seconds INTEGER,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL,
+  last_egress_ip       TEXT,
+  last_tested_at       INTEGER
 );
 CREATE INDEX idx_proxies_sort_order ON proxies (sort_order, created_at);
 
