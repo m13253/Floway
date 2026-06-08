@@ -16,6 +16,7 @@ import type { DialedSocket, SocketDial } from '@floway-dev/platform';
 // We `await socket.opened` before resolving so a TLS handshake error or
 // connect-refused surfaces as a connect-time rejection (with `cause`)
 // rather than as an opaque first-read failure later.
+
 // Convert a caller-supplied abort signal's reason into a thrown AbortError.
 // Preserve a structured Error reason as-is so its stack/cause survives;
 // stringify only when the reason is a primitive or absent.
