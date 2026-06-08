@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseHttpResponse } from './fetch-on-stream.ts';
-import { collectBody, makeFakeDuplex } from './test-utils.ts';
+import { makeFakeDuplex } from './test-utils.ts';
 
 const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
   const fake = makeFakeDuplex();

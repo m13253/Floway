@@ -543,7 +543,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
   // serialized `${k}: ${v}\r\n` line would inject extra header lines.
   const reqHeaderName = async (name: string): Promise<unknown> => {
     const fake = makeFakeDuplex();
-    return fetchOnStream(
+    return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
       { method: 'GET', path: '/', headers: { Host: 'h', [name]: 'v' } },
     ).catch((e: unknown) => e);
@@ -592,7 +592,7 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
   // `${k}: ${v}\r\n` serialization.
   const reqHeaderValue = async (value: string): Promise<unknown> => {
     const fake = makeFakeDuplex();
-    return fetchOnStream(
+    return await fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
       { method: 'GET', path: '/', headers: { Host: 'h', 'X-Test': value } },
     ).catch((e: unknown) => e);
