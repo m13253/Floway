@@ -4,13 +4,8 @@ import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
+import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
-
-const generateKey = (): string => {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-};
 
 const apiKeyToJson = (key: ApiKey) => ({
   id: key.id,
@@ -66,7 +61,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     id: crypto.randomUUID(),
     userId,
     name: body.name,
-    key: generateKey(),
+    key: generateApiKeyToken(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
@@ -88,7 +83,7 @@ export const rotateKey = async (c: Context) => {
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
 
-  const updated = { ...owned, key: generateKey() } satisfies ApiKey;
+  const updated = { ...owned, key: generateApiKeyToken() } satisfies ApiKey;
   await getRepo().apiKeys.save(updated);
   return c.json(apiKeyToJson(updated));
 };

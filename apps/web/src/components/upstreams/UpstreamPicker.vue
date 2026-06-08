@@ -5,16 +5,16 @@ import { computed, ref, watch } from 'vue';
 import type { UpstreamProviderKind } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 
+export interface UpstreamPickerValue {
+  override: boolean;
+  ids: string[];
+}
+
 interface RowState {
   id: string;
   name: string;
   provider: UpstreamProviderKind | null;
   enabled: boolean;
-}
-
-interface PickerValue {
-  override: boolean;
-  ids: string[];
 }
 
 const props = defineProps<{
@@ -23,7 +23,7 @@ const props = defineProps<{
   inheritDescription: string;
 }>();
 
-const value = defineModel<PickerValue>({ required: true });
+const value = defineModel<UpstreamPickerValue>({ required: true });
 
 const rows = ref<RowState[]>([]);
 

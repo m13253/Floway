@@ -26,8 +26,7 @@ import ModelInfoBar from '../../components/models/ModelInfoBar.vue';
 const initialData = useModelsPageData();
 const { models, error: modelsError } = useModelsStore();
 
-// Loader-level data is fetched once per navigation; nothing in this page
-// reloads it, so a plain const matches the actual lifetime.
+// Drop reactivity: this page never reloads the loader's keys.
 const keys = initialData.data.value.keys;
 
 const modelsSearch = ref('');

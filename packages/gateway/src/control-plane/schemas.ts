@@ -141,8 +141,8 @@ export const authLoginBody = z.object({
 const usernameSchema = z.string().regex(/^[a-zA-Z0-9_.\-]{1,64}$/, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because a key that allows zero upstreams cannot serve
-// any model and the UI has no affordance to express that intent.
+// Empty array is rejected because an entity restricted to zero upstreams cannot
+// serve any model and the UI has no affordance to express that intent.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
   .min(1, 'upstreamIds must contain at least one upstream id; use null for unrestricted')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })

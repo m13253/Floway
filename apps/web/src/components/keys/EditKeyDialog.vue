@@ -6,9 +6,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import { useAuthStore } from '../../stores/auth.ts';
-import UpstreamPicker from '../upstreams/UpstreamPicker.vue';
-
-interface PickerValue { override: boolean; ids: string[] }
+import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamPicker.vue';
 
 const open = defineModel<boolean>('open');
 
@@ -33,7 +31,7 @@ const visibleUpstreams = computed<UpstreamOption[]>(() => {
 });
 
 const name = ref('');
-const upstreamSelection = ref<PickerValue>({ override: false, ids: [] });
+const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const saving = ref(false);
 const error = ref<string | null>(null);
 

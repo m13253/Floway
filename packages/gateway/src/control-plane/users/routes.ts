@@ -7,6 +7,7 @@ import type { Context } from 'hono';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
+import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
 
@@ -23,12 +24,6 @@ const userToWire = (u: User) => ({
   createdAt: u.createdAt,
   deletedAt: u.deletedAt,
 });
-
-const generateRawApiKey = (): string => {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-};
 
 const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
   if (ids === null) return null;
@@ -86,7 +81,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     id: crypto.randomUUID(),
     userId: newId,
     name: 'Default',
-    key: generateRawApiKey(),
+    key: generateApiKeyToken(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
     deletedAt: null,

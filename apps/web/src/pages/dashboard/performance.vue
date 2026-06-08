@@ -89,19 +89,6 @@ const overview = ref<OverviewResponse>(initialOverview.data.value.overview);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
 
-const switchPerformanceRange = (r: Range) => {
-  if (performanceRange.value === r) return;
-  performanceRange.value = r;
-};
-const switchPerformanceMetricScope = (s: Scope) => {
-  if (performanceMetricScope.value === s) return;
-  performanceMetricScope.value = s;
-};
-const switchPerformanceChartView = (v: ChartView) => {
-  if (performanceChartView.value === v) return;
-  performanceChartView.value = v;
-};
-
 const load = async () => {
   const requestId = ++performanceRequestId;
   const requestedRange = performanceRange.value;
@@ -299,14 +286,14 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceMetricScope === 'request_total' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformanceMetricScope('request_total')"
+              @click="performanceMetricScope = 'request_total'"
             >
               Total
             </button>
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceMetricScope === 'upstream_success' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformanceMetricScope('upstream_success')"
+              @click="performanceMetricScope = 'upstream_success'"
             >
               Upstream
             </button>
@@ -319,14 +306,14 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceChartView === 'model' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformanceChartView('model')"
+              @click="performanceChartView = 'model'"
             >
               By Model
             </button>
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceChartView === 'percentile' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformanceChartView('percentile')"
+              @click="performanceChartView = 'percentile'"
             >
               By Percentile
             </button>
@@ -371,7 +358,7 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
               :key="r"
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceRange === r ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="switchPerformanceRange(r)"
+              @click="performanceRange = r"
             >
               {{ r === 'today' ? 'Last Day' : r === '7d' ? '7 Days' : '30 Days' }}
             </button>

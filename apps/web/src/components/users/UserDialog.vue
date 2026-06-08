@@ -5,10 +5,8 @@ import { computed, ref, watch } from 'vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import SecretInput from '../shared/SecretInput.vue';
-import UpstreamPicker from '../upstreams/UpstreamPicker.vue';
+import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamPicker.vue';
 import type { WireUser } from './types.ts';
-
-interface PickerValue { override: boolean; ids: string[] }
 
 const open = defineModel<boolean>('open');
 
@@ -28,7 +26,7 @@ const username = ref('');
 const password = ref('');
 const isAdmin = ref(false);
 const canViewGlobalTelemetry = ref(false);
-const upstreamSelection = ref<PickerValue>({ override: false, ids: [] });
+const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const saving = ref(false);
 const error = ref<string | null>(null);
 
