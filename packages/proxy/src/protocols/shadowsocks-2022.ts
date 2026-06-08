@@ -252,7 +252,7 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
  */
 export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS2022');
-  const addrSection = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'SS2022');
+  const addrSection = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 });
   const padLen = 16;
   const pad = randomBytes(padLen);
   const out = new Uint8Array(addrSection.byteLength + 2 + 2 + padLen);

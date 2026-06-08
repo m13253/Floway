@@ -98,7 +98,7 @@ export const buildTrojanRequestHeader = (password: string, target: DialTarget): 
   const hash = sha224(enc.encode(password));
   const hashHex = bytesToHex(hash);
 
-  const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'Trojan');
+  const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x03, v6: 0x04 });
   const header = new Uint8Array(56 + 2 + 1 + addr.byteLength + 2 + 2);
   let off = 0;
   for (let i = 0; i < 56; i++) header[off++] = hashHex.charCodeAt(i);

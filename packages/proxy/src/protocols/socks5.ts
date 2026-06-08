@@ -157,7 +157,7 @@ const dialSocks5Inner = async (
  */
 export const buildSocks5ConnectRequest = (host: string, port: number): Uint8Array => {
   assertValidTargetPort(port, 'SOCKS5');
-  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'SOCKS5');
+  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 });
   // VER | CMD=CONNECT | RSV | <ATYP+addr> | port[BE]
   const out = new Uint8Array(3 + addr.byteLength + 2);
   out[0] = 0x05; out[1] = 0x01; out[2] = 0x00;

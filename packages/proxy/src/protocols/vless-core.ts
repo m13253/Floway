@@ -42,7 +42,7 @@ export const vlessFrameOverStream = async (
 const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
   assertValidTargetPort(target.port, 'VLESS');
   const uuidBytes = parseUuid(uuid);
-  const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x02, v6: 0x03 }, 'VLESS');
+  const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x02, v6: 0x03 });
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + addr.byteLength);
   let off = 0;
   header[off++] = 0x00;

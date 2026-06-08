@@ -592,9 +592,9 @@ describe('dialSocks5 — pre-dial target validation', () => {
 
   it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
     // ATYP=domain framing puts the host behind a 1-byte length prefix
-    // (max 255). encodeAtypAddress would otherwise reject mid-dial with
-    // stage=proxy-handshake — after a TCP slot has been burned to the
-    // proxy.
+    // (max 255). The pre-dial assertion catches an overflow before a
+    // TCP slot has been burned to the proxy — without it the length
+    // byte would silently truncate and corrupt the address frame.
     const fake = makeFakeSocketDial();
     await expect(
       dialSocks5(socks5Config(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),

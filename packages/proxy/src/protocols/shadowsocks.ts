@@ -253,7 +253,7 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
  */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS');
-  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'SS');
+  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 });
   const out = new Uint8Array(addr.byteLength + 2);
   out.set(addr, 0);
   out[addr.byteLength] = (port >> 8) & 0xff;
