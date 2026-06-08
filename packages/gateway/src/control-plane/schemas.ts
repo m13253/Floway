@@ -158,7 +158,7 @@ export const updateKeyBody = z.object({
 // the proxies repo or the literal `'direct'` sentinel meaning "dial without a
 // proxy". The handler validates the ids against the proxies repo; the schema
 // only enforces the wire shape.
-export const proxyFallbackListSchema = z.array(z.string().min(1));
+const proxyFallbackListSchema = z.array(z.string().min(1));
 
 const upstreamBaseFields = {
   name: z.string().min(1),
@@ -282,7 +282,7 @@ export const codexRefreshNowBody = z.object({});
 // dialer's hard ceiling above ~10min would just stall the fallback chain
 // without ever giving up. nullable so the operator can clear it back to
 // the gateway-wide default; absent vs. null is meaningful in PATCH.
-export const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
+const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
 
 export const createProxyBody = z.object({
   name: z.string().min(1).max(200),
