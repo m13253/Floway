@@ -358,3 +358,46 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
   const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]);
   assertEquals(groups, [[String(apiKey.userId), 1]]);
 });
+
+test('/api/performance self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.performance.recordLatency({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    metricScope: 'request_total',
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses',
+    targetApi: 'responses',
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 200,
+  });
+  await repo.apiKeys.softDelete(apiKey.id);
+  // The acting api key was the one that was soft-deleted; build a fresh
+  // active key under the same user so the request authenticates.
+  await repo.apiKeys.save({
+    id: 'key_fresh',
+    userId: apiKey.userId,
+    name: 'Fresh',
+    key: 'raw_fresh_key',
+    createdAt: '2026-04-30T11:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const response = await requestApp(
+    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=keyId&include_key_metadata=1',
+    { headers: { 'x-api-key': 'raw_fresh_key' } },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // The deleted key surfaces in keys[] even though listByUserId active-only
+  // would have hidden it; the row attributes back to its keyId.
+  const ids = body.keys.map((k: { id: string }) => k.id).sort();
+  assertEquals(ids.includes(apiKey.id), true);
+  const matched = body.records.find((r: { group: string }) => r.group === apiKey.id);
+  assertEquals(matched?.requests, 1);
+});
