@@ -59,3 +59,111 @@ describe('buildTrojanRequestHeader', () => {
     expect(Array.from(header.subarray(56))).toEqual(tail);
   });
 });
+
+describe('buildTrojanRequestHeader — SHA-224 password vectors', () => {
+  // SHA-224 of various password bytes, computed via Node's crypto.
+  // Trojan's CRLF + CMD + ATYP + addr + port + CRLF tail starts at offset 56.
+  const PASSWORD_VECTORS: Array<[string, string]> = [
+    ['', 'd14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f'],
+    ['a', 'abd37534c7d9a2efb9465de931cd7055ffdb8879563ae98078d6d6d5'],
+    ['p@ssw0rd!', '2d2e8b944f53164ee0aa8b1f98d75713c1b1bc6b9dd67591ef0a29e0'],
+    ['with space', '8cde0192998892a0d0144c4c570de8506478a690dc6e82bd74532b26'],
+    ['A B\tC', 'da79560bf60049a8757bff9c0611c4fb39b51095f737481ba92cf478'],
+  ];
+
+  for (const [password, expected] of PASSWORD_VECTORS) {
+    it(`hashes ${JSON.stringify(password)} → ${expected.slice(0, 12)}…`, () => {
+      const header = buildTrojanRequestHeader(password, target443);
+      const hashAscii = new TextDecoder().decode(header.subarray(0, 56));
+      expect(hashAscii).toBe(expected);
+    });
+  }
+
+  it('hashes a UTF-8 password by encoded byte sequence (not by JS string code units)', () => {
+    // "你好世界" → 12 UTF-8 bytes, SHA-224 = b3f5c93d…
+    const header = buildTrojanRequestHeader('你好世界', target443);
+    const hashAscii = new TextDecoder().decode(header.subarray(0, 56));
+    expect(hashAscii).toBe('b3f5c93d7b531d7e29266412f2c842f8a4b7286871f87d259c6eaf07');
+  });
+});
+
+describe('buildTrojanRequestHeader — port and address variants', () => {
+  it('encodes port 1 (BE) as 0x00 0x01', () => {
+    const header = buildTrojanRequestHeader('p', { host: 'h', port: 1 });
+    // ATYP=0x03, dom_len=1, dom='h', port=0x0001
+    expect(header[58]).toBe(0x01);
+    expect(header[59]).toBe(0x03);
+    expect(header[60]).toBe(0x01);
+    expect(header[61]).toBe('h'.charCodeAt(0));
+    expect(header[62]).toBe(0x00);
+    expect(header[63]).toBe(0x01);
+  });
+
+  it('encodes port 65535 as 0xff 0xff', () => {
+    const header = buildTrojanRequestHeader('p', { host: 'h', port: 65535 });
+    expect(header[62]).toBe(0xff);
+    expect(header[63]).toBe(0xff);
+  });
+
+  it('encodes port 0 as 0x00 0x00 (caller is responsible for rejecting if invalid)', () => {
+    // The Trojan dial layer doesn't validate port range; we just emit BE bytes.
+    // Port 0 is technically out of band but the dialer doesn't refuse it —
+    // surfaces as a finding for upstream validation if relevant.
+    const header = buildTrojanRequestHeader('p', { host: 'h', port: 0 });
+    expect(header[62]).toBe(0x00);
+    expect(header[63]).toBe(0x00);
+  });
+
+  it('serializes a 255-byte hostname (max dom_len)', () => {
+    const host = 'a'.repeat(255);
+    const header = buildTrojanRequestHeader('p', { host, port: 443 });
+    expect(header[60]).toBe(0xff);
+    expect(new TextDecoder().decode(header.subarray(61, 61 + 255))).toBe(host);
+  });
+
+  it('rejects a 256-byte hostname before any I/O', () => {
+    expect(() => buildTrojanRequestHeader('p', { host: 'a'.repeat(256), port: 443 })).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
+    );
+  });
+});
+
+describe('buildTrojanRequestHeader — total framing layout', () => {
+  // Spec: trojan-gfw.github.io/trojan/protocol — 56 hex + CRLF + 1 (CMD) +
+  // 1 (ATYP) + addr + 2 (port BE) + CRLF.
+  it('total length = 56 + 2 + 1 + 1 + 1 + dom_len + 2 + 2', () => {
+    const dom = 'subdomain.example.com';
+    const header = buildTrojanRequestHeader('p', { host: dom, port: 443 });
+    const want = 56 + 2 + 1 + 1 + 1 + dom.length + 2 + 2;
+    expect(header.byteLength).toBe(want);
+  });
+
+  it('emits CMD=0x01 (CONNECT) — UDP ASSOCIATE 0x03 is not implemented', () => {
+    const header = buildTrojanRequestHeader('p', target443);
+    expect(header[58]).toBe(0x01);
+  });
+
+  it('emits ATYP=0x03 (domain) — IPv4/IPv6 literals get encoded as domain strings', () => {
+    // Trojan's ATYP byte takes the SOCKS5 values (0x01 v4, 0x03 domain,
+    // 0x04 v6) but the floway dialer always emits domain encoding. A v4
+    // literal target string therefore travels as a 7-byte domain "1.2.3.4".
+    const header = buildTrojanRequestHeader('p', { host: '1.2.3.4', port: 80 });
+    expect(header[59]).toBe(0x03);
+    expect(header[60]).toBe('1.2.3.4'.length);
+    expect(new TextDecoder().decode(header.subarray(61, 68))).toBe('1.2.3.4');
+  });
+
+  it('emits two CRLF terminators — one after the hash, one after the port', () => {
+    const header = buildTrojanRequestHeader('p', target443);
+    expect(header[56]).toBe(0x0d);
+    expect(header[57]).toBe(0x0a);
+    expect(header[header.byteLength - 2]).toBe(0x0d);
+    expect(header[header.byteLength - 1]).toBe(0x0a);
+  });
+
+  it('does not include a payload length prefix — payload concatenates after the trailing CRLF', () => {
+    const header = buildTrojanRequestHeader('p', target443);
+    // 56 + 2 + 1 + 1 + 1 + 14 + 2 + 2 = 79
+    expect(header.byteLength).toBe(79);
+  });
+});
