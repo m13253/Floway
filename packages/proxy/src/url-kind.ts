@@ -21,7 +21,7 @@ export const kindFromUri = (url: string): string => {
   case 'ss:': {
     // ss2022 ciphers begin with `2022-blake3-`; the userinfo carries either
     // `method:password` (legacy SS) or the same with a 2022 cipher prefix.
-    const userinfo = decodeURIComponent(parsed.username || '');
+    const userinfo = decodeURIComponent(parsed.username);
     return userinfo.startsWith('2022-blake3-') ? 'SS-2022' : 'SS';
   }
   case 'trojan:': return 'TROJAN';

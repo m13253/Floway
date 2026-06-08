@@ -52,6 +52,15 @@ describe('parseProxyUri', () => {
     });
   });
 
+  it('preserves an explicit http port=80 across userinfo, IPv6, and path/query/fragment', () => {
+    // The raw-authority scan must walk past userinfo (everything up to the
+    // last `@`), the IPv6 envelope (`[::1]`), and stop before the first
+    // `/`, `?`, or `#`. Each variant exercises one of those branches.
+    expect(parseProxyUri('http://u:p@example.com:80').port).toBe(80);
+    expect(parseProxyUri('http://[::1]:80').port).toBe(80);
+    expect(parseProxyUri('http://example.com:80/x?y=1#name').port).toBe(80);
+  });
+
   it('parses SOCKS5 with auth', () => {
     expect(parseProxyUri('socks5://u:p@1.2.3.4:1080#jp')).toEqual({
       kind: 'socks5',
