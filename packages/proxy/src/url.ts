@@ -89,7 +89,6 @@ const explicitAuthorityPort = (uri: string): number | null => {
   // Skip the IPv6 literal envelope (`[::1]`) before scanning for the port
   // colon; the colons inside the brackets aren't separators.
   const hostEnd = authority.startsWith('[') ? authority.indexOf(']') + 1 : 0;
-  if (hostEnd < 0) return null;
   const colon = authority.indexOf(':', hostEnd);
   if (colon < 0) return null;
   const portStr = authority.slice(colon + 1);
