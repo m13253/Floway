@@ -5,14 +5,14 @@ import type { DialTarget } from '../types.ts';
 
 const target443: DialTarget = { host: 'api.openai.com', port: 443 };
 
-const sha224HexOfPassword = 'password' as const;
+const PASSWORD = 'password';
 // Reference: trojan-go/tunnel/trojan/server_test.go uses
 // hex(SHA-224("password")) → "d63dc919e201d7bc4c825630d2cf25fdc93d4b2f0d46706d29038d01"
 const PASSWORD_SHA224_HEX = 'd63dc919e201d7bc4c825630d2cf25fdc93d4b2f0d46706d29038d01';
 
 describe('buildTrojanRequestHeader', () => {
   it('starts with 56 bytes of hex(SHA-224(password)) followed by CRLF', () => {
-    const header = buildTrojanRequestHeader(sha224HexOfPassword, target443);
+    const header = buildTrojanRequestHeader(PASSWORD, target443);
     const hashAscii = new TextDecoder().decode(header.subarray(0, 56));
     expect(hashAscii).toBe(PASSWORD_SHA224_HEX);
     expect(header[56]).toBe(0x0d);
@@ -20,7 +20,7 @@ describe('buildTrojanRequestHeader', () => {
   });
 
   it('encodes a SOCKS5-style domain target after the CRLF', () => {
-    const header = buildTrojanRequestHeader(sha224HexOfPassword, target443);
+    const header = buildTrojanRequestHeader(PASSWORD, target443);
     // CMD=0x01 (CONNECT), ATYP=0x03 (domain), dom_len=14, dom='api.openai.com', port=0x01bb.
     let off = 58;
     expect(header[off++]).toBe(0x01);

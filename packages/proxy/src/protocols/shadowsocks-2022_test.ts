@@ -76,7 +76,7 @@ describe('dialShadowsocks2022 — SIP022 happy path', () => {
     expect(variablePlain[17]).toBe(0xbb);
 
     // Server reply.
-    sendServerHandshake(srv, sendSalt, KEY_LEN, /* skewSec */ 0, /* echoCorrect */ true, 'OK');
+    sendServerHandshake(srv, sendSalt, KEY_LEN, /* skewSec */ 0, 'OK');
 
     const result = await promise;
     const reader = result.readable.getReader();
@@ -160,7 +160,7 @@ const runWithServerHandshakeOptions = async (
   if (remaining > 0) await srv.read(remaining);
 
   const dialerSendSalt = serverOpts.echoCorrect ? sendSalt : new Uint8Array(KEY_LEN);
-  sendServerHandshake(srv, dialerSendSalt, KEY_LEN, serverOpts.skewSec, true, 'OK');
+  sendServerHandshake(srv, dialerSendSalt, KEY_LEN, serverOpts.skewSec, 'OK');
 
   const result = await dialPromise;
   const reader = result.readable.getReader();
@@ -176,7 +176,6 @@ const sendServerHandshake = (
   sendSaltToEcho: Uint8Array,
   keyLen: number,
   skewSec: number,
-  echoCorrect: boolean,
   payload: string,
 ): void => {
   const recvSalt = new Uint8Array(keyLen);
@@ -191,9 +190,7 @@ const sendServerHandshake = (
   for (let i = 7; i >= 0; i--) {
     fixedPlain[1 + i] = Number(respTs >> BigInt((7 - i) * 8) & 0xffn);
   }
-  // Caller controls whether the echo matches.
-  const echoToWrite = echoCorrect ? sendSaltToEcho : new Uint8Array(keyLen);
-  fixedPlain.set(echoToWrite, 1 + 8);
+  fixedPlain.set(sendSaltToEcho, 1 + 8);
   const payloadBytes = new TextEncoder().encode(payload);
   fixedPlain[1 + 8 + keyLen] = (payloadBytes.byteLength >> 8) & 0xff;
   fixedPlain[1 + 8 + keyLen + 1] = payloadBytes.byteLength & 0xff;
