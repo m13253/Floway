@@ -3,6 +3,8 @@
 // be pooled or reused by the runtime (most visibly on Node), so anything we
 // enqueue downstream or retain past the next read needs to own its memory.
 
+import { ProxyDialError } from './errors.ts';
+
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
  * Detaches the resulting buffer from any transport-owned backing storage
@@ -172,5 +174,79 @@ const ipv6StringToBytes = (s: string): Uint8Array | null => {
     out[14] = tailIpv4[2]!;
     out[15] = tailIpv4[3]!;
   }
+  return out;
+};
+
+/**
+ * ATYP byte triplet for a proxy protocol's SOCKS-style address frame.
+ * SOCKS5 / Shadowsocks / Shadowsocks-2022 / Trojan all share the
+ * 0x01/0x03/0x04 numbering; VLESS uses 0x01/0x02/0x03 instead. The
+ * dialers thread their own values into `encodeAtypAddress` so the
+ * IP-literal / domain discrimination + non-ASCII reject + 255-byte cap
+ * stays in one place.
+ */
+export interface AtypBytes {
+  v4: number;
+  domain: number;
+  v6: number;
+}
+
+/**
+ * Encode `host` as `[ATYP][addr-bytes]` for a SOCKS-style proxy frame.
+ *
+ * Literal IPv4 / IPv6 targets emit raw octets (4 / 16 bytes) so the
+ * upstream doesn't have to re-parse a string into an address — the wire
+ * shape sing-box / Xray-core / shadowsocks-rust all send for literal
+ * targets. Domain hostnames take the length-prefixed `0x03`/`0x02` path.
+ *
+ * Non-ASCII hostnames are rejected up-front: per `DialTarget.host`'s
+ * contract, callers MUST punycode IDN labels before reaching the dial
+ * layer, and a UTF-8 / Latin-1 muddle in a length-prefixed wire frame
+ * silently corrupts the address on the far side. `protocolLabel` flows
+ * into the thrown ProxyDialError so the operator sees which protocol
+ * rejected the host. Domain names over 255 bytes are similarly rejected
+ * — the 1-byte length prefix can't address them.
+ */
+export const encodeAtypAddress = (
+  host: string,
+  atyp: AtypBytes,
+  protocolLabel: string,
+): Uint8Array<ArrayBuffer> => {
+  // Strip the optional IPv6 brackets so callers can pass either
+  // `2001:db8::1` or `[2001:db8::1]`.
+  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  const v4 = parseIpv4Literal(host);
+  if (v4) {
+    const out = new Uint8Array(1 + 4);
+    out[0] = atyp.v4;
+    out.set(v4, 1);
+    return out;
+  }
+  const v6 = parseIpv6Literal(unbracketed);
+  if (v6) {
+    const out = new Uint8Array(1 + 16);
+    out[0] = atyp.v6;
+    out.set(v6, 1);
+    return out;
+  }
+  for (let i = 0; i < host.length; i++) {
+    if (host.charCodeAt(i) > 0x7f) {
+      throw new ProxyDialError(
+        `${protocolLabel} target host must be ASCII (punycode IDN before dial): ${host}`,
+        'proxy-handshake',
+      );
+    }
+  }
+  const dom = new TextEncoder().encode(host);
+  if (dom.byteLength > 255) {
+    throw new ProxyDialError(
+      `${protocolLabel}: hostname too long (${dom.byteLength} bytes; ATYP domain is 1-byte length-prefixed)`,
+      'proxy-handshake',
+    );
+  }
+  const out = new Uint8Array(1 + 1 + dom.byteLength);
+  out[0] = atyp.domain;
+  out[1] = dom.byteLength;
+  out.set(dom, 2);
   return out;
 };

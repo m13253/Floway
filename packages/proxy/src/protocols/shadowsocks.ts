@@ -21,7 +21,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
-import { asciiBytes, concat, parseIpv4Literal, parseIpv6Literal, randomBytes } from '../bytes.ts';
+import { asciiBytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
@@ -262,48 +262,10 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
  */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS');
-  // Strip the optional IPv6 brackets so callers can pass either
-  // `2001:db8::1` or `[2001:db8::1]`.
-  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
-  const v4 = parseIpv4Literal(host);
-  if (v4) {
-    const out = new Uint8Array(1 + 4 + 2);
-    out[0] = 0x01;
-    out.set(v4, 1);
-    out[5] = (port >> 8) & 0xff;
-    out[6] = port & 0xff;
-    return out;
-  }
-  const v6 = parseIpv6Literal(unbracketed);
-  if (v6) {
-    const out = new Uint8Array(1 + 16 + 2);
-    out[0] = 0x04;
-    out.set(v6, 1);
-    out[17] = (port >> 8) & 0xff;
-    out[18] = port & 0xff;
-    return out;
-  }
-  const enc = new TextEncoder();
-  // Domain path. SS servers (shadowsocks-rust, sing-box) parse the
-  // domain string in-band and run their own resolver, but raw IDN
-  // bytes on the wire muddle Latin-1 / UTF-8 framing — the dial
-  // layer's contract (see `DialTarget.host`) is ASCII-only and IDN
-  // punycoding belongs at the URL parser one layer up.
-  for (let i = 0; i < host.length; i++) {
-    if (host.charCodeAt(i) > 0x7f) {
-      throw new ProxyDialError(
-        `SS target host must be ASCII (punycode IDN before dial): ${host}`,
-        'proxy-handshake',
-      );
-    }
-  }
-  const dom = enc.encode(host);
-  if (dom.byteLength > 255) throw new ProxyDialError('SS: address too long', 'proxy-handshake');
-  const out = new Uint8Array(1 + 1 + dom.byteLength + 2);
-  out[0] = 0x03;
-  out[1] = dom.byteLength;
-  out.set(dom, 2);
-  out[2 + dom.byteLength] = (port >> 8) & 0xff;
-  out[2 + dom.byteLength + 1] = port & 0xff;
+  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'SS');
+  const out = new Uint8Array(addr.byteLength + 2);
+  out.set(addr, 0);
+  out[addr.byteLength] = (port >> 8) & 0xff;
+  out[addr.byteLength + 1] = port & 0xff;
   return out;
 };

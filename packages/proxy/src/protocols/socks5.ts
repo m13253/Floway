@@ -4,7 +4,7 @@
 // the SOCKS5 handshake we hand the post-handshake byte stream back to the
 // orchestrator, which layers userspace TLS for the upstream's HTTPS handshake.
 
-import { copy, parseIpv4Literal, parseIpv6Literal } from '../bytes.ts';
+import { concat, copy, encodeAtypAddress } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetPort } from '../types.ts';
@@ -56,10 +56,7 @@ const dialSocks5Inner = async (
     while (pending.byteLength < n) {
       const r = await reader.read();
       if (r.done) throw new ProxyDialError(`SOCKS5: unexpected EOF, want ${n} got ${pending.byteLength}`, 'proxy-handshake');
-      const next = new Uint8Array(pending.byteLength + r.value.byteLength);
-      next.set(pending, 0);
-      next.set(r.value, pending.byteLength);
-      pending = next;
+      pending = concat(pending, r.value);
     }
     const out = pending.subarray(0, n);
     pending = pending.subarray(n);
@@ -163,42 +160,12 @@ const dialSocks5Inner = async (
  */
 export const buildSocks5ConnectRequest = (host: string, port: number): Uint8Array => {
   assertValidTargetPort(port, 'SOCKS5');
-  // Strip the optional IPv6 brackets so callers can pass either
-  // `2001:db8::1` or `[2001:db8::1]`.
-  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
-  const v4 = parseIpv4Literal(host);
-  if (v4) {
-    const out = new Uint8Array(4 + 4 + 2);
-    out[0] = 0x05; out[1] = 0x01; out[2] = 0x00; out[3] = 0x01;
-    out.set(v4, 4);
-    out[8] = (port >> 8) & 0xff;
-    out[9] = port & 0xff;
-    return out;
-  }
-  const v6 = parseIpv6Literal(unbracketed);
-  if (v6) {
-    const out = new Uint8Array(4 + 16 + 2);
-    out[0] = 0x05; out[1] = 0x01; out[2] = 0x00; out[3] = 0x04;
-    out.set(v6, 4);
-    out[20] = (port >> 8) & 0xff;
-    out[21] = port & 0xff;
-    return out;
-  }
-  for (let i = 0; i < host.length; i++) {
-    if (host.charCodeAt(i) > 0x7f) {
-      throw new ProxyDialError(
-        `SOCKS5 target host must be ASCII (punycode IDN before dial): ${host}`,
-        'proxy-handshake',
-      );
-    }
-  }
-  const dom = new TextEncoder().encode(host);
-  if (dom.byteLength > 255) throw new ProxyDialError('hostname too long for SOCKS5', 'proxy-handshake');
-  const out = new Uint8Array(4 + 1 + dom.byteLength + 2);
-  out[0] = 0x05; out[1] = 0x01; out[2] = 0x00; out[3] = 0x03;
-  out[4] = dom.byteLength;
-  out.set(dom, 5);
-  out[5 + dom.byteLength] = (port >> 8) & 0xff;
-  out[6 + dom.byteLength] = port & 0xff;
+  const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 }, 'SOCKS5');
+  // VER | CMD=CONNECT | RSV | <ATYP+addr> | port[BE]
+  const out = new Uint8Array(3 + addr.byteLength + 2);
+  out[0] = 0x05; out[1] = 0x01; out[2] = 0x00;
+  out.set(addr, 3);
+  out[3 + addr.byteLength] = (port >> 8) & 0xff;
+  out[3 + addr.byteLength + 1] = port & 0xff;
   return out;
 };

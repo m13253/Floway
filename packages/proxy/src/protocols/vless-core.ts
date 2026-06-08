@@ -4,7 +4,7 @@
 // Used by reality.ts (after the REALITY-tls is established) and by vless.ts
 // (after the outer TLS / outer fetch+WS upgrade).
 
-import { concat, copy, hexDecode, parseIpv4Literal, parseIpv6Literal } from '../bytes.ts';
+import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { assertValidTargetPort } from '../types.ts';
 import type { DialResult, DialTarget } from '../types.ts';
@@ -42,7 +42,7 @@ export const vlessFrameOverStream = async (
 const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
   assertValidTargetPort(target.port, 'VLESS');
   const uuidBytes = parseUuid(uuid);
-  const addr = encodeVlessAddress(target.host);
+  const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x02, v6: 0x03 }, 'VLESS');
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + addr.byteLength);
   let off = 0;
   header[off++] = 0x00;
@@ -53,46 +53,6 @@ const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
   header[off++] = target.port & 0xff;
   header.set(addr, off);
   return header;
-};
-
-const encodeVlessAddress = (host: string): Uint8Array => {
-  // Strip the optional IPv6 brackets so callers can pass either
-  // `2001:db8::1` or `[2001:db8::1]`.
-  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
-  const v4 = parseIpv4Literal(host);
-  if (v4) {
-    const out = new Uint8Array(1 + 4);
-    out[0] = 0x01;
-    out.set(v4, 1);
-    return out;
-  }
-  const v6 = parseIpv6Literal(unbracketed);
-  if (v6) {
-    const out = new Uint8Array(1 + 16);
-    out[0] = 0x03;
-    out.set(v6, 1);
-    return out;
-  }
-  // Domain path. VLESS servers (Xray-core, sing-box) parse the domain as
-  // UTF-8 string in-band, but Latin-1 / UTF-8 framing of an IDN label on
-  // the wire is a layering muddle — the caller has the information to
-  // punycode an IDN before it reaches the dial layer. Reject non-ASCII
-  // up front so the dial fails as a typed handshake error.
-  for (let i = 0; i < host.length; i++) {
-    if (host.charCodeAt(i) > 0x7f) {
-      throw new ProxyDialError(
-        `VLESS target host must be ASCII (punycode IDN before dial): ${host}`,
-        'proxy-handshake',
-      );
-    }
-  }
-  const dom = new TextEncoder().encode(host);
-  if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake');
-  const out = new Uint8Array(1 + 1 + dom.byteLength);
-  out[0] = 0x02;
-  out[1] = dom.byteLength;
-  out.set(dom, 2);
-  return out;
 };
 
 const parseUuid = (s: string): Uint8Array => {
