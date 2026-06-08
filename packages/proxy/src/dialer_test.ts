@@ -158,10 +158,12 @@ describe('runProxiedRequest — post-dial teardown', () => {
 // mocked to return a duplex whose write-side captures the request line +
 // headers; the canned response keeps fetchOnStream from hanging.
 //
-// We exercise both default-port branches via target.tls=false (default
-// port = 80). The HTTPS-on-443 case is the same logic with target.tls=true
-// + port=443; we assert the lookup logic separately rather than running
-// userspaceTls against a canned stream that wouldn't satisfy a handshake.
+// All cases pin target.tls=false to keep the test off userspaceTls, which
+// won't complete a handshake against a canned response stream. We cover
+// the tls=false default branch (port 80 → omit) and the non-default branch
+// (port 8080 → include); the tls=true default branch (port 443 → omit)
+// shares the same `target.tls ? 443 : 80` lookup, indirectly verified by
+// the port=443 + tls=false case which proves the lookup keys on tls.
 describe('runProxiedRequest — Host header synthesis', () => {
   const buildCapturingDial = (responseHead: string): {
     written: () => string;
