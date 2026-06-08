@@ -19,31 +19,24 @@
 // percent-encoding, and SS-2022 base64 padding may vary.
 
 import { ProxyUriError } from './errors.ts';
-import type {
-  HttpProxyConfig,
-  ProxyConfig,
-  RealityProxyConfig,
-  Shadowsocks2022ProxyConfig,
-  ShadowsocksProxyConfig,
-  Socks5ProxyConfig,
-  Ss2022Method,
-  SsMethod,
-  TrojanProxyConfig,
-  VlessTcpTlsProxyConfig,
-  VlessWsTlsProxyConfig,
+import {
+  SS2022_METHODS,
+  SS_METHODS,
+  type HttpProxyConfig,
+  type ProxyConfig,
+  type RealityProxyConfig,
+  type Shadowsocks2022ProxyConfig,
+  type ShadowsocksProxyConfig,
+  type Socks5ProxyConfig,
+  type Ss2022Method,
+  type SsMethod,
+  type TrojanProxyConfig,
+  type VlessTcpTlsProxyConfig,
+  type VlessWsTlsProxyConfig,
 } from './proxy-config.ts';
 
-const SS_METHODS: ReadonlySet<string> = new Set<SsMethod>([
-  'aes-128-gcm',
-  'aes-256-gcm',
-  'chacha20-ietf-poly1305',
-]);
-
-const SS2022_METHODS: ReadonlySet<string> = new Set<Ss2022Method>([
-  '2022-blake3-aes-128-gcm',
-  '2022-blake3-aes-256-gcm',
-  '2022-blake3-chacha20-poly1305',
-]);
+const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>(SS_METHODS);
+const SS2022_METHOD_SET: ReadonlySet<string> = new Set<Ss2022Method>(SS2022_METHODS);
 
 export const parseProxyUri = (uri: string): ProxyConfig => {
   const url = new URL(uri);
@@ -134,7 +127,7 @@ const parseSs = (
   // split userinfo on the first ':' for us via username/password, and
   // percent-encoded any `=` padding on the way through).
   const username = decodeURIComponent(url.username);
-  if (SS2022_METHODS.has(username)) {
+  if (SS2022_METHOD_SET.has(username)) {
     return {
       kind: 'ss2022',
       method: username as Ss2022Method,
@@ -160,7 +153,7 @@ const parseSs = (
   const sep = decoded.indexOf(':');
   if (sep < 0) throw new ProxyUriError(`malformed ss userinfo: ${url.username}`);
   const method = decoded.slice(0, sep);
-  if (!SS_METHODS.has(method)) {
+  if (!SS_METHOD_SET.has(method)) {
     throw new ProxyUriError(`unknown ss method: ${method}`);
   }
   return {

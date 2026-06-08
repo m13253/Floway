@@ -1,19 +1,14 @@
-// @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
-// + a fetch-shaped orchestrator.
+// @floway-dev/proxy — proxy URI parsing, per-protocol byte-stream dialers,
+// and a `runProxiedRequest` orchestrator that composes dial → optional
+// userspace TLS → fetch-on-stream into a real Response.
 //
-// The dial layer is transport-only: `dial(config, target, options)` returns
-// a duplex byte stream that lands at `target.host:target.port`. Inner TLS
-// to the upstream and HTTP/1.1 framing live in @floway-dev/http; the
-// orchestrator `runProxiedRequest` composes the three for callers that
-// just want a Response.
-//
-// Most dialers stay runtime-agnostic by taking the raw TCP `socketDial`
-// primitive through DialOptions, so the same library runs on Workers
-// (`cloudflare:sockets`), Node (`node:net`), or any future target that
-// supplies a SocketDial impl. The one exception is `vless-ws`, which goes
-// through the runtime's global `fetch()` to perform the WebSocket upgrade —
-// only workerd's fetch returns a `webSocket` handle on the Response, so
-// that variant is workerd-only by construction.
+// `dial(config, target, options)` returns a duplex byte stream landing at
+// `target.host:target.port`; inner TLS and HTTP/1.1 framing live in
+// @floway-dev/http. Dialers stay runtime-agnostic by taking the raw TCP
+// `socketDial` primitive through DialOptions, so the same code runs on
+// Workers (`cloudflare:sockets`), Node (`node:net`), or any other target.
+// The one exception is `vless-ws`, which is workerd-only because only
+// workerd's fetch returns a `webSocket` handle on the upgrade Response.
 
 export type { DialTarget, ProxyRequestTarget, DialOptions, DialResult, SocketDial, SocketDialOptions, DialedSocket } from './types.ts';
 
@@ -33,6 +28,7 @@ export type {
   SsMethod,
   Ss2022Method,
 } from './proxy-config.ts';
+export { SS_METHODS, SS2022_METHODS } from './proxy-config.ts';
 
 export { ProxyDialError, ProxyUriError } from './errors.ts';
 

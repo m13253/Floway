@@ -46,18 +46,26 @@ export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
 };
 
 /**
- * Parse a hex string into bytes. Throws on odd length; the caller is
- * responsible for validating the character set up front when the input is
- * untrusted, since `parseInt('zz', 16)` returns NaN and the byte slot is
- * then written as 0.
+ * Parse a hex string into bytes. Throws on odd length or any non-hex
+ * character — `parseInt('zz', 16)` returns NaN which would otherwise
+ * silently write the byte slot as 0 and let a typo through wire framing.
  */
 export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
   if (s.length % 2 !== 0) throw new Error(`hex: odd length ${s.length}`);
   const out = new Uint8Array(s.length / 2);
   for (let i = 0; i < out.byteLength; i++) {
-    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+    const hi = hexNibble(s.charCodeAt(i * 2));
+    const lo = hexNibble(s.charCodeAt(i * 2 + 1));
+    out[i] = (hi << 4) | lo;
   }
   return out;
+};
+
+const hexNibble = (code: number): number => {
+  if (code >= 0x30 && code <= 0x39) return code - 0x30;       // '0'..'9'
+  if (code >= 0x61 && code <= 0x66) return code - 0x61 + 10;  // 'a'..'f'
+  if (code >= 0x41 && code <= 0x46) return code - 0x41 + 10;  // 'A'..'F'
+  throw new Error(`hex: non-hex character 0x${code.toString(16)}`);
 };
 
 /**

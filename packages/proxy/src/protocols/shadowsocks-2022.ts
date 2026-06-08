@@ -302,10 +302,7 @@ const nonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
 };
 
 const writeU64BE = (buf: Uint8Array, off: number, value: bigint): void => {
-  for (let i = 7; i >= 0; i--) {
-    buf[off + i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
+  new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setBigUint64(off, value, false);
 };
 
 const base64Decode = (s: string): Uint8Array<ArrayBuffer> => {

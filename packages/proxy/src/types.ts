@@ -12,6 +12,12 @@ export interface DialTarget {
   /**
    * TCP host the proxy should reach on our behalf. Can be a hostname (resolved
    * by the proxy's resolver) or a literal IPv4/IPv6 address.
+   *
+   * MUST be ASCII. Callers are responsible for punycoding IDN labels before
+   * the dial layer sees them — the wire format for every proxy protocol we
+   * support frames the hostname as length-prefixed bytes, and a raw UTF-8
+   * IDN would muddle Latin-1 / UTF-8 framing on the wire. Dialers reject
+   * non-ASCII hosts up-front with a typed dial error.
    */
   host: string;
   /** TCP port. */

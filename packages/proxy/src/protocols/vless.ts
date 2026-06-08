@@ -72,6 +72,18 @@ export const dialVlessWsTls = async (
   // Hoist port-range validation ahead of the WebSocket upgrade fetch so a
   // bad target port doesn't burn a connection slot.
   assertValidTargetPort(target.port, 'VLESS');
+  // The WS path relies on workerd's non-standard `fetch()` behavior of
+  // returning a `webSocket` handle on a 101 Response. Other runtimes
+  // (Node, browsers) follow the spec and emit either a thrown TypeError
+  // or a plain HTTP response, so the rest of this dialer is unreachable
+  // off workerd. Reject up front rather than fail deep inside the fetch
+  // with an opaque "response has no .webSocket" error.
+  if (typeof (globalThis as { WebSocketPair?: unknown }).WebSocketPair === 'undefined') {
+    throw new ProxyDialError(
+      'VLESS-WS requires a workerd-compatible runtime where fetch() returns a webSocket on the upgrade Response',
+      'config',
+    );
+  }
   const wsUrl = `https://${config.host}:${config.port}${config.path}`;
   let resp: Response;
   try {
