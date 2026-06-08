@@ -332,6 +332,24 @@ describe('dialHttpConnect — request authority forms', () => {
       await promise;
     }
   });
+
+  it('rejects an IDN host string before any I/O — caller must punycode first', async () => {
+    // RFC 9110 §5.4 requires Host to be a valid uri-host; Host is
+    // request-line-derived. The CONNECT request-line and Host header
+    // serialize as wire bytes and must be ASCII — straddling Latin-1
+    // and UTF-8 here would make the line ambiguous to upstream
+    // parsers. Reject up front and surface to the caller as a typed
+    // dial error so it can punycode before retrying.
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialHttpConnect(httpConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });
 
 describe('dialHttpConnect — response status code matrix', () => {
