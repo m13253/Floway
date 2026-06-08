@@ -37,9 +37,6 @@ import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider'
 
 const SEARCH_CONFIG_KEY = 'search_config';
 
-// Apply a list of prepared statements, using `db.batch` when available
-// (D1 ships it; SqlDatabase models it as optional) and falling back to a
-// sequential `run()` per statement otherwise. Empty input is a no-op.
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
   if (db.batch) return await db.batch(statements);
@@ -167,9 +164,8 @@ class SqlApiKeyRepo implements ApiKeyRepo {
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
 // Throws rather than returning null on bad data: a silent downgrade to Default
-// would grant the row broader access than the admin intended. Used by both
-// api_keys.upstream_ids and users.upstream_ids — `label` identifies the row
-// and column so a malformed value can be located in the database.
+// would grant the row broader access than the admin intended. `label` identifies
+// the row and column so a malformed value can be located in the database.
 const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
   let parsed: unknown;

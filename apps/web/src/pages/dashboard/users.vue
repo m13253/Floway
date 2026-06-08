@@ -1,15 +1,15 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
-import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
-import { useUpstreamOptionsStore as useUpstreamOptionsStoreForLoader } from '../../composables/useUpstreamOptions.ts';
+import { callApi, useApi } from '../../api/client.ts';
+import { useUpstreamOptionsStore } from '../../composables/useUpstreamOptions.ts';
 import type { WireUser } from '../../components/users/types.ts';
 
 export const useUsersPageData = defineBasicLoader(async () => {
-  const api = useApiForLoader();
+  const api = useApi();
   const [usersRes] = await Promise.all([
-    callApiForLoader<WireUser[]>(() => api.api.users.$get()),
-    useUpstreamOptionsStoreForLoader().load(),
+    callApi<WireUser[]>(() => api.api.users.$get()),
+    useUpstreamOptionsStore().load(),
   ]);
   return { users: usersRes.data ?? [], error: usersRes.error?.message ?? null };
 });
@@ -19,11 +19,9 @@ export const useUsersPageData = defineBasicLoader(async () => {
 import { Button } from '@floway-dev/ui';
 import { computed, ref } from 'vue';
 
-import { callApi, useApi } from '../../api/client.ts';
 import PasswordDialog from '../../components/users/PasswordDialog.vue';
 import UserDialog from '../../components/users/UserDialog.vue';
 import UsersTable from '../../components/users/UsersTable.vue';
-import { useUpstreamOptionsStore } from '../../composables/useUpstreamOptions.ts';
 import { type AuthUser, useAuthStore } from '../../stores/auth.ts';
 
 definePage({ meta: { requiresAdmin: true } });

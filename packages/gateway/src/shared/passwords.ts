@@ -20,11 +20,8 @@ const fromBase64 = (b64: string): Uint8Array => {
 
 const deriveBits = async (plaintext: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> => {
   const key = await crypto.subtle.importKey('raw', utf8.encode(plaintext), 'PBKDF2', false, ['deriveBits']);
-  // The TS lib types model `Uint8Array<ArrayBufferLike>` as not assignable to
-  // BufferSource because the buffer could in theory be a SharedArrayBuffer.
-  // Both call sites here wrap freshly-allocated typed arrays whose underlying
-  // buffer is a plain ArrayBuffer; copying through a fresh ArrayBuffer keeps
-  // the runtime behavior identical and satisfies the typing.
+  // TS lib types reject `Uint8Array<ArrayBufferLike>` as `BufferSource` because the
+  // backing buffer could be a SharedArrayBuffer; copy through a fresh ArrayBuffer.
   const saltBuffer = new Uint8Array(salt).buffer;
   const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltBuffer, iterations }, key, HASH_BITS);
   return new Uint8Array(bits);

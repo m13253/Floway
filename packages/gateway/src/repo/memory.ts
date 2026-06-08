@@ -1,5 +1,3 @@
-// In-memory repository implementation for testing
-
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';

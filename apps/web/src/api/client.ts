@@ -52,7 +52,14 @@ export const callApi = async <T>(
     } catch {
       // Non-JSON error bodies (e.g. upstream HTML errors) — leave body undefined.
     }
-    const message = extractErrorMessage(body, response.status);
+    let message = `HTTP ${response.status}`;
+    if (body && typeof body === 'object') {
+      const obj = body as Record<string, unknown>;
+      if (typeof obj.error === 'string') message = obj.error;
+      else if (obj.error && typeof obj.error === 'object' && typeof (obj.error as Record<string, unknown>).message === 'string') {
+        message = (obj.error as { message: string }).message;
+      }
+    }
     return { error: { status: response.status, message, raw: body } };
   }
 
@@ -63,15 +70,4 @@ export const callApi = async <T>(
     return { error: { status: response.status, message: e instanceof Error ? e.message : 'Invalid JSON response' } };
   }
   return { data };
-};
-
-const extractErrorMessage = (body: unknown, status: number): string => {
-  if (body && typeof body === 'object') {
-    const obj = body as Record<string, unknown>;
-    if (typeof obj.error === 'string') return obj.error;
-    if (obj.error && typeof obj.error === 'object' && typeof (obj.error as Record<string, unknown>).message === 'string') {
-      return (obj.error as { message: string }).message;
-    }
-  }
-  return `HTTP ${status}`;
 };
