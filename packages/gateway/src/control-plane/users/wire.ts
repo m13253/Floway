@@ -18,5 +18,4 @@ export const userToRawWire = (user: User) => ({
   upstreamIds: user.upstreamIds,
   canViewGlobalTelemetry: user.canViewGlobalTelemetry,
   createdAt: user.createdAt,
-  deletedAt: user.deletedAt,
 });

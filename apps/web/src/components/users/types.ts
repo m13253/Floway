@@ -5,5 +5,4 @@ export interface WireUser {
   upstreamIds: string[] | null;
   canViewGlobalTelemetry: boolean;
   createdAt: string;
-  deletedAt: string | null;
 }

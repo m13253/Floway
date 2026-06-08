@@ -153,7 +153,8 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
   const repo = getRepo();
 
   const user = await repo.users.getById(userId);
-  if (!user?.passwordHash) return c.json({ error: 'Current password is incorrect' }, 401);
+  if (!user) throw new Error(`userId ${userId} in context but user row missing`);
+  if (user.passwordHash === null) return c.json({ error: 'Current password is incorrect' }, 401);
   if (!(await verifyPassword(currentPassword, user.passwordHash))) {
     return c.json({ error: 'Current password is incorrect' }, 401);
   }

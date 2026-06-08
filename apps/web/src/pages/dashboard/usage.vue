@@ -151,10 +151,7 @@ const tokenRange = ref<Range>('today');
 const loadedTokenRange = ref<Range>('today');
 const tokenChartMetric = ref<Metric>('total');
 const redactKeys = ref(false);
-// `view` controls whether the page aggregates per-key (the user's own keys) or
-// per-user (everyone's, for admins and grant-holders). The picker UI is hidden
-// when the actor lacks `canViewGlobalTelemetry`; the value is then pinned to
-// `self-by-key` so the gateway returns the actor's slice.
+// `view` is forced to 'self-by-key' for actors without canViewGlobalTelemetry; the gateway then returns the actor's slice.
 const view = ref<UsageView>(initialUsageData.data.value.view);
 const data = ref<UsageResponse | null>(initialUsageData.data.value.usage);
 const searchData = ref<SearchUsageResponse | null>(initialUsageData.data.value.search);

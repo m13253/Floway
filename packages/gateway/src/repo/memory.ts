@@ -214,7 +214,7 @@ interface UsageBucketState extends UsageBucketIdentity {
 class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
-  private key(r: { keyId: string; model: string; upstream: string | null; modelKey: string; hour: string }): string {
+  private key(r: UsageBucketIdentity): string {
     return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour].join('\0');
   }
 

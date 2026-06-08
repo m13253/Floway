@@ -5,9 +5,9 @@ import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../ap
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
 import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
-export type PerformanceView = 'all-by-user' | 'self-by-key';
+type PerformanceView = 'all-by-user' | 'self-by-key';
 
-export interface PerformanceDisplayRecord {
+interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
   requests: number;
@@ -19,7 +19,7 @@ export interface PerformanceDisplayRecord {
   p99Ms: number | null;
 }
 
-export interface PerformanceOverviewResponse {
+interface PerformanceOverviewResponse {
   series: PerformanceDisplayRecord[];
   summaryRows: PerformanceDisplayRecord[];
   modelRows: PerformanceDisplayRecord[];
