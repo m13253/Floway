@@ -4,12 +4,10 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { useProxiesStore as useProxiesStoreForLoader } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../../composables/useUpstreams.ts';
 
-// The loader's job is to ensure the stores are populated before the page
-// mounts; it does NOT freeze a record reference. The page reads the live
-// row out of the store via a `computed`, so server-side state changes
-// (admin reset, sibling test, etc.) propagate into props.record on the
-// next store reload — which is what the override-clearing watcher in
-// ProxyEditPage relies on to drop a stale local Test result.
+// The loader populates the proxies and upstreams stores before the page
+// mounts. The page reads the live row out of the store via a `computed`,
+// so server-side state changes (admin reset, sibling test, etc.)
+// propagate into props.record on the next store reload.
 export const useEditProxyData = defineBasicLoader('/dashboard/proxies/[id]', async () => {
   const proxiesStore = useProxiesStoreForLoader();
   await Promise.all([

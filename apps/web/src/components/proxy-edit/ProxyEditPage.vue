@@ -23,6 +23,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
 import ProxyConfigForm from './ProxyConfigForm.vue';
+import { FORM_KIND_LABELS, formKindOf } from './proxy-form-defaults.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
@@ -58,11 +59,11 @@ const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false;
   }
 };
 
-// Canonical form-side state. Seeded from the initial URL so the form
-// shows the parsed shape on mount; null while the URL is empty or
-// unparseable. The form panel's v-if drives off this — when null, the
-// panel falls back to the last good config but visually dims via the
-// `urlError` prop.
+// Canonical form-side state. Seeded from the initial URL on mount.
+// Cleared to null only when the URL field is empty (panel hides via
+// v-if). When the URL becomes unparseable mid-edit, we keep the last
+// good config so the form does not reset under the operator and dim it
+// via the urlError prop instead.
 const initialParse = tryParse(url.value);
 const config = ref<ProxyConfig | null>(initialParse && initialParse.ok ? initialParse.config : null);
 const urlError = ref<string | null>(initialParse && !initialParse.ok ? initialParse.error : null);
@@ -130,24 +131,10 @@ const testError = ref<string | null>(null);
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
 
-const KIND_LABELS: Record<ProxyConfig['kind'], string> = {
-  'http': 'HTTP',
-  'socks5': 'SOCKS5',
-  'ss': 'Shadowsocks',
-  'ss2022': 'Shadowsocks 2022',
-  'trojan': 'Trojan',
-  'vless-tcp': 'VLESS / TLS',
-  'vless-ws': 'VLESS / WebSocket',
-  'reality': 'VLESS / REALITY',
-};
-
 const parseLabel = computed(() => {
   const c = config.value;
   if (!c || urlError.value) return '';
-  // HTTP variant carries a TLS bit rather than a separate kind; surface it
-  // in the label so an operator can tell https-CONNECT from plain http.
-  const kindLabel = c.kind === 'http' && c.tls ? 'HTTPS' : KIND_LABELS[c.kind];
-  return `${kindLabel} · ${c.host}:${c.port}`;
+  return `${FORM_KIND_LABELS[formKindOf(c)]} · ${c.host}:${c.port}`;
 });
 
 const backoffsForProxy = computed<BackoffRow[]>(() => {
@@ -249,17 +236,12 @@ const test = async () => {
     );
     if (error) { testError.value = error.message; return; }
     if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
-    // The test endpoint persists the egress IP and last_tested_at into the
-    // proxy row; emitting `saved` triggers the parent's store reload, which
-    // surfaces the new test result through `props.record`. No local mirror
-    // is needed — and avoiding one closes a stale-cache hazard where a
-    // local override would outlive a subsequent URL edit.
+    // The test endpoint persists egress_ip and last_tested_at into the
+    // proxy row; emitting `saved` triggers the parent store reload, which
+    // surfaces the new test result through props.record.
     emit('saved');
   } finally {
-    // The Test request is no longer in flight — Save unblocks immediately.
     testing.value = false;
-    // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
-    // This blocks the Test button alone (Save ignores it).
     testCoolingDown.value = true;
     startTestCooldown();
   }
