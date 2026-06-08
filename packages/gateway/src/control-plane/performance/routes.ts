@@ -5,10 +5,7 @@
 //   `group_by=userId` is rejected — every row already belongs to the actor.
 // - `all-by-user` aggregates across every row (callers must have
 //   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
-//   another user's key id into a global response. Under all-by-user the
-//   /overview series swaps from per-model to per-user grouping so the
-//   dashboard renders one line per user — the model and runtime tables stay
-//   grouped by their respective dimensions.
+//   another user's key id into a global response.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';

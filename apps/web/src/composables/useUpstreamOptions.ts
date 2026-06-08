@@ -30,7 +30,7 @@ export const useUpstreamOptionsStore = () => {
       error.value = err.message;
       return;
     }
-    options.value = data ?? [];
+    options.value = data;
   };
 
   return { options, loading, error, load };

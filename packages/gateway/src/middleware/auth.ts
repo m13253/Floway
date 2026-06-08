@@ -1,12 +1,11 @@
 import type { Context, Next } from 'hono';
 
 import { getRepo } from '../repo/index.ts';
+import type { User } from '../repo/types.ts';
 import { getEnv } from '@floway-dev/platform';
 
-// `/` and `/dashboard` are served by Workers Static Assets (apps/web/dist)
-// before reaching the Worker. `/favicon.ico` is reserved for a future static
-// favicon at apps/web/src/favicon.ico; until that file lands and is copied into
-// dist/, the Worker handles it as a public 204 (see control-plane/routes.ts).
+// Workers Static Assets serves `/` and `/dashboard` before the Worker runs.
+// `/favicon.ico` is a Worker-served public 204 (see control-plane/routes.ts).
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
@@ -53,10 +52,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
   await next();
 };
 
-const setUserContext = (
-  c: Context,
-  user: { id: number; isAdmin: boolean; upstreamIds: string[] | null; canViewGlobalTelemetry: boolean },
-) => {
+const setUserContext = (c: Context, user: User) => {
   c.set('userId', user.id);
   c.set('isAdmin', user.isAdmin);
   c.set('userUpstreamIds', user.upstreamIds);

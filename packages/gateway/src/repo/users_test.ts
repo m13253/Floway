@@ -56,11 +56,6 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(await repo.users.softDelete(2)).toBe(false);
   });
 
-  test('softDelete of user 1 is forbidden', async () => {
-    const repo = await makeRepo();
-    await expect(repo.users.softDelete(1)).rejects.toThrow();
-  });
-
   test('deleted username can be reused by a new user (partial unique index)', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));

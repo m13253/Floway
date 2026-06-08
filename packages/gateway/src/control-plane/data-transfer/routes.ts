@@ -536,8 +536,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // v4 replace mode wipes the users table before re-inserting, so a payload
     // that omits user 1 would leave the deployment with no seed admin and
     // brick the ADMIN_KEY backdoor. v4 export always includes user 1
-    // (migration 0028 guarantees its existence and softDelete refuses to
-    // delete it), so a missing entry here is operator pilot error.
+    // (migration 0028 guarantees its existence and DELETE /api/users/1 is
+    // refused at the control plane), so a missing entry here is operator
+    // pilot error.
     if (!users.some(u => u.id === 1)) {
       return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
     }

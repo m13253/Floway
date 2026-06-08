@@ -26,7 +26,7 @@ import ModelInfoBar from '../../components/models/ModelInfoBar.vue';
 const initialData = useModelsPageData();
 const { models, error: modelsError } = useModelsStore();
 
-// Drop reactivity: this page never reloads the loader's keys.
+// Reactivity is intentionally dropped: the loader never refetches keys here.
 const keys = initialData.data.value.keys;
 
 const modelsSearch = ref('');
@@ -43,8 +43,6 @@ const filteredChatModels = computed(() => {
 const chatModelInfo = computed<ControlPlaneModel | undefined>(
   () => (models.value ?? []).find(m => m.id === chatModelId.value),
 );
-
-const selectChatModel = (id: string) => { chatModelId.value = id; };
 
 if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filteredChatModels.value[0].id;
 
@@ -103,7 +101,7 @@ const banner = computed(() => modelsError.value ?? initialData.data.value.keysEr
                   : 'text-gray-400 hover:bg-white/[0.03] hover:text-gray-200 border-l-transparent',
                 i < filteredChatModels.length - 1 ? 'border-b border-white/[0.03]' : '',
               ]"
-              @click="selectChatModel(m.id)"
+              @click="chatModelId = m.id"
             >
               <div class="text-[13px] truncate" :class="chatModelId === m.id ? 'text-white' : 'text-gray-300'">
                 {{ m.display_name ?? m.id }}

@@ -51,7 +51,7 @@ const passwordTarget = ref<WireUser | null>(null);
 const reload = async () => {
   const { data, error: err } = await callApi<WireUser[]>(() => api.api.users.$get());
   if (err) { error.value = err.message; return; }
-  users.value = data ?? [];
+  users.value = data;
   error.value = null;
 };
 
@@ -79,8 +79,9 @@ const onUserSaved = async (savedId: number) => {
   // (e.g. the per-key UpstreamPicker filter) would stay stale until the next
   // login. Pull /auth/me to keep the local identity in sync.
   if (savedId === actorUserId.value) {
-    const { data } = await callApi<{ user: AuthUser }>(() => api.auth.me.$get());
-    if (data) auth.setUser(data.user);
+    const { data, error: err } = await callApi<{ user: AuthUser }>(() => api.auth.me.$get());
+    if (err) { error.value = err.message; return; }
+    auth.setUser(data.user);
   }
 };
 

@@ -179,18 +179,16 @@ const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | nul
   return parsed as string[];
 };
 
-function toApiKey(row: ApiKeyRow): ApiKey {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    key: row.key,
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at ?? undefined,
-    upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `api_keys.id=${row.id}`),
-    deletedAt: row.deleted_at,
-  };
-}
+const toApiKey = (row: ApiKeyRow): ApiKey => ({
+  id: row.id,
+  userId: row.user_id,
+  name: row.name,
+  key: row.key,
+  createdAt: row.created_at,
+  lastUsedAt: row.last_used_at ?? undefined,
+  upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `api_keys.id=${row.id}`),
+  deletedAt: row.deleted_at,
+});
 
 interface UserRow {
   id: number;
@@ -284,7 +282,6 @@ class SqlUsersRepo implements UsersRepo {
   }
 
   async softDelete(id: number): Promise<boolean> {
-    if (id === 1) throw new Error('user 1 cannot be deleted');
     const result = await this.db
       .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), id)
@@ -791,34 +788,29 @@ interface PerformanceBucketRow extends PerformanceDimensionRow {
   count: number;
 }
 
-function performanceDimensionsFromRow(row: PerformanceDimensionRow): PerformanceDimensions {
-  return {
-    hour: row.hour,
-    metricScope: row.metric_scope as PerformanceMetricScope,
-    keyId: row.key_id,
-    model: row.model,
-    upstream: row.upstream ?? null,
-    modelKey: row.model_key,
-    sourceApi: row.source_api as PerformanceTelemetryRecord['sourceApi'],
-    targetApi: row.target_api as PerformanceTelemetryRecord['targetApi'],
-    stream: row.stream === 1,
-    runtimeLocation: row.runtime_location,
-  };
-}
+const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
+  hour: row.hour,
+  metricScope: row.metric_scope as PerformanceMetricScope,
+  keyId: row.key_id,
+  model: row.model,
+  upstream: row.upstream ?? null,
+  modelKey: row.model_key,
+  sourceApi: row.source_api as PerformanceTelemetryRecord['sourceApi'],
+  targetApi: row.target_api as PerformanceTelemetryRecord['targetApi'],
+  stream: row.stream === 1,
+  runtimeLocation: row.runtime_location,
+});
 
-function performanceRecordKey(record: PerformanceDimensions): string {
-  return [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? '1' : '0', record.runtimeLocation].join(
+const performanceRecordKey = (record: PerformanceDimensions): string =>
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? '1' : '0', record.runtimeLocation].join(
     '\0',
   );
-}
 
-function performanceDimensionBinds(record: PerformanceDimensions): unknown[] {
-  return [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? 1 : 0, record.runtimeLocation];
-}
+const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? 1 : 0, record.runtimeLocation];
 
-function comparePerformanceTelemetryRecords(a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number {
-  return (
-    a.hour.localeCompare(b.hour) ||
+const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
+  a.hour.localeCompare(b.hour) ||
     a.metricScope.localeCompare(b.metricScope) ||
     a.keyId.localeCompare(b.keyId) ||
     a.model.localeCompare(b.model) ||
@@ -827,11 +819,9 @@ function comparePerformanceTelemetryRecords(a: PerformanceTelemetryRecord, b: Pe
     a.sourceApi.localeCompare(b.sourceApi) ||
     a.targetApi.localeCompare(b.targetApi) ||
     Number(a.stream) - Number(b.stream) ||
-    a.runtimeLocation.localeCompare(b.runtimeLocation)
-  );
-}
+    a.runtimeLocation.localeCompare(b.runtimeLocation);
 
-function toSearchUsageRecord(row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord {
+const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
     throw new TypeError(`Invalid search usage action: ${row.action}`);
   }
@@ -842,7 +832,7 @@ function toSearchUsageRecord(row: { provider: string; key_id: string; action: st
     hour: row.hour,
     requests: row.requests,
   };
-}
+};
 
 class SqlCacheRepo implements CacheRepo {
   constructor(private db: SqlDatabase) {}
@@ -915,12 +905,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      // One INSERT per `(id, api_key_id)`. Stream pipelines call insertMany
-      // exactly once per stored id at the carrier's finalizing frame; the
-      // wrap's idMapper memoizes so reattempts within one stream are
-      // impossible. Cross-session collisions of the random body are
-      // effectively impossible (~2^-128) and treated as no-op if they ever
-      // happen.
+      // ON CONFLICT DO NOTHING handles cross-session collisions of the random
+      // body id (~2^-128, effectively impossible) as a silent no-op.
       return this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

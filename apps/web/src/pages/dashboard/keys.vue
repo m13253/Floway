@@ -57,7 +57,7 @@ const loadAll = async () => {
     error.value = keysRes.error.message;
     return;
   }
-  keys.value = keysRes.data ?? [];
+  keys.value = keysRes.data;
 };
 
 const create = async () => {

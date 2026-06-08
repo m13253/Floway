@@ -52,6 +52,8 @@ interface LoaderSearchUsageByUserResponse {
 
 // The page normalizes the by-user payload into the by-key shape so the chart
 // and summary code can stay shape-agnostic.
+type UsageView = 'all-by-user' | 'self-by-key';
+
 const userBucketId = (userId: number): string => `user-${userId}`;
 const usersAsKeys = (users: ReadonlyArray<{ id: number; username: string }>) =>
   users.map(u => ({ id: userBucketId(u.id), name: u.username, createdAt: '' }));
@@ -63,7 +65,7 @@ const userSearchRecordsAsKeyShape = (records: LoaderSearchUsageByUserResponse['r
 export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApiForLoader();
   const auth = useAuthStoreForLoader();
-  const view: 'all-by-user' | 'self-by-key' = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const view: UsageView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end } = dashboardRangeQueryForLoader('today');
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
@@ -153,7 +155,7 @@ const redactKeys = ref(false);
 // per-user (everyone's, for admins and grant-holders). The picker UI is hidden
 // when the actor lacks `canViewGlobalTelemetry`; the value is then pinned to
 // `self-by-key` so the gateway returns the actor's slice.
-const view = ref<'all-by-user' | 'self-by-key'>(initialUsageData.data.value.view);
+const view = ref<UsageView>(initialUsageData.data.value.view);
 const data = ref<UsageResponse | null>(initialUsageData.data.value.usage);
 const searchData = ref<SearchUsageResponse | null>(initialUsageData.data.value.search);
 const tokenLoading = ref(false);

@@ -71,7 +71,6 @@ class MemoryUsersRepo implements UsersRepo {
   }
 
   async softDelete(id: number): Promise<boolean> {
-    if (id === 1) throw new Error('user 1 cannot be deleted');
     const i = this.users.findIndex(u => u.id === id && u.deletedAt === null);
     if (i < 0) return false;
     this.users[i] = { ...this.users[i], deletedAt: new Date().toISOString() };
