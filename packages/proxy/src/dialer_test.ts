@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { dial } from './dialer.ts';
+import { dial, runProxiedRequest } from './dialer.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from './types.ts';
 
@@ -114,5 +114,40 @@ describe('dial deadline', () => {
     await expect(
       dial(config, target, { ...baseOptions(), signal: ac.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('runProxiedRequest — post-dial teardown', () => {
+  it('cancels the dialed readable when the inner-TLS step throws past the dial', async () => {
+    // Track every cancel attempt directly on the readable so the assertion
+    // doesn't depend on cancel-hook semantics (the hook doesn't fire once
+    // the underlying source is already done/errored, which userspaceTls's
+    // pump leaves the EOFed source in by the time the catch runs).
+    let cancelCalls = 0;
+    let lastCancelReason: unknown = undefined;
+    const { dialSocks5 } = await import('./protocols/socks5.ts');
+    vi.mocked(dialSocks5).mockImplementationOnce(async () => {
+      const inner = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
+      const readable = new Proxy(inner, {
+        get(t, prop, recv) {
+          if (prop === 'cancel') {
+            return (reason: unknown) => {
+              cancelCalls++;
+              lastCancelReason = reason;
+              return Reflect.get(t, prop, recv).call(t, reason);
+            };
+          }
+          return Reflect.get(t, prop, recv);
+        },
+      });
+      const writable = new WritableStream<Uint8Array>();
+      return { readable, writable };
+    });
+    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
+    await expect(
+      runProxiedRequest(config, target, { method: 'GET', path: '/', headers: {} }, baseOptions()),
+    ).rejects.toBeInstanceOf(Error);
+    expect(cancelCalls).toBeGreaterThan(0);
+    expect((lastCancelReason as Error)?.message ?? '').toMatch(/.+/);
   });
 });
