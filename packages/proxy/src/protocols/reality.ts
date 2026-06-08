@@ -63,7 +63,7 @@ export const dialReality = async (
   try {
     serverPub = base64UrlDecode(config.publicKey);
   } catch (cause) {
-    throw new ProxyDialError(`REALITY: invalid base64 in pbk`, 'tcp-connect', { cause });
+    throw new ProxyDialError('REALITY: invalid base64 in pbk', 'tcp-connect', { cause });
   }
   if (serverPub.byteLength !== 32) {
     throw new ProxyDialError(
@@ -75,7 +75,7 @@ export const dialReality = async (
   try {
     shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
   } catch (cause) {
-    throw new ProxyDialError(`REALITY: invalid hex in sid`, 'tcp-connect', { cause });
+    throw new ProxyDialError('REALITY: invalid hex in sid', 'tcp-connect', { cause });
   }
   if (shortId.byteLength !== 8) {
     throw new ProxyDialError(
