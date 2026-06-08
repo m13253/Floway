@@ -53,17 +53,30 @@ export const dialReality = async (
 ): Promise<DialResult> => {
   ensureCrypto();
   const ver = DEFAULT_XRAY_VERSION;
-  const serverPub = base64UrlDecode(config.publicKey);
   // Wire-shape config checks raise typed dial errors so a single malformed
   // REALITY entry doesn't escape ProxyDialError handling and kill the whole
-  // fallback chain — the next entry is allowed to try.
+  // fallback chain — the next entry is allowed to try. The decoders also
+  // throw for unparseable inputs (atob on bad base64, hexDecode on odd
+  // length) — wrap those at the same layer so a parser blow-up reaches the
+  // fallback chain as a dial error rather than a generic Error.
+  let serverPub: Uint8Array<ArrayBuffer>;
+  try {
+    serverPub = base64UrlDecode(config.publicKey);
+  } catch (cause) {
+    throw new ProxyDialError(`REALITY: invalid base64 in pbk`, 'tcp-connect', { cause });
+  }
   if (serverPub.byteLength !== 32) {
     throw new ProxyDialError(
       `REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`,
       'tcp-connect',
     );
   }
-  const shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
+  let shortId: Uint8Array<ArrayBuffer>;
+  try {
+    shortId = hexDecode(config.shortId ?? DEFAULT_SHORT_ID_HEX);
+  } catch (cause) {
+    throw new ProxyDialError(`REALITY: invalid hex in sid`, 'tcp-connect', { cause });
+  }
   if (shortId.byteLength !== 8) {
     throw new ProxyDialError(
       `REALITY: shortId must be 8 bytes, got ${shortId.byteLength}`,

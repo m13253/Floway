@@ -282,7 +282,7 @@ const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   const enc = new TextEncoder();
   const dom = enc.encode(host);
-  if (dom.byteLength > 255) throw new Error('SS: address too long');
+  if (dom.byteLength > 255) throw new ProxyDialError('SS: address too long', 'proxy-handshake');
   const out = new Uint8Array(1 + 1 + dom.byteLength + 2);
   out[0] = 0x03;
   out[1] = dom.byteLength;

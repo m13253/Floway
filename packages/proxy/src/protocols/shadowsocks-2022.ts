@@ -41,7 +41,18 @@ export const dialShadowsocks2022 = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   const keyLen = KEY_LEN_2022[config.method];
-  const psk = base64Decode(config.passwordBase64);
+  // Wire-shape config checks raise typed dial errors so a single misconfigured
+  // proxy entry doesn't escape ProxyDialError handling and kill the whole
+  // fallback chain — the next entry is allowed to try. The decoder also
+  // throws on unparseable input (atob on bad base64); wrap that at the same
+  // layer so a parse blow-up reaches the fallback chain as a dial error
+  // rather than a generic Error.
+  let psk: Uint8Array<ArrayBuffer>;
+  try {
+    psk = base64Decode(config.passwordBase64);
+  } catch (cause) {
+    throw new ProxyDialError('SS2022: invalid base64 in PSK', 'tcp-connect', { cause });
+  }
   // PSK byte-length is part of the SIP022 wire contract: a key shorter or
   // longer than the cipher demands derives a wrong subkey and the very first
   // record fails AEAD auth. Tag as a typed dial error so a single misconfigured
@@ -260,6 +271,11 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
 export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   const enc = new TextEncoder();
   const dom = enc.encode(host);
+  // ATYP=0x03 encodes the domain length in a single byte; a hostname over
+  // 255 bytes can't be addressed in this header. Throw a typed dial error
+  // so the fallback chain advances rather than silently truncating the
+  // length byte and corrupting the wire format.
+  if (dom.byteLength > 255) throw new ProxyDialError('SS2022: hostname too long', 'proxy-handshake');
   const padLen = 16;
   const pad = randomBytes(padLen);
   const out = new Uint8Array(1 + 1 + dom.byteLength + 2 + 2 + padLen);
