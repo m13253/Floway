@@ -19,7 +19,7 @@ import { concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
-import { assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
@@ -43,9 +43,10 @@ export const dialShadowsocks2022 = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Hoist port-range validation ahead of socketDial.connect so a bad
-  // target port doesn't burn a TCP slot to the proxy server.
+  // Validate the target shape ahead of socketDial.connect so a bad
+  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'SS2022');
+  assertValidTargetHost(target.host, 'SS2022');
   const keyLen = KEY_LEN_2022[config.method];
   // Pre-dial config validation runs at stage 'config' so a single misconfigured
   // proxy entry doesn't burn a TCP slot and so the gateway's fallback chain

@@ -25,7 +25,7 @@ import { asciiBytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts'
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
-import { assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
@@ -43,9 +43,10 @@ export const dialShadowsocks = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Hoist port-range validation ahead of socketDial.connect so a bad
-  // target port doesn't burn a TCP slot to the proxy server.
+  // Validate the target shape ahead of socketDial.connect so a bad
+  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'SS');
+  assertValidTargetHost(target.host, 'SS');
   const keyLen = METHOD_KEY_LEN[config.method];
 
   let socket: DialedSocket;

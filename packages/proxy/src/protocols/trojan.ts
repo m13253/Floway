@@ -20,7 +20,7 @@ import { sha224 } from '@noble/hashes/sha2.js';
 import { encodeAtypAddress } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { userspaceTls, type TlsStream } from '@floway-dev/http';
 
@@ -29,9 +29,10 @@ export const dialTrojan = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
-  // Hoist port-range validation ahead of socketDial.connect so a bad
-  // target port doesn't burn a TCP slot to the proxy server.
+  // Validate the target shape ahead of socketDial.connect so a bad
+  // port or non-ASCII host doesn't burn a TCP slot to the proxy server.
   assertValidTargetPort(target.port, 'Trojan');
+  assertValidTargetHost(target.host, 'Trojan');
   // Plain TCP to Trojan server; outer TLS done in userspace.
   let socket: DialedSocket;
   try {

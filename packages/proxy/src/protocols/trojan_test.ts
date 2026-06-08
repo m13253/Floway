@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildTrojanRequestHeader } from './trojan.ts';
+import { buildTrojanRequestHeader, dialTrojan } from './trojan.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
+import type { TrojanProxyConfig } from '../proxy-config.ts';
 
 const target443: DialTarget = { host: 'api.openai.com', port: 443 };
+
+const trojanConfig = (overrides: Partial<TrojanProxyConfig> = {}): TrojanProxyConfig => ({
+  kind: 'trojan',
+  host: 'proxy.example',
+  port: 443,
+  password: 'password',
+  name: 'trojan-test',
+  ...overrides,
+});
 
 const PASSWORD = 'password';
 // Reference: trojan-go/tunnel/trojan/server_test.go uses
@@ -210,5 +221,31 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
     const header = buildTrojanRequestHeader('p', target443);
     // 56 + 2 + 1 + 1 + 1 + 14 + 2 + 2 = 79
     expect(header.byteLength).toBe(79);
+  });
+});
+
+describe('dialTrojan — pre-dial target validation', () => {
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialTrojan(trojanConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialTrojan(trojanConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
   });
 });

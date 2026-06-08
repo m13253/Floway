@@ -7,7 +7,7 @@
 import { concat, copy, encodeAtypAddress } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 export const dialSocks5 = async (
@@ -16,6 +16,7 @@ export const dialSocks5 = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'SOCKS5');
+  assertValidTargetHost(target.host, 'SOCKS5');
 
   const auth = config.username !== undefined
     ? { username: config.username, password: config.password ?? '' }

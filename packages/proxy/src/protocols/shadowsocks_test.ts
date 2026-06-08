@@ -463,6 +463,18 @@ describe('dialShadowsocks — pre-handshake plumbing', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
+
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialShadowsocks(config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });
 
 const nonce = (counter: number): Uint8Array => {

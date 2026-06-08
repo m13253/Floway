@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
+import { dialVlessTcpTls } from './vless.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
+import type { VlessTcpTlsProxyConfig } from '../proxy-config.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
 const UUID = 'b831381d-6324-4d53-ad4f-8cda48b30811';
+
+const vlessTcpConfig = (overrides: Partial<VlessTcpTlsProxyConfig> = {}): VlessTcpTlsProxyConfig => ({
+  kind: 'vless-tcp',
+  host: 'proxy.example',
+  port: 443,
+  uuid: UUID,
+  name: 'vless-test',
+  ...overrides,
+});
 // Spec example UUID, parsed in big-endian byte order:
 const UUID_BYTES = [
   0xb8, 0x31, 0x38, 0x1d,
@@ -420,5 +432,31 @@ describe('vlessFrameOverStream — fixed UUID byte order vector', () => {
       0xad, 0x4f,
       0x8c, 0xda, 0x48, 0xb3, 0x08, 0x11,
     ]);
+  });
+});
+
+describe('dialVlessTcpTls — pre-dial target validation', () => {
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialVlessTcpTls(vlessTcpConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialVlessTcpTls(vlessTcpConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
   });
 });

@@ -563,3 +563,29 @@ describe('dialSocks5 — pre-handshake EOF / mid-flow errors', () => {
     });
   });
 });
+
+describe('dialSocks5 — pre-dial target validation', () => {
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialSocks5(socks5Config(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialSocks5(socks5Config(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('ASCII'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+});

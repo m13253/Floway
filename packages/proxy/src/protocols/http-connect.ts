@@ -12,7 +12,7 @@
 import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 export const dialHttpConnect = async (
@@ -23,18 +23,11 @@ export const dialHttpConnect = async (
   assertValidTargetPort(target.port, 'CONNECT');
   // The CONNECT request-line and the Host header both serialize the
   // target host as wire bytes. RFC 9110 §5.4 + §3.4 expect a valid
-  // ASCII uri-host; IDN labels must be punycoded by the caller before
-  // they reach this layer. Refuse non-ASCII outright so we don't
-  // straddle Latin-1 / UTF-8 framing on the wire and so we never burn a
-  // TCP connection on a request the proxy is guaranteed to reject.
-  for (let i = 0; i < target.host.length; i++) {
-    if (target.host.charCodeAt(i) > 0x7f) {
-      throw new ProxyDialError(
-        `CONNECT target host must be ASCII (punycode IDN before dial): ${target.host}`,
-        'config',
-      );
-    }
-  }
+  // ASCII uri-host; punycode IDN labels happen at the gateway layer
+  // before they reach this dialer. Reject up-front so we don't straddle
+  // Latin-1 / UTF-8 framing on the wire and so we never burn a TCP
+  // connection on a request the proxy is guaranteed to reject.
+  assertValidTargetHost(target.host, 'CONNECT');
 
   const auth = config.username !== undefined
     ? { username: config.username, password: config.password ?? '' }
