@@ -80,8 +80,7 @@ const dialTrojanInner = async (
  *   hex(SHA-224(password))[56] | CRLF | CMD=0x01 | ATYP | addr | port[BE] | CRLF
  *
  * ATYP follows the SOCKS5 numbering (0x01 IPv4 raw, 0x03 domain
- * length-prefixed, 0x04 IPv6 raw). Reference clients detect literal IPs
- * and send them as raw octets; only true hostnames take the domain path.
+ * length-prefixed, 0x04 IPv6 raw).
  *
  * Spec: https://trojan-gfw.github.io/trojan/protocol
  */

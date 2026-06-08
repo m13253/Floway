@@ -243,9 +243,7 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
 /**
  * Build the SS2022 variable header for a target. Exported for tests.
  *
- * Literal IPv4 / IPv6 targets are emitted with ATYP=0x01 / 0x04 and
- * the address octets — matching what Xray-core and sing-box send.
- * Domain hostnames use ATYP=0x03 (domain). Layout:
+ * Layout:
  *
  *   ATYP=0x01 | v4[4]    | port[BE] | padlen[BE u16] | pad | initial_payload
  *   ATYP=0x03 | dom_len  | dom      | port[BE] | padlen[BE u16] | pad | initial_payload

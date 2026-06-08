@@ -249,16 +249,8 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
 };
 
 /**
- * Build the SS-style request address: ATYP | addr | port[BE].
- *
- * Literal IPv4 / IPv6 targets go on the wire as ATYP=0x01 / 0x04 with
- * the address octets — matching what Xray-core and sing-box emit. Only
- * a non-literal host becomes ATYP=0x03 (domain). Sending a literal as
- * a domain string works against most SS servers (they reparse) but
- * needlessly forces a string-to-binary conversion on the far side and
- * doesn't match what reference clients do.
- *
- * Exported for tests.
+ * Build the SS-style request address: ATYP | addr | port[BE]. Exported
+ * for tests.
  */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS');

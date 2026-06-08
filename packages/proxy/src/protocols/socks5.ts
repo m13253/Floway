@@ -92,11 +92,7 @@ const dialSocks5Inner = async (
     if (reply[1] !== 0x00) throw new ProxyDialError(`SOCKS5 auth failed status=${reply[1]}`, 'proxy-handshake');
   }
 
-  // 3. CONNECT request. Literal IPv4 / IPv6 targets are emitted as raw
-  //    octets (ATYP=0x01 / 0x04) so the SOCKS5 server doesn't have to
-  //    re-parse a string into an address — same shape Xray-core / sing-box
-  //    send for literal targets. Domain hostnames take the length-prefixed
-  //    ATYP=0x03 path.
+  // 3. CONNECT request.
   const req = buildSocks5ConnectRequest(target.host, target.port);
   await writer.write(req);
 

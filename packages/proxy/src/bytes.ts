@@ -212,9 +212,6 @@ export const encodeAtypAddress = (
   atyp: AtypBytes,
   protocolLabel: string,
 ): Uint8Array<ArrayBuffer> => {
-  // Strip the optional IPv6 brackets so callers can pass either
-  // `2001:db8::1` or `[2001:db8::1]`.
-  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
   const v4 = parseIpv4Literal(host);
   if (v4) {
     const out = new Uint8Array(1 + 4);
@@ -222,7 +219,7 @@ export const encodeAtypAddress = (
     out.set(v4, 1);
     return out;
   }
-  const v6 = parseIpv6Literal(unbracketed);
+  const v6 = parseIpv6Literal(host);
   if (v6) {
     const out = new Uint8Array(1 + 16);
     out[0] = atyp.v6;
