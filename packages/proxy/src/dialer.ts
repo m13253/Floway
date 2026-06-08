@@ -53,7 +53,14 @@ export const dial = async (
   const onCallerAbort = (): void => {
     internal.abort(callerSignal!.reason ?? new DOMException('aborted', 'AbortError'));
   };
-  if (callerSignal) callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+  if (callerSignal) {
+    callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+    // addEventListener('abort') on an already-aborted signal does not fire,
+    // so a caller signal that aborted between the pre-check above and the
+    // listener install would otherwise be lost. Re-check and propagate
+    // synchronously to close the TOCTOU window.
+    if (callerSignal.aborted) onCallerAbort();
+  }
   const timer = setTimeout(
     () => internal.abort(new ProxyDialError(`dial deadline exceeded after ${deadlineMs}ms`, 'tcp-connect')),
     deadlineMs,

@@ -93,6 +93,10 @@ export const dialVlessWsTls = async (
     const onAbort = (): void => { try { ws.close(1000, 'aborted'); } catch { /* WS already closed */ } };
     signal.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => signal.removeEventListener('abort', onAbort);
+    // addEventListener('abort') on an already-aborted signal does not fire,
+    // so an abort that landed during fetch() above would otherwise be lost.
+    // Drive onAbort synchronously to close that TOCTOU window.
+    if (signal.aborted) onAbort();
   }
 
   try {

@@ -274,6 +274,11 @@ export const userspaceTls = async (
     };
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => { captured.removeEventListener('abort', onAbort); };
+    // addEventListener('abort') on an already-aborted signal does not fire,
+    // so an abort that landed between the pre-check at the top of this
+    // function and this listener install would otherwise be lost. Drive
+    // onAbort synchronously to close that TOCTOU window.
+    if (captured.aborted) onAbort();
   }
 
   try {
