@@ -650,6 +650,34 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
     await promise;
     expect(decodeAscii(fake.written())).toContain('X-Test: !#$%&\'*+-.^_`|~\r\n');
   });
+
+  it('rejects every C0 control byte except HTAB (0x09) in a request header value (RFC 9110 §5.5 field-vchar)', async () => {
+    // VCHAR is %x21-7E; the only control byte field-content lets through
+    // is HTAB. The request validator covers the full C0 range — the
+    // response parser already enforces the same shape, so symmetry
+    // closes a smuggling-adjacent path on the request side.
+    for (let b = 0x01; b <= 0x1f; b++) {
+      if (b === 0x09) continue;
+      const err = await reqHeaderValue(`a${String.fromCharCode(b)}b`);
+      expect(err, `byte 0x${b.toString(16)}`).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+    }
+  });
+
+  it('accepts HTAB (0x09) inside a request header value (RFC 9110 §5.5 field-content)', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'GET',
+        path: '/',
+        headers: { Host: 'h', 'X-Test': 'a\tb' },
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('X-Test: a\tb\r\n');
+  });
 });
 
 describe('fetchOnStream — request-method handling', () => {

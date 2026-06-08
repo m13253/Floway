@@ -52,14 +52,17 @@ const validateRequestHeaderName = (name: string): void => {
 };
 
 const validateRequestHeaderValue = (name: string, value: string): void => {
-  // RFC 9110 §5.5: field-value = *( field-content / obs-text ). CR, LF,
-  // and NUL inside a value would either be a smuggling attempt (CR/LF
-  // injecting a fresh header line into the request) or a transport-level
-  // garbage byte. Reject DEL (0x7f) too — it's the lone CTL not covered
-  // by the obs-text range.
+  // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold;
+  // field-vchar = VCHAR / obs-text. The legal byte set inside a value is
+  // therefore HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text
+  // (0x80-0xFF). Anything else — NUL and the rest of the C0 control set
+  // (0x01-0x08, 0x0B-0x1F; CR/LF call out the smuggling shape directly)
+  // plus DEL (0x7F) — violates the grammar. The serialised `${k}: ${v}\r\n`
+  // line would otherwise carry a control byte onto the wire, smuggling a
+  // fresh header on CR/LF or rendering the value lossy on the others.
   for (let i = 0; i < value.length; i++) {
     const c = value.charCodeAt(i);
-    if (c === 0 || c === 0x0a || c === 0x0d || c === 0x7f) {
+    if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
       throw new HttpProtocolError(
         `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte`,
         'BAD_HEADERS',
