@@ -629,7 +629,7 @@ export const decodeChunked = (
           // unbounded, so cap to a 64-bit-ish chunk size before parsing.
           if (hex.length > 16) {
             controller.error(new HttpProtocolError(
-              `chunked: size line exceeds 64-bit chunk size`,
+              'chunked: size line exceeds 64-bit chunk size',
               'CHUNK_BAD_SIZE',
             ));
             return;
