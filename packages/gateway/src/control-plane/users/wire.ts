@@ -15,7 +15,7 @@ export const userToRawWire = (user: User) => ({
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
-  upstreamIds: user.upstreamIds,
   canViewGlobalTelemetry: user.canViewGlobalTelemetry,
+  upstreamIds: user.upstreamIds,
   createdAt: user.createdAt,
 });

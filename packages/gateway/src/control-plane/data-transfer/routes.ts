@@ -161,7 +161,6 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
     const record = value[i];
     if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
     try {
-      // v3 omits upstreamIds entirely (treat as Default); v4 always writes it.
       const upstreamIdsRaw = version === 3 && record.upstreamIds === undefined ? null : record.upstreamIds;
       const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
       if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
@@ -535,10 +534,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     users = usersResult.records;
     // v4 replace mode wipes the users table before re-inserting, so a payload
     // that omits user 1 would leave the deployment with no seed admin and
-    // brick the ADMIN_KEY backdoor. v4 export always includes user 1
-    // (migration 0028 guarantees its existence and DELETE /api/users/1 is
-    // refused at the control plane), so a missing entry here is operator
-    // pilot error.
+    // brick the ADMIN_KEY backdoor. A v4 export always includes user 1, so a
+    // missing entry here is operator pilot error.
     if (!users.some(u => u.id === 1)) {
       return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
     }
