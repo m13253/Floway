@@ -96,7 +96,6 @@ describe('dial deadline', () => {
     // Wire socks5 to a dialer that never resolves so only the deadline can
     // unstick the call. The dial wrapper's combined controller signals abort
     // through to dispatch on timeout.
-    const { dialSocks5 } = await import('./protocols/socks5.ts');
     vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
       // Hold open until the caller signal aborts; reject with the abort
       // reason so the dial wrapper can surface the deadline error.
@@ -116,7 +115,6 @@ describe('dial deadline', () => {
   });
 
   it('rethrows the caller-driven AbortError when the external signal aborts mid-dial', async () => {
-    const { dialSocks5 } = await import('./protocols/socks5.ts');
     vi.mocked(dialSocks5).mockImplementationOnce(async (_c, _t, opts) => {
       await new Promise<DialResult>((_, reject) => {
         opts.signal?.addEventListener('abort', () => reject(opts.signal!.reason ?? new Error('aborted')), { once: true });
@@ -149,7 +147,6 @@ describe('runProxiedRequest — post-dial teardown', () => {
     // pump leaves the EOFed source in by the time the catch runs).
     let cancelCalls = 0;
     let lastCancelReason: unknown = undefined;
-    const { dialSocks5 } = await import('./protocols/socks5.ts');
     vi.mocked(dialSocks5).mockImplementationOnce(async () => {
       const inner = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
       const readable = new Proxy(inner, {
@@ -191,13 +188,12 @@ describe('runProxiedRequest — post-dial teardown', () => {
 describe('runProxiedRequest — Host header synthesis', () => {
   const buildCapturingDial = (responseHead: string): {
     written: () => string;
-    setupMock: () => Promise<void>;
+    setupMock: () => void;
   } => {
     let writeBuf = new Uint8Array(0);
     return {
       written: () => new TextDecoder().decode(writeBuf),
-      setupMock: async () => {
-        const { dialSocks5 } = await import('./protocols/socks5.ts');
+      setupMock: () => {
         vi.mocked(dialSocks5).mockImplementationOnce(async () => {
           const writable = new WritableStream<Uint8Array>({
             write(chunk) {
@@ -224,7 +220,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
 
   it('omits the port for plain HTTP on 80 (scheme default)', async () => {
     const cap = buildCapturingDial(ok200);
-    await cap.setupMock();
+    cap.setupMock();
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 80, tls: false },
@@ -236,7 +232,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
 
   it('includes the port for plain HTTP on 8080 (non-default port)', async () => {
     const cap = buildCapturingDial(ok200);
-    await cap.setupMock();
+    cap.setupMock();
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 8080, tls: false },
@@ -251,7 +247,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
     // non-default. The Host header must reflect that — strict virtual-host
     // upstreams route on the literal `host:port` value.
     const cap = buildCapturingDial(ok200);
-    await cap.setupMock();
+    cap.setupMock();
     await runProxiedRequest(
       socks,
       { host: 'api.example.com', port: 443, tls: false },
@@ -263,7 +259,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
 
   it('preserves a caller-provided Host header verbatim', async () => {
     const cap = buildCapturingDial(ok200);
-    await cap.setupMock();
+    cap.setupMock();
     await runProxiedRequest(
       socks,
       { host: 'cdn.example.com', port: 443, tls: false },

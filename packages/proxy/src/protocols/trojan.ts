@@ -59,7 +59,16 @@ const dialTrojanInner = async (
 ): Promise<DialResult> => {
   let outerTls: TlsStream;
   try {
-    outerTls = await userspaceTls(socket, { host: config.sni ?? config.host, signal });
+    outerTls = await userspaceTls(socket, {
+      host: config.sni ?? config.host,
+      // `allowInsecure` is the operator's escape hatch for self-signed
+      // trojan-server leaf certs (the trojan-go reference inbound runs
+      // self-signed by default). Honoring it pre-dial keeps the dashboard
+      // toggle from being silently dead while still defaulting to
+      // chain-validating.
+      insecure: config.allowInsecure,
+      signal,
+    });
   } catch (cause) {
     throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
   }

@@ -39,7 +39,9 @@ export interface UserspaceTlsOptions {
   alpn?: string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
-   * no name match). Test-only.
+   * no name match). The trojan dialer threads its `allowInsecure` URI flag
+   * through here for self-signed trojan inbounds; tests use the same hook
+   * to bypass certificate plumbing.
    */
   insecure?: boolean;
   /**
