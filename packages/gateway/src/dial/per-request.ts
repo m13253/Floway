@@ -2,8 +2,7 @@ import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
 import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
-import type { Fetcher } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
 
 // Build a per-request mapper that hands each upstream id its own

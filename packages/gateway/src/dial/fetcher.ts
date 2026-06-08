@@ -21,7 +21,7 @@ export interface ProxyEntry {
   dialTimeoutMs: number | null;
 }
 
-export interface CreateFetcherInput {
+interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
   upstreamId: string;
   fallbackList: string[];
