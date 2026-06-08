@@ -8,7 +8,7 @@ import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
 
-interface LoaderUsageResponse {
+interface UsageByKeyResponse {
   records: Array<{
     keyId: string;
     keyName?: string;
@@ -23,14 +23,14 @@ interface LoaderUsageResponse {
   keyColorOrder: string[];
 }
 
-interface LoaderSearchUsageResponse {
+interface SearchUsageByKeyResponse {
   records: Array<{ provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }>;
   keys: Array<{ id: string; name: string; createdAt: string }>;
   keyColorOrder: string[];
   activeProvider: string;
 }
 
-interface LoaderUsageByUserResponse {
+interface UsageByUserResponse {
   records: Array<{
     userId: number;
     model: string;
@@ -43,7 +43,7 @@ interface LoaderUsageByUserResponse {
   keyColorOrder: string[];
 }
 
-interface LoaderSearchUsageByUserResponse {
+interface SearchUsageByUserResponse {
   records: Array<{ provider: string; userId: number; hour: string; requests: number }>;
   users: Array<{ id: number; username: string }>;
   keyColorOrder: string[];
@@ -57,9 +57,9 @@ type UsageView = 'all-by-user' | 'self-by-key';
 const userBucketId = (userId: number): string => `user-${userId}`;
 const usersAsKeys = (users: ReadonlyArray<{ id: number; username: string }>) =>
   users.map(u => ({ id: userBucketId(u.id), name: u.username, createdAt: '' }));
-const userRecordsAsKeyShape = (records: LoaderUsageByUserResponse['records']) =>
+const userRecordsAsKeyShape = (records: UsageByUserResponse['records']) =>
   records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost }));
-const userSearchRecordsAsKeyShape = (records: LoaderSearchUsageByUserResponse['records']) =>
+const userSearchRecordsAsKeyShape = (records: SearchUsageByUserResponse['records']) =>
   records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests }));
 
 export const useUsagePageData = defineBasicLoader(async () => {
@@ -69,8 +69,8 @@ export const useUsagePageData = defineBasicLoader(async () => {
   const { start, end } = dashboardRangeQueryForLoader('today');
   if (view === 'all-by-user') {
     const [usageRes, searchRes] = await Promise.all([
-      callApiForLoader<LoaderUsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
-      callApiForLoader<LoaderSearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApiForLoader<UsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApiForLoader<SearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
       useModelsStoreForLoader().load(),
     ]);
     return {
@@ -84,8 +84,8 @@ export const useUsagePageData = defineBasicLoader(async () => {
     };
   }
   const [usageRes, searchRes] = await Promise.all([
-    callApiForLoader<LoaderUsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
-    callApiForLoader<LoaderSearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApiForLoader<UsageByKeyResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApiForLoader<SearchUsageByKeyResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
     useModelsStoreForLoader().load(),
   ]);
   return {
@@ -183,8 +183,8 @@ const load = async () => {
   try {
     if (requestedView === 'all-by-user') {
       const [usageRes, searchRes] = await Promise.all([
-        callApi<LoaderUsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
-        callApi<LoaderSearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+        callApi<UsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+        callApi<SearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
       ]);
       if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
       if (usageRes.data) {

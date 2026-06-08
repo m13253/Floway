@@ -86,19 +86,18 @@ const logout = async () => {
           </RouterLink>
         </OverlayScrollbars>
 
-        <!-- The hover panel is held open by `pointer-events-auto` on its own
-             container plus a 200 ms `transition-opacity`, so a small mouse
-             gap between trigger and panel doesn't dismiss it. -->
         <div class="group relative ml-auto shrink-0">
           <button
             type="button"
             class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-gray-300 hover:bg-surface-800 hover:text-white"
           >
-            <span class="font-medium">{{ auth.currentUser?.username ?? '' }}</span>
+            <span class="font-medium">{{ auth.currentUser!.username }}</span>
             <svg class="h-3 w-3 text-gray-500 transition-transform group-hover:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M6 9l6 6 6-6" />
             </svg>
           </button>
+          <!-- The `pt-1` strip is a hover bridge: it keeps `.group:hover` true
+               while the cursor crosses the gap between trigger and panel. -->
           <div class="invisible absolute right-0 top-full z-50 pt-1 opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
             <div class="min-w-[180px] rounded-md border border-white/[0.08] bg-surface-800 py-1 shadow-xl">
               <button

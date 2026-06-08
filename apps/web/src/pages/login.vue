@@ -42,7 +42,6 @@ const [loading, submit] = useLoading(async () => {
 
 <template>
   <main class="flex min-h-screen items-center justify-center p-4">
-    <!-- Ambient cyan glow behind the card, identical to the prerender login. -->
     <div class="pointer-events-none fixed left-1/2 top-0 h-[400px] w-[600px] -translate-x-1/2 rounded-full bg-accent-cyan/5 blur-[120px]" />
 
     <div class="w-full max-w-md">

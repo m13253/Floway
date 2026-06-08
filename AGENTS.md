@@ -143,12 +143,11 @@ user, then create or pick an API key under your account and use it as
 purpose is to let an operator who lost the admin password log in via
 `POST /auth/login`.
 
-`POST /api/users` provisions a `Default` API key (`upstream_ids: null`)
-in a follow-up write so the user can call the gateway immediately
-after their first login. A failure between the two writes leaves a
-user with no Default key; the operator must create one by hand or
+`POST /api/users` also provisions a `Default` API key (`upstream_ids:
+null`) for the new user. If that secondary provisioning fails the user
+is left with no Default key; the operator must create one by hand or
 recreate the user. The cleartext key is not returned in the response;
-the new user retrieves it from the Keys page after first sign-in.
+the user retrieves it from the Keys page.
 
 Database exports include the `password_hash` for every user (active and
 soft-deleted) so a restore reconstructs login state. Treat exported

@@ -17,7 +17,7 @@ router.beforeEach(to => {
 
   if (!isPublic && !auth.isAuthenticated) return { path: '/login', replace: true };
   if (to.path === '/login' && auth.isAuthenticated) return { path: '/dashboard', replace: true };
-  if (to.meta.requiresAdmin === true && !auth.isAdmin) return { path: '/dashboard/settings', replace: true };
+  if (to.meta.requiresAdmin === true && !auth.isAdmin) return { path: '/dashboard/keys', replace: true };
   return true;
 });
 
