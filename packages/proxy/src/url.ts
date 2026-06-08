@@ -20,8 +20,6 @@
 
 import { ProxyUriError } from './errors.ts';
 import {
-  SS2022_METHODS,
-  SS_METHODS,
   type HttpProxyConfig,
   type ProxyConfig,
   type RealityProxyConfig,
@@ -35,8 +33,19 @@ import {
   type VlessWsTlsProxyConfig,
 } from './proxy-config.ts';
 
-const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>(SS_METHODS);
-const SS2022_METHOD_SET: ReadonlySet<string> = new Set<Ss2022Method>(SS2022_METHODS);
+// Runtime tables backing the SsMethod / Ss2022Method literal validation.
+// Kept inside the parser because url.ts is the only consumer that needs to
+// reify the literal union at runtime.
+const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>([
+  'aes-128-gcm',
+  'aes-256-gcm',
+  'chacha20-ietf-poly1305',
+]);
+const SS2022_METHOD_SET: ReadonlySet<string> = new Set<Ss2022Method>([
+  '2022-blake3-aes-128-gcm',
+  '2022-blake3-aes-256-gcm',
+  '2022-blake3-chacha20-poly1305',
+]);
 
 export const parseProxyUri = (uri: string): ProxyConfig => {
   let url: URL;

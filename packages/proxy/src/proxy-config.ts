@@ -36,17 +36,6 @@ export interface Socks5ProxyConfig extends ProxyConfigBase {
 
 export type SsMethod = 'aes-128-gcm' | 'aes-256-gcm' | 'chacha20-ietf-poly1305';
 
-/**
- * Every SsMethod literal in declaration order. Frozen so consumers can
- * iterate options (UI dropdowns, config validation) without re-deriving
- * the list from the type. Keep in sync with SsMethod.
- */
-export const SS_METHODS: readonly SsMethod[] = Object.freeze([
-  'aes-128-gcm',
-  'aes-256-gcm',
-  'chacha20-ietf-poly1305',
-] as const);
-
 export interface ShadowsocksProxyConfig extends ProxyConfigBase {
   kind: 'ss';
   method: SsMethod;
@@ -57,16 +46,6 @@ export type Ss2022Method =
   | '2022-blake3-aes-128-gcm'
   | '2022-blake3-aes-256-gcm'
   | '2022-blake3-chacha20-poly1305';
-
-/**
- * Every Ss2022Method literal in declaration order. See SS_METHODS above
- * for the contract.
- */
-export const SS2022_METHODS: readonly Ss2022Method[] = Object.freeze([
-  '2022-blake3-aes-128-gcm',
-  '2022-blake3-aes-256-gcm',
-  '2022-blake3-chacha20-poly1305',
-] as const);
 
 export interface Shadowsocks2022ProxyConfig extends ProxyConfigBase {
   kind: 'ss2022';
