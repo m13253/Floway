@@ -16,8 +16,7 @@ export const kindFromUri = (url: string): string => {
   switch (parsed.protocol) {
   case 'http:': return 'HTTP';
   case 'https:': return 'HTTPS';
-  case 'socks5:':
-  case 'socks5h:': return 'SOCKS5';
+  case 'socks5:': return 'SOCKS5';
   case 'ss:': {
     // ss2022 ciphers begin with `2022-blake3-`; the userinfo carries either
     // `method:password` (legacy SS) or the same with a 2022 cipher prefix.
@@ -34,6 +33,6 @@ export const kindFromUri = (url: string): string => {
     if (transport === 'ws') return 'VLESS-WS';
     return 'VLESS';
   }
-  default: return parsed.protocol.replace(/:$/, '').toUpperCase() || 'PROXY';
+  default: return parsed.protocol.replace(/:$/, '').toUpperCase();
   }
 };
