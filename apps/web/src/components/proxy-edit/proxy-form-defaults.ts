@@ -45,7 +45,7 @@ export const formKindOf = (config: ProxyConfig): FormKind => {
   return config.kind;
 };
 
-export interface DefaultsContext {
+interface DefaultsContext {
   host: string;
   port: number;
   name: string;

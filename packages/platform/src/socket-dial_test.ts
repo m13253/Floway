@@ -3,6 +3,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   getSocketDial,
   initSocketDial,
+  resetSocketDialForTesting,
   type SocketDial,
   type DialedSocket,
 } from './socket-dial.ts';
@@ -16,8 +17,7 @@ describe('SocketDial singleton', () => {
     });
   });
 
-  it('throws when used before init', async () => {
-    const { resetSocketDialForTesting } = await import('./socket-dial.ts');
+  it('throws when used before init', () => {
     resetSocketDialForTesting();
     expect(() => getSocketDial()).toThrow('SocketDial not initialized');
   });

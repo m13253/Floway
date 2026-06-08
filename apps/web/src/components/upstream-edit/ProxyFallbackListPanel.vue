@@ -68,20 +68,21 @@ interface ActiveBackoff {
   lastError: string | null;
 }
 
-const activeBackoffByEntry = computed<Map<string, ActiveBackoff | null>>(() => {
-  const map = new Map<string, ActiveBackoff | null>();
-  if (props.upstreamId === null) {
-    for (const entry of props.modelValue) map.set(entry, null);
-    return map;
-  }
+const activeBackoffByEntry = computed<Map<string, ActiveBackoff>>(() => {
+  if (props.upstreamId === null) return new Map();
+  const map = new Map<string, ActiveBackoff>();
   const nowSec = Math.floor(now.value.getTime() / 1000);
   for (const entry of props.modelValue) {
-    if (entry === DIRECT) { map.set(entry, null); continue; }
+    if (entry === DIRECT) continue;
     const rows = backoffsByProxyId.value.get(entry);
     const row = rows?.find(r => r.upstream_id === props.upstreamId && r.expires_at > nowSec);
-    map.set(entry, row
-      ? { expiresIn: formatCountdown((row.expires_at - nowSec) * 1000), failCount: row.fail_count, lastError: row.last_error }
-      : null);
+    if (row) {
+      map.set(entry, {
+        expiresIn: formatCountdown((row.expires_at - nowSec) * 1000),
+        failCount: row.fail_count,
+        lastError: row.last_error,
+      });
+    }
   }
   return map;
 });
