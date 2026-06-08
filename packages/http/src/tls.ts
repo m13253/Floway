@@ -159,16 +159,17 @@ export const userspaceTls = async (
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
   // `@reclaimprotocol/tls`'s exported TLSClientOptions typing does not
-  // include the patched fields (`verifyHost`, `onClientHelloPack`,
-  // `onKeyPairGenerated`, `onRecvCertificateVerify`) that our pnpm patch
-  // adds at runtime. Build the options against a locally extended adapter
-  // type so we still get field-level checking on what we pass, then run a
-  // single `as` at the call site to bridge to the upstream parameter
-  // shape. When the upstream typing absorbs the patch, this extension type
-  // becomes redundant and the `as` cast becomes unnecessary.
+  // include `verifyHost`, the only field our pnpm patch adds at runtime
+  // that this call site uses. We also widen `onTlsEnd`'s error from the
+  // upstream `Error` to `unknown` because we forward it straight to
+  // `closePlain(unknown)` and the runtime can hand us non-Error rejects.
+  // Build the options against a locally extended adapter type so we still
+  // get field-level checking on what we pass, then run a single `as` at
+  // the call site to bridge to the upstream parameter shape. When the
+  // upstream typing absorbs the patch, this extension type and the cast
+  // become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string;
-    onApplicationData?: (plaintext: Uint8Array) => void;
     onTlsEnd?: (error?: unknown) => void;
   };
   const tlsOptions: PatchedTLSOptions = {
