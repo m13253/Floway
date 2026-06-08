@@ -185,13 +185,11 @@ const makeAead = (method: SsMethod, key: Uint8Array): Aead => {
       encrypt: (nonce, pt) => chacha20poly1305(key, nonce).encrypt(pt),
       decrypt: (nonce, ct) => chacha20poly1305(key, nonce).decrypt(ct),
     };
-  } else if (method === 'aes-256-gcm' || method === 'aes-128-gcm') {
-    return {
-      encrypt: (nonce, pt) => gcm(key, nonce).encrypt(pt),
-      decrypt: (nonce, ct) => gcm(key, nonce).decrypt(ct),
-    };
   }
-  throw new Error(`unsupported method ${method}`);
+  return {
+    encrypt: (nonce, pt) => gcm(key, nonce).encrypt(pt),
+    decrypt: (nonce, ct) => gcm(key, nonce).decrypt(ct),
+  };
 };
 
 const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {
