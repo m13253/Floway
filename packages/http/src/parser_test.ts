@@ -103,12 +103,15 @@ describe('parseHttpResponse — status-line grammar', () => {
     });
   });
 
-  it('accepts a status line with two SPs between code and reason (treated as leading SP in reason)', async () => {
-    // Documenting current behavior: the regex anchors capture the first SP
-    // between status and reason, and the duplicated SP is absorbed into the
-    // reason-phrase capture. llhttp behaves similarly in lenient mode.
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n'));
-    expect(r.status).toBe(200);
+  it('rejects a status line with two SPs between code and reason (the second SP cannot be absorbed into the reason)', async () => {
+    // RFC 9112 §4 grammar puts a single SP between status-code and
+    // reason-phrase. A double SP would either silently absorb the extra
+    // space into the reason (a lenient-parser foot-gun llhttp's strict
+    // mode rejects), or — if accepted — diverge from what a strict
+    // intermediary sees. We reject.
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200  OK\r\nContent-Length: 0\r\n\r\n'))).rejects.toMatchObject({
+      code: 'BAD_STATUS_LINE',
+    });
   });
 
   it('rejects a status line with two SPs between version and code', async () => {
@@ -147,9 +150,14 @@ describe('parseHttpResponse — status-line grammar', () => {
     });
   });
 
-  it('rejects HTTPER/1.1 (close-but-wrong scheme)', async () => {
+  it('rejects HTTPER/1.1 with a message naming the bad version prefix', async () => {
+    // RTSP/ICE branch above rejects via the "does not begin with HTTP/"
+    // check. HTTPER starts with HTTP — so this case lands on the
+    // version-tuple check, which surfaces the actual seen status line in
+    // the error message.
     await expect(parseHttpResponse(respondAndEnd('HTTPER/1.1 200 OK\r\n\r\n'))).rejects.toMatchObject({
       code: 'BAD_STATUS_LINE',
+      message: expect.stringContaining('HTTPER/1.1'),
     });
   });
 

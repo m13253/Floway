@@ -212,9 +212,23 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   const lines = headerText.split('\r\n');
   const statusLine = lines.shift()!;
   // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
-  // Require both spaces (strict). Reason-phrase may be empty per
-  // RFC 7230 erratum 4087.
-  const m = /^HTTP\/(1\.[01]) (\d{3}) (.*)$/.exec(statusLine);
+  // Two distinct issues to call out separately for a useful error message:
+  // (1) the line MUST start with HTTP/1.0 or HTTP/1.1 — llhttp dispatches
+  //     HTTP/RTSP/ICE separately, so we surface anything that even begins
+  //     `HTTP/` but isn't a supported version with a precise message.
+  // (2) the second SP after the status code MUST be followed by a non-SP
+  //     reason byte (or the line MUST end immediately — RFC 7230 erratum
+  //     4087 permits an empty reason). A double SP between code and reason
+  //     would silently absorb the extra SP into the reason in lenient
+  //     parsers; llhttp's strict mode rejects it.
+  if (!statusLine.startsWith('HTTP/')) {
+    throw new HttpProtocolError(
+      `status line does not begin with HTTP/: ${JSON.stringify(statusLine)}`,
+      'BAD_STATUS_LINE',
+      { rfc: 'RFC 9112 §4' },
+    );
+  }
+  const m = /^HTTP\/(1\.[01]) (\d{3}) (\S.*|)$/.exec(statusLine);
   if (!m) {
     throw new HttpProtocolError(
       `bad status line: ${JSON.stringify(statusLine)}`,
