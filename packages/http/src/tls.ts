@@ -158,7 +158,20 @@ export const userspaceTls = async (
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
-  const tlsClient = makeTLSClient(({
+  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing does not
+  // include the patched fields (`verifyHost`, `onClientHelloPack`,
+  // `onKeyPairGenerated`, `onRecvCertificateVerify`) that our pnpm patch
+  // adds at runtime. Build the options against a locally extended adapter
+  // type so we still get field-level checking on what we pass, then run a
+  // single `as` at the call site to bridge to the upstream parameter
+  // shape. When the upstream typing absorbs the patch, this extension type
+  // becomes redundant and the `as` cast becomes unnecessary.
+  type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
+    verifyHost?: string;
+    onApplicationData?: (plaintext: Uint8Array) => void;
+    onTlsEnd?: (error?: unknown) => void;
+  };
+  const tlsOptions: PatchedTLSOptions = {
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
@@ -199,7 +212,8 @@ export const userspaceTls = async (
       }
       closePlain(error);
     },
-  } as Parameters<typeof makeTLSClient>[0]));
+  };
+  const tlsClient = makeTLSClient(tlsOptions as Parameters<typeof makeTLSClient>[0]);
 
   // App-data downward stream (TLS plaintext → consumer). The cancel hook
   // fires only after the duplex pair has been returned to the consumer,
@@ -240,8 +254,11 @@ export const userspaceTls = async (
     },
   });
 
-  // Pump bytes from transport → tls.handleReceivedBytes
-  const pump = (async () => {
+  // Pump bytes from transport → tls.handleReceivedBytes. Errors and
+  // teardown are handled inside the IIFE; the outer flow only awaits the
+  // handshake, so the pump's promise is intentionally not awaited.
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
@@ -263,9 +280,6 @@ export const userspaceTls = async (
       try { reader.releaseLock(); } catch { /* lock already released */ }
     }
   })();
-  // Detach the pump's microtask chain from the handshake await; teardown
-  // calls below cancel the reader and the pump exits via its finally.
-  void pump;
 
   if (opts.signal) {
     const captured = opts.signal;
