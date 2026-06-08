@@ -69,7 +69,6 @@ const editUser = (u: WireUser) => {
   userDialogOpen.value = true;
 };
 
-
 const resetPassword = (u: WireUser) => {
   passwordTarget.value = u;
   passwordOpen.value = true;

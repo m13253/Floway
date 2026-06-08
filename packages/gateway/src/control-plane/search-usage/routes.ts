@@ -25,11 +25,10 @@ const parseProvider = (provider: string | undefined): { type: 'ok'; provider?: W
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
-  const start = query.start ?? '';
-  const end = query.end ?? '';
-  if (!start || !end) {
+  if (!query.start || !query.end) {
     return c.json({ error: 'start and end query parameters are required (e.g. 2026-03-09T00)' }, 400);
   }
+  const { start, end } = query;
 
   const providerResult = parseProvider(query.provider);
   if (providerResult.type === 'invalid') {

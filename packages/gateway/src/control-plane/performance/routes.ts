@@ -37,9 +37,7 @@ const readPerformanceQuery = (
   c: Ctx,
 ): { type: 'ok'; value: PerformanceQueryParams } | { type: 'error'; error: string } => {
   const query = c.req.valid('query');
-  const start = query.start ?? '';
-  const end = query.end ?? '';
-  if (!start || !end) {
+  if (!query.start || !query.end) {
     return { type: 'error', error: 'start and end query parameters are required (e.g. 2026-03-09T00)' };
   }
 
@@ -52,8 +50,8 @@ const readPerformanceQuery = (
     type: 'ok',
     value: {
       keyId: query.key_id === '' ? undefined : query.key_id,
-      start,
-      end,
+      start: query.start,
+      end: query.end,
       bucket: query.bucket ?? 'hour',
       groupBy: query.group_by ?? 'model',
       metricScope: query.metric_scope ?? 'request_total',
