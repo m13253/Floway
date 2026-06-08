@@ -42,7 +42,7 @@ export const dial = async (
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   const callerSignal = options.signal;
   if (callerSignal?.aborted) {
-    throw new DOMException(String(callerSignal.reason ?? 'aborted'), 'AbortError');
+    throw signalAbortReason(callerSignal);
   }
   // We multiplex the caller signal and our deadline into a single internal
   // AbortController. Setting the abort `reason` to a ProxyDialError on
@@ -78,6 +78,17 @@ export const dial = async (
     clearTimeout(timer);
     if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   }
+};
+
+// Mirror @floway-dev/platform's throwAbort shape for the pre-dial signal
+// check: a structured Error reason rethrows as-is so its stack/cause
+// survives, a primitive or absent reason becomes a DOMException. The
+// proxy package can't import from @floway-dev/platform (the dependency
+// direction is reversed), so we keep a sibling implementation here.
+const signalAbortReason = (signal: AbortSignal): Error => {
+  const reason = signal.reason;
+  if (reason instanceof Error) return reason;
+  return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
 
 const dispatchDial = async (config: ProxyConfig, target: DialTarget, options: DialOptions): Promise<DialResult> => {

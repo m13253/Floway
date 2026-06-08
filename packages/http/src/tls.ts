@@ -81,7 +81,7 @@ export const userspaceTls = async (
   ensureCrypto();
 
   if (opts.signal?.aborted) {
-    throw new DOMException(String(opts.signal.reason ?? 'aborted'), 'AbortError');
+    throw signalAbortReason(opts.signal);
   }
 
   const writer = transport.writable.getWriter();
@@ -323,4 +323,15 @@ const logTlsTeardownError = (e: unknown): void => {
   if (proc?.env?.DEBUG_USERSPACE_TLS) {
     console.debug('[userspace-tls] teardown:', e);
   }
+};
+
+// Pre-handshake signal-already-aborted reshape. A structured Error reason
+// rethrows as-is so its stack/cause survives; a primitive or absent
+// reason becomes a DOMException('AbortError'). The platform package
+// exposes the same shape as `throwAbort`, but @floway-dev/http has no
+// dependency edge into platform — keep a sibling implementation here.
+const signalAbortReason = (signal: AbortSignal): Error => {
+  const reason = signal.reason;
+  if (reason instanceof Error) return reason;
+  return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
