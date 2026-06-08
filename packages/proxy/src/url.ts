@@ -147,15 +147,12 @@ const parseSs = (
     };
   }
 
-  // Legacy: the entire userinfo is base64(method:password). The URL parser
-  // would split on ':' if base64 padding put one in there, so recombine
-  // the two halves before decoding.
-  const userinfo = url.password
-    ? `${url.username}:${decodeURIComponent(url.password)}`
-    : url.username;
+  // Legacy: the entire userinfo is base64(method:password). The base64
+  // alphabet contains no ':' so the URL parser leaves the whole blob in
+  // url.username and never splits it across username/password.
   let decoded: string;
   try {
-    decoded = base64Decode(userinfo);
+    decoded = base64Decode(url.username);
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
