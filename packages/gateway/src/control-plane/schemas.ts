@@ -278,10 +278,11 @@ export const codexRefreshNowBody = z.object({});
 // runs `parseProxyUri` and returns its error message verbatim so the operator
 // sees the canonical "unsupported scheme" / "missing password" feedback.
 
-// Per-proxy dial-stage timeout. Bound to a 1s..600s window because the
-// dialer's hard ceiling above ~10min would just stall the fallback chain
-// without ever giving up. nullable so the operator can clear it back to
-// the gateway-wide default; absent vs. null is meaningful in PATCH.
+// Per-proxy dial-stage timeout. Capped at 600s (10min): an operator
+// override beyond that would let a single dead proxy stall the fallback
+// chain past any reasonable client deadline. nullable so the operator can
+// clear it back to the gateway-wide default; absent vs. null is meaningful
+// in PATCH.
 const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
 
 export const createProxyBody = z.object({
