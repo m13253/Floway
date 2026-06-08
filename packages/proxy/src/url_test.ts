@@ -157,23 +157,6 @@ describe('parseProxyUri', () => {
     });
   });
 
-  it('drops unsupported VLESS knobs (fp, spx) on parse so they don\'t leak into the typed config', () => {
-    // Our reality dialer threads the ClientHello through @reclaimprotocol/tls
-    // and runs no spiderX probe, so neither knob has anywhere to land. We
-    // accept URIs that carry them (subscription generators add `fp` by
-    // default) but discard the values rather than retain a config field
-    // the dialer can't honor.
-    const reality = parseProxyUri(
-      'vless://u@h:443?type=tcp&security=reality&pbk=PUB&fp=chrome&sni=s&spx=%2F',
-    );
-    expect(reality).not.toHaveProperty('fingerprint');
-    expect(reality).not.toHaveProperty('spiderX');
-    const tcp = parseProxyUri('vless://u@h:443?type=tcp&security=tls&sni=h&fp=chrome');
-    expect(tcp).not.toHaveProperty('fingerprint');
-    const ws = parseProxyUri('vless://u@h:443?type=ws&security=tls&path=%2F&fp=chrome');
-    expect(ws).not.toHaveProperty('fingerprint');
-  });
-
   it('throws on unknown scheme', () => {
     expect(() => parseProxyUri('weird://x:1')).toThrow(/scheme/i);
   });

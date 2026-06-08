@@ -67,8 +67,16 @@ describe('createPerRequestFetcher', () => {
     await repo.upstreams.save(upstream('u_direct', []));
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
 
+    let proxyListCalls = 0;
+    const realList = repo.proxies.list.bind(repo.proxies);
+    repo.proxies.list = (...args) => {
+      proxyListCalls++;
+      return realList(...args);
+    };
+
     const fetcherFor = await createPerRequestFetcher();
     const directFetcher = fetcherFor('u_direct');
     expect(typeof directFetcher).toBe('function');
+    expect(proxyListCalls).toBe(0);
   });
 });
