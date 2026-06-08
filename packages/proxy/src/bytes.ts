@@ -1,11 +1,7 @@
-// Tiny byte-buffer primitives used by the HTTP/1.1 framing layer.
+// Tiny byte-buffer primitives shared across the proxy-protocol dialers.
 // Buffers come in from a transport-owned ReadableStream — those buffers may
 // be pooled or reused by the runtime (most visibly on Node), so anything we
 // enqueue downstream or retain past the next read needs to own its memory.
-//
-// These helpers stay internal to @floway-dev/http: they are not exported
-// from the package surface. The chunked decoder, response parser, and
-// userspace-TLS adapter all consume them through this module.
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
@@ -35,9 +31,40 @@ export const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> =>
 };
 
 /**
+ * UTF-8-encode an ASCII string. Equivalent to `new TextEncoder().encode(s)`
+ * but short enough to use inline in HKDF info / context-binding literals
+ * without forcing each caller to keep its own encoder around.
+ */
+export const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
+  new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
+
+/** Fill a fresh `n`-byte buffer from the Web Crypto CSPRNG. */
+export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => {
+  const buf = new Uint8Array(n);
+  crypto.getRandomValues(buf);
+  return buf;
+};
+
+/**
+ * Parse a hex string into bytes. Throws on odd length; the caller is
+ * responsible for validating the character set up front when the input is
+ * untrusted, since `parseInt('zz', 16)` returns NaN and the byte slot is
+ * then written as 0.
+ */
+export const hexDecode = (s: string): Uint8Array<ArrayBuffer> => {
+  if (s.length % 2 !== 0) throw new Error(`hex: odd length ${s.length}`);
+  const out = new Uint8Array(s.length / 2);
+  for (let i = 0; i < out.byteLength; i++) {
+    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+};
+
+/**
  * Locate a CR/LF/CR/LF sequence — the HTTP/1.1 header-section terminator
  * (RFC 9112 §2.2). Returns the index of the first CR, or -1 if the buffer
- * doesn't contain a full terminator yet.
+ * doesn't contain a full terminator yet. Used by the CONNECT-response peel
+ * in the HTTP proxy dialer.
  */
 export const findDoubleCrlf = (buf: Uint8Array): number => {
   for (let i = 0; i + 3 < buf.byteLength; i++) {

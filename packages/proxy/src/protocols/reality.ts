@@ -34,7 +34,7 @@ import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
-import { copy, asciiBytes, randomBytes, hexDecode } from '@floway-dev/http';
+import { copy, asciiBytes, randomBytes, hexDecode } from '../bytes.ts';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {

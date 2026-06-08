@@ -7,7 +7,7 @@
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { copy } from '@floway-dev/http';
+import { copy } from '../bytes.ts';
 
 export const dialSocks5 = async (
   config: Socks5ProxyConfig,

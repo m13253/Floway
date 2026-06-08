@@ -2,8 +2,7 @@
 // Web Streams reader. Shadowsocks AEAD-2018 and Shadowsocks-2022 both
 // walk fixed-size handshake records off a transport reader and need the
 // same loop: pull until N bytes are buffered, hand N to the caller, keep
-// the rest for the next call. Lives here so any byte-framed consumer on
-// a `ReadableStreamDefaultReader<Uint8Array>` can reuse it.
+// the rest for the next call.
 
 export const makeExactReader = (
   reader: ReadableStreamDefaultReader<Uint8Array>,

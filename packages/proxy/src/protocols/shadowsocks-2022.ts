@@ -18,7 +18,8 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { ProxyDialError } from '../errors.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { concat, makeExactReader, randomBytes } from '@floway-dev/http';
+import { concat, randomBytes } from '../bytes.ts';
+import { makeExactReader } from '../exact-reader.ts';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
   '2022-blake3-aes-128-gcm': 16,

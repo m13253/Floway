@@ -12,7 +12,7 @@
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { copy, findDoubleCrlf } from '@floway-dev/http';
+import { copy, findDoubleCrlf } from '../bytes.ts';
 
 export const dialHttpConnect = async (
   config: HttpProxyConfig,

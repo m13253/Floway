@@ -6,7 +6,7 @@
 
 import { ProxyDialError } from '../errors.ts';
 import type { DialResult, DialTarget } from '../types.ts';
-import { concat, copy, hexDecode } from '@floway-dev/http';
+import { concat, copy, hexDecode } from '../bytes.ts';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },

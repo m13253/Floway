@@ -5,7 +5,7 @@ import { buildRealityAad, buildRealitySessionId, dialReality } from './reality.t
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
-import { hexDecode } from '@floway-dev/http';
+import { hexDecode } from '../bytes.ts';
 
 describe('buildRealitySessionId', () => {
   it('packs version, timestamp, and short id into 32 bytes', () => {

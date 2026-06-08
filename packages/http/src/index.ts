@@ -6,8 +6,8 @@
 //
 // It also ships a userspace TLS adapter for runtimes whose native
 // `Socket.startTls()` cannot wrap a stream that has already exchanged
-// plain bytes — most notably Cloudflare Workers (workerd #2712) — and for
-// proxy protocols that need full control over TLS record framing.
+// plain bytes, and for protocols that need full control over TLS record
+// framing.
 
 export type { DuplexStream, HttpRequest } from './types.ts';
 
@@ -18,7 +18,4 @@ export { userspaceTls } from './tls.ts';
 export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 
 export { HttpProtocolError } from './errors.ts';
-
-export { copy, concat, asciiBytes, randomBytes, hexDecode, findDoubleCrlf } from './bytes.ts';
-
-export { makeExactReader } from './exact-reader.ts';
+export type { HttpProtocolErrorCode } from './errors.ts';
