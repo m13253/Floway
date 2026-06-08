@@ -87,12 +87,12 @@ const onPasswordChanged = () => {
       {{ passwordToast }}
     </div>
 
-    <div class="glass-card p-5 sm:p-6 animate-in mb-5">
+    <div v-if="!auth.isAdmin" class="glass-card p-5 sm:p-6 animate-in">
       <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
       <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-sm text-white">{{ auth.currentUser?.username ?? '—' }}</p>
-          <p class="text-xs text-gray-500">{{ auth.isAdmin ? 'Administrator' : 'Standard user' }}</p>
+          <p class="text-xs text-gray-500">Standard user</p>
         </div>
         <Button variant="secondary" @click="openChangePassword">Change my password</Button>
       </div>
@@ -115,6 +115,16 @@ const onPasswordChanged = () => {
       </div>
 
       <div class="flex flex-col gap-5">
+        <div class="glass-card p-5 sm:p-6 animate-in">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
+          <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="text-sm text-white">{{ auth.currentUser?.username ?? '—' }}</p>
+              <p class="text-xs text-gray-500">Administrator</p>
+            </div>
+            <Button variant="secondary" @click="openChangePassword">Change my password</Button>
+          </div>
+        </div>
         <ApiEndpointsSection />
         <div class="glass-card p-5 sm:p-6 animate-in delay-2">
           <ExportSection :framed="false" />

@@ -10,8 +10,7 @@ defineProps<{
 }>();
 
 defineEmits<{
-  'toggle-admin': [user: WireUser];
-  'toggle-global-telemetry': [user: WireUser];
+  edit: [user: WireUser];
   'reset-password': [user: WireUser];
   remove: [user: WireUser];
 }>();
@@ -45,24 +44,17 @@ const isProtected = (id: number, actor: number) => id === 1 || id === actor;
           class="border-b border-white/[0.03]"
         >
           <td class="py-3 pr-4 pl-2">
-            <div class="flex items-center gap-2">
-              <span class="text-white font-medium truncate">{{ u.username }}</span>
-              <span v-if="u.id === 1" class="text-[10px] uppercase tracking-widest text-gray-500">seed</span>
-            </div>
+            <span class="text-white font-medium truncate">{{ u.username }}</span>
           </td>
           <td class="py-3 pr-4">
-            <Switch
-              :model-value="u.isAdmin"
-              :disabled="isProtected(u.id, actorUserId)"
-              @update:model-value="$emit('toggle-admin', u)"
-            />
+            <span class="inline-block pointer-events-none" aria-hidden="true">
+              <Switch :model-value="u.isAdmin" />
+            </span>
           </td>
           <td class="py-3 pr-4">
-            <Switch
-              :model-value="u.canViewGlobalTelemetry || u.isAdmin"
-              :disabled="u.isAdmin"
-              @update:model-value="$emit('toggle-global-telemetry', u)"
-            />
+            <span class="inline-block pointer-events-none" aria-hidden="true">
+              <Switch :model-value="u.canViewGlobalTelemetry || u.isAdmin" />
+            </span>
           </td>
           <td class="py-3 pr-4">
             <span class="text-gray-500 text-xs cursor-default" :title="fullDateTime(u.createdAt)">{{ shortDate(u.createdAt) }}</span>
@@ -70,11 +62,28 @@ const isProtected = (id: number, actor: number) => id === 1 || id === actor;
           <td class="py-3 pr-2 text-right">
             <div class="flex items-center justify-end gap-1">
               <button
-                class="inline-flex min-h-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors px-2 text-xs"
+                class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
+                title="Edit user"
+                aria-label="Edit user"
+                @click.stop="$emit('edit', u)"
+              >
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                  <path d="m15 5 4 4" />
+                </svg>
+              </button>
+              <button
+                class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
                 title="Reset password"
+                aria-label="Reset password"
                 @click.stop="$emit('reset-password', u)"
               >
-                Reset password
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="8" cy="15" r="4" />
+                  <path d="M10.85 12.15 19 4" />
+                  <path d="m18 5 2 2" />
+                  <path d="m15 8 3 3" />
+                </svg>
               </button>
               <button
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1"

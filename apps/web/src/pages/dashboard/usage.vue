@@ -654,7 +654,7 @@ const formatCost = (v: number) => {
     <div class="glass-card p-6 animate-in">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage — {{ view === 'all-by-user' ? 'By User' : 'By Key' }}</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage</span>
           <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
             <button
               type="button"
@@ -740,7 +740,7 @@ const formatCost = (v: number) => {
 
       <div v-if="searchUsageActiveProvider !== 'disabled'" class="mt-6 pt-5 border-t border-white/5">
         <div class="flex items-center gap-3 mb-4">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage — Per Key</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage</span>
           <Spinner v-if="searchUsageLoading" class="h-3.5 w-3.5 text-gray-500" />
         </div>
         <div style="height: 320px; position: relative;">

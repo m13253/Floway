@@ -69,24 +69,28 @@ const selectedApiKey = computed(() => {
 
     <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
       <div class="max-h-56 w-full shrink-0 border-b border-white/[0.06] flex flex-col lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r">
-        <div class="p-3 border-b border-white/[0.06] space-y-2">
-          <select
-            v-model="selectedKeyId"
-            :disabled="keys.length === 0"
-            class="w-full rounded-md border border-white/[0.08] bg-surface-700 px-2 py-1.5 text-xs text-gray-200 focus:border-accent-cyan focus:outline-none"
-          >
-            <option v-if="keys.length === 0" :value="null">(no API keys — create one in Keys)</option>
-            <option v-for="k in keys" :key="k.id" :value="k.id">
-              {{ k.name }} (·{{ k.key.slice(-4) }})
-            </option>
-          </select>
-          <Input
-            v-model="modelsSearch"
-            type="search"
-            placeholder="Filter models..."
-            size="sm"
-            class="font-mono !border-transparent !bg-transparent !px-0 hover:!border-transparent focus:!border-transparent focus:!ring-0"
-          />
+        <div class="border-b border-white/[0.06] divide-y divide-white/[0.06]">
+          <div class="p-3">
+            <select
+              v-model="selectedKeyId"
+              :disabled="keys.length === 0"
+              class="w-full bg-transparent border-none text-xs text-gray-200 focus:outline-none disabled:text-gray-500"
+            >
+              <option v-if="keys.length === 0" :value="null">(no API keys — create one in Keys)</option>
+              <option v-for="k in keys" :key="k.id" :value="k.id">
+                {{ k.name }} (.{{ k.key.slice(-4) }})
+              </option>
+            </select>
+          </div>
+          <div class="p-3">
+            <Input
+              v-model="modelsSearch"
+              type="search"
+              placeholder="Filter models..."
+              size="sm"
+              class="font-mono !border-transparent !bg-transparent !px-0 hover:!border-transparent focus:!border-transparent focus:!ring-0"
+            />
+          </div>
         </div>
         <OverlayScrollbars class="min-h-0 flex-1" :v-scrollbar-offset="{ x: 2 }">
           <template v-if="models">

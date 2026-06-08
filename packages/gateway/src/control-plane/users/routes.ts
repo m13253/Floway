@@ -1,6 +1,6 @@
 // User management routes — admin CRUD on /api/users plus the self-service
 // password change. The seed admin (id 1) and the actor are protected from
-// foot-gun mutations (cannot demote, cannot delete, cannot rename user 1).
+// foot-gun mutations (cannot demote, cannot delete).
 
 import type { Context } from 'hono';
 
@@ -18,15 +18,6 @@ const userToWire = (u: User) => ({
   canViewGlobalTelemetry: u.canViewGlobalTelemetry,
   createdAt: u.createdAt,
   deletedAt: u.deletedAt,
-});
-
-const apiKeyToJson = (key: ApiKey) => ({
-  id: key.id,
-  name: key.name,
-  key: key.key,
-  created_at: key.createdAt,
-  last_used_at: key.lastUsedAt ?? null,
-  upstream_ids: key.upstreamIds,
 });
 
 const generateRawApiKey = (): string => {
@@ -83,8 +74,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   await repo.users.save(user);
 
   // Every user starts with a Default API key so they can use the playground
-  // and CLI immediately. The user can rotate or rename it later; if they
-  // delete it, they have to create a new key by hand.
+  // and CLI immediately after their first login. The cleartext key is not
+  // exposed in the create response — admins do not see other users' keys; the
+  // new user finds it themselves on the dashboard's Keys page.
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
     userId: newId,
@@ -96,7 +88,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   };
   await repo.apiKeys.save(defaultKey);
 
-  return c.json({ user: userToWire(user), defaultKey: apiKeyToJson(defaultKey) }, 201);
+  return c.json({ user: userToWire(user) }, 201);
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
@@ -109,12 +101,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   const existing = await repo.users.getById(id);
   if (!existing) return c.json({ error: 'User not found' }, 404);
 
-  if (id === 1) {
-    if (body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
-    if (body.username !== undefined && body.username !== existing.username) {
-      return c.json({ error: 'user 1 cannot be renamed' }, 400);
-    }
-  }
+  if (id === 1 && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
     return c.json({ error: 'cannot demote yourself' }, 400);
   }

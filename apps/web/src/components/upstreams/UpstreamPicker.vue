@@ -1,0 +1,119 @@
+<script setup lang="ts">
+import { Badge, Sortable, Switch } from '@floway-dev/ui';
+import { computed, ref, watch } from 'vue';
+
+import type { UpstreamProviderKind } from '../../api/types.ts';
+import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
+
+interface RowState {
+  id: string;
+  name: string;
+  provider: UpstreamProviderKind | null;
+  enabled: boolean;
+}
+
+interface PickerValue {
+  override: boolean;
+  ids: string[];
+}
+
+const props = defineProps<{
+  // The pool the actor is allowed to choose from.
+  available: UpstreamOption[];
+  title: string;
+  // Tooltip explaining what "off" means in the host context.
+  inheritDescription: string;
+}>();
+
+const value = defineModel<PickerValue>({ required: true });
+
+const rows = ref<RowState[]>([]);
+
+const reset = () => {
+  const orderedIds = value.value.ids;
+  const orderedSet = new Set(orderedIds);
+  const rest = props.available.filter(u => !orderedSet.has(u.id));
+  rows.value = [
+    ...orderedIds.map(id => {
+      const u = props.available.find(x => x.id === id);
+      return { id, name: u?.name ?? `Unknown (${id})`, provider: u?.provider ?? null, enabled: true };
+    }),
+    ...rest.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: false })),
+  ];
+};
+
+watch(() => [value.value, props.available] as const, reset, { immediate: true });
+
+const setOverride = (next: boolean) => {
+  value.value = { override: next, ids: value.value.ids };
+};
+
+const setRows = (next: RowState[]) => {
+  rows.value = next;
+  value.value = { override: value.value.override, ids: next.filter(r => r.enabled).map(r => r.id) };
+};
+
+const toggleRow = (id: string, enabled: boolean) => {
+  setRows(rows.value.map(r => r.id === id ? { ...r, enabled } : r));
+};
+
+const enabledCount = computed(() => rows.value.filter(r => r.enabled).length);
+const badgeCount = computed(() => value.value.override ? enabledCount.value : props.available.length);
+
+const providerTone = (provider: UpstreamProviderKind | null): 'amber' | 'emerald' | 'cyan' | 'zinc' => {
+  if (provider === 'custom') return 'amber';
+  if (provider === 'azure') return 'emerald';
+  if (provider === 'copilot') return 'cyan';
+  if (provider === 'codex') return 'cyan';
+  return 'zinc';
+};
+
+const providerLabel = (provider: UpstreamProviderKind | null) => {
+  if (provider === 'custom') return 'Custom';
+  if (provider === 'azure') return 'Azure';
+  if (provider === 'copilot') return 'Copilot';
+  if (provider === 'codex') return 'Codex';
+  return 'Unknown';
+};
+</script>
+
+<template>
+  <div class="space-y-3">
+    <label class="flex items-center justify-between rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2.5">
+      <span>
+        <p class="text-sm text-white">
+          {{ title }}
+          <span class="ml-1.5 font-mono text-[10px] font-medium text-accent-cyan">({{ badgeCount }})</span>
+        </p>
+        <p class="text-xs text-gray-500">{{ inheritDescription }}</p>
+      </span>
+      <Switch :model-value="value.override" @update:model-value="v => setOverride(!!v)" />
+    </label>
+
+    <Sortable
+      v-if="value.override"
+      :model-value="rows"
+      @update:model-value="setRows"
+      :item-key="(r: RowState) => r.id"
+      handle=".floway-drag-handle"
+      tag="ul"
+      class="space-y-1.5"
+    >
+      <template #default="{ item: row }">
+        <li :key="row.id" class="flex items-center gap-3 rounded-md border border-white/[0.06] bg-surface-800/40 px-3 py-2">
+          <button
+            type="button"
+            class="floway-drag-handle grid size-6 cursor-grab place-items-center rounded text-gray-500 hover:bg-surface-700 hover:text-gray-200 active:cursor-grabbing"
+            aria-label="Drag to reorder"
+          >
+            <i class="i-lucide-grip-vertical size-4" />
+          </button>
+          <Switch :model-value="row.enabled" @update:model-value="v => toggleRow(row.id, !!v)" />
+          <Badge :tone="providerTone(row.provider)" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerLabel(row.provider) }}</Badge>
+          <span class="min-w-0 flex-1 truncate text-sm text-white">{{ row.name }}</span>
+          <code class="text-xs text-gray-500">{{ row.id }}</code>
+        </li>
+      </template>
+    </Sortable>
+  </div>
+</template>

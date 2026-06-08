@@ -25,19 +25,18 @@ test('GET /api/users requires admin', async () => {
   assertEquals(response.status, 403);
 });
 
-test('POST /api/users creates the user and a default API key in one go', async () => {
+test('POST /api/users creates the user and provisions a Default key in one transaction', async () => {
   const { adminSession, repo } = await setupAppTest();
   const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22' });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { user: { id: number; username: string }; defaultKey: { id: string; name: string; key: string } };
+  const body = (await response.json()) as { user: { id: number; username: string } };
   expect(body.user.id).toBeGreaterThan(2);
   assertEquals(body.user.username, 'alice');
-  assertEquals(body.defaultKey.name, 'Default');
-  expect(body.defaultKey.key).toMatch(/^[0-9a-f]{64}$/);
-
+  // The Default key is created server-side but never returned to the admin.
+  // The new user finds it themselves on the dashboard's Keys page.
   const stored = await repo.apiKeys.listByUserId(body.user.id);
   assertEquals(stored.length, 1);
-  assertEquals(stored[0].id, body.defaultKey.id);
+  assertEquals(stored[0].name, 'Default');
 });
 
 test('POST /api/users rejects duplicate username + unknown upstream id', async () => {
@@ -49,10 +48,10 @@ test('POST /api/users rejects duplicate username + unknown upstream id', async (
   assertEquals(unknown.status, 400);
 });
 
-test('PATCH /api/users/1 cannot demote, rename, or be deleted', async () => {
+test('PATCH /api/users/1 may rename but cannot be demoted or deleted', async () => {
   const { adminSession } = await setupAppTest();
   assertEquals((await adminPatch(adminSession, 1, { isAdmin: false })).status, 400);
-  assertEquals((await adminPatch(adminSession, 1, { username: 'someone-else' })).status, 400);
+  assertEquals((await adminPatch(adminSession, 1, { username: 'someone-else' })).status, 200);
   assertEquals((await adminDelete(adminSession, 1)).status, 400);
 });
 
@@ -92,7 +91,8 @@ test('admin password reset on another user revokes that user\'s sessions', async
 test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () => {
   const { adminSession, repo } = await setupAppTest();
   const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  const { user, defaultKey } = (await created.json()) as { user: { id: number }; defaultKey: { id: string } };
+  const { user } = (await created.json()) as { user: { id: number } };
+  const [defaultKey] = await repo.apiKeys.listByUserId(user.id);
   await repo.sessions.create(user.id);
 
   const response = await adminDelete(adminSession, user.id);
