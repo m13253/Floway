@@ -147,19 +147,55 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
     expect(header.byteLength).toBe(want);
   });
 
+  it('emits ATYP=0x01 + 4 raw octets for an IPv4 literal target', () => {
+    // Reference Trojan clients (trojan-gfw, sing-box) detect literal IPs
+    // and emit raw octets matching SOCKS5 numbering (0x01 v4, 0x04 v6);
+    // only true hostnames take the 0x03 domain path.
+    const header = buildTrojanRequestHeader('p', { host: '1.2.3.4', port: 80 });
+    expect(header[59]).toBe(0x01);
+    expect(Array.from(header.subarray(60, 64))).toEqual([1, 2, 3, 4]);
+    expect(header[64]).toBe(0x00);
+    expect(header[65]).toBe(0x50);
+    // 56 + CRLF + CMD + ATYP + 4 + port + CRLF.
+    expect(header.byteLength).toBe(56 + 2 + 1 + 1 + 4 + 2 + 2);
+  });
+
+  it('emits ATYP=0x04 + 16 raw octets for a bracketed IPv6 literal target', () => {
+    const header = buildTrojanRequestHeader('p', { host: '[2001:db8::1]', port: 443 });
+    expect(header[59]).toBe(0x04);
+    expect(Array.from(header.subarray(60, 60 + 16))).toEqual([
+      0x20, 0x01, 0x0d, 0xb8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x01,
+    ]);
+    expect(header.byteLength).toBe(56 + 2 + 1 + 1 + 16 + 2 + 2);
+  });
+
+  it('emits ATYP=0x04 + 16 raw octets for an unbracketed IPv6 literal target', () => {
+    const header = buildTrojanRequestHeader('p', { host: '::1', port: 80 });
+    expect(header[59]).toBe(0x04);
+    expect(header[60 + 15]).toBe(0x01);
+    expect(header.byteLength).toBe(56 + 2 + 1 + 1 + 16 + 2 + 2);
+  });
+
   it('emits CMD=0x01 (CONNECT) — UDP ASSOCIATE 0x03 is not implemented', () => {
     const header = buildTrojanRequestHeader('p', target443);
     expect(header[58]).toBe(0x01);
   });
 
-  it('emits ATYP=0x03 (domain) — IPv4/IPv6 literals get encoded as domain strings', () => {
-    // Trojan's ATYP byte takes the SOCKS5 values (0x01 v4, 0x03 domain,
-    // 0x04 v6) but the floway dialer always emits domain encoding. A v4
-    // literal target string therefore travels as a 7-byte domain "1.2.3.4".
-    const header = buildTrojanRequestHeader('p', { host: '1.2.3.4', port: 80 });
+  it('emits ATYP=0x03 (domain) for a true hostname target', () => {
+    // SOCKS5 numbering: 0x01 v4, 0x03 domain, 0x04 v6.
+    const header = buildTrojanRequestHeader('p', { host: 'example.com', port: 80 });
     expect(header[59]).toBe(0x03);
-    expect(header[60]).toBe('1.2.3.4'.length);
-    expect(new TextDecoder().decode(header.subarray(61, 68))).toBe('1.2.3.4');
+    expect(header[60]).toBe('example.com'.length);
+    expect(new TextDecoder().decode(header.subarray(61, 72))).toBe('example.com');
+  });
+
+  it('rejects an IDN host string before any I/O — caller must punycode first', () => {
+    expect(() => buildTrojanRequestHeader('p', { host: '例.com', port: 443 })).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake', message: expect.stringContaining('ASCII') }),
+    );
   });
 
   it('emits two CRLF terminators — one after the hash, one after the port', () => {

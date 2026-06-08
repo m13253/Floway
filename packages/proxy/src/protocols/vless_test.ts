@@ -237,13 +237,62 @@ describe('vlessFrameOverStream — port and hostname encoding', () => {
     });
   });
 
-  it('emits ATYP=0x02 (domain, length-prefixed) — VLESS uses different ATYP numbering than SOCKS5', async () => {
-    // VLESS: 0x01 v4, 0x02 domain, 0x03 v6.
-    // SOCKS5/SS: 0x01 v4, 0x03 domain, 0x04 v6. Easy to confuse.
+  it('emits ATYP=0x02 (domain, length-prefixed) for a true hostname', async () => {
+    // VLESS numbering: 0x01 v4, 0x02 domain, 0x03 v6.
+    // SOCKS5/SS numbering: 0x01 v4, 0x03 domain, 0x04 v6. Easy to confuse.
     const p = makePair();
     void vlessFrameOverStream(p.transport, UUID, target);
     const written = await p.written;
     expect(written[21]).toBe(0x02);
+  });
+
+  it('emits ATYP=0x01 + 4 raw octets for an IPv4 literal target', async () => {
+    // Reference VLESS clients (Xray-core, sing-box) detect literal IPs and
+    // emit them as raw octets; sending a literal as a domain string forces
+    // a string→bytes conversion on the server side.
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: '1.2.3.4', port: 80 });
+    const written = await p.written;
+    expect(written[21]).toBe(0x01);
+    expect(Array.from(written.subarray(22, 26))).toEqual([1, 2, 3, 4]);
+    // No dom_len byte for literal ATYPs; total header = 22 + 4.
+    expect(written.byteLength).toBe(22 + 4);
+  });
+
+  it('emits ATYP=0x03 + 16 raw octets for a bracketed IPv6 literal target', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: '[2001:db8::1]', port: 443 });
+    const written = await p.written;
+    expect(written[21]).toBe(0x03);
+    expect(Array.from(written.subarray(22, 22 + 16))).toEqual([
+      0x20, 0x01, 0x0d, 0xb8,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x01,
+    ]);
+    expect(written.byteLength).toBe(22 + 16);
+  });
+
+  it('emits ATYP=0x03 + 16 raw octets for an unbracketed IPv6 literal target', async () => {
+    const p = makePair();
+    void vlessFrameOverStream(p.transport, UUID, { host: '::1', port: 80 });
+    const written = await p.written;
+    expect(written[21]).toBe(0x03);
+    expect(written[22 + 15]).toBe(0x01);
+    expect(written.byteLength).toBe(22 + 16);
+  });
+
+  it('rejects an IDN host string before any I/O — caller must punycode first', async () => {
+    // VLESS servers parse the domain as a UTF-8 string in-band, but
+    // emitting raw IDN bytes here is a layering muddle. The URL parser
+    // at the gateway layer is the right place for the punycode
+    // translation.
+    const p = makePair();
+    await expect(vlessFrameOverStream(p.transport, UUID, { host: '例.com', port: 443 })).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('ASCII'),
+    });
   });
 });
 
