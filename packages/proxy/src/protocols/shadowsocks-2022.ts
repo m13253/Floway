@@ -43,6 +43,9 @@ export const dialShadowsocks2022 = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  // Hoist port-range validation ahead of socketDial.connect so a bad
+  // target port doesn't burn a TCP slot to the proxy server.
+  assertValidTargetPort(target.port, 'SS2022');
   const keyLen = KEY_LEN_2022[config.method];
   // Pre-dial config validation runs at stage 'config' so a single misconfigured
   // proxy entry doesn't burn a TCP slot and so the gateway's fallback chain

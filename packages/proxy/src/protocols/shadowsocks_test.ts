@@ -458,6 +458,18 @@ describe('dialShadowsocks — pre-handshake plumbing', () => {
       message: expect.stringContaining('tcp connect to proxy.example:8388 failed'),
     });
   });
+
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialShadowsocks(config(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('1..65535'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });
 
 const nonce = (counter: number): Uint8Array => {

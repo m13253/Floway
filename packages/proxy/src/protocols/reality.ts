@@ -39,6 +39,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { copy, asciiBytes, randomBytes, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 
@@ -63,6 +64,9 @@ export const dialReality = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  // Hoist port-range validation ahead of socketDial.connect so a bad
+  // target port doesn't burn a TCP slot to the REALITY server.
+  assertValidTargetPort(target.port, 'REALITY');
   ensureCrypto();
   const ver = DEFAULT_XRAY_VERSION;
   // Pre-dial config validation runs at stage 'config' so a single malformed

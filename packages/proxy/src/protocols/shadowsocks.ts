@@ -43,6 +43,9 @@ export const dialShadowsocks = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  // Hoist port-range validation ahead of socketDial.connect so a bad
+  // target port doesn't burn a TCP slot to the proxy server.
+  assertValidTargetPort(target.port, 'SS');
   const keyLen = METHOD_KEY_LEN[config.method];
 
   let socket: DialedSocket;

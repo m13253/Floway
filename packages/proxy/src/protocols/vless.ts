@@ -13,6 +13,7 @@
 
 import { ProxyDialError } from '../errors.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 
@@ -30,6 +31,9 @@ export const dialVlessTcpTls = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  // Hoist port-range validation ahead of socketDial.connect so a bad
+  // target port doesn't burn a TCP slot to the proxy server.
+  assertValidTargetPort(target.port, 'VLESS');
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
   // we can't distinguish a TCP RST from a TLS handshake failure here, so any
   // dial-time error is reported as tcp-connect.
@@ -65,6 +69,9 @@ export const dialVlessWsTls = async (
   target: DialTarget,
   options: VlessWsDialOptions,
 ): Promise<DialResult> => {
+  // Hoist port-range validation ahead of the WebSocket upgrade fetch so a
+  // bad target port doesn't burn a connection slot.
+  assertValidTargetPort(target.port, 'VLESS');
   const wsUrl = `https://${config.host}:${config.port}${config.path}`;
   let resp: Response;
   try {

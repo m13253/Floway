@@ -21,11 +21,12 @@ export interface DialTarget {
 /**
  * Reject a port outside the 1..65535 range used by TCP. Port 0 is
  * reserved (RFC 6335 §6) — its presence on the wire is almost always
- * a config bug. We surface a typed dial error before any I/O so the
- * fallback chain can advance to the next proxy entry. */
+ * a config bug. We surface a typed dial error at stage 'config' before
+ * any I/O so the fallback chain can advance to the next proxy entry
+ * without burning a TCP slot. */
 export const assertValidTargetPort = (port: number, protocol: string): void => {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new ProxyDialError(`${protocol}: target port must be 1..65535, got ${port}`, 'proxy-handshake');
+    throw new ProxyDialError(`${protocol}: target port must be 1..65535, got ${port}`, 'config');
   }
 };
 
