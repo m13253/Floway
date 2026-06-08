@@ -2,10 +2,13 @@
 import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { useAuthStore } from '../../stores/auth.ts';
+
 const router = useRouter();
+const auth = useAuthStore();
 
 onMounted(() => {
-  void router.replace('/dashboard/settings');
+  void router.replace(auth.isAdmin ? '/dashboard/settings' : '/dashboard/keys');
 });
 </script>
 
