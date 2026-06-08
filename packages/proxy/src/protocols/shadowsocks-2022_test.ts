@@ -41,6 +41,16 @@ describe('buildSs2022RequestHeader', () => {
     // total length is fixed.
     expect(h.byteLength).toBe(off + 16);
   });
+
+  it('rejects host components longer than 255 bytes as a typed proxy-handshake dial error', () => {
+    // ATYP=0x03 stores the domain length in a single byte; without an upfront
+    // check the dialer would silently truncate the length byte (modulo 256)
+    // and corrupt the wire format, surfacing later as an opaque AEAD auth
+    // failure.
+    expect(() => buildSs2022RequestHeader('a'.repeat(256), 1)).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
+    );
+  });
 });
 
 describe('dialShadowsocks2022 — SIP022 happy path', () => {
@@ -98,6 +108,37 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
       stage: 'proxy-handshake',
       message: expect.stringMatching(/salt-echo mismatch/),
     });
+  });
+});
+
+describe('dialShadowsocks2022 — pre-connect config validation', () => {
+  // Wrap the decoder + length checks as ProxyDialError so a malformed config
+  // doesn't fly past the gateway's `instanceof ProxyDialError` gate and kill
+  // the rest of the fallback chain.
+  it('rejects an unparseable PSK base64 string as a typed dial error', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialShadowsocks2022(config({ passwordBase64: 'not!valid!base64' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('invalid base64'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a PSK whose decoded byte length disagrees with the cipher', async () => {
+    const fake = makeFakeSocketDial();
+    // 2022-blake3-aes-128-gcm wants 16 bytes; a 15-byte PSK fails up-front.
+    const shortPsk = btoa(String.fromCharCode(...new Uint8Array(15)));
+    await expect(
+      dialShadowsocks2022(config({ passwordBase64: shortPsk }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('PSK is 15 bytes'),
+    });
+    expect(fake.connectCount()).toBe(0);
   });
 });
 

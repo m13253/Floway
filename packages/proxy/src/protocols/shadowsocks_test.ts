@@ -47,8 +47,13 @@ describe('buildSsAddress', () => {
     expect(out[17]).toBe(0xbb);
   });
 
-  it('rejects host components longer than 255 bytes', () => {
-    expect(() => buildSsAddress('a'.repeat(256), 1)).toThrow(/too long/);
+  it('rejects host components longer than 255 bytes as a typed proxy-handshake dial error', () => {
+    // Wrapped as ProxyDialError (rather than plain Error) so a malformed
+    // dial target doesn't fly past the gateway's `instanceof ProxyDialError`
+    // gate and kill the rest of the fallback chain.
+    expect(() => buildSsAddress('a'.repeat(256), 1)).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake' }),
+    );
   });
 });
 

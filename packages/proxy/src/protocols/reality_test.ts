@@ -1,7 +1,10 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { describe, expect, it } from 'vitest';
 
-import { buildRealityAad, buildRealitySessionId } from './reality.ts';
+import { buildRealityAad, buildRealitySessionId, dialReality } from './reality.ts';
+import type { RealityProxyConfig } from '../proxy-config.ts';
+import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import type { DialTarget } from '../types.ts';
 
 describe('buildRealitySessionId', () => {
   it('packs version, timestamp, and short id into 32 bytes', () => {
@@ -66,3 +69,72 @@ const hex = (s: string): Uint8Array => {
   for (let i = 0; i < out.byteLength; i++) out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
   return out;
 };
+
+const target: DialTarget = { host: 'api.openai.com', port: 443 };
+
+const realityConfig = (overrides: Partial<RealityProxyConfig> = {}): RealityProxyConfig => ({
+  kind: 'reality',
+  uuid: '11111111-2222-3333-4444-555555555555',
+  // 32 well-formed base64url bytes — overridden in the bad-pbk case below.
+  publicKey: 'A'.repeat(43),
+  fingerprint: 'chrome',
+  serverName: 'www.cloudflare.com',
+  host: 'h',
+  port: 443,
+  name: 'r',
+  ...overrides,
+});
+
+describe('dialReality — pre-connect config validation', () => {
+  // Wrap the decoder + length checks as ProxyDialError so a malformed config
+  // doesn't fly past the gateway's `instanceof ProxyDialError` gate and kill
+  // the rest of the fallback chain.
+  it('rejects an unparseable pbk base64 string as a typed dial error', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ publicKey: '!!!not-base64!!!' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('invalid base64'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a pbk whose decoded length is not 32 bytes', async () => {
+    const fake = makeFakeSocketDial();
+    // Three base64 chars decode to only 2 bytes — not 32.
+    await expect(
+      dialReality(realityConfig({ publicKey: 'AAA' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('pubkey must be 32 bytes'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects an odd-length sid hex string as a typed dial error', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ shortId: 'abc' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('invalid hex'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a sid whose decoded length is not 8 bytes', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ shortId: 'aabb' }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('shortId must be 8 bytes'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+});
