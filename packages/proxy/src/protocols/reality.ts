@@ -65,22 +65,19 @@ export const dialReality = async (
 ): Promise<DialResult> => {
   ensureCrypto();
   const ver = DEFAULT_XRAY_VERSION;
-  // Wire-shape config checks raise typed dial errors so a single malformed
-  // REALITY entry doesn't escape ProxyDialError handling and kill the whole
-  // fallback chain — the next entry is allowed to try. The decoders also
-  // throw for unparseable inputs (atob on bad base64, hexDecode on odd
-  // length) — wrap those at the same layer so a parser blow-up reaches the
-  // fallback chain as a dial error rather than a generic Error.
+  // Pre-dial config validation runs at stage 'config' so a single malformed
+  // REALITY entry doesn't burn a TCP slot and so the gateway's fallback
+  // chain can tell a wire-shape rejection apart from a TCP failure.
   let serverPub: Uint8Array<ArrayBuffer>;
   try {
     serverPub = base64UrlDecode(config.publicKey);
   } catch (cause) {
-    throw new ProxyDialError('REALITY: invalid base64 in pbk', 'tcp-connect', { cause });
+    throw new ProxyDialError('REALITY: invalid base64 in pbk', 'config', { cause });
   }
   if (serverPub.byteLength !== 32) {
     throw new ProxyDialError(
       `REALITY: server pubkey must be 32 bytes, got ${serverPub.byteLength}`,
-      'tcp-connect',
+      'config',
     );
   }
   let shortId: Uint8Array<ArrayBuffer>;
@@ -88,7 +85,7 @@ export const dialReality = async (
     shortId = parseShortId(config.shortId);
   } catch (cause) {
     if (cause instanceof ProxyDialError) throw cause;
-    throw new ProxyDialError('REALITY: invalid sid', 'tcp-connect', { cause });
+    throw new ProxyDialError('REALITY: invalid sid', 'config', { cause });
   }
 
   // Plain TCP — userspace TLS will do the entire handshake.
@@ -395,14 +392,14 @@ export const parseShortId = (sid: string | undefined): Uint8Array<ArrayBuffer> =
   if (hex.length > MAX_SHORT_ID_BYTES * 2) {
     throw new ProxyDialError(
       `REALITY: shortId hex must be 0..${MAX_SHORT_ID_BYTES * 2} chars, got ${hex.length}`,
-      'tcp-connect',
+      'config',
     );
   }
   let raw: Uint8Array<ArrayBuffer>;
   try {
     raw = hexDecode(hex);
   } catch (cause) {
-    throw new ProxyDialError('REALITY: invalid hex in sid', 'tcp-connect', { cause });
+    throw new ProxyDialError('REALITY: invalid hex in sid', 'config', { cause });
   }
   const padded = new Uint8Array(MAX_SHORT_ID_BYTES);
   padded.set(raw);

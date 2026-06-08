@@ -44,27 +44,22 @@ export const dialShadowsocks2022 = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   const keyLen = KEY_LEN_2022[config.method];
-  // Wire-shape config checks raise typed dial errors so a single misconfigured
-  // proxy entry doesn't escape ProxyDialError handling and kill the whole
-  // fallback chain — the next entry is allowed to try. The decoder also
-  // throws on unparseable input (atob on bad base64); wrap that at the same
-  // layer so a parse blow-up reaches the fallback chain as a dial error
-  // rather than a generic Error.
+  // Pre-dial config validation runs at stage 'config' so a single misconfigured
+  // proxy entry doesn't burn a TCP slot and so the gateway's fallback chain
+  // can tell a wire-shape rejection apart from a TCP failure.
   let psk: Uint8Array<ArrayBuffer>;
   try {
     psk = base64Decode(config.passwordBase64);
   } catch (cause) {
-    throw new ProxyDialError('SS2022: invalid base64 in PSK', 'tcp-connect', { cause });
+    throw new ProxyDialError('SS2022: invalid base64 in PSK', 'config', { cause });
   }
   // PSK byte-length is part of the SIP022 wire contract: a key shorter or
   // longer than the cipher demands derives a wrong subkey and the very first
-  // record fails AEAD auth. Tag as a typed dial error so a single misconfigured
-  // proxy entry doesn't escape ProxyDialError handling and kill the whole
-  // fallback chain — the next entry is allowed to try.
+  // record fails AEAD auth.
   if (psk.byteLength !== keyLen) {
     throw new ProxyDialError(
       `SS2022: PSK is ${psk.byteLength} bytes, expected ${keyLen}`,
-      'tcp-connect',
+      'config',
     );
   }
 

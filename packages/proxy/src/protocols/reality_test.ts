@@ -99,7 +99,7 @@ describe('dialReality — pre-connect config validation', () => {
       dialReality(realityConfig({ publicKey: '!!!not-base64!!!' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('invalid base64'),
     });
     expect(fake.connectCount()).toBe(0);
@@ -112,7 +112,7 @@ describe('dialReality — pre-connect config validation', () => {
       dialReality(realityConfig({ publicKey: 'AAA' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('pubkey must be 32 bytes'),
     });
     expect(fake.connectCount()).toBe(0);
@@ -124,7 +124,7 @@ describe('dialReality — pre-connect config validation', () => {
       dialReality(realityConfig({ shortId: 'abc' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('invalid hex'),
     });
     expect(fake.connectCount()).toBe(0);
@@ -221,7 +221,7 @@ describe('dialReality — pre-connect base64 decoder corner cases', () => {
       dialReality(realityConfig({ publicKey: tooLong }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('pubkey must be 32 bytes'),
     });
   });
@@ -266,7 +266,7 @@ describe('dialReality — shortId hex decoder corner cases', () => {
       dialReality(realityConfig({ shortId: '0011223344556677889' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('shortId hex must be 0..16 chars'),
     });
   });

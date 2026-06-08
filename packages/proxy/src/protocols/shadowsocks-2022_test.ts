@@ -156,7 +156,7 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
       dialShadowsocks2022(config({ passwordBase64: 'not!valid!base64' }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('invalid base64'),
     });
     expect(fake.connectCount()).toBe(0);
@@ -170,7 +170,7 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
       dialShadowsocks2022(config({ passwordBase64: shortPsk }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('PSK is 15 bytes'),
     });
     expect(fake.connectCount()).toBe(0);
@@ -183,7 +183,7 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
       dialShadowsocks2022(config({ passwordBase64: tooLongPsk }), target, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('PSK is 17 bytes'),
     });
   });
@@ -198,7 +198,7 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
       ),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
-      stage: 'tcp-connect',
+      stage: 'config',
       message: expect.stringContaining('PSK is 16 bytes'),
     });
   });

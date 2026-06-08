@@ -146,6 +146,33 @@ describe('createFetcher', () => {
     expect(directCalls).toBe(1);
   });
 
+  it('tags the unknown-proxy-id failure as stage=config so it does not register against backoff', async () => {
+    const repo = new InMemoryRepo();
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      // No 'direct' fallback — the only entry is the unknown id, so the
+      // call fails and the typed ProxyDialError surfaces directly (single-
+      // entry chains skip the AggregateError wrapper).
+      fallbackList: ['p_unknown'],
+      proxyById: new Map(),
+      runProxied: async () => new Response('proxy'),
+      runDirect: async () => { throw new Error('unreachable'); },
+      socketDial: () => stubSocketDial,
+    });
+    await expect(
+      fetcher('https://api.openai.com', { method: 'GET' }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('unknown proxy id'),
+    });
+    // The unknown-id failure is a control-plane race, not a dial-stage
+    // failure: backoff entries must stay untouched.
+    const rows = await repo.proxyBackoffs.listForUpstream('u');
+    expect(rows).toEqual([]);
+  });
+
   it('does not retry an entry that already failed in the first pass', async () => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];

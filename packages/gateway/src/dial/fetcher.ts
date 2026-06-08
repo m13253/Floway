@@ -185,7 +185,7 @@ const tryOne = async (
       // sibling entries further down the list). We don't write to backoff
       // here — the row is gone, and the upstream's fallback_list will
       // surface the dangling reference next time the dashboard renders it.
-      errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'tcp-connect'));
+      errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));
       return null;
     }
     const proxied = await proxiedFor();
