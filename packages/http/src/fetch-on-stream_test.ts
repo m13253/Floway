@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HttpProtocolError } from './errors.ts';
 import { fetchOnStream, parseHttpResponse } from './fetch-on-stream.ts';
-import { collectBody, collectBodyBytes, makeFakeDuplex } from './test-utils.ts';
+import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 const decodeAscii = (b: Uint8Array): string => new TextDecoder().decode(b);
 
@@ -294,13 +294,6 @@ describe('fetchOnStream — body-bearing responses', () => {
 });
 
 describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling matrix', () => {
-  const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
-    const fake = makeFakeDuplex();
-    fake.respond(head);
-    fake.endResponse();
-    return fake.readable;
-  };
-
   // RFC 9112 §6.3: the Content-Length and Transfer-Encoding combinations
   // below are exactly the smuggling-shaped messages a request smuggler
   // exploits to desync front-end and back-end framing.
@@ -409,13 +402,6 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
 });
 
 describe('parseHttpResponse — Content-Length value grammar', () => {
-  const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
-    const fake = makeFakeDuplex();
-    fake.respond(head);
-    fake.endResponse();
-    return fake.readable;
-  };
-
   it('rejects Content-Length: -1 (RFC 9112 §8.6)', async () => {
     await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n')))
       .rejects.toMatchObject({ code: 'BAD_CL' });

@@ -28,9 +28,10 @@ export interface FetchOnStreamOptions {
 // RFC 9112 §5 forbids any non-ASCII byte in the header section, so the
 // per-response parser byte-scans for ≥ 0x80 up front and only feeds
 // guaranteed-ASCII bytes here. Shared module-scope so the parser never
-// allocates a fresh decoder per response.
-const ASCII_DECODER = new TextDecoder('utf-8');
-const LENIENT_ASCII = new TextDecoder();
+// allocates a fresh decoder per response. The chunked decoder reuses the
+// same instance — its inputs are bounded to the 1 KiB chunk-size-line cap
+// and the only field actually parsed is the pre-`;` hex prefix.
+const ASCII_DECODER = new TextDecoder();
 
 // RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
 // "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
@@ -346,13 +347,12 @@ const readResponseHead = async (
       );
     }
     const value = line.slice(idx + 1).replace(/^[\t ]+|[\t ]+$/g, '');
-    // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold,
-    // field-vchar = VCHAR / obs-text. After the §5 ASCII-only check above
-    // strips obs-text, valid bytes inside a field value are HTAB (0x09),
-    // SP (0x20), and VCHAR (0x21-0x7E). Anything else — NUL, the rest of
-    // the C0 control set (0x01-0x08, 0x0B-0x1F; CR/LF already split the
-    // line), and DEL (0x7F) — violates the grammar and points at either a
-    // smuggling shape (CR/LF/NUL) or a transport-level garbage byte.
+    // After the §5 non-ASCII reject above, any remaining byte is ASCII; the
+    // only valid ones inside a field-value are HTAB (0x09), SP (0x20), and
+    // VCHAR (0x21-0x7E). Reject everything else — NUL, the rest of the C0
+    // controls (0x01-0x08, 0x0B-0x1F; CR/LF already split the line), and
+    // DEL (0x7F) — which points at either a smuggling shape (CR/LF/NUL) or
+    // a transport-level garbage byte.
     for (let i = 0; i < value.length; i++) {
       const c = value.charCodeAt(i);
       if (c < 0x20 && c !== 0x09) {
@@ -593,7 +593,7 @@ export const decodeChunked = (
             ));
             return;
           }
-          const sizeLine = LENIENT_ASCII.decode(buf.subarray(0, idx));
+          const sizeLine = ASCII_DECODER.decode(buf.subarray(0, idx));
           const semi = sizeLine.indexOf(';');
           const hex = (semi < 0 ? sizeLine : sizeLine.slice(0, semi)).trim();
           // Strict hex validation. parseInt('1f garbage', 16) returns 31 —

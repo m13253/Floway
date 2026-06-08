@@ -23,7 +23,7 @@ export interface FakeDuplex {
 
 export const makeFakeDuplex = (): FakeDuplex => {
   let writeBuffer = new Uint8Array(0);
-  let writableClosedResolve: (() => void) | null = null;
+  let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
 
   const writable = new WritableStream<Uint8Array>({
@@ -33,8 +33,8 @@ export const makeFakeDuplex = (): FakeDuplex => {
       next.set(chunk, writeBuffer.byteLength);
       writeBuffer = next;
     },
-    close() { writableClosedResolve?.(); },
-    abort() { writableClosedResolve?.(); },
+    close() { writableClosedResolve(); },
+    abort() { writableClosedResolve(); },
   });
 
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -55,6 +55,15 @@ export const makeFakeDuplex = (): FakeDuplex => {
     },
     endResponse() { controller.close(); },
   };
+};
+
+/** Feed `head` to a fresh fake duplex, EOF the server side, and return the
+ *  readable for the parser/fetch tests to consume in one shot. */
+export const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
+  const fake = makeFakeDuplex();
+  fake.respond(head);
+  fake.endResponse();
+  return fake.readable;
 };
 
 export const collectBody = async (resp: { body: ReadableStream<Uint8Array> } | Response): Promise<string> => {

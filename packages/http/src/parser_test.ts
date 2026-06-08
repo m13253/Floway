@@ -7,14 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseHttpResponse, toWebResponse } from './fetch-on-stream.ts';
-import { makeFakeDuplex } from './test-utils.ts';
-
-const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
-  const fake = makeFakeDuplex();
-  fake.respond(head);
-  fake.endResponse();
-  return fake.readable;
-};
+import { makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 describe('parseHttpResponse — status-line grammar', () => {
   it('accepts HTTP/1.0 200 OK', async () => {
