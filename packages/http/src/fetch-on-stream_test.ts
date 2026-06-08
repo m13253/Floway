@@ -535,3 +535,278 @@ describe('parseHttpResponse — body framing (Content-Length boundaries)', () =>
     expect(await collectBody(resp)).toBe('');
   });
 });
+
+describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / §5.5)', () => {
+  // RFC 9110 §5.6.2: tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" /
+  // "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA. Anything
+  // outside that set in a request header NAME is a smuggling vector — the
+  // serialized `${k}: ${v}\r\n` line would inject extra header lines.
+  const reqHeaderName = async (name: string): Promise<unknown> => {
+    const fake = makeFakeDuplex();
+    return fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'GET', path: '/', headers: { Host: 'h', [name]: 'v' } },
+    ).catch((e: unknown) => e);
+  };
+
+  const FORBIDDEN_NAMES: Record<string, string> = {
+    'space inside name': 'X Foo',
+    'TAB inside name': 'X\tFoo',
+    'CR': 'X\rFoo',
+    'LF': 'X\nFoo',
+    'NUL': 'X Foo',
+    'DEL (0x7f)': 'XFoo',
+    'parenthesis (open)': 'X(Foo',
+    'parenthesis (close)': 'X)Foo',
+    'angle bracket <': 'X<Foo',
+    'angle bracket >': 'X>Foo',
+    'at sign': 'X@Foo',
+    'comma': 'X,Foo',
+    'semicolon': 'X;Foo',
+    'colon': 'X:Foo',
+    'backslash': 'X\\Foo',
+    'double quote': 'X"Foo',
+    'forward slash': 'X/Foo',
+    'square bracket [': 'X[Foo',
+    'square bracket ]': 'X]Foo',
+    'question mark': 'X?Foo',
+    'equals': 'X=Foo',
+    'curly brace {': 'X{Foo',
+    'curly brace }': 'X}Foo',
+  };
+
+  for (const [label, name] of Object.entries(FORBIDDEN_NAMES)) {
+    it(`rejects a request header name with ${label}`, async () => {
+      const err = await reqHeaderName(name);
+      expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+    });
+  }
+
+  it('rejects an empty request header name', async () => {
+    const err = await reqHeaderName('');
+    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+  });
+
+  // RFC 9110 §5.5: field-value control bytes (NUL, CR, LF, DEL) injected
+  // by a caller would smuggle a fresh header onto the wire after our
+  // `${k}: ${v}\r\n` serialization.
+  const reqHeaderValue = async (value: string): Promise<unknown> => {
+    const fake = makeFakeDuplex();
+    return fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'GET', path: '/', headers: { Host: 'h', 'X-Test': value } },
+    ).catch((e: unknown) => e);
+  };
+
+  it('rejects a request header value containing CR (CRLF injection prevention)', async () => {
+    const err = await reqHeaderValue('foo\rEvil: bar');
+    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a request header value containing LF (LF injection prevention)', async () => {
+    const err = await reqHeaderValue('foo\nEvil: bar');
+    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a request header value containing NUL', async () => {
+    const err = await reqHeaderValue('foo bar');
+    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a request header value containing DEL (0x7f)', async () => {
+    const err = await reqHeaderValue('foobar');
+    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
+  });
+
+  it('accepts a request header value containing the typical printable special characters', async () => {
+    // ; , = ( ) " < > [ ] { } @ / ? — all allowed in field-value.
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'GET',
+        path: '/',
+        headers: { Host: 'h', 'X-Test': 'a;b,c=d (e) [f] {g} <h>/?@' },
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('X-Test: a;b,c=d (e) [f] {g} <h>/?@\r\n');
+  });
+
+  it('accepts a request header value containing the legitimate token specials', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'GET',
+        path: '/',
+        headers: { Host: 'h', 'X-Test': '!#$%&\'*+-.^_`|~' },
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).toContain('X-Test: !#$%&\'*+-.^_`|~\r\n');
+  });
+});
+
+describe('fetchOnStream — request-method handling', () => {
+  it('rejects a HEAD request at this layer (RFC 9110 §6.4.1; framing would hang)', async () => {
+    const fake = makeFakeDuplex();
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'HEAD', path: '/', headers: { Host: 'h' } },
+    )).rejects.toMatchObject({
+      name: 'HttpProtocolError',
+      code: 'HEAD_REQUEST_REJECTED',
+    });
+  });
+
+  it('rejects a HEAD request regardless of letter case (head)', async () => {
+    const fake = makeFakeDuplex();
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'head', path: '/', headers: { Host: 'h' } },
+    )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
+  });
+
+  it('rejects a HEAD request regardless of letter case (Head)', async () => {
+    const fake = makeFakeDuplex();
+    await expect(fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'Head', path: '/', headers: { Host: 'h' } },
+    )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
+  });
+});
+
+describe('fetchOnStream — request body serialization', () => {
+  it('serializes a Uint8Array body in a single write when it fits in the default chunk size', async () => {
+    const body = new TextEncoder().encode('payload');
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    const text = decodeAscii(fake.written());
+    expect(text).toContain('Content-Length: 7\r\n');
+    expect(text.endsWith('\r\n\r\npayload')).toBe(true);
+  });
+
+  it('splits a body that exceeds bodyWriteChunkSize across multiple writes', async () => {
+    // 8 chunks of 16 bytes each = 128 bytes total.
+    const body = new Uint8Array(128).fill(0x41);
+    const writeSizes: number[] = [];
+    const fake = makeFakeDuplex();
+    const writableTap = new WritableStream<Uint8Array>({
+      write(chunk) {
+        writeSizes.push(chunk.byteLength);
+        const w = fake.writable.getWriter();
+        return w.write(chunk).finally(() => w.releaseLock());
+      },
+    });
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: writableTap },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body },
+      { bodyWriteChunkSize: 16 },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    // First write is the head; the next eight are 16 bytes each.
+    expect(writeSizes.length).toBe(9);
+    expect(writeSizes.slice(1)).toEqual([16, 16, 16, 16, 16, 16, 16, 16]);
+  });
+
+  it('does not write any body bytes when body is undefined', async () => {
+    const fake = makeFakeDuplex();
+    const writeCount = { n: 0 };
+    const writableTap = new WritableStream<Uint8Array>({
+      write(chunk) {
+        writeCount.n++;
+        const w = fake.writable.getWriter();
+        return w.write(chunk).finally(() => w.releaseLock());
+      },
+    });
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: writableTap },
+      { method: 'GET', path: '/', headers: { Host: 'h' } },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(writeCount.n).toBe(1);
+  });
+
+  it('writes only the head when body is an empty Uint8Array', async () => {
+    const fake = makeFakeDuplex();
+    const writeCount = { n: 0 };
+    const writableTap = new WritableStream<Uint8Array>({
+      write(chunk) {
+        writeCount.n++;
+        const w = fake.writable.getWriter();
+        return w.write(chunk).finally(() => w.releaseLock());
+      },
+    });
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: writableTap },
+      { method: 'POST', path: '/', headers: { Host: 'h' }, body: new Uint8Array(0) },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(writeCount.n).toBe(1);
+    // No Content-Length is added for a zero-byte body — matches the
+    // current policy (only set CL when bodyLen > 0).
+    expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
+  });
+
+  it('preserves caller-set Accept-Encoding rather than overriding to identity', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'GET', path: '/', headers: { Host: 'h', 'Accept-Encoding': 'gzip' } },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    const text = decodeAscii(fake.written());
+    expect(text).toContain('Accept-Encoding: gzip\r\n');
+    expect(text).not.toContain('Accept-Encoding: identity\r\n');
+  });
+
+  it('drops the caller Connection header regardless of case', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      { method: 'GET', path: '/', headers: { Host: 'h', 'CONNECTION': 'keep-alive' } },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    const text = decodeAscii(fake.written());
+    expect(text).toContain('Connection: close\r\n');
+    expect(text).not.toContain('keep-alive');
+  });
+
+  it('drops a caller transfer-encoding header regardless of case', async () => {
+    const fake = makeFakeDuplex();
+    const promise = fetchOnStream(
+      { readable: fake.readable, writable: fake.writable },
+      {
+        method: 'POST',
+        path: '/',
+        headers: { Host: 'h', 'transfer-encoding': 'chunked' },
+        body: new TextEncoder().encode('x'),
+      },
+    );
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await promise;
+    expect(decodeAscii(fake.written())).not.toMatch(/transfer-encoding/i);
+  });
+});
