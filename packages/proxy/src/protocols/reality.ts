@@ -313,8 +313,8 @@ const runRealityHandshake = async (
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);
     // addEventListener('abort') on an already-aborted signal does not fire;
-    // drive onAbort synchronously so an abort that lands between the
-    // dialReality entry check and this listener install isn't lost.
+    // drive onAbort synchronously so an abort that lands between dial()'s
+    // upstream pre-check and this listener install isn't lost.
     if (captured.aborted) onAbort();
   }
 
