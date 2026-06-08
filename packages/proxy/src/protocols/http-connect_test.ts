@@ -186,3 +186,250 @@ describe('dialHttpConnect — failure modes', () => {
     await expect(result.readable.getReader().read()).rejects.toBeInstanceOf(ProxyDialError);
   });
 });
+
+// Helpers shared by the expanded coverage matrix below.
+const drainCONNECTRequest = async (srv: { peekWritten: () => Uint8Array; read: (n: number) => Promise<Uint8Array> }): Promise<string> => {
+  const dec = new TextDecoder();
+  let head = '';
+  while (!head.includes('\r\n\r\n')) head += dec.decode(await srv.read(1), { stream: true });
+  return head;
+};
+
+describe('dialHttpConnect — auth header encoding', () => {
+  // RFC 7617 §2: token = base64(user-id ":" password). user-id MUST NOT
+  // contain ":"; the spec doesn't mandate rejecting it, but the encoded
+  // form would be ambiguous on the server side.
+  it('encodes "user:pass" as "dXNlcjpwYXNz"', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(
+      httpConfig({ username: 'user', password: 'pass' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    expect(head).toContain('Proxy-Authorization: Basic dXNlcjpwYXNz\r\n');
+    srv.respond('HTTP/1.1 200 Connection Established\r\n\r\n');
+    await promise;
+  });
+
+  it('encodes empty username + non-empty password as ":pass" → "OnBhc3M="', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(
+      httpConfig({ username: '', password: 'pass' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    expect(head).toContain('Proxy-Authorization: Basic OnBhc3M=\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('treats username present + password undefined as username:""', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(
+      httpConfig({ username: 'admin' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    // base64("admin:") = "YWRtaW46"
+    expect(head).toContain('Proxy-Authorization: Basic YWRtaW46\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  // Finding: the dialer encodes the auth token via btoa(`${u}:${p}`), which
+  // Latin1-encodes each code unit. This means a password byte in U+0080..U+00FF
+  // is sent as that single Latin1 byte (NOT UTF-8), and a password containing
+  // any code point > U+00FF blows up the entire dial with InvalidCharacterError.
+  // RFC 7617 §2.1 names UTF-8 as the default charset; the discrepancy is a
+  // latent bug for non-ASCII passwords.
+  it('Latin1-encodes a "ä" (U+00E4) password byte rather than UTF-8', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(
+      httpConfig({ username: 'u', password: 'pä' }),
+      target,
+      { socketDial: fake.socketDial },
+    );
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    // btoa("u:pä") = "dTpw5A==" — Latin1 byte 0xE4. UTF-8 would have been
+    // 0xC3 0xA4 → "dTpww6Q=".
+    expect(head).toContain('Proxy-Authorization: Basic dTpw5A==\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('throws InvalidCharacterError on a password containing a code point > U+00FF', async () => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialHttpConnect(
+        httpConfig({ username: 'u', password: 'p中' }),
+        target,
+        { socketDial: fake.socketDial },
+      ),
+    ).rejects.toThrow(/Invalid character/i);
+  });
+});
+
+describe('dialHttpConnect — request authority forms', () => {
+  // RFC 9110 §9.3.6: CONNECT request-target is the authority form
+  // host:port; for IPv6 literals the host MUST be wrapped in [...].
+  it('uses the bare IPv4 literal in request-target and Host header', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), { host: '1.2.3.4', port: 443 }, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    expect(head).toContain('CONNECT 1.2.3.4:443 HTTP/1.1\r\n');
+    expect(head).toContain('Host: 1.2.3.4:443\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('preserves a bracketed IPv6 literal in request-target and Host header', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), { host: '[2001:db8::1]', port: 443 }, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    expect(head).toContain('CONNECT [2001:db8::1]:443 HTTP/1.1\r\n');
+    expect(head).toContain('Host: [2001:db8::1]:443\r\n');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('round-trips port 80 / 1 / 65535 verbatim', async () => {
+    for (const port of [1, 80, 65535]) {
+      const fake = makeFakeSocketDial();
+      const promise = dialHttpConnect(httpConfig(), { host: 'h', port }, { socketDial: fake.socketDial });
+      const srv = await fake.awaitConnect();
+      const head = await drainCONNECTRequest(srv);
+      expect(head).toContain(`CONNECT h:${port} HTTP/1.1\r\n`);
+      srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+      await promise;
+    }
+  });
+
+  it('forwards an IDN host string verbatim — caller is responsible for punycoding', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    const head = await drainCONNECTRequest(srv);
+    // The dialer doesn't punycode; it forwards UTF-8 bytes. RFC 9110 §5.4
+    // requires Host to be a valid uri-host, but enforcement is not at
+    // the dial layer — surface as a finding.
+    expect(head).toContain('例え.jp:443');
+    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
+    await promise;
+  });
+});
+
+describe('dialHttpConnect — response status code matrix', () => {
+  // RFC 9110 §15.3.1: any 2xx is success; reason phrase is freeform.
+  // RFC 9110 §15.5.4 & §15.5.7 define 407 / 504.
+  const expectStatusError = async (statusLine: string, contains: string): Promise<void> => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond(`${statusLine}\r\n\r\n`);
+    const result = await promise;
+    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining(contains),
+    });
+  };
+
+  it('accepts 200 with a non-canonical reason phrase', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond('HTTP/1.1 200 tunneled\r\n\r\n');
+    await promise;
+  });
+
+  it('accepts HTTP/1.0 200', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond('HTTP/1.0 200 OK\r\n\r\n');
+    await promise;
+  });
+
+  it('accepts a 200 carrying a CONNECT-illegal Content-Length header without choking', async () => {
+    // RFC 9110 §9.3.6: a 2xx CONNECT response must NOT carry a body. We
+    // forward whatever follows the header terminator as opaque post-CONNECT
+    // bytes without parsing chunked / content-length framing.
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond('HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nDATA');
+    const result = await promise;
+    const reader = result.readable.getReader();
+    const { value } = await reader.read();
+    expect(new TextDecoder().decode(value!)).toBe('DATA');
+  });
+
+  it('rejects HTTP/2.0 status line — only HTTP/1.0 and HTTP/1.1 are supported', async () => {
+    await expectStatusError('HTTP/2.0 200 OK', 'bad status line');
+  });
+
+  it('rejects 100 Continue — an interim status before 200 violates CONNECT framing', async () => {
+    await expectStatusError('HTTP/1.1 100 Continue', '100');
+  });
+
+  it('rejects 301 Moved Permanently — 3xx is not a CONNECT success', async () => {
+    await expectStatusError('HTTP/1.1 301 Moved Permanently', '301');
+  });
+
+  it('rejects 400 Bad Request', async () => {
+    await expectStatusError('HTTP/1.1 400 Bad Request', '400');
+  });
+
+  it('rejects 403 Forbidden', async () => {
+    await expectStatusError('HTTP/1.1 403 Forbidden', '403');
+  });
+
+  it('rejects 404 Not Found', async () => {
+    await expectStatusError('HTTP/1.1 404 Not Found', '404');
+  });
+
+  it('rejects 504 Gateway Timeout', async () => {
+    await expectStatusError('HTTP/1.1 504 Gateway Timeout', '504');
+  });
+});
+
+describe('dialHttpConnect — malformed status lines', () => {
+  it('rejects garbage that does not start with HTTP/', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond('GET / HTTP/1.1\r\n\r\n');
+    const result = await promise;
+    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+    });
+  });
+
+  it('rejects a status line with a non-three-digit code', async () => {
+    const fake = makeFakeSocketDial();
+    const promise = dialHttpConnect(httpConfig(), target, { socketDial: fake.socketDial });
+    const srv = await fake.awaitConnect();
+    await drainCONNECTRequest(srv);
+    srv.respond('HTTP/1.1 20 OK\r\n\r\n');
+    const result = await promise;
+    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+    });
+  });
+});
