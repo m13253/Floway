@@ -148,7 +148,7 @@ const parseSs = (
   try {
     decoded = base64Decode(userinfo);
   } catch (cause) {
-    throw new ProxyUriError(`malformed ss userinfo (invalid base64)`, { cause });
+    throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
   const sep = decoded.indexOf(':');
   if (sep < 0) throw new ProxyUriError(`malformed ss userinfo: ${url.username}`);
