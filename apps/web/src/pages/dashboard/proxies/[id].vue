@@ -19,6 +19,7 @@ export const useEditProxyData = defineBasicLoader('/dashboard/proxies/[id]', asy
 </script>
 
 <script setup lang="ts">
+import { Button } from '@floway-dev/ui';
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -65,7 +66,7 @@ const onSaved = async () => {
     <p class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
       {{ store.error.value }}
     </p>
-    <button class="btn-secondary !py-2 !px-3 text-xs" @click="goBackToSettings">Back to settings</button>
+    <Button variant="secondary" size="sm" @click="goBackToSettings">Back to settings</Button>
   </div>
   <ProxyEditPage
     v-else-if="record"
