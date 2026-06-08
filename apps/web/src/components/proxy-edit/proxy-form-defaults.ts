@@ -1,9 +1,8 @@
-// Per-kind seeds the form panel falls back to when the operator switches
-// the protocol selector or types into a kind-specific field for the first
-// time. The values must satisfy `formatProxyUri` so the URL field stays
-// regenerable on every keystroke — empty UUIDs and missing required
-// REALITY/SS fields are kept empty here, and the page-level guard refuses
-// to save until the URL parses cleanly again.
+// Per-kind seeds the form panel uses when the operator switches the
+// protocol selector. The values must satisfy `formatProxyUri` so the URL
+// field stays regenerable on every keystroke — empty UUIDs and missing
+// required REALITY/SS fields are kept empty here, and the page-level guard
+// refuses to save until the URL parses cleanly again.
 
 import type {
   HttpProxyConfig,

@@ -28,16 +28,11 @@ import { useProxiesStore } from '../../../composables/useProxies.ts';
 definePage({ meta: { requiresAdmin: true } });
 
 useEditProxyData();
-const route = useRoute();
+const route = useRoute('/dashboard/proxies/[id]');
 const router = useRouter();
 const store = useProxiesStore();
 
-const record = computed(() => {
-  const params = route.params as Record<string, string | string[]>;
-  const raw = params.id;
-  const id = Array.isArray(raw) ? raw[0]! : raw;
-  return (store.proxies.value ?? []).find(p => p.id === id) ?? null;
-});
+const record = computed(() => (store.proxies.value ?? []).find(p => p.id === route.params.id) ?? null);
 
 // Redirect both at mount AND on subsequent transitions to null so a row
 // deleted by a sibling action while this page is mounted does not leave

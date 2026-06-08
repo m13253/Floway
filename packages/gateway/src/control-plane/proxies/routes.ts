@@ -199,7 +199,8 @@ const isIpLike = (s: string): boolean => isIpV4(s) || isIpV6(s);
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const id = c.req.param('id') ?? '';
   const body = c.req.valid('json');
-  const anchor = ANCHORS[body.anchor ?? 'ipify'];
+  const anchorName = body.anchor ?? 'ipify';
+  const anchor = ANCHORS[anchorName];
 
   const repo = getRepo();
   const proxy = await repo.proxies.getById(id);
@@ -247,7 +248,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     // proxy still gets a routable answer — but reporting that v4 back as
     // a "v6" check would silently mislead. Reject the v4 shape on the v6
     // anchor explicitly.
-    if ((body.anchor ?? 'ipify') === 'ident.me-v6' && !truncated.includes(':')) {
+    if (anchorName === 'ident.me-v6' && !truncated.includes(':')) {
       return c.json({ ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` });
     }
     await repo.proxies.recordTestSuccess(id, truncated);
