@@ -44,11 +44,8 @@ export const dialShadowsocks2022 = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'SS2022');
-  assertValidTargetHost(target.host, 'SS2022');
+  assertValidTargetHost(target.host, 'SS2022', { maxBytes: 255 });
   const keyLen = KEY_LEN_2022[config.method];
-  // Pre-dial config validation runs at stage 'config' so a single misconfigured
-  // proxy entry doesn't burn a TCP slot and so the gateway's fallback chain
-  // can tell a wire-shape rejection apart from a TCP failure.
   let psk: Uint8Array<ArrayBuffer>;
   try {
     psk = base64Decode(config.passwordBase64);

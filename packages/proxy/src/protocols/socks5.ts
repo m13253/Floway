@@ -16,7 +16,7 @@ export const dialSocks5 = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'SOCKS5');
-  assertValidTargetHost(target.host, 'SOCKS5');
+  assertValidTargetHost(target.host, 'SOCKS5', { maxBytes: 255 });
 
   const auth = config.username !== undefined
     ? { username: config.username, password: config.password ?? '' }

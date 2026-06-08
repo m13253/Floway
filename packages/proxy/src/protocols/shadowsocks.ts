@@ -44,7 +44,7 @@ export const dialShadowsocks = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'SS');
-  assertValidTargetHost(target.host, 'SS');
+  assertValidTargetHost(target.host, 'SS', { maxBytes: 255 });
   const keyLen = METHOD_KEY_LEN[config.method];
 
   let socket: DialedSocket;

@@ -356,20 +356,6 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
 });
 
 describe('dialSocks5 — CONNECT request address encoding', () => {
-  it('rejects a target hostname longer than 255 bytes', async () => {
-    const fake = makeFakeSocketDial();
-    const longTarget: DialTarget = { host: 'a'.repeat(256), port: 1 };
-    const promise = dialSocks5(socks5Config(), longTarget, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    await srv.read(3);
-    srv.respond(arr(0x05, 0x00));
-    await expect(promise).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('hostname too long'),
-    });
-  });
-
   it('encodes port 0x0050 (80) and 0xffff (65535) in network byte order', async () => {
     for (const port of [80, 65535]) {
       const fake = makeFakeSocketDial();
@@ -600,6 +586,22 @@ describe('dialSocks5 — pre-dial target validation', () => {
       name: 'ProxyDialError',
       stage: 'config',
       message: expect.stringContaining('empty'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
+  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
+    // ATYP=domain framing puts the host behind a 1-byte length prefix
+    // (max 255). encodeAtypAddress would otherwise reject mid-dial with
+    // stage=proxy-handshake — after a TCP slot has been burned to the
+    // proxy.
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialSocks5(socks5Config(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('too long'),
     });
     expect(fake.connectCount()).toBe(0);
   });

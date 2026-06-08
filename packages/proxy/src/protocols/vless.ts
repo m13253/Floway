@@ -32,7 +32,7 @@ export const dialVlessTcpTls = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'VLESS');
-  assertValidTargetHost(target.host, 'VLESS');
+  assertValidTargetHost(target.host, 'VLESS', { maxBytes: 255 });
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
   // we can't distinguish a TCP RST from a TLS handshake failure here, so any
   // dial-time error is reported as tcp-connect.
@@ -69,7 +69,7 @@ export const dialVlessWsTls = async (
   options: VlessWsDialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'VLESS');
-  assertValidTargetHost(target.host, 'VLESS');
+  assertValidTargetHost(target.host, 'VLESS', { maxBytes: 255 });
   // The WS path relies on workerd's non-standard `fetch()` behavior of
   // returning a `webSocket` handle on a 101 Response. Other runtimes
   // (Node, browsers) follow the spec and emit either a thrown TypeError

@@ -65,12 +65,9 @@ export const dialReality = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'REALITY');
-  assertValidTargetHost(target.host, 'REALITY');
+  assertValidTargetHost(target.host, 'REALITY', { maxBytes: 255 });
   ensureCrypto();
   const ver = DEFAULT_XRAY_VERSION;
-  // Pre-dial config validation runs at stage 'config' so a single malformed
-  // REALITY entry doesn't burn a TCP slot and so the gateway's fallback
-  // chain can tell a wire-shape rejection apart from a TCP failure.
   let serverPub: Uint8Array<ArrayBuffer>;
   try {
     serverPub = base64UrlDecode(config.publicKey);
@@ -83,13 +80,7 @@ export const dialReality = async (
       'config',
     );
   }
-  let shortId: Uint8Array<ArrayBuffer>;
-  try {
-    shortId = parseShortId(config.shortId);
-  } catch (cause) {
-    if (cause instanceof ProxyDialError) throw cause;
-    throw new ProxyDialError('REALITY: invalid sid', 'config', { cause });
-  }
+  const shortId = parseShortId(config.shortId);
 
   // Plain TCP — userspace TLS will do the entire handshake.
   let socket: DialedSocket;

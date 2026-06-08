@@ -248,4 +248,20 @@ describe('dialTrojan — pre-dial target validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
+
+  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
+    // ATYP=domain framing puts the host behind a 1-byte length prefix
+    // (max 255). encodeAtypAddress would otherwise reject mid-dial with
+    // stage=proxy-handshake — after a TCP slot has been burned to the
+    // proxy.
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialTrojan(trojanConfig(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('too long'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });
