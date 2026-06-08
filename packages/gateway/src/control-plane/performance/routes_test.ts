@@ -327,3 +327,34 @@ test('/api/performance rejects out-of-range timezone offsets', async () => {
     error: 'timezone_offset_minutes must be between -1440 and 1440',
   });
 });
+
+test('/api/performance all-by-user attributes soft-deleted keys to their original owner', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  // Latency sample on apiKey, then soft-delete the key. The aggregator must
+  // still resolve the row to apiKey.userId rather than the synthetic userId 0
+  // it falls back to when the key→user lookup misses.
+  await repo.performance.recordLatency({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    metricScope: 'request_total',
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses',
+    targetApi: 'responses',
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 100,
+  });
+  await repo.apiKeys.softDelete(apiKey.id);
+
+  const response = await requestApp(
+    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user',
+    { headers: { 'x-floway-session': adminSession } },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]);
+  assertEquals(groups, [[String(apiKey.userId), 1]]);
+});

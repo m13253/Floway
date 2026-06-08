@@ -21,7 +21,7 @@ const apiKeyToJson = (key: ApiKey) => ({
   upstream_ids: key.upstreamIds,
 });
 
-const validateUpstreamIds = async (
+const validateUpstreamIdsAgainstUserCap = async (
   c: Context,
   proposed: readonly string[] | null,
 ): Promise<string | null> => {
@@ -59,7 +59,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   const userId = c.get('userId') as number;
   const body = c.req.valid('json');
 
-  const upstreamErr = await validateUpstreamIds(c, body.upstream_ids ?? null);
+  const upstreamErr = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
   const key = {
@@ -105,7 +105,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   if (owned instanceof Response) return owned;
 
   if (body.upstream_ids !== undefined) {
-    const err = await validateUpstreamIds(c, body.upstream_ids);
+    const err = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids);
     if (err) return c.json({ error: err }, 400);
   }
 

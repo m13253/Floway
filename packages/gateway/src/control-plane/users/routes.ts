@@ -10,6 +10,10 @@ import type { ApiKey, User } from '../../repo/types.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
 
+// Surfaces the raw stored isAdmin / canViewGlobalTelemetry flags so admins
+// editing a user see exactly what's persisted. Distinct from auth/routes.ts'
+// userToWire, which OR's isAdmin into canViewGlobalTelemetry for the
+// /auth/me consumer's effective-capability view.
 const userToWire = (u: User) => ({
   id: u.id,
   username: u.username,
@@ -26,7 +30,7 @@ const generateRawApiKey = (): string => {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
 };
 
-const validateUpstreamIds = async (ids: readonly string[] | null): Promise<string | null> => {
+const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<string | null> => {
   if (ids === null) return null;
   const upstreams = await getRepo().upstreams.list();
   const known = new Set(upstreams.map(u => u.id));
@@ -52,7 +56,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (await repo.users.findByUsernameActive(body.username)) {
     return c.json({ error: 'username taken' }, 400);
   }
-  const upstreamErr = await validateUpstreamIds(body.upstreamIds ?? null);
+  const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds ?? null);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
   // Allocate the next id from the existing rows (including soft-deleted ones,
@@ -110,7 +114,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
   if (body.upstreamIds !== undefined) {
-    const err = await validateUpstreamIds(body.upstreamIds);
+    const err = await validateUpstreamIdsExist(body.upstreamIds);
     if (err) return c.json({ error: err }, 400);
   }
 

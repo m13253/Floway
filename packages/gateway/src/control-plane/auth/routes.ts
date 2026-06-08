@@ -11,12 +11,14 @@ import { verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { getEnv } from '@floway-dev/platform';
 
+// /auth/me feeds the dashboard its effective capability flags, so isAdmin is
+// OR'd into canViewGlobalTelemetry — admins always see global telemetry.
+// Distinct from users/routes.ts userToWire, which surfaces the raw stored
+// flags so an admin editing a user can see and toggle the underlying values.
 const userToWire = (user: User) => ({
   id: user.id,
   username: user.username,
   isAdmin: user.isAdmin,
-  // Admins always effectively can see global telemetry; surface that as the
-  // wire form so the dashboard does not need to recompute the OR client-side.
   canViewGlobalTelemetry: user.isAdmin || user.canViewGlobalTelemetry,
   upstreamIds: user.upstreamIds,
 });
