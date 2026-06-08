@@ -1,5 +1,9 @@
 // Discriminated union over every proxy protocol packages/proxy supports.
-// kind matches the canonical scheme used in the URI form (see url.ts).
+// kind matches the URI scheme for single-transport protocols (http, socks5,
+// trojan); ss / ss2022 share the `ss:` scheme and split on userinfo shape,
+// and vless-tcp / vless-ws / reality share the `vless:` scheme and split on
+// the `?type=` + `?security=` query params (see url.ts for the
+// discrimination logic).
 // Adding a new protocol = add a variant here, a parser branch in url.ts,
 // and a dispatch branch in dialer.ts.
 

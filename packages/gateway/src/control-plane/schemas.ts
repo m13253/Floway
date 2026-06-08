@@ -272,10 +272,12 @@ export const codexRefreshNowBody = z.object({});
 
 // --- proxies ---
 //
-// Proxy URLs accept the full subscription-style scheme set parsed by
-// `parseProxyUri` in @floway-dev/proxy (http(s), socks5, ss, ss2022, trojan,
-// vless, reality). We don't pre-validate the URI shape in zod — the handler
-// runs `parseProxyUri` and returns its error message verbatim so the operator
+// Proxy URLs accept the URI schemes parsed by `parseProxyUri` in
+// @floway-dev/proxy: http, https, socks5, ss, trojan, vless. `ss://`
+// carries both the legacy AEAD-2018 and 2022-blake3 ciphersuites
+// (disambiguated by userinfo shape), and `vless://?security=reality` routes
+// to REALITY. We don't pre-validate the URI shape in zod — the handler runs
+// `parseProxyUri` and returns its error message verbatim so the operator
 // sees the canonical "unsupported scheme" / "missing password" feedback.
 
 // Per-proxy dial-stage timeout. Capped at 600s (10min): an operator

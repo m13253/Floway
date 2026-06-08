@@ -35,9 +35,11 @@ export const reorderProxies = async (c: CtxWithJson<typeof reorderProxiesBody>) 
 export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
   const body = c.req.valid('json');
 
-  // The URI parser owns the full scheme matrix (http(s), socks5, ss, ss2022,
-  // trojan, vless, reality); failing here surfaces the same message the
-  // dashboard would otherwise see only on the first dial attempt.
+  // The URI parser owns the full scheme matrix (http, https, socks5, ss,
+  // trojan, vless — `ss://` auto-detects SS-2022 ciphers,
+  // `vless://?security=reality` reaches REALITY); failing here surfaces the
+  // same message the dashboard would otherwise see only on the first dial
+  // attempt.
   try {
     parseProxyUri(body.url);
   } catch (err) {
@@ -85,7 +87,7 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
     // Forward the absent / null distinction so the repo can tell "leave it"
     // from "clear it back to default" — Object.hasOwn carries the bit
     // through the spread below.
-    ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds ?? null } : {}),
+    ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds } : {}),
   });
   if (!record) return c.json({ error: 'Proxy not found' }, 404);
 
