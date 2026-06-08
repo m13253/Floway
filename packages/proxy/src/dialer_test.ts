@@ -1,6 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dial, runProxiedRequest } from './dialer.ts';
+import { dialHttpConnect } from './protocols/http-connect.ts';
+import { dialReality } from './protocols/reality.ts';
+import { dialShadowsocks } from './protocols/shadowsocks.ts';
+import { dialShadowsocks2022 } from './protocols/shadowsocks-2022.ts';
+import { dialSocks5 } from './protocols/socks5.ts';
+import { dialTrojan } from './protocols/trojan.ts';
+import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from './types.ts';
 
@@ -48,22 +55,39 @@ const stubSocketDial: SocketDial = {
 
 const baseOptions = (): DialOptions => ({ socketDial: stubSocketDial });
 
-const cases: Array<[ProxyConfig['kind'], ProxyConfig]> = [
-  ['http', { kind: 'http', tls: false, host: 'h', port: 1, name: 'h' }],
-  ['socks5', { kind: 'socks5', host: 'h', port: 1, name: 'h' }],
-  ['trojan', { kind: 'trojan', password: 'p', host: 'h', port: 1, name: 'h' }],
-  ['vless-tcp', { kind: 'vless-tcp', uuid: 'u', host: 'h', port: 1, name: 'h' }],
-  ['vless-ws', { kind: 'vless-ws', uuid: 'u', host: 'h', port: 1, path: '/', name: 'h' }],
-  ['ss', { kind: 'ss', method: 'aes-256-gcm', password: 'p', host: 'h', port: 1, name: 'h' }],
-  ['ss2022', { kind: 'ss2022', method: '2022-blake3-aes-128-gcm', passwordBase64: 'a', host: 'h', port: 1, name: 'h' }],
-  ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', fingerprint: 'chrome', serverName: 's', host: 'h', port: 1, name: 'h' }],
+const cases: Array<[ProxyConfig['kind'], ProxyConfig, ReturnType<typeof vi.fn>]> = [
+  ['http', { kind: 'http', tls: false, host: 'h', port: 1, name: 'h' }, vi.mocked(dialHttpConnect)],
+  ['socks5', { kind: 'socks5', host: 'h', port: 1, name: 'h' }, vi.mocked(dialSocks5)],
+  ['trojan', { kind: 'trojan', password: 'p', host: 'h', port: 1, name: 'h' }, vi.mocked(dialTrojan)],
+  ['vless-tcp', { kind: 'vless-tcp', uuid: 'u', host: 'h', port: 1, name: 'h' }, vi.mocked(dialVlessTcpTls)],
+  ['vless-ws', { kind: 'vless-ws', uuid: 'u', host: 'h', port: 1, path: '/', name: 'h' }, vi.mocked(dialVlessWsTls)],
+  ['ss', { kind: 'ss', method: 'aes-256-gcm', password: 'p', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks)],
+  ['ss2022', { kind: 'ss2022', method: '2022-blake3-aes-128-gcm', passwordBase64: 'a', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks2022)],
+  ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', fingerprint: 'chrome', serverName: 's', host: 'h', port: 1, name: 'h' }, vi.mocked(dialReality)],
+];
+
+const allDialerMocks = [
+  vi.mocked(dialHttpConnect),
+  vi.mocked(dialSocks5),
+  vi.mocked(dialTrojan),
+  vi.mocked(dialVlessTcpTls),
+  vi.mocked(dialVlessWsTls),
+  vi.mocked(dialShadowsocks),
+  vi.mocked(dialShadowsocks2022),
+  vi.mocked(dialReality),
 ];
 
 describe('dial dispatch', () => {
-  it.each(cases)('routes kind=%s to its dialer', async (_kind, config) => {
-    const result = await dial(config, target, baseOptions());
-    expect(result.readable).toBeInstanceOf(ReadableStream);
-    expect(result.writable).toBeInstanceOf(WritableStream);
+  beforeEach(() => {
+    for (const m of allDialerMocks) m.mockClear();
+  });
+
+  it.each(cases)('routes kind=%s only to its dialer', async (_kind, config, expectedDialer) => {
+    await dial(config, target, baseOptions());
+    expect(expectedDialer).toHaveBeenCalledTimes(1);
+    for (const m of allDialerMocks) {
+      if (m !== expectedDialer) expect(m).not.toHaveBeenCalled();
+    }
   });
 });
 

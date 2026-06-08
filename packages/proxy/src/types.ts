@@ -39,14 +39,11 @@ export const assertValidTargetPort = (port: number, protocol: string): void => {
 /**
  * Enforce the `DialTarget.host` ASCII + non-empty contract before any I/O.
  * SOCKS-style ATYP-domain framing carries the host as a 1-byte length-
- * prefix + bytes, so callers wiring those protocols pass `maxBytes: 255`
- * and we reject longer hosts here too — otherwise `encodeAtypAddress`
- * surfaces the same rejection mid-dial after a TCP slot has been burned,
- * masquerading the cap-violation as a proxy-handshake failure on the
- * gateway's fallback dashboard. Surfaces as 'config' so the fallback chain
- * can advance to the next proxy entry without burning a TCP slot on a
- * frame the upstream is guaranteed to reject (an empty length-prefixed
- * domain, an over-long domain, or a `CONNECT :PORT` request line). */
+ * prefix + bytes, so callers wiring those protocols pass `maxBytes: 255`.
+ * Rejecting here surfaces as 'config' before any TCP slot is burned,
+ * instead of masquerading mid-dial as a proxy-handshake error on an empty
+ * length-prefixed domain, an over-long domain, or a `CONNECT :PORT`
+ * request line. */
 export const assertValidTargetHost = (
   host: string,
   protocol: string,

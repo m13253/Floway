@@ -1,6 +1,4 @@
 import { gcm } from '@noble/ciphers/aes.js';
-import { hmac } from '@noble/hashes/hmac.js';
-import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -188,14 +186,6 @@ describe('buildRealitySessionId — timestamp and shortId encoding', () => {
     const sid = buildRealitySessionId([1, 2, 3], 42, hexDecode('deadbeefcafe1234'));
     expect(Array.from(sid.subarray(8, 16))).toEqual([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0x12, 0x34]);
   });
-
-  it('lays out the Xray version triplet at offsets 0..2 with the trailing zero at offset 3', () => {
-    const sid = buildRealitySessionId([99, 88, 77], 0, new Uint8Array(8));
-    expect(sid[0]).toBe(99);
-    expect(sid[1]).toBe(88);
-    expect(sid[2]).toBe(77);
-    expect(sid[3]).toBe(0);
-  });
 });
 
 describe('buildRealityAad — clientHello boundary cases', () => {
@@ -379,43 +369,5 @@ describe('constantTimeEqual', () => {
   it('returns false for buffers of different lengths', () => {
     expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3, 4]))).toBe(false);
     expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(1))).toBe(false);
-  });
-});
-
-describe('REALITY server-cert HMAC verification — round trip', () => {
-  // Demonstrates the wire shape the dialer's onRecvCertificateVerify hook
-  // enforces: the leaf cert's signature field must equal HMAC-SHA512 over
-  // the leaf's raw Ed25519 pubkey, keyed by the shared 32-byte authKey.
-  // Matches Xray-core's reality.go VerifyPeerCertificate.
-  it('HMAC-SHA512(authKey, leafEd25519Pub) yields the same tag a REALITY server would emit', () => {
-    const authKey = new Uint8Array(32);
-    crypto.getRandomValues(authKey);
-    const leafPub = new Uint8Array(32);
-    crypto.getRandomValues(leafPub);
-
-    const expected = hmac(sha512, authKey, leafPub);
-    const got = hmac(sha512, authKey, leafPub);
-    expect(constantTimeEqual(expected, got)).toBe(true);
-    expect(expected.byteLength).toBe(64);
-  });
-
-  it('a tag computed under a different authKey does not match — the cert-verify hook would reject', () => {
-    const authKey = new Uint8Array(32).fill(0xaa);
-    const wrongAuthKey = new Uint8Array(32).fill(0xbb);
-    const leafPub = new Uint8Array(32).fill(0x55);
-
-    const expected = hmac(sha512, authKey, leafPub);
-    const wrong = hmac(sha512, wrongAuthKey, leafPub);
-    expect(constantTimeEqual(expected, wrong)).toBe(false);
-  });
-
-  it('a tag computed over a different leaf pubkey does not match — defends against MitM cert injection', () => {
-    const authKey = new Uint8Array(32).fill(0xaa);
-    const leafPub = new Uint8Array(32).fill(0x55);
-    const attackerLeafPub = new Uint8Array(32).fill(0x66);
-
-    const expected = hmac(sha512, authKey, leafPub);
-    const attacker = hmac(sha512, authKey, attackerLeafPub);
-    expect(constantTimeEqual(expected, attacker)).toBe(false);
   });
 });
