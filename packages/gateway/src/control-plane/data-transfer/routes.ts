@@ -160,21 +160,29 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
   for (let i = 0; i < value.length; i++) {
     const record = value[i];
     if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
-    // Older exports omit the field; treat as Default.
-    const upstreamIdsRaw = record.upstreamIds === undefined ? null : record.upstreamIds;
-    const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
-    if (!upstreamIdsParsed.ok) return { type: 'invalid', index: i, error: upstreamIdsParsed.error };
     try {
+      // v3 omits upstreamIds entirely (treat as Default); v4 always writes it.
+      const upstreamIdsRaw = version === 3 && record.upstreamIds === undefined ? null : record.upstreamIds;
+      const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
+      if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
+
       let userId: number;
+      let deletedAt: string | null;
       if (version === 3) {
         // Legacy v3 exports never carried per-key ownership — every row lands
         // on the seed admin (user 1) so historical telemetry attributes there.
         userId = 1;
+        // v3 also predates soft delete; treat every imported row as active.
+        deletedAt = null;
       } else {
         if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
           throw new Error('userId must be a positive integer');
         }
         userId = record.userId;
+        if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
+          throw new Error('deletedAt must be null or an ISO string');
+        }
+        deletedAt = record.deletedAt;
       }
       records.push({
         id: nonEmptyString(record.id, 'id'),
@@ -184,7 +192,7 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
-        deletedAt: typeof record.deletedAt === 'string' ? record.deletedAt : null,
+        deletedAt,
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -218,9 +226,16 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
       if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
 
-      const upstreamIdsRaw = record.upstreamIds === undefined ? null : record.upstreamIds;
-      const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
+      // v4 always writes upstreamIds and deletedAt. Forgiving missing or
+      // wrongly-typed values would silently turn corrupt rows into "active
+      // user with Default cap", which is exactly the wrong default — fail the
+      // import instead.
+      if (record.upstreamIds === undefined) throw new Error('upstreamIds must be present (null or array)');
+      const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
       if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
+      if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
+        throw new Error('deletedAt must be null or an ISO string');
+      }
 
       records.push({
         id: record.id,
@@ -230,7 +245,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
         upstreamIds: upstreamIdsParsed.value,
         canViewGlobalTelemetry: record.canViewGlobalTelemetry,
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
-        deletedAt: typeof record.deletedAt === 'string' ? record.deletedAt : null,
+        deletedAt: record.deletedAt,
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -518,6 +533,14 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
     }
     users = usersResult.records;
+    // v4 replace mode wipes the users table before re-inserting, so a payload
+    // that omits user 1 would leave the deployment with no seed admin and
+    // brick the ADMIN_KEY backdoor. v4 export always includes user 1
+    // (migration 0028 guarantees its existence and softDelete refuses to
+    // delete it), so a missing entry here is operator pilot error.
+    if (!users.some(u => u.id === 1)) {
+      return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
+    }
     const known = new Set(users.map(u => u.id));
     for (let i = 0; i < apiKeys.length; i++) {
       if (!known.has(apiKeys[i].userId)) {

@@ -12,13 +12,10 @@ interface PickerValue { override: boolean; ids: string[] }
 
 const open = defineModel<boolean>('open');
 
-const props = defineProps<{
-  // mode === 'edit' supplies the user being modified; 'create' starts blank.
-  mode: 'create' | 'edit';
-  user?: WireUser;
-  actorUserId: number;
-  upstreams: UpstreamOption[];
-}>();
+const props = defineProps<
+  | { mode: 'create'; user?: undefined; actorUserId: number; upstreams: UpstreamOption[] }
+  | { mode: 'edit'; user: WireUser; actorUserId: number; upstreams: UpstreamOption[] }
+>();
 
 const emit = defineEmits<{
   created: [user: WireUser];
@@ -42,7 +39,7 @@ const reset = () => {
     isAdmin.value = false;
     canViewGlobalTelemetry.value = false;
     upstreamSelection.value = { override: false, ids: [] };
-  } else if (props.user) {
+  } else {
     username.value = props.user.username;
     password.value = '';
     isAdmin.value = props.user.isAdmin;
@@ -57,18 +54,15 @@ const reset = () => {
 
 watch(open, v => { if (v) reset(); });
 
-const isUserOne = computed(() => props.mode === 'edit' && props.user?.id === 1);
-const isSelf = computed(() => props.mode === 'edit' && props.user?.id === props.actorUserId);
+const isUserOne = computed(() => props.mode === 'edit' && props.user.id === 1);
+const isSelf = computed(() => props.mode === 'edit' && props.user.id === props.actorUserId);
 const adminLocked = computed(() => isUserOne.value || isSelf.value);
 // Admins implicitly see global telemetry; the toggle is locked-on for them.
 const globalTelemetryLocked = computed(() => isAdmin.value);
 const effectiveCanViewGlobalTelemetry = computed(() => isAdmin.value || canViewGlobalTelemetry.value);
 const usernameValid = computed(() => /^[a-zA-Z0-9_.\-]{1,64}$/.test(username.value.trim()));
 
-const titleText = computed(() => {
-  if (props.mode === 'create') return 'New user';
-  return props.user ? `Edit — ${props.user.username}` : 'Edit user';
-});
+const titleText = computed(() => props.mode === 'create' ? 'New user' : `Edit — ${props.user.username}`);
 
 const submit = async () => {
   if (!usernameValid.value) {
@@ -103,7 +97,6 @@ const submit = async () => {
   }
 
   const target = props.user;
-  if (!target) { saving.value = false; return; }
   const body: { username?: string; isAdmin?: boolean; canViewGlobalTelemetry?: boolean; upstreamIds?: string[] | null } = {};
   if (username.value.trim() !== target.username) body.username = username.value.trim();
   if (!adminLocked.value && isAdmin.value !== target.isAdmin) body.isAdmin = isAdmin.value;

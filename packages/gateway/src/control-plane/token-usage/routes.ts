@@ -45,7 +45,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   }
 
   // self-by-key: scope rows to the actor's keys (active + soft-deleted).
-  const ownedIds = await repo.apiKeys.idsByUserId(resolved.scopeUserId!, { includeDeleted: true });
+  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId!);
   const ownedSet = new Set(ownedIds);
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {
@@ -54,7 +54,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
 
   const [rawRecords, keys] = await Promise.all([
     repo.usage.query({ keyId: explicitKeyId, start, end }),
-    repo.apiKeys.listByUserId(resolved.scopeUserId!),
+    repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId!),
   ]);
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
   const records = aggregateUsageForDisplay(filtered);

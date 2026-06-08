@@ -39,7 +39,7 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import type { UpstreamRecord } from '../../api/types.ts';
-import PasswordDrawer from '../../components/users/PasswordDrawer.vue';
+import PasswordDialog from '../../components/users/PasswordDialog.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
@@ -91,7 +91,7 @@ const onPasswordChanged = () => {
       <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
       <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p class="text-sm text-white">{{ auth.currentUser?.username ?? '—' }}</p>
+          <p class="text-sm text-white">{{ auth.currentUser!.username }}</p>
           <p class="text-xs text-gray-500">Standard user</p>
         </div>
         <Button variant="secondary" @click="openChangePassword">Change my password</Button>
@@ -119,7 +119,7 @@ const onPasswordChanged = () => {
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">My Account</span>
           <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p class="text-sm text-white">{{ auth.currentUser?.username ?? '—' }}</p>
+              <p class="text-sm text-white">{{ auth.currentUser!.username }}</p>
               <p class="text-xs text-gray-500">Administrator</p>
             </div>
             <Button variant="secondary" @click="openChangePassword">Change my password</Button>
@@ -134,7 +134,7 @@ const onPasswordChanged = () => {
       </div>
     </div>
 
-    <PasswordDrawer
+    <PasswordDialog
       v-model:open="passwordDrawerOpen"
       mode="self"
       @saved="onPasswordChanged"

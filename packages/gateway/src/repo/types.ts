@@ -102,11 +102,14 @@ export interface ApiKeyRepo {
   // user_id behind each row stays resolvable.
   listIncludingDeleted(): Promise<ApiKey[]>;
   listByUserId(userId: number): Promise<ApiKey[]>;
+  // Self-scope telemetry includes the actor's own soft-deleted keys so a
+  // rotated key's name still surfaces in the dashboard's by-key view.
+  listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
   // Telemetry scope: historical rows belong to the user even after the key is
-  // soft-deleted, so callers opt in to include those via includeDeleted.
-  idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]>;
+  // soft-deleted, so this returns active + soft-deleted ids.
+  idsByUserIdIncludingDeleted(userId: number): Promise<string[]>;
   save(key: ApiKey): Promise<void>;
   softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;

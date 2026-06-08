@@ -134,7 +134,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
 });
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,

@@ -17,10 +17,10 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, 'key-1');
-    assertEquals(ctx.apiKeyUpstreamIds, ['up-1', 'up-2']);
+    assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
   });
 
-  test('sets apiKeyId and apiKeyUpstreamIds to null when unset (admin key path)', async () => {
+  test('sets apiKeyId and upstreamIds to null when unset (admin key path)', async () => {
     const app = new Hono();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -30,7 +30,7 @@ describe('createGatewayCtxFromHono', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, null);
-    assertEquals(ctx.apiKeyUpstreamIds, null);
+    assertEquals(ctx.upstreamIds, null);
   });
 
   test('respects wantsStream=true', async () => {
@@ -102,6 +102,39 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(nothingThrown, true);
   });
 
+  test('upstreamIds is the intersection of the per-user cap and the per-key whitelist', async () => {
+    // Drives the headline multi-tenant invariant: an unrestricted key under a
+    // capped user must not route to upstreams outside the user's cap.
+    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[]; userUpstreamIds: readonly string[] } }>();
+    const collected: { capOnly?: readonly string[] | null; both?: readonly string[] | null; keyOnly?: readonly string[] | null } = {};
+    app.get('/cap-only', c => {
+      // Unrestricted key (apiKeyUpstreamIds null) under a capped user.
+      c.set('userUpstreamIds', ['up-a']);
+      collected.capOnly = createGatewayCtxFromHono(c, false).upstreamIds;
+      return c.text('ok');
+    });
+    app.get('/both', c => {
+      // Per-key whitelist further narrows the user cap and preserves per-key order.
+      c.set('userUpstreamIds', ['up-a', 'up-b']);
+      c.set('apiKeyUpstreamIds', ['up-b', 'up-c']);
+      collected.both = createGatewayCtxFromHono(c, false).upstreamIds;
+      return c.text('ok');
+    });
+    app.get('/key-only', c => {
+      // Unrestricted user (no userUpstreamIds set) with a per-key whitelist
+      // falls through to the per-key list verbatim.
+      c.set('apiKeyUpstreamIds', ['up-x']);
+      collected.keyOnly = createGatewayCtxFromHono(c, false).upstreamIds;
+      return c.text('ok');
+    });
+    await app.request('/cap-only');
+    await app.request('/both');
+    await app.request('/key-only');
+    assertEquals(collected.capOnly, ['up-a']);
+    assertEquals(collected.both, ['up-b']);
+    assertEquals(collected.keyOnly, ['up-x']);
+  });
+
   test('stamps requestStartedAt from performance.now() at construction', async () => {
     const app = new Hono();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
@@ -133,10 +166,10 @@ describe('createGatewayCtxForWs', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, 'ws-key');
-    assertEquals(ctx.apiKeyUpstreamIds, ['ws-up-1']);
+    assertEquals(ctx.upstreamIds, ['ws-up-1']);
   });
 
-  test('sets apiKeyId and apiKeyUpstreamIds to null when unset', async () => {
+  test('sets apiKeyId and upstreamIds to null when unset', async () => {
     const app = new Hono();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
@@ -147,7 +180,7 @@ describe('createGatewayCtxForWs', () => {
     await app.request('/test');
     assertExists(ctx);
     assertEquals(ctx.apiKeyId, null);
-    assertEquals(ctx.apiKeyUpstreamIds, null);
+    assertEquals(ctx.upstreamIds, null);
   });
 
   test('forces wantsStream=true', async () => {

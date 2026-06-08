@@ -11,7 +11,7 @@ import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from 
 
 const stubCtx: GatewayCtx = {
   apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},
   requestStartedAt: 0,

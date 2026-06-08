@@ -92,7 +92,7 @@ const queryRecordsForView = async (
     });
   }
 
-  const ownedIds = await repo.apiKeys.idsByUserId(resolved.scopeUserId!, { includeDeleted: true });
+  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId!);
   const ownedSet = new Set(ownedIds);
   if (params.keyId !== undefined && !ownedSet.has(params.keyId)) {
     return null;
@@ -123,13 +123,12 @@ export const performanceTelemetry = async (c: Ctx) => {
   const rawRecords = await queryRecordsForView(resolved, params.value);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const keyToUser = params.value.groupBy === 'userId' ? await buildKeyToUserMap() : undefined;
-  const records = aggregatePerformanceForDisplay(rawRecords, {
-    bucket: params.value.bucket,
-    groupBy: params.value.groupBy,
-    timezoneOffsetMinutes: params.value.timezoneOffsetMinutes,
-    keyToUser,
-  });
+  const records = aggregatePerformanceForDisplay(
+    rawRecords,
+    params.value.groupBy === 'userId'
+      ? { ...params.value, groupBy: 'userId', keyToUser: await buildKeyToUserMap() }
+      : { ...params.value, groupBy: params.value.groupBy },
+  );
 
   const query = c.req.valid('query');
   const repo = getRepo();
@@ -144,7 +143,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   }
 
   if (query.include_key_metadata !== '1') return c.json({ records });
-  const keys = await repo.apiKeys.listByUserId(resolved.scopeUserId!);
+  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId!);
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({ records, keys: keyMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
@@ -165,10 +164,9 @@ export const performanceOverview = async (c: Ctx) => {
   // all-by-user, the by-model line chart is replaced by a per-user one so the
   // operator sees latency split by who is generating it. The model and runtime
   // tables remain grouped by their respective dimensions in both views.
-  const seriesGroupBy: PerformanceGroupBy = resolved.view === 'all-by-user' ? 'userId' : 'model';
-  const keyToUser = resolved.view === 'all-by-user' ? await buildKeyToUserMap() : undefined;
-
-  const series = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: seriesGroupBy, keyToUser });
+  const series = resolved.view === 'all-by-user'
+    ? aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'userId', keyToUser: await buildKeyToUserMap() })
+    : aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' });
   const summaryRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' });
   const modelRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' });
   const runtimeRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });

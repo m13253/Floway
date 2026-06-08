@@ -192,14 +192,20 @@ const load = async () => {
       ]);
     if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
     if (usageRes.data) {
-      data.value = requestedView === 'all-by-user'
-        ? { records: userRecordsAsKeyShape((usageRes.data as LoaderUsageByUserResponse).records), keys: usersAsKeys((usageRes.data as LoaderUsageByUserResponse).users), keyColorOrder: usageRes.data.keyColorOrder }
-        : usageRes.data as UsageResponse;
+      if (requestedView === 'all-by-user') {
+        const d = usageRes.data as LoaderUsageByUserResponse;
+        data.value = { records: userRecordsAsKeyShape(d.records), keys: usersAsKeys(d.users), keyColorOrder: d.keyColorOrder };
+      } else {
+        data.value = usageRes.data as UsageResponse;
+      }
     }
     if (searchRes.data) {
-      searchData.value = requestedView === 'all-by-user'
-        ? { records: userSearchRecordsAsKeyShape((searchRes.data as LoaderSearchUsageByUserResponse).records), keys: usersAsKeys((searchRes.data as LoaderSearchUsageByUserResponse).users), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: (searchRes.data as LoaderSearchUsageByUserResponse).activeProvider }
-        : searchRes.data as SearchUsageResponse;
+      if (requestedView === 'all-by-user') {
+        const d = searchRes.data as LoaderSearchUsageByUserResponse;
+        searchData.value = { records: userSearchRecordsAsKeyShape(d.records), keys: usersAsKeys(d.users), keyColorOrder: d.keyColorOrder, activeProvider: d.activeProvider };
+      } else {
+        searchData.value = searchRes.data as SearchUsageResponse;
+      }
     }
     loadedTokenRange.value = requestedRange;
   } finally {

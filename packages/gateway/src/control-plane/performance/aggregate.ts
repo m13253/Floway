@@ -16,15 +16,21 @@ export interface PerformanceDisplayRecord {
   p99Ms: number | null;
 }
 
-interface AggregateOptions {
-  bucket: PerformanceBucketGranularity;
-  groupBy: PerformanceGroupBy;
-  timezoneOffsetMinutes: number;
-  // Only consulted when groupBy === 'userId'. Records whose keyId no longer
-  // resolves to a user collapse into the synthetic userId 0 for the same
-  // reason aggregateUsageByUserForDisplay does so.
-  keyToUser?: ReadonlyMap<string, number>;
-}
+type AggregateOptions =
+  | {
+    bucket: PerformanceBucketGranularity;
+    groupBy: Exclude<PerformanceGroupBy, 'userId'>;
+    timezoneOffsetMinutes: number;
+  }
+  | {
+    bucket: PerformanceBucketGranularity;
+    groupBy: 'userId';
+    timezoneOffsetMinutes: number;
+    // Records whose keyId no longer resolves to a user collapse into the
+    // synthetic userId 0 for the same reason aggregateUsageByUserForDisplay
+    // does so.
+    keyToUser: ReadonlyMap<string, number>;
+  };
 
 interface MutableAggregate {
   bucket: string;
@@ -88,10 +94,10 @@ function displayBucket(hour: string, options: Pick<AggregateOptions, 'bucket' | 
   return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
 }
 
-function displayGroup(record: PerformanceTelemetryRecord, options: Pick<AggregateOptions, 'groupBy' | 'keyToUser'>): string {
+function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOptions): string {
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
-    const userId = options.keyToUser?.get(record.keyId) ?? 0;
+    const userId = options.keyToUser.get(record.keyId) ?? 0;
     return String(userId);
   }
   return String(record[options.groupBy]);

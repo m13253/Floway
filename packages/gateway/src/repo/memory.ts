@@ -143,6 +143,10 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(this.keys.filter(k => k.userId === userId && k.deletedAt === null).map(k => ({ ...k })));
   }
 
+  listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]> {
+    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => ({ ...k })));
+  }
+
   findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const k = this.keys.find(k => k.key === rawKey && k.deletedAt === null);
     return Promise.resolve(k ? { ...k } : null);
@@ -153,11 +157,8 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(k ? { ...k } : null);
   }
 
-  idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]> {
-    const includeDeleted = options?.includeDeleted === true;
-    return Promise.resolve(
-      this.keys.filter(k => k.userId === userId && (includeDeleted || k.deletedAt === null)).map(k => k.id),
-    );
+  idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
+    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => k.id));
   }
 
   async save(key: ApiKey): Promise<void> {
@@ -729,8 +730,7 @@ export class InMemoryRepo implements Repo {
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
 
-    // Seed the default admin user 1 to match the SQL migration's behavior. Tests
-    // and any in-memory deployment start with the same baseline as a fresh DB.
+    // Seed the default admin user 1 to match the SQL migration's behavior.
     void this.users.save({
       id: 1,
       username: 'admin',

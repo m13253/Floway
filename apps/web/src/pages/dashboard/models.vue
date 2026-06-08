@@ -11,22 +11,24 @@ export const useModelsPageData = defineBasicLoader(async () => {
     callApi<ApiKey[]>(() => api.api.keys.$get()),
     useModelsStore().load(),
   ]);
-  return { keys: keysRes.data ?? [] };
+  return { keys: keysRes.data ?? [], keysError: keysRes.error?.message ?? null };
 });
 </script>
 
 <script setup lang="ts">
 import { Input, OverlayScrollbars } from '@floway-dev/ui';
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, ref, useTemplateRef } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import ChatPanel from '../../components/models/ChatPanel.vue';
 import ModelInfoBar from '../../components/models/ModelInfoBar.vue';
 
 const initialData = useModelsPageData();
-const { models, error } = useModelsStore();
+const { models, error: modelsError } = useModelsStore();
 
-const keys = ref(initialData.data.value.keys);
+// Loader-level data is fetched once per navigation; nothing in this page
+// reloads it, so a plain const matches the actual lifetime.
+const keys = initialData.data.value.keys;
 
 const modelsSearch = ref('');
 const chatModelId = ref<string>('');
@@ -48,23 +50,21 @@ const selectChatModel = (id: string) => { chatModelId.value = id; };
 if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filteredChatModels.value[0].id;
 
 // Playground requires a real per-user API key, not the admin key.
-const selectedKeyId = ref<string | null>(keys.value[0]?.id ?? null);
-watch(keys, list => {
-  if (selectedKeyId.value && list.some(k => k.id === selectedKeyId.value)) return;
-  selectedKeyId.value = list[0]?.id ?? null;
-});
+const selectedKeyId = ref<string | null>(keys[0]?.id ?? null);
 
 const selectedApiKey = computed(() => {
   const id = selectedKeyId.value;
   if (!id) return null;
-  return keys.value.find(k => k.id === id)?.key ?? null;
+  return keys.find(k => k.id === id)?.key ?? null;
 });
+
+const banner = computed(() => modelsError.value ?? initialData.data.value.keysError);
 </script>
 
 <template>
   <div>
-    <div v-if="error" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
-      {{ error }}
+    <div v-if="banner" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
+      {{ banner }}
     </div>
 
     <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">

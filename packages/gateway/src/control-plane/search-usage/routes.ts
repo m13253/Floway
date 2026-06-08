@@ -66,7 +66,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   }
 
   // self-by-key: scope rows to the actor's keys (active + soft-deleted).
-  const ownedIds = await repo.apiKeys.idsByUserId(resolved.scopeUserId!, { includeDeleted: true });
+  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId!);
   const ownedSet = new Set(ownedIds);
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {
@@ -87,7 +87,7 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   if (query.include_key_metadata !== '1') return c.json(aggregated);
 
   const [keys, searchConfig] = await Promise.all([
-    repo.apiKeys.listByUserId(resolved.scopeUserId!),
+    repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId!),
     loadSearchConfig(),
   ]);
   const keyMap = new Map(keys.map(k => [k.id, k]));

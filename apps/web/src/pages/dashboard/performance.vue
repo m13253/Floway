@@ -81,7 +81,6 @@ const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
-// Mirrors the Token Usage page picker.
 const view = ref<'all-by-user' | 'self-by-key'>(initialOverview.data.value.view);
 
 const series = ref<DisplayRecord[]>(initialOverview.data.value.overview.series);

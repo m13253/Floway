@@ -444,7 +444,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string | undefined;
-  apiKeyUpstreamIds: readonly string[] | null | undefined;
+  upstreamIds: readonly string[] | null | undefined;
   scheduleBackground: GatewayCtx['scheduleBackground'];
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
@@ -534,7 +534,7 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await resolveModelForRequest(state.config.model, state.apiKeyUpstreamIds);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
@@ -933,7 +933,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
   const state: ShimState = {
     config,
     apiKeyId: gatewayCtx.apiKeyId ?? undefined,
-    apiKeyUpstreamIds: gatewayCtx.apiKeyUpstreamIds,
+    upstreamIds: gatewayCtx.upstreamIds,
     scheduleBackground: gatewayCtx.scheduleBackground,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,

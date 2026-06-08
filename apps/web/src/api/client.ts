@@ -32,9 +32,9 @@ export interface GlobalError {
   raw?: unknown;
 }
 
-// Unwrap a Hono RPC response into a Marina-shaped `{ data?, error? }`. The
-// generic is supplied by the caller because the Hono RPC client types
-// `.json()` per-handler but we lose that narrowing when wrapping in a helper.
+// Unwrap a Hono RPC response into `{ data?, error? }`. The generic is supplied
+// by the caller because the Hono RPC client types `.json()` per-handler but we
+// lose that narrowing when wrapping in a helper.
 export const callApi = async <T>(
   fn: () => Promise<Response>,
 ): Promise<{ data?: T; error?: GlobalError }> => {

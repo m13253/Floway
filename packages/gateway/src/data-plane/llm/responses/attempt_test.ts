@@ -19,7 +19,7 @@ const API_KEY_ID = 'key_attempt_test';
 
 const makeGatewayCtx = (): GatewayCtx => ({
   apiKeyId: API_KEY_ID,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,

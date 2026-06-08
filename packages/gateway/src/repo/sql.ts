@@ -86,6 +86,14 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return results.map(toApiKey);
   }
 
+  async listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE user_id = ? ORDER BY created_at`)
+      .bind(userId)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
   async findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const row = await this.db
       .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE key = ? AND deleted_at IS NULL`)
@@ -102,11 +110,11 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return row ? toApiKey(row) : null;
   }
 
-  async idsByUserId(userId: number, options?: { includeDeleted?: boolean }): Promise<string[]> {
-    const sql = options?.includeDeleted
-      ? 'SELECT id FROM api_keys WHERE user_id = ?'
-      : 'SELECT id FROM api_keys WHERE user_id = ? AND deleted_at IS NULL';
-    const { results } = await this.db.prepare(sql).bind(userId).all<{ id: string }>();
+  async idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
+    const { results } = await this.db
+      .prepare('SELECT id FROM api_keys WHERE user_id = ?')
+      .bind(userId)
+      .all<{ id: string }>();
     return results.map(r => r.id);
   }
 

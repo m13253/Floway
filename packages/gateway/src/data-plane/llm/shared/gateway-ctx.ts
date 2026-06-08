@@ -1,10 +1,16 @@
 import type { Context } from 'hono';
 
+import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 
 export interface GatewayCtx {
   readonly apiKeyId: string | null;
-  readonly apiKeyUpstreamIds: readonly string[] | null;
+  // Intersection of the actor's per-user cap and the per-key whitelist
+  // (null on either side means unrestricted on that side; null here means
+  // unrestricted overall). The data plane consults this and never the raw
+  // per-key list — bypassing the user cap would break the headline
+  // multi-tenant promise.
+  readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
@@ -21,11 +27,11 @@ const buildScheduleBackground = (c: Context): GatewayCtx['scheduleBackground'] =
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
   const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
-  const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
   return {
     apiKeyId,
-    apiKeyUpstreamIds,
+    upstreamIds,
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
     scheduleBackground: buildScheduleBackground(c),
@@ -39,10 +45,10 @@ export const createGatewayCtxForWs = (
   downstreamAbortController: AbortController,
 ): GatewayCtx => {
   const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
-  const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
   return {
     apiKeyId,
-    apiKeyUpstreamIds,
+    upstreamIds,
     abortSignal: downstreamAbortController.signal,
     wantsStream: true,
     downstreamAbortController,

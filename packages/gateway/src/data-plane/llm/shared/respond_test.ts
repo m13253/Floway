@@ -40,7 +40,7 @@ const setup = (): Harness => {
     background,
     ctx: (overrides = {}) => ({
       apiKeyId: overrides.apiKeyId === undefined ? 'key_a' : overrides.apiKeyId,
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       wantsStream: true,
       scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
       requestStartedAt: overrides.requestStartedAt ?? 0,

@@ -21,7 +21,6 @@ const props = defineProps<{
   // The pool the actor is allowed to choose from.
   available: UpstreamOption[];
   title: string;
-  // Tooltip explaining what "off" means in the host context.
   inheritDescription: string;
 }>();
 
@@ -57,8 +56,7 @@ const toggleRow = (id: string, enabled: boolean) => {
   setRows(rows.value.map(r => r.id === id ? { ...r, enabled } : r));
 };
 
-const enabledCount = computed(() => rows.value.filter(r => r.enabled).length);
-const badgeCount = computed(() => value.value.override ? enabledCount.value : props.available.length);
+const badgeCount = computed(() => value.value.override ? rows.value.filter(r => r.enabled).length : props.available.length);
 
 const providerTone = (provider: UpstreamProviderKind | null): 'amber' | 'emerald' | 'cyan' | 'zinc' => {
   if (provider === 'custom') return 'amber';

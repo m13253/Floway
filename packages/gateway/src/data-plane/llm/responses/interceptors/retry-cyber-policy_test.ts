@@ -39,7 +39,7 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
 
 const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => ({
   apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,

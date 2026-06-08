@@ -20,11 +20,11 @@ import { Button } from '@floway-dev/ui';
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import PasswordDrawer from '../../components/users/PasswordDrawer.vue';
+import PasswordDialog from '../../components/users/PasswordDialog.vue';
 import UserDialog from '../../components/users/UserDialog.vue';
 import UsersTable from '../../components/users/UsersTable.vue';
 import { useUpstreamOptionsStore } from '../../composables/useUpstreamOptions.ts';
-import { useAuthStore } from '../../stores/auth.ts';
+import { type AuthUser, useAuthStore } from '../../stores/auth.ts';
 
 definePage({ meta: { requiresAdmin: true } });
 
@@ -86,9 +86,7 @@ const onUserSaved = async (savedId: number) => {
   // (e.g. the per-key UpstreamPicker filter) would stay stale until the next
   // login. Pull /auth/me to keep the local identity in sync.
   if (savedId === actorUserId.value) {
-    const { data } = await callApi<{ user: { id: number; username: string; isAdmin: boolean; canViewGlobalTelemetry: boolean; upstreamIds: string[] | null } }>(
-      () => api.auth.me.$get(),
-    );
+    const { data } = await callApi<{ user: AuthUser }>(() => api.auth.me.$get());
     if (data) auth.setUser(data.user);
   }
 };
@@ -125,15 +123,25 @@ const remove = async (u: WireUser) => {
     </div>
 
     <UserDialog
+      v-if="userDialogMode === 'create'"
       v-model:open="userDialogOpen"
-      :mode="userDialogMode"
-      :user="editTarget ?? undefined"
+      mode="create"
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
       @created="onCreated"
       @saved="onUserSaved"
     />
-    <PasswordDrawer
+    <UserDialog
+      v-else-if="editTarget"
+      v-model:open="userDialogOpen"
+      mode="edit"
+      :user="editTarget"
+      :actor-user-id="actorUserId"
+      :upstreams="upstreamOptions"
+      @created="onCreated"
+      @saved="onUserSaved"
+    />
+    <PasswordDialog
       v-model:open="passwordOpen"
       mode="admin"
       :target-user-id="passwordTarget?.id"

@@ -14,7 +14,6 @@ const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations
 type SqlJsDatabase = {
   run(sql: string, params?: unknown[]): void;
   exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
-  close(): void;
 };
 
 export const createSqliteTestDb = async (): Promise<SqlDatabase> => {

@@ -52,7 +52,7 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
 
 const gatewayCtx = (apiKeyId?: string): GatewayCtx => ({
   apiKeyId: apiKeyId ?? null,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},
   requestStartedAt: 0,
