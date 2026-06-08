@@ -4,9 +4,12 @@
 // construct one themselves.
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 
-// Default fetcher for any code path that has no proxy story (control-plane
-// /models listings, catalog refreshes, OAuth bootstrap). Every call site
-// declares whether it wants the proxy chain by passing a fetcher explicitly.
+// Plain runtime fetch as a Fetcher. Every call site declares whether it
+// wants the per-upstream proxy chain by passing a fetcher explicitly; this
+// constant is the choice for the few paths where there is no upstream id
+// to key a chain off — the gateway's `direct` fallback impl, the pre-save
+// custom-config validation flow (no row exists yet), and the Codex PKCE
+// token exchange (the upstream is created from the response).
 export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 
 export interface FetchOptions {

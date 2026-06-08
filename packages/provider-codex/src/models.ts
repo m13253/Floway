@@ -23,8 +23,8 @@ export interface CodexRawModel {
 
 // `fetcher` is required so every catalog refresh routes through whatever
 // proxy fallback chain the upstream is configured with — there is no
-// implicit direct-egress fallback at this layer. Callers without an
-// upstream context (admin imports, operator-pressed refresh) pass the
+// implicit direct-egress fallback at this layer. The only production
+// caller is the codex provider's getProvidedModels, which threads the
 // per-upstream fetcher built via createPerRequestFetcher.
 export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: string; signal?: AbortSignal; fetcher: Fetcher }): Promise<CodexRawModel[]> => {
   const response = await opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_MODELS_PATH}?client_version=${CODEX_CLI_VERSION}`, {

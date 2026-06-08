@@ -45,10 +45,12 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   cache: CacheRepo;
   effects: CodexCallEffects;
-  /** Proxy-aware indirection for the upstream Codex call AND for the
-   *  data-plane OAuth refresh. The /codex/models bootstrap stays on direct
-   *  egress (admin-side, runs in setup/refresh routes that don't have an
-   *  upstream context). */
+  /** Proxy-aware indirection threaded through every outbound HTTP from
+   *  this call: the upstream Codex `/responses` POST AND the OAuth refresh
+   *  hop that may run inside it. The data plane builds the per-upstream
+   *  fetcher via createPerRequestFetcher and hands the same one to both
+   *  legs so a single fallback chain covers them both under restricted
+   *  egress. */
   fetcher: Fetcher;
 }
 
