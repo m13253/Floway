@@ -106,7 +106,7 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   while (headerEnd < 0) {
     const { value, done } = await reader.read();
     if (done) throw new HttpProtocolError(`unexpected EOF before headers; got ${buffer.byteLength} bytes`);
-    buffer = concat(buffer, copy(value));
+    buffer = concat(buffer, value);
     headerEnd = findDoubleCrlf(buffer);
     if (headerEnd < 0 && buffer.byteLength > HEADER_BUFFER_CAP) {
       throw new HttpProtocolError(`HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`);
@@ -284,7 +284,7 @@ export const decodeChunked = (
               controller.error(new HttpProtocolError('chunked: EOF in size'));
               return;
             }
-            buf = concat(buf, copy(more.value));
+            buf = concat(buf, more.value);
             continue;
           }
           const sizeLine = new TextDecoder().decode(buf.subarray(0, idx));
@@ -319,7 +319,7 @@ export const decodeChunked = (
           buf = buf.subarray(take);
           need -= take;
           if (need === 0) state = 'after-data-crlf';
-          if (take > 0) return;
+          return;
         } else if (state === 'after-data-crlf') {
           while (buf.byteLength < 2) {
             const more = await reader.read();
@@ -327,7 +327,7 @@ export const decodeChunked = (
               controller.error(new HttpProtocolError('chunked: EOF before CRLF after data'));
               return;
             }
-            buf = concat(buf, copy(more.value));
+            buf = concat(buf, more.value);
           }
           if (buf[0] !== 0x0d || buf[1] !== 0x0a) {
             controller.error(new HttpProtocolError('chunked: missing CRLF after data'));
@@ -343,7 +343,7 @@ export const decodeChunked = (
               controller.error(new HttpProtocolError('chunked: EOF in trailers'));
               return;
             }
-            buf = concat(buf, copy(more.value));
+            buf = concat(buf, more.value);
             continue;
           }
           if (idx === 0) {
