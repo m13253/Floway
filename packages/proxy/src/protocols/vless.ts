@@ -52,12 +52,19 @@ export const dialVlessTcpTls = async (
   }
 };
 
+// The WS path performs its TLS + WebSocket upgrade through the runtime's
+// global `fetch()` (workerd hands back a `webSocket` handle on the Response),
+// so it never touches `socketDial`. We narrow the parameter to the slice this
+// dialer actually uses — `signal` — instead of taking the full `DialOptions`
+// and silently ignoring `socketDial`. The dispatcher still passes a full
+// `DialOptions`; structural typing makes the call site work unchanged.
+type VlessWsDialOptions = Pick<DialOptions, 'signal'>;
+
 export const dialVlessWsTls = async (
   config: VlessWsTlsProxyConfig,
   target: DialTarget,
-  options: DialOptions,
+  options: VlessWsDialOptions,
 ): Promise<DialResult> => {
-  // Use Worker fetch() to do the WS upgrade — workerd handles outer TLS for us.
   const wsUrl = `https://${config.host}:${config.port}${config.path}`;
   let resp: Response;
   try {
