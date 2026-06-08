@@ -1,8 +1,4 @@
 // Public types for HTTP/1.1 over a duplex byte stream.
-//
-// This package speaks HTTP/1.1 against any duplex transport — a raw TCP
-// socket, a userspace-TLS-wrapped stream, a CONNECT-tunnelled stream, etc.
-// It has no opinion on how the duplex got there; the caller hands one in.
 
 /**
  * A duplex byte transport. Both halves are owned by the caller; the

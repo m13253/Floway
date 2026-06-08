@@ -129,7 +129,6 @@ const dialShadowsocks2022Inner = async (
     async pull(controller) {
       try {
         if (!recvCipher) {
-          // Read server salt
           const recvSalt = await readN(keyLen);
           const recvKey = blake3(concat(psk, recvSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
           recvCipher = makeAead(method, recvKey);
@@ -171,7 +170,6 @@ const dialShadowsocks2022Inner = async (
           if (firstPlain.byteLength) controller.enqueue(firstPlain as Uint8Array<ArrayBuffer>);
           return;
         }
-        // Read length record
         const lenSealed = await readN(2 + TAG);
         const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;

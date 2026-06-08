@@ -110,12 +110,10 @@ const dialShadowsocksInner = async (
   // layer fall through to the next entry instead of masquerading the cause
   // as an opaque inner-TLS failure.
   let recvBootstrapped = false;
-  // Build the SS-decrypted readable
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         if (!recvCipher) {
-          // Read the server's salt
           const saltBuf = await readExactly(keyLen);
           const recvSubkey = hkdf(sha1, masterKey, saltBuf, asciiBytes('ss-subkey'), keyLen);
           recvCipher = makeAead(method, recvSubkey);
@@ -147,7 +145,6 @@ const dialShadowsocksInner = async (
     },
   });
 
-  // SS-encrypting writable
   const ssWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
       // Re-acquire the writer per frame so the SS-encrypting writable owns the underlying lock only while it actively writes a record.
