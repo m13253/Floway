@@ -24,6 +24,7 @@ import { md5, sha1 } from '@noble/hashes/legacy.js';
 import { ProxyDialError } from '../errors.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { makeExactReader } from './exact-reader.ts';
 import { asciiBytes, concat, randomBytes } from '@floway-dev/http';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
@@ -83,31 +84,7 @@ const dialShadowsocksInner = async (
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
-  let leftover: Uint8Array | undefined;
-  const readExactly = async (n: number): Promise<Uint8Array<ArrayBuffer>> => {
-    const out = new Uint8Array(n);
-    let got = 0;
-    if (leftover?.byteLength) {
-      const take = Math.min(n, leftover.byteLength);
-      out.set(leftover.subarray(0, take), 0);
-      got += take;
-      leftover = take < leftover.byteLength ? leftover.subarray(take) : undefined;
-    }
-    while (got < n) {
-      const r = await reader.read();
-      if (r.done) throw new Error(`SS: EOF, want ${n} got ${got}`);
-      const need = n - got;
-      if (r.value.byteLength <= need) {
-        out.set(r.value, got);
-        got += r.value.byteLength;
-      } else {
-        out.set(r.value.subarray(0, need), got);
-        leftover = r.value.subarray(need);
-        got += need;
-      }
-    }
-    return out;
-  };
+  const readExactly = makeExactReader(reader, 'SS');
 
   // Build the SS address header for the first payload chunk.
   const addrBytes = buildSsAddress(target.host, target.port);

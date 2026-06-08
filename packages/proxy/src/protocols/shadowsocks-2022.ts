@@ -18,6 +18,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { ProxyDialError } from '../errors.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { makeExactReader } from './exact-reader.ts';
 import { concat, randomBytes } from '@floway-dev/http';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
@@ -101,31 +102,7 @@ const dialShadowsocks2022Inner = async (
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
-  let leftover: Uint8Array | undefined;
-  const readN = async (n: number): Promise<Uint8Array<ArrayBuffer>> => {
-    const out = new Uint8Array(n);
-    let got = 0;
-    if (leftover?.byteLength) {
-      const take = Math.min(n, leftover.byteLength);
-      out.set(leftover.subarray(0, take), 0);
-      got += take;
-      leftover = take < leftover.byteLength ? leftover.subarray(take) : undefined;
-    }
-    while (got < n) {
-      const r = await reader.read();
-      if (r.done) throw new Error(`SS2022: EOF, want ${n} got ${got}`);
-      const need = n - got;
-      if (r.value.byteLength <= need) {
-        out.set(r.value, got);
-        got += r.value.byteLength;
-      } else {
-        out.set(r.value.subarray(0, need), got);
-        leftover = r.value.subarray(need);
-        got += need;
-      }
-    }
-    return out;
-  };
+  const readN = makeExactReader(reader, 'SS2022');
 
   // Build the request:
   //   - sendSalt
