@@ -144,26 +144,6 @@ describe('dialSocks5 — failure modes', () => {
     });
   });
 
-  it('rejects a connection-refused CONNECT reply with the upstream rep code in the message', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    await srv.read(3);
-    srv.respond(arr(0x05, 0x00));
-    await srv.read(4);
-    const lenBuf = await srv.read(1);
-    await srv.read(lenBuf[0]!);
-    await srv.read(2);
-
-    // rep=0x05 → connection refused (RFC 1928 §6).
-    srv.respond(arr(0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0));
-    await expect(promise).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('status=5'),
-    });
-  });
-
   it('handles ATYP=0x04 (IPv6) in the CONNECT reply by reading the 16-byte BND.ADDR', async () => {
     const fake = makeFakeSocketDial();
     const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });

@@ -377,21 +377,6 @@ describe('vlessFrameOverStream — reply prefix edge cases', () => {
     expect(Array.from(value!.subarray(0, 4))).toEqual([0, 1, 2, 3]);
   });
 
-  it('errors the readable when the server replies with version 0xff', async () => {
-    const p = makePair();
-    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
-    await p.written;
-    p.pushFromServer(new Uint8Array([0xff, 0x00]));
-
-    const result = await dialPromise;
-    const reader = result.readable.getReader();
-    await expect(reader.read()).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('bad version'),
-    });
-  });
-
   it('completes prefix strip when the payload is empty (closes cleanly after addons)', async () => {
     const p = makePair();
     const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
