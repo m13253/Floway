@@ -44,7 +44,6 @@ const target: ProxyRequestTarget = {
   host: 'api.openai.com',
   port: 443,
   tls: true,
-  alpn: undefined,
 };
 
 const stubSocketDial: SocketDial = {

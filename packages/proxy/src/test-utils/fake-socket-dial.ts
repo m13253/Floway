@@ -94,7 +94,7 @@ const makeFakeSocket = (
   // Dialer-side writable → server-side read buffer.
   let writeBuffer = new Uint8Array(0);
   let writableClosed = false;
-  let writableClosedResolve: (() => void) | null = null;
+  let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
   const readWaiters: Array<{ n: number; resolve: (v: Uint8Array) => void; reject: (e: unknown) => void }> = [];
 
@@ -125,12 +125,12 @@ const makeFakeSocket = (
     },
     close() {
       writableClosed = true;
-      writableClosedResolve?.();
+      writableClosedResolve();
       tryDispatchReads();
     },
     abort() {
       writableClosed = true;
-      writableClosedResolve?.();
+      writableClosedResolve();
       tryDispatchReads();
     },
   });
