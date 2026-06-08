@@ -60,8 +60,7 @@ const badgeCount = computed(() => value.value.override ? rows.value.filter(r => 
 const providerTone = (provider: UpstreamProviderKind | null): 'amber' | 'emerald' | 'cyan' | 'zinc' => {
   if (provider === 'custom') return 'amber';
   if (provider === 'azure') return 'emerald';
-  if (provider === 'copilot') return 'cyan';
-  if (provider === 'codex') return 'cyan';
+  if (provider === 'copilot' || provider === 'codex') return 'cyan';
   return 'zinc';
 };
 

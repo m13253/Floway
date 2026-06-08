@@ -32,9 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
         if (!raw) return null;
         try {
           const parsed: unknown = JSON.parse(raw);
-          // Anything that does not match the current AuthIdentity shape — most
-          // commonly a payload written by an older version of the dashboard —
-          // is treated as "no valid identity" and the user lands on /login.
+          // Drop payloads that do not match the current shape so stale localStorage redirects to /login.
           return isAuthIdentity(parsed) ? parsed : null;
         } catch {
           return null;

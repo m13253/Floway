@@ -15,11 +15,10 @@ import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
-  const start = query.start ?? '';
-  const end = query.end ?? '';
-  if (!start || !end) {
+  if (!query.start || !query.end) {
     return c.json({ error: 'start and end query parameters are required (e.g. 2026-03-09T00)' }, 400);
   }
+  const { start, end } = query;
 
   const resolved = resolveTelemetryView(c, query.view, query.key_id);
   if ('error' in resolved) {

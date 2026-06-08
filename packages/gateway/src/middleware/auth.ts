@@ -77,7 +77,7 @@ export const userUpstreamIdsFromContext = (c: Context): readonly string[] | null
 
 // Composes the per-user upstream cap with the per-key whitelist: any side `null`
 // means unrestricted; both sides set return their intersection (preserving the
-// per-key priority order). Empty intersection reaches the existing
+// per-key priority order). Empty intersection falls through to the downstream
 // "no upstream available" error path.
 export const effectiveUpstreamIdsFromContext = (c: Context): readonly string[] | null => {
   const userIds = userUpstreamIdsFromContext(c);

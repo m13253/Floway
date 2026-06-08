@@ -1,9 +1,8 @@
 // GET /api/performance — query backend-aggregated latency telemetry.
 //
 // View semantics mirror /api/token-usage and /api/search-usage:
-// - `self-by-key` scopes rows to the actor's keys (active + soft-deleted) and
-//   keeps the existing per-key groupBy options. `group_by=userId` is rejected
-//   in this mode — every row already belongs to the actor.
+// - `self-by-key` scopes rows to the actor's keys (active + soft-deleted).
+//   `group_by=userId` is rejected — every row already belongs to the actor.
 // - `all-by-user` aggregates across every row (callers must have
 //   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
 //   another user's key id into a global response; `group_by=userId` is the
