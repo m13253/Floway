@@ -36,7 +36,6 @@ interface PerformanceQueryParams {
 // zod-shaped error so the dashboard's inline-error rendering stays intact.
 const readPerformanceQuery = (
   c: Ctx,
-  defaults: { bucket: PerformanceBucketGranularity; groupBy: PerformanceGroupBy },
 ): { type: 'ok'; value: PerformanceQueryParams } | { type: 'error'; error: string } => {
   const query = c.req.valid('query');
   const start = query.start ?? '';
@@ -56,8 +55,8 @@ const readPerformanceQuery = (
       keyId: query.key_id === '' ? undefined : query.key_id,
       start,
       end,
-      bucket: query.bucket ?? defaults.bucket,
-      groupBy: query.group_by ?? defaults.groupBy,
+      bucket: query.bucket ?? 'hour',
+      groupBy: query.group_by ?? 'model',
       metricScope: query.metric_scope ?? 'request_total',
       timezoneOffsetMinutes,
     },
@@ -114,7 +113,7 @@ const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
 };
 
 export const performanceTelemetry = async (c: Ctx) => {
-  const params = readPerformanceQuery(c, { bucket: 'hour', groupBy: 'model' });
+  const params = readPerformanceQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
   const resolved = resolveView(c, params.value);
@@ -150,7 +149,7 @@ export const performanceTelemetry = async (c: Ctx) => {
 };
 
 export const performanceOverview = async (c: Ctx) => {
-  const params = readPerformanceQuery(c, { bucket: 'hour', groupBy: 'model' });
+  const params = readPerformanceQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
   const resolved = resolveView(c, params.value);

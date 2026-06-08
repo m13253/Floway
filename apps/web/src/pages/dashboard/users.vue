@@ -69,9 +69,8 @@ const editUser = (u: WireUser) => {
   userDialogOpen.value = true;
 };
 
-const onCreated = (user: WireUser) => {
-  void reload();
-  if (!users.value.find(u => u.id === user.id)) users.value = [...users.value, user];
+const onCreated = async () => {
+  await reload();
 };
 
 const resetPassword = (u: WireUser) => {

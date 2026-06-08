@@ -1,5 +1,3 @@
-// Search-usage aggregation helpers shared by the route handler and tests.
-//
 // The repo stores one row per (provider, keyId, action, hour). The dashboard
 // renders one row per (provider, keyId, hour) with `search` and `fetch_page`
 // counts summed; the all-by-user view rolls those further into per-user rows.
@@ -24,9 +22,8 @@ export interface DisplaySearchUsageByUserRecord {
 export const aggregateSearchUsageByKey = (records: readonly SearchUsageRecord[]): DisplaySearchUsageByKeyRecord[] => {
   const grouped = new Map<string, DisplaySearchUsageByKeyRecord>();
   for (const r of records) {
-    // JSON-encoded tuple so a delimiter byte inside any component (e.g.
-    // `|` smuggled into a future external keyId source) can't collide
-    // with the separator.
+    // JSON-encoded tuple keeps the composite key unambiguous regardless of
+    // characters in any component.
     const key = JSON.stringify([r.provider, r.keyId, r.hour]);
     const existing = grouped.get(key);
     if (existing) {

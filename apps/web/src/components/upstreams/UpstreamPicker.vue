@@ -18,7 +18,6 @@ interface PickerValue {
 }
 
 const props = defineProps<{
-  // The pool the actor is allowed to choose from.
   available: UpstreamOption[];
   title: string;
   inheritDescription: string;

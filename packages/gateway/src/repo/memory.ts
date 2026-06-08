@@ -250,7 +250,6 @@ class MemoryUsageRepo implements UsageRepo {
     state.requests += record.requests;
     for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
       state.tokens[dimension] = (state.tokens[dimension] ?? 0) + tokens;
-      // Keep the first unit price set for this dimension; do not overwrite.
       if (state.unitPrices[dimension] === undefined && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }
     return Promise.resolve();

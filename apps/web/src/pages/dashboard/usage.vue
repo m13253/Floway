@@ -30,7 +30,6 @@ interface LoaderSearchUsageResponse {
   activeProvider: string;
 }
 
-// The page normalizes the by-user payload into the by-key shape so the chart and summary code can stay shape-agnostic.
 interface LoaderUsageByUserResponse {
   records: Array<{
     userId: number;
@@ -51,6 +50,8 @@ interface LoaderSearchUsageByUserResponse {
   activeProvider: string;
 }
 
+// The page normalizes the by-user payload into the by-key shape so the chart
+// and summary code can stay shape-agnostic.
 const userBucketId = (userId: number): string => `user-${userId}`;
 const usersAsKeys = (users: ReadonlyArray<{ id: number; username: string }>) =>
   users.map(u => ({ id: userBucketId(u.id), name: u.username, createdAt: '' }));

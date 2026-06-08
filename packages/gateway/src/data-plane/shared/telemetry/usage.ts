@@ -102,8 +102,6 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
 };
 
 export const recordTokenUsageForApiKey = async (apiKeyId: string | undefined, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  // Belt-and-suspenders: every data-plane request resolves to a concrete API
-  // key id under the auth middleware, so this guard should never fire.
   if (!apiKeyId) return;
   await recordTokenUsage(apiKeyId, modelIdentity, usage);
 };
