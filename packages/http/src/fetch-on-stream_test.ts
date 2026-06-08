@@ -11,14 +11,25 @@ describe('parseHttpResponse — status line', () => {
     ['HTTP/1.1 200 OK', 200],
     ['HTTP/1.1 404 Not Found', 404],
     ['HTTP/1.0 503 Service Unavailable', 503],
+    // RFC 9112 §4 + erratum 4087: reason-phrase may be empty, but the
+    // second SP separator is mandatory.
     ['HTTP/1.1 200 ', 200],
-    ['HTTP/1.1 200', 200],
   ])('parses %s as status %d', async (line, status) => {
     const fake = makeFakeDuplex();
     fake.respond(`${line}\r\nContent-Length: 0\r\n\r\n`);
     fake.endResponse();
     const resp = await parseHttpResponse(fake.readable);
     expect(resp.status).toBe(status);
+  });
+
+  it('rejects a status line missing the second SP separator', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    await expect(parseHttpResponse(fake.readable)).rejects.toMatchObject({
+      name: 'HttpProtocolError',
+      code: 'BAD_STATUS_LINE',
+    });
   });
 
   it('rejects malformed status lines as HttpProtocolError', async () => {
