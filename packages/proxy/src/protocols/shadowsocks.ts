@@ -25,6 +25,7 @@ import { asciiBytes, concat, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
@@ -255,6 +256,7 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
  * Exported for tests.
  */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
+  assertValidTargetPort(port, 'SS');
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   if (dom.byteLength > 255) throw new ProxyDialError('SS: address too long', 'proxy-handshake');

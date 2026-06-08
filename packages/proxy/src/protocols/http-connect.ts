@@ -12,6 +12,7 @@
 import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 export const dialHttpConnect = async (
@@ -19,6 +20,7 @@ export const dialHttpConnect = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  assertValidTargetPort(target.port, 'CONNECT');
   // The CONNECT request-line and the Host header both serialize the
   // target host as wire bytes. RFC 9110 §5.4 + §3.4 expect a valid
   // ASCII uri-host; IDN labels must be punycoded by the caller before

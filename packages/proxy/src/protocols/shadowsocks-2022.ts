@@ -19,6 +19,7 @@ import { concat, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
@@ -247,6 +248,7 @@ const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
  * padding bytes and an empty initial_payload.
  */
 export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array<ArrayBuffer> => {
+  assertValidTargetPort(port, 'SS2022');
   const enc = new TextEncoder();
   const dom = enc.encode(host);
   // ATYP=0x03 encodes the domain length in a single byte; a hostname over

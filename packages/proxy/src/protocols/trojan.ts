@@ -19,6 +19,7 @@ import { sha224 } from '@noble/hashes/sha2.js';
 
 import { ProxyDialError } from '../errors.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { userspaceTls, type TlsStream } from '@floway-dev/http';
 
@@ -77,6 +78,7 @@ const dialTrojanInner = async (
  * Spec: https://trojan-gfw.github.io/trojan/protocol
  */
 export const buildTrojanRequestHeader = (password: string, target: DialTarget): Uint8Array => {
+  assertValidTargetPort(target.port, 'Trojan');
   const enc = new TextEncoder();
   const hash = sha224(enc.encode(password));
   const hashHex = bytesToHex(hash);

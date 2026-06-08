@@ -446,10 +446,10 @@ describe('dialSocks5 — CONNECT reply BND.ADDR variants', () => {
     await promise;
   });
 
-  it('handles ATYP=0x04 (IPv6) BND.ADDR even with a non-zero RSV byte (server-side spec violation we tolerate)', async () => {
-    // RFC 1928 §6 says RSV "MUST be 0x00"; some servers emit other values.
-    // The dialer skips RSV by indexing ATYP at byte 3, so anything in byte 2
-    // is silently ignored.
+  it('rejects ATYP=0x04 (IPv6) BND.ADDR when RSV byte is non-zero (RFC 1928 §6)', async () => {
+    // RFC 1928 §6 says RSV MUST be 0x00. A non-zero byte is a spec
+    // violation and we'd rather surface that than silently parse an
+    // ambiguous reply.
     const fake = makeFakeSocketDial();
     const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
     const srv = await fake.awaitConnect();
@@ -458,7 +458,11 @@ describe('dialSocks5 — CONNECT reply BND.ADDR variants', () => {
     await drainConnectRequest(srv);
     const ipv6 = new Uint8Array(16);
     srv.respond(new Uint8Array([0x05, 0x00, 0xff, 0x04, ...ipv6, 0, 0]));
-    await promise;
+    await expect(promise).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'proxy-handshake',
+      message: expect.stringContaining('RSV byte non-zero'),
+    });
   });
 });
 

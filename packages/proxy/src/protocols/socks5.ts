@@ -7,6 +7,7 @@
 import { copy } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 export const dialSocks5 = async (
@@ -14,6 +15,8 @@ export const dialSocks5 = async (
   target: DialTarget,
   options: DialOptions,
 ): Promise<DialResult> => {
+  assertValidTargetPort(target.port, 'SOCKS5');
+
   const auth = config.username !== undefined
     ? { username: config.username, password: config.password ?? '' }
     : undefined;
@@ -111,6 +114,10 @@ const dialSocks5Inner = async (
   const head = await expect(4);
   if (head[0] !== 0x05) throw new ProxyDialError(`SOCKS5 reply bad version: ${head[0]}`, 'proxy-handshake');
   if (head[1] !== 0x00) throw new ProxyDialError(`SOCKS5 connect failed status=${head[1]}`, 'proxy-handshake');
+  // RFC 1928 §6: RSV MUST be 0x00. A non-zero byte points at a broken or
+  // hostile proxy and we'd rather surface the spec violation than parse
+  // an ambiguous reply.
+  if (head[2] !== 0x00) throw new ProxyDialError(`SOCKS5 reply RSV byte non-zero (got 0x${head[2]!.toString(16).padStart(2, '0')}, RFC 1928 §6)`, 'proxy-handshake');
   let bndLen = 0;
   const atyp = head[3];
   if (atyp === 0x01) bndLen = 4;

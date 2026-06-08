@@ -6,6 +6,7 @@
 
 import { concat, copy, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
+import { assertValidTargetPort } from '../types.ts';
 import type { DialResult, DialTarget } from '../types.ts';
 
 export const vlessFrameOverStream = async (
@@ -24,6 +25,7 @@ export const vlessFrameOverStream = async (
 };
 
 const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
+  assertValidTargetPort(target.port, 'VLESS');
   const enc = new TextEncoder();
   const dom = enc.encode(target.host);
   if (dom.byteLength > 255) throw new ProxyDialError('VLESS: hostname too long', 'proxy-handshake');

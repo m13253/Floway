@@ -105,13 +105,22 @@ describe('buildTrojanRequestHeader — port and address variants', () => {
     expect(header[63]).toBe(0xff);
   });
 
-  it('encodes port 0 as 0x00 0x00 (caller is responsible for rejecting if invalid)', () => {
-    // The Trojan dial layer doesn't validate port range; we just emit BE bytes.
-    // Port 0 is technically out of band but the dialer doesn't refuse it —
-    // surfaces as a finding for upstream validation if relevant.
-    const header = buildTrojanRequestHeader('p', { host: 'h', port: 0 });
-    expect(header[62]).toBe(0x00);
-    expect(header[63]).toBe(0x00);
+  it('rejects port 0 before building any wire bytes (RFC 6335 §6 reserves port 0)', async () => {
+    expect(() => buildTrojanRequestHeader('p', { host: 'h', port: 0 })).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', stage: 'proxy-handshake', message: expect.stringContaining('1..65535') }),
+    );
+  });
+
+  it('rejects port 65536 (off by one above the max)', () => {
+    expect(() => buildTrojanRequestHeader('p', { host: 'h', port: 65536 })).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', message: expect.stringContaining('1..65535') }),
+    );
+  });
+
+  it('rejects a negative port', () => {
+    expect(() => buildTrojanRequestHeader('p', { host: 'h', port: -1 })).toThrow(
+      expect.objectContaining({ name: 'ProxyDialError', message: expect.stringContaining('1..65535') }),
+    );
   });
 
   it('serializes a 255-byte hostname (max dom_len)', () => {
