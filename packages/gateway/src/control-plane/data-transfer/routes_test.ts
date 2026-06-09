@@ -264,6 +264,7 @@ test('export emits latest v2 structure with upstreams only', async () => {
   assertEquals(typeof result.exportedAt, 'string');
   assertEquals(result.data.apiKeys, []);
   assertEquals(result.data.upstreams, []);
+  assertEquals(result.data.proxies, []);
   assertEquals(result.data.usage, []);
   assertEquals(result.data.searchUsage, []);
   assertEquals(result.data.performanceIncluded, false);
@@ -352,7 +353,7 @@ test('import replace writes v2 upstreams and clears replaced collections', async
   });
 
   assertEquals(result.status, 200);
-  assertEquals(result.body.imported, { apiKeys: 1, upstreams: 1, usage: 1, searchUsage: 1, performance: 0 });
+  assertEquals(result.body.imported, { apiKeys: 1, upstreams: 1, proxies: 0, usage: 1, searchUsage: 1, performance: 0 });
   assertEquals(await repo.apiKeys.list(), [KEY_B]);
   assertEquals(await repo.upstreams.list(), [AZURE_UPSTREAM]);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
@@ -657,5 +658,86 @@ test('import validates mode and data before mutating', async () => {
   assertEquals(missingUpstreams.status, 400);
   assertEquals(missingUpstreams.body.error, 'invalid apiKeys: apiKeys must be an array');
   assertEquals(emptyMerge.status, 200);
-  assertEquals(emptyMerge.body.imported, { apiKeys: 0, upstreams: 0, usage: 0, searchUsage: 0, performance: 0 });
+  assertEquals(emptyMerge.body.imported, { apiKeys: 0, upstreams: 0, proxies: 0, usage: 0, searchUsage: 0, performance: 0 });
+});
+
+const HTTP_PROXY_URL = 'http://198.51.100.20:3128';
+const SOCKS_PROXY_URL = 'socks5://user:pass@198.51.100.10:1080';
+
+test('export includes proxies with full credential URIs and round-trips through import', async () => {
+  const { app, repo } = setup();
+  await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: 45 });
+  await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sortOrder: 1, dialTimeoutSeconds: null });
+  const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: ['p_socks', 'p_http', 'direct'] };
+  await repo.upstreams.save(upstreamWithFallback);
+
+  const exported = await doExport(app);
+
+  assertEquals(exported.data.proxies, [
+    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sort_order: 0, dial_timeout_seconds: 45 },
+    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sort_order: 1, dial_timeout_seconds: null },
+  ]);
+
+  const fresh = new InMemoryRepo();
+  initRepo(fresh);
+  const importApp = new Hono();
+  importApp.post('/import', zValidator('json', importBody), importData);
+  const result = await doImport(importApp, 'replace', exported.data);
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported.proxies, 2);
+
+  const restored = await fresh.proxies.list();
+  assertEquals(restored.map(p => ({ id: p.id, name: p.name, url: p.url, sortOrder: p.sortOrder, dialTimeoutSeconds: p.dialTimeoutSeconds })), [
+    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: 45 },
+    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sortOrder: 1, dialTimeoutSeconds: null },
+  ]);
+  // last_egress_ip / last_tested_at are deployment-local observations that the
+  // import contract does not carry; assert they reset on the destination side.
+  assertEquals(restored.every(p => p.lastEgressIp === null && p.lastTestedAt === null), true);
+
+  const restoredUpstream = await fresh.upstreams.getById(upstreamWithFallback.id);
+  assertEquals(restoredUpstream?.proxyFallbackList, ['p_socks', 'p_http', 'direct']);
+});
+
+test('import rejects an upstream fallback reference that does not resolve to an imported proxy', async () => {
+  const { app, repo } = setup();
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+
+  const result = await doImport(app, 'replace', latestImportData({
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), proxy_fallback_list: ['p_missing', 'direct'] }],
+    proxies: [],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, `invalid upstreams: upstream ${CUSTOM_UPSTREAM.id} references unknown proxy p_missing`);
+  assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+});
+
+test('import rejects a proxy whose url does not parse', async () => {
+  const { app } = setup();
+
+  const result = await doImport(app, 'replace', latestImportData({
+    proxies: [{ id: 'p_bad', name: 'Bad', url: 'gibberish', sort_order: 0, dial_timeout_seconds: null }],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(String(result.body.error).startsWith('invalid proxies at index 0: url did not parse:'), true);
+});
+
+test('import upserts proxies on id collision (last-writer-wins on name / url / sort_order / timeout)', async () => {
+  const { app, repo } = setup();
+  await repo.proxies.save({ id: 'p1', name: 'Original', url: HTTP_PROXY_URL, sortOrder: 5, dialTimeoutSeconds: null });
+
+  const result = await doImport(app, 'merge', latestImportData({
+    proxies: [{ id: 'p1', name: 'Renamed', url: SOCKS_PROXY_URL, sort_order: 2, dial_timeout_seconds: 90 }],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported.proxies, 1);
+
+  const after = await repo.proxies.getById('p1');
+  assertEquals(after?.name, 'Renamed');
+  assertEquals(after?.url, SOCKS_PROXY_URL);
+  assertEquals(after?.sortOrder, 2);
+  assertEquals(after?.dialTimeoutSeconds, 90);
 });

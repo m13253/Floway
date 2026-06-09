@@ -1,13 +1,19 @@
 // Data transfer routes — export/import operator-managed database data as JSON.
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
+//
+// The export contains every credential the gateway holds — provider API keys,
+// GitHub tokens, Codex refresh tokens, and proxy URIs that embed passwords /
+// UUIDs / PSKs. The endpoint is admin-only via x-api-key; operators are
+// responsible for handling the dumped file with the same care as a DB backup.
 
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
+import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, ProxyRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import type { exportQuery, importBody } from '../schemas.ts';
@@ -19,6 +25,19 @@ import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { parseProxyUri } from '@floway-dev/proxy';
+
+// Wire shape of a proxy entry in the export/import payload. The runtime
+// observation fields (last_egress_ip, last_tested_at) and the backoff rows
+// are deliberately excluded — they describe what this deployment saw, not
+// what the operator configured.
+interface SerializedProxy {
+  id: string;
+  name: string;
+  url: string;
+  sort_order: number;
+  dial_timeout_seconds: number | null;
+}
 
 interface ExportPayload {
   version: 3;
@@ -26,6 +45,7 @@ interface ExportPayload {
   data: {
     apiKeys: ApiKey[];
     upstreams: SerializedUpstreamRecord[];
+    proxies: SerializedProxy[];
     usage: UsageRecord[];
     searchUsage: SearchUsageRecord[];
     performance?: PerformanceTelemetryRecord[];
@@ -107,6 +127,15 @@ const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown):
   return value;
 };
 
+const parseProxyFallbackListField = (value: unknown): string[] => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error('proxy_fallback_list must be an array');
+  for (const entry of value) {
+    if (typeof entry !== 'string') throw new Error('proxy_fallback_list entries must be strings');
+  }
+  return normalizeProxyFallbackList(value as string[]);
+};
+
 const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRecord[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'upstreams must be an array' };
 
@@ -138,7 +167,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         updatedAt: nonEmptyString(item.updated_at, 'updated_at'),
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
-        proxyFallbackList: [],
+        proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         config: item.config,
         state: normalizeUpstreamState(provider, item.state),
       };
@@ -149,6 +178,69 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
   }
 
   return { type: 'ok', records };
+};
+
+const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedProxy[] } | { type: 'invalid'; index: number; error: string } => {
+  // Proxies are optional in the import contract: an absent or empty array
+  // means "the source deployment had no proxies". The cross-reference check
+  // later still fails the import if upstreams point at ids this array
+  // doesn't carry, so a dangling reference cannot slip through silently.
+  if (value === undefined) return { type: 'ok', records: [] };
+  if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'proxies must be an array' };
+
+  const records: SerializedProxy[] = [];
+  for (let i = 0; i < value.length; i++) {
+    try {
+      const item = value[i];
+      if (!isRecord(item)) throw new Error('record must be an object');
+      const id = nonEmptyString(item.id, 'id');
+      if (id === DIRECT_PROXY_ID) throw new Error(`id must not be the reserved '${DIRECT_PROXY_ID}' sentinel`);
+      const name = nonEmptyString(item.name, 'name');
+      const url = nonEmptyString(item.url, 'url');
+      try {
+        parseProxyUri(url);
+      } catch (err) {
+        throw new Error(`url did not parse: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');
+      const dialTimeoutSeconds = item.dial_timeout_seconds;
+      if (dialTimeoutSeconds !== null && (typeof dialTimeoutSeconds !== 'number' || !Number.isInteger(dialTimeoutSeconds) || dialTimeoutSeconds < 1)) {
+        throw new Error('dial_timeout_seconds must be null or a positive integer');
+      }
+      records.push({ id, name, url, sort_order: Math.floor(item.sort_order), dial_timeout_seconds: dialTimeoutSeconds });
+    } catch (error) {
+      return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  return { type: 'ok', records };
+};
+
+const validateProxyIdentities = (records: readonly SerializedProxy[]): string | null => {
+  const seen = new Map<string, number>();
+  for (let i = 0; i < records.length; i++) {
+    const prior = seen.get(records[i].id);
+    if (prior !== undefined) return `duplicate proxies id ${records[i].id} at indexes ${prior} and ${i}`;
+    seen.set(records[i].id, i);
+  }
+  return null;
+};
+
+// Every entry in every upstream's proxy_fallback_list must resolve to either
+// an imported proxy id or the 'direct' sentinel. A dangling reference would
+// silently disable that fallback in the dial layer, which is exactly the
+// silent-truncation behavior the import contract is supposed to prevent.
+const validateProxyFallbackReferences = (upstreams: readonly UpstreamRecord[], proxies: readonly SerializedProxy[]): string | null => {
+  const knownIds = new Set<string>(proxies.map(p => p.id));
+  knownIds.add(DIRECT_PROXY_ID);
+  for (const upstream of upstreams) {
+    for (const ref of upstream.proxyFallbackList) {
+      if (!knownIds.has(ref)) {
+        return `upstream ${upstream.id} references unknown proxy ${ref}`;
+      }
+    }
+  }
+  return null;
 };
 
 const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
@@ -396,18 +488,27 @@ const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricSco
 
 const isPerformanceApiName = (value: unknown): value is PerformanceApiName => typeof value === 'string' && PERFORMANCE_API_NAMES.has(value as PerformanceApiName);
 
-/** GET /api/export — dump all data as JSON */
+const proxyRecordToExportEntry = (record: ProxyRecord): SerializedProxy => ({
+  id: record.id,
+  name: record.name,
+  url: record.url,
+  sort_order: record.sortOrder,
+  dial_timeout_seconds: record.dialTimeoutSeconds,
+});
+
+/** GET /api/export — dump all data as JSON. The payload includes proxy URIs verbatim (passwords / UUIDs / PSKs) and every other stored credential; handle the file with the same care as a database backup. */
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams] = await Promise.all([
+  const [apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams, proxies] = await Promise.all([
     repo.apiKeys.list(),
     repo.usage.listAll(),
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
     repo.searchConfig.get(),
     repo.upstreams.list(),
+    repo.proxies.list(),
   ]);
 
   const payload: ExportPayload = {
@@ -416,6 +517,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     data: {
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
+      proxies: proxies.map(proxyRecordToExportEntry),
       usage,
       searchUsage,
       performanceIncluded: includePerformance,
@@ -455,6 +557,19 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   const upstreams = upstreamsResult.records;
 
+  const proxiesResult = parseProxyRecords(data.proxies);
+  if (proxiesResult.type === 'invalid') {
+    const location = proxiesResult.index >= 0 ? ` at index ${proxiesResult.index}` : '';
+    return c.json({ error: `invalid proxies${location}: ${proxiesResult.error}` }, 400);
+  }
+  const proxies = proxiesResult.records;
+
+  const proxyIdentityError = validateProxyIdentities(proxies);
+  if (proxyIdentityError) return c.json({ error: `invalid proxies: ${proxyIdentityError}` }, 400);
+
+  const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies);
+  if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
+
   const searchUsageResult = parseSearchUsageRecords(data.searchUsage);
   if (searchUsageResult.type === 'invalid') {
     const location = searchUsageResult.index >= 0 ? ` at index ${searchUsageResult.index}` : '';
@@ -489,12 +604,32 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     const existingUpstreams = await repo.upstreams.list();
-    const deletes = [repo.apiKeys.deleteAll(), repo.usage.deleteAll(), repo.searchUsage.deleteAll(), repo.upstreams.deleteAll(), repo.responsesSnapshots.deleteAll(), repo.responsesItems.deleteAll()];
+    const deletes = [
+      repo.apiKeys.deleteAll(),
+      repo.usage.deleteAll(),
+      repo.searchUsage.deleteAll(),
+      repo.upstreams.deleteAll(),
+      repo.proxies.deleteAll(),
+      repo.responsesSnapshots.deleteAll(),
+      repo.responsesItems.deleteAll(),
+    ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
+  // Proxies land before upstreams so any concurrent reader (e.g. a request
+  // resolving an upstream's fallback list) sees the row referenced by an
+  // upstream's proxy_fallback_list as soon as the upstream is visible.
+  for (const proxy of proxies) {
+    await repo.proxies.save({
+      id: proxy.id,
+      name: proxy.name,
+      url: proxy.url,
+      sortOrder: proxy.sort_order,
+      dialTimeoutSeconds: proxy.dial_timeout_seconds,
+    });
+  }
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
@@ -510,6 +645,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     imported: {
       apiKeys: apiKeys.length,
       upstreams: upstreams.length,
+      proxies: proxies.length,
       usage: usage.length,
       searchUsage: searchUsage.length,
       performance: performance.length,

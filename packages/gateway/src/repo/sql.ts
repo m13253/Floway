@@ -1162,6 +1162,31 @@ class SqlProxyRepo implements ProxyRepo {
     return ((result.meta.changes as number) ?? 0) > 0;
   }
 
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM proxies').run();
+  }
+
+  async save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void> {
+    // Mirrors SqlUpstreamRepo.save: ON CONFLICT preserves created_at and the
+    // runtime test-result columns (last_egress_ip / last_tested_at). The
+    // import payload deliberately does not carry those — they describe
+    // observations from the deployment that created the row, not the row's
+    // intended config.
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(
+        `INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           name = excluded.name,
+           url = excluded.url,
+           sort_order = excluded.sort_order,
+           updated_at = excluded.updated_at,
+           dial_timeout_seconds = excluded.dial_timeout_seconds`,
+      )
+      .bind(record.id, record.name, record.url, record.sortOrder, now, now, record.dialTimeoutSeconds)
+      .run();
+  }
+
   async bulkReorder(ids: string[]): Promise<void> {
     // Validate the ids form an exact partition of the current catalog
     // before touching any row. A mismatched call would otherwise either

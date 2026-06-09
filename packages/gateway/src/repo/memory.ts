@@ -649,6 +649,32 @@ class MemoryProxyRepo implements ProxyRepo {
     return this.store.delete(id);
   }
 
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
+  }
+
+  save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void> {
+    // Upsert that mirrors the SQL ON CONFLICT path: preserve the existing
+    // row's createdAt and runtime test fields on collision so the import
+    // never overwrites observations local to this deployment.
+    const existing = this.store.get(record.id);
+    const now = new Date().toISOString();
+    const next: ProxyRecord = {
+      id: record.id,
+      name: record.name,
+      url: record.url,
+      sortOrder: record.sortOrder,
+      dialTimeoutSeconds: record.dialTimeoutSeconds,
+      createdAt: existing ? existing.createdAt : now,
+      updatedAt: now,
+      lastEgressIp: existing ? existing.lastEgressIp : null,
+      lastTestedAt: existing ? existing.lastTestedAt : null,
+    };
+    this.store.set(record.id, next);
+    return Promise.resolve();
+  }
+
   bulkReorder(ids: string[]): Promise<void> {
     const incoming = new Set(ids);
     if (ids.length !== this.store.size || ids.length !== incoming.size) {

@@ -160,7 +160,16 @@ export interface ProxyRepo {
   getById(id: string): Promise<ProxyRecord | null>;
   insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
   patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
+  // Upsert used by the operator import path: an id collision overwrites the
+  // configurable columns (name, url, sort_order, dial_timeout_seconds) and
+  // refreshes updated_at; created_at and the runtime-observed test fields
+  // (last_egress_ip, last_tested_at) belong to the local deployment and are
+  // never carried over from the import file.
+  save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void>;
   delete(id: string): Promise<boolean>;
+  // Operator-import "replace" path: drops every proxy row in one statement.
+  // Backoff rows live in a separate table and are wiped by their own repo.
+  deleteAll(): Promise<void>;
   // Atomically rewrite sort_order of every proxy from `ids` to its index in
   // the array. The set must equal the full proxies catalog — both sides of
   // a mismatch (ids missing from the array or unknown ids in it) abort the

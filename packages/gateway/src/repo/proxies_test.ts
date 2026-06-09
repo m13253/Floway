@@ -118,3 +118,43 @@ test('proxies repo bulkReorder rejects a non-permutation', async () => {
     () => undefined,
   );
 });
+
+test('proxies repo save inserts a new row with createdAt and updatedAt set to now', async () => {
+  const repo = new InMemoryRepo();
+  await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: 30 });
+  const row = await repo.proxies.getById('a');
+  assertEquals(row?.name, 'A');
+  assertEquals(row?.url, 'socks5://host:1080');
+  assertEquals(row?.sortOrder, 0);
+  assertEquals(row?.dialTimeoutSeconds, 30);
+  assertEquals(row?.lastEgressIp, null);
+  assertEquals(row?.lastTestedAt, null);
+});
+
+test('proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config', async () => {
+  const repo = new InMemoryRepo();
+  await repo.proxies.insert({ id: 'a', name: 'Old', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.recordTestSuccess('a', '1.2.3.4');
+  const before = await repo.proxies.getById('a');
+  const originalCreatedAt = before?.createdAt;
+  if (!originalCreatedAt) throw new Error('expected createdAt to be populated');
+
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await repo.proxies.save({ id: 'a', name: 'New', url: 'http://host-b:3128', sortOrder: 7, dialTimeoutSeconds: 60 });
+
+  const after = await repo.proxies.getById('a');
+  assertEquals(after?.name, 'New');
+  assertEquals(after?.url, 'http://host-b:3128');
+  assertEquals(after?.sortOrder, 7);
+  assertEquals(after?.dialTimeoutSeconds, 60);
+  assertEquals(after?.createdAt, originalCreatedAt);
+  assertEquals(after?.lastEgressIp, '1.2.3.4');
+});
+
+test('proxies repo deleteAll drops every row', async () => {
+  const repo = new InMemoryRepo();
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.deleteAll();
+  assertEquals(await repo.proxies.list(), []);
+});
