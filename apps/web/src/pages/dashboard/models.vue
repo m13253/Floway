@@ -75,7 +75,7 @@ const banner = computed(() => modelsError.value ?? initialData.data.value.keysEr
             >
               <option v-if="keys.length === 0" :value="null">(no API keys — create one in Keys)</option>
               <option v-for="k in keys" :key="k.id" :value="k.id">
-                {{ k.name }} (.{{ k.key.slice(-4) }})
+                {{ k.name }} ({{ k.key.slice(-4) }})
               </option>
             </select>
           </div>
