@@ -108,7 +108,7 @@ export const wsUpgradeAndFrame = async (
   const keyBytes = new Uint8Array(16);
   crypto.getRandomValues(keyBytes);
   const clientKey = base64Encode(keyBytes);
-  const expectedAccept = base64Encode(sha1(asciiBytes(clientKey + WS_GUID)));
+  const expectedAccept = base64Encode(sha1(utf8Bytes(clientKey + WS_GUID)));
 
   const writer = transport.writable.getWriter();
   const reader = transport.readable.getReader();
@@ -196,7 +196,7 @@ const sendUpgradeRequest = async (
     lines.push(`${name}: ${value}`);
   }
   const head = `${lines.join('\r\n')}\r\n\r\n`;
-  await writer.write(asciiBytes(head));
+  await writer.write(utf8Bytes(head));
 };
 
 interface UpgradeResponseHead {
@@ -368,7 +368,7 @@ const frameDuplexOnTransport = (
     // status code leaves 123 bytes for the reason. Encode first, then byte-
     // truncate at a UTF-8 boundary — slicing the JS string is char-level and
     // a single multi-byte code point at the cap would split mid-sequence.
-    const reasonBytes = truncateUtf8(asciiBytes(reason), 123);
+    const reasonBytes = truncateUtf8(utf8Bytes(reason), 123);
     const payload = new Uint8Array(2 + reasonBytes.byteLength);
     payload[0] = (code >> 8) & 0xff;
     payload[1] = code & 0xff;
@@ -687,7 +687,7 @@ const joinChunks = (parts: Uint8Array[], total: number): Uint8Array => {
   return out;
 };
 
-const asciiBytes = (s: string): Uint8Array => new TextEncoder().encode(s);
+const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 // Truncate a UTF-8 byte buffer to at most `max` bytes without splitting a
 // multi-byte code point. UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF);
