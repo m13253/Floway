@@ -60,11 +60,9 @@ const dialTrojanInner = async (
   try {
     outerTls = await userspaceTls(socket, {
       host: config.sni ?? config.host,
-      // `allowInsecure` is the operator's escape hatch for self-signed
-      // trojan-server leaf certs (the trojan-go reference inbound runs
-      // self-signed by default). Honoring it pre-dial keeps the dashboard
-      // toggle from being silently dead while still defaulting to
-      // chain-validating.
+      // Operator escape hatch for self-signed trojan-server leaves (the
+      // trojan-go reference inbound runs self-signed by default); the
+      // wrapper chain-validates otherwise.
       insecure: config.allowInsecure,
       signal,
     });
