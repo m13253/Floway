@@ -168,5 +168,5 @@ test('PATCH /api/users/me/password rejects API key auth (must be a session)', as
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ currentPassword: 'x', newPassword: 'y' }),
   });
-  assertEquals(response.status, 400);
+  assertEquals(response.status, 401);
 });

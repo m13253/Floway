@@ -39,7 +39,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
     } as never,
   },
   store: new LayeredStatefulResponsesStore({
-    apiKeyId: null,
+    apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
     itemWrites: [],
     snapshotWrites: [],
@@ -49,7 +49,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   headers: {},
 });
 const gatewayCtx = (): GatewayCtx => ({
-  apiKeyId: null,
+  apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},

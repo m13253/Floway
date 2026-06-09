@@ -55,7 +55,6 @@ watch(open, v => { if (v) reset(); }, { immediate: true });
 const isUserOne = computed(() => props.mode === 'edit' && props.user.id === 1);
 const isSelf = computed(() => props.mode === 'edit' && props.user.id === props.actorUserId);
 const adminLocked = computed(() => isUserOne.value || isSelf.value);
-// Admins implicitly see global telemetry; the toggle is locked-on for them.
 const globalTelemetryLocked = computed(() => isAdmin.value);
 const usernameValid = computed(() => /^[a-zA-Z0-9_.\-]{1,64}$/.test(username.value.trim()));
 

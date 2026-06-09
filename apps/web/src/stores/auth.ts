@@ -36,7 +36,6 @@ export const useAuthStore = defineStore('auth', () => {
         if (!raw) return null;
         try {
           const parsed: unknown = JSON.parse(raw);
-          // Drop payloads that do not match the current shape so stale localStorage redirects to /login.
           return isAuthIdentity(parsed) ? parsed : null;
         } catch {
           return null;

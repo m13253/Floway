@@ -9,7 +9,7 @@ import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
-  apiKeyId: null,
+  apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},

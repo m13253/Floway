@@ -100,8 +100,3 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
     })(),
   ]);
 };
-
-export const recordTokenUsageForApiKey = async (apiKeyId: string | undefined, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  if (!apiKeyId) return;
-  await recordTokenUsage(apiKeyId, modelIdentity, usage);
-};

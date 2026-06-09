@@ -8,7 +8,7 @@ import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
-  apiKeyId: null,
+  apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},

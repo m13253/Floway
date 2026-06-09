@@ -18,8 +18,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { recordPerformanceError, recordPerformanceLatency, recordRequestPerformanceForApiKey, runtimeLocationFromRequest } from './telemetry/performance.ts';
-import { recordTokenUsageForApiKey } from './telemetry/usage.ts';
+import { recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
+import { recordTokenUsage } from './telemetry/usage.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -97,25 +97,22 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 };
 
 const performanceContextFor = (
-  apiKeyId: string | undefined,
+  apiKeyId: string,
   modelId: string,
   binding: ProviderModelRecord,
   modelKey: string,
   runtimeLocation: string,
   sourceApi: NonLlmServeApiName,
-): PerformanceTelemetryContext | undefined =>
-  apiKeyId
-    ? {
-        keyId: apiKeyId,
-        model: modelId,
-        upstream: binding.upstream,
-        modelKey,
-        sourceApi,
-        targetApi: sourceApi,
-        stream: false,
-        runtimeLocation,
-      }
-    : undefined;
+): PerformanceTelemetryContext => ({
+  keyId: apiKeyId,
+  model: modelId,
+  upstream: binding.upstream,
+  modelKey,
+  sourceApi,
+  targetApi: sourceApi,
+  stream: false,
+  runtimeLocation,
+});
 
 export interface PassthroughServeContext {
   readonly c: Context;
@@ -147,7 +144,7 @@ export interface PassthroughServeContext {
 export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Response> => {
   const { c, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = ctx;
   const requestStartedAt = performance.now();
-  const apiKeyId = c.get('apiKeyId') as string | undefined;
+  const apiKeyId = c.get('apiKeyId') as string;
   const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
   const scheduleBackground = backgroundSchedulerFromContext(c);
   let lastPerformance: PerformanceTelemetryContext | undefined;
@@ -164,11 +161,11 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const upstreamStartedAt = performance.now();
       const { response, modelKey } = await call(binding);
       const performanceContext = performanceContextFor(apiKeyId, modelId, binding, modelKey, runtimeLocation, sourceApi);
-      if (performanceContext) lastPerformance = performanceContext;
+      lastPerformance = performanceContext;
 
       if (!response.ok) {
         recordUpstreamPerformance(scheduleBackground, performanceContext, true, performance.now() - upstreamStartedAt);
-        recordRequestPerformanceForApiKey(apiKeyId, scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
+        recordRequestPerformance(apiKeyId, scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
         return forwardUpstreamResponse(response);
       }
 
@@ -179,7 +176,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       if (usage) {
         scheduleUsageRecord(
           scheduleBackground,
-          recordTokenUsageForApiKey(
+          recordTokenUsage(
             apiKeyId,
             {
               model: modelId,
@@ -191,7 +188,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
           ),
         );
       }
-      recordRequestPerformanceForApiKey(apiKeyId, scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
+      recordRequestPerformance(apiKeyId, scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
       return forwardUpstreamResponse(response);
     }
 
@@ -201,7 +198,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) return forwarded;
     }
-    recordRequestPerformanceForApiKey(apiKeyId, scheduleBackground, lastPerformance, true, performance.now() - requestStartedAt);
+    recordRequestPerformance(apiKeyId, scheduleBackground, lastPerformance, true, performance.now() - requestStartedAt);
     return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
   }
 };

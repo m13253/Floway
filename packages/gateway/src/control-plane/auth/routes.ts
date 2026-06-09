@@ -6,7 +6,7 @@ import type { Context } from 'hono';
 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { verifyPassword } from '../../shared/passwords.ts';
+import { timingSafeEqual, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { userToEffectiveWire } from '../users/wire.ts';
 import { getEnv } from '@floway-dev/platform';
@@ -17,7 +17,8 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
 
   if (username === '') {
     const adminKey = getEnv('ADMIN_KEY');
-    if (!adminKey || password !== adminKey) {
+    const utf8 = new TextEncoder();
+    if (!adminKey || !timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) {
       return c.json({ error: 'Invalid username or password' }, 401);
     }
     const user = await repo.users.getById(1);
@@ -46,12 +47,13 @@ export const authMe = async (c: Context) => {
   const sessionId = c.get('sessionId') as string | undefined;
   const apiKeyId = c.get('apiKeyId') as string | undefined;
   const user = await getRepo().users.getById(userId);
-  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  if (!user) throw new Error(`authMiddleware loaded userId ${userId} but it is now missing`);
 
   let apiKey: { id: string; name: string } | null = null;
   if (apiKeyId) {
     const k = await getRepo().apiKeys.getById(apiKeyId);
-    apiKey = k ? { id: k.id, name: k.name } : null;
+    if (!k) throw new Error(`authMiddleware accepted apiKeyId ${apiKeyId} but it is now missing`);
+    apiKey = { id: k.id, name: k.name };
   }
   return c.json({
     user: userToEffectiveWire(user),

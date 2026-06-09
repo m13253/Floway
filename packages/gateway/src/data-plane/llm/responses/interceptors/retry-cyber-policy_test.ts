@@ -28,7 +28,7 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags: new Set(['retry-cyber-policy']) } }),
   store: new LayeredStatefulResponsesStore({
-    apiKeyId: null,
+    apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
     itemWrites: [],
     snapshotWrites: [],
@@ -38,7 +38,7 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
 });
 
 const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => ({
-  apiKeyId: null,
+  apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},

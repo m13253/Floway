@@ -23,8 +23,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
     if (!session) return c.json({ error: 'Invalid session' }, 401);
     const user = await getRepo().users.getById(session.userId);
     if (!user) {
-      // The user was deleted while this session was live; clean it up so the
-      // next request stops paying for the lookup.
+      // The user was deleted while this session was live; clean up the orphan.
       await getRepo().sessions.deleteById(sessionToken);
       return c.json({ error: 'Invalid session' }, 401);
     }

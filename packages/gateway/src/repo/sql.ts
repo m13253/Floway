@@ -163,8 +163,8 @@ class SqlApiKeyRepo implements ApiKeyRepo {
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
-// Throws rather than returning null on bad data: a silent downgrade to Default
-// would grant the row broader access than the admin intended.
+// Throws on bad data: silently returning null would broaden the row's
+// upstream access beyond what the admin set.
 const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
   let parsed: unknown;
@@ -809,15 +809,15 @@ const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
 
 const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
   a.hour.localeCompare(b.hour) ||
-    a.metricScope.localeCompare(b.metricScope) ||
-    a.keyId.localeCompare(b.keyId) ||
-    a.model.localeCompare(b.model) ||
-    (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-    a.modelKey.localeCompare(b.modelKey) ||
-    a.sourceApi.localeCompare(b.sourceApi) ||
-    a.targetApi.localeCompare(b.targetApi) ||
-    Number(a.stream) - Number(b.stream) ||
-    a.runtimeLocation.localeCompare(b.runtimeLocation);
+  a.metricScope.localeCompare(b.metricScope) ||
+  a.keyId.localeCompare(b.keyId) ||
+  a.model.localeCompare(b.model) ||
+  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
+  a.modelKey.localeCompare(b.modelKey) ||
+  a.sourceApi.localeCompare(b.sourceApi) ||
+  a.targetApi.localeCompare(b.targetApi) ||
+  Number(a.stream) - Number(b.stream) ||
+  a.runtimeLocation.localeCompare(b.runtimeLocation);
 
 const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {

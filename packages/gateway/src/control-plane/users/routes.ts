@@ -37,8 +37,8 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds ?? null);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
-  // Includes soft-deleted rows so a recreated username never collides with
-  // an old id.
+  // Soft-deleted ids stay reserved so a recreated username never collides
+  // with an old id.
   const all = await repo.users.listIncludingDeleted();
   const newId = all.reduce((max, u) => Math.max(max, u.id), 0) + 1;
 
@@ -91,10 +91,8 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  // Build a partial of the fields the body actually carries, then spread on
-  // top of `existing`. The `!== undefined` check (rather than `??`) is
-  // load-bearing for `upstreamIds`: an explicit `null` means "switch back to
-  // inherit" and must overwrite the existing whitelist, not fall back to it.
+  // Use `!== undefined` rather than `??`: an explicit `null` on `upstreamIds`
+  // means "switch back to inherit" and must overwrite the existing whitelist.
   const overrides: Partial<User> = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
@@ -132,15 +130,17 @@ export const deleteUser = async (c: Context) => {
 export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordBody>) => {
   const sessionId = c.get('sessionId') as string | undefined;
   if (!sessionId) {
-    return c.json({ error: 'Self-service password change requires a logged-in dashboard session' }, 400);
+    return c.json({ error: 'Self-service password change requires a logged-in dashboard session' }, 401);
   }
   const userId = c.get('userId') as number;
   const { currentPassword, newPassword } = c.req.valid('json');
   const repo = getRepo();
 
   const user = await repo.users.getById(userId);
-  if (!user) throw new Error(`userId ${userId} in context but user row missing`);
-  if (user.passwordHash === null) return c.json({ error: 'Current password is incorrect' }, 401);
+  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  if (user.passwordHash === null) {
+    return c.json({ error: 'This account has no password set; ask an admin to reset it.' }, 401);
+  }
   if (!(await verifyPassword(currentPassword, user.passwordHash))) {
     return c.json({ error: 'Current password is incorrect' }, 401);
   }

@@ -170,7 +170,6 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
         // Legacy v3 exports never carried per-key ownership — every row lands
         // on the seed admin (user 1) so historical telemetry attributes there.
         userId = 1;
-        // v3 also predates soft delete; treat every imported row as active.
         deletedAt = null;
       } else {
         if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
@@ -582,9 +581,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     //
-    // Sessions wipe first because their user_id FK references break under
-    // either an api-key recreation or a users-table replacement. Users wipe
-    // only when the payload carries a replacement set (v4).
+    // Sessions are wiped because their user_id would dangle after either an
+    // api-key recreation or a users-table replacement; users are only wiped
+    // when the payload (v4) carries a replacement set.
     const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),

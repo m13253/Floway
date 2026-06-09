@@ -54,15 +54,10 @@ interface SearchUsageByUserResponse {
   activeProvider: string;
 }
 
-// The page normalizes the by-user payload into the by-key shape so the chart
-// and summary code can stay shape-agnostic.
 type UsageView = 'all-by-user' | 'self-by-key';
 
 const userBucketId = (userId: number): string => `user-${userId}`;
 
-// Single source of truth for the view → query → normalize pipeline. Both the
-// loader and the in-component refresh path call it, so request shape and
-// shape-normalization can never drift between them.
 const fetchUsageForView = async (
   api: ApiClient,
   view: UsageView,

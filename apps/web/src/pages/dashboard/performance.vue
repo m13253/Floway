@@ -97,13 +97,7 @@ const load = async () => {
 watch([performanceRange, performanceMetricScope, performanceView], load);
 useIntervalFn(load, 60_000);
 
-const performancePercentileLabel = computed(() => {
-  switch (performancePercentile.value) {
-  case 'p50Ms': return 'p50';
-  case 'p95Ms': return 'p95';
-  case 'p99Ms': return 'p99';
-  }
-});
+const performancePercentileLabel = computed(() => performancePercentile.value.replace('Ms', ''));
 
 const performanceModelOptions = computed(() => {
   const ids = new Set<string>();
@@ -236,9 +230,6 @@ const performanceSummary = computed(() => {
     p99Ms: row?.p99Ms ?? null,
   };
 });
-
-const performanceModelRows = computed(() => overview.value.modelRows);
-const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
 </script>
 
 <template>
@@ -401,7 +392,7 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in performanceModelRows" :key="row.group">
+                <tr v-for="row in overview.modelRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatDuration(row[performancePercentile]) }}</td>
@@ -411,7 +402,7 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
             </table>
           </OverlayScrollbars>
         </div>
-        <div v-if="performanceRuntimeRows.length > 0">
+        <div v-if="overview.runtimeRows.length > 0">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Region</span>
           <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
             <table class="w-full text-sm">
@@ -424,7 +415,7 @@ const performanceRuntimeRows = computed(() => overview.value.runtimeRows);
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in performanceRuntimeRows" :key="row.group">
+                <tr v-for="row in overview.runtimeRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatDuration(row[performancePercentile]) }}</td>

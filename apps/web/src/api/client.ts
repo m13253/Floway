@@ -4,9 +4,7 @@ import { useAuthStore } from '../stores/auth.ts';
 import type { AppType } from '@floway-dev/gateway/app-type';
 
 // Injects the dashboard session token on every outbound request and clears the
-// store on 401 so the router guard redirects to /login. Data-plane calls
-// (e.g. the Models playground) bypass this client and set `x-api-key` directly,
-// since session tokens are rejected outside the control plane.
+// store on 401 so the router guard redirects to /login.
 const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const headers = new Headers(init?.headers ?? {});
   const token = useAuthStore().authToken;

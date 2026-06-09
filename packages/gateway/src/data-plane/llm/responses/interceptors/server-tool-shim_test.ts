@@ -338,7 +338,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
   headers: {},
 });
 
-const makeGatewayCtx = (apiKeyId: string | null = 'k1'): GatewayCtx => ({
+const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   apiKeyId,
   upstreamIds: null,
   wantsStream: true,

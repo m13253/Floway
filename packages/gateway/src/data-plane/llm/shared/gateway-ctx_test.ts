@@ -5,7 +5,7 @@ import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.t
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 interface AuthVars {
-  apiKeyId: string | null;
+  apiKeyId: string;
   apiKeyUpstreamIds: readonly string[] | null;
   userUpstreamIds: readonly string[] | null;
 }
@@ -17,7 +17,7 @@ interface AuthVars {
 const makeApp = (): Hono<{ Variables: AuthVars }> => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
-    c.set('apiKeyId', null);
+    c.set('apiKeyId', 'test-key');
     c.set('apiKeyUpstreamIds', null);
     c.set('userUpstreamIds', null);
     await next();
@@ -41,7 +41,7 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
   });
 
-  test('passes apiKeyId and upstreamIds through as null on an unrestricted key + uncapped user', async () => {
+  test('passes upstreamIds through as null on an unrestricted key + uncapped user', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -50,7 +50,7 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertEquals(ctx.apiKeyId, null);
+    assertEquals(ctx.apiKeyId, 'test-key');
     assertEquals(ctx.upstreamIds, null);
   });
 
@@ -190,7 +190,7 @@ describe('createGatewayCtxForWs', () => {
     assertEquals(ctx.upstreamIds, ['ws-up-1']);
   });
 
-  test('passes apiKeyId and upstreamIds through as null on an unrestricted key + uncapped user', async () => {
+  test('passes upstreamIds through as null on an unrestricted key + uncapped user', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
@@ -200,7 +200,7 @@ describe('createGatewayCtxForWs', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertEquals(ctx.apiKeyId, null);
+    assertEquals(ctx.apiKeyId, 'test-key');
     assertEquals(ctx.upstreamIds, null);
   });
 
