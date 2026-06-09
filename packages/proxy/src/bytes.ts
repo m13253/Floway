@@ -157,7 +157,6 @@ const ipv6StringToBytes = (s: string): Uint8Array | null => {
   if (zerosNeeded < 0) return null;
   for (let i = 0; i < zerosNeeded; i++) groups.push(0);
   for (const p of rightParts) groups.push(parseInt(p, 16));
-  if (groups.length !== 8) return null;
   const out = new Uint8Array(16);
   for (let i = 0; i < groups.length; i++) {
     out[i * 2] = (groups[i]! >> 8) & 0xff;
