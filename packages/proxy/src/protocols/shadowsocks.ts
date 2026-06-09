@@ -118,7 +118,6 @@ const dialShadowsocksInner = async (
           const recvSubkey = hkdf(sha1, masterKey, saltBuf, asciiBytes('ss-subkey'), keyLen);
           recvCipher = makeAead(method, recvSubkey);
         }
-        // Read length record (2-byte len + 16-byte tag)
         const lenSealed = await readExactly(2 + TAG_LEN);
         const lenPlain = recvCipher.decrypt(nonceBytes(recvNonce), lenSealed);
         recvNonce++;
@@ -150,7 +149,6 @@ const dialShadowsocksInner = async (
       // Re-acquire the writer per frame so the SS-encrypting writable owns the underlying lock only while it actively writes a record.
       const w = socket.writable.getWriter();
       try {
-        // Split into MAX_PAYLOAD-sized records.
         let off = 0;
         while (off < chunk.byteLength) {
           const piece = chunk.subarray(off, Math.min(off + MAX_PAYLOAD, chunk.byteLength));
