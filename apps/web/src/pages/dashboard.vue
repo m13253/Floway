@@ -6,8 +6,6 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 import PasswordDialog from '../components/users/PasswordDialog.vue';
 import { useAuthStore } from '../stores/auth.ts';
 
-// Tab labels and order mirror the prerender dashboard exactly — "API Keys",
-// not "Keys".
 interface TabDef {
   path: string;
   label: string;

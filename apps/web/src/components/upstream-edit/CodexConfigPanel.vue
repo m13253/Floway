@@ -50,8 +50,6 @@ const fetchPkceStart = async () => {
 
 const importFormVisible = computed(() => props.mode === 'create' || reimportOpen.value);
 
-// Fetch the PKCE handshake the first time the operator surfaces the callback
-// tab while the import form is visible.
 watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (visible && tab === 'callback') void fetchPkceStart();
 }, { immediate: true });

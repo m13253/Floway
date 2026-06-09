@@ -20,8 +20,6 @@ const emit = defineEmits<{ saved: [] }>();
 const api = useApi();
 const auth = useAuthStore();
 
-// A non-admin actor can only see / pick upstreams that fall inside their
-// per-user cap. Admins see the full list.
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
   if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
   const cap = auth.currentUser.upstreamIds;

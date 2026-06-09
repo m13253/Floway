@@ -69,13 +69,13 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
   const id = parseUserId(c.req.param('id')!);
-  if (id === null) return c.json({ error: 'Invalid user id' }, 400);
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
   const body = c.req.valid('json');
   const actorId = c.get('userId') as number;
   const repo = getRepo();
 
   const existing = await repo.users.getById(id);
-  if (!existing) return c.json({ error: 'User not found' }, 404);
+  if (!existing) return c.json({ error: 'user not found' }, 404);
 
   if (id === 1 && body.isAdmin === false) return c.json({ error: 'user 1 cannot be demoted' }, 400);
   if (id === actorId && body.isAdmin === false) {
@@ -110,14 +110,14 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 
 export const deleteUser = async (c: Context) => {
   const id = parseUserId(c.req.param('id')!);
-  if (id === null) return c.json({ error: 'Invalid user id' }, 400);
+  if (id === null) return c.json({ error: 'invalid user id' }, 400);
   const actorId = c.get('userId') as number;
   if (id === 1) return c.json({ error: 'user 1 cannot be deleted' }, 400);
   if (id === actorId) return c.json({ error: 'cannot delete yourself' }, 400);
 
   const repo = getRepo();
   const ok = await repo.users.softDelete(id);
-  if (!ok) return c.json({ error: 'User not found' }, 404);
+  if (!ok) return c.json({ error: 'user not found' }, 404);
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);

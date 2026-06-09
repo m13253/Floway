@@ -72,10 +72,8 @@ const resetPassword = (u: WireUser) => {
 
 const onUserSaved = async (savedId: number) => {
   await reload();
-  // Self-edits change the actor's own row, including their upstream cap. The
-  // auth store still holds the pre-save snapshot, so anything reading from it
-  // (e.g. the per-key UpstreamPicker filter) would stay stale until the next
-  // login. Pull /auth/me to keep the local identity in sync.
+  // Self-edits change the actor's own row; refresh the auth store so cached
+  // identity (e.g. upstream cap) stays in sync.
   if (savedId === actorUserId.value) {
     const { data, error: err } = await callApi<{ user: AuthUser }>(() => api.auth.me.$get());
     if (err) { error.value = err.message; return; }

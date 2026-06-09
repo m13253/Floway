@@ -58,6 +58,34 @@ interface ApiKeyRow {
 
 const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at';
 
+const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
+
+// Throws on bad data: silently returning null would broaden the row's
+// upstream access beyond what the admin set.
+const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`upstream_ids JSON is malformed for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  if (!Array.isArray(parsed)) throw new Error(`upstream_ids is not an array for ${label}`);
+  if (!parsed.every(item => typeof item === 'string')) throw new Error(`upstream_ids contains non-string entries for ${label}`);
+  return parsed as string[];
+};
+
+const toApiKey = (row: ApiKeyRow): ApiKey => ({
+  id: row.id,
+  userId: row.user_id,
+  name: row.name,
+  key: row.key,
+  createdAt: row.created_at,
+  lastUsedAt: row.last_used_at ?? undefined,
+  upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
+  deletedAt: row.deleted_at,
+});
+
 class SqlApiKeyRepo implements ApiKeyRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -160,34 +188,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     await this.db.prepare('DELETE FROM api_keys').run();
   }
 }
-
-const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
-
-// Throws on bad data: silently returning null would broaden the row's
-// upstream access beyond what the admin set.
-const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`upstream_ids JSON is malformed for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`);
-  }
-  if (!Array.isArray(parsed)) throw new Error(`upstream_ids is not an array for ${label}`);
-  if (!parsed.every(item => typeof item === 'string')) throw new Error(`upstream_ids contains non-string entries for ${label}`);
-  return parsed as string[];
-};
-
-const toApiKey = (row: ApiKeyRow): ApiKey => ({
-  id: row.id,
-  userId: row.user_id,
-  name: row.name,
-  key: row.key,
-  createdAt: row.created_at,
-  lastUsedAt: row.last_used_at ?? undefined,
-  upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
-  deletedAt: row.deleted_at,
-});
 
 interface UserRow {
   id: number;
