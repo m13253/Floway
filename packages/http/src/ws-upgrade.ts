@@ -15,6 +15,7 @@
 
 import { sha1 } from '@noble/hashes/legacy.js';
 
+import { signalAbortReason } from './abort.ts';
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { ASCII_DECODER, TCHAR } from './grammar.ts';
@@ -451,11 +452,6 @@ const frameDuplexOnTransport = (
 
   const readable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
-    pull() {
-      // Pull is satisfied by the IIFE pump below — backpressure is
-      // expressed through `queueSize` and the ReadableStream queue
-      // itself. Nothing to do here.
-    },
     cancel(reason) {
       plainClosed = true;
       void reader.cancel(reason).catch(() => {});
@@ -678,10 +674,4 @@ const base64Encode = (bytes: Uint8Array): string => {
   let bin = '';
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
   return btoa(bin);
-};
-
-const signalAbortReason = (signal: AbortSignal): Error => {
-  const reason = signal.reason;
-  if (reason instanceof Error) return reason;
-  return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };

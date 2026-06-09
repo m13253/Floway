@@ -16,7 +16,7 @@ describe('userspaceTls — input validation', () => {
     ).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('client gone') });
   });
 
-  it('aborts a mid-handshake handshake and surfaces the abort reason', async () => {
+  it('aborts a handshake mid-flight and surfaces the abort reason', async () => {
     const fake = makeFakeDuplex();
     const ac = new AbortController();
     const promise = userspaceTls(

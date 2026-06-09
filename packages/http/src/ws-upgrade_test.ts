@@ -37,16 +37,15 @@ const parseUpgradeRequest = (raw: Uint8Array): { method: string; path: string; h
 
 const buildAcceptHeader = (clientKey: string): string => base64(sha1(enc(clientKey + WS_GUID)));
 
-const standardHandshakeReply = (clientKey: string, extra: string = ''): string => {
+const standardHandshakeReply = (clientKey: string): string => {
   return [
     'HTTP/1.1 101 Switching Protocols',
     'Upgrade: websocket',
     'Connection: Upgrade',
     `Sec-WebSocket-Accept: ${buildAcceptHeader(clientKey)}`,
-    extra,
     '',
     '',
-  ].filter((l, i, arr) => !(i === arr.length - 3 && l === '')).join('\r\n');
+  ].join('\r\n');
 };
 
 const buildServerFrame = (

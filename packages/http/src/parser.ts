@@ -371,7 +371,6 @@ const lengthBody = (
   });
 };
 
-// Body framing — read until EOF.
 const untilEofBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,

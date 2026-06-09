@@ -15,6 +15,7 @@
 import { makeTLSClient, setCryptoImplementation } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
+import { signalAbortReason } from './abort.ts';
 import { copy } from './bytes.ts';
 import type { DuplexStream } from './types.ts';
 
@@ -319,13 +320,4 @@ const logTlsTeardownError = (e: unknown): void => {
   if (proc?.env?.DEBUG_USERSPACE_TLS) {
     console.debug('[userspace-tls] teardown:', e);
   }
-};
-
-// Reshape an already-aborted signal into a throwable Error. A structured
-// Error reason rethrows as-is so its stack/cause survive; a primitive or
-// absent reason becomes a DOMException('AbortError').
-const signalAbortReason = (signal: AbortSignal): Error => {
-  const reason = signal.reason;
-  if (reason instanceof Error) return reason;
-  return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
