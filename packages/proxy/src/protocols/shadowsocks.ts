@@ -91,9 +91,6 @@ const dialShadowsocksInner = async (
 
   const addrBytes = buildSsAddress(target.host, target.port);
 
-  // Encrypt and send: [salt] + frame(addr+initialPayload). For an AEAD frame,
-  // we encrypt up to MAX_PAYLOAD plaintext bytes per record. The first record
-  // contains the address. Subsequent records carry the inner-TLS bytes.
   const initialFrame = encryptFrame(sendCipher, addrBytes, sendNonce);
   sendNonce += 2n;
   const initialOut = concat(sendSalt, initialFrame);

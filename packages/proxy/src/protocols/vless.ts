@@ -2,10 +2,8 @@
 // TCP+TLS and WebSocket+TLS — each going through `socketDial(tls=true)`
 // to the proxy and delegating header construction + reply-prefix framing
 // to `vlessFrameOverStream` in vless-core.ts. The WS variant inserts
-// `wsUpgradeAndFrame` from @floway-dev/http between the outer TLS and
-// the VLESS framing so it stays runtime-agnostic — workerd's
-// `fetch().webSocket` trick is unnecessary now that the upgrade lives in
-// user-space.
+// `wsUpgradeAndFrame` from @floway-dev/http between the outer TLS and the
+// VLESS framing so it stays runtime-agnostic.
 
 import { ProxyDialError } from '../errors.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
