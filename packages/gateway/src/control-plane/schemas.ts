@@ -152,7 +152,7 @@ const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64
 // Empty array is rejected because an entity restricted to zero upstreams cannot
 // serve any model and the UI has no affordance to express that intent.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
-  .min(1, 'upstreamIds must contain at least one upstream id; use null for unrestricted')
+  .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
   .nullable();
 

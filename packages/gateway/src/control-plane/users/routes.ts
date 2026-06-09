@@ -13,7 +13,7 @@ const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<
   const upstreams = await getRepo().upstreams.list();
   const known = new Set(upstreams.map(u => u.id));
   const unknown = ids.filter(id => !known.has(id));
-  return unknown.length ? `unknown upstream id(s): ${unknown.join(', ')}` : null;
+  return unknown.length ? `Unknown upstream(s): ${unknown.join(', ')}` : null;
 };
 
 const parseUserId = (raw: string): number | null => {
@@ -31,7 +31,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const repo = getRepo();
 
   if (await repo.users.findByUsername(body.username)) {
-    return c.json({ error: 'username taken' }, 400);
+    return c.json({ error: 'That username is already taken (usernames are case-insensitive).' }, 400);
   }
   if (body.upstreamIds !== undefined) {
     const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds);

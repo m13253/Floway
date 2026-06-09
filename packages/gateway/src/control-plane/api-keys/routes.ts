@@ -24,14 +24,14 @@ const validateUpstreamIdsAgainstUserCap = async (
   const upstreams = await getRepo().upstreams.list();
   const known = new Set(upstreams.map(u => u.id));
   const unknown = proposed.filter(id => !known.has(id));
-  if (unknown.length) return `unknown upstream id(s): ${unknown.join(', ')}`;
+  if (unknown.length) return `Unknown upstream(s): ${unknown.join(', ')}`;
 
   const userCap = userUpstreamIdsFromContext(c);
   if (userCap === null) return null;
   const userSet = new Set(userCap);
   const blocked = proposed.filter(id => !userSet.has(id));
   return blocked.length
-    ? `upstream_ids contains entries outside your user-level whitelist: ${blocked.join(', ')}`
+    ? `Some selected upstreams aren't available to your account: ${blocked.join(', ')}`
     : null;
 };
 
@@ -93,7 +93,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const body = c.req.valid('json');
 
   if (body.name === undefined && body.upstream_ids === undefined) {
-    return c.json({ error: 'at least one of name or upstream_ids must be provided' }, 400);
+    return c.json({ error: 'Provide a new name or upstream selection to update.' }, 400);
   }
 
   const owned = await ownedKeyOr404(c, id);
