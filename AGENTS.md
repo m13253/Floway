@@ -52,7 +52,7 @@ contracts and is ESLint-prohibited from reaching into any `apps/platform-*`.
 floway/
 ├── packages/
 │   ├── gateway/             # @floway-dev/gateway — Hono app, control/data planes, repo, migrations
-│   ├── http/                # @floway-dev/http — HTTP/1.1 + userspace TLS over a duplex byte stream
+│   ├── http/                # @floway-dev/http — HTTP/1.1 + userspace TLS + WebSocket upgrade over a duplex byte stream
 │   ├── interceptor/         # @floway-dev/interceptor — generic interceptor framework
 │   ├── platform/            # @floway-dev/platform — runtime contracts + portable helpers
 │   ├── protocols/           # @floway-dev/protocols — protocol type defs
