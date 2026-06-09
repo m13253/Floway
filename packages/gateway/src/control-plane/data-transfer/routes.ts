@@ -226,12 +226,19 @@ const validateProxyIdentities = (records: readonly SerializedProxy[]): string | 
   return null;
 };
 
-// Every entry in every upstream's proxy_fallback_list must resolve to either
-// an imported proxy id or the 'direct' sentinel. A dangling reference would
-// silently disable that fallback in the dial layer, which is exactly the
-// silent-truncation behavior the import contract is supposed to prevent.
-const validateProxyFallbackReferences = (upstreams: readonly UpstreamRecord[], proxies: readonly SerializedProxy[]): string | null => {
+// Every entry in every upstream's proxy_fallback_list must resolve to a proxy
+// id that will exist after the import completes — that is, an imported proxy,
+// an existing local proxy (merge mode only; replace mode wipes them first),
+// or the 'direct' sentinel. A dangling reference would silently disable that
+// fallback in the dial layer, which is exactly the silent-truncation
+// behavior the import contract is supposed to prevent.
+const validateProxyFallbackReferences = (
+  upstreams: readonly UpstreamRecord[],
+  proxies: readonly SerializedProxy[],
+  existingProxyIds: readonly string[],
+): string | null => {
   const knownIds = new Set<string>(proxies.map(p => p.id));
+  for (const id of existingProxyIds) knownIds.add(id);
   knownIds.add(DIRECT_PROXY_ID);
   for (const upstream of upstreams) {
     for (const ref of upstream.proxyFallbackList) {
@@ -567,9 +574,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const proxyIdentityError = validateProxyIdentities(proxies);
   if (proxyIdentityError) return c.json({ error: `invalid proxies: ${proxyIdentityError}` }, 400);
 
-  const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies);
-  if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
-
   const searchUsageResult = parseSearchUsageRecords(data.searchUsage);
   if (searchUsageResult.type === 'invalid') {
     const location = searchUsageResult.index >= 0 ? ` at index ${searchUsageResult.index}` : '';
@@ -597,6 +601,13 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const repo = getRepo();
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.list() : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
+
+  // Merge mode keeps the existing proxies table alongside the imported rows,
+  // so an upstream may reference either set. Replace mode wipes the table
+  // before saving and only the imported ids will exist post-import.
+  const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(p => p.id) : [];
+  const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies, existingProxyIdsForRefs);
+  if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
 
   if (mode === 'replace') {
     // Replace mode is intentionally non-atomic across repos: D1 binding does not expose multi-repo

@@ -699,7 +699,7 @@ test('export includes proxies with full credential URIs and round-trips through 
   assertEquals(restoredUpstream?.proxyFallbackList, ['p_socks', 'p_http', 'direct']);
 });
 
-test('import rejects an upstream fallback reference that does not resolve to an imported proxy', async () => {
+test('import in replace mode rejects an upstream fallback reference that does not resolve to an imported proxy', async () => {
   const { app, repo } = setup();
   await repo.upstreams.save(CUSTOM_UPSTREAM);
 
@@ -711,6 +711,38 @@ test('import rejects an upstream fallback reference that does not resolve to an 
   assertEquals(result.status, 400);
   assertEquals(result.body.error, `invalid upstreams: upstream ${CUSTOM_UPSTREAM.id} references unknown proxy p_missing`);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
+});
+
+test('import in merge mode accepts an upstream fallback reference that resolves to an existing local proxy', async () => {
+  const { app, repo } = setup();
+  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+
+  // The imported payload carries no proxies of its own, only an upstream that
+  // references the destination's existing 'p_local'. Merge mode keeps the
+  // local proxies table, so this is a legitimate reference that must not be
+  // rejected as dangling.
+  const result = await doImport(app, 'merge', latestImportData({
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), proxy_fallback_list: ['p_local', 'direct'] }],
+    proxies: [],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported.upstreams, 1);
+  const restored = await repo.upstreams.getById(CUSTOM_UPSTREAM.id);
+  assertEquals(restored?.proxyFallbackList, ['p_local', 'direct']);
+});
+
+test('import in merge mode rejects an upstream fallback reference that resolves to neither an imported nor an existing proxy', async () => {
+  const { app, repo } = setup();
+  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+
+  const result = await doImport(app, 'merge', latestImportData({
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), proxy_fallback_list: ['p_phantom'] }],
+    proxies: [],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, `invalid upstreams: upstream ${CUSTOM_UPSTREAM.id} references unknown proxy p_phantom`);
 });
 
 test('import rejects a proxy whose url does not parse', async () => {
