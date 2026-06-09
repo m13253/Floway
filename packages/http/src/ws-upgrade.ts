@@ -338,10 +338,16 @@ const frameDuplexOnTransport = (
 
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
+  // Mirror userspaceTls's detach pattern: a long-lived caller signal
+  // (e.g. a request controller shared across many dials) would otherwise
+  // accumulate one closure per ws upgrade pinning the closed-over streams.
+  let detachAbortListener: (() => void) | null = null;
 
   const closePlain = (cause?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
+    detachAbortListener?.();
+    detachAbortListener = null;
     if (cause) {
       try { plainController.error(cause); } catch { /* already closed */ }
     } else {
@@ -454,6 +460,8 @@ const frameDuplexOnTransport = (
     start(c) { plainController = c; },
     cancel(reason) {
       plainClosed = true;
+      detachAbortListener?.();
+      detachAbortListener = null;
       void reader.cancel(reason).catch(() => {});
       // Best-effort close frame; if the writer is already torn down
       // the catch in sendCloseFrame swallows the error.
@@ -534,6 +542,7 @@ const frameDuplexOnTransport = (
       void frameWriter.abort(captured.reason).catch(() => {});
     };
     captured.addEventListener('abort', onAbort, { once: true });
+    detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);
     if (captured.aborted) onAbort();
   }
 
