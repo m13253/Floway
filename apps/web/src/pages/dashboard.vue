@@ -50,7 +50,6 @@ const onPasswordChanged = () => {
 };
 
 const logout = async () => {
-  // Invalidate the server session so a captured token can't outlive the tab.
   await callApi(() => api.auth.logout.$post());
   auth.clearAuth();
   await router.replace('/login');

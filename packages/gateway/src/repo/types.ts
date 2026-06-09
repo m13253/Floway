@@ -18,8 +18,8 @@ export interface ApiKey {
 export interface User {
   id: number;
   username: string;
-  // null = the row is not a credential — it can only be entered through the
-  // ADMIN_KEY backdoor (the default state of user 1 right after migration).
+  // null = the row is not a credential — sign-in is only possible through
+  // the ADMIN_KEY backdoor.
   passwordHash: string | null;
   isAdmin: boolean;
   // null = unrestricted at the user level; an array intersects with the
@@ -124,8 +124,7 @@ export interface UsersRepo {
   // instead of silently overwriting state.
   save(user: User): Promise<void>;
   softDelete(id: number): Promise<boolean>;
-  // Hard delete; bypasses soft-delete semantics. Callers using this are
-  // responsible for re-seeding the table.
+  // Hard delete; bypasses soft-delete semantics.
   deleteAll(): Promise<void>;
 }
 
