@@ -144,33 +144,24 @@ const parseIpv6Literal = (s: string): Uint8Array | null => {
 };
 
 const ipv6StringToBytes = (s: string): Uint8Array | null => {
-  // Split at `::` once; each half is a sequence of hex groups.
+  // Input always arrives via parseIpv6Literal → `new URL('http://[…]/').hostname`,
+  // and the WHATWG URL serializer collapses any IPv4-mapped tail into hex groups
+  // (`::ffff:1.2.3.4` → `[::ffff:102:304]`). The expansion below is therefore a
+  // pure hex-group parser.
   const [left, right] = s.includes('::') ? s.split('::', 2) as [string, string] : [s, ''];
   const leftParts = left === '' ? [] : left.split(':');
   const rightParts = right === '' ? [] : right.split(':');
-  // IPv4-mapped suffix support: the last group can be a dotted-quad.
-  const tailIpv4 = rightParts.length > 0 && rightParts[rightParts.length - 1]!.includes('.')
-    ? parseIpv4Literal(rightParts.pop()!)
-    : leftParts.length > 0 && leftParts[leftParts.length - 1]!.includes('.')
-      ? parseIpv4Literal(leftParts.pop()!)
-      : null;
   const groups: number[] = [];
   for (const p of leftParts) groups.push(parseInt(p, 16));
-  const zerosNeeded = 8 - leftParts.length - rightParts.length - (tailIpv4 ? 2 : 0);
+  const zerosNeeded = 8 - leftParts.length - rightParts.length;
   if (zerosNeeded < 0) return null;
   for (let i = 0; i < zerosNeeded; i++) groups.push(0);
   for (const p of rightParts) groups.push(parseInt(p, 16));
-  if (groups.length !== (tailIpv4 ? 6 : 8)) return null;
+  if (groups.length !== 8) return null;
   const out = new Uint8Array(16);
   for (let i = 0; i < groups.length; i++) {
     out[i * 2] = (groups[i]! >> 8) & 0xff;
     out[i * 2 + 1] = groups[i]! & 0xff;
-  }
-  if (tailIpv4) {
-    out[12] = tailIpv4[0]!;
-    out[13] = tailIpv4[1]!;
-    out[14] = tailIpv4[2]!;
-    out[15] = tailIpv4[3]!;
   }
   return out;
 };
