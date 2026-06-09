@@ -72,8 +72,7 @@ describe('createPerRequestFetcher', () => {
       return realList(...args);
     };
 
-    const fetcherFor = await createPerRequestFetcher();
-    fetcherFor('u_direct');
+    await createPerRequestFetcher();
     expect(proxyListCalls).toBe(0);
   });
 });

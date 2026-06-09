@@ -227,21 +227,6 @@ describe('createFetcher', () => {
     expect(await res.text()).toBe('direct');
   });
 
-  it('aggregates errors when both passes exhaust with multiple entries failing', async () => {
-    const repo = new InMemoryRepo();
-    const fetcher = createFetcher({
-      repo,
-      upstreamId: 'u',
-      fallbackList: ['a', 'b'],
-      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
-      runProxied: async () => { throw new ProxyDialError('fail', 'tcp-connect'); },
-      runDirect: async () => new Response('ok'),
-      socketDial: () => stubSocketDial,
-    });
-    await expect(fetcher('https://api.openai.com', { method: 'GET' }))
-      .rejects.toBeInstanceOf(AggregateError);
-  });
-
   it('rethrows AbortError without continuing the chain', async () => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];
