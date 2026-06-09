@@ -11,21 +11,28 @@
 //        nonce     = random[20:32]
 //        AAD       = ClientHello bytes (with session_id slot zeroed before the seal)
 //        output    = 16-byte ciphertext + 16-byte tag, written back into session_id slot.
-//   3. Validates the server's identity in CertificateVerify with a
-//      server-to-client check:
-//        HMAC-SHA512(authKey, leafEd25519Pub) == certs[0].Signature
-//      Same 32-byte authKey from step 2; the leaf cert is forged so X.509
-//      chain validation is intentionally skipped — only the HMAC tag in the
-//      cert's signature slot proves the server holds the REALITY private key.
+//   3. Validates the server's identity by checking the HMAC tag the server
+//      stamps into the leaf cert's X.509 signatureValue field:
+//        HMAC-SHA512(authKey, leafEd25519Pub) == lastBytes(leafCert.DER, 64)
+//      Same 32-byte authKey from step 2. Xray's server overwrites the last 64
+//      bytes of the leaf's DER (the BIT STRING content of signatureValue) with
+//      the HMAC tag (XTLS/REALITY handshake_server_tls13.go:149-151). The
+//      client-side check matches Xray-core's certs[0].Signature ==
+//      hmac.Sum(nil) (Xray-core reality.go:84-87). The TLS-protocol
+//      CertificateVerify is a separate, real Ed25519 signature over the
+//      transcript and is validated by reclaim-tls's standard path; we only
+//      replace the chain validation, since REALITY's leaf cert is forged.
 //
 // We layer this on top of @reclaimprotocol/tls via three patched hooks:
 //   - onKeyPairGenerated: capture the TLS keyshare X25519 private key so
 //     onClientHelloPack can derive authKey via the same ECDH the server runs.
 //   - onClientHelloPack: seal the session_id in-place after the ClientHello
 //     bytes are built; latch authKey for the cert-verify hook below.
-//   - onRecvCertificateVerify: replace the standard CertificateVerify
-//     signature check with the REALITY HMAC check, returning false to skip
-//     the default check on match, throwing to abort the handshake on miss.
+//   - onRecvCertificateVerify: replace the standard chain validation with
+//     the REALITY HMAC check over the leaf's DER tail, returning false to
+//     skip the default signature verify (the cert is forged so a public-key
+//     based signature check would always fail) and throwing on miss to
+//     abort the handshake.
 //
 // After REALITY auth completes, the inner protocol is VLESS by convention.
 
@@ -251,26 +258,20 @@ const runRealityHandshake = async (
       out.set(sealed, sidStart);
       return out;
     },
-    onRecvCertificateVerify(args: { signature: Uint8Array; certificates: Array<{ getPublicKey(): { buffer: Uint8Array; algorithm: string } }> }) {
-      // REALITY repurposes the CertificateVerify signature slot as an
-      // HMAC-SHA512 tag over the leaf cert's raw Ed25519 pubkey, keyed by
-      // the shared authKey. Match → skip the default sig check (the chain
-      // is forged so the standard check would always fail). Miss → throw
-      // so the handshake aborts; returning false alone only suppresses the
-      // default check and would let an attacker bypass server auth entirely.
+    onRecvCertificateVerify(args: {
+      certificates: Array<{
+        getPublicKey(): { buffer: Uint8Array; algorithm: string };
+        internal: { rawData: ArrayBuffer };
+      }>;
+    }) {
+      // The reclaim-tls hook also surfaces the TLS CertificateVerify
+      // signature over the transcript, but REALITY auth is a separate HMAC
+      // tag the server stamps into the leaf cert's signatureValue field
+      // — we ignore the transcript signature here and verify the cert tag.
       if (!authKey) throw new ProxyDialError('REALITY: authKey not derived before CertificateVerify', 'proxy-handshake');
       const leaf = args.certificates[0];
       if (!leaf) throw new ProxyDialError('REALITY: no leaf certificate', 'proxy-handshake');
-      let leafPub: Uint8Array;
-      try {
-        leafPub = extractEd25519RawPubKey(leaf.getPublicKey().buffer);
-      } catch (cause) {
-        throw new ProxyDialError('REALITY: leaf cert is not Ed25519 (REALITY servers always present an Ed25519 leaf)', 'proxy-handshake', { cause });
-      }
-      const tag = hmac(sha512, authKey, leafPub);
-      if (!constantTimeEqual(tag, args.signature)) {
-        throw new ProxyDialError('REALITY: server HMAC-SHA512 over leaf pubkey did not match cert-verify signature', 'proxy-handshake');
-      }
+      verifyRealityLeaf(authKey, new Uint8Array(leaf.internal.rawData), leaf.getPublicKey().buffer);
       return false;
     },
   }) as Parameters<typeof makeTLSClient>[0]);
@@ -388,6 +389,39 @@ const runRealityHandshake = async (
   // it on the next teardown event.
 
   return { readable: plainReadable, writable: plainWritable };
+};
+
+/**
+ * Validate a REALITY server's leaf cert by recomputing the HMAC-SHA512 tag
+ * the server stamps into the cert's X.509 signatureValue.
+ *
+ * REALITY's server (XTLS/REALITY handshake_server_tls13.go:149-151) writes
+ *   HMAC-SHA512(authKey, leafEd25519Pub)
+ * into the last 64 bytes of the leaf cert's DER, which for an Ed25519 cert
+ * is the BIT STRING content of the signatureValue field. The client side
+ * (Xray-core reality.go:84-87) compares certs[0].Signature against the same
+ * HMAC. We do the byte-level equivalent: read the last 64 bytes of the
+ * leaf's DER and constant-time-compare against the locally recomputed tag.
+ *
+ * Throws a ProxyDialError on any mismatch — REALITY's leaf is forged, so
+ * this HMAC IS the server-auth signal; failing closed is the security
+ * boundary. Exported for tests.
+ */
+export const verifyRealityLeaf = (authKey: Uint8Array, leafDer: Uint8Array, leafSpki: Uint8Array): void => {
+  let leafPub: Uint8Array;
+  try {
+    leafPub = extractEd25519RawPubKey(leafSpki);
+  } catch (cause) {
+    throw new ProxyDialError('REALITY: leaf cert is not Ed25519 (REALITY servers always present an Ed25519 leaf)', 'proxy-handshake', { cause });
+  }
+  if (leafDer.byteLength < 64) {
+    throw new ProxyDialError(`REALITY: leaf cert DER is ${leafDer.byteLength} bytes, cannot hold a 64-byte HMAC tag`, 'proxy-handshake');
+  }
+  const certHmacWire = leafDer.subarray(leafDer.byteLength - 64);
+  const tag = hmac(sha512, authKey, leafPub);
+  if (!constantTimeEqual(tag, certHmacWire)) {
+    throw new ProxyDialError('REALITY: server HMAC-SHA512 over leaf pubkey did not match cert signatureValue', 'proxy-handshake');
+  }
 };
 
 const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {
@@ -513,9 +547,9 @@ export const extractEd25519RawPubKey = (spki: Uint8Array): Uint8Array => {
 /**
  * Length-safe constant-time byte equality. Returns false immediately on
  * length mismatch — length is not secret here (the HMAC output length is
- * fixed at 64 bytes and the CertificateVerify signature slot is wire-
- * visible). The per-byte loop never short-circuits, so a partial-match
- * attack can't read out which prefix matched.
+ * fixed at 64 bytes and the cert's signatureValue tail is wire-visible).
+ * The per-byte loop never short-circuits, so a partial-match attack can't
+ * read out which prefix matched.
  *
  * Exported for tests.
  */

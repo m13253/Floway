@@ -1,4 +1,6 @@
 import { gcm } from '@noble/ciphers/aes.js';
+import { hmac } from '@noble/hashes/hmac.js';
+import { sha512 } from '@noble/hashes/sha2.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +10,7 @@ import {
   dialReality,
   extractEd25519RawPubKey,
   parseShortId,
+  verifyRealityLeaf,
 } from './reality.ts';
 import { hexDecode } from '../bytes.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
@@ -393,5 +396,81 @@ describe('constantTimeEqual', () => {
   it('returns false for buffers of different lengths', () => {
     expect(constantTimeEqual(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3, 4]))).toBe(false);
     expect(constantTimeEqual(new Uint8Array(0), new Uint8Array(1))).toBe(false);
+  });
+});
+
+describe('verifyRealityLeaf', () => {
+  // RFC 8410 §4 fixed Ed25519 SPKI prefix; with a 32-byte raw key glued on
+  // it forms the 44-byte SubjectPublicKeyInfo every real REALITY leaf carries.
+  const ED25519_SPKI_PREFIX = hexDecode('302a300506032b6570032100');
+  const buildSpki = (rawPub: Uint8Array): Uint8Array => {
+    const spki = new Uint8Array(ED25519_SPKI_PREFIX.byteLength + 32);
+    spki.set(ED25519_SPKI_PREFIX);
+    spki.set(rawPub, ED25519_SPKI_PREFIX.byteLength);
+    return spki;
+  };
+  // We don't need a parser-valid X.509 to exercise verifyRealityLeaf — only
+  // the last 64 bytes of the DER buffer matter to the check, mirroring
+  // Xray's server-side overwrite at cert[len-64:].
+  const buildLeafDer = (tail: Uint8Array, prefixLen = 200): Uint8Array => {
+    if (tail.byteLength !== 64) throw new Error('tail must be 64 bytes');
+    const der = new Uint8Array(prefixLen + 64);
+    for (let i = 0; i < prefixLen; i++) der[i] = (i * 53) & 0xff;
+    der.set(tail, prefixLen);
+    return der;
+  };
+
+  it('accepts a leaf whose DER tail is HMAC-SHA512(authKey, leafEd25519Pub)', () => {
+    const authKey = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) authKey[i] = i + 1;
+    const rawPub = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) rawPub[i] = (i * 7) & 0xff;
+    const tag = hmac(sha512, authKey, rawPub);
+    const der = buildLeafDer(tag);
+    expect(() => verifyRealityLeaf(authKey, der, buildSpki(rawPub))).not.toThrow();
+  });
+
+  it('rejects a leaf whose DER tail does not match the recomputed HMAC', () => {
+    const authKey = new Uint8Array(32);
+    const rawPub = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) rawPub[i] = i;
+    // A tail computed under a different authKey — the bytes are well-formed
+    // 64 bytes but do not equal HMAC(authKey, pub).
+    const wrongTag = hmac(sha512, new Uint8Array(32).fill(0xff), rawPub);
+    const der = buildLeafDer(wrongTag);
+    expect(() => verifyRealityLeaf(authKey, der, buildSpki(rawPub)))
+      .toThrow(/HMAC-SHA512.*did not match/);
+  });
+
+  it('rejects a leaf whose pubkey is not Ed25519', () => {
+    const authKey = new Uint8Array(32);
+    const rawPub = new Uint8Array(32);
+    const tag = hmac(sha512, authKey, rawPub);
+    const der = buildLeafDer(tag);
+    // Build an SPKI of the right length but wrong OID byte.
+    const badSpki = buildSpki(rawPub);
+    badSpki[6] = 0xff;
+    expect(() => verifyRealityLeaf(authKey, der, badSpki))
+      .toThrow(/not Ed25519/);
+  });
+
+  it('rejects a DER shorter than 64 bytes (no room for the HMAC tag)', () => {
+    const authKey = new Uint8Array(32);
+    const rawPub = new Uint8Array(32);
+    expect(() => verifyRealityLeaf(authKey, new Uint8Array(50), buildSpki(rawPub)))
+      .toThrow(/cannot hold a 64-byte HMAC tag/);
+  });
+
+  it('matches a tag flipped one bit at the boundary as a length-positional check', () => {
+    // Smoke test that the tail check is positional (last 64 bytes) and a
+    // single-bit flip is rejected — guards against accidental off-by-one
+    // (e.g. comparing against bytes [-65, -1) instead of [-64, end)).
+    const authKey = new Uint8Array(32).fill(0x42);
+    const rawPub = new Uint8Array(32).fill(0x24);
+    const tag = hmac(sha512, authKey, rawPub);
+    const flipped = new Uint8Array(tag);
+    flipped[0] ^= 0x01;
+    expect(() => verifyRealityLeaf(authKey, buildLeafDer(flipped), buildSpki(rawPub)))
+      .toThrow(/HMAC-SHA512.*did not match/);
   });
 });
