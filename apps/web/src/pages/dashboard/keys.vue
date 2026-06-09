@@ -15,7 +15,7 @@ export const useKeysPageData = defineBasicLoader(async () => {
     useModelsStoreForLoader().load(),
   ]);
   return {
-    keys: keysRes.data ?? [],
+    keys: keysRes.error ? [] : keysRes.data,
     error: keysRes.error?.message ?? upstreamOptions.error.value,
   };
 });

@@ -93,7 +93,7 @@ const queryRecordsForView = async (
     end: params.end,
     metricScope: params.metricScope,
   });
-  return params.keyId ? rows : rows.filter(r => ownedSet.has(r.keyId));
+  return params.keyId !== undefined ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
 // Includes soft-deleted keys so historical telemetry on a since-deleted key
@@ -150,8 +150,6 @@ export const performanceOverview = async (c: Ctx) => {
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
   const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
-  // Pivot the series chart by user under all-by-user so operators see latency
-  // split by who is generating it.
   const series = resolved.view === 'all-by-user'
     ? aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'userId', keyToUser: await buildKeyToUserMap() })
     : aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' });

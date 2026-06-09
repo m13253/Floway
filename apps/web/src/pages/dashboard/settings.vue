@@ -46,8 +46,7 @@ const { upstreams, loading: storeLoading, error: storeError, load } = useUpstrea
 const modelsStore = useModelsStore();
 const settingsData = useSettingsPageData();
 
-// Local copy sorted by sort_order; the child card emits a reordered array
-// via update:ordered, and reloadAll re-syncs from the store after PATCH.
+// Local copy sorted by sort_order; rewritten when the store reloads.
 const ordered = ref<UpstreamRecord[]>([]);
 watch(upstreams, list => {
   ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];

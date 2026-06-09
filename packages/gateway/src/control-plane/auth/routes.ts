@@ -1,6 +1,5 @@
-// Auth routes — username/password login with an ADMIN_KEY backdoor for the
-// seed admin (user 1). Sessions are issued as opaque 64-hex tokens carried
-// on the `x-floway-session` header.
+// POST /auth/login: empty username + ADMIN_KEY logs in as the seed admin
+// (user 1); otherwise verify password against the user row.
 
 import type { Context } from 'hono';
 
@@ -51,9 +50,9 @@ export const authMe = async (c: Context) => {
 
   let apiKey: { id: string; name: string } | null = null;
   if (apiKeyId) {
-    const k = await getRepo().apiKeys.getById(apiKeyId);
-    if (!k) throw new Error(`authMiddleware accepted apiKeyId ${apiKeyId} but it is now missing`);
-    apiKey = { id: k.id, name: k.name };
+    const key = await getRepo().apiKeys.getById(apiKeyId);
+    if (!key) throw new Error(`authMiddleware accepted apiKeyId ${apiKeyId} but it is now missing`);
+    apiKey = { id: key.id, name: key.name };
   }
   return c.json({
     user: userToEffectiveWire(user),

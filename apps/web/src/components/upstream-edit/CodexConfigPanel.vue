@@ -91,7 +91,6 @@ const submit = async () => {
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
   emit('imported', result.data);
-  // Reset draft + PKCE so a subsequent edit / re-open starts clean.
   draft.value = { activeTab: 'auth_json', authJsonText: '', callbackUrlText: '' };
   pkce.value = null;
   reimportOpen.value = false;

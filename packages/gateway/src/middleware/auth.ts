@@ -2,6 +2,7 @@ import type { Context, Next } from 'hono';
 
 import { getRepo } from '../repo/index.ts';
 import type { User } from '../repo/types.ts';
+import { timingSafeEqual } from '../shared/passwords.ts';
 import { getEnv } from '@floway-dev/platform';
 
 // Workers Static Assets serves `/` and `/dashboard` before the Worker runs.
@@ -36,8 +37,11 @@ export const authMiddleware = async (c: Context, next: Next) => {
   if (!rawKey) return c.json({ error: 'Unauthorized' }, 401);
 
   const adminKey = getEnv('ADMIN_KEY');
-  if (rawKey === adminKey) {
-    return c.json({ error: 'ADMIN_KEY is only valid via POST /auth/login (leave username blank).' }, 401);
+  if (adminKey) {
+    const utf8 = new TextEncoder();
+    if (timingSafeEqual(utf8.encode(rawKey), utf8.encode(adminKey))) {
+      return c.json({ error: 'ADMIN_KEY is only valid via POST /auth/login (leave username blank).' }, 401);
+    }
   }
 
   const apiKey = await getRepo().apiKeys.findByRawKey(rawKey);

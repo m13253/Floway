@@ -16,8 +16,7 @@ const validateUpstreamIdsExist = async (ids: readonly string[] | null): Promise<
   return unknown.length ? `unknown upstream id(s): ${unknown.join(', ')}` : null;
 };
 
-const parseUserId = (raw: string | undefined): number | null => {
-  if (raw === undefined) return null;
+const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 1 ? n : null;
 };
@@ -69,7 +68,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
 };
 
 export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
-  const id = parseUserId(c.req.param('id'));
+  const id = parseUserId(c.req.param('id')!);
   if (id === null) return c.json({ error: 'Invalid user id' }, 400);
   const body = c.req.valid('json');
   const actorId = c.get('userId') as number;
@@ -112,7 +111,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
 };
 
 export const deleteUser = async (c: Context) => {
-  const id = parseUserId(c.req.param('id'));
+  const id = parseUserId(c.req.param('id')!);
   if (id === null) return c.json({ error: 'Invalid user id' }, 400);
   const actorId = c.get('userId') as number;
   if (id === 1) return c.json({ error: 'user 1 cannot be deleted' }, 400);
@@ -137,7 +136,7 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
   const repo = getRepo();
 
   const user = await repo.users.getById(userId);
-  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  if (!user) throw new Error(`authMiddleware loaded userId ${userId} but it is now missing`);
   if (user.passwordHash === null) {
     return c.json({ error: 'This account has no password set; ask an admin to reset it.' }, 401);
   }

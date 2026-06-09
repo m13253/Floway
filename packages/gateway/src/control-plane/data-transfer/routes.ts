@@ -167,8 +167,7 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
       let userId: number;
       let deletedAt: string | null;
       if (version === 3) {
-        // Legacy v3 exports never carried per-key ownership — every row lands
-        // on the seed admin (user 1) so historical telemetry attributes there.
+        // v3 predates per-key ownership; attribute to user 1 (the seed admin).
         userId = 1;
         deletedAt = null;
       } else {
@@ -518,10 +517,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
     }
     users = usersResult.records;
-    // A v4 payload is a self-describing snapshot: it must include user 1 (else
-    // replace mode would brick the ADMIN_KEY backdoor) and every apiKeys.userId
-    // must resolve within the payload (else replace mode would leave dangling
-    // keys).
+    // v4 payloads must be self-contained: user 1 present, every apiKey.userId
+    // resolved within the payload.
     if (!users.some(u => u.id === 1)) {
       return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
     }
@@ -580,10 +577,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
-    //
-    // Sessions are wiped because their user_id would dangle after either an
-    // api-key recreation or a users-table replacement; users are only wiped
-    // when the payload (v4) carries a replacement set.
     const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),

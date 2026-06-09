@@ -6,7 +6,7 @@ import type { AppType } from '@floway-dev/gateway/app-type';
 // Injects the dashboard session token on every outbound request and clears the
 // store on 401 so the router guard redirects to /login.
 const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const headers = new Headers(init?.headers ?? {});
+  const headers = new Headers(init?.headers);
   const token = useAuthStore().authToken;
   if (token) headers.set('x-floway-session', token);
   const response = await fetch(input, { ...init, headers });
@@ -14,9 +14,6 @@ const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<
   return response;
 };
 
-// The Hono RPC client. Control-plane routes declare their request shape via
-// zValidator, so the client types both path/method and JSON body / query for
-// the SPA.
 const client = hc<AppType>('/', { fetch: authFetch });
 
 export type ApiClient = typeof client;
@@ -31,9 +28,7 @@ export interface GlobalError {
 
 export type ApiResult<T> = { data: T; error?: undefined } | { data?: undefined; error: GlobalError };
 
-// Unwrap a Hono RPC response into a discriminated `{ data } | { error }`. The
-// generic is supplied by the caller because the Hono RPC client types `.json()`
-// per-handler but we lose that narrowing when wrapping in a helper.
+// Unwrap a Hono RPC response into a discriminated `{ data } | { error }`.
 export const callApi = async <T>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<T>> => {
