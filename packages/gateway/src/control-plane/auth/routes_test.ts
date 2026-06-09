@@ -61,6 +61,29 @@ test('/auth/login with username + matching password issues a session', async () 
   assertEquals(body.user.isAdmin, false);
 });
 
+test('/auth/login matches the username case-insensitively', async () => {
+  const { repo } = await setupAppTest();
+  await repo.users.save({
+    id: 2,
+    username: 'Alice',
+    passwordHash: await hashPassword('hunter2'),
+    isAdmin: false,
+    upstreamIds: null,
+    canViewGlobalTelemetry: false,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    deletedAt: null,
+  });
+
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'ALICE', password: 'hunter2' }),
+  });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as { user: { id: number } };
+  assertEquals(body.user.id, 2);
+});
+
 test('/auth/login with wrong password is rejected', async () => {
   const { repo } = await setupAppTest();
   await repo.users.save({

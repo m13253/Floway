@@ -46,6 +46,12 @@ const SEED_ADMIN_USER: User = {
   deletedAt: null,
 };
 
+// Mirror the SQL `username TEXT COLLATE NOCASE` collation: usernames match
+// case-insensitively for both lookup and uniqueness. `USERNAME_PATTERN`
+// restricts usernames to ASCII, so a plain `toLowerCase()` fold is exactly
+// SQLite's NOCASE.
+const usernamesMatch = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
 class MemoryUsersRepo implements UsersRepo {
   private users: User[] = [{ ...SEED_ADMIN_USER }];
 
@@ -63,12 +69,12 @@ class MemoryUsersRepo implements UsersRepo {
   }
 
   findByUsername(username: string): Promise<User | null> {
-    const u = this.users.find(u => u.username === username && u.deletedAt === null);
+    const u = this.users.find(u => usernamesMatch(u.username, username) && u.deletedAt === null);
     return Promise.resolve(u ? { ...u } : null);
   }
 
   createNewUser(template: Omit<User, 'id'>): Promise<User> {
-    const collision = this.users.find(u => u.username === template.username && u.deletedAt === null);
+    const collision = this.users.find(u => usernamesMatch(u.username, template.username) && u.deletedAt === null);
     if (collision) throw new Error(`username taken: ${template.username}`);
     const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
     const user: User = { ...template, id };
@@ -80,7 +86,7 @@ class MemoryUsersRepo implements UsersRepo {
     // Match SQL's partial unique index `WHERE deleted_at IS NULL`: a clash is
     // only meaningful when the new row is also active. A soft-deleted import
     // can carry a username already in use by an active row without colliding.
-    const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
+    const collision = this.users.find(u => usernamesMatch(u.username, user.username) && u.deletedAt === null && u.id !== user.id);
     if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);
     const i = this.users.findIndex(u => u.id === user.id);
     if (i >= 0) this.users[i] = { ...user };

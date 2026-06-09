@@ -1,6 +1,10 @@
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
-  username TEXT NOT NULL,
+  -- NOCASE so usernames are matched case-insensitively everywhere: the
+  -- `WHERE username = ?` login lookup and the active-username unique index
+  -- below both inherit this collation, so "Admin" and "admin" are the same
+  -- account and cannot coexist.
+  username TEXT NOT NULL COLLATE NOCASE,
   password_hash TEXT,
   is_admin INTEGER NOT NULL DEFAULT 0,
   upstream_ids TEXT,

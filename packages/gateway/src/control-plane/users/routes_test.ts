@@ -48,6 +48,13 @@ test('POST /api/users rejects duplicate username + unknown upstream id', async (
   assertEquals(unknown.status, 400);
 });
 
+test('POST /api/users rejects a username that differs only in case', async () => {
+  const { adminSession } = await setupAppTest();
+  await adminPost(adminSession, { username: 'alice', password: 'pw' });
+  const dup = await adminPost(adminSession, { username: 'Alice', password: 'pw' });
+  assertEquals(dup.status, 400);
+});
+
 test('PATCH /api/users/1 may rename but cannot be demoted or deleted', async () => {
   const { adminSession } = await setupAppTest();
   assertEquals((await adminPatch(adminSession, 1, { isAdmin: false })).status, 400);
