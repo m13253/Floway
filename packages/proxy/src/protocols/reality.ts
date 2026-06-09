@@ -210,15 +210,28 @@ const runRealityHandshake = async (
       // X25519(serverPriv, clientKeysharePub) and never sees a separate
       // ephemeral key — all auth flows from the keyshare's private key).
       if (!tlsX25519Priv) throw new Error('REALITY: X25519 privKey not captured');
-      const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
-
-      const sharedSecret = new Uint8Array(
-        await crypto.subtle.deriveBits(
-          { name: 'X25519', public: serverPubKey } satisfies EcdhKeyDeriveParams,
-          tlsX25519Priv,
-          256,
-        ),
-      );
+      // importKey + deriveBits reject an off-curve / mistyped pbk with
+      // OperationError (DOMException). That's operator-supplied bad input,
+      // not a programmer bug, so wrap it as a config-stage dial error and
+      // let testProxy / the data plane render it as `{ok:false, error}` /
+      // a backoff row instead of a 500.
+      let sharedSecret: Uint8Array;
+      try {
+        const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
+        sharedSecret = new Uint8Array(
+          await crypto.subtle.deriveBits(
+            { name: 'X25519', public: serverPubKey } satisfies EcdhKeyDeriveParams,
+            tlsX25519Priv,
+            256,
+          ),
+        );
+      } catch (cause) {
+        throw new ProxyDialError(
+          `REALITY: pbk failed X25519 derive — public key is invalid or off-curve`,
+          'config',
+          { cause },
+        );
+      }
       // Xray runs HKDF-SHA256 over the shared secret in place (writing 32
       // output bytes back into the 32-byte input buffer). We just call hkdf
       // for 32 bytes.
@@ -338,7 +351,20 @@ const runRealityHandshake = async (
   }
 
   // Trigger the handshake with our pre-built sessionId and random.
-  await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]);
+  // onClientHelloPack runs inside startHandshake and may throw a typed
+  // ProxyDialError (config-stage) for an off-curve / mistyped pbk. Catch it
+  // here so it surfaces with its stage tag instead of escaping unwrapped to
+  // the framework's 500 handler.
+  try {
+    await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]);
+  } catch (cause) {
+    detachAbortListener?.();
+    detachAbortListener = null;
+    void reader.cancel(cause).catch(() => {});
+    try { writer.releaseLock(); } catch { /* lock already released */ }
+    if (cause instanceof ProxyDialError) throw cause;
+    throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
+  }
   try {
     await handshakeDone;
   } catch (cause) {

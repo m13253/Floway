@@ -128,6 +128,31 @@ describe('dialReality — pre-connect config validation', () => {
   });
 });
 
+describe('dialReality — runtime X25519 derive failure', () => {
+  // A 32-byte all-zero pbk is decodable but its high-order representation
+  // fails Web Crypto's X25519 importKey/deriveBits with an OperationError.
+  // The operator pastes the wrong public key from their proxy generator far
+  // more often than they paste a non-base64 string, so the dial layer must
+  // surface that failure as a config-stage ProxyDialError rather than let
+  // the raw DOMException escape as a framework 500.
+  it('wraps an off-curve / mistyped pbk that decodes but fails ECDH as a config-stage dial error', async () => {
+    // 32 bytes of zero, encoded as 43 base64url chars (one byte of padding
+    // would round to '=', which we strip — reality.ts accepts both forms).
+    const allZeroPbk = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialReality(realityConfig({ publicKey: allZeroPbk }), target, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('pbk failed X25519 derive'),
+    });
+    // The TCP socket WAS opened (the derive failure happens inside the
+    // outer-TLS state machine, after connect succeeds). We don't assert
+    // connectCount here — only that the failure is shaped right.
+  });
+});
+
 describe('dialReality — pre-dial target validation', () => {
   it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();
