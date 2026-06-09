@@ -31,7 +31,6 @@ export const dialTrojan = async (
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'Trojan');
   assertValidTargetHost(target.host, 'Trojan', { maxBytes: 255 });
-  // Plain TCP to Trojan server; outer TLS done in userspace.
   let socket: DialedSocket;
   try {
     socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });

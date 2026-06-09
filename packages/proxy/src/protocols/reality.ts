@@ -51,7 +51,7 @@ const ensureCrypto = (): void => {
 };
 
 /** Xray version stamp baked into the REALITY session_id payload. */
-const DEFAULT_XRAY_VERSION: [number, number, number] = [25, 4, 30];
+const XRAY_VERSION: [number, number, number] = [25, 4, 30];
 
 // Reality shortIds: per Xray-core's `copy(hello.SessionId[8:], config.ShortId)`,
 // any byte slice up to 8 bytes is accepted and the remainder of the 8-byte
@@ -67,7 +67,6 @@ export const dialReality = async (
   assertValidTargetPort(target.port, 'REALITY');
   assertValidTargetHost(target.host, 'REALITY', { maxBytes: 255 });
   ensureCrypto();
-  const ver = DEFAULT_XRAY_VERSION;
   let serverPub: Uint8Array<ArrayBuffer>;
   try {
     serverPub = base64UrlDecode(config.publicKey);
@@ -95,7 +94,7 @@ export const dialReality = async (
   }
 
   try {
-    const post = await runRealityHandshake(socket, config, ver, serverPub, shortId, options.signal);
+    const post = await runRealityHandshake(socket, config, serverPub, shortId, options.signal);
     return await vlessFrameOverStream(post, config.uuid, target);
   } catch (err) {
     void socket.close().catch(() => {});
@@ -106,13 +105,11 @@ export const dialReality = async (
 const runRealityHandshake = async (
   socket: DialedSocket,
   config: RealityProxyConfig,
-  ver: [number, number, number],
   serverPub: Uint8Array<ArrayBuffer>,
   shortId: Uint8Array<ArrayBuffer>,
   signal: AbortSignal | undefined,
 ): Promise<{ readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }> => {
-  // Build the unsealed session_id payload
-  const sessionIdPlain = buildRealitySessionId(ver, Math.floor(Date.now() / 1000), shortId);
+  const sessionIdPlain = buildRealitySessionId(XRAY_VERSION, Math.floor(Date.now() / 1000), shortId);
 
   // Pre-generate the client random so we know it before packClientHello uses it
   const clientRandom = randomBytes(32);
