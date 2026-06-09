@@ -129,6 +129,8 @@ test('proxies repo save inserts a new row with createdAt and updatedAt set to no
   assertEquals(row?.dialTimeoutSeconds, 30);
   assertEquals(row?.lastEgressIp, null);
   assertEquals(row?.lastTestedAt, null);
+  assertEquals(typeof row?.createdAt, 'string');
+  assertEquals(row?.createdAt, row?.updatedAt);
 });
 
 test('proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config', async () => {
