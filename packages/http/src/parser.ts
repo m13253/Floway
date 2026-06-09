@@ -56,16 +56,27 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
 export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): Promise<RawHttpResponse> => {
   const reader = readable.getReader();
   let buffer: Uint8Array = new Uint8Array(0);
-  while (true) {
-    const result = await readResponseHead(reader, buffer);
-    buffer = result.remainder;
-    if (result.status >= 100 && result.status < 200) {
-      // Interim response: no body to frame, no headers to surface. The
-      // remainder bytes belong to the next response; loop back into
-      // head-parsing with them already buffered.
-      continue;
+  // Hand-off contract: on the success path the reader is moved into the body
+  // framing stream, which then owns the lock. On every throw before that
+  // hand-off the reader must release the lock — otherwise the orchestrator's
+  // teardown `stream.readable.cancel(reason)` lands on a still-locked
+  // readable and a swallowed TypeError, leaving the underlying transport
+  // dangling until GC.
+  try {
+    while (true) {
+      const result = await readResponseHead(reader, buffer);
+      buffer = result.remainder;
+      if (result.status >= 100 && result.status < 200) {
+        // Interim response: no body to frame, no headers to surface. The
+        // remainder bytes belong to the next response; loop back into
+        // head-parsing with them already buffered.
+        continue;
+      }
+      return finalizeResponse(reader, result);
     }
-    return finalizeResponse(reader, result);
+  } catch (err) {
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+    throw err;
   }
 };
 

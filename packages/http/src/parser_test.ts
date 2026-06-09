@@ -849,3 +849,30 @@ describe('toWebResponse', () => {
     );
   });
 });
+
+describe('parseHttpResponse — reader-lock release on error', () => {
+  // The orchestrator's teardown calls `stream.readable.cancel(reason)` on a
+  // failed dial. If parseHttpResponse rejects with the reader still locked
+  // onto its readable, that cancel hits a locked stream and the cancel
+  // cascade silently no-ops. Pin the contract: every throw path releases
+  // the reader so the upstream cancel reaches the underlying transport.
+
+  it('releases the reader lock when the head fails to parse (BAD_STATUS_LINE)', async () => {
+    const readable = respondAndEnd('not an http response\r\n\r\n');
+    await expect(parseHttpResponse(readable)).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
+    expect(readable.locked).toBe(false);
+    await expect(readable.cancel()).resolves.toBeUndefined();
+  });
+
+  it('releases the reader lock when the head EOFs before terminator', async () => {
+    const readable = respondAndEnd('HTTP/1.1 200 OK\r\nContent-Type: text/plain');
+    await expect(parseHttpResponse(readable)).rejects.toMatchObject({ code: 'EOF' });
+    expect(readable.locked).toBe(false);
+  });
+
+  it('releases the reader lock when finalizeResponse rejects CL+TE smuggling', async () => {
+    const readable = respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n');
+    await expect(parseHttpResponse(readable)).rejects.toMatchObject({ code: 'CL_AND_TE' });
+    expect(readable.locked).toBe(false);
+  });
+});
