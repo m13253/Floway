@@ -144,7 +144,7 @@ test('PATCH /api/users/me/password requires session and a correct current passwo
     headers: { 'content-type': 'application/json', 'x-floway-session': sessionA.id },
     body: JSON.stringify({ currentPassword: 'WRONG', newPassword: 'new-pw' }),
   });
-  assertEquals(wrongRes.status, 401);
+  assertEquals(wrongRes.status, 400);
 
   // Correct flow keeps the current session and revokes others.
   const okRes = await requestApp('/api/users/me/password', {

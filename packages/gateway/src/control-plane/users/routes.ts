@@ -135,11 +135,15 @@ export const changeOwnPassword = async (c: CtxWithJson<typeof changeOwnPasswordB
 
   const user = await repo.users.getById(userId);
   if (!user) throw new Error(`authMiddleware loaded userId ${userId} but it is now missing`);
+  // 400, not 401: these are domain validation errors on the request payload,
+  // not authentication failures. The dashboard's auth client treats 401 as
+  // "session expired" and silently signs the user out, which is wrong here —
+  // the actor's session is fine, they just typed the wrong current password.
   if (user.passwordHash === null) {
-    return c.json({ error: 'This account has no password set; ask an admin to reset it.' }, 401);
+    return c.json({ error: 'This account has no password set; ask an admin to reset it.' }, 400);
   }
   if (!(await verifyPassword(currentPassword, user.passwordHash))) {
-    return c.json({ error: 'Current password is incorrect' }, 401);
+    return c.json({ error: 'Current password is incorrect' }, 400);
   }
 
   await repo.users.save({ ...user, passwordHash: await hashPassword(newPassword) });

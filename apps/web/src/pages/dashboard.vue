@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router';
 
 import PasswordDialog from '../components/users/PasswordDialog.vue';
+import { callApi, useApi } from '../api/client.ts';
 import { useAuthStore } from '../stores/auth.ts';
 
 interface TabDef {
@@ -27,6 +28,7 @@ const allTabs: TabDef[] = [
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const api = useApi();
 
 const tabs = computed(() => allTabs.filter(t => !t.adminOnly || auth.isAdmin));
 
@@ -48,6 +50,9 @@ const onPasswordChanged = () => {
 };
 
 const logout = async () => {
+  // Invalidate the server session before wiping local state so a captured
+  // token can't outlive the browser tab.
+  await callApi(() => api.auth.logout.$post());
   auth.clearAuth();
   await router.replace('/login');
 };
