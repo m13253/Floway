@@ -4,6 +4,8 @@ import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
+import type { SerializedProxyRecord } from './serialize.ts';
+
 // Stub SocketDial so the test endpoint hits a deterministic error path
 // (`runProxiedRequest` calls connect() and we surface its rejection as the
 // response's `error` field). The proxy library has no other path to a real
@@ -50,18 +52,6 @@ const deleteAuthed = (adminSession: string): RequestInit => ({
   headers: { 'x-floway-session': adminSession },
 });
 
-interface ProxyJson {
-  id: string;
-  name: string;
-  url: string;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  last_egress_ip: string | null;
-  last_tested_at: number | null;
-  dial_timeout_seconds: number | null;
-}
-
 test('GET /api/proxies returns rows ordered by sort_order', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, sortOrder: 2, dialTimeoutSeconds: null });
@@ -69,7 +59,7 @@ test('GET /api/proxies returns rows ordered by sort_order', async () => {
 
   const resp = await requestApp('/api/proxies', authed(adminSession));
   assertEquals(resp.status, 200);
-  const list = (await resp.json()) as ProxyJson[];
+  const list = (await resp.json()) as SerializedProxyRecord[];
   assertEquals(list.map(p => p.id), ['p_a', 'p_b']);
   assertEquals(list[0].name, 'First');
   assertEquals(list[0].url, HTTP_URL);
@@ -83,7 +73,7 @@ test('POST /api/proxies creates a row and assigns the next sort_order', async ()
 
   const resp = await requestApp('/api/proxies', authed(adminSession, { name: 'New', url: SOCKS_URL }));
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as ProxyJson;
+  const created = (await resp.json()) as SerializedProxyRecord;
   assertEquals(created.name, 'New');
   assertEquals(created.url, SOCKS_URL);
   assertEquals(created.sort_order, 8);
@@ -111,7 +101,7 @@ test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', a
 
   const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_c', 'p_a', 'p_b'] }));
   assertEquals(resp.status, 200);
-  const list = (await resp.json()) as ProxyJson[];
+  const list = (await resp.json()) as SerializedProxyRecord[];
   assertEquals(list.map(p => p.id), ['p_c', 'p_a', 'p_b']);
   assertEquals(list.map(p => p.sort_order), [0, 1, 2]);
 });
@@ -131,7 +121,7 @@ test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson;
+  const updated = (await resp.json()) as SerializedProxyRecord;
   assertEquals(updated.name, 'Renamed');
   assertEquals(updated.url, HTTP_URL);
 });
@@ -146,7 +136,7 @@ test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async 
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { url: SOCKS_URL }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson;
+  const updated = (await resp.json()) as SerializedProxyRecord;
   assertEquals(updated.url, SOCKS_URL);
   assertEquals(updated.last_egress_ip, null);
   assertEquals(updated.last_tested_at, null);
@@ -188,7 +178,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override',
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: 120 }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson;
+  const updated = (await resp.json()) as SerializedProxyRecord;
   assertEquals(updated.dial_timeout_seconds, 120);
 
   const stored = await repo.proxies.getById('p1');
@@ -201,7 +191,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existin
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson;
+  const updated = (await resp.json()) as SerializedProxyRecord;
   assertEquals(updated.dial_timeout_seconds, 90);
 
   const stored = await repo.proxies.getById('p1');
@@ -214,7 +204,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to de
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: null }));
   assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ProxyJson;
+  const updated = (await resp.json()) as SerializedProxyRecord;
   assertEquals(updated.dial_timeout_seconds, null);
 
   const stored = await repo.proxies.getById('p1');
