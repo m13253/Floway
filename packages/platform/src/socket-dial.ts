@@ -19,7 +19,9 @@ interface SocketDialOptions {
    *   - established sockets are closed by the runtime impl, which then
    *     surfaces as read/write rejections to the proxy library.
    * The signal is also honoured pre-connect: a signal that is already
-   * aborted at call time throws a DOMException without opening a socket.
+   * aborted at call time throws synchronously without opening a socket —
+   * its Error reason is rethrown as-is, and a primitive or absent reason
+   * becomes a DOMException('AbortError').
    */
   signal?: AbortSignal;
 }
