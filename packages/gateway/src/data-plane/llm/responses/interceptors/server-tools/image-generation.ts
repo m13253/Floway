@@ -444,7 +444,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string;
-  upstreamIds: readonly string[] | null | undefined;
+  upstreamIds: readonly string[] | null;
   scheduleBackground: GatewayCtx['scheduleBackground'];
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;

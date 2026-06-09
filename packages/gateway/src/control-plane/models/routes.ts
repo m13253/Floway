@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
+import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
@@ -40,7 +41,11 @@ const emptyResponse = (): ControlPlaneModelsResponse => ({
 
 export const controlPlaneModels = async (c: Context) => {
   try {
-    const models = await getModels();
+    // Scope the dashboard catalog to the caller's effective upstreams, exactly
+    // like the data-plane /models endpoint. On a session request there is no
+    // API key, so this resolves to the user's per-user upstream cap: a user who
+    // has had an upstream removed must not see its models in the Models tab.
+    const models = await getModels(effectiveUpstreamIdsFromContext(c));
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {
       object: 'list',

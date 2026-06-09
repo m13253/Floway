@@ -20,7 +20,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   return info;
 };
 
-export const loadModels = async (upstreamFilter?: readonly string[] | null): Promise<PublicModelsResponse> => {
+export const loadModels = async (upstreamFilter: readonly string[] | null): Promise<PublicModelsResponse> => {
   const data = (await getInternalModels(upstreamFilter)).map(toPublicModel);
   return {
     object: 'list',

@@ -89,7 +89,7 @@ const geminiModelLoadError = (error: unknown): Response => {
   return geminiError(502, error instanceof Error ? error.message : String(error));
 };
 
-const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Promise<GeminiModel[]> => {
+const loadGeminiModels = async (upstreamFilter: readonly string[] | null): Promise<GeminiModel[]> => {
   const models = await getInternalModels(upstreamFilter);
   // The Gemini /models surface represents only generative chat models;
   // embedding and image kinds are intentionally skipped because the

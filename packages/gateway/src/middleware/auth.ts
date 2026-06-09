@@ -56,6 +56,12 @@ const setUserContext = (c: Context, user: User) => {
   c.set('userId', user.id);
   c.set('isAdmin', user.isAdmin);
   c.set('userUpstreamIds', user.upstreamIds);
+  // Baseline the key-level whitelist to "no key restriction". Session requests
+  // (dashboard) carry no API key and never reach the override below, so without
+  // this `effectiveUpstreamIdsFromContext` would read an unset `undefined` and
+  // slip past its `=== null` guards. The API-key path overwrites this with the
+  // key's actual whitelist.
+  c.set('apiKeyUpstreamIds', null);
   c.set('canViewGlobalTelemetry', user.isAdmin || user.canViewGlobalTelemetry);
 };
 
