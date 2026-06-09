@@ -861,3 +861,71 @@ test('v4 replace import refuses payload missing user 1', async () => {
   assertEquals(result.status, 400);
   expect(result.body.error).toMatch(/user 1/);
 });
+
+test('a full v4 export re-imports verbatim — the export→import round trip is closed', async () => {
+  const { app, repo } = setup();
+  // Seed one of every collection the export emits.
+  await repo.users.save(SEED_ADMIN);
+  await repo.users.save(USER_BOB);
+  await repo.apiKeys.save(KEY_A);
+  await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
+  await repo.upstreams.save(COPILOT_UPSTREAM);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.upstreams.save(AZURE_UPSTREAM);
+  await repo.upstreams.save(CODEX_UPSTREAM);
+  await repo.usage.set(USAGE_1);
+  await repo.usage.set(USAGE_2);
+  await repo.searchUsage.set(SEARCH_USAGE_1);
+  await repo.searchUsage.set(SEARCH_USAGE_2);
+  await repo.performance.set(PERFORMANCE_1);
+  await repo.performance.set(PERFORMANCE_2);
+  const config = { provider: 'tavily' as const, tavily: { apiKey: 'tk' }, microsoftGrounding: { apiKey: '' } };
+  await repo.searchConfig.save(config);
+
+  const exported = await doExport(app, true);
+  assertEquals(exported.version, 4);
+
+  // Replace-import the export's own `data`, verbatim. If the export emits any
+  // shape the import parser rejects, this 400s — the round trip is the
+  // invariant, so this test fails the moment the two sides drift.
+  const result = await doImport(app, 'replace', exported.data, 4);
+  assertEquals(result.status, 200);
+  assertEquals(result.body.imported, { users: 2, apiKeys: 2, upstreams: 4, usage: 2, searchUsage: 2, performance: 2 });
+
+  // Spot-check fidelity across collection types (order-independent).
+  assertEquals((await repo.upstreams.list()).find(u => u.id === 'up_codex_a')?.state, CODEX_UPSTREAM.state);
+  assertEquals((await repo.users.listIncludingDeleted()).find(u => u.id === USER_BOB.id), USER_BOB);
+  assertEquals((await repo.apiKeys.getById('key-b'))?.userId, USER_BOB.id);
+  assertEquals((await repo.usage.listAll()).find(u => u.keyId === 'key-a' && u.hour === USAGE_1.hour), USAGE_1);
+  assertEquals((await repo.performance.listAll()).find(p => p.keyId === 'key-a' && p.hour === PERFORMANCE_1.hour), PERFORMANCE_1);
+  assertEquals(await repo.searchConfig.get(), config);
+});
+
+test('any data bearing a historical version is rejected on the version gate, before mutating', async () => {
+  const { app, repo } = setup();
+  await repo.users.save(SEED_ADMIN);
+  await repo.apiKeys.save(KEY_A);
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+
+  // A perfectly well-formed current-version payload — only the version stamp
+  // is historical. It must still be refused on the version alone.
+  const wellFormed = {
+    users: [SEED_ADMIN],
+    apiKeys: [KEY_A],
+    upstreams: [upstreamRecordToFullJson(CUSTOM_UPSTREAM)],
+    usage: [],
+    searchUsage: [],
+    performanceIncluded: false,
+    searchConfig: DEFAULT_SEARCH_CONFIG,
+  };
+
+  for (const version of [1, 2, 3]) {
+    const result = await doImport(app, 'replace', wellFormed, version);
+    assertEquals(result.status, 400);
+    assertEquals(String(result.body.error).includes('version must be 4'), true);
+  }
+
+  // Nothing was touched — the version gate runs before any delete or write.
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+  assertEquals((await repo.upstreams.list()).map(u => u.id), ['up_custom_a']);
+});
