@@ -68,39 +68,43 @@ describe('dialVlessTcpTls — pre-dial target validation', () => {
 });
 
 describe('dialVlessWsTls — pre-dial target validation', () => {
-  // The WS dialer goes through the runtime's global fetch() and never touches
-  // socketDial, so these tests confirm the pre-dial guards fire before the
-  // workerd-runtime check or any fetch call. In a non-workerd test
-  // environment the function would later reject with a 'config'-stage error
-  // for the missing WebSocketPair anyway — pinning the rejection to the
-  // target-validation message ensures the asserts run first.
-  it('rejects an out-of-range target port at stage=config, before any fetch upgrade', async () => {
+  // The WS dialer now goes through the same `socketDial.connect(tls=true)`
+  // path as the TCP dialer (the WS upgrade lives on top of that duplex), so
+  // these tests pin the pre-dial guards firing before any TCP slot is burnt
+  // — same shape as the TCP variant above.
+  it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
     await expect(
-      dialVlessWsTls(vlessWsConfig(), { host: 'api.openai.com', port: 0 }, {}),
+      dialVlessWsTls(vlessWsConfig(), { host: 'api.openai.com', port: 0 }, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'config',
       message: expect.stringContaining('1..65535'),
     });
+    expect(fake.connectCount()).toBe(0);
   });
 
-  it('rejects a non-ASCII target host at stage=config, before any fetch upgrade', async () => {
+  it('rejects a non-ASCII target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
     await expect(
-      dialVlessWsTls(vlessWsConfig(), { host: '例え.jp', port: 443 }, {}),
+      dialVlessWsTls(vlessWsConfig(), { host: '例え.jp', port: 443 }, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'config',
       message: expect.stringContaining('ASCII'),
     });
+    expect(fake.connectCount()).toBe(0);
   });
 
-  it('rejects a 256-byte target host at stage=config, before any fetch upgrade', async () => {
+  it('rejects a 256-byte target host at stage=config, before any TCP connect', async () => {
+    const fake = makeFakeSocketDial();
     await expect(
-      dialVlessWsTls(vlessWsConfig(), { host: 'a'.repeat(256), port: 443 }, {}),
+      dialVlessWsTls(vlessWsConfig(), { host: 'a'.repeat(256), port: 443 }, { socketDial: fake.socketDial }),
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'config',
       message: expect.stringContaining('too long'),
     });
+    expect(fake.connectCount()).toBe(0);
   });
 });

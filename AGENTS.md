@@ -72,15 +72,14 @@ floway/
 
 Dependency direction is strict. The leaf-most packages are `protocols`,
 `interceptor`, and `http` (HTTP/1.1 over a duplex byte stream + userspace
-TLS, no runtime dependencies). `translate` depends on `protocols`. `proxy`
-depends on `http`; it parses subscription-style proxy URIs, dispatches to
-per-protocol byte-stream dialers, and exposes a `runProxiedRequest`
-orchestrator that composes dial → optional userspace TLS → fetch-on-stream.
-Most dialers stay runtime-agnostic by taking the raw TCP `socketDial`
-primitive through `DialOptions`, so they never import `@floway-dev/platform`;
-the one exception is `vless-ws`, which goes through the runtime's global
-`fetch()` to perform the WebSocket upgrade and is workerd-only because only
-workerd's fetch returns a `webSocket` handle on the Response. `provider`
+TLS + WebSocket upgrade, no runtime dependencies). `translate` depends on
+`protocols`. `proxy` depends on `http`; it parses subscription-style
+proxy URIs, dispatches to per-protocol byte-stream dialers, and exposes a
+`runProxiedRequest` orchestrator that composes dial → optional userspace
+TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
+`wsUpgradeAndFrame` over the runtime's TLS-wrapped duplex — stay
+runtime-agnostic by taking the raw TCP `socketDial` primitive through
+`DialOptions`, so they never import `@floway-dev/platform`. `provider`
 depends on `platform` + `protocols` + `interceptor`; the per-vendor
 `provider-*` packages depend on `provider`.
 `gateway` depends on `platform` + `protocols` + `translate` + `http` +
