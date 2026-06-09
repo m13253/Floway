@@ -14,6 +14,7 @@ const props = defineProps<{
   moveUpDisabled: boolean;
   moveDownDisabled: boolean;
   testInFlight: boolean;
+  testCoolingDown: boolean;
   testError: string | null;
 }>();
 
@@ -107,7 +108,7 @@ const upstreamLabel = (id: string) => props.upstreamNames.get(id) ?? id;
         <button
           type="button"
           class="inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-gray-300 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-40"
-          :disabled="testInFlight"
+          :disabled="testInFlight || testCoolingDown"
           aria-label="Test proxy"
           title="Test proxy egress"
           @click="$emit('test')"

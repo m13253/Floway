@@ -256,19 +256,13 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     await repo.proxies.recordTestSuccess(id, truncated);
     return c.json({ ok: true, egress_ip: truncated });
   } catch (err) {
-    // Narrow the catch to dial-shaped failures: ProxyDialError surfaces
-    // proxy-handshake / inner-tls / tcp-connect, and a runtime fetch
-    // error from the underlying socket layer presents as a TypeError or
-    // generic Error with a network-shaped message. Programmer errors
-    // (TypeError from a typo, RangeError, etc.) MUST propagate to the
+    // Every dial-shaped failure inside runProxiedRequest surfaces as a typed
+    // ProxyDialError carrying the stage tag. Programmer errors (TypeError
+    // from a typo, RangeError, etc.) and AbortError MUST propagate to the
     // framework's top-level handler instead of getting flattened into a
     // green-channel ok:false reply.
     if (err instanceof ProxyDialError) {
       return c.json({ ok: false, error: `[${err.stage}] ${err.message}` });
-    }
-    if (err instanceof Error && err.name === 'AbortError') throw err;
-    if (err instanceof Error && /tcp connect to|fetch failed|network|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(err.message)) {
-      return c.json({ ok: false, error: err.message });
     }
     throw err;
   }

@@ -23,9 +23,14 @@ watch(proxiesStore.proxies, list => {
   ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
 }, { immediate: true });
 
-// Per-proxy in-flight + last error for the Test button. Plain Maps keyed by id;
-// Vue tracks Map reassignments rather than internal mutation, so replace on every update.
+// Per-proxy in-flight, post-test cooldown, and last error for the Test button.
+// `testInFlight` clears the moment the API call resolves so the spinner stops
+// spinning once the response is in hand; `testCoolingDown` is a separate 3s
+// guard that disables the button without making it look busy. Plain Maps keyed
+// by id; Vue tracks Map reassignments rather than internal mutation, so replace
+// on every update.
 const testInFlight = ref<Map<string, boolean>>(new Map());
+const testCoolingDown = ref<Map<string, boolean>>(new Map());
 const testError = ref<Map<string, string | null>>(new Map());
 
 const setMapEntry = <V>(map: Map<string, V>, key: string, value: V): Map<string, V> => {
@@ -109,10 +114,11 @@ const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const startTestCooldown = (id: string): void => {
   const existing = cooldownTimers.get(id);
   if (existing) clearTimeout(existing);
+  testCoolingDown.value = setMapEntry(testCoolingDown.value, id, true);
   cooldownTimers.set(
     id,
     setTimeout(() => {
-      testInFlight.value = setMapEntry(testInFlight.value, id, false);
+      testCoolingDown.value = setMapEntry(testCoolingDown.value, id, false);
       cooldownTimers.delete(id);
     }, 3000),
   );
@@ -125,19 +131,23 @@ onBeforeUnmount(() => {
 const testProxy = async (record: ProxyRecord) => {
   testInFlight.value = setMapEntry(testInFlight.value, record.id, true);
   testError.value = setMapEntry(testError.value, record.id, null);
-  // Anchor defaults to ipify on the server when the body is empty.
-  const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
-    () => api.api.proxies[':id'].test.$post({ param: { id: record.id }, json: {} }),
-  );
-  if (error) {
-    testError.value = setMapEntry(testError.value, record.id, error.message);
-  } else if (data && !data.ok) {
-    testError.value = setMapEntry(testError.value, record.id, data.error ?? 'Test failed');
-  } else {
-    emit('changed');
+  try {
+    // Anchor defaults to ipify on the server when the body is empty.
+    const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
+      () => api.api.proxies[':id'].test.$post({ param: { id: record.id }, json: {} }),
+    );
+    if (error) {
+      testError.value = setMapEntry(testError.value, record.id, error.message);
+    } else if (data && !data.ok) {
+      testError.value = setMapEntry(testError.value, record.id, data.error ?? 'Test failed');
+    } else {
+      emit('changed');
+    }
+  } finally {
+    testInFlight.value = setMapEntry(testInFlight.value, record.id, false);
+    // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
+    startTestCooldown(record.id);
   }
-  // 3s cooldown so a double-click can't double-spend the anchor's IP echo.
-  startTestCooldown(record.id);
 };
 
 const resetBackoffs = async (record: ProxyRecord) => {
@@ -199,6 +209,7 @@ const deleteProxy = async (record: ProxyRecord) => {
         :move-up-disabled="moveDisabled(proxy.id, -1)"
         :move-down-disabled="moveDisabled(proxy.id, 1)"
         :test-in-flight="testInFlight.get(proxy.id) ?? false"
+        :test-cooling-down="testCoolingDown.get(proxy.id) ?? false"
         :test-error="testError.get(proxy.id) ?? null"
         @test="testProxy(proxy)"
         @reset-backoffs="resetBackoffs(proxy)"
