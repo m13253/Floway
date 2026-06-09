@@ -365,8 +365,8 @@ const lengthBody = (
         }
       }
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
     },
   });
 };
@@ -384,8 +384,8 @@ const untilEofBody = (
       if (done) controller.close();
       else controller.enqueue(copy(value));
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
     },
   });
 };

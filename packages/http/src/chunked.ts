@@ -167,8 +167,8 @@ export const decodeChunked = (
         }
       }
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
     },
   });
 };
