@@ -4,9 +4,30 @@ import { describe, test } from 'vitest';
 import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
+interface AuthVars {
+  apiKeyId: string | null;
+  apiKeyUpstreamIds: readonly string[] | null;
+  userUpstreamIds: readonly string[] | null;
+}
+
+// Mirrors the production guarantee: by the time a data-plane handler runs,
+// auth middleware has stamped all three vars on the context. Tests that want
+// to model an unrestricted key on an uncapped user can rely on the defaults;
+// tests that want to model a capped key or user override at the handler.
+const makeApp = (): Hono<{ Variables: AuthVars }> => {
+  const app = new Hono<{ Variables: AuthVars }>();
+  app.use('*', async (c, next) => {
+    c.set('apiKeyId', null);
+    c.set('apiKeyUpstreamIds', null);
+    c.set('userUpstreamIds', null);
+    await next();
+  });
+  return app;
+};
+
 describe('createGatewayCtxFromHono', () => {
   test('copies auth fields when both are set', async () => {
-    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       c.set('apiKeyId', 'key-1');
@@ -20,8 +41,8 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
   });
 
-  test('sets apiKeyId and upstreamIds to null when unset (admin key path)', async () => {
-    const app = new Hono();
+  test('passes apiKeyId and upstreamIds through as null on an unrestricted key + uncapped user', async () => {
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, false);
@@ -34,7 +55,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('respects wantsStream=true', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, true);
@@ -46,7 +67,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('respects wantsStream=false', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, false);
@@ -58,7 +79,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('wantsStream=true: downstreamAbortController is defined and abortSignal matches its signal', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, true);
@@ -71,7 +92,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, false);
@@ -84,7 +105,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('scheduleBackground is present and callable without throwing', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       ctx = createGatewayCtxFromHono(c, false);
@@ -105,7 +126,7 @@ describe('createGatewayCtxFromHono', () => {
   test('upstreamIds is the intersection of the per-user cap and the per-key whitelist', async () => {
     // Drives the headline multi-tenant invariant: an unrestricted key under a
     // capped user must not route to upstreams outside the user's cap.
-    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[]; userUpstreamIds: readonly string[] } }>();
+    const app = makeApp();
     const collected: { capOnly?: readonly string[] | null; both?: readonly string[] | null; keyOnly?: readonly string[] | null } = {};
     app.get('/cap-only', c => {
       // Unrestricted key (apiKeyUpstreamIds null) under a capped user.
@@ -121,8 +142,8 @@ describe('createGatewayCtxFromHono', () => {
       return c.text('ok');
     });
     app.get('/key-only', c => {
-      // Unrestricted user (no userUpstreamIds set) with a per-key whitelist
-      // falls through to the per-key list verbatim.
+      // Uncapped user with a per-key whitelist falls through to the per-key
+      // list verbatim.
       c.set('apiKeyUpstreamIds', ['up-x']);
       collected.keyOnly = createGatewayCtxFromHono(c, false).upstreamIds;
       return c.text('ok');
@@ -136,7 +157,7 @@ describe('createGatewayCtxFromHono', () => {
   });
 
   test('stamps requestStartedAt from performance.now() at construction', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     const before = performance.now();
     app.get('/test', c => {
@@ -154,7 +175,7 @@ describe('createGatewayCtxFromHono', () => {
 
 describe('createGatewayCtxForWs', () => {
   test('copies auth fields from Hono context', async () => {
-    const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       c.set('apiKeyId', 'ws-key');
@@ -169,8 +190,8 @@ describe('createGatewayCtxForWs', () => {
     assertEquals(ctx.upstreamIds, ['ws-up-1']);
   });
 
-  test('sets apiKeyId and upstreamIds to null when unset', async () => {
-    const app = new Hono();
+  test('passes apiKeyId and upstreamIds through as null on an unrestricted key + uncapped user', async () => {
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
@@ -184,7 +205,7 @@ describe('createGatewayCtxForWs', () => {
   });
 
   test('forces wantsStream=true', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
@@ -197,7 +218,7 @@ describe('createGatewayCtxForWs', () => {
   });
 
   test('sets abortSignal from downstreamAbortController.signal', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     let controller: AbortController | undefined;
     app.get('/test', c => {
@@ -212,7 +233,7 @@ describe('createGatewayCtxForWs', () => {
   });
 
   test('exposes downstreamAbortController', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     let controller: AbortController | undefined;
     app.get('/test', c => {
@@ -227,7 +248,7 @@ describe('createGatewayCtxForWs', () => {
   });
 
   test('scheduleBackground is present and callable without throwing', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
@@ -247,7 +268,7 @@ describe('createGatewayCtxForWs', () => {
   });
 
   test('stamps requestStartedAt from performance.now() at construction', async () => {
-    const app = new Hono();
+    const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     const before = performance.now();
     app.get('/test', c => {

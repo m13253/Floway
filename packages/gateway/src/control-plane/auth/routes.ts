@@ -26,7 +26,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
     return c.json({ token: session.id, user: userToEffectiveWire(user) });
   }
 
-  const user = await repo.users.findByUsernameActive(username);
+  const user = await repo.users.findByUsername(username);
   if (!user?.passwordHash) return c.json({ error: 'Invalid username or password' }, 401);
   if (!(await verifyPassword(password, user.passwordHash))) {
     return c.json({ error: 'Invalid username or password' }, 401);

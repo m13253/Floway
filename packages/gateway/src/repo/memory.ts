@@ -60,7 +60,7 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve(u ? { ...u } : null);
   }
 
-  findByUsernameActive(username: string): Promise<User | null> {
+  findByUsername(username: string): Promise<User | null> {
     const u = this.users.find(u => u.username === username && u.deletedAt === null);
     return Promise.resolve(u ? { ...u } : null);
   }

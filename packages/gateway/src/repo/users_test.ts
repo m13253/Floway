@@ -61,7 +61,7 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
     await repo.users.softDelete(2);
     await repo.users.save(sampleUser({ id: 3, username: 'alice' }));
-    expect((await repo.users.findByUsernameActive('alice'))?.id).toBe(3);
+    expect((await repo.users.findByUsername('alice'))?.id).toBe(3);
   });
 
   test('saving a duplicate active username throws', async () => {
@@ -85,10 +85,10 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.users.getById(3))?.upstreamIds).toEqual(['up_one', 'up_two']);
   });
 
-  test('findByUsernameActive does not return soft-deleted rows', async () => {
+  test('findByUsername does not return soft-deleted rows', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
     await repo.users.softDelete(2);
-    expect(await repo.users.findByUsernameActive('alice')).toBeNull();
+    expect(await repo.users.findByUsername('alice')).toBeNull();
   });
 });

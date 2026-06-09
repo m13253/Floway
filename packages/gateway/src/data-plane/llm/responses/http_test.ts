@@ -42,12 +42,14 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }> => {
-  const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
+const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }> => {
+  const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }>();
   // Stamp the authenticated key onto every request so the http entry sees the
   // same value the real auth middleware would set.
   app.use('*', async (c, next) => {
     c.set('apiKeyId', API_KEY_ID);
+    c.set('apiKeyUpstreamIds', null);
+    c.set('userUpstreamIds', null);
     await next();
   });
   app.post('/v1/responses', responsesHttp.generate);

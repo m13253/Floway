@@ -14,7 +14,11 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
   const api = useApi();
   const store = useUpstreamsStore();
   await store.load();
-  const list = store.upstreams.value ?? [];
+  if (store.error.value) throw new Error(store.error.value);
+  if (store.upstreams.value === null || store.flagCatalog.value === null) {
+    throw new Error('upstreams store not populated after a successful load()');
+  }
+  const list = store.upstreams.value;
   const id = route.params.id;
   const record = list.find(u => u.id === id) ?? null;
 
@@ -74,7 +78,7 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
 
   return {
     record,
-    flags: store.flagCatalog.value ?? [],
+    flags: store.flagCatalog.value,
     nextSortOrder: list.reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1,
     upstreamModels,
     upstreamModelsError,

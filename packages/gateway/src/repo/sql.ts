@@ -246,7 +246,7 @@ class SqlUsersRepo implements UsersRepo {
     return row ? toUser(row) : null;
   }
 
-  async findByUsernameActive(username: string): Promise<User | null> {
+  async findByUsername(username: string): Promise<User | null> {
     const row = await this.db
       .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE username = ? AND deleted_at IS NULL`)
       .bind(username)

@@ -31,7 +31,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
 
-  if (await repo.users.findByUsernameActive(body.username)) {
+  if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'username taken' }, 400);
   }
   const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds ?? null);
@@ -83,7 +83,7 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     return c.json({ error: 'cannot demote yourself' }, 400);
   }
   if (body.username !== undefined && body.username !== existing.username) {
-    const dup = await repo.users.findByUsernameActive(body.username);
+    const dup = await repo.users.findByUsername(body.username);
     if (dup && dup.id !== id) return c.json({ error: 'username taken' }, 400);
   }
   if (body.upstreamIds !== undefined) {
