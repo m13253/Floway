@@ -254,7 +254,6 @@ const resetBackoff = async (upstreamId: string) => {
     }),
   );
   if (error) { window.alert(`Reset failed: ${error.message}`); return; }
-  await proxiesStore.load();
   emit('saved');
 };
 
@@ -267,7 +266,6 @@ const resetAllBackoffs = async () => {
     }),
   );
   if (error) { window.alert(`Reset failed: ${error.message}`); return; }
-  await proxiesStore.load();
   emit('saved');
 };
 
