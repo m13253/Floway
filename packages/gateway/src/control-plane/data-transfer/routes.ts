@@ -8,9 +8,10 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
-import type { exportQuery, importBody } from '../schemas.ts';
+import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
@@ -36,7 +37,6 @@ interface ExportPayload {
 }
 
 const EXPORT_VERSION = 4;
-const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
@@ -216,8 +216,8 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
       if (typeof record.username !== 'string' || !USERNAME_PATTERN.test(record.username)) {
         throw new Error('username must match ^[a-zA-Z0-9_.-]{1,64}$');
       }
-      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith('pbkdf2-sha256$'))) {
-        throw new Error('passwordHash must be null or start with pbkdf2-sha256$');
+      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith(`${PASSWORD_HASH_SCHEME}$`))) {
+        throw new Error(`passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$`);
       }
       if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
       if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
@@ -247,7 +247,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
   return { type: 'ok', records };
 };
 
-const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: string): string | null => {
+const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
 

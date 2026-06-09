@@ -130,7 +130,6 @@ export interface UsersRepo {
 }
 
 export interface SessionsRepo {
-  // Updates last_seen_at on hit.
   getByIdAndTouch(id: string): Promise<Session | null>;
   create(userId: number): Promise<Session>;
   deleteById(id: string): Promise<boolean>;

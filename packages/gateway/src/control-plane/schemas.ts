@@ -138,7 +138,9 @@ export const authLoginBody = z.object({
 
 // --- users ---
 
-const usernameSchema = z.string().regex(/^[a-zA-Z0-9_.\-]{1,64}$/, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
+export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
+
+const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
 // Empty array is rejected because an entity restricted to zero upstreams cannot

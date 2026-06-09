@@ -80,9 +80,9 @@ const seedFromRecord = (r: UpstreamRecord) => {
   if (r.provider === 'custom') {
     const cfg = r.config as CustomUpstreamConfig;
     customDraft.value = {
-      baseUrl: cfg.baseUrl ?? '',
-      authStyle: cfg.authStyle ?? 'bearer',
-      endpoints: { ...(cfg.endpoints ?? {}) },
+      baseUrl: cfg.baseUrl,
+      authStyle: cfg.authStyle,
+      endpoints: { ...cfg.endpoints },
       bearerToken: '',
       pathOverrides: seedPathOverrides(cfg.pathOverrides),
       modelsFetch: cfg.modelsFetch
@@ -97,7 +97,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
   } else if (r.provider === 'azure') {
     const cfg = r.config as AzureUpstreamConfig;
     azureDraft.value = {
-      endpoint: cfg.endpoint ?? '',
+      endpoint: cfg.endpoint,
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };

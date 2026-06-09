@@ -90,7 +90,6 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  // null on upstreamIds clears to inherit; undefined leaves the field unchanged.
   const overrides: Partial<User> = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);

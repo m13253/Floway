@@ -1,7 +1,7 @@
 const ITERATIONS = 600_000;
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
-const SCHEME = 'pbkdf2-sha256';
+export const PASSWORD_HASH_SCHEME = 'pbkdf2-sha256';
 
 const utf8 = new TextEncoder();
 
@@ -37,7 +37,7 @@ export const timingSafeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
 export const hashPassword = async (plaintext: string): Promise<string> => {
   const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
   const bits = await deriveBits(plaintext, salt, ITERATIONS);
-  return `${SCHEME}$${ITERATIONS}$${toBase64(salt)}$${toBase64(bits)}`;
+  return `${PASSWORD_HASH_SCHEME}$${ITERATIONS}$${toBase64(salt)}$${toBase64(bits)}`;
 };
 
 // Returns false on any structural failure of the encoded string. The caller
@@ -45,7 +45,7 @@ export const hashPassword = async (plaintext: string): Promise<string> => {
 // help an attacker distinguish "no such user" from "stored hash corrupted".
 export const verifyPassword = async (plaintext: string, encoded: string): Promise<boolean> => {
   const parts = encoded.split('$');
-  if (parts.length !== 4 || parts[0] !== SCHEME) return false;
+  if (parts.length !== 4 || parts[0] !== PASSWORD_HASH_SCHEME) return false;
   const iters = Number(parts[1]);
   if (!Number.isFinite(iters) || iters < 1000 || iters > 10_000_000) return false;
   let salt: Uint8Array;
