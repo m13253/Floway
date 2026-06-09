@@ -91,9 +91,10 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  // Build a partial of the fields the body actually carries, then spread it on
-  // top of `existing`. Filtering undefined keeps explicit `false` / empty
-  // strings (which `??` would mistakenly drop).
+  // Build a partial of the fields the body actually carries, then spread on
+  // top of `existing`. The `!== undefined` check (rather than `??`) is
+  // load-bearing for `upstreamIds`: an explicit `null` means "switch back to
+  // inherit" and must overwrite the existing whitelist, not fall back to it.
   const overrides: Partial<User> = {};
   if (body.username !== undefined) overrides.username = body.username;
   if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);

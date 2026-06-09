@@ -1,6 +1,7 @@
-// The repo stores one row per (provider, keyId, action, hour). The dashboard
-// renders one row per (provider, keyId, hour) with `search` and `fetch_page`
-// counts summed; the all-by-user view rolls those further into per-user rows.
+// The repo stores one row per (provider, keyId, action, hour). The two
+// aggregators below collapse the action dimension, summing search and
+// fetch_page into a single `requests` count per (provider, keyId, hour) or
+// (provider, userId, hour).
 
 import type { SearchUsageRecord } from '../../repo/types.ts';
 import type { WebSearchProviderName } from '../../shared/web-search-providers.ts';
@@ -22,8 +23,6 @@ export interface DisplaySearchUsageByUserRecord {
 export const aggregateSearchUsageByKey = (records: readonly SearchUsageRecord[]): DisplaySearchUsageByKeyRecord[] => {
   const grouped = new Map<string, DisplaySearchUsageByKeyRecord>();
   for (const r of records) {
-    // JSON-encoded tuple keeps the composite key unambiguous regardless of
-    // characters in any component.
     const key = JSON.stringify([r.provider, r.keyId, r.hour]);
     const existing = grouped.get(key);
     if (existing) {
