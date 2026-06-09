@@ -89,7 +89,6 @@ watch(url, next => {
     urlError.value = null;
     void nextTick(() => { if (lastSource === 'url') lastSource = null; });
   } else {
-    // Keep the last good config so the form does not reset mid-keystroke.
     urlError.value = parsed.error;
   }
 });
