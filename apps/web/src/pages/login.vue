@@ -71,6 +71,7 @@ const [loading, submit] = useLoading(async () => {
               type="text"
               placeholder="(leave blank for ADMIN_KEY login)"
               autocomplete="username"
+              autofocus
             />
           </div>
 
@@ -83,7 +84,6 @@ const [loading, submit] = useLoading(async () => {
               placeholder="Enter your password..."
               :invalid="!!errorMessage"
               autocomplete="current-password"
-              autofocus
             />
           </div>
 
