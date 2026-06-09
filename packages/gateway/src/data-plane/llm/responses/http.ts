@@ -4,23 +4,17 @@ import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-
-const CODEX_AUTO_REVIEW_ALIAS = 'codex-auto-review';
-const CODEX_AUTO_REVIEW_TARGET = 'gpt-5.4';
 
 // Codex sends auto-review requests over the Responses wire API as a
 // `codex-auto-review` model id; rewrite at the entry so downstream routing,
 // performance telemetry, and usage accounting all see the real model name
 // (and the `low` reasoning effort the alias implies — generate only;
 // compact carries no `reasoning` field).
-//
-// References (codex @ e7bffc5a20e92cbc64d6c16a1b257d0b2e4cd5df):
-//   codex-rs/model-provider/src/provider.rs#L73-L96
-//   codex-rs/codex-api/src/endpoint/responses.rs#L102-L134
 const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoningEffort: boolean): ResponsesPayload => {
   if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
   if (!stampReasoningEffort) return { ...payload, model: CODEX_AUTO_REVIEW_TARGET };

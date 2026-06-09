@@ -100,10 +100,3 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
     })(),
   ]);
 };
-
-export const recordTokenUsageForApiKey = async (apiKeyId: string | undefined, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  // Dashboard playground requests authenticate with ADMIN_KEY and intentionally
-  // have no API key id; usage is not recorded for those.
-  if (!apiKeyId) return;
-  await recordTokenUsage(apiKeyId, modelIdentity, usage);
-};

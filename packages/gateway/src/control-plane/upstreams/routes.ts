@@ -162,6 +162,24 @@ export const listUpstreams = async (c: Context) => {
   return c.json(await Promise.all(items.map(serializeForResponse)));
 };
 
+// Picker dataset for the per-key upstream whitelist editor. Non-admin users
+// need to know which upstreams exist to scope their keys, but they must not
+// see operator-tuned config (model lists, flag overrides, copilot user info,
+// etc.). This minimal projection is the only upstream surface mounted outside
+// the admin zone.
+export const listUpstreamOptions = async (c: Context) => {
+  const items = await getRepo().upstreams.list();
+  return c.json(items
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(upstream => ({
+      id: upstream.id,
+      name: upstream.name,
+      provider: upstream.provider,
+      enabled: upstream.enabled,
+    })));
+};
+
 export const listOptionalFlags = (c: Context) => c.json(getFlagCatalog());
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
@@ -258,7 +276,7 @@ export const deleteUpstream = async (c: Context) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams (see migration 0028), so the cleanup is unconditional.
+  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams (see migration 0029), so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForUpstream(id);
   await invalidateModelsStore(id);
   return c.json({ ok: true });

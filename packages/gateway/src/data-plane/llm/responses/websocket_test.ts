@@ -1,7 +1,7 @@
 import type { ExecutionContext } from 'hono';
 import { test } from 'vitest';
 
-import { hashResponsesItemContent } from './items/format.ts';
+import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
 import { app } from '../../../app.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -173,12 +173,16 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
 
       const messages = await received;
       assert(messages.every(message => message.event_id === 'evt_1'));
-      assert(messages.some(message => message.type === 'response.completed'));
+      const completed = messages.find(message => message.type === 'response.completed') as { response?: { id?: unknown } } | undefined;
+      assertExists(completed);
+      const flowayResponseId = (completed.response as { id?: unknown } | undefined)?.id;
+      assertEquals(typeof flowayResponseId, 'string');
+      assert(isStoredResponseId(flowayResponseId as string), 'expected floway-minted resp_ id, not the upstream blob');
       assertEquals(messages.at(-1), {
         type: 'response.done',
         event_id: 'evt_1',
         response: {
-          id: 'resp_ws',
+          id: flowayResponseId,
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         },
       });
@@ -379,6 +383,8 @@ test('Responses WebSocket store:false writes no items/snapshot and follow-ups ca
 test('Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
   const { apiKey, repo } = await setupAppTest();
   let turn = 0;
+  let firstResponseId: string | undefined;
+  let secondResponseId: string | undefined;
 
   await withMockedFetch(
     async request => {
@@ -413,16 +419,22 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
       const client = await connectResponsesWebSocket(apiKey.key);
       const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
       client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
-      await firstDone;
+      const firstMessages = await firstDone;
+      const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
+      firstResponseId = firstCompleted?.response?.id;
+      assertExists(firstResponseId);
 
       const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
-      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: 'resp_ws_durable_1', input: 'second' } }));
-      await secondDone;
+      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: firstResponseId, input: 'second' } }));
+      const secondMessages = await secondDone;
+      const secondCompleted = secondMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
+      secondResponseId = secondCompleted?.response?.id;
+      assertExists(secondResponseId);
     }),
   );
 
-  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_durable_1');
-  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_durable_2');
+  const firstSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId!);
+  const secondSnapshot = await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId!);
   assertExists(firstSnapshot);
   assertExists(secondSnapshot);
   assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
@@ -475,22 +487,25 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         type: 'response.create',
         response: { model: 'gpt-direct-responses', input: 'turn one input' },
       }));
-      await firstDone;
+      const firstMessages = await firstDone;
+      const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
+      const firstResponseId = firstCompleted?.response?.id;
+      assertExists(firstResponseId);
 
       // The first turn wrote to both the durable repo and the session-local
       // cache. Wipe the repo to prove the next lookup comes from the cache
       // alone.
-      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_session_1'));
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId));
       await repo.responsesSnapshots.deleteAll();
       await repo.responsesItems.deleteAll();
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_session_1'), null);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
 
       const secondDone = waitForMessages(sessionA, messages => messages.some(message => message.type === 'response.done'));
       sessionA.send(JSON.stringify({
         type: 'response.create',
         response: {
           model: 'gpt-direct-responses',
-          previous_response_id: 'resp_session_1',
+          previous_response_id: firstResponseId,
           input: 'turn two input',
         },
       }));

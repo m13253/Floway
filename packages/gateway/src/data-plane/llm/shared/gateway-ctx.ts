@@ -1,10 +1,11 @@
 import type { Context } from 'hono';
 
+import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 
 export interface GatewayCtx {
-  readonly apiKeyId: string | null;
-  readonly apiKeyUpstreamIds: readonly string[] | null;
+  readonly apiKeyId: string;
+  readonly upstreamIds: readonly string[] | null;
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
@@ -20,12 +21,12 @@ const buildScheduleBackground = (c: Context): GatewayCtx['scheduleBackground'] =
 };
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
-  const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
-  const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
+  const apiKeyId = c.get('apiKeyId') as string;
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
   return {
     apiKeyId,
-    apiKeyUpstreamIds,
+    upstreamIds,
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
     scheduleBackground: buildScheduleBackground(c),
@@ -38,11 +39,11 @@ export const createGatewayCtxForWs = (
   _server: WebSocket,
   downstreamAbortController: AbortController,
 ): GatewayCtx => {
-  const apiKeyId = (c.get('apiKeyId') as string | undefined) ?? null;
-  const apiKeyUpstreamIds = (c.get('apiKeyUpstreamIds') as readonly string[] | null | undefined) ?? null;
+  const apiKeyId = c.get('apiKeyId') as string;
+  const upstreamIds = effectiveUpstreamIdsFromContext(c);
   return {
     apiKeyId,
-    apiKeyUpstreamIds,
+    upstreamIds,
     abortSignal: downstreamAbortController.signal,
     wantsStream: true,
     downstreamAbortController,

@@ -54,6 +54,42 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
   ]);
 });
 
+test('/api/performance scopes to actor\'s keys in self-by-key mode', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  // A key owned by user 1 with usage in the same window — must NOT surface to
+  // the actor (user 2) under the default self-by-key view.
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Other key',
+    key: 'raw_other_key',
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    metricScope: 'request_total' as const,
+    upstream: null,
+    sourceApi: 'responses' as const,
+    targetApi: 'responses' as const,
+    stream: false,
+    runtimeLocation: 'unknown',
+  };
+
+  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id, model: 'gpt-5', modelKey: 'gpt-5', durationMs: 50 });
+  await repo.performance.recordLatency({ ...sample, keyId: 'key_other', model: 'gpt-5', modelKey: 'gpt-5', durationMs: 250 });
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=keyId', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // Only the actor's key surfaces; the other user's row is filtered out.
+  assertEquals(body.records.length, 1);
+  assertEquals(body.records[0].group, apiKey.id);
+});
+
 test('/api/performance can include key metadata', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordLatency({
@@ -81,6 +117,141 @@ test('/api/performance can include key metadata', async () => {
       createdAt: apiKey.createdAt,
     },
   ]);
+});
+
+test('/api/performance all-by-user view aggregates over every key', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  // Two users' rows in the same hour. The admin session has
+  // canViewGlobalTelemetry=true and defaults to all-by-user; both rows must
+  // contribute to the same `model` group.
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Admin owned',
+    key: 'raw_admin_owned',
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    metricScope: 'request_total' as const,
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses' as const,
+    targetApi: 'responses' as const,
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 100,
+  };
+  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=model&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.records.length, 1);
+  assertEquals(body.records[0].group, 'gpt-5');
+  assertEquals(body.records[0].requests, 2);
+});
+
+test('/api/performance rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 403);
+});
+
+test('/api/performance rejects group_by=keyId in all-by-user mode', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
+  assertEquals(response.status, 400);
+  const body = await response.json();
+  assertEquals(body.error, 'group_by=keyId is not allowed in all-by-user mode');
+});
+
+test('/api/performance all-by-user view supports group_by=userId', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Admin owned',
+    key: 'raw_admin_owned',
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    metricScope: 'request_total' as const,
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses' as const,
+    targetApi: 'responses' as const,
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 100,
+  };
+  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  assertEquals(groups, [['1', 1], ['2', 2]]);
+});
+
+test('/api/performance rejects group_by=userId in self-by-key mode', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 400);
+  const body = await response.json();
+  assertEquals(body.error, 'group_by=userId is not allowed in self-by-key mode');
+});
+
+test('/api/performance/overview series pivots to per-user under all-by-user view', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Admin owned',
+    key: 'raw_admin_owned',
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    metricScope: 'request_total' as const,
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses' as const,
+    targetApi: 'responses' as const,
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 100,
+  };
+  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&metric_scope=request_total&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // Series is now grouped by user; both rows show up.
+  const seriesGroups = body.series.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  assertEquals(seriesGroups, [['1', 1], ['2', 1]]);
+  assertEquals(body.users.map((u: { id: number }) => u.id).sort(), [1, 2]);
+  assertEquals(Array.isArray(body.keyColorOrder), true);
 });
 
 test('/api/performance/overview returns dashboard aggregates from one repo query', async () => {
@@ -155,4 +326,78 @@ test('/api/performance rejects out-of-range timezone offsets', async () => {
   assertEquals(await response.json(), {
     error: 'timezone_offset_minutes must be between -1440 and 1440',
   });
+});
+
+test('/api/performance all-by-user attributes soft-deleted keys to their original owner', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  // Latency sample on apiKey, then soft-delete the key. The aggregator must
+  // still resolve the row to apiKey.userId rather than the synthetic userId 0
+  // it falls back to when the key→user lookup misses.
+  await repo.performance.recordLatency({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    metricScope: 'request_total',
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses',
+    targetApi: 'responses',
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 100,
+  });
+  await repo.apiKeys.softDelete(apiKey.id);
+
+  const response = await requestApp(
+    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user',
+    { headers: { 'x-floway-session': adminSession } },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]);
+  assertEquals(groups, [[String(apiKey.userId), 1]]);
+});
+
+test('/api/performance self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.performance.recordLatency({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    metricScope: 'request_total',
+    model: 'gpt-5',
+    modelKey: 'gpt-5',
+    upstream: null,
+    sourceApi: 'responses',
+    targetApi: 'responses',
+    stream: false,
+    runtimeLocation: 'unknown',
+    durationMs: 200,
+  });
+  await repo.apiKeys.softDelete(apiKey.id);
+  // The acting api key was the one that was soft-deleted; build a fresh
+  // active key under the same user so the request authenticates.
+  await repo.apiKeys.save({
+    id: 'key_fresh',
+    userId: apiKey.userId,
+    name: 'Fresh',
+    key: 'raw_fresh_key',
+    createdAt: '2026-04-30T11:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+  });
+
+  const response = await requestApp(
+    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=keyId&include_key_metadata=1',
+    { headers: { 'x-api-key': 'raw_fresh_key' } },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // The deleted key surfaces in keys[] even though listByUserId active-only
+  // would have hidden it; the row attributes back to its keyId.
+  const ids = body.keys.map((k: { id: string }) => k.id).sort();
+  assertEquals(ids.includes(apiKey.id), true);
+  const matched = body.records.find((r: { group: string }) => r.group === apiKey.id);
+  assertEquals(matched?.requests, 1);
 });

@@ -1,8 +1,8 @@
 import { normalizeDomainEntry, normalizeDomainList } from '../../../../tools/web-search/domain-normalize.ts';
-import { fetchPageAndRecordUsage, fetchPageWithoutRecordingUsage } from '../../../../tools/web-search/fetch-page.ts';
+import { fetchPageAndRecordUsage } from '../../../../tools/web-search/fetch-page.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
 import { loadSearchConfig } from '../../../../tools/web-search/search-config.ts';
-import { searchWebAndRecordUsage, searchWebWithoutRecordingUsage } from '../../../../tools/web-search/search.ts';
+import { searchWebAndRecordUsage } from '../../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
@@ -759,9 +759,7 @@ export interface ShimState {
   // tool emission) never call this, so an unconfigured search provider
   // does not 500 the request.
   getProvider: () => Promise<ConfiguredWebSearchProvider>;
-  // `undefined` for keyless requests (admin playground); usage
-  // recording is skipped in that case.
-  apiKeyId: string | undefined;
+  apiKeyId: string;
   // Set when the client passed `include: ["web_search_call.results"]` on
   // the request. Native Responses gates the `results` field on this
   // include token; the shim follows suit on the wire item — but the IR
@@ -944,17 +942,12 @@ const runOneSearchQuery = async (
       userLocation: state.filters.userLocation,
       ...(state.downstreamAbortSignal !== undefined ? { signal: state.downstreamAbortSignal } : {}),
     };
-    const result = state.apiKeyId !== undefined
-      ? await searchWebAndRecordUsage({
-          provider: active.provider,
-          providerName: active.providerName,
-          keyId: state.apiKeyId,
-          request: searchRequest,
-        })
-      : await searchWebWithoutRecordingUsage({
-          provider: active.provider,
-          request: searchRequest,
-        });
+    const result = await searchWebAndRecordUsage({
+      provider: active.provider,
+      providerName: active.providerName,
+      keyId: state.apiKeyId,
+      request: searchRequest,
+    });
 
     if (result.type === 'error') {
       const msg = result.message ?? result.errorCode;
@@ -1002,17 +995,12 @@ const runBatchFetch = async (
       urls: needFetch,
       ...(state.downstreamAbortSignal !== undefined ? { signal: state.downstreamAbortSignal } : {}),
     };
-    const result = state.apiKeyId !== undefined
-      ? await fetchPageAndRecordUsage({
-          provider: active.provider,
-          providerName: active.providerName,
-          keyId: state.apiKeyId,
-          request: fetchRequest,
-        })
-      : await fetchPageWithoutRecordingUsage({
-          provider: active.provider,
-          request: fetchRequest,
-        });
+    const result = await fetchPageAndRecordUsage({
+      provider: active.provider,
+      providerName: active.providerName,
+      keyId: state.apiKeyId,
+      request: fetchRequest,
+    });
 
     if (result.type === 'error') {
       const msg = result.message ?? result.errorCode;
@@ -1325,7 +1313,7 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
       configuredProvider ??= loadSearchConfig().then(cfg => resolveConfiguredWebSearchProvider(cfg));
       return configuredProvider;
     },
-    apiKeyId: gatewayCtx.apiKeyId ?? undefined,
+    apiKeyId: gatewayCtx.apiKeyId,
     includeSearchResults: includeArray.includes('web_search_call.results'),
     includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     ...(gatewayCtx.abortSignal !== undefined ? { downstreamAbortSignal: gatewayCtx.abortSignal } : {}),

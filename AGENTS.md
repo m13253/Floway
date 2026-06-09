@@ -150,9 +150,11 @@ target serves no SPA.
 Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.
 
-For manual data-plane validation, use `ADMIN_KEY` with the
-`x-models-playground: 1` header on approved playground routes. Do not
-reuse or create normal API keys for manual testing.
+For manual data-plane validation, log into the dashboard with the
+`ADMIN_KEY` backdoor or with your own user, then create or pick an API
+key under your account and use it as `x-api-key`. `ADMIN_KEY` is not a
+data-plane credential; its only purpose is to let an operator who lost
+the admin password log in via `POST /auth/login`.
 
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic
@@ -215,6 +217,10 @@ outside the repo so the working tree stays clean:
 pnpm wrangler d1 export <DB_NAME> --remote \
   --output "${TMPDIR:-/tmp}/<DB_NAME>-$(date -u +%Y%m%dT%H%M%SZ).sql"
 ```
+
+The export includes `password_hash` for every user (active and
+soft-deleted) — treat the file as a credential bundle. Anyone with it
+can sign in as every user whose password has not rotated since.
 
 Report the resolved backup path, then give the user two rollback commands,
 in this order:

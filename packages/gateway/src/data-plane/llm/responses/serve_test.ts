@@ -51,7 +51,7 @@ const installRepo = (): InMemoryRepo => {
 
 const makeGatewayCtx = (): GatewayCtx => ({
   apiKeyId: API_KEY_ID,
-  apiKeyUpstreamIds: null,
+  upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,
@@ -546,18 +546,21 @@ test('generate reuses an existing input row when a later turn echoes the same us
   queueCandidates([makeCandidate({ callResponses })]);
   const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store });
   if (turn1.type !== 'events') throw new Error('turn 1: expected events');
-  await collectEvents(turn1.events);
+  const turn1Events = await collectEvents(turn1.events);
 
   queueCandidates([makeCandidate({ callResponses })]);
   const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store });
   if (turn2.type !== 'events') throw new Error('turn 2: expected events');
-  await collectEvents(turn2.events);
+  const turn2Events = await collectEvents(turn2.events);
 
   // Both snapshots' first item id is the staged user message; a working
   // content-hash preload makes turn 2 reuse turn 1's row instead of minting
-  // a fresh one.
-  const snap1 = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_turn_1');
-  const snap2 = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_turn_2');
+  // a fresh one. Look up by the floway-minted response id wrap puts on
+  // each terminal event — the upstream's `resp_turn_N` id is discarded.
+  const turn1ResponseId = (turn1Events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>).response.id;
+  const turn2ResponseId = (turn2Events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>).response.id;
+  const snap1 = await repo.responsesSnapshots.lookup(API_KEY_ID, turn1ResponseId);
+  const snap2 = await repo.responsesSnapshots.lookup(API_KEY_ID, turn2ResponseId);
   if (snap1 === null || snap2 === null) throw new Error('expected both snapshots to be persisted');
   const turn1InputId = snap1.itemIds[0];
   const turn2InputId = snap2.itemIds[0];

@@ -11,14 +11,16 @@ export type { ProviderCandidate };
 // doesn't expose the endpoint this source needs" (true → `model-unsupported`
 // 400).
 export const enumerateProviderCandidates = async ({
-  apiKeyUpstreamIds, model, pickTarget,
+  upstreamIds, model, pickTarget,
 }: {
-  apiKeyUpstreamIds: readonly string[] | null;
+  // Effective per-actor whitelist (per-user cap intersected with per-key
+  // whitelist; null = unrestricted).
+  upstreamIds: readonly string[] | null;
   model: string;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
 }): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }> => {
   const fetcherForUpstream = await createPerRequestFetcher();
-  const providers = await listModelProviders(apiKeyUpstreamIds, fetcherForUpstream);
+  const providers = await listModelProviders(upstreamIds, fetcherForUpstream);
   const candidates: ProviderCandidate[] = [];
   let sawModel = false;
 

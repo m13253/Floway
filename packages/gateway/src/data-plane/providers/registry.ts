@@ -32,13 +32,19 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 export const createProviderInstance = (record: UpstreamRecord, fetcher: Fetcher): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record, { fetcher });
 
-// Ids not in the catalog are silently dropped; undefined/null preserves global sort order.
-// `fetcherForUpstream` decides each instance's outbound HTTP. Both the data
-// plane and the control-plane catalog views funnel through the same
+// Ids not in the catalog are silently dropped; null preserves global sort order.
+// The upstream scope is a required argument across the catalog-assembly chain
+// (this, getModels, getInternalModels) so a caller can never omit it and
+// silently receive the full, unscoped catalog — a missing scope is a compile
+// error, not a runtime leak. Pass `null` to deliberately request every enabled
+// upstream.
+//
+// `fetcherForUpstream` decides each provider instance's outbound HTTP. Both
+// the data plane and the control-plane catalog views funnel through the same
 // per-upstream proxy chain, so dashboard listings work behind GFW when the
 // operator has configured proxies.
 export const listModelProviders = async (
-  upstreamFilter: readonly string[] | null | undefined,
+  upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
 ): Promise<ModelProviderInstance[]> => {
   const upstreams = await getRepo().upstreams.list();
@@ -179,8 +185,8 @@ export const compareModelIds = (a: string, b: string): number => {
 };
 
 export const getModels = async (
+  upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
-  upstreamFilter?: readonly string[] | null,
 ): Promise<ResolvedModel[]> => {
   const providers = await listModelProviders(upstreamFilter, fetcherForUpstream);
   if (providers.length === 0) {
@@ -197,10 +203,10 @@ export const getModels = async (
 // Strips planner-only and provider-binding fields, leaving the InternalModel
 // shape consumed by the public /models DTO projection and the dashboard.
 export const getInternalModels = async (
+  upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
-  upstreamFilter?: readonly string[] | null,
 ): Promise<InternalModel[]> =>
-  (await getModels(fetcherForUpstream, upstreamFilter)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
+  (await getModels(upstreamFilter, fetcherForUpstream)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 export interface ModelResolution {
   id: string;
@@ -238,7 +244,7 @@ const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId:
 
 export const resolveModelForRequest = async (
   modelId: string,
-  upstreamFilter: readonly string[] | null | undefined,
+  upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
 ): Promise<ModelResolution> => {
   const providers = await listModelProviders(upstreamFilter, fetcherForUpstream);

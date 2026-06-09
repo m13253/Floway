@@ -37,10 +37,12 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }> => {
-  const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] } }>();
+const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }> => {
+  const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }>();
   app.use('*', async (c, next) => {
     c.set('apiKeyId', API_KEY_ID);
+    c.set('apiKeyUpstreamIds', null);
+    c.set('userUpstreamIds', null);
     await next();
   });
   app.post('/v1beta/models/:modelAction{.+}', geminiHttp);

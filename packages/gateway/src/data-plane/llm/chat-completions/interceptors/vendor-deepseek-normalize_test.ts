@@ -13,8 +13,8 @@ type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['del
 };
 
 const stubCtx: GatewayCtx = {
-  apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  apiKeyId: 'test-key',
+  upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},
   requestStartedAt: 0,

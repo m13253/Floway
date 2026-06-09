@@ -10,8 +10,8 @@ import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubProviderCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
-  apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  apiKeyId: 'test-key',
+  upstreamIds: null,
   wantsStream: false,
   scheduleBackground: () => {},
   requestStartedAt: 0,
@@ -21,7 +21,7 @@ const invocation = (): ResponsesInvocation => ({
   payload: { model: 'gpt-test', input: 'hi' } as ResponsesPayload,
   candidate: stubProviderCandidate({ targetApi: 'responses' }),
   store: new LayeredStatefulResponsesStore({
-    apiKeyId: null,
+    apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
     itemWrites: [],
     snapshotWrites: [],

@@ -123,7 +123,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
     } as never,
   },
   store: new LayeredStatefulResponsesStore({
-    apiKeyId: null,
+    apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
     itemWrites: [],
     snapshotWrites: [],
@@ -133,8 +133,8 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
   headers: {},
 });
 const gatewayCtx = (): GatewayCtx => ({
-  apiKeyId: null,
-  apiKeyUpstreamIds: null,
+  apiKeyId: 'test-key',
+  upstreamIds: null,
   wantsStream: true,
   scheduleBackground: () => {},
   requestStartedAt: 0,

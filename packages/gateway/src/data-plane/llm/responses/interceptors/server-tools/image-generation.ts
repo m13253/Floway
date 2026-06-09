@@ -1,7 +1,7 @@
 import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
-import { recordTokenUsageForApiKey, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
+import { recordTokenUsage, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -444,19 +444,18 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 // calls one response may issue.
 interface ShimState {
   config: ImageGenerationConfig;
-  apiKeyId: string | undefined;
-  apiKeyUpstreamIds: readonly string[] | null | undefined;
+  apiKeyId: string;
+  upstreamIds: readonly string[] | null;
   scheduleBackground: GatewayCtx['scheduleBackground'];
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
 
 const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelKey: string, responseBody: unknown): void => {
-  if (state.apiKeyId === undefined) return;
   const usageBlock = responseBody !== null && typeof responseBody === 'object' ? (responseBody as { usage?: unknown }).usage : undefined;
   const usage = usageBlock !== undefined ? tokenUsageFromImagesResponse(usageBlock) : null;
   if (usage === null) return;
-  const promise = recordTokenUsageForApiKey(state.apiKeyId, {
+  const promise = recordTokenUsage(state.apiKeyId, {
     model: binding.upstreamModel.id,
     upstream: binding.upstream,
     modelKey,
@@ -536,7 +535,7 @@ const resolveImageBinding = async (
   let resolution;
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    resolution = await resolveModelForRequest(state.config.model, state.apiKeyUpstreamIds, fetcherForUpstream);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
@@ -934,8 +933,8 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
 
   const state: ShimState = {
     config,
-    apiKeyId: gatewayCtx.apiKeyId ?? undefined,
-    apiKeyUpstreamIds: gatewayCtx.apiKeyUpstreamIds,
+    apiKeyId: gatewayCtx.apiKeyId,
+    upstreamIds: gatewayCtx.upstreamIds,
     scheduleBackground: gatewayCtx.scheduleBackground,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,

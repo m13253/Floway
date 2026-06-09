@@ -82,9 +82,9 @@ const seedFromRecord = (r: UpstreamRecord) => {
   if (r.provider === 'custom') {
     const cfg = r.config as CustomUpstreamConfig;
     customDraft.value = {
-      baseUrl: cfg.baseUrl ?? '',
-      authStyle: cfg.authStyle ?? 'bearer',
-      endpoints: { ...(cfg.endpoints ?? {}) },
+      baseUrl: cfg.baseUrl,
+      authStyle: cfg.authStyle,
+      endpoints: { ...cfg.endpoints },
       bearerToken: '',
       pathOverrides: seedPathOverrides(cfg.pathOverrides),
       modelsFetch: cfg.modelsFetch
@@ -99,7 +99,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
   } else if (r.provider === 'azure') {
     const cfg = r.config as AzureUpstreamConfig;
     azureDraft.value = {
-      endpoint: cfg.endpoint ?? '',
+      endpoint: cfg.endpoint,
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
@@ -184,7 +184,7 @@ const fetchModels = async () => {
     // discard the late result rather than repopulating stale auto rows.
     if (!customDraft.value.modelsFetch.enabled) return;
     if (error) { fetchError.value = error.message; return; }
-    fetchedRaw.value = data?.data ?? [];
+    fetchedRaw.value = data.data;
     fetchedAtMs.value = Date.now();
   } finally {
     fetchLoading.value = false;
@@ -266,7 +266,7 @@ const save = async () => {
       }
       const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: body }));
       if (error) { saveError.value = error.message; return; }
-      emit('saved', data ?? null);
+      emit('saved', data);
     } else if (props.record) {
       const patch: PatchBody = baseFields();
       if (activeProvider.value === 'custom') patch.config = buildCustomConfig();

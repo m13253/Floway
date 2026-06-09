@@ -48,10 +48,12 @@ const framesFrom = async function* (events: readonly ResponsesStreamEvent[]) {
   for (const event of events) yield eventFrame(event);
 };
 
+const TEST_RESPONSE_ID = 'resp_test123';
+
 const wrap = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   overrides: Parameters<typeof makeStore>[0] = {},
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions' } = {},
+  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; responseId?: string } = {},
 ) => {
   const store = makeStore(overrides);
   return {
@@ -60,6 +62,7 @@ const wrap = (
       upstream: 'up_native',
       snapshotMode: extra.snapshotMode ?? 'none',
       targetApi: extra.targetApi ?? 'responses',
+      responseId: extra.responseId ?? TEST_RESPONSE_ID,
     }),
     store,
   };
@@ -68,12 +71,13 @@ const wrap = (
 const wrapWithStore = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   store: ReturnType<typeof createResponsesHttpStore>,
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string } = {},
+  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string; responseId?: string } = {},
 ) => wrapResponsesOutputForStorage(frames, {
   store,
   upstream: extra.upstream ?? 'up_native',
   snapshotMode: extra.snapshotMode ?? 'none',
   targetApi: extra.targetApi ?? 'responses',
+  responseId: extra.responseId ?? TEST_RESPONSE_ID,
 });
 
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
@@ -387,12 +391,12 @@ test('snapshotMode=append: snapshot written after terminal event', async () => {
 
   const events = wrapWithStore(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_append' } },
-  ]), store, { snapshotMode: 'append' });
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
+  ]), store, { snapshotMode: 'append', responseId: 'resp_snap_append' });
 
   await collectEvents(events);
   const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_append');
-  assert(snapshot !== null, 'expected snapshot to be written');
+  assert(snapshot !== null, 'expected snapshot to be written under floway-minted id');
   assertEquals(snapshot.id, 'resp_snap_append');
 });
 
@@ -404,12 +408,12 @@ test('snapshotMode=replace: snapshot written after terminal event', async () => 
 
   const events = wrapWithStore(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_replace' } },
-  ]), store, { snapshotMode: 'replace' });
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
+  ]), store, { snapshotMode: 'replace', responseId: 'resp_snap_replace' });
 
   await collectEvents(events);
   const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_replace');
-  assert(snapshot !== null, 'expected snapshot to be written');
+  assert(snapshot !== null, 'expected snapshot to be written under floway-minted id');
   assertEquals(snapshot.id, 'resp_snap_replace');
 });
 

@@ -5,12 +5,36 @@ import type { PerformanceApiName, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
+  userId: number;
   name: string;
   key: string;
   createdAt: string;
   lastUsedAt?: string;
   // null = inherit global upstream order; array = whitelist + priority order.
   upstreamIds: string[] | null;
+  deletedAt: string | null;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  // null = the row is not a credential — sign-in is only possible through
+  // the ADMIN_KEY backdoor.
+  passwordHash: string | null;
+  isAdmin: boolean;
+  // null = unrestricted at the user level; an array intersects with the
+  // per-key whitelist when both are present.
+  upstreamIds: string[] | null;
+  canViewGlobalTelemetry: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+export interface Session {
+  id: string;
+  userId: number;
+  createdAt: string;
+  lastSeenAt: string;
 }
 
 export interface UsageRecord {
@@ -73,10 +97,45 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
+  // Includes soft-deleted rows. Telemetry attribution and v4 export need every
+  // historical key, including ones the owner has rotated or deleted, so the
+  // user_id behind each row stays resolvable.
+  listIncludingDeleted(): Promise<ApiKey[]>;
+  listByUserId(userId: number): Promise<ApiKey[]>;
+  // Self-scope telemetry includes the actor's own soft-deleted keys so a
+  // rotated key's name still surfaces in the dashboard's by-key view.
+  listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
+  idsByUserIdIncludingDeleted(userId: number): Promise<string[]>;
   save(key: ApiKey): Promise<void>;
-  delete(id: string): Promise<boolean>;
+  softDelete(id: string): Promise<boolean>;
+  softDeleteByUserId(userId: number): Promise<number>;
+  deleteAll(): Promise<void>;
+}
+
+export interface UsersRepo {
+  list(): Promise<User[]>;
+  listIncludingDeleted(): Promise<User[]>;
+  getById(id: number): Promise<User | null>;
+  findByUsername(username: string): Promise<User | null>;
+  // Atomic insert that allocates id = MAX(id) + 1 in a single statement so two
+  // concurrent admin creates can't compute the same id and silently overwrite
+  // each other.
+  createNewUser(template: Omit<User, 'id'>): Promise<User>;
+  // Throws when the username is already taken by another active row, so
+  // duplicate-username races surface instead of silently overwriting state.
+  save(user: User): Promise<void>;
+  softDelete(id: number): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
+export interface SessionsRepo {
+  getByIdAndTouch(id: string): Promise<Session | null>;
+  create(userId: number): Promise<Session>;
+  deleteById(id: string): Promise<boolean>;
+  deleteByUserId(userId: number): Promise<number>;
+  deleteByUserIdExcept(userId: number, exceptId: string): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
@@ -263,6 +322,8 @@ export interface ResponsesSnapshotsRepo {
 
 export interface Repo {
   apiKeys: ApiKeyRepo;
+  users: UsersRepo;
+  sessions: SessionsRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;

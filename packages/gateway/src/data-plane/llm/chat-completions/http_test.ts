@@ -38,13 +38,16 @@ const installRepo = (): InMemoryRepo => {
 
 interface AuthVars {
   apiKeyId: string;
-  apiKeyUpstreamIds: readonly string[];
+  apiKeyUpstreamIds: readonly string[] | null;
+  userUpstreamIds: readonly string[] | null;
 }
 
 const makeApp = (middleware?: (c: Context) => void): Hono<{ Variables: AuthVars }> => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
     c.set('apiKeyId', API_KEY_ID);
+    c.set('apiKeyUpstreamIds', null);
+    c.set('userUpstreamIds', null);
     middleware?.(c);
     await next();
   });

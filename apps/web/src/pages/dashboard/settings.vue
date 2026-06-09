@@ -46,18 +46,17 @@ import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 definePage({ meta: { requiresAdmin: true } });
 
 const router = useRouter();
-const store = useUpstreamsStore();
-const { upstreams, loading: storeLoading, error: storeError, load } = store;
+const { upstreams, loading: storeLoading, error: storeError, load } = useUpstreamsStore();
 const modelsStore = useModelsStore();
 const proxiesStore = useProxiesStore();
 const { load: loadProxies } = proxiesStore;
 const settingsData = useSettingsPageData();
 
-// Local copy sorted by sort_order; the child card emits a reordered array
-// via update:ordered, and reloadAll re-syncs from the store after PATCH.
+// Local working copy that the child reorders via v-model:ordered; reloadAll
+// re-syncs from the store after a successful PATCH.
 const ordered = ref<UpstreamRecord[]>([]);
 watch(upstreams, list => {
-  ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
+  ordered.value = list ? [...list] : [];
 }, { immediate: true });
 
 const reloadAll = async () => {

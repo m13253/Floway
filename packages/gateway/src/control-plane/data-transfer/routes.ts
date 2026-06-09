@@ -13,10 +13,11 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, ProxyRecord, SearchUsageRecord, TokenUsage, UsageRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, ProxyRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
-import type { exportQuery, importBody } from '../schemas.ts';
+import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
@@ -40,9 +41,10 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 3;
+  version: 4;
   exportedAt: string;
   data: {
+    users: User[];
     apiKeys: ApiKey[];
     upstreams: SerializedUpstreamRecord[];
     proxies: SerializedProxy[];
@@ -54,7 +56,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 3;
+const EXPORT_VERSION = 4;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
 const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
@@ -257,18 +259,25 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
   for (let i = 0; i < value.length; i++) {
     const record = value[i];
     if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
-    // Older exports omit the field; treat as Default.
-    const upstreamIdsRaw = record.upstreamIds === undefined ? null : record.upstreamIds;
-    const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
-    if (!upstreamIdsParsed.ok) return { type: 'invalid', index: i, error: upstreamIdsParsed.error };
     try {
+      const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
+      if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
+
+      if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
+        throw new Error('userId must be a positive integer');
+      }
+      if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
+        throw new Error('deletedAt must be null or an ISO string');
+      }
       records.push({
         id: nonEmptyString(record.id, 'id'),
+        userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
+        deletedAt: record.deletedAt,
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -278,7 +287,56 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
   return { type: 'ok', records };
 };
 
-const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: string): string | null => {
+const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { type: 'invalid'; index: number; error: string } => {
+  if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'users must be an array' };
+
+  const records: User[] = [];
+  const seenIds = new Set<number>();
+  for (let i = 0; i < value.length; i++) {
+    const record = value[i];
+    if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
+    try {
+      if (typeof record.id !== 'number' || !Number.isInteger(record.id) || record.id < 1) {
+        throw new Error('id must be a positive integer');
+      }
+      if (seenIds.has(record.id)) throw new Error(`duplicate user id ${record.id}`);
+      seenIds.add(record.id);
+
+      if (typeof record.username !== 'string' || !USERNAME_PATTERN.test(record.username)) {
+        throw new Error('username must match ^[a-zA-Z0-9_.-]{1,64}$');
+      }
+      if (record.passwordHash !== null && (typeof record.passwordHash !== 'string' || !record.passwordHash.startsWith(`${PASSWORD_HASH_SCHEME}$`))) {
+        throw new Error(`passwordHash must be null or start with ${PASSWORD_HASH_SCHEME}$`);
+      }
+      if (typeof record.isAdmin !== 'boolean') throw new Error('isAdmin must be a boolean');
+      if (typeof record.canViewGlobalTelemetry !== 'boolean') throw new Error('canViewGlobalTelemetry must be a boolean');
+
+      if (record.upstreamIds === undefined) throw new Error('upstreamIds must be present (null or array)');
+      const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
+      if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
+      if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
+        throw new Error('deletedAt must be null or an ISO string');
+      }
+
+      records.push({
+        id: record.id,
+        username: record.username,
+        passwordHash: record.passwordHash,
+        isAdmin: record.isAdmin,
+        upstreamIds: upstreamIdsParsed.value,
+        canViewGlobalTelemetry: record.canViewGlobalTelemetry,
+        createdAt: nonEmptyString(record.createdAt, 'createdAt'),
+        deletedAt: record.deletedAt,
+      });
+    } catch (error) {
+      return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  return { type: 'ok', records };
+};
+
+const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
 
@@ -368,8 +426,6 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      // Imported payloads may omit cost (older exports) — null is the
-      // canonical "no pricing recorded" value; aggregation treats it as 0.
       cost: parseImportedCost(record.cost),
     });
   }
@@ -508,8 +564,9 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
 
-  const [apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams, proxies] = await Promise.all([
-    repo.apiKeys.list(),
+  const [users, apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams, proxies] = await Promise.all([
+    repo.users.listIncludingDeleted(),
+    repo.apiKeys.listIncludingDeleted(),
     repo.usage.listAll(),
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
@@ -522,6 +579,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
     data: {
+      users,
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(proxyRecordToExportEntry),
@@ -549,6 +607,22 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     return c.json({ error: `invalid apiKeys${location}: ${apiKeysResult.error}` }, 400);
   }
   const apiKeys = apiKeysResult.records;
+
+  const usersResult = parseUserRecords(data.users);
+  if (usersResult.type === 'invalid') {
+    const location = usersResult.index >= 0 ? ` at index ${usersResult.index}` : '';
+    return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
+  }
+  const users = usersResult.records;
+  if (!users.some(u => u.id === 1)) {
+    return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
+  }
+  const known = new Set(users.map(u => u.id));
+  for (let i = 0; i < apiKeys.length; i++) {
+    if (!known.has(apiKeys[i].userId)) {
+      return c.json({ error: `invalid apiKeys at index ${i}: user_id ${apiKeys[i].userId} does not match any user in the payload` }, 400);
+    }
+  }
 
   const usageResult = parseUsageRecords(data.usage);
   if (usageResult.type === 'invalid') {
@@ -599,7 +673,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performance = performanceResult.records;
 
   const repo = getRepo();
-  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.list() : [], mode);
+  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
   // Merge mode keeps the existing proxies table alongside the imported rows,
@@ -615,7 +689,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
     const existingUpstreams = await repo.upstreams.list();
-    const deletes = [
+    const deletes: Promise<unknown>[] = [
+      repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),
       repo.usage.deleteAll(),
       repo.searchUsage.deleteAll(),
@@ -623,15 +698,18 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.proxies.deleteAll(),
       repo.responsesSnapshots.deleteAll(),
       repo.responsesItems.deleteAll(),
+      repo.users.deleteAll(),
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
+  // Users land before api keys so the FK from api_keys.user_id can resolve.
   // Proxies land before upstreams so any concurrent reader (e.g. a request
   // resolving an upstream's fallback list) sees the row referenced by an
   // upstream's proxy_fallback_list as soon as the upstream is visible.
+  for (const user of users) await repo.users.save(user);
   for (const proxy of proxies) {
     await repo.proxies.save({
       id: proxy.id,
@@ -654,6 +732,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   return c.json({
     ok: true,
     imported: {
+      users: users.length,
       apiKeys: apiKeys.length,
       upstreams: upstreams.length,
       proxies: proxies.length,

@@ -47,7 +47,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_a', 10, ['test-model'], { messages: {} }));
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -66,7 +66,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -84,7 +84,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_a', 10, ['other-model'], { messages: {} }));
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -102,7 +102,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_third', 30, ['test-model'], { messages: {} }));
 
     const { candidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -112,7 +112,7 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(candidates[1].provider.upstream, 'up_third');
   });
 
-  test('apiKeyUpstreamIds filtering: only matching providers surface in given order', async () => {
+  test('upstreamIds filtering: only matching providers surface in given order', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_a', 10, ['test-model'], { messages: {} }));
@@ -120,7 +120,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_c', 30, ['test-model'], { messages: {} }));
 
     const { candidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: ['up_c', 'up_a'],
+      upstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -130,7 +130,7 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(candidates[1].provider.upstream, 'up_a');
   });
 
-  test('apiKeyUpstreamIds=null returns all enabled providers', async () => {
+  test('upstreamIds=null returns all enabled providers', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_enabled', 10, ['test-model'], { messages: {} }));
@@ -140,7 +140,7 @@ describe('enumerateProviderCandidates', () => {
     });
 
     const { candidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });
@@ -157,7 +157,7 @@ describe('enumerateProviderCandidates', () => {
 
     // pickMessagesOrResponses prefers messages over responses.
     const { candidates: msgCandidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessagesOrResponses,
     });
@@ -166,7 +166,7 @@ describe('enumerateProviderCandidates', () => {
 
     // pickResponses only accepts responses.
     const { candidates: resCandidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickResponses,
     });
@@ -181,7 +181,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
     const { candidates: anyCandidates } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickAny,
     });
@@ -189,7 +189,7 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(anyCandidates[0].targetApi, 'chat-completions');
 
     const { candidates: msgCandidates, sawModel } = await enumerateProviderCandidates({
-      apiKeyUpstreamIds: null,
+      upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
     });

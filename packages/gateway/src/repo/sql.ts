@@ -22,14 +22,19 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  Session,
+  SessionsRepo,
   StoredResponsesItem,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
   UsageRepo,
+  User,
+  UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
@@ -37,9 +42,6 @@ import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider'
 
 const SEARCH_CONFIG_KEY = 'search_config';
 
-// Apply a list of prepared statements, using `db.batch` when available
-// (D1 ships it; SqlDatabase models it as optional) and falling back to a
-// sequential `run()` per statement otherwise. Empty input is a no-op.
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
   if (db.batch) return await db.batch(statements);
@@ -48,37 +50,143 @@ const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]
   return results;
 };
 
+interface ApiKeyRow {
+  id: string;
+  user_id: number;
+  name: string;
+  key: string;
+  created_at: string;
+  last_used_at: string | null;
+  upstream_ids: string | null;
+  deleted_at: string | null;
+}
+
+const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at';
+
+const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
+
+// Throws on bad data: silently returning null would broaden the row's
+// upstream access beyond what the admin set.
+const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
+  if (raw === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`upstream_ids JSON is malformed for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  if (!Array.isArray(parsed)) throw new Error(`upstream_ids is not an array for ${label}`);
+  if (!parsed.every(item => typeof item === 'string')) throw new Error(`upstream_ids contains non-string entries for ${label}`);
+  return parsed as string[];
+};
+
+const toApiKey = (row: ApiKeyRow): ApiKey => ({
+  id: row.id,
+  userId: row.user_id,
+  name: row.name,
+  key: row.key,
+  createdAt: row.created_at,
+  lastUsedAt: row.last_used_at ?? undefined,
+  upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
+  deletedAt: row.deleted_at,
+});
+
 class SqlApiKeyRepo implements ApiKeyRepo {
   constructor(private db: SqlDatabase) {}
 
   async list(): Promise<ApiKey[]> {
-    const { results } = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys ORDER BY created_at').all<ApiKeyRow>();
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE deleted_at IS NULL ORDER BY created_at`)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
+  async listIncludingDeleted(): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys ORDER BY created_at`)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
+  async listByUserId(userId: number): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at`)
+      .bind(userId)
+      .all<ApiKeyRow>();
+    return results.map(toApiKey);
+  }
+
+  async listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE user_id = ? ORDER BY created_at`)
+      .bind(userId)
+      .all<ApiKeyRow>();
     return results.map(toApiKey);
   }
 
   async findByRawKey(rawKey: string): Promise<ApiKey | null> {
-    const row = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys WHERE key = ?').bind(rawKey).first<ApiKeyRow>();
+    const row = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE key = ? AND deleted_at IS NULL`)
+      .bind(rawKey)
+      .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
   }
 
   async getById(id: string): Promise<ApiKey | null> {
-    const row = await this.db.prepare('SELECT id, name, key, created_at, last_used_at, upstream_ids FROM api_keys WHERE id = ?').bind(id).first<ApiKeyRow>();
+    const row = await this.db
+      .prepare(`SELECT ${API_KEY_COLUMNS} FROM api_keys WHERE id = ? AND deleted_at IS NULL`)
+      .bind(id)
+      .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
+  }
+
+  async idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
+    const { results } = await this.db
+      .prepare('SELECT id FROM api_keys WHERE user_id = ?')
+      .bind(userId)
+      .all<{ id: string }>();
+    return results.map(r => r.id);
   }
 
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (id, name, key, created_at, last_used_at, upstream_ids) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET name = excluded.name, key = excluded.key, last_used_at = excluded.last_used_at, upstream_ids = excluded.upstream_ids`,
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           user_id = excluded.user_id,
+           name = excluded.name,
+           key = excluded.key,
+           last_used_at = excluded.last_used_at,
+           upstream_ids = excluded.upstream_ids,
+           deleted_at = excluded.deleted_at`,
       )
-      .bind(key.id, key.name, key.key, key.createdAt, key.lastUsedAt ?? null, serializeUpstreamIds(key.upstreamIds))
+      .bind(
+        key.id,
+        key.userId,
+        key.name,
+        key.key,
+        key.createdAt,
+        key.lastUsedAt ?? null,
+        serializeUpstreamIds(key.upstreamIds),
+        key.deletedAt,
+      )
       .run();
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await this.db.prepare('DELETE FROM api_keys WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number) ?? 0) > 0;
+  async softDelete(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare('UPDATE api_keys SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async softDeleteByUserId(userId: number): Promise<number> {
+    const result = await this.db
+      .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), userId)
+      .run();
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -86,41 +194,179 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   }
 }
 
-interface ApiKeyRow {
-  id: string;
-  name: string;
-  key: string;
-  created_at: string;
-  last_used_at: string | null;
+interface UserRow {
+  id: number;
+  username: string;
+  password_hash: string | null;
+  is_admin: number;
   upstream_ids: string | null;
+  can_view_global_telemetry: number;
+  created_at: string;
+  deleted_at: string | null;
 }
 
-const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
+const USER_COLUMNS = 'id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at';
 
-// Throws rather than returning null on bad data: a silent downgrade to Default
-// would grant the key broader provider access than the admin intended.
-const parseUpstreamIds = (raw: string | null, keyId: string): string[] | null => {
-  if (raw === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`api_keys.upstream_ids JSON is malformed for id=${keyId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+const toUser = (row: UserRow): User => ({
+  id: row.id,
+  username: row.username,
+  passwordHash: row.password_hash,
+  isAdmin: row.is_admin === 1,
+  upstreamIds: parseUpstreamIds(row.upstream_ids, `users.id=${row.id}`),
+  canViewGlobalTelemetry: row.can_view_global_telemetry === 1,
+  createdAt: row.created_at,
+  deletedAt: row.deleted_at,
+});
+
+class SqlUsersRepo implements UsersRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<User[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE deleted_at IS NULL ORDER BY id`)
+      .all<UserRow>();
+    return results.map(toUser);
   }
-  if (!Array.isArray(parsed)) throw new Error(`api_keys.upstream_ids is not an array for id=${keyId}`);
-  if (!parsed.every(item => typeof item === 'string')) throw new Error(`api_keys.upstream_ids contains non-string entries for id=${keyId}`);
-  return parsed as string[];
-};
 
-function toApiKey(row: ApiKeyRow): ApiKey {
-  return {
-    id: row.id,
-    name: row.name,
-    key: row.key,
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at ?? undefined,
-    upstreamIds: parseUpstreamIds(row.upstream_ids, row.id),
-  };
+  async listIncludingDeleted(): Promise<User[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY id`)
+      .all<UserRow>();
+    return results.map(toUser);
+  }
+
+  async getById(id: number): Promise<User | null> {
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND deleted_at IS NULL`)
+      .bind(id)
+      .first<UserRow>();
+    return row ? toUser(row) : null;
+  }
+
+  async findByUsername(username: string): Promise<User | null> {
+    const row = await this.db
+      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE username = ? AND deleted_at IS NULL`)
+      .bind(username)
+      .first<UserRow>();
+    return row ? toUser(row) : null;
+  }
+
+  async createNewUser(template: Omit<User, 'id'>): Promise<User> {
+    // INSERT ... SELECT computes id = MAX(id) + 1 in one statement, so
+    // concurrent admin creates serialize on D1's per-database write lock and
+    // pick distinct ids.
+    const row = await this.db
+      .prepare(
+        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at)
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM users
+         RETURNING id`,
+      )
+      .bind(
+        template.username,
+        template.passwordHash,
+        template.isAdmin ? 1 : 0,
+        serializeUpstreamIds(template.upstreamIds),
+        template.canViewGlobalTelemetry ? 1 : 0,
+        template.createdAt,
+        template.deletedAt,
+      )
+      .first<{ id: number }>();
+    if (!row) throw new Error('createNewUser: insert returned no rows');
+    return { ...template, id: row.id };
+  }
+
+  async save(user: User): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO users (${USER_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           username = excluded.username,
+           password_hash = excluded.password_hash,
+           is_admin = excluded.is_admin,
+           upstream_ids = excluded.upstream_ids,
+           can_view_global_telemetry = excluded.can_view_global_telemetry,
+           deleted_at = excluded.deleted_at`,
+      )
+      .bind(
+        user.id,
+        user.username,
+        user.passwordHash,
+        user.isAdmin ? 1 : 0,
+        serializeUpstreamIds(user.upstreamIds),
+        user.canViewGlobalTelemetry ? 1 : 0,
+        user.createdAt,
+        user.deletedAt,
+      )
+      .run();
+  }
+
+  async softDelete(id: number): Promise<boolean> {
+    const result = await this.db
+      .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(new Date().toISOString(), id)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM users').run();
+  }
+}
+
+interface SessionRow {
+  id: string;
+  user_id: number;
+  created_at: string;
+  last_seen_at: string;
+}
+
+const SESSION_COLUMNS = 'id, user_id, created_at, last_seen_at';
+
+class SqlSessionsRepo implements SessionsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async getByIdAndTouch(id: string): Promise<Session | null> {
+    const row = await this.db
+      .prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE id = ?`)
+      .bind(id)
+      .first<SessionRow>();
+    if (!row) return null;
+    const now = new Date().toISOString();
+    await this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE id = ?').bind(now, id).run();
+    return { id: row.id, userId: row.user_id, createdAt: row.created_at, lastSeenAt: now };
+  }
+
+  async create(userId: number): Promise<Session> {
+    const id = generateSessionToken();
+    const now = new Date().toISOString();
+    await this.db
+      .prepare(`INSERT INTO sessions (${SESSION_COLUMNS}) VALUES (?, ?, ?, ?)`)
+      .bind(id, userId, now, now)
+      .run();
+    return { id, userId, createdAt: now, lastSeenAt: now };
+  }
+
+  async deleteById(id: string): Promise<boolean> {
+    const result = await this.db.prepare('DELETE FROM sessions WHERE id = ?').bind(id).run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteByUserId(userId: number): Promise<number> {
+    const result = await this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
+    const result = await this.db
+      .prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?')
+      .bind(userId, exceptId)
+      .run();
+    return result.meta.changes ?? 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM sessions').run();
+  }
 }
 
 const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
@@ -561,47 +807,40 @@ interface PerformanceBucketRow extends PerformanceDimensionRow {
   count: number;
 }
 
-function performanceDimensionsFromRow(row: PerformanceDimensionRow): PerformanceDimensions {
-  return {
-    hour: row.hour,
-    metricScope: row.metric_scope as PerformanceMetricScope,
-    keyId: row.key_id,
-    model: row.model,
-    upstream: row.upstream ?? null,
-    modelKey: row.model_key,
-    sourceApi: row.source_api as PerformanceTelemetryRecord['sourceApi'],
-    targetApi: row.target_api as PerformanceTelemetryRecord['targetApi'],
-    stream: row.stream === 1,
-    runtimeLocation: row.runtime_location,
-  };
-}
+const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
+  hour: row.hour,
+  metricScope: row.metric_scope as PerformanceMetricScope,
+  keyId: row.key_id,
+  model: row.model,
+  upstream: row.upstream ?? null,
+  modelKey: row.model_key,
+  sourceApi: row.source_api as PerformanceTelemetryRecord['sourceApi'],
+  targetApi: row.target_api as PerformanceTelemetryRecord['targetApi'],
+  stream: row.stream === 1,
+  runtimeLocation: row.runtime_location,
+});
 
-function performanceRecordKey(record: PerformanceDimensions): string {
-  return [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? '1' : '0', record.runtimeLocation].join(
+const performanceRecordKey = (record: PerformanceDimensions): string =>
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? '1' : '0', record.runtimeLocation].join(
     '\0',
   );
-}
 
-function performanceDimensionBinds(record: PerformanceDimensions): unknown[] {
-  return [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? 1 : 0, record.runtimeLocation];
-}
+const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? 1 : 0, record.runtimeLocation];
 
-function comparePerformanceTelemetryRecords(a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number {
-  return (
-    a.hour.localeCompare(b.hour) ||
-    a.metricScope.localeCompare(b.metricScope) ||
-    a.keyId.localeCompare(b.keyId) ||
-    a.model.localeCompare(b.model) ||
-    (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-    a.modelKey.localeCompare(b.modelKey) ||
-    a.sourceApi.localeCompare(b.sourceApi) ||
-    a.targetApi.localeCompare(b.targetApi) ||
-    Number(a.stream) - Number(b.stream) ||
-    a.runtimeLocation.localeCompare(b.runtimeLocation)
-  );
-}
+const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
+  a.hour.localeCompare(b.hour) ||
+  a.metricScope.localeCompare(b.metricScope) ||
+  a.keyId.localeCompare(b.keyId) ||
+  a.model.localeCompare(b.model) ||
+  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
+  a.modelKey.localeCompare(b.modelKey) ||
+  a.sourceApi.localeCompare(b.sourceApi) ||
+  a.targetApi.localeCompare(b.targetApi) ||
+  Number(a.stream) - Number(b.stream) ||
+  a.runtimeLocation.localeCompare(b.runtimeLocation);
 
-function toSearchUsageRecord(row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord {
+const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
     throw new TypeError(`Invalid search usage action: ${row.action}`);
   }
@@ -612,7 +851,7 @@ function toSearchUsageRecord(row: { provider: string; key_id: string; action: st
     hour: row.hour,
     requests: row.requests,
   };
-}
+};
 
 class SqlCacheRepo implements CacheRepo {
   constructor(private db: SqlDatabase) {}
@@ -685,12 +924,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     const statements = await Promise.all(items.map(async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      // One INSERT per `(id, api_key_id)`. Stream pipelines call insertMany
-      // exactly once per stored id at the carrier's finalizing frame; the
-      // wrap's idMapper memoizes so reattempts within one stream are
-      // impossible. Cross-session collisions of the random body are
-      // effectively impossible (~2^-128) and treated as no-op if they ever
-      // happen.
       return this.db
         .prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -714,7 +947,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
     }));
     const results = await runStatements(this.db, statements);
-    return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
+    return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
 
   async refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
@@ -731,17 +964,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .bind(refreshedAt, apiKeyId, ...chunk, refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS)
         .run();
     }));
-    return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
+    return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
 
   async clearPayloadOlderThan(createdBefore: number): Promise<number> {
     const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < ?').bind(createdBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteOlderThan(refreshedBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_items WHERE refreshed_at < ?').bind(refreshedBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -804,12 +1037,12 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .prepare('UPDATE responses_snapshots SET refreshed_at = ? WHERE id = ? AND COALESCE(api_key_id, \'\') = COALESCE(?, \'\') AND refreshed_at < ?')
       .bind(refreshedAt, id, apiKeyId, refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS)
       .run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteOlderThan(refreshedBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_snapshots WHERE refreshed_at < ?').bind(refreshedBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -926,7 +1159,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async delete(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -942,7 +1175,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
       .bind(serializeStoredState(newState), id, serializeStoredState(options.expectedState))
       .run();
-    return { updated: ((result.meta.changes as number | undefined) ?? 0) > 0 };
+    return { updated: (result.meta.changes ?? 0) > 0 };
   }
 }
 
@@ -961,7 +1194,7 @@ interface UpstreamRow {
   proxy_fallback_list_json: string;
 }
 
-function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
+const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   let config: unknown;
   try {
     config = JSON.parse(row.config_json) as unknown;
@@ -991,7 +1224,7 @@ function toUpstreamRecord(row: UpstreamRow): UpstreamRecord {
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
   };
-}
+};
 
 const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
   if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex') return provider;
@@ -1371,6 +1604,8 @@ const toBackoffRow = (row: BackoffRowDb): BackoffRow => ({
 });
 
 export class SqlRepo implements Repo {
+  users: UsersRepo;
+  sessions: SessionsRepo;
   apiKeys: ApiKeyRepo;
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
@@ -1384,6 +1619,8 @@ export class SqlRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor(db: SqlDatabase) {
+    this.users = new SqlUsersRepo(db);
+    this.sessions = new SqlSessionsRepo(db);
     this.apiKeys = new SqlApiKeyRepo(db);
     this.usage = new SqlUsageRepo(db);
     this.searchUsage = new SqlSearchUsageRepo(db);

@@ -21,10 +21,10 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
 };
 
 export const loadModels = async (
+  upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
-  upstreamFilter?: readonly string[] | null,
 ): Promise<PublicModelsResponse> => {
-  const data = (await getInternalModels(fetcherForUpstream, upstreamFilter)).map(toPublicModel);
+  const data = (await getInternalModels(upstreamFilter, fetcherForUpstream)).map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

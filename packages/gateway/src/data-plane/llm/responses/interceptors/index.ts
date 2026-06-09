@@ -15,8 +15,8 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 // Order matters: earlier entries wrap later ones.
 //   - withResponsesServerToolShim: runs outermost so it wraps the full
 //     multi-turn ReAct loop around the rest of the chain.
-//   - withReasoningEncryptedContentCanonicalized: registered first after the
-//     shim so it pins the final (post-retry) event stream's encrypted_content.
+//   - withReasoningEncryptedContentCanonicalized: pins the final
+//     (post-retry) event stream's encrypted_content.
 //   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.

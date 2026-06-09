@@ -15,7 +15,11 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
   const api = useApi();
   const store = useUpstreamsStore();
   await Promise.all([store.load(), useProxiesStoreForLoader().load()]);
-  const list = store.upstreams.value ?? [];
+  if (store.error.value) throw new Error(store.error.value);
+  if (store.upstreams.value === null || store.flagCatalog.value === null) {
+    throw new Error('upstreams store not populated after a successful load()');
+  }
+  const list = store.upstreams.value;
   const id = route.params.id;
   const record = list.find(u => u.id === id) ?? null;
 
@@ -39,14 +43,14 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
       : null;
     const [modelsRes, quotaRes] = await Promise.all([modelsPromise, quotaPromise ?? Promise.resolve(null)]);
     if (modelsRes.error) upstreamModelsError = modelsRes.error.message;
-    else upstreamModels = modelsRes.data?.data ?? [];
+    else upstreamModels = modelsRes.data.data;
     if (quotaRes) {
       if (quotaRes.error) copilotQuotaError = quotaRes.error.message;
-      else copilotQuota = quotaRes.data ?? null;
+      else copilotQuota = quotaRes.data;
     }
   } else if (record?.provider === 'custom') {
     const cfg = record.config as CustomUpstreamConfig;
-    if (cfg.modelsFetch?.enabled) {
+    if (cfg.modelsFetch.enabled) {
       const { data, error } = await callApi<{ data: CustomRawModel[] }>(
         () => api.api.upstreams['fetch-models'].$post({
           json: {
@@ -67,7 +71,7 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
       if (error) {
         customRawModelsError = error.message;
       } else {
-        customRawModels = data?.data ?? [];
+        customRawModels = data.data;
         customFetchedAt = Date.now();
       }
     }
@@ -75,7 +79,7 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
 
   return {
     record,
-    flags: store.flagCatalog.value ?? [],
+    flags: store.flagCatalog.value,
     nextSortOrder: list.reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1,
     upstreamModels,
     upstreamModelsError,

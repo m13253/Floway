@@ -52,6 +52,7 @@ declare module 'vue-router/auto-routes' {
       | '/dashboard/upstreams/[id]'
       | '/dashboard/upstreams/new'
       | '/dashboard/usage'
+      | '/dashboard/users'
     >,
     '/dashboard/': RouteRecordInfo<
       '/dashboard/',
@@ -123,6 +124,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    '/dashboard/users': RouteRecordInfo<
+      '/dashboard/users',
+      '/dashboard/users',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     '/login': RouteRecordInfo<
       '/login',
       '/login',
@@ -168,6 +176,7 @@ declare module 'vue-router/auto-routes' {
         | '/dashboard/upstreams/[id]'
         | '/dashboard/upstreams/new'
         | '/dashboard/usage'
+        | '/dashboard/users'
       views:
         | 'default'
     }
@@ -228,6 +237,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/dashboard/usage.vue': {
       routes:
         | '/dashboard/usage'
+      views:
+        | never
+    }
+    'src/pages/dashboard/users.vue': {
+      routes:
+        | '/dashboard/users'
       views:
         | never
     }

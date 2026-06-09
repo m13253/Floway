@@ -78,7 +78,7 @@ const testSearchConfig = async () => {
   searchConfigTestResult.value = null;
   try {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (auth.authKey) headers['x-api-key'] = auth.authKey;
+    if (auth.authToken) headers['x-floway-session'] = auth.authToken;
     const resp = await fetch('/api/search-config/test', {
       method: 'POST',
       headers,

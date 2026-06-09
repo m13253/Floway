@@ -1,61 +1,12 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 
-import { callApi as callApiForLoader, useApi as useApiForLoader } from '../../api/client.ts';
+import { callApi, useApi as useApiForLoader, type ApiClient } from '../../api/client.ts';
 import { dashboardRangeQuery as dashboardRangeQueryForLoader } from '../../components/charts/dashboard-chart.ts';
 import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
+import { useAuthStore as useAuthStoreForLoader } from '../../stores/auth.ts';
 
 type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
-
-interface LoaderUsageResponse {
-  records: Array<{
-    keyId: string;
-    keyName?: string;
-    keyCreatedAt?: string;
-    model: string;
-    hour: string;
-    requests: number;
-    tokens: Partial<Record<BillingDimension, number>>;
-    cost: number;
-  }>;
-  keys: Array<{ id: string; name: string; createdAt: string }>;
-  keyColorOrder: string[];
-}
-
-interface LoaderSearchUsageResponse {
-  records: Array<{ provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }>;
-  keys: Array<{ id: string; name: string; createdAt: string }>;
-  keyColorOrder: string[];
-  activeProvider: string;
-}
-
-export const useUsagePageData = defineBasicLoader(async () => {
-  const api = useApiForLoader();
-  const { start, end } = dashboardRangeQueryForLoader('today');
-  const [usageRes, searchRes] = await Promise.all([
-    callApiForLoader<LoaderUsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-    callApiForLoader<LoaderSearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-    useModelsStoreForLoader().load(),
-  ]);
-  return {
-    usage: usageRes.data ?? { records: [], keys: [], keyColorOrder: [] },
-    search: searchRes.data ?? { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
-  };
-});
-</script>
-
-<script setup lang="ts">
-import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
-import { useIntervalFn } from '@vueuse/core';
-import type { TooltipItem } from 'chart.js';
-import type { ChartConfiguration } from 'chart.js/auto';
-import { computed, ref, watch } from 'vue';
-
-import { callApi, useApi } from '../../api/client.ts';
-import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
-import ChartCanvas from '../../components/charts/ChartCanvas.vue';
-import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
-import { useModelsStore } from '../../composables/useModels.ts';
 
 interface DisplayUsageRecord {
   keyId: string;
@@ -67,18 +18,103 @@ interface DisplayUsageRecord {
   tokens: Partial<Record<BillingDimension, number>>;
   cost: number;
 }
+
 interface UsageResponse {
   records: DisplayUsageRecord[];
-  keys: Array<{ id: string; name: string; createdAt: string }>;
+  keys: Array<{ id: string; name: string; createdAt?: string }>;
   keyColorOrder: string[];
 }
+
 interface SearchUsageRecord { provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }
+
 interface SearchUsageResponse {
   records: SearchUsageRecord[];
-  keys: Array<{ id: string; name: string; createdAt: string }>;
+  keys: Array<{ id: string; name: string; createdAt?: string }>;
   keyColorOrder: string[];
   activeProvider: string;
 }
+
+interface UsageByUserResponse {
+  records: Array<{
+    userId: number;
+    model: string;
+    hour: string;
+    requests: number;
+    tokens: Partial<Record<BillingDimension, number>>;
+    cost: number;
+  }>;
+  users: Array<{ id: number; username: string }>;
+  keyColorOrder: string[];
+}
+
+interface SearchUsageByUserResponse {
+  records: Array<{ provider: string; userId: number; hour: string; requests: number }>;
+  users: Array<{ id: number; username: string }>;
+  keyColorOrder: string[];
+  activeProvider: string;
+}
+
+type UsageView = 'all-by-user' | 'self-by-key';
+
+const userBucketId = (userId: number): string => `user-${userId}`;
+
+const fetchUsageForView = async (
+  api: ApiClient,
+  view: UsageView,
+  start: string,
+  end: string,
+): Promise<{ usage: UsageResponse | null; search: SearchUsageResponse | null }> => {
+  if (view === 'all-by-user') {
+    const [usageRes, searchRes] = await Promise.all([
+      callApi<UsageByUserResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+      callApi<SearchUsageByUserResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_user_metadata: '1', view: 'all-by-user' } })),
+    ]);
+    return {
+      usage: usageRes.data
+        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: usageRes.data.keyColorOrder }
+        : null,
+      search: searchRes.data
+        ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider }
+        : null,
+    };
+  }
+  const [usageRes, searchRes] = await Promise.all([
+    callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+    callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1', view: 'self-by-key' } })),
+  ]);
+  return { usage: usageRes.data ?? null, search: searchRes.data ?? null };
+};
+
+export const useUsagePageData = defineBasicLoader(async () => {
+  const api = useApiForLoader();
+  const auth = useAuthStoreForLoader();
+  const view: UsageView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
+  const { start, end } = dashboardRangeQueryForLoader('today');
+  const [{ usage, search }] = await Promise.all([
+    fetchUsageForView(api, view, start, end),
+    useModelsStoreForLoader().load(),
+  ]);
+  return {
+    view,
+    usage: usage ?? { records: [], keys: [], keyColorOrder: [] },
+    search: search ?? { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
+  };
+});
+</script>
+
+<script setup lang="ts">
+import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
+import { useIntervalFn } from '@vueuse/core';
+import type { TooltipItem } from 'chart.js';
+import type { ChartConfiguration } from 'chart.js/auto';
+import { computed, ref, watch } from 'vue';
+
+import { useApi } from '../../api/client.ts';
+import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
+import { useModelsStore } from '../../composables/useModels.ts';
+import { useAuthStore } from '../../stores/auth.ts';
 
 type Metric =
   | 'requests' | 'cost'
@@ -90,6 +126,7 @@ type Range = DashboardRange;
 const dim = (r: DisplayUsageRecord, k: BillingDimension): number => r.tokens[k] ?? 0;
 
 const api = useApi();
+const auth = useAuthStore();
 const initialUsageData = useUsagePageData();
 const modelsStore = useModelsStore();
 
@@ -97,6 +134,7 @@ const tokenRange = ref<Range>('today');
 const loadedTokenRange = ref<Range>('today');
 const tokenChartMetric = ref<Metric>('total');
 const redactKeys = ref(false);
+const view = ref<UsageView>(initialUsageData.data.value.view);
 const data = ref<UsageResponse | null>(initialUsageData.data.value.usage);
 const searchData = ref<SearchUsageResponse | null>(initialUsageData.data.value.search);
 const tokenLoading = ref(false);
@@ -120,17 +158,15 @@ const toggleHidden = (set: Set<string>, id: string) => {
 const load = async () => {
   const requestId = ++usageRequestId;
   const requestedRange = tokenRange.value;
+  const requestedView = view.value;
   tokenLoading.value = true;
   searchUsageLoading.value = true;
   const { start, end } = dashboardRangeQuery(requestedRange);
   try {
-    const [usageRes, searchRes] = await Promise.all([
-      callApi<UsageResponse>(() => api.api['token-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-      callApi<SearchUsageResponse>(() => api.api['search-usage'].$get({ query: { start, end, include_key_metadata: '1' } })),
-    ]);
-    if (requestId !== usageRequestId || tokenRange.value !== requestedRange) return;
-    if (usageRes.data) data.value = usageRes.data;
-    if (searchRes.data) searchData.value = searchRes.data;
+    const { usage, search } = await fetchUsageForView(api, requestedView, start, end);
+    if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
+    if (usage) data.value = usage;
+    if (search) searchData.value = search;
     loadedTokenRange.value = requestedRange;
   } finally {
     if (requestId === usageRequestId) {
@@ -147,6 +183,7 @@ const switchTokenRange = (r: Range) => {
 const switchTokenChartMetric = (m: string) => { tokenChartMetric.value = m as Metric; };
 
 watch(tokenRange, load);
+watch(view, load);
 useIntervalFn(load, 60_000);
 
 const tokenSummary = computed(() => {
@@ -377,7 +414,7 @@ const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   return `${label.padEnd(labelWidth + 1)}${String(detail.requests).padStart(5)}  ${formatCost(detail.cost).padStart(9)}  ${formatTokenCount(total).padStart(7)}  ${formatTokenCount(cached).padStart(7)}  ${formatInputRate(cached, prompt).padStart(8)}  ${formatTokenCount(prefill).padStart(7)}  ${formatTokenCount(output).padStart(7)}  ${formatHitRate(detail.cacheRead, detail.cacheCreation).padStart(7)}`;
 };
 
-const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], metadata: readonly { id: string; name: string; createdAt: string }[]) => {
+const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], metadata: readonly { id: string; name: string; createdAt?: string }[]) => {
   const map = new Map<string, KeyMeta>();
   for (const key of metadata) map.set(key.id, { name: key.name, createdAt: key.createdAt });
   for (const record of records) {
@@ -583,11 +620,25 @@ const formatCost = (v: number) => {
     <div class="glass-card p-6 animate-in">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div class="flex items-center gap-3">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage — By Key</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Token Usage</span>
+          <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'all-by-user'"
+            >All by user</button>
+            <button
+              type="button"
+              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
+              :class="view === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+              @click="view = 'self-by-key'"
+            >My keys</button>
+          </div>
           <button
             class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md p-1 transition-colors text-gray-600 hover:text-gray-400 hover:bg-white/[0.04]"
-            aria-label="Toggle key name redaction"
-            title="Redact key names"
+            :aria-label="view === 'all-by-user' ? 'Toggle user name redaction' : 'Toggle key name redaction'"
+            :title="view === 'all-by-user' ? 'Redact usernames' : 'Redact key names'"
             @click="redactKeys = !redactKeys"
           >
             <svg v-if="!redactKeys" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -655,7 +706,7 @@ const formatCost = (v: number) => {
 
       <div v-if="searchUsageActiveProvider !== 'disabled'" class="mt-6 pt-5 border-t border-white/5">
         <div class="flex items-center gap-3 mb-4">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage — Per Key</span>
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage</span>
           <Spinner v-if="searchUsageLoading" class="h-3.5 w-3.5 text-gray-500" />
         </div>
         <div style="height: 320px; position: relative;">
