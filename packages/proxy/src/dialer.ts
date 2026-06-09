@@ -124,8 +124,8 @@ export type RunProxiedRequestOptions = DialOptions;
  * response body (decrypted, transfer-encoding decoded).
  *
  * The dial-stage deadline applies to dial + outer-TLS + proxy-handshake
- * + inner-TLS combined; once the request bytes have been written the
- * upstream's response time is unbounded by this options surface.
+ * combined; once `dial()` returns the inner-TLS handshake and the
+ * upstream's response time are unbounded by this options surface.
  */
 export const runProxiedRequest = async (
   config: ProxyConfig,

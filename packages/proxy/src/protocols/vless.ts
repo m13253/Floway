@@ -1,15 +1,7 @@
-// VLESS dialer (TCP+TLS or WebSocket+TLS transports).
-//
-// VLESS spec (https://xtls.github.io/development/protocols/vless.html):
-//   ver[1=0x00] | UUID[16] | addonsLen[1] | addons[N=0]
-//     | cmd[1] (0x01 TCP, 0x02 UDP)
-//     | port[2 BE]
-//     | atyp[1] (0x01 v4, 0x02 domain (length-prefixed), 0x03 v6)
-//     | addr[var]
-//     | payload…
-//
-// The reply prefix from the server is `ver[1] | addonsLen[1] | addons[M]`,
-// followed by transparent payload. We parse and discard the reply prefix.
+// VLESS dialer composition: two transport variants for the VLESS protocol —
+// TCP+TLS through `socketDial(tls=true)`, and WebSocket+TLS through the
+// runtime's global `fetch()` upgrade — each delegating header construction
+// and reply-prefix framing to `vlessFrameOverStream` in vless-core.ts.
 
 import { ProxyDialError } from '../errors.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';

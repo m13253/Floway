@@ -1,10 +1,10 @@
-// Best-effort proxy-kind label derived from the URL scheme alone. Used by
-// the dashboard's settings card to colour-code a row without dragging in
-// the dial-time TLS stack that the full `parseProxyUri` pulls. The output
-// is a short uppercase label, never null — callers render it directly.
-//
-// Pure function, no SocketDial / TLS dependencies. Adding a new protocol =
-// add a parser branch in `url.ts` and a case here.
+// Best-effort proxy-kind label derived from the URL scheme alone. Distinct
+// from `parseProxyUri` because (a) it returns a `PROXY` fallback on garbled
+// input instead of throwing, and (b) it does scheme-only discrimination —
+// no required-field validation, no SS / VLESS userinfo decode beyond the
+// minimum needed to pick the kind label. Pure function, no SocketDial /
+// TLS dependencies. Adding a new protocol = add a parser branch in
+// `url.ts` and a case here.
 
 export const kindFromUri = (url: string): string => {
   let parsed: URL;
