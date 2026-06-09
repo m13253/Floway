@@ -2,9 +2,9 @@
 // owns the reader once handed in; cancelling the returned stream cancels
 // the underlying reader.
 
-import { ASCII_DECODER } from './parser.ts';
 import { concat, copy } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
+import { ASCII_DECODER } from './parser.ts';
 
 // Decode an HTTP/1.1 chunked transfer-encoding body. Exported for advanced
 // callers that already hold a reader into a chunked stream.
