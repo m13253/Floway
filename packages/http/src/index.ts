@@ -11,8 +11,10 @@
 
 export type { DuplexStream, HttpRequest, RawHttpResponse } from './types.ts';
 
-export { fetchOnStream, parseHttpResponse, toWebResponse, decodeChunked } from './fetch-on-stream.ts';
+export { fetchOnStream } from './fetch-on-stream.ts';
 export type { FetchOnStreamOptions } from './fetch-on-stream.ts';
+export { parseHttpResponse, toWebResponse } from './parser.ts';
+export { decodeChunked } from './chunked.ts';
 
 export { userspaceTls } from './tls.ts';
 export type { UserspaceTlsOptions, TlsStream } from './tls.ts';

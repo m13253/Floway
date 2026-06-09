@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { parseHttpResponse, toWebResponse } from './fetch-on-stream.ts';
+import { parseHttpResponse, toWebResponse } from './parser.ts';
 import { makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 describe('parseHttpResponse — status-line grammar', () => {

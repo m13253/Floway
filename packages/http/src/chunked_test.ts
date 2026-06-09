@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeChunked, HttpProtocolError } from './index.ts';
+import { decodeChunked } from './chunked.ts';
+import { HttpProtocolError } from './errors.ts';
 
 const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
   const reader = stream.getReader();

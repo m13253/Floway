@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { HttpProtocolError } from './errors.ts';
-import { fetchOnStream, parseHttpResponse } from './fetch-on-stream.ts';
+import { fetchOnStream } from './fetch-on-stream.ts';
+import { parseHttpResponse } from './parser.ts';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 const decodeAscii = (b: Uint8Array): string => new TextDecoder().decode(b);
