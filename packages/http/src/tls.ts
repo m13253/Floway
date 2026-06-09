@@ -39,8 +39,7 @@ export interface UserspaceTlsOptions {
   alpn?: string[];
   /**
    * When true, all server certificates are accepted (no chain validation,
-   * no name match). The trojan dialer threads its `allowInsecure` URI flag
-   * through here for self-signed trojan inbounds.
+   * no name match).
    */
   insecure?: boolean;
   /**
@@ -322,11 +321,9 @@ const logTlsTeardownError = (e: unknown): void => {
   }
 };
 
-// Pre-handshake signal-already-aborted reshape. A structured Error reason
-// rethrows as-is so its stack/cause survives; a primitive or absent
-// reason becomes a DOMException('AbortError'). The platform package
-// exposes the same shape as `throwAbort`, but @floway-dev/http has no
-// dependency edge into platform — keep a sibling implementation here.
+// Reshape an already-aborted signal into a throwable Error. A structured
+// Error reason rethrows as-is so its stack/cause survive; a primitive or
+// absent reason becomes a DOMException('AbortError').
 const signalAbortReason = (signal: AbortSignal): Error => {
   const reason = signal.reason;
   if (reason instanceof Error) return reason;
