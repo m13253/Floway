@@ -115,7 +115,6 @@ const dialHttpConnectInner = async (
           }
           const trailing = buf.subarray(idx + 4);
           if (trailing.byteLength) await fwdWriter.write(copy(trailing));
-          // Pump the rest of the socket into the forward stream
           while (true) {
             const r = await reader.read();
             if (r.done) {
