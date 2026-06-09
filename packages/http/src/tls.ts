@@ -220,11 +220,11 @@ export const userspaceTls = async (
     // Consumer-initiated cancel (response body fully read or aborted) tears
     // down our side of the duplex — flag so subsequent TLS-end callbacks
     // skip their controller calls, and signal end-of-stream upward.
-    cancel() {
+    cancel(reason) {
       plainClosed = true;
       cleanupSignal();
       void tlsClient.end().catch(logTlsTeardownError);
-      void reader.cancel().catch(() => {});
+      void reader.cancel(reason).catch(() => {});
       void writer.close().catch(logTlsTeardownError);
     },
   });

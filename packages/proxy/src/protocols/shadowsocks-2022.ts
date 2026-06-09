@@ -188,7 +188,7 @@ const dialShadowsocks2022Inner = async (
         controller.error(e);
       }
     },
-    cancel() { reader.cancel().catch(() => {}); },
+    cancel(reason) { reader.cancel(reason).catch(() => {}); },
   });
 
   const ssWritable = new WritableStream<Uint8Array>({

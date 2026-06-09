@@ -108,8 +108,8 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
       if (r.done) controller.close();
       else controller.enqueue(copy(r.value));
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
     },
   });
 };

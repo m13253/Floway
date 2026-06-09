@@ -282,12 +282,12 @@ const runRealityHandshake = async (
   // tlsClient is fully initialized by then.
   const plainReadable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
-    cancel() {
+    cancel(reason) {
       plainClosed = true;
       detachAbortListener?.();
       detachAbortListener = null;
       void tlsClient.end().catch(() => {});
-      void reader.cancel().catch(() => {});
+      void reader.cancel(reason).catch(() => {});
       void writer.close().catch(() => {});
     },
   });

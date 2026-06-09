@@ -136,8 +136,8 @@ const dialShadowsocksInner = async (
         controller.error(e);
       }
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
     },
   });
 
