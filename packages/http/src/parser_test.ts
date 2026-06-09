@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseHttpResponse, toWebResponse } from './parser.ts';
-import { makeFakeDuplex, respondAndEnd } from './test-utils.ts';
+import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 
 describe('parseHttpResponse — status-line grammar', () => {
   it('accepts HTTP/1.0 200 OK', async () => {
@@ -429,6 +429,167 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
   });
 });
 
+describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling matrix', () => {
+  // RFC 9112 §6.3: the Content-Length and Transfer-Encoding combinations
+  // below are exactly the smuggling-shaped messages a request smuggler
+  // exploits to desync front-end and back-end framing.
+
+  it('rejects CL+TE with the CL listed first', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'CL_AND_TE' });
+  });
+
+  it('rejects CL+TE with the TE listed first', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'CL_AND_TE' });
+  });
+
+  it('rejects two Content-Length headers carrying the same numeric value', async () => {
+    // RFC 9112 §6.3 allows CL repeated with the same value to be folded
+    // into one — but this layer rejects all duplicates outright as the
+    // safer policy against smuggling proxies that disagree about folding.
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello',
+    ))).rejects.toMatchObject({ code: 'MULTIPLE_CL' });
+  });
+
+  it('rejects two Content-Length headers carrying different numeric values', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\nhellohello',
+    ))).rejects.toMatchObject({ code: 'MULTIPLE_CL' });
+  });
+
+  it('rejects a comma-separated dual Content-Length within a single header', async () => {
+    // The Headers map will append-fold "5,5" but the parser stores raw
+    // values per occurrence; both forms must be rejected.
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length: 5, 5\r\n\r\nhello',
+    ))).rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Transfer-Encoding: gzip alone (we do not honor non-chunked TE)', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  });
+
+  it('rejects Transfer-Encoding: identity', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: identity\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  });
+
+  it('rejects Transfer-Encoding: chunked, gzip (chunked must be the final coding)', async () => {
+    // RFC 9112 §6.1: chunked MUST be the final coding when used.
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, gzip\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  });
+
+  it('accepts Transfer-Encoding: gzip, chunked (chunked is the final coding)', async () => {
+    // RFC 9112 §6.1: legal — the gateway just sees chunked framing and
+    // delivers the gzip-encoded body bytes through. Decoding gzip is the
+    // caller's job.
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
+    ));
+    expect(await collectBody(r)).toBe('hello');
+  });
+
+  it('rejects Transfer-Encoding: chunked listed twice (across two headers)', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_DOUBLE_CHUNKED' });
+  });
+
+  it('rejects Transfer-Encoding: chunked, chunked within one header value', async () => {
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_DOUBLE_CHUNKED' });
+  });
+
+  it('rejects Transfer-Encoding: chunkedchunked (substring match must not enable chunked)', async () => {
+    // llhttp test/response/transfer-encoding.md: the literal token must
+    // be `chunked`, never a token that contains `chunked` as a substring.
+    await expect(parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunkedchunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n',
+    ))).rejects.toMatchObject({ code: 'TE_NOT_CHUNKED' });
+  });
+
+  it('does not treat Content-Length-X as Content-Length (prefix match must not fire)', async () => {
+    // llhttp test/response/content-length.md: a header that merely starts
+    // with the literal `Content-Length` is not Content-Length.
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length-X: 0\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nOK\r\n0\r\n\r\n',
+    ));
+    expect(await collectBody(r)).toBe('OK');
+  });
+
+  it('accepts Content-Length with surrounding whitespace (OWS trimmed by header parser)', async () => {
+    // The header value parser strips OWS before storing the raw value, so
+    // a CL of `   5   ` reaches the framing layer as `5`.
+    const r = await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Length:   5   \r\n\r\nhello',
+    ));
+    expect(await collectBody(r)).toBe('hello');
+  });
+});
+
+describe('parseHttpResponse — Content-Length value grammar', () => {
+  it('rejects Content-Length: -1 (RFC 9112 §8.6)', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Content-Length: 1.5 (must be a non-negative integer)', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 1.5\r\n\r\nh')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Content-Length: 0xa (hex prefix is not allowed)', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 0xa\r\n\r\n')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Content-Length: 12abc (trailing non-digit garbage)', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 12abc\r\n\r\n')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Content-Length: 1 1 (RFC 9112 §8.6 forbids embedded space)', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 1 1\r\n\r\nhh')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects Content-Length with a leading + sign', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: +5\r\n\r\nhello')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('rejects an empty Content-Length value', async () => {
+    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length:\r\n\r\n')))
+      .rejects.toMatchObject({ code: 'BAD_CL' });
+  });
+
+  it('accepts Content-Length: 0 with no body bytes', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'));
+    expect(await collectBody(r)).toBe('');
+  });
+
+  it('accepts a large Content-Length value (within 32-bit range)', async () => {
+    const len = 70_000;
+    const fake = makeFakeDuplex();
+    fake.respond(`HTTP/1.1 200 OK\r\nContent-Length: ${len}\r\n\r\n`);
+    fake.respond(new Uint8Array(len).fill(0x61));
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    const buf = await collectBodyBytes(resp);
+    expect(buf.byteLength).toBe(len);
+  });
+});
+
 describe('parseHttpResponse — DoS caps', () => {
   it('rejects a response with more than 100 header lines as TOO_MANY_HEADERS', async () => {
     const lines = ['HTTP/1.1 200 OK'];
@@ -481,6 +642,88 @@ describe('parseHttpResponse — DoS caps', () => {
   it('accepts a response with zero headers', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\n\r\n'));
     expect(r.status).toBe(200);
+  });
+});
+
+describe('parseHttpResponse — body framing', () => {
+  it('uses chunked framing when Transfer-Encoding ends in chunked', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond([
+      'HTTP/1.1 200 OK',
+      'Transfer-Encoding: chunked',
+      '',
+      '5\r\nhello\r\n0\r\n\r\n',
+    ].join('\r\n'));
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('hello');
+    // The internal transfer-encoding header is stripped because it has been
+    // decoded — re-exposing it would mislead downstream consumers.
+    expect(resp.headers.get('transfer-encoding')).toBeNull();
+  });
+
+  it('falls back to read-until-EOF when neither CL nor TE is present (HTTP/1.0 style)', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.0 200 OK\r\n\r\nhello world');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('hello world');
+  });
+
+  it('reads to EOF when no framing headers are present (HTTP/1.1)', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\n\r\nbody bytes');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('body bytes');
+  });
+
+  it('errors with TRAILING_BODY_BYTES when CL is satisfied and more bytes follow', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloEXTRA');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
+      code: 'TRAILING_BODY_BYTES',
+    });
+  });
+
+  it('errors with TRAILING_BODY_BYTES when CL: 0 is followed by any body byte', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\nX');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
+      code: 'TRAILING_BODY_BYTES',
+    });
+  });
+
+  it('errors with EOF when CL exceeds the available bytes', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    await expect(collectBodyBytes(resp)).rejects.toMatchObject({
+      code: 'EOF',
+    });
+  });
+
+  it('streams CL body across multiple transport reads', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhello');
+    fake.respond(' world');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(await collectBody(resp)).toBe('hello world');
+  });
+
+  it('returns an empty body when CL: 0 with no following bytes', async () => {
+    const fake = makeFakeDuplex();
+    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    fake.endResponse();
+    const resp = await parseHttpResponse(fake.readable);
+    expect(resp.status).toBe(200);
+    expect(await collectBody(resp)).toBe('');
   });
 });
 
