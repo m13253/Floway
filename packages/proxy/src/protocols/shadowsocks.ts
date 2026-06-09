@@ -191,7 +191,6 @@ const makeAead = (method: SsMethod, key: Uint8Array): Aead => {
 };
 
 const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {
-  if (payload.byteLength > MAX_PAYLOAD) throw new Error('payload exceeds MAX_PAYLOAD');
   const lenBytes = new Uint8Array(2);
   lenBytes[0] = (payload.byteLength >> 8) & 0xff;
   lenBytes[1] = payload.byteLength & 0xff;
