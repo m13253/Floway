@@ -121,14 +121,12 @@ export interface UsersRepo {
   findByUsername(username: string): Promise<User | null>;
   // Atomic insert that allocates id = MAX(id) + 1 in a single statement so two
   // concurrent admin creates can't compute the same id and silently overwrite
-  // each other. Returns the inserted row.
+  // each other.
   createNewUser(template: Omit<User, 'id'>): Promise<User>;
-  // Upsert by id; the caller owns id allocation. Throws when the username is
-  // already taken by another active row, so duplicate-username races surface
-  // instead of silently overwriting state.
+  // Throws when the username is already taken by another active row, so
+  // duplicate-username races surface instead of silently overwriting state.
   save(user: User): Promise<void>;
   softDelete(id: number): Promise<boolean>;
-  // Hard delete; bypasses soft-delete semantics.
   deleteAll(): Promise<void>;
 }
 

@@ -247,10 +247,9 @@ class SqlUsersRepo implements UsersRepo {
   }
 
   async createNewUser(template: Omit<User, 'id'>): Promise<User> {
-    // INSERT ... SELECT computes id = MAX(id) + 1 inside one statement, so
-    // two concurrent admin creates serialize on D1's per-database write lock
-    // and pick distinct ids — avoiding the read-then-write race that
-    // listIncludingDeleted() + max + save() had.
+    // INSERT ... SELECT computes id = MAX(id) + 1 in one statement, so
+    // concurrent admin creates serialize on D1's per-database write lock and
+    // pick distinct ids.
     const row = await this.db
       .prepare(
         `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at)

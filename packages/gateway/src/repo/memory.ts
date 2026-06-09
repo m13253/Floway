@@ -69,7 +69,7 @@ class MemoryUsersRepo implements UsersRepo {
 
   createNewUser(template: Omit<User, 'id'>): Promise<User> {
     const collision = this.users.find(u => u.username === template.username && u.deletedAt === null);
-    if (collision && template.deletedAt === null) throw new Error(`username taken: ${template.username}`);
+    if (collision) throw new Error(`username taken: ${template.username}`);
     const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
     const user: User = { ...template, id };
     this.users.push(user);
@@ -78,7 +78,7 @@ class MemoryUsersRepo implements UsersRepo {
 
   async save(user: User): Promise<void> {
     const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
-    if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);
+    if (collision) throw new Error(`username taken: ${user.username}`);
     const i = this.users.findIndex(u => u.id === user.id);
     if (i >= 0) this.users[i] = { ...user };
     else this.users.push({ ...user });
@@ -188,13 +188,13 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   softDeleteByUserId(userId: number): Promise<number> {
     const now = new Date().toISOString();
     let count = 0;
-    this.keys = this.keys.map(k => {
+    for (let i = 0; i < this.keys.length; i++) {
+      const k = this.keys[i];
       if (k.userId === userId && k.deletedAt === null) {
+        this.keys[i] = { ...k, deletedAt: now };
         count += 1;
-        return { ...k, deletedAt: now };
       }
-      return k;
-    });
+    }
     return Promise.resolve(count);
   }
 

@@ -129,10 +129,10 @@ const copilotConfigSchema = z.object({
 
 // --- auth ---
 
-// PBKDF2 runs over the password as the HMAC key, so an unbounded length is a
-// CPU DoS vector (an attacker can hit /auth/login with a multi-MB password and
-// burn ~150ms × payload-size CPU per request). Cap at 1024 bytes — well above
-// any real passphrase.
+// Cap PBKDF2 input length: 1024 bytes — well above any real passphrase. The
+// CPU cost dependency on length is sub-linear past SHA-256's 64-byte block
+// (oversize keys are pre-hashed once before the iteration loop), but the
+// JSON-parse + zod + pre-hash work is still worth bounding.
 const passwordSchema = z.string().min(1).max(1024);
 
 // Username is allowed to be empty here so the dashboard's "leave blank +

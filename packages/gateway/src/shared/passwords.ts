@@ -62,12 +62,9 @@ export const verifyPassword = async (plaintext: string, encoded: string): Promis
 };
 
 // Stable dummy hash used to flatten the login timing oracle: the no-user /
-// no-passwordHash branches of /auth/login burn the same ~150ms of PBKDF2 work
-// as a real verify, so request latency cannot distinguish "user exists with
-// password" from "user does not exist". The plaintext does not matter —
-// verifyPassword always returns false against a hash of "", so this is purely
-// a CPU-burn sentinel. Memoized so we only pay the derivation cost once per
-// worker isolate.
+// no-passwordHash branches of /auth/login burn the same PBKDF2 work as a real
+// verify, so request latency cannot distinguish "user exists" from "user does
+// not exist".
 let dummyHash: Promise<string> | null = null;
 export const dummyPasswordHash = (): Promise<string> => {
   dummyHash ??= hashPassword('');
