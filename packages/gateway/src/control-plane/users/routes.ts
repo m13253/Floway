@@ -91,17 +91,16 @@ export const updateUser = async (c: CtxWithJson<typeof updateUserBody>) => {
     if (err) return c.json({ error: err }, 400);
   }
 
-  const next: User = {
-    ...existing,
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    username: body.username === undefined ? existing.username : body.username,
-    passwordHash: body.password === undefined ? existing.passwordHash : await hashPassword(body.password),
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    isAdmin: body.isAdmin === undefined ? existing.isAdmin : body.isAdmin,
-    upstreamIds: body.upstreamIds === undefined ? existing.upstreamIds : body.upstreamIds,
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    canViewGlobalTelemetry: body.canViewGlobalTelemetry === undefined ? existing.canViewGlobalTelemetry : body.canViewGlobalTelemetry,
-  };
+  // Build a partial of the fields the body actually carries, then spread it on
+  // top of `existing`. Filtering undefined keeps explicit `false` / empty
+  // strings (which `??` would mistakenly drop).
+  const overrides: Partial<User> = {};
+  if (body.username !== undefined) overrides.username = body.username;
+  if (body.password !== undefined) overrides.passwordHash = await hashPassword(body.password);
+  if (body.isAdmin !== undefined) overrides.isAdmin = body.isAdmin;
+  if (body.upstreamIds !== undefined) overrides.upstreamIds = body.upstreamIds;
+  if (body.canViewGlobalTelemetry !== undefined) overrides.canViewGlobalTelemetry = body.canViewGlobalTelemetry;
+  const next: User = { ...existing, ...overrides };
   await repo.users.save(next);
 
   if (body.password !== undefined) {

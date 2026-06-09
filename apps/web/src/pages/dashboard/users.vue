@@ -44,7 +44,6 @@ const error = ref<string | null>(initial.data.value.error);
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
 
 const userDialogOpen = ref(false);
-const userDialogMode = ref<'create' | 'edit'>('create');
 const editTarget = ref<WireUser | null>(null);
 
 const passwordOpen = ref(false);
@@ -58,13 +57,11 @@ const reload = async () => {
 };
 
 const openCreate = () => {
-  userDialogMode.value = 'create';
   editTarget.value = null;
   userDialogOpen.value = true;
 };
 
 const editUser = (u: WireUser) => {
-  userDialogMode.value = 'edit';
   editTarget.value = u;
   userDialogOpen.value = true;
 };
@@ -119,7 +116,7 @@ const remove = async (u: WireUser) => {
     </div>
 
     <UserDialog
-      v-if="userDialogMode === 'create'"
+      v-if="userDialogOpen && !editTarget"
       v-model:open="userDialogOpen"
       mode="create"
       :actor-user-id="actorUserId"
