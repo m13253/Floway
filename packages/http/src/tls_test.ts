@@ -107,10 +107,11 @@ describe('userspaceTls — handshake failure', () => {
     });
   });
 
-  it('propagates a non-DOMException abort reason as the rejection value', async () => {
-    // The signal contract: AbortSignal.reason is whatever the caller passed
-    // to abort(). The TLS adapter forwards that reason through unchanged
-    // unless it constructs its own AbortError from a missing reason.
+  it('wraps a non-Error abort reason as DOMException(AbortError) on the rejection', async () => {
+    // signalAbortReason normalises a primitive reason (string/number/null)
+    // into a DOMException so every consumer sees an Error-shaped rejection
+    // and stack traces survive. The reason's string form rides through as
+    // the message.
     const fake = makeFakeDuplex();
     const ac = new AbortController();
     const promise = userspaceTls(
@@ -118,7 +119,10 @@ describe('userspaceTls — handshake failure', () => {
       { host: 'example.com', signal: ac.signal },
     );
     setTimeout(() => ac.abort('plain string reason'), 5);
-    await expect(promise).rejects.toMatch(/plain string reason|AbortError/);
+    await expect(promise).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'plain string reason',
+    });
   });
 });
 
