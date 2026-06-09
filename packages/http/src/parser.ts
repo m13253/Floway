@@ -168,9 +168,9 @@ const readResponseHead = async (
   // a stream of `A:` lines could stay under 64 KiB while still stuffing
   // tens of thousands of entries into the Headers map.
   const MAX_HEADER_COUNT = 100;
-  if (lines.length - 1 > MAX_HEADER_COUNT) {
+  if (lines.length > MAX_HEADER_COUNT) {
     throw new HttpProtocolError(
-      `HTTP/1.1 response has ${lines.length - 1} header lines (max ${MAX_HEADER_COUNT})`,
+      `HTTP/1.1 response has ${lines.length} header lines (max ${MAX_HEADER_COUNT})`,
       'TOO_MANY_HEADERS',
     );
   }

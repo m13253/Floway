@@ -451,6 +451,17 @@ describe('parseHttpResponse — DoS caps', () => {
     expect(r.status).toBe(200);
   });
 
+  it('rejects a response with 101 header lines (one past the boundary)', async () => {
+    const lines = ['HTTP/1.1 200 OK'];
+    for (let i = 0; i < 100; i++) lines.push(`X-${i}: v`);
+    lines.push('Content-Length: 0');
+    lines.push('');
+    lines.push('');
+    await expect(parseHttpResponse(respondAndEnd(lines.join('\r\n')))).rejects.toMatchObject({
+      code: 'TOO_MANY_HEADERS',
+    });
+  });
+
   it('rejects a single header that grows past the 64 KiB header buffer', async () => {
     const fake = makeFakeDuplex();
     fake.respond('HTTP/1.1 200 OK\r\nX-Big: ');
