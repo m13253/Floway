@@ -227,7 +227,7 @@ const runRealityHandshake = async (
         );
       } catch (cause) {
         throw new ProxyDialError(
-          `REALITY: pbk failed X25519 derive — public key is invalid or off-curve`,
+          'REALITY: pbk failed X25519 derive — public key is invalid or off-curve',
           'config',
           { cause },
         );
