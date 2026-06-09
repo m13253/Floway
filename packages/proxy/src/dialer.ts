@@ -123,12 +123,12 @@ export const runProxiedRequest = async (
   options: RunProxiedRequestOptions,
 ): Promise<Response> => {
   const dialed = await dial(config, target, options);
+  let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
     // Trojan plain-HTTP needs its 56-byte auth header to ride in the same
     // TLS record as the request line; Trojan TLS-upstream needs it as the
     // outer prefix to the inner-TLS ClientHello. Route the prefix to
     // whichever wrapper consumes the next bytes.
-    let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
     let fetchPrefix: Uint8Array | undefined;
     if (target.tls) {
       let tls: TlsStream;
@@ -158,14 +158,14 @@ export const runProxiedRequest = async (
     const headers = ensureHostHeader(request.headers, target);
     return await fetchOnStream(stream, { ...request, headers }, { prefix: fetchPrefix });
   } catch (err) {
-    // Any throw past `dial()` means the dialed transport will never be
-    // returned to the caller. userspaceTls's own teardown only fires once
-    // it has acquired the transport's reader/writer; an abort that fires
-    // between dial returning and userspaceTls's pre-check leaves the
-    // underlying socket alive with the dialer's wrapper streams still
-    // pumping. Cancel the readable so the cancel cascade reaches every
-    // protocol's IIFE / TLS pump and ends with the socket destroyed.
-    void dialed.readable.cancel(err).catch(() => {});
+    // Any throw past `dial()` means the active stream will never be returned
+    // to the caller. Cancel the topmost layer (the post-TLS readable when
+    // userspaceTls succeeded, otherwise the dialed readable) so the cancel
+    // cascade reaches every wrapper's teardown — userspaceTls's plainReadable
+    // cancel hook ends the TLS layer and closes the transport writer; each
+    // protocol's IIFE / framing pump observes the underlying read failure
+    // and closes the socket.
+    void stream.readable.cancel(err).catch(() => {});
     throw err;
   }
 };
