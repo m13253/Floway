@@ -130,9 +130,10 @@ const runRealityHandshake = async (
   // reuse it via Web Crypto deriveBits inside onClientHelloPack.
   let tlsX25519Priv: CryptoKey | null = null;
   // The 32-byte symmetric authKey shared by the session_id seal AND the
-  // server-side CertificateVerify HMAC. Built inside onClientHelloPack
-  // because that's where we have access to the ECDHE output; latched out so
-  // onRecvCertificateVerify can read it without re-running HKDF.
+  // HMAC the server stamps into the leaf cert's signatureValue. Built inside
+  // onClientHelloPack because that's where we have access to the ECDHE
+  // output; latched out so onRecvCertificateVerify can read it without
+  // re-running HKDF.
   let authKey: Uint8Array | null = null;
 
   // The plaintext stream returned to the caller (VLESS framing) after the

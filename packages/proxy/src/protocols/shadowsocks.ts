@@ -95,9 +95,6 @@ const dialShadowsocksInner = async (
   sendNonce += 2n;
   const initialOut = concat(sendSalt, initialFrame);
   await writer.write(initialOut);
-  // We're about to hand the writer off via the SS-encrypting WritableStream
-  // wrapper. Construct a wrapping WritableStream that frames each chunk as
-  // an SS AEAD record before forwarding to the underlying socket.
   writer.releaseLock();
 
   // Track whether the SS receive side has produced any successful payload

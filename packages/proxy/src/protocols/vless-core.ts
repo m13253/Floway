@@ -2,7 +2,8 @@
 // reply prefix off the readable, and return the post-framing duplex stream.
 //
 // Used by reality.ts (after the REALITY-tls is established) and by vless.ts
-// (after the outer TLS / outer fetch+WS upgrade).
+// (after the outer TLS for vless-tcp, or after the outer TLS + WebSocket
+// upgrade for vless-ws).
 
 import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
