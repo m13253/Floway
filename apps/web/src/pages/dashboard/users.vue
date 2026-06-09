@@ -33,7 +33,6 @@ const auth = useAuthStore();
 const initial = useUsersPageData();
 const upstreamOptionsStore = useUpstreamOptionsStore();
 
-// Route is admin-guarded, so currentUser is always set when this page renders.
 const actorUserId = computed(() => {
   if (!auth.currentUser) throw new Error('users page rendered without an authenticated admin');
   return auth.currentUser.id;

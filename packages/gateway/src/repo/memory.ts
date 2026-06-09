@@ -341,6 +341,18 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
   }
 }
 
+const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
+  a.hour.localeCompare(b.hour) ||
+  a.metricScope.localeCompare(b.metricScope) ||
+  a.keyId.localeCompare(b.keyId) ||
+  a.model.localeCompare(b.model) ||
+  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
+  a.modelKey.localeCompare(b.modelKey) ||
+  a.sourceApi.localeCompare(b.sourceApi) ||
+  a.targetApi.localeCompare(b.targetApi) ||
+  Number(a.stream) - Number(b.stream) ||
+  a.runtimeLocation.localeCompare(b.runtimeLocation);
+
 class MemoryPerformanceRepo implements PerformanceRepo {
   private summaries = new Map<string, PerformanceTelemetryRecord>();
 
@@ -423,18 +435,6 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     return Promise.resolve();
   }
 }
-
-const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
-  a.hour.localeCompare(b.hour) ||
-  a.metricScope.localeCompare(b.metricScope) ||
-  a.keyId.localeCompare(b.keyId) ||
-  a.model.localeCompare(b.model) ||
-  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-  a.modelKey.localeCompare(b.modelKey) ||
-  a.sourceApi.localeCompare(b.sourceApi) ||
-  a.targetApi.localeCompare(b.targetApi) ||
-  Number(a.stream) - Number(b.stream) ||
-  a.runtimeLocation.localeCompare(b.runtimeLocation);
 
 class MemoryCacheRepo implements CacheRepo {
   private store = new Map<string, { value: string; expiresAt?: number }>();

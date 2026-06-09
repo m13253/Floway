@@ -165,7 +165,7 @@ const serializeUpstreamIds = (value: readonly string[] | null): string | null =>
 
 // Throws on bad data: silently returning null would broaden the row's
 // upstream access beyond what the admin set.
-const parseUpstreamIdsJson = (raw: string | null, label: string): string[] | null => {
+const parseUpstreamIds = (raw: string | null, label: string): string[] | null => {
   if (raw === null) return null;
   let parsed: unknown;
   try {
@@ -185,7 +185,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   key: row.key,
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
-  upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `api_keys.id=${row.id}`),
+  upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   deletedAt: row.deleted_at,
 });
 
@@ -207,7 +207,7 @@ const toUser = (row: UserRow): User => ({
   username: row.username,
   passwordHash: row.password_hash,
   isAdmin: row.is_admin === 1,
-  upstreamIds: parseUpstreamIdsJson(row.upstream_ids, `users.id=${row.id}`),
+  upstreamIds: parseUpstreamIds(row.upstream_ids, `users.id=${row.id}`),
   canViewGlobalTelemetry: row.can_view_global_telemetry === 1,
   createdAt: row.created_at,
   deletedAt: row.deleted_at,
