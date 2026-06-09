@@ -111,7 +111,7 @@ describe('buildTrojanRequestHeader — port and address variants', () => {
     expect(header[63]).toBe(0xff);
   });
 
-  it('rejects port 0 before building any wire bytes (RFC 6335 §6 reserves port 0)', async () => {
+  it('rejects port 0 before building any wire bytes (RFC 6335 §6 reserves port 0)', () => {
     expect(() => buildTrojanRequestHeader('p', { host: 'h', port: 0 })).toThrow(
       expect.objectContaining({ name: 'ProxyDialError', stage: 'config', message: expect.stringContaining('1..65535') }),
     );

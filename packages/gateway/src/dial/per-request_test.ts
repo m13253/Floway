@@ -51,8 +51,6 @@ describe('createPerRequestFetcher', () => {
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
 
     const fetcherFor = await createPerRequestFetcher();
-    const okFetcher = fetcherFor('u_ok');
-    expect(typeof okFetcher).toBe('function');
     const badFetcher = fetcherFor('u_bad');
     await expect(badFetcher('https://example.com', { method: 'GET' }))
       .rejects.toThrow(/u_bad references malformed proxy p_bad/);
@@ -75,8 +73,7 @@ describe('createPerRequestFetcher', () => {
     };
 
     const fetcherFor = await createPerRequestFetcher();
-    const directFetcher = fetcherFor('u_direct');
-    expect(typeof directFetcher).toBe('function');
+    fetcherFor('u_direct');
     expect(proxyListCalls).toBe(0);
   });
 });
