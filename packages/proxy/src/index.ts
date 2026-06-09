@@ -7,8 +7,8 @@
 // @floway-dev/http. Dialers stay runtime-agnostic by taking the raw TCP
 // `socketDial` primitive through DialOptions, so the same code runs on
 // Workers (`cloudflare:sockets`), Node (`node:net`), or any other target.
-// The one exception is `vless-ws`, which is workerd-only because only
-// workerd's fetch returns a `webSocket` handle on the upgrade Response.
+// vless-ws layers @floway-dev/http's `wsUpgradeAndFrame` over the same
+// `socketDial(tls=true)` leg, so it stays runtime-agnostic too.
 
 export type { ProxyRequestTarget, SocketDial } from './types.ts';
 

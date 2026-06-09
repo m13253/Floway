@@ -168,8 +168,7 @@ export interface DialOptions {
   dialTimeoutMs?: number;
   /**
    * Platform-injected raw TCP dial primitive. Required — every dialer
-   * needs to open at least one TCP connection (the VLESS-WS dialer uses
-   * runtime fetch instead and ignores this).
+   * needs to open at least one TCP connection.
    */
   socketDial: SocketDial;
 }

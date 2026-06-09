@@ -215,12 +215,12 @@ const parseVless = (
     const sni = url.searchParams.get('sni') ?? undefined;
     return parseReality(url, host, port, name, uuid, sni);
   }
-  // VLESS-TCP+TLS goes through the runtime's native TLS via `socketDial(tls=true)`,
-  // and VLESS-WS+TLS goes through the runtime's `fetch()`. Neither surface
-  // accepts an SNI override separate from the URL host, so a `?sni=` query
-  // param is silently ignored by the parser to avoid round-tripping a field
-  // the dialer cannot honour. REALITY keeps `?sni=` as the spoofed front
-  // domain because its userspace TLS stack drives the SNI directly.
+  // Both VLESS-TCP+TLS and VLESS-WS+TLS go through the runtime's native TLS
+  // via `socketDial(tls=true)`, which ties SNI to the URL host; neither
+  // surface accepts an SNI override on the wire, so a `?sni=` query param
+  // is silently dropped to avoid round-tripping a field the dialer cannot
+  // honour. REALITY keeps `?sni=` as the spoofed front domain because its
+  // userspace TLS stack drives the SNI directly.
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
       kind: 'vless-tcp',

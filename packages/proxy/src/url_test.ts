@@ -152,7 +152,7 @@ describe('parseProxyUri', () => {
     });
   });
 
-  it('drops a `?sni=` query param on VLESS-WS+TLS — the WS upgrade goes through runtime fetch which ties SNI to the URL host, so an override would never reach the wire', () => {
+  it('drops a `?sni=` query param on VLESS-WS+TLS — the outer TLS rides `socketDial(tls=true)` which pins SNI to the URL host, so an override would never reach the wire', () => {
     const uri =
       'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=ignored#vw';
     expect(parseProxyUri(uri)).toEqual({
