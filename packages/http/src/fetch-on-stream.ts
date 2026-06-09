@@ -180,9 +180,9 @@ export const toWebResponse = (raw: RawHttpResponse): Response => {
   // construct with `null`.
   if (raw.status === 204 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
-    return new Response(null, { status: raw.status, headers: raw.headers });
+    return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
-  return new Response(raw.body, { status: raw.status, headers: raw.headers });
+  return new Response(raw.body, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
 };
 
 /**

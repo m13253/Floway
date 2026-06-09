@@ -568,6 +568,23 @@ describe('toWebResponse', () => {
     expect(r.headers.get('etag')).toBe('"abc"');
   });
 
+  it('forwards the parsed reason-phrase through statusText', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 418 I\'m a teapot\r\nContent-Length: 0\r\n\r\n',
+    )));
+    expect(r.status).toBe(418);
+    expect(r.statusText).toBe('I\'m a teapot');
+  });
+
+  it('forwards the parsed reason-phrase on a null-body 204 too', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 204 No Content Here\r\nContent-Length: 0\r\n\r\n',
+    )));
+    expect(r.status).toBe(204);
+    expect(r.statusText).toBe('No Content Here');
+    expect(r.body).toBeNull();
+  });
+
   it('throws BAD_STATUS_LINE when handed a status the Fetch standard refuses to model', () => {
     // parseHttpResponse will never produce a 1xx (it skips them internally),
     // but the bridge function still validates. A handcrafted struct mirrors
