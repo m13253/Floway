@@ -312,6 +312,45 @@ test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400
   assertEquals(body.error.includes('bearerToken'), true);
 });
 
+test('POST /api/upstreams/fetch-models routes through the saved upstream\'s proxy fallback list when an id is supplied', async () => {
+  const { repo, adminKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  // A malformed proxy URL surfaces from the per-request fetcher as a dial-time
+  // error keyed on the upstream id. directFetcher would have ignored the list
+  // entirely and the catalog GET would succeed — so a 502 here proves the
+  // route built and used the per-upstream fetcher.
+  await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.upstreams.save({
+    id: 'up_with_bad_proxy',
+    provider: 'custom',
+    name: 'Custom with bad proxy',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-05-22T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: ['p_bad'],
+    config: { ...customConfig, bearerToken: 'sk-stored' },
+    state: null,
+  });
+
+  await withMockedFetch(
+    async request => {
+      // Reached only if the route fell back to directFetcher — failing here
+      // pins the regression rather than letting it slip past as a 200.
+      throw new Error(`unexpected direct fetch in proxy-fallback path: ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/fetch-models',
+        authed(adminKey, { id: 'up_with_bad_proxy', config: { ...customConfig, bearerToken: '' } }),
+      );
+      assertEquals(resp.status, 502);
+    },
+  );
+});
+
 test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s for an unknown id', async () => {
   const { repo, adminKey } = await setupAppTest();
   await repo.upstreams.deleteAll();

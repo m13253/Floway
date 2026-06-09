@@ -309,7 +309,12 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   }
 
   try {
-    const result = await fetchCustomModels(assertedConfig, directFetcher);
+    // Edit mode (`id` present) routes the upstream's catalog GET through the
+    // per-request proxy fallback chain so the dashboard's Refresh button hits
+    // the same egress path as the data plane; a brand-new draft has no saved
+    // row yet, so it falls back to direct.
+    const fetcher = id === undefined ? directFetcher : (await createPerRequestFetcher())(id);
+    const result = await fetchCustomModels(assertedConfig, fetcher);
     return c.json(result);
   } catch (e) {
     // Mirror the control-plane /models convention: squash genuine upstream

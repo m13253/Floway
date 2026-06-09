@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from './index.ts';
-import { isProviderModelsHttpStatus, ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
+import { isProviderModelsHttpStatus, ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstreamRecord = () => ({
@@ -170,4 +170,21 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
   assertEquals(thrown.httpResponse, null);
+});
+
+test('fetchCustomModels routes the catalog GET through the injected fetcher, not globalThis.fetch', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  const calls: Array<{ url: string; authorization: string | null }> = [];
+  const injected: Fetcher = (url, init) => {
+    const headers = new Headers(init.headers);
+    calls.push({ url: String(url), authorization: headers.get('authorization') });
+    return Promise.resolve(jsonResponse({ object: 'list', data: [{ id: 'injected-model' }] }));
+  };
+  // No withMockedFetch — assert by construction that the injected fetcher
+  // (not the runtime's globalThis.fetch) carried the request.
+  const result = await fetchCustomModels(config, injected);
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].url, 'https://custom.example.com/v1/models');
+  assertEquals(calls[0].authorization, 'Bearer token');
+  assertEquals(result.data[0].id, 'injected-model');
 });
