@@ -77,8 +77,11 @@ class MemoryUsersRepo implements UsersRepo {
   }
 
   async save(user: User): Promise<void> {
+    // Match SQL's partial unique index `WHERE deleted_at IS NULL`: a clash is
+    // only meaningful when the new row is also active. A soft-deleted import
+    // can carry a username already in use by an active row without colliding.
     const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
-    if (collision) throw new Error(`username taken: ${user.username}`);
+    if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);
     const i = this.users.findIndex(u => u.id === user.id);
     if (i >= 0) this.users[i] = { ...user };
     else this.users.push({ ...user });
