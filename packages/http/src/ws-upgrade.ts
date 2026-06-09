@@ -354,6 +354,13 @@ const frameDuplexOnTransport = (
       try { plainController.close(); } catch { /* already closed */ }
     }
     void reader.cancel(cause).catch(() => {});
+    // Close (or abort) the underlying writer too. Without this, every teardown
+    // path that doesn't originate from the consumer's writable.close — server
+    // close frame, transport EOF, signal abort, internal frame error — leaks
+    // the transport's write half locked under our frameWriter. Mirror tls.ts
+    // closePlain.
+    if (cause) void frameWriter.abort(cause).catch(() => {});
+    else void frameWriter.close().catch(() => {});
   };
 
   const sendCloseFrame = async (code: number, reason: string): Promise<void> => {
@@ -539,7 +546,6 @@ const frameDuplexOnTransport = (
     const captured = signal;
     const onAbort = (): void => {
       closePlain(signalAbortReason(captured));
-      void frameWriter.abort(captured.reason).catch(() => {});
     };
     captured.addEventListener('abort', onAbort, { once: true });
     detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);
