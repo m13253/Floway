@@ -111,7 +111,7 @@ const parseIpv4Literal = (s: string): Uint8Array | null => {
     const p = parts[i]!;
     if (p.length > 1 && p.startsWith('0')) return null;
     const n = Number(p);
-    if (n < 0 || n > 255) return null;
+    if (n > 255) return null;
     out[i] = n;
   }
   return out;
