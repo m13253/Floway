@@ -1583,6 +1583,10 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
       .bind(proxyId, upstreamId)
       .run();
   }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM proxy_upstream_backoffs').run();
+  }
 }
 
 interface BackoffRowDb {

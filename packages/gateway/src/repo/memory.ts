@@ -923,6 +923,11 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
     this.rows.delete(this.key(proxyId, upstreamId));
     return Promise.resolve();
   }
+
+  deleteAll(): Promise<void> {
+    this.rows.clear();
+    return Promise.resolve();
+  }
 }
 
 const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });

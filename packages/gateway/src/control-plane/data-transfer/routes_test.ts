@@ -819,6 +819,26 @@ test('import upserts proxies on id collision (last-writer-wins on name / url / s
   assertEquals(after?.dialTimeoutSeconds, 90);
 });
 
+test('import replace wipes proxy_upstream_backoffs alongside the proxies it cools down', async () => {
+  // Backoff rows survive only as long as the proxy_id they reference is real;
+  // a replace import that brings in a fresh proxy with the same id as a wiped
+  // one would otherwise have its first dials short-circuited by a stale
+  // cool-down row from the prior catalog.
+  const { app, repo } = setup();
+  await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.upstreams.save(CUSTOM_UPSTREAM);
+  await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, 'transport reset');
+  assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
+
+  const result = await doImport(app, 'replace', latestImportData({
+    proxies: [{ id: 'p_old', name: 'New', url: SOCKS_PROXY_URL, sort_order: 0, dial_timeout_seconds: null }],
+    upstreams: [upstreamRecordToFullJson(CUSTOM_UPSTREAM)],
+  }));
+
+  assertEquals(result.status, 200);
+  assertEquals(await repo.proxyBackoffs.listAll(), []);
+});
+
 test('v4 export/import round-trips users and per-key user_id', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);

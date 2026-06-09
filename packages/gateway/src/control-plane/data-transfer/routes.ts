@@ -696,6 +696,11 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.searchUsage.deleteAll(),
       repo.upstreams.deleteAll(),
       repo.proxies.deleteAll(),
+      // proxy_upstream_backoffs is per-deployment runtime state keyed on
+      // proxy_id; replace mode wipes the proxies table, so leaving the
+      // backoff rows behind would cool-down freshly imported proxies that
+      // happen to reuse a deleted id. Same intent as wiping sessions.
+      repo.proxyBackoffs.deleteAll(),
       repo.responsesSnapshots.deleteAll(),
       repo.responsesItems.deleteAll(),
       repo.users.deleteAll(),

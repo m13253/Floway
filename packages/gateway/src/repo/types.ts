@@ -264,6 +264,7 @@ export interface ProxyBackoffRepo {
   resetForProxy(proxyId: string): Promise<void>;
   resetForUpstream(upstreamId: string): Promise<void>;
   reset(proxyId: string, upstreamId: string): Promise<void>;
+  deleteAll(): Promise<void>;
 }
 
 export interface StoredResponsesItem {
