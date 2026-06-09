@@ -23,7 +23,7 @@ import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
 import { resolveSni, resolveVerifyHost } from './types.ts';
-import { fetchOnStream, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
@@ -51,7 +51,7 @@ export const dial = async (
   // because abort propagation was racy.
   const internal = new AbortController();
   const onCallerAbort = (): void => {
-    internal.abort(callerSignal!.reason ?? new DOMException('aborted', 'AbortError'));
+    internal.abort(signalAbortReason(callerSignal!));
   };
   if (callerSignal) {
     callerSignal.addEventListener('abort', onCallerAbort, { once: true });
@@ -78,17 +78,6 @@ export const dial = async (
     clearTimeout(timer);
     if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   }
-};
-
-// Mirror @floway-dev/platform's throwAbort shape for the pre-dial signal
-// check: a structured Error reason rethrows as-is so its stack/cause
-// survives, a primitive or absent reason becomes a DOMException. The
-// proxy package can't import from @floway-dev/platform (the dependency
-// direction is reversed), so we keep a sibling implementation here.
-const signalAbortReason = (signal: AbortSignal): Error => {
-  const reason = signal.reason;
-  if (reason instanceof Error) return reason;
-  return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
 
 const dispatchDial = async (config: ProxyConfig, target: DialTarget, options: DialOptions): Promise<DialResult> => {

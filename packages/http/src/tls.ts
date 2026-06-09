@@ -280,7 +280,7 @@ export const userspaceTls = async (
   if (opts.signal) {
     const captured = opts.signal;
     const onAbort = (): void => {
-      const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
+      const reason = signalAbortReason(captured);
       if (!handshakeOk) handshakeReject(reason);
       else closePlain(reason);
       void reader.cancel(reason).catch(() => {});

@@ -49,6 +49,7 @@ import type { RealityProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
+import { signalAbortReason } from '@floway-dev/http';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {
@@ -338,7 +339,7 @@ const runRealityHandshake = async (
   if (signal) {
     const captured = signal;
     const onAbort = (): void => {
-      const reason = captured.reason ?? new DOMException('aborted', 'AbortError');
+      const reason = signalAbortReason(captured);
       if (!handshakeOk) handshakeReject(reason);
       else closePlain(reason);
       void reader.cancel(reason).catch(() => {});
