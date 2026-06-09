@@ -129,11 +129,17 @@ const copilotConfigSchema = z.object({
 
 // --- auth ---
 
+// PBKDF2 runs over the password as the HMAC key, so an unbounded length is a
+// CPU DoS vector (an attacker can hit /auth/login with a multi-MB password and
+// burn ~150ms × payload-size CPU per request). Cap at 1024 bytes — well above
+// any real passphrase.
+const passwordSchema = z.string().min(1).max(1024);
+
 // Username is allowed to be empty here so the dashboard's "leave blank +
 // ADMIN_KEY" backdoor passes validation; the login handler dispatches on it.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
-  password: z.string().min(1),
+  password: passwordSchema,
 });
 
 // --- users ---
@@ -152,7 +158,7 @@ const upstreamIdsValueSchema = z.array(z.string().min(1))
 
 export const createUserBody = z.object({
   username: usernameSchema,
-  password: z.string().min(1),
+  password: passwordSchema,
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),
@@ -160,15 +166,15 @@ export const createUserBody = z.object({
 
 export const updateUserBody = z.object({
   username: usernameSchema.optional(),
-  password: z.string().min(1).optional(),
+  password: passwordSchema.optional(),
   isAdmin: z.boolean().optional(),
   upstreamIds: upstreamIdsValueSchema.optional(),
   canViewGlobalTelemetry: z.boolean().optional(),
 });
 
 export const changeOwnPasswordBody = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(1),
+  currentPassword: passwordSchema,
+  newPassword: passwordSchema,
 });
 
 // --- api keys ---

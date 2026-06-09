@@ -38,11 +38,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     if (upstreamErr) return c.json({ error: upstreamErr }, 400);
   }
 
-  const all = await repo.users.listIncludingDeleted();
-  const newId = all.reduce((max, u) => Math.max(max, u.id), 0) + 1;
-
-  const user: User = {
-    id: newId,
+  const user = await repo.users.createNewUser({
     username: body.username,
     passwordHash: await hashPassword(body.password),
     isAdmin: body.isAdmin ?? false,
@@ -50,12 +46,11 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     canViewGlobalTelemetry: body.canViewGlobalTelemetry ?? false,
     createdAt: new Date().toISOString(),
     deletedAt: null,
-  };
-  await repo.users.save(user);
+  });
 
   const defaultKey: ApiKey = {
     id: crypto.randomUUID(),
-    userId: newId,
+    userId: user.id,
     name: 'Default',
     key: generateApiKeyToken(),
     createdAt: new Date().toISOString(),

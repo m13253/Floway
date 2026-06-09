@@ -67,6 +67,15 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve(u ? { ...u } : null);
   }
 
+  createNewUser(template: Omit<User, 'id'>): Promise<User> {
+    const collision = this.users.find(u => u.username === template.username && u.deletedAt === null);
+    if (collision && template.deletedAt === null) throw new Error(`username taken: ${template.username}`);
+    const id = this.users.reduce((max, u) => Math.max(max, u.id), 0) + 1;
+    const user: User = { ...template, id };
+    this.users.push(user);
+    return Promise.resolve({ ...user });
+  }
+
   async save(user: User): Promise<void> {
     const collision = this.users.find(u => u.username === user.username && u.deletedAt === null && u.id !== user.id);
     if (collision && user.deletedAt === null) throw new Error(`username taken: ${user.username}`);

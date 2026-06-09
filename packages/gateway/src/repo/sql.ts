@@ -246,6 +246,31 @@ class SqlUsersRepo implements UsersRepo {
     return row ? toUser(row) : null;
   }
 
+  async createNewUser(template: Omit<User, 'id'>): Promise<User> {
+    // INSERT ... SELECT computes id = MAX(id) + 1 inside one statement, so
+    // two concurrent admin creates serialize on D1's per-database write lock
+    // and pick distinct ids — avoiding the read-then-write race that
+    // listIncludingDeleted() + max + save() had.
+    const row = await this.db
+      .prepare(
+        `INSERT INTO users (id, username, password_hash, is_admin, upstream_ids, can_view_global_telemetry, created_at, deleted_at)
+         SELECT COALESCE(MAX(id), 0) + 1, ?, ?, ?, ?, ?, ?, ? FROM users
+         RETURNING id`,
+      )
+      .bind(
+        template.username,
+        template.passwordHash,
+        template.isAdmin ? 1 : 0,
+        serializeUpstreamIds(template.upstreamIds),
+        template.canViewGlobalTelemetry ? 1 : 0,
+        template.createdAt,
+        template.deletedAt,
+      )
+      .first<{ id: number }>();
+    if (!row) throw new Error('createNewUser: insert returned no rows');
+    return { ...template, id: row.id };
+  }
+
   async save(user: User): Promise<void> {
     await this.db
       .prepare(

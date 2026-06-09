@@ -105,7 +105,7 @@ const copyToClipboard = async (text: string, tag: string) => {
     await navigator.clipboard.writeText(text);
     copied.value = tag;
     window.setTimeout(() => { if (copied.value === tag) copied.value = null; }, 1500);
-  } catch { /* clipboard may be denied — no feedback */ }
+  } catch { /* */ }
 };
 
 const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));

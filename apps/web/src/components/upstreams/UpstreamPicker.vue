@@ -43,12 +43,12 @@ const reset = () => {
 watch(() => [value.value, props.available] as const, reset, { immediate: true });
 
 const setOverride = (next: boolean) => {
-  value.value = { override: next, ids: value.value.ids };
+  value.value = { ...value.value, override: next };
 };
 
 const setRows = (next: RowState[]) => {
   rows.value = next;
-  value.value = { override: value.value.override, ids: next.filter(r => r.enabled).map(r => r.id) };
+  value.value = { ...value.value, ids: next.filter(r => r.enabled).map(r => r.id) };
 };
 
 const toggleRow = (id: string, enabled: boolean) => {
@@ -57,19 +57,13 @@ const toggleRow = (id: string, enabled: boolean) => {
 
 const badgeCount = computed(() => value.value.override ? rows.value.filter(r => r.enabled).length : props.available.length);
 
-const providerTone = (provider: UpstreamProviderKind | null): 'amber' | 'emerald' | 'cyan' | 'zinc' => {
-  if (provider === 'custom') return 'amber';
-  if (provider === 'azure') return 'emerald';
-  if (provider === 'copilot' || provider === 'codex') return 'cyan';
-  return 'zinc';
-};
-
-const providerLabel = (provider: UpstreamProviderKind | null) => {
-  if (provider === 'custom') return 'Custom';
-  if (provider === 'azure') return 'Azure';
-  if (provider === 'copilot') return 'Copilot';
-  if (provider === 'codex') return 'Codex';
-  return 'Unknown';
+interface ProviderMeta { tone: 'amber' | 'emerald' | 'cyan' | 'zinc'; label: string }
+const providerMeta = (provider: UpstreamProviderKind | null): ProviderMeta => {
+  if (provider === 'custom') return { tone: 'amber', label: 'Custom' };
+  if (provider === 'azure') return { tone: 'emerald', label: 'Azure' };
+  if (provider === 'copilot') return { tone: 'cyan', label: 'Copilot' };
+  if (provider === 'codex') return { tone: 'cyan', label: 'Codex' };
+  return { tone: 'zinc', label: 'Unknown' };
 };
 </script>
 
@@ -105,7 +99,7 @@ const providerLabel = (provider: UpstreamProviderKind | null) => {
             <i class="i-lucide-grip-vertical size-4" />
           </button>
           <Switch :model-value="row.enabled" @update:model-value="v => toggleRow(row.id, !!v)" />
-          <Badge :tone="providerTone(row.provider)" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerLabel(row.provider) }}</Badge>
+          <Badge :tone="providerMeta(row.provider).tone" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerMeta(row.provider).label }}</Badge>
           <span class="min-w-0 flex-1 truncate text-sm text-white">{{ row.name }}</span>
           <code class="text-xs text-gray-500">{{ row.id }}</code>
         </li>

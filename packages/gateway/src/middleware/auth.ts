@@ -5,7 +5,6 @@ import type { User } from '../repo/types.ts';
 import { timingSafeEqual } from '../shared/passwords.ts';
 import { getEnv } from '@floway-dev/platform';
 
-// /favicon.ico is a Worker-served public 204 (see control-plane/routes.ts).
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
 
@@ -23,7 +22,6 @@ export const authMiddleware = async (c: Context, next: Next) => {
     if (!session) return c.json({ error: 'Invalid session' }, 401);
     const user = await getRepo().users.getById(session.userId);
     if (!user) {
-      // Orphan session: user was deleted.
       await getRepo().sessions.deleteById(sessionToken);
       return c.json({ error: 'Invalid session' }, 401);
     }

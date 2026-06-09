@@ -119,6 +119,10 @@ export interface UsersRepo {
   listIncludingDeleted(): Promise<User[]>;
   getById(id: number): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
+  // Atomic insert that allocates id = MAX(id) + 1 in a single statement so two
+  // concurrent admin creates can't compute the same id and silently overwrite
+  // each other. Returns the inserted row.
+  createNewUser(template: Omit<User, 'id'>): Promise<User>;
   // Upsert by id; the caller owns id allocation. Throws when the username is
   // already taken by another active row, so duplicate-username races surface
   // instead of silently overwriting state.

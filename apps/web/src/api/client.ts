@@ -40,9 +40,7 @@ export const callApi = async <T>(
     let body: unknown;
     try {
       body = await response.json();
-    } catch {
-      // Non-JSON error bodies (e.g. upstream HTML errors) — leave body undefined.
-    }
+    } catch { /* non-JSON body */ }
     let message = `HTTP ${response.status}`;
     if (body && typeof body === 'object') {
       const obj = body as Record<string, unknown>;
