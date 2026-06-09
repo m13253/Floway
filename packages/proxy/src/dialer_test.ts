@@ -168,7 +168,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
       runProxiedRequest(config, target, { method: 'GET', path: '/', headers: {} }, baseOptions()),
     ).rejects.toBeInstanceOf(Error);
     expect(cancelCalls).toBeGreaterThan(0);
-    expect((lastCancelReason as Error)?.message ?? '').toMatch(/.+/);
+    expect(lastCancelReason).toBeInstanceOf(Error);
   });
 });
 

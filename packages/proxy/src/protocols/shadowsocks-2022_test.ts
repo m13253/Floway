@@ -357,12 +357,12 @@ describe('dialShadowsocks2022 — response-side SIP022 checks', () => {
 
   it('accepts a response exactly 30s in the past (boundary inclusive)', async () => {
     const r = await runWithServerHandshakeOptions({ skewSec: 30, echoCorrect: true });
-    expect((r as { value?: Uint8Array }).value).toBeDefined();
+    expect(new TextDecoder().decode((r as { value: Uint8Array }).value)).toBe('OK');
   });
 
   it('accepts a response exactly 30s in the future (boundary inclusive)', async () => {
     const r = await runWithServerHandshakeOptions({ skewSec: -30, echoCorrect: true });
-    expect((r as { value?: Uint8Array }).value).toBeDefined();
+    expect(new TextDecoder().decode((r as { value: Uint8Array }).value)).toBe('OK');
   });
 });
 

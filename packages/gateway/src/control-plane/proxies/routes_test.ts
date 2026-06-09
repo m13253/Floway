@@ -10,14 +10,14 @@ import { assertEquals, assertExists } from '@floway-dev/test-utils';
 // socket, so this fully isolates the handler from the network. Reset the
 // singleton in afterEach so a later suite that expects an uninitialized
 // SocketDial doesn't see this stub.
-const stubFailingSocketDial = (message: string): SocketDial => ({
+const stubFailingSocketDial = (): SocketDial => ({
   connect: async () => {
-    throw new Error(message);
+    throw new Error('stub: dial refused');
   },
 });
 
 beforeEach(() => {
-  initSocketDial(stubFailingSocketDial('stub: dial refused'));
+  initSocketDial(stubFailingSocketDial());
 });
 
 afterEach(() => {
