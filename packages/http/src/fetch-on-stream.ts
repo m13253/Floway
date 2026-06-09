@@ -3,6 +3,7 @@
 // for our userspace-TLS-wrapped streams.
 
 import { HttpProtocolError } from './errors.ts';
+import { TCHAR } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
@@ -24,10 +25,6 @@ export interface FetchOnStreamOptions {
    */
   bodyWriteChunkSize?: number;
 }
-
-// RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
-// "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-const TCHAR = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 const validateRequestHeaderName = (name: string): void => {
   if (!TCHAR.test(name)) {
