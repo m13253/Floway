@@ -175,7 +175,6 @@ const readResponseHead = async (
     );
   }
   for (const line of lines) {
-    if (line.length === 0) continue;
     // RFC 9112 §5.2: obs-fold (a continuation line beginning with SP/HTAB)
     // is deprecated and MUST be rejected.
     const first = line.charCodeAt(0);
