@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultsFor, formKindOf, isValidPort, isValidUuid, switchKind } from './proxy-form-defaults.ts';
+import { formKindOf, isValidPort, isValidUuid, switchKind } from './proxy-form-defaults.ts';
+import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
 
 describe('formKindOf', () => {
@@ -15,34 +16,12 @@ describe('formKindOf', () => {
   });
 });
 
-describe('defaultsFor', () => {
-  const ctx = { host: 'srv', port: 0, name: 'srv:0' };
-
-  it('seeds shadowsocks with an aead method', () => {
-    const c = defaultsFor('ss', ctx);
-    expect(c.kind).toBe('ss');
-    expect(c).toMatchObject({ method: 'aes-256-gcm', password: '' });
-  });
-
-  it('seeds reality with empty required fields the operator must supply', () => {
-    const c = defaultsFor('reality', ctx);
-    expect(c).toMatchObject({ kind: 'reality', uuid: '', publicKey: '', serverName: '' });
-  });
-
-  it('chooses canonical default ports per kind when current is 0', () => {
-    expect(defaultsFor('http', ctx).port).toBe(8080);
-    expect(defaultsFor('https', ctx).port).toBe(443);
-    expect(defaultsFor('socks5', ctx).port).toBe(1080);
-    expect(defaultsFor('ss', ctx).port).toBe(8388);
-    expect(defaultsFor('reality', ctx).port).toBe(443);
-  });
-
-  it('keeps the existing port when one was already typed', () => {
-    expect(defaultsFor('http', { ...ctx, port: 31280 }).port).toBe(31280);
-  });
-});
-
 describe('switchKind', () => {
+  // switchKind routes through the per-kind seed function with the current
+  // config's host/port/name; these cases pin the per-kind seed shape and the
+  // canonical-port behavior through that single observable surface.
+  const seed: ProxyConfig = { kind: 'http', tls: false, host: 'srv', port: 0, name: 'srv:0' };
+
   it('preserves host, port, name across the swap and resets kind-specific fields', () => {
     const before = parseProxyUri('vless://aaaa-uuid@h:443?type=tcp&security=tls#mine');
     const after = switchKind(before, 'trojan');
@@ -54,17 +33,48 @@ describe('switchKind', () => {
       password: '',
     });
   });
+
+  it('seeds shadowsocks with an aead method', () => {
+    const c = switchKind(seed, 'ss');
+    expect(c.kind).toBe('ss');
+    expect(c).toMatchObject({ method: 'aes-256-gcm', password: '' });
+  });
+
+  it('seeds reality with empty required fields the operator must supply', () => {
+    expect(switchKind(seed, 'reality')).toMatchObject({
+      kind: 'reality', uuid: '', publicKey: '', serverName: '',
+    });
+  });
+
+  it('chooses canonical default ports per kind when current is 0', () => {
+    expect(switchKind(seed, 'http').port).toBe(8080);
+    expect(switchKind(seed, 'https').port).toBe(443);
+    expect(switchKind(seed, 'socks5').port).toBe(1080);
+    expect(switchKind(seed, 'ss').port).toBe(8388);
+    expect(switchKind(seed, 'reality').port).toBe(443);
+  });
+
+  it('keeps the existing port when one was already typed', () => {
+    const typed: ProxyConfig = { ...seed, port: 31280 };
+    expect(switchKind(typed, 'http').port).toBe(31280);
+  });
 });
 
 describe('round-trip through formatProxyUri', () => {
   it('a freshly seeded HTTP config formats and parses back without loss', () => {
-    const c = defaultsFor('http', { host: 'p.example.com', port: 0, name: 'p.example.com:8080' });
+    const c = switchKind(
+      { kind: 'http', tls: false, host: 'p.example.com', port: 0, name: 'p.example.com:8080' },
+      'http',
+    );
     const uri = formatProxyUri(c);
     expect(parseProxyUri(uri)).toEqual(c);
   });
 
   it('a freshly seeded VLESS-WS config formats and parses back without loss', () => {
-    const c = defaultsFor('vless-ws', { host: 'h', port: 443, name: 'h:443' });
+    const c = switchKind(
+      { kind: 'http', tls: false, host: 'h', port: 443, name: 'h:443' },
+      'vless-ws',
+    );
     // Insert a UUID so VLESS dialing-time validation would accept it; the
     // URL grammar itself does not reject empty UUIDs, but we want a realistic
     // round-trip.
