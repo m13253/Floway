@@ -194,7 +194,7 @@ const sendUpgradeRequest = async (
     }
     lines.push(`${name}: ${value}`);
   }
-  const head = lines.join('\r\n') + '\r\n\r\n';
+  const head = `${lines.join('\r\n')}\r\n\r\n`;
   await writer.write(asciiBytes(head));
 };
 

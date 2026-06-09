@@ -8,8 +8,8 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 import { describe, expect, it } from 'vitest';
 
-import { wsUpgradeAndFrame } from './ws-upgrade.ts';
 import { makeFakeDuplex } from './test-utils.ts';
+import { wsUpgradeAndFrame } from './ws-upgrade.ts';
 
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -87,8 +87,9 @@ const parseClientFrame = (
   const len7 = buf[1]! & 0x7f;
   let off = 2;
   let payloadLen: number;
-  if (len7 <= 125) { payloadLen = len7; }
-  else if (len7 === 126) {
+  if (len7 <= 125) {
+    payloadLen = len7;
+  } else if (len7 === 126) {
     if (buf.byteLength < 4) return null;
     payloadLen = (buf[2]! << 8) | buf[3]!;
     off = 4;

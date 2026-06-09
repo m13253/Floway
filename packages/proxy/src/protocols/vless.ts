@@ -7,13 +7,12 @@
 // `fetch().webSocket` trick is unnecessary now that the upgrade lives in
 // user-space.
 
-import { wsUpgradeAndFrame } from '@floway-dev/http';
-
 import { ProxyDialError } from '../errors.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
+import { wsUpgradeAndFrame } from '@floway-dev/http';
 
 export const dialVlessTcpTls = async (
   config: VlessTcpTlsProxyConfig,
