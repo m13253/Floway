@@ -373,8 +373,10 @@ const frameDuplexOnTransport = (
   // Reassembly state for fragmented messages. RFC 6455 §5.4 allows a
   // message to span FIN=0 frames followed by a FIN=1 continuation; we
   // concatenate the parts and only enqueue once the message is whole, so
-  // the consumer never sees a partial inner-protocol record.
-  let messageOpcode = -1;
+  // the consumer never sees a partial inner-protocol record. Text and
+  // binary opcodes (0x1, 0x2) are not distinguished here — the inner
+  // protocol is byte-oriented and treats them equally.
+  let inMessage = false;
   const messageParts: Uint8Array[] = [];
   let messageSize = 0;
 
@@ -402,7 +404,7 @@ const frameDuplexOnTransport = (
       return;
     }
     if (opcode === 0x0) {
-      if (messageOpcode === -1) {
+      if (!inMessage) {
         throw new HttpProtocolError(
           'WS frame: continuation frame with no message in progress',
           'BAD_HEADERS',
@@ -410,14 +412,14 @@ const frameDuplexOnTransport = (
         );
       }
     } else if (opcode === 0x1 || opcode === 0x2) {
-      if (messageOpcode !== -1) {
+      if (inMessage) {
         throw new HttpProtocolError(
           `WS frame: new message (opcode ${opcode}) started while a previous message was in progress`,
           'BAD_HEADERS',
           { rfc: 'RFC 6455 §5.4' },
         );
       }
-      messageOpcode = opcode;
+      inMessage = true;
     } else {
       throw new HttpProtocolError(
         `WS frame: reserved opcode 0x${opcode.toString(16)}`,
@@ -434,14 +436,10 @@ const frameDuplexOnTransport = (
     }
     messageParts.push(payload);
     if (!fin) return;
-    // Reassemble into one chunk and hand to the consumer. Text frames
-    // (opcode 0x1) are surfaced as their UTF-8 bytes — the inner protocol
-    // (e.g. VLESS) is byte-oriented and treats either equally; the proxy
-    // library only sends binary frames anyway.
     const message = messageParts.length === 1
       ? messageParts[0]!
       : joinChunks(messageParts, messageSize);
-    messageOpcode = -1;
+    inMessage = false;
     messageParts.length = 0;
     messageSize = 0;
     try {
