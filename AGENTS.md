@@ -89,7 +89,11 @@ library at the dial-layer composition root. `apps/platform-*` depend on
 `platform` + `gateway` plus their target's runtime libraries
 (`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the
 only places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext,
-sharp, node:sqlite, fs) appear. `apps/web` depends on `ui` and type-imports
+sharp, node:sqlite, fs) appear. `apps/web` depends on `ui` + `proxy` (the
+latter only via its `/url`, `/url-kind`, `/proxy-config`, and `/constants`
+subpath exports — chosen so the dashboard's proxy editor reuses URI
+parse/format and config types without pulling dialers, userspace TLS, or
+Node `crypto` into the SPA bundle), and type-imports
 `@floway-dev/gateway/app-type` for Hono RPC client typing.
 
 ESLint forbids any workspace file from importing `@floway-dev/platform-*`
