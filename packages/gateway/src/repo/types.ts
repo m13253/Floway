@@ -120,7 +120,6 @@ export interface UsersRepo {
   list(): Promise<User[]>;
   listIncludingDeleted(): Promise<User[]>;
   getById(id: number): Promise<User | null>;
-  getByIdIncludingDeleted(id: number): Promise<User | null>;
   findByUsername(username: string): Promise<User | null>;
   // Upsert by id; the caller owns id allocation. Throws when the username is
   // already taken by another active row, so duplicate-username races surface

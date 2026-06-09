@@ -3,8 +3,6 @@ import { hc } from 'hono/client';
 import { useAuthStore } from '../stores/auth.ts';
 import type { AppType } from '@floway-dev/gateway/app-type';
 
-// Injects the dashboard session token on every outbound request and clears the
-// store on 401 so the router guard redirects to /login.
 const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const headers = new Headers(init?.headers);
   const token = useAuthStore().authToken;
@@ -28,7 +26,6 @@ export interface GlobalError {
 
 export type ApiResult<T> = { data: T; error?: undefined } | { data?: undefined; error: GlobalError };
 
-// Unwrap a Hono RPC response into a discriminated `{ data } | { error }`.
 export const callApi = async <T>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<T>> => {

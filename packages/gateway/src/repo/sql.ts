@@ -238,14 +238,6 @@ class SqlUsersRepo implements UsersRepo {
     return row ? toUser(row) : null;
   }
 
-  async getByIdIncludingDeleted(id: number): Promise<User | null> {
-    const row = await this.db
-      .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-      .bind(id)
-      .first<UserRow>();
-    return row ? toUser(row) : null;
-  }
-
   async findByUsername(username: string): Promise<User | null> {
     const row = await this.db
       .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE username = ? AND deleted_at IS NULL`)

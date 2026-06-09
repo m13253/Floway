@@ -13,7 +13,7 @@ export const useUsersPageData = defineBasicLoader(async () => {
     upstreamOptions.load(),
   ]);
   const error = usersRes.error?.message ?? upstreamOptions.error.value;
-  return { users: usersRes.data ?? [], error };
+  return { users: usersRes.error ? [] : usersRes.data, error };
 });
 </script>
 
@@ -122,7 +122,6 @@ const remove = async (u: WireUser) => {
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
       @created="reload"
-      @saved="onUserSaved"
     />
     <UserDialog
       v-else-if="editTarget"
@@ -131,7 +130,6 @@ const remove = async (u: WireUser) => {
       :user="editTarget"
       :actor-user-id="actorUserId"
       :upstreams="upstreamOptions"
-      @created="reload"
       @saved="onUserSaved"
     />
     <PasswordDialog

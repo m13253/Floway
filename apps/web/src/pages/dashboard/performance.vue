@@ -37,7 +37,7 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   return {
     view,
     overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] },
-    error: overviewRes.error?.message ?? null,
+    error: overviewRes.error ? overviewRes.error.message : null,
   };
 });
 </script>
@@ -114,8 +114,8 @@ watchEffect(() => {
   if (!options.includes(performanceModel.value)) performanceModel.value = options[0]!;
 });
 
-const formatDuration = (ms: number | null | undefined) => {
-  if (ms === null || ms === undefined) return '—';
+const formatDuration = (ms: number | null) => {
+  if (ms === null) return '—';
   if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`;
   return `${Math.round(ms)}ms`;

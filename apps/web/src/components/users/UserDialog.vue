@@ -42,10 +42,9 @@ const reset = () => {
     password.value = '';
     isAdmin.value = props.user.isAdmin;
     canViewGlobalTelemetry.value = props.user.canViewGlobalTelemetry;
-    upstreamSelection.value = {
-      override: props.user.upstreamIds !== null,
-      ids: props.user.upstreamIds ?? [],
-    };
+    upstreamSelection.value = props.user.upstreamIds === null
+      ? { override: false, ids: [] }
+      : { override: true, ids: props.user.upstreamIds };
   }
   error.value = null;
 };

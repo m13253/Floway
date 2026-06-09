@@ -74,10 +74,8 @@ const extractApiKey = (c: Context): string | null => {
 export const userUpstreamIdsFromContext = (c: Context): readonly string[] | null =>
   c.get('userUpstreamIds') as readonly string[] | null;
 
-// Composes the per-user upstream cap with the per-key whitelist: any side `null`
-// means unrestricted; both sides set return their intersection (preserving the
-// per-key priority order). Empty intersection falls through to the downstream
-// "no upstream available" error path.
+// Composes the per-user upstream cap with the per-key whitelist: null on either
+// side means unrestricted; both sides set return their intersection.
 export const effectiveUpstreamIdsFromContext = (c: Context): readonly string[] | null => {
   const userIds = userUpstreamIdsFromContext(c);
   const keyIds = c.get('apiKeyUpstreamIds') as readonly string[] | null;

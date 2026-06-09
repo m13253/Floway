@@ -96,8 +96,6 @@ const queryRecordsForView = async (
   return params.keyId !== undefined ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
-// Includes soft-deleted keys so historical telemetry on a since-deleted key
-// still resolves.
 const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
   const keys = await getRepo().apiKeys.listIncludingDeleted();
   return new Map(keys.map(k => [k.id, k.userId] as const));

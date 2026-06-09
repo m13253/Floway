@@ -55,11 +55,6 @@ class MemoryUsersRepo implements UsersRepo {
     return Promise.resolve(u ? { ...u } : null);
   }
 
-  getByIdIncludingDeleted(id: number): Promise<User | null> {
-    const u = this.users.find(u => u.id === id);
-    return Promise.resolve(u ? { ...u } : null);
-  }
-
   findByUsername(username: string): Promise<User | null> {
     const u = this.users.find(u => u.username === username && u.deletedAt === null);
     return Promise.resolve(u ? { ...u } : null);

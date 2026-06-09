@@ -45,7 +45,6 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     const including = (await repo.users.listIncludingDeleted()).find(u => u.id === 2);
     expect(including).toBeDefined();
     expect(including!.deletedAt).not.toBeNull();
-    expect(await repo.users.getByIdIncludingDeleted(2)).not.toBeNull();
   });
 
   test('softDelete returns false for an unknown or already-deleted user', async () => {

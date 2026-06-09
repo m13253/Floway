@@ -33,11 +33,11 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
   if (await repo.users.findByUsername(body.username)) {
     return c.json({ error: 'username taken' }, 400);
   }
-  const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds ?? null);
-  if (upstreamErr) return c.json({ error: upstreamErr }, 400);
+  if (body.upstreamIds !== undefined) {
+    const upstreamErr = await validateUpstreamIdsExist(body.upstreamIds);
+    if (upstreamErr) return c.json({ error: upstreamErr }, 400);
+  }
 
-  // Soft-deleted ids stay reserved so a recreated username never collides
-  // with an old id.
   const all = await repo.users.listIncludingDeleted();
   const newId = all.reduce((max, u) => Math.max(max, u.id), 0) + 1;
 
