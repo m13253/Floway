@@ -163,7 +163,13 @@ const readResponseHead = async (
     );
   }
   const status = parseInt(m[2]!, 10);
-  const statusText = m[3]!;
+  // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). The reason-phrase grammar
+  // forbids leading OWS (enforced by the `\S` first-byte anchor) but
+  // greedy `.*` keeps trailing SP/HTAB up to the CRLF, so a misbehaving
+  // upstream sending `HTTP/1.1 200 OK   ` would otherwise surface
+  // trailing whitespace through statusText. Trim it to match the
+  // RawHttpResponse.statusText contract.
+  const statusText = m[3]!.replace(/[ \t]+$/, '');
 
   const respHeaders = new Headers();
   // Track raw header lines so we can validate framing-related fields off

@@ -798,6 +798,11 @@ describe('parseHttpResponse — wire-faithful return shape', () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 \r\nContent-Length: 0\r\n\r\n'));
     expect(r.statusText).toBe('');
   });
+
+  it('trims trailing OWS from the reason-phrase (matches RawHttpResponse.statusText contract)', async () => {
+    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK   \r\nContent-Length: 0\r\n\r\n'));
+    expect(r.statusText).toBe('OK');
+  });
 });
 
 describe('toWebResponse', () => {

@@ -9,9 +9,9 @@
 // Control frames are handled internally — ping → pong, close → tear down.
 //
 // This is the runtime-agnostic alternative to workerd's
-// `fetch().webSocket` trick. The proxy library uses it to make VLESS-WS
-// structurally identical to VLESS-TCP+TLS: dial → optional outer TLS →
-// WS upgrade → VLESS framing.
+// `fetch().webSocket` trick. Lets WebSocket-tunnelled byte-stream
+// protocols stay runtime-agnostic the same way TCP+TLS protocols already
+// are: dial → optional outer TLS → WS upgrade → caller's framing.
 
 import { sha1 } from '@noble/hashes/legacy.js';
 
@@ -68,7 +68,7 @@ const WS_16BIT_LEN_MAX = 0xffff;
 // Cap on a single message reassembled across continuation frames. A
 // rogue server that streams a fragmented message indefinitely would
 // otherwise pin unbounded heap in `messageParts`. 64 MiB is far past
-// any single LLM response or VLESS-framed application record.
+// any reasonable WebSocket message a sane peer would emit.
 const WS_MAX_MESSAGE_SIZE = 64 * 1024 * 1024;
 
 // Cap on the upgrade-response head accumulation. RFC has no defined
@@ -449,7 +449,7 @@ const frameDuplexOnTransport = (
     if (messageSize > WS_MAX_MESSAGE_SIZE) {
       throw new HttpProtocolError(
         `WS message exceeded ${WS_MAX_MESSAGE_SIZE} bytes across continuation frames`,
-        'HEADER_BUFFER_OVERFLOW',
+        'WS_MESSAGE_TOO_LARGE',
       );
     }
     messageParts.push(payload);
