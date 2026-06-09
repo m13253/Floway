@@ -152,7 +152,7 @@ const now = useNow({ interval: 1000 });
 
 const activeBackoffs = computed(() => {
   const nowSec = Math.floor(now.value.getTime() / 1000);
-  return [...backoffsForProxy.value]
+  return backoffsForProxy.value
     .filter(b => b.expires_at > nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
