@@ -116,26 +116,50 @@ describe('parseProxyUri', () => {
 
   it('parses VLESS TCP+TLS', () => {
     const uri =
-      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#v';
+      'vless://aaaa-uuid@h:443?type=tcp&security=tls#v';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-tcp',
       uuid: 'aaaa-uuid',
       host: 'h',
       port: 443,
-      sni: 'h',
+      name: 'v',
+    });
+  });
+
+  it('drops a `?sni=` query param on VLESS-TCP+TLS — neither workerd connect(tls=true) nor node:tls servername-via-host supports an SNI override on the wire, so persisting it would be fake config', () => {
+    const uri =
+      'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=front#v';
+    expect(parseProxyUri(uri)).toEqual({
+      kind: 'vless-tcp',
+      uuid: 'aaaa-uuid',
+      host: 'h',
+      port: 443,
       name: 'v',
     });
   });
 
   it('parses VLESS WS+TLS', () => {
     const uri =
-      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h#vw';
+      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws#vw';
     expect(parseProxyUri(uri)).toEqual({
       kind: 'vless-ws',
       uuid: 'u',
       host: 'h',
       port: 443,
-      sni: 'h',
+      wsHost: 'front',
+      path: '/ws',
+      name: 'vw',
+    });
+  });
+
+  it('drops a `?sni=` query param on VLESS-WS+TLS — the WS upgrade goes through runtime fetch which ties SNI to the URL host, so an override would never reach the wire', () => {
+    const uri =
+      'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=ignored#vw';
+    expect(parseProxyUri(uri)).toEqual({
+      kind: 'vless-ws',
+      uuid: 'u',
+      host: 'h',
+      port: 443,
       wsHost: 'front',
       path: '/ws',
       name: 'vw',
@@ -192,8 +216,8 @@ describe('formatProxyUri', () => {
     'ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#tag',
     'ss://2022-blake3-aes-128-gcm:MTIzNDU2Nzg5MGFiY2RlZg==@1.2.3.4:8388#tag',
     'trojan://pw@example.com:443?sni=example.com&allowInsecure=0#t',
-    'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#v',
-    'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws&sni=h#vw',
+    'vless://aaaa-uuid@h:443?type=tcp&security=tls#v',
+    'vless://u@h:443?type=ws&security=tls&host=front&path=%2Fws#vw',
     'vless://u@h:443?type=tcp&security=reality&pbk=PUB&sni=site&sid=ab#r',
   ];
 

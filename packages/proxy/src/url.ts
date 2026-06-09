@@ -210,11 +210,17 @@ const parseVless = (
   const uuid = decodeURIComponent(url.username);
   const type = url.searchParams.get('type') ?? 'tcp';
   const security = url.searchParams.get('security') ?? 'tls';
-  const sni = url.searchParams.get('sni') ?? undefined;
 
   if (type === 'tcp' && security === 'reality') {
+    const sni = url.searchParams.get('sni') ?? undefined;
     return parseReality(url, host, port, name, uuid, sni);
   }
+  // VLESS-TCP+TLS goes through the runtime's native TLS via `socketDial(tls=true)`,
+  // and VLESS-WS+TLS goes through the runtime's `fetch()`. Neither surface
+  // accepts an SNI override separate from the URL host, so a `?sni=` query
+  // param is silently ignored by the parser to avoid round-tripping a field
+  // the dialer cannot honour. REALITY keeps `?sni=` as the spoofed front
+  // domain because its userspace TLS stack drives the SNI directly.
   if (type === 'tcp' && security === 'tls') {
     const config: VlessTcpTlsProxyConfig = {
       kind: 'vless-tcp',
@@ -223,7 +229,6 @@ const parseVless = (
       port,
       name,
     };
-    if (sni) config.sni = sni;
     return config;
   }
   if (type === 'ws' && security === 'tls') {
@@ -236,7 +241,6 @@ const parseVless = (
       name,
       path,
     };
-    if (sni) config.sni = sni;
     const wsHost = url.searchParams.get('host');
     if (wsHost) config.wsHost = wsHost;
     return config;
@@ -383,7 +387,6 @@ const formatVlessTcp = (config: VlessTcpTlsProxyConfig): string => {
   const query = formatQuery({
     type: 'tcp',
     security: 'tls',
-    sni: config.sni,
   });
   return `${authority}${query}${
     formatFragment(config.name, config.host, config.port)}`;
@@ -398,7 +401,6 @@ const formatVlessWs = (config: VlessWsTlsProxyConfig): string => {
     security: 'tls',
     host: config.wsHost,
     path: config.path,
-    sni: config.sni,
   });
   return `${authority}${query}${
     formatFragment(config.name, config.host, config.port)}`;

@@ -68,13 +68,11 @@ export interface TrojanProxyConfig extends ProxyConfigBase {
 export interface VlessTcpTlsProxyConfig extends ProxyConfigBase {
   kind: 'vless-tcp';
   uuid: string;
-  sni?: string;
 }
 
 export interface VlessWsTlsProxyConfig extends ProxyConfigBase {
   kind: 'vless-ws';
   uuid: string;
-  sni?: string;
   /** WebSocket Host header; defaults to host. */
   wsHost?: string;
   /** WebSocket path. */

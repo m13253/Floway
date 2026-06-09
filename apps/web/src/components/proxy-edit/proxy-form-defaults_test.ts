@@ -44,7 +44,7 @@ describe('defaultsFor', () => {
 
 describe('switchKind', () => {
   it('preserves host, port, name across the swap and resets kind-specific fields', () => {
-    const before = parseProxyUri('vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=h#mine');
+    const before = parseProxyUri('vless://aaaa-uuid@h:443?type=tcp&security=tls#mine');
     const after = switchKind(before, 'trojan');
     expect(after).toEqual({
       kind: 'trojan',

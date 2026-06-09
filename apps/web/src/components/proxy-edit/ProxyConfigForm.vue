@@ -299,15 +299,6 @@ const reality = computed<RealityProxyConfig | null>(() =>
           @update:model-value="v => updateVlessTcp({ uuid: v })"
         />
       </div>
-      <div class="space-y-1.5">
-        <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
-        <Input
-          :model-value="vlessTcp.sni ?? ''"
-          placeholder="defaults to host"
-          class="font-mono"
-          @update:model-value="v => updateVlessTcp({ sni: v === '' ? undefined : v })"
-        />
-      </div>
     </template>
 
     <template v-if="vlessWs">
@@ -319,15 +310,6 @@ const reality = computed<RealityProxyConfig | null>(() =>
           placeholder="00000000-0000-0000-0000-000000000000"
           class="font-mono"
           @update:model-value="v => updateVlessWs({ uuid: v })"
-        />
-      </div>
-      <div class="space-y-1.5">
-        <label class="block text-xs font-medium text-gray-500">SNI <span class="text-gray-600">(optional)</span></label>
-        <Input
-          :model-value="vlessWs.sni ?? ''"
-          placeholder="defaults to host"
-          class="font-mono"
-          @update:model-value="v => updateVlessWs({ sni: v === '' ? undefined : v })"
         />
       </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
