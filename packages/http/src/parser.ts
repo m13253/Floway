@@ -305,32 +305,29 @@ const finalizeResponse = (
   return { status, statusText, headers, body };
 };
 
-// Body framing — Content-Length. The first chunk can be a partial of the
-// header buffer's remainder; we copy() it so the body stream owns its
-// memory and the header parser's buffer can be released. After `total`
-// bytes have been delivered, any further byte from the transport is a
-// framing error (the next message of a keep-alive connection in our
-// non-keep-alive world means the upstream is broken).
+// Body framing — Content-Length. Frames the body to exactly `total` bytes:
+// surfaces TRAILING_BODY_BYTES if the transport delivers more (the next
+// message of a keep-alive connection in our non-keep-alive world means the
+// upstream is broken) and EOF if it delivers less.
 const lengthBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
   total: number,
 ): ReadableStream<Uint8Array> => {
   let consumed = 0;
-  const ownedHead = copy(head);
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      if (ownedHead.byteLength > total) {
+      if (head.byteLength > total) {
         controller.error(new HttpProtocolError(
-          `trailing bytes after Content-Length boundary (${ownedHead.byteLength - total} extra in head)`,
+          `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
         ));
         try { await reader.cancel(); } catch { /* reader already cancelled */ }
         return;
       }
-      if (ownedHead.byteLength) {
-        controller.enqueue(ownedHead);
-        consumed += ownedHead.byteLength;
+      if (head.byteLength) {
+        controller.enqueue(head);
+        consumed += head.byteLength;
       }
       if (consumed >= total) {
         controller.close();
@@ -374,17 +371,14 @@ const lengthBody = (
   });
 };
 
-// Body framing — read until EOF. The head buffer is copy()'d to match
-// lengthBody's ownership rule: the body stream owns its bytes regardless
-// of which framing path produced them.
+// Body framing — read until EOF.
 const untilEofBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
 ): ReadableStream<Uint8Array> => {
-  const ownedHead = copy(head);
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      if (ownedHead.byteLength) controller.enqueue(ownedHead);
+      if (head.byteLength) controller.enqueue(head);
     },
     async pull(controller) {
       const { value, done } = await reader.read();
