@@ -108,16 +108,19 @@ const banner = computed(() => modelsError.value ?? initialData.data.value.keysEr
               </div>
               <div class="text-[11px] font-mono truncate mt-0.5 opacity-60">{{ m.id }}</div>
             </button>
-            <div v-if="filteredChatModels.length === 0" class="p-4 text-center text-gray-600 text-xs">No models found</div>
+            <div v-if="filteredChatModels.length === 0" class="p-4 text-center text-gray-600 text-xs">{{ modelsSearch.trim() ? 'No models match your search' : 'No models available' }}</div>
           </template>
-          <div v-else class="p-4 text-center text-gray-600 text-xs">No models found</div>
+          <div v-else class="p-4 text-center text-gray-600 text-xs">No models available</div>
         </OverlayScrollbars>
       </div>
 
       <div class="flex-1 flex flex-col min-w-0 min-h-0">
         <template v-if="chatModelInfo">
           <ModelInfoBar :model="chatModelInfo" @clear="chatPanelRef?.clear()" />
-          <ChatPanel ref="chatPanel" :model-id="chatModelInfo.id" :api-key="selectedApiKey" />
+          <ChatPanel v-if="selectedApiKey" ref="chatPanel" :model-id="chatModelInfo.id" :api-key="selectedApiKey" />
+          <div v-else class="flex-1 flex items-center justify-center px-6 text-center text-gray-600 text-sm">
+            Create an API key in the Keys tab to chat with models.
+          </div>
         </template>
         <div v-else class="flex-1 flex items-center justify-center text-gray-600 text-sm">Select a model to begin</div>
       </div>

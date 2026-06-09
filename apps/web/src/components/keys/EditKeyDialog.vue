@@ -50,6 +50,10 @@ const save = async () => {
     error.value = 'Name is required';
     return;
   }
+  if (upstreamSelection.value.override && upstreamSelection.value.ids.length === 0) {
+    error.value = 'Select at least one upstream, or turn off the override to use every upstream available to you.';
+    return;
+  }
   saving.value = true;
   error.value = null;
   const body = {

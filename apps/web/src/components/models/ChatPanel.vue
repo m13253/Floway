@@ -61,7 +61,7 @@ const sendChatMessage = async () => {
   if (!text && !img) return;
   if (!props.modelId) return;
 
-  chatMessages.value.push({ role: 'user', text: text || '(image)', imageUrl: img || undefined });
+  chatMessages.value.push({ role: 'user', text, imageUrl: img || undefined });
   chatInput.value = '';
   chatImageUrl.value = '';
   chatShowImage.value = false;

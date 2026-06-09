@@ -70,6 +70,10 @@ const submit = async () => {
   }
   saving.value = true;
   error.value = null;
+  if (upstreamSelection.value.override && upstreamSelection.value.ids.length === 0) {
+    error.value = 'Select at least one upstream, or turn off the override to allow all upstreams.';
+    return;
+  }
   const upstreamIds = upstreamSelection.value.override ? upstreamSelection.value.ids : null;
 
   if (props.mode === 'create') {
