@@ -517,8 +517,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
     }
     users = usersResult.records;
-    // v4 payloads must be self-contained: user 1 present, every apiKey.userId
-    // resolved within the payload.
     if (!users.some(u => u.id === 1)) {
       return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
     }

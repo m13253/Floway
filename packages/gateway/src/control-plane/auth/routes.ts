@@ -1,6 +1,3 @@
-// POST /auth/login: empty username + ADMIN_KEY logs in as the seed admin
-// (user 1); otherwise verify password against the user row.
-
 import type { Context } from 'hono';
 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
@@ -21,7 +18,7 @@ export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
       return c.json({ error: 'Invalid username or password' }, 401);
     }
     const user = await repo.users.getById(1);
-    if (!user) return c.json({ error: 'Invalid username or password' }, 401);
+    if (!user) throw new Error('ADMIN_KEY login: seed admin (user 1) is missing');
     const session = await repo.sessions.create(user.id);
     return c.json({ token: session.id, user: userToEffectiveWire(user) });
   }

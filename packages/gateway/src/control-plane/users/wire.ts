@@ -1,6 +1,5 @@
 import type { User } from '../../repo/types.ts';
 
-// Admin implies canViewGlobalTelemetry.
 export const userToEffectiveWire = (user: User) => ({
   id: user.id,
   username: user.username,

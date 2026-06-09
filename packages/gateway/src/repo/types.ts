@@ -107,8 +107,6 @@ export interface ApiKeyRepo {
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
-  // Telemetry scope: historical rows belong to the user even after the key is
-  // soft-deleted, so this returns active + soft-deleted ids.
   idsByUserIdIncludingDeleted(userId: number): Promise<string[]>;
   save(key: ApiKey): Promise<void>;
   softDelete(id: string): Promise<boolean>;
