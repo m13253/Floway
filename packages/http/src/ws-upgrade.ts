@@ -364,7 +364,11 @@ const frameDuplexOnTransport = (
   };
 
   const sendCloseFrame = async (code: number, reason: string): Promise<void> => {
-    const reasonBytes = asciiBytes(reason);
+    // RFC 6455 §5.5: control-frame payload MUST be ≤ 125 bytes. The 2-byte
+    // status code leaves 123 bytes for the reason. Encode first, then byte-
+    // truncate at a UTF-8 boundary — slicing the JS string is char-level and
+    // a single multi-byte code point at the cap would split mid-sequence.
+    const reasonBytes = truncateUtf8(asciiBytes(reason), 123);
     const payload = new Uint8Array(2 + reasonBytes.byteLength);
     payload[0] = (code >> 8) & 0xff;
     payload[1] = code & 0xff;
@@ -537,7 +541,7 @@ const frameDuplexOnTransport = (
     },
     async abort(reason) {
       const code = 1011;
-      await sendCloseFrame(code, String(reason ?? '').slice(0, 120));
+      await sendCloseFrame(code, String(reason ?? ''));
       try { await frameWriter.abort(reason); } catch { /* peer already gone */ }
     },
   });
@@ -684,6 +688,18 @@ const joinChunks = (parts: Uint8Array[], total: number): Uint8Array => {
 };
 
 const asciiBytes = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+// Truncate a UTF-8 byte buffer to at most `max` bytes without splitting a
+// multi-byte code point. UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF);
+// step back from the cap until we land on a byte that is either ASCII
+// (0x00..0x7F) or a leading byte (0xC0..0xFF), at which point the prefix is
+// a complete sequence of code points.
+const truncateUtf8 = (bytes: Uint8Array, max: number): Uint8Array => {
+  if (bytes.byteLength <= max) return bytes;
+  let cut = max;
+  while (cut > 0 && (bytes[cut]! & 0xc0) === 0x80) cut--;
+  return bytes.subarray(0, cut);
+};
 
 const base64Encode = (bytes: Uint8Array): string => {
   let bin = '';

@@ -448,4 +448,34 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     ac.abort(new DOMException('cancelled', 'AbortError'));
     await fake.waitWritableClosed();
   });
+
+  it('byte-truncates the abort reason so the close frame stays inside the 125-byte control-frame cap', async () => {
+    // RFC 6455 §5.5: control-frame payload MUST be ≤ 125 bytes (status code
+    // + reason). A reason whose UTF-8 encoding exceeds 123 bytes — easy to
+    // hit with multi-byte code points, where one JS char = 4 bytes — would
+    // otherwise produce a malformed close frame our own receive parser
+    // rejects.
+    const fake = makeFakeDuplex();
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    const handshakeBytes = fake.written().byteLength;
+    // 100 emoji → 400 UTF-8 bytes — well past the 123-byte reason cap,
+    // and crucially each code point is 4 bytes, so a naive mid-byte slice
+    // would split a UTF-8 sequence.
+    const reason = '\u{1F4A9}'.repeat(100);
+    const writer = stream.writable.getWriter();
+    await writer.abort(reason).catch(() => {});
+    writer.releaseLock();
+    const { frame } = await readClientFrame(fake, handshakeBytes);
+    expect(frame!.opcode).toBe(0x8);
+    expect(frame!.payload.byteLength).toBeLessThanOrEqual(125);
+    expect(frame!.payload[0]).toBe(0x03); // 1011 status code high byte
+    expect(frame!.payload[1]).toBe(0xf3); // 1011 status code low byte
+    // The truncated reason must still decode cleanly — the truncate helper
+    // walks back from the cap to the nearest UTF-8 boundary, never splitting
+    // a multi-byte sequence.
+    const reasonBytes = frame!.payload.subarray(2);
+    expect(() => new TextDecoder('utf-8', { fatal: true }).decode(reasonBytes)).not.toThrow();
+  });
 });
