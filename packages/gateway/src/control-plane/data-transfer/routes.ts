@@ -152,7 +152,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
   return { type: 'ok', records };
 };
 
-const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
+const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
   const records: ApiKey[] = [];
@@ -160,34 +160,24 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
     const record = value[i];
     if (!isRecord(record)) return { type: 'invalid', index: i, error: 'record must be an object' };
     try {
-      const upstreamIdsRaw = version === 3 && record.upstreamIds === undefined ? null : record.upstreamIds;
-      const upstreamIdsParsed = parseUpstreamIdsValue(upstreamIdsRaw);
+      const upstreamIdsParsed = parseUpstreamIdsValue(record.upstreamIds);
       if (!upstreamIdsParsed.ok) throw new Error(upstreamIdsParsed.error);
 
-      let userId: number;
-      let deletedAt: string | null;
-      if (version === 3) {
-        userId = 1;
-        deletedAt = null;
-      } else {
-        if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
-          throw new Error('userId must be a positive integer');
-        }
-        userId = record.userId;
-        if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
-          throw new Error('deletedAt must be null or an ISO string');
-        }
-        deletedAt = record.deletedAt;
+      if (typeof record.userId !== 'number' || !Number.isInteger(record.userId) || record.userId < 1) {
+        throw new Error('userId must be a positive integer');
+      }
+      if (record.deletedAt !== null && typeof record.deletedAt !== 'string') {
+        throw new Error('deletedAt must be null or an ISO string');
       }
       records.push({
         id: nonEmptyString(record.id, 'id'),
-        userId,
+        userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
-        deletedAt,
+        deletedAt: record.deletedAt,
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -497,33 +487,30 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
 /** POST /api/import — import data with merge or replace mode */
 export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const body = c.req.valid('json');
-  const { mode, data, version } = body;
+  const { mode, data } = body;
 
   if (!isRecord(data)) return c.json({ error: 'data is required' }, 400);
 
-  const apiKeysResult = parseApiKeyRecords(data.apiKeys, version);
+  const apiKeysResult = parseApiKeyRecords(data.apiKeys);
   if (apiKeysResult.type === 'invalid') {
     const location = apiKeysResult.index >= 0 ? ` at index ${apiKeysResult.index}` : '';
     return c.json({ error: `invalid apiKeys${location}: ${apiKeysResult.error}` }, 400);
   }
   const apiKeys = apiKeysResult.records;
 
-  let users: User[] = [];
-  if (version === 4) {
-    const usersResult = parseUserRecords(data.users);
-    if (usersResult.type === 'invalid') {
-      const location = usersResult.index >= 0 ? ` at index ${usersResult.index}` : '';
-      return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
-    }
-    users = usersResult.records;
-    if (!users.some(u => u.id === 1)) {
-      return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
-    }
-    const known = new Set(users.map(u => u.id));
-    for (let i = 0; i < apiKeys.length; i++) {
-      if (!known.has(apiKeys[i].userId)) {
-        return c.json({ error: `invalid apiKeys at index ${i}: user_id ${apiKeys[i].userId} does not match any user in the payload` }, 400);
-      }
+  const usersResult = parseUserRecords(data.users);
+  if (usersResult.type === 'invalid') {
+    const location = usersResult.index >= 0 ? ` at index ${usersResult.index}` : '';
+    return c.json({ error: `invalid users${location}: ${usersResult.error}` }, 400);
+  }
+  const users = usersResult.records;
+  if (!users.some(u => u.id === 1)) {
+    return c.json({ error: 'invalid users: payload must include user 1 (the seed admin)' }, 400);
+  }
+  const known = new Set(users.map(u => u.id));
+  for (let i = 0; i < apiKeys.length; i++) {
+    if (!known.has(apiKeys[i].userId)) {
+      return c.json({ error: `invalid apiKeys at index ${i}: user_id ${apiKeys[i].userId} does not match any user in the payload` }, 400);
     }
   }
 
@@ -583,8 +570,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.upstreams.deleteAll(),
       repo.responsesSnapshots.deleteAll(),
       repo.responsesItems.deleteAll(),
+      repo.users.deleteAll(),
     ];
-    if (version === 4) deletes.push(repo.users.deleteAll());
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
     await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
