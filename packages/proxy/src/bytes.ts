@@ -31,11 +31,12 @@ export const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> =>
 };
 
 /**
- * UTF-8-encode an ASCII string. Equivalent to `new TextEncoder().encode(s)`
- * but short enough to use inline in HKDF info / context-binding literals
+ * UTF-8-encode a string. Equivalent to `new TextEncoder().encode(s)` but
+ * short enough to use inline at call sites — HKDF info / context-binding
+ * literals, the SS user password feeding EVP_BytesToKey, and so on —
  * without forcing each caller to keep its own encoder around.
  */
-export const asciiBytes = (s: string): Uint8Array<ArrayBuffer> =>
+export const utf8Bytes = (s: string): Uint8Array<ArrayBuffer> =>
   new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
 
 /** Fill a fresh `n`-byte buffer from the Web Crypto CSPRNG. */

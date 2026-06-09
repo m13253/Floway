@@ -43,7 +43,7 @@ import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { copy, asciiBytes, randomBytes, hexDecode } from '../bytes.ts';
+import { copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -244,7 +244,7 @@ const runRealityHandshake = async (
       // Xray runs HKDF-SHA256 over the shared secret in place (writing 32
       // output bytes back into the 32-byte input buffer). We just call hkdf
       // for 32 bytes.
-      authKey = hkdf(sha256, sharedSecret, clientRandom.subarray(0, 20), asciiBytes('REALITY'), 32);
+      authKey = hkdf(sha256, sharedSecret, clientRandom.subarray(0, 20), utf8Bytes('REALITY'), 32);
 
       const sidStart = 39;
       for (let i = 0; i < 32; i++) {

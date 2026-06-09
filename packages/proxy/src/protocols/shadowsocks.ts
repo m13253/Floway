@@ -21,7 +21,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
-import { asciiBytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
+import { utf8Bytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
@@ -77,7 +77,7 @@ const dialShadowsocksInner = async (
 
   // Per-direction salts and subkeys
   const sendSalt = randomBytes(keyLen);
-  const sendSubkey = hkdf(sha1, masterKey, sendSalt, asciiBytes('ss-subkey'), keyLen);
+  const sendSubkey = hkdf(sha1, masterKey, sendSalt, utf8Bytes('ss-subkey'), keyLen);
   const sendCipher = makeAead(method, sendSubkey);
   let sendNonce = 0n;
 
@@ -109,7 +109,7 @@ const dialShadowsocksInner = async (
       try {
         if (!recvCipher) {
           const saltBuf = await readExactly(keyLen);
-          const recvSubkey = hkdf(sha1, masterKey, saltBuf, asciiBytes('ss-subkey'), keyLen);
+          const recvSubkey = hkdf(sha1, masterKey, saltBuf, utf8Bytes('ss-subkey'), keyLen);
           recvCipher = makeAead(method, recvSubkey);
         }
         const lenSealed = await readExactly(2 + TAG_LEN);
@@ -217,7 +217,7 @@ const nonceBytes = (counter: bigint): Uint8Array<ArrayBuffer> => {
  * Exported for tests.
  */
 export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer> => {
-  const pw = asciiBytes(password);
+  const pw = utf8Bytes(password);
   const out = new Uint8Array(keyLen);
   let prev = new Uint8Array(0);
   let off = 0;
