@@ -226,6 +226,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     updatedAt: '2026-05-01T00:00:00.000Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
+    proxyFallbackList: [],
     config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
@@ -348,7 +349,7 @@ test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400
 });
 
 test('POST /api/upstreams/fetch-models routes through the saved upstream\'s proxy fallback list when an id is supplied', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // A malformed proxy URL surfaces from the per-request fetcher as a dial-time
   // error keyed on the upstream id. directFetcher would have ignored the list
@@ -379,7 +380,7 @@ test('POST /api/upstreams/fetch-models routes through the saved upstream\'s prox
     async () => {
       const resp = await requestApp(
         '/api/upstreams/fetch-models',
-        authed(adminKey, { id: 'up_with_bad_proxy', config: { ...customConfig, bearerToken: '' } }),
+        authed(adminSession, { id: 'up_with_bad_proxy', config: { ...customConfig, bearerToken: '' } }),
       );
       assertEquals(resp.status, 502);
     },
@@ -635,13 +636,13 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
 // the list so the wire response matches what GET returns afterwards.
 
 test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the response', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0, dialTimeoutSeconds: null });
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminKey, createBody({ proxy_fallback_list: ['p_fallback', 'direct'] })),
+    authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct'] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
@@ -652,13 +653,13 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
 });
 
 test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0, dialTimeoutSeconds: null });
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminKey, createBody({ proxy_fallback_list: ['p_fallback', 'direct', 'p_fallback', 'direct'] })),
+    authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct', 'p_fallback', 'direct'] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
@@ -667,24 +668,24 @@ test('POST /api/upstreams normalises proxy_fallback_list duplicates so the respo
   // different list on POST vs the next GET.
   assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
 
-  const get = await requestApp('/api/upstreams', authed(adminKey));
+  const get = await requestApp('/api/upstreams', authed(adminSession));
   const list = (await get.json()) as Array<Record<string, any>>;
   const fresh = list.find(u => u.id === created.id);
   assertEquals(fresh!.proxy_fallback_list, ['p_fallback', 'direct']);
 });
 
 test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', sortOrder: 0, dialTimeoutSeconds: null });
 
-  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as { id: string; proxy_fallback_list: string[] };
   assertEquals(created.proxy_fallback_list, []);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-api-key': adminKey },
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
     body: JSON.stringify({ proxy_fallback_list: ['p_fallback', 'direct'] }),
   });
   assertEquals(patch.status, 200);
@@ -693,15 +694,15 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
 });
 
 test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown proxy id', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const create = await requestApp('/api/upstreams', authed(adminKey, createBody()));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as { id: string };
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-api-key': adminKey },
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
     body: JSON.stringify({ proxy_fallback_list: ['nope'] }),
   });
   assertEquals(patch.status, 400);
@@ -710,11 +711,11 @@ test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown pr
 });
 
 test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', sortOrder: 0, dialTimeoutSeconds: null });
 
-  const create = await requestApp('/api/upstreams', authed(adminKey, createBody({ proxy_fallback_list: ['p_a'] })));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: ['p_a'] })));
   const created = (await create.json()) as { id: string };
 
   await repo.proxyBackoffs.recordDialFailure('p_a', created.id, 'tcp refused');
@@ -723,7 +724,7 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
 
   const del = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'DELETE',
-    headers: { 'x-api-key': adminKey },
+    headers: { 'x-floway-session': adminSession },
   });
   assertEquals(del.status, 200);
 

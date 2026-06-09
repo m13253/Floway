@@ -27,27 +27,27 @@ afterEach(() => {
 const SOCKS_URL = 'socks5://user:pass@198.51.100.10:1080';
 const HTTP_URL = 'http://198.51.100.20:3128';
 
-const authed = (adminKey: string, body?: unknown): RequestInit => ({
+const authed = (adminSession: string, body?: unknown): RequestInit => ({
   method: body === undefined ? 'GET' : 'POST',
   headers: {
     'content-type': 'application/json',
-    'x-api-key': adminKey,
+    'x-floway-session': adminSession,
   },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
-const patchAuthed = (adminKey: string, body: unknown): RequestInit => ({
+const patchAuthed = (adminSession: string, body: unknown): RequestInit => ({
   method: 'PATCH',
   headers: {
     'content-type': 'application/json',
-    'x-api-key': adminKey,
+    'x-floway-session': adminSession,
   },
   body: JSON.stringify(body),
 });
 
-const deleteAuthed = (adminKey: string): RequestInit => ({
+const deleteAuthed = (adminSession: string): RequestInit => ({
   method: 'DELETE',
-  headers: { 'x-api-key': adminKey },
+  headers: { 'x-floway-session': adminSession },
 });
 
 interface ProxyJson {
@@ -63,11 +63,11 @@ interface ProxyJson {
 }
 
 test('GET /api/proxies returns rows ordered by sort_order', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, sortOrder: 2, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_a', name: 'First', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies', authed(adminKey));
+  const resp = await requestApp('/api/proxies', authed(adminSession));
   assertEquals(resp.status, 200);
   const list = (await resp.json()) as ProxyJson[];
   assertEquals(list.map(p => p.id), ['p_a', 'p_b']);
@@ -78,10 +78,10 @@ test('GET /api/proxies returns rows ordered by sort_order', async () => {
 });
 
 test('POST /api/proxies creates a row and assigns the next sort_order', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_first', name: 'First', url: HTTP_URL, sortOrder: 7, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies', authed(adminKey, { name: 'New', url: SOCKS_URL }));
+  const resp = await requestApp('/api/proxies', authed(adminSession, { name: 'New', url: SOCKS_URL }));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as ProxyJson;
   assertEquals(created.name, 'New');
@@ -94,9 +94,9 @@ test('POST /api/proxies creates a row and assigns the next sort_order', async ()
 });
 
 test('POST /api/proxies rejects an unparseable URL with 400', async () => {
-  const { adminKey } = await setupAppTest();
+  const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/proxies', authed(adminKey, { name: 'Bad', url: 'gibberish' }));
+  const resp = await requestApp('/api/proxies', authed(adminSession, { name: 'Bad', url: 'gibberish' }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error?: string };
   assertEquals(typeof body.error, 'string');
@@ -104,12 +104,12 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
 });
 
 test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_c', name: 'C', url: HTTP_URL, sortOrder: 2, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/reorder', authed(adminKey, { ids: ['p_c', 'p_a', 'p_b'] }));
+  const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_c', 'p_a', 'p_b'] }));
   assertEquals(resp.status, 200);
   const list = (await resp.json()) as ProxyJson[];
   assertEquals(list.map(p => p.id), ['p_c', 'p_a', 'p_b']);
@@ -117,19 +117,19 @@ test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', a
 });
 
 test('POST /api/proxies/reorder rejects a non-permutation with 400', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/reorder', authed(adminKey, { ids: ['p_a'] }));
+  const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_a'] }));
   assertEquals(resp.status, 400);
 });
 
 test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.name, 'Renamed');
@@ -137,14 +137,14 @@ test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
 });
 
 test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('p1', '203.0.113.1');
 
   const before = await repo.proxies.getById('p1');
   assertEquals(before?.lastEgressIp, '203.0.113.1');
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { url: SOCKS_URL }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { url: SOCKS_URL }));
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.url, SOCKS_URL);
@@ -157,7 +157,7 @@ test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async 
 });
 
 test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   // Two upstreams have already escalated this proxy through several failures.
   // After the URL changes the operator expects an immediate retry; the dial
@@ -165,28 +165,28 @@ test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', as
   for (let n = 0; n < 5; n++) await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
   for (let n = 0; n < 5; n++) await repo.proxyBackoffs.recordDialFailure('p1', 'up_b', 'boom');
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { url: SOCKS_URL }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { url: SOCKS_URL }));
   assertEquals(resp.status, 200);
 
   assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 0);
 });
 
 test('PATCH /api/proxies/:id without changing the url leaves backoff rows intact', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
 
   assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 1);
 });
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: 120 }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: 120 }));
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, 120);
@@ -196,10 +196,10 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override',
 });
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existing value', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { name: 'Renamed' }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, 90);
@@ -209,10 +209,10 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existin
 });
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to default', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
 
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminKey, { dial_timeout_seconds: null }));
+  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: null }));
   assertEquals(resp.status, 200);
   const updated = (await resp.json()) as ProxyJson;
   assertEquals(updated.dial_timeout_seconds, null);
@@ -222,20 +222,20 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to de
 });
 
 test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/p_del', deleteAuthed(adminKey));
+  const resp = await requestApp('/api/proxies/p_del', deleteAuthed(adminSession));
   assertEquals(resp.status, 204);
   assertEquals(await repo.proxies.getById('p_del'), null);
 });
 
 test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy', async () => {
-  const { repo, adminKey, copilotUpstream } = await setupAppTest();
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
   await repo.upstreams.save({ ...copilotUpstream, proxyFallbackList: ['p_ref'] });
 
-  const resp = await requestApp('/api/proxies/p_ref', deleteAuthed(adminKey));
+  const resp = await requestApp('/api/proxies/p_ref', deleteAuthed(adminSession));
   assertEquals(resp.status, 409);
   const body = (await resp.json()) as { error?: string; referencing_upstream_ids?: string[] };
   assertEquals(body.referencing_upstream_ids, [copilotUpstream.id]);
@@ -243,10 +243,10 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
 });
 
 test('POST /api/proxies/:id/test surfaces the dial error in the ok:false response shape', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
 
-  const resp = await requestApp('/api/proxies/p_test/test', authed(adminKey, {}));
+  const resp = await requestApp('/api/proxies/p_test/test', authed(adminSession, {}));
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { ok: boolean; error?: string; egress_ip?: string };
   assertEquals(body.ok, false);
@@ -263,17 +263,17 @@ test('POST /api/proxies/:id/test surfaces the dial error in the ok:false respons
 });
 
 test('POST /api/proxies/:id/test returns 404 for an unknown proxy', async () => {
-  const { adminKey } = await setupAppTest();
-  const resp = await requestApp('/api/proxies/unknown/test', authed(adminKey, {}));
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp('/api/proxies/unknown/test', authed(adminSession, {}));
   assertEquals(resp.status, 404);
 });
 
 test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_a', 'boom');
 
-  const resp = await requestApp('/api/proxies/p_a/backoffs', authed(adminKey));
+  const resp = await requestApp('/api/proxies/p_a/backoffs', authed(adminSession));
   assertEquals(resp.status, 200);
   const rows = (await resp.json()) as Array<{ proxy_id: string; upstream_id: string; fail_count: number; last_error: string | null }>;
   assertEquals(rows.length, 1);
@@ -284,11 +284,11 @@ test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () 
 });
 
 test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_b', 'kaboom');
 
-  const resp = await requestApp('/api/proxies/backoffs', authed(adminKey));
+  const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
   assertEquals(resp.status, 200);
   const rows = (await resp.json()) as Array<{ proxy_id: string; upstream_id: string }>;
   assertEquals(rows.length, 2);
@@ -297,12 +297,12 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
 });
 
 test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the proxy', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_x', 'boom');
 
-  const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminKey, {}));
+  const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminSession, {}));
   assertEquals(resp.status, 200);
   assertEquals(await resp.json(), { ok: true });
 
@@ -311,11 +311,11 @@ test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the
 });
 
 test('POST /api/proxies/:id/backoffs/reset with upstream_id clears only the matching pair', async () => {
-  const { repo, adminKey } = await setupAppTest();
+  const { repo, adminSession } = await setupAppTest();
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', 'boom');
 
-  const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminKey, { upstream_id: 'up_x' }));
+  const resp = await requestApp('/api/proxies/p_a/backoffs/reset', authed(adminSession, { upstream_id: 'up_x' }));
   assertEquals(resp.status, 200);
 
   const rows = await repo.proxyBackoffs.listForProxy('p_a');
