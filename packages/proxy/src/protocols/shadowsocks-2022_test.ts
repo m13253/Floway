@@ -324,10 +324,10 @@ describe('dialShadowsocks2022 — KDF + key-length matrix', () => {
     const psk = new Uint8Array(16).fill(0x11);
     const salt = new Uint8Array(16).fill(0x22);
     const key = blake3(concat(psk, salt), { dkLen: 16, context: SUBKEY_CONTEXT });
-    expect(key.byteLength).toBe(16);
-    // Pin the first 4 bytes to catch any context-string drift.
-    const expected = blake3(concat(psk, salt), { dkLen: 16, context: SUBKEY_CONTEXT });
-    expect(Array.from(key)).toEqual(Array.from(expected));
+    // Pin the derived key to a golden vector so a primitive swap or a drift in
+    // the SUBKEY_CONTEXT string is caught here, not only at round-trip.
+    expect(Array.from(key).map(b => b.toString(16).padStart(2, '0')).join(''))
+      .toBe('5f5af8d1711a0cf862c59d7ebe86365f');
   });
 
   it('derives a 32-byte key for aes-256-gcm', () => {
