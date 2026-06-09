@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, test } from 'vitest';
 
+import type { SerializedProxyRecord } from './serialize.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
-
-import type { SerializedProxyRecord } from './serialize.ts';
 
 // Stub SocketDial so the test endpoint hits a deterministic error path
 // (`runProxiedRequest` calls connect() and we surface its rejection as the
