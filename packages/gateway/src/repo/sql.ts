@@ -173,7 +173,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .prepare('UPDATE api_keys SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), id)
       .run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async softDeleteByUserId(userId: number): Promise<number> {
@@ -181,7 +181,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .prepare('UPDATE api_keys SET deleted_at = ? WHERE user_id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), userId)
       .run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -276,7 +276,7 @@ class SqlUsersRepo implements UsersRepo {
       .prepare('UPDATE users SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL')
       .bind(new Date().toISOString(), id)
       .run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -319,12 +319,12 @@ class SqlSessionsRepo implements SessionsRepo {
 
   async deleteById(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM sessions WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteByUserId(userId: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteByUserIdExcept(userId: number, exceptId: string): Promise<number> {
@@ -332,7 +332,7 @@ class SqlSessionsRepo implements SessionsRepo {
       .prepare('DELETE FROM sessions WHERE user_id = ? AND id != ?')
       .bind(userId, exceptId)
       .run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -918,7 +918,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
     }));
     const results = await runStatements(this.db, statements);
-    return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
+    return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
 
   async refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number> {
@@ -935,17 +935,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .bind(refreshedAt, apiKeyId, ...chunk, refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS)
         .run();
     }));
-    return results.reduce((sum, result) => sum + ((result.meta.changes as number | undefined) ?? 0), 0);
+    return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
 
   async clearPayloadOlderThan(createdBefore: number): Promise<number> {
     const result = await this.db.prepare('UPDATE responses_items SET payload_json = NULL WHERE payload_json IS NOT NULL AND created_at < ?').bind(createdBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteOlderThan(refreshedBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_items WHERE refreshed_at < ?').bind(refreshedBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -1008,12 +1008,12 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .prepare('UPDATE responses_snapshots SET refreshed_at = ? WHERE id = ? AND COALESCE(api_key_id, \'\') = COALESCE(?, \'\') AND refreshed_at < ?')
       .bind(refreshedAt, id, apiKeyId, refreshedAt - RESPONSES_REFRESH_DEBOUNCE_MS)
       .run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteOlderThan(refreshedBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_snapshots WHERE refreshed_at < ?').bind(refreshedBefore).run();
-    return (result.meta.changes as number | undefined) ?? 0;
+    return result.meta.changes ?? 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -1128,7 +1128,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async delete(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
-    return ((result.meta.changes as number | undefined) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -1144,7 +1144,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
       .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
       .bind(serializeStoredState(newState), id, serializeStoredState(options.expectedState))
       .run();
-    return { updated: ((result.meta.changes as number | undefined) ?? 0) > 0 };
+    return { updated: (result.meta.changes ?? 0) > 0 };
   }
 }
 

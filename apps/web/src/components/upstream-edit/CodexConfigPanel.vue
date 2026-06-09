@@ -68,10 +68,8 @@ const buildBody = (): { ok: true; value: { auth_json?: unknown; callback?: { cal
   return { ok: true, value: { callback: { callback_url: url } } };
 };
 
-// Single submit entry point shared by create and re-import. The endpoint
-// dispatch is the only meaningful difference: /codex-import for create
-// (the server synthesizes a default name from the imported identity, like
-// the copilot device flow does), /:id/codex-reimport for re-import.
+// Single submit entry point shared by create and re-import. /codex-import for
+// create, /:id/codex-reimport for re-import.
 const submit = async () => {
   const body = buildBody();
   if (!body.ok) { emit('error', body.error); return; }

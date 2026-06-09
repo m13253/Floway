@@ -49,7 +49,7 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
     }
   } else if (record?.provider === 'custom') {
     const cfg = record.config as CustomUpstreamConfig;
-    if (cfg.modelsFetch?.enabled) {
+    if (cfg.modelsFetch.enabled) {
       const { data, error } = await callApi<{ data: CustomRawModel[] }>(
         () => api.api.upstreams['fetch-models'].$post({
           json: {

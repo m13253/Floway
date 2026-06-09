@@ -23,7 +23,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
     if (!session) return c.json({ error: 'Invalid session' }, 401);
     const user = await getRepo().users.getById(session.userId);
     if (!user) {
-      // Orphan session — user was deleted; drop it.
+      // Orphan session: user was deleted.
       await getRepo().sessions.deleteById(sessionToken);
       return c.json({ error: 'Invalid session' }, 401);
     }

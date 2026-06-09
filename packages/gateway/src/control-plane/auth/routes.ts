@@ -42,12 +42,13 @@ export const authMe = async (c: Context) => {
   const userId = c.get('userId') as number;
   const sessionId = c.get('sessionId') as string | undefined;
   const apiKeyId = c.get('apiKeyId') as string | undefined;
-  const user = await getRepo().users.getById(userId);
+  const repo = getRepo();
+  const user = await repo.users.getById(userId);
   if (!user) throw new Error(`authMiddleware loaded userId ${userId} but it is now missing`);
 
   let apiKey: { id: string; name: string } | null = null;
   if (apiKeyId) {
-    const key = await getRepo().apiKeys.getById(apiKeyId);
+    const key = await repo.apiKeys.getById(apiKeyId);
     if (!key) throw new Error(`authMiddleware accepted apiKeyId ${apiKeyId} but it is now missing`);
     apiKey = { id: key.id, name: key.name };
   }

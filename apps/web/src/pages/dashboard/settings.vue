@@ -46,10 +46,11 @@ const { upstreams, loading: storeLoading, error: storeError, load } = useUpstrea
 const modelsStore = useModelsStore();
 const settingsData = useSettingsPageData();
 
-// Local copy sorted by sort_order; the store list is unsorted.
+// Local working copy that the child reorders via v-model:ordered; reloadAll
+// re-syncs from the store after a successful PATCH.
 const ordered = ref<UpstreamRecord[]>([]);
 watch(upstreams, list => {
-  ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
+  ordered.value = list ? [...list] : [];
 }, { immediate: true });
 
 const reloadAll = async () => {

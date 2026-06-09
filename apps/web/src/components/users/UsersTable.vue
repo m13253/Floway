@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 
 import type { WireUser } from './types.ts';
 
-defineProps<{
+const props = defineProps<{
   users: WireUser[];
   actorUserId: number;
 }>();
@@ -16,7 +16,7 @@ defineEmits<{
 }>();
 
 // User 1 (seed admin) and the actor themselves cannot be deleted.
-const isProtected = (id: number, actor: number) => id === 1 || id === actor;
+const isProtected = (id: number) => id === 1 || id === props.actorUserId;
 </script>
 
 <template>
@@ -85,8 +85,8 @@ const isProtected = (id: number, actor: number) => id === 1 || id === actor;
               </button>
               <button
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1"
-                :class="isProtected(u.id, actorUserId) ? 'opacity-30 cursor-not-allowed' : ''"
-                :disabled="isProtected(u.id, actorUserId)"
+                :class="isProtected(u.id) ? 'opacity-30 cursor-not-allowed' : ''"
+                :disabled="isProtected(u.id)"
                 title="Delete user"
                 aria-label="Delete user"
                 @click.stop="$emit('remove', u)"
