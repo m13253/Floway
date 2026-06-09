@@ -8,6 +8,11 @@
 // `Socket.startTls()` cannot wrap a stream that has already exchanged
 // plain bytes, and for protocols that need full control over TLS record
 // framing.
+//
+// `wsUpgradeAndFrame` extends the same model to RFC 6455: take a duplex,
+// negotiate the WebSocket Upgrade, return a frame-level duplex of
+// unmasked binary payloads. Lets WebSocket-tunnelled protocols stay
+// runtime-agnostic in the same way TCP+TLS protocols already are.
 
 export type { DuplexStream, HttpRequest, RawHttpResponse } from './types.ts';
 
@@ -18,6 +23,9 @@ export { decodeChunked } from './chunked.ts';
 
 export { userspaceTls } from './tls.ts';
 export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
+
+export { wsUpgradeAndFrame } from './ws-upgrade.ts';
+export type { WsUpgradeOptions } from './ws-upgrade.ts';
 
 export { HttpProtocolError } from './errors.ts';
 export type { HttpProtocolErrorCode } from './errors.ts';
