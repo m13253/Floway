@@ -193,10 +193,6 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   }
 }
 
-// Mirrors the D1 schema: one entry per (bucket, dimension) with a token count
-// and a per-dimension unit_price snapshot, plus a separate request count per
-// bucket. Records are reassembled into UsageRecord on read, folding the
-// per-dimension unit prices back into a ModelPricing snapshot.
 interface UsageBucketIdentity {
   keyId: string;
   model: string;
@@ -520,9 +516,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     return Promise.resolve();
   }
 
-  // Mirrors the SQL CAS predicate by comparing the canonical JSON encoding of
-  // the row's current state against the expected one — same encoding the SQL
-  // impl writes, so callers see identical semantics across backends.
   saveState(id: string, newState: unknown, options: { expectedState: unknown }): Promise<{ updated: boolean }> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve({ updated: false });

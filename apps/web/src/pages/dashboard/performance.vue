@@ -71,7 +71,6 @@ const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
 const performanceView = ref<PerformanceView>(initialOverview.data.value.view);
 
-const series = ref<PerformanceDisplayRecord[]>(initialOverview.data.value.overview.series);
 const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
 const performanceError = ref<string | null>(initialOverview.data.value.error);
 const performanceLoading = ref(false);
@@ -92,7 +91,6 @@ const load = async () => {
   if (err) { performanceError.value = err.message; return; }
   performanceError.value = null;
   overview.value = data;
-  series.value = data.series;
   loadedPerformanceRange.value = requestedRange;
 };
 
@@ -109,7 +107,7 @@ const performancePercentileLabel = computed(() => {
 
 const performanceModelOptions = computed(() => {
   const ids = new Set<string>();
-  for (const r of series.value) ids.add(r.group);
+  for (const r of overview.value.series) ids.add(r.group);
   return [...ids].sort();
 });
 
@@ -135,7 +133,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   const datasets = performanceChartView.value === 'model'
     ? (() => {
       const groups = new Map<string, Map<string, number | null>>();
-      for (const r of series.value) {
+      for (const r of overview.value.series) {
         const inner = groups.get(r.group) ?? new Map<string, number | null>();
         inner.set(r.bucket, r[performancePercentile.value]);
         groups.set(r.group, inner);
@@ -157,7 +155,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
       });
     })()
     : (['p50Ms', 'p95Ms', 'p99Ms'] as PercentileKey[]).map((p, i) => {
-      const byBucket = new Map(series.value.filter(r => r.group === performanceModel.value).map(r => [r.bucket, r[p]]));
+      const byBucket = new Map(overview.value.series.filter(r => r.group === performanceModel.value).map(r => [r.bucket, r[p]]));
       const color = chartColor(i);
       return {
         label: p.replace('Ms', ''),
