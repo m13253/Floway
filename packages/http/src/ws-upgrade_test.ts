@@ -295,6 +295,7 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     fake.respond(buildServerFrame(0x9, enc('ping-payload')));
     const { frame } = await readClientFrame(fake, handshakeBytes);
     expect(frame!.opcode).toBe(0xa);
+    expect(frame!.fin).toBe(true);
     expect(dec(frame!.payload)).toBe('ping-payload');
   });
 

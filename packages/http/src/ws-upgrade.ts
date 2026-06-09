@@ -378,7 +378,7 @@ const frameDuplexOnTransport = (
 
   const sendPongFrame = async (payload: Uint8Array): Promise<void> => {
     try {
-      await writeFrame(frameWriter, 0xa, payload, false);
+      await writeFrame(frameWriter, 0xa, payload, true);
     } catch {
       /* peer already gone */
     }
