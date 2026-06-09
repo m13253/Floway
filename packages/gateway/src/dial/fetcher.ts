@@ -8,7 +8,7 @@ import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProx
 // and from collectBody (where the actual buffer step would fail), so
 // streaming-body callers see the same message regardless of which gate
 // fires first.
-const STREAMING_BODY_ERROR_MESSAGE = 'streaming request bodies are not yet supported through proxies';
+const STREAMING_BODY_ERROR_MESSAGE = 'streaming request bodies are not supported through proxies — buffer before calling';
 
 // Per-proxy dial parameters loaded once per request and looked up by
 // fallback-list entry. Carries both the parsed wire config and the

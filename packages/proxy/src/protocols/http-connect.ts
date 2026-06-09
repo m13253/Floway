@@ -77,7 +77,7 @@ const dialHttpConnectInner = async (
     // U+0080..U+00FF would go on the wire as that single Latin-1 byte
     // and a code point > U+00FF would throw InvalidCharacterError mid-
     // dial. Encode to UTF-8 bytes first, then base64.
-    const credBytes = new TextEncoder().encode(`${auth.username}:${auth.password}`);
+    const credBytes = enc.encode(`${auth.username}:${auth.password}`);
     const token = base64EncodeBytes(credBytes);
     lines.push(`Proxy-Authorization: Basic ${token}`);
   }
