@@ -183,18 +183,17 @@ describe('dialSocks5 — failure modes', () => {
 });
 
 // Helpers shared by the expanded coverage matrix below.
-const drainGreeting = async (srv: { read: (n: number) => Promise<Uint8Array> }, hasAuth: boolean): Promise<Uint8Array> => {
-  return await srv.read(hasAuth ? 4 : 3);
+const drainGreeting = async (srv: { read: (n: number) => Promise<Uint8Array> }, hasAuth: boolean): Promise<void> => {
+  await srv.read(hasAuth ? 4 : 3);
 };
 
 const drainConnectRequest = async (
   srv: { read: (n: number) => Promise<Uint8Array> },
-): Promise<{ head: Uint8Array; domain: Uint8Array; port: Uint8Array }> => {
-  const head = await srv.read(4);
+): Promise<void> => {
+  await srv.read(4);
   const lenBuf = await srv.read(1);
-  const domain = await srv.read(lenBuf[0]!);
-  const port = await srv.read(2);
-  return { head: new Uint8Array([...head, ...lenBuf, ...domain]), domain, port };
+  await srv.read(lenBuf[0]!);
+  await srv.read(2);
 };
 
 describe('dialSocks5 — RFC 1928 method-select negotiation', () => {
