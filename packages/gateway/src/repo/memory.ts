@@ -35,12 +35,19 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 
 const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
 
-class MemoryUsersRepo implements UsersRepo {
-  private users: User[];
+const SEED_ADMIN_USER: User = {
+  id: 1,
+  username: 'admin',
+  passwordHash: null,
+  isAdmin: true,
+  upstreamIds: null,
+  canViewGlobalTelemetry: true,
+  createdAt: new Date(0).toISOString(),
+  deletedAt: null,
+};
 
-  constructor(seed: User[]) {
-    this.users = seed.map(u => ({ ...u }));
-  }
+class MemoryUsersRepo implements UsersRepo {
+  private users: User[] = [{ ...SEED_ADMIN_USER }];
 
   list(): Promise<User[]> {
     return Promise.resolve(this.users.filter(u => u.deletedAt === null).map(u => ({ ...u })));
@@ -701,16 +708,7 @@ export class InMemoryRepo implements Repo {
   responsesSnapshots: ResponsesSnapshotsRepo;
 
   constructor() {
-    this.users = new MemoryUsersRepo([{
-      id: 1,
-      username: 'admin',
-      passwordHash: null,
-      isAdmin: true,
-      upstreamIds: null,
-      canViewGlobalTelemetry: true,
-      createdAt: new Date(0).toISOString(),
-      deletedAt: null,
-    }]);
+    this.users = new MemoryUsersRepo();
     this.sessions = new MemorySessionsRepo();
     this.apiKeys = new MemoryApiKeyRepo();
     this.usage = new MemoryUsageRepo();

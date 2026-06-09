@@ -93,7 +93,6 @@ const submit = async () => {
 };
 
 const refreshTokenNow = async () => {
-  if (!props.record) return;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
     () => api.api.upstreams[':id']['codex-refresh-now'].$post({ param: { id: props.record!.id }, json: {} }),

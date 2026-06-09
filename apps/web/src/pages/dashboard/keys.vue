@@ -22,7 +22,7 @@ export const useKeysPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-import { Button, Code, Input, Spinner } from '@floway-dev/ui';
+import { Button, Input } from '@floway-dev/ui';
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';

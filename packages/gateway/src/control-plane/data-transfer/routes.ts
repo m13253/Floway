@@ -167,7 +167,6 @@ const parseApiKeyRecords = (value: unknown, version: 3 | 4): { type: 'ok'; recor
       let userId: number;
       let deletedAt: string | null;
       if (version === 3) {
-        // v3 predates per-key ownership; attribute to user 1 (the seed admin).
         userId = 1;
         deletedAt = null;
       } else {
