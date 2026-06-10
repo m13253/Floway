@@ -138,7 +138,6 @@ const dialShadowsocksInner = async (
 
   const ssWritable = new WritableStream<Uint8Array>({
     async write(chunk) {
-      // Re-acquire the writer per frame so the SS-encrypting writable owns the underlying lock only while it actively writes a record.
       const w = socket.writable.getWriter();
       try {
         let off = 0;
