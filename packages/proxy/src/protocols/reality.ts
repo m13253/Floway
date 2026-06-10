@@ -225,10 +225,10 @@ const runRealityHandshake = async (
       // ephemeral key — all auth flows from the keyshare's private key).
       if (!tlsX25519Priv) throw new Error('REALITY: X25519 privKey not captured');
       // importKey + deriveBits reject an off-curve / mistyped pbk with
-      // OperationError (DOMException). That's operator-supplied bad input,
-      // not a programmer bug, so wrap it as a config-stage dial error and
-      // let testProxy / the data plane render it as `{ok:false, error}` /
-      // a backoff row instead of a 500.
+      // OperationError (DOMException). That's operator-supplied bad
+      // input, not a programmer bug, so wrap it as a config-stage dial
+      // error — callers branch on `stage` to distinguish bad config
+      // from a transport failure.
       let sharedSecret: Uint8Array;
       try {
         const serverPubKey = await crypto.subtle.importKey('raw', serverPub, { name: 'X25519' }, false, []);
@@ -387,8 +387,8 @@ const runRealityHandshake = async (
     try { writer.releaseLock(); } catch { /* lock already released */ }
     // A ProxyDialError raised by onRecvCertificateVerify (HMAC mismatch,
     // wrong leaf cert type) must surface with its original 'proxy-handshake'
-    // stage rather than be rewrapped as 'outer-tls' — the gateway's backoff
-    // loop distinguishes auth-shaped rejections from transport-shaped ones.
+    // stage rather than be rewrapped as 'outer-tls' — callers branching on
+    // stage distinguish auth-shaped rejections from transport-shaped ones.
     if (cause instanceof ProxyDialError) throw cause;
     // The REALITY handshake combines outer TLS framing with the auth seal in
     // session_id; for everything else we can't tell whether the server

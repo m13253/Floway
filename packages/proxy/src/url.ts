@@ -97,8 +97,8 @@ const resolvePort = (url: URL, uri: string): number => {
   // 0 reserves the wildcard port (RFC 6335 §6); anything outside 1..65535
   // is a wire-shape failure the URL parser already accepts at the upper
   // bound for some schemes. Reject here so the dial stage's typed
-  // assertValidTargetPort isn't the only line of defense, and so a
-  // dashboard editor surfaces the failure on save instead of on first dial.
+  // assertValidTargetPort isn't the only line of defense, and so callers
+  // see the failure at parse time instead of on first dial.
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new ProxyUriError(`port out of range (1..65535): ${uri}`);
   }

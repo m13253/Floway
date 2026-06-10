@@ -59,9 +59,9 @@ const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
 const parseUuid = (s: string): Uint8Array => {
   const hex = s.replace(/-/g, '');
   if (hex.length !== 32 || !/^[0-9a-fA-F]+$/.test(hex)) {
-    // UUIDs are VLESS credentials. Carry the raw value only on `cause` so it
-    // stays out of the dial error's message — which lands in log lines, dial
-    // metrics, and dashboard error strings.
+    // UUIDs are VLESS credentials. Carry the raw value only on `cause`
+    // so it stays out of the dial error's message, which callers
+    // typically render verbatim into logs and error reports.
     throw new ProxyDialError('VLESS: malformed UUID', 'proxy-handshake', { cause: { uuid: s } });
   }
   return hexDecode(hex);
