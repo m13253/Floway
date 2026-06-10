@@ -498,7 +498,7 @@ const frameDuplexOnTransport = (
   // to handleFrame. Errors close the readable. Clean transport EOF closes
   // the readable too.
   void (async () => {
-    let buffer: Uint8Array = initialBytes.byteLength ? copy(initialBytes) : initialBytes;
+    let buffer: Uint8Array = initialBytes;
     try {
       while (!plainClosed) {
         const header = tryParseFrameHeader(buffer);
