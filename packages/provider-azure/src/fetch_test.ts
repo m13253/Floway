@@ -7,7 +7,6 @@ import {
   azureFetchImagesGenerations,
   azureFetchMessages,
   azureFetchMessagesCountTokens,
-  azureFetchModels,
   azureFetchResponses,
   azureFetchResponsesCompact,
 } from './fetch.ts';
@@ -58,7 +57,6 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
       await azureFetchResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher });
       await azureFetchResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher });
       await azureFetchEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher });
-      await azureFetchModels(config, { method: 'GET' }, { fetcher: directFetcher });
     },
   );
 
@@ -69,16 +67,15 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
       'https://example.openai.azure.com/openai/v1/responses',
       'https://example.openai.azure.com/openai/v1/responses/compact',
       'https://example.openai.azure.com/openai/v1/embeddings',
-      'https://example.openai.azure.com/openai/v1/models',
     ],
   );
   assertEquals(
     seen.map(item => item.apiKey),
-    ['az-key', 'az-key', 'az-key', 'az-key', 'az-key'],
+    ['az-key', 'az-key', 'az-key', 'az-key'],
   );
   assertEquals(
     seen.map(item => item.contentType),
-    ['application/json', 'application/json', 'application/json', 'application/json', null],
+    ['application/json', 'application/json', 'application/json', 'application/json'],
   );
   assertEquals(seen[0].body, { model: 'set-by-provider' });
 });
@@ -288,12 +285,10 @@ test('Foundry Anthropic messages target URI is accepted and splits per surface',
     },
     async () => {
       await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await azureFetchModels(config, { method: 'GET' }, { fetcher: directFetcher });
     },
   );
 
   assertEquals(seen, [
     'https://example.services.ai.azure.com/anthropic/v1/messages',
-    'https://example.services.ai.azure.com/openai/v1/models',
   ]);
 });

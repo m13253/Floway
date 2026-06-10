@@ -101,6 +101,8 @@ export { mergeAnthropicBetaHeader } from './anthropic-beta.ts';
 export type { FetchOptions, Fetcher, ProviderFactoryOptions } from './options.ts';
 export { directFetcher } from './options.ts';
 
+export { isAbortError } from './abort.ts';
+
 export {
   compressBase64ImageToWebp,
   compressImageDataUrlToWebp,

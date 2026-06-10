@@ -11,8 +11,6 @@
 //   - TCP response: server echoes the request salt and includes a fresh
 //     timestamp (must be within 30s of now).
 
-import { gcm } from '@noble/ciphers/aes.js';
-import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 
 import { base64DecodeBytes, concat, encodeAtypAddress, randomBytes, utf8Bytes } from '../bytes.ts';
@@ -21,6 +19,7 @@ import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
   '2022-blake3-aes-128-gcm': 16,
@@ -29,7 +28,6 @@ const KEY_LEN_2022: Record<Ss2022Method, number> = {
 };
 
 const TAG = 16;
-const NONCE = 12;
 // SIP022 uses a u16 length field. Servers can send up to 0xffff per record;
 // AEAD-2018's 0x3fff limit does not apply.
 const MAX = 0xffff;
@@ -111,8 +109,8 @@ const dialShadowsocks2022Inner = async (
   fixedPlain[9] = (variableHeader.byteLength >> 8) & 0xff;
   fixedPlain[10] = variableHeader.byteLength & 0xff;
 
-  const fixedSealed = sendCipher.encrypt(nonce(sendNonce++), fixedPlain);
-  const variableSealed = sendCipher.encrypt(nonce(sendNonce++), variableHeader);
+  const fixedSealed = sendCipher.encrypt(leNonce(sendNonce++), fixedPlain);
+  const variableSealed = sendCipher.encrypt(leNonce(sendNonce++), variableHeader);
   const initialOut = new Uint8Array(sendSalt.byteLength + fixedSealed.byteLength + variableSealed.byteLength);
   initialOut.set(sendSalt, 0);
   initialOut.set(fixedSealed, sendSalt.byteLength);
@@ -134,7 +132,7 @@ const dialShadowsocks2022Inner = async (
           recvCipher = makeAead(method, recvKey);
           // Read response fixed header AEAD: [type=0x01 | timestamp(u64be) | salt-echo(keyLen) | len(u16be)] + tag
           const respFixedSealed = await readN(1 + 8 + keyLen + 2 + TAG);
-          const respFixedPlain = recvCipher.decrypt(nonce(recvNonce++), respFixedSealed);
+          const respFixedPlain = recvCipher.decrypt(leNonce(recvNonce++), respFixedSealed);
           if (respFixedPlain[0] !== RESP_HEADER_TYPE) {
             throw new ProxyDialError(`SS2022: bad response type ${respFixedPlain[0]}`, 'proxy-handshake');
           }
@@ -165,20 +163,20 @@ const dialShadowsocks2022Inner = async (
           // First-payload length
           const firstLen = (respFixedPlain[1 + 8 + keyLen]! << 8) | respFixedPlain[1 + 8 + keyLen + 1]!;
           const firstSealed = await readN(firstLen + TAG);
-          const firstPlain = recvCipher.decrypt(nonce(recvNonce++), firstSealed);
+          const firstPlain = recvCipher.decrypt(leNonce(recvNonce++), firstSealed);
           recvBootstrapped = true;
           if (firstPlain.byteLength) controller.enqueue(firstPlain as Uint8Array<ArrayBuffer>);
           return;
         }
         const lenSealed = await readN(2 + TAG);
-        const lenPlain = recvCipher.decrypt(nonce(recvNonce++), lenSealed);
+        const lenPlain = recvCipher.decrypt(leNonce(recvNonce++), lenSealed);
         const len = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (len === 0) {
           controller.error(new ProxyDialError('SS2022: zero-length payload', 'proxy-handshake'));
           return;
         }
         const ptSealed = await readN(len + TAG);
-        const pt = recvCipher.decrypt(nonce(recvNonce++), ptSealed);
+        const pt = recvCipher.decrypt(leNonce(recvNonce++), ptSealed);
         controller.enqueue(pt as Uint8Array<ArrayBuffer>);
       } catch (e) {
         if (!recvBootstrapped && !(e instanceof ProxyDialError)) {
@@ -199,8 +197,8 @@ const dialShadowsocks2022Inner = async (
         while (off < chunk.byteLength) {
           const piece = chunk.subarray(off, Math.min(off + MAX, chunk.byteLength));
           const lenBytes = new Uint8Array([(piece.byteLength >> 8) & 0xff, piece.byteLength & 0xff]);
-          const lenSealed = sendCipher.encrypt(nonce(sendNonce++), lenBytes);
-          const ptSealed = sendCipher.encrypt(nonce(sendNonce++), piece);
+          const lenSealed = sendCipher.encrypt(leNonce(sendNonce++), lenBytes);
+          const ptSealed = sendCipher.encrypt(leNonce(sendNonce++), piece);
           await w.write(concat(lenSealed, ptSealed));
           off += piece.byteLength;
         }
@@ -215,23 +213,8 @@ const dialShadowsocks2022Inner = async (
   return { readable: ssReadable, writable: ssWritable };
 };
 
-interface Aead {
-  encrypt(nonce: Uint8Array, plaintext: Uint8Array): Uint8Array;
-  decrypt(nonce: Uint8Array, ciphertext: Uint8Array): Uint8Array;
-}
-
-const makeAead = (method: Ss2022Method, key: Uint8Array): Aead => {
-  if (method === '2022-blake3-chacha20-poly1305') {
-    return {
-      encrypt: (n, pt) => chacha20poly1305(key, n).encrypt(pt),
-      decrypt: (n, ct) => chacha20poly1305(key, n).decrypt(ct),
-    };
-  }
-  return {
-    encrypt: (n, pt) => gcm(key, n).encrypt(pt),
-    decrypt: (n, ct) => gcm(key, n).decrypt(ct),
-  };
-};
+const makeAead = (method: Ss2022Method, key: Uint8Array): Aead =>
+  makeAeadShared(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', key);
 
 /**
  * Build the SS2022 variable header for a target. Exported for tests.
@@ -260,16 +243,6 @@ export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array
   out[off++] = (padLen >> 8) & 0xff;
   out[off++] = padLen & 0xff;
   out.set(pad, off);
-  return out;
-};
-
-const nonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
-  const out = new Uint8Array(NONCE);
-  let c = counter;
-  for (let i = 0; i < NONCE; i++) {
-    out[i] = Number(c & 0xffn);
-    c >>= 8n;
-  }
   return out;
 };
 

@@ -94,8 +94,6 @@ export const azureFetchImagesGenerations = (config: AzureUpstreamConfig, init: R
   azureFetchInternal(config, 'openai', '/images/generations', init, options, 'api-version=preview');
 export const azureFetchImagesEdits = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/images/edits', init, options, 'api-version=preview');
-export const azureFetchModels = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
-  azureFetchInternal(config, 'openai', '/models', init, options);
 export const azureFetchMessages = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'anthropic', '/v1/messages', init, options);
 export const azureFetchMessagesCountTokens = (config: AzureUpstreamConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>

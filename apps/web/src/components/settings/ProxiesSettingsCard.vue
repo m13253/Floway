@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import ProxyRow from './ProxyRow.vue';
 import { callApi, useApi } from '../../api/client.ts';
-import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
+import type { ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Spinner } from '@floway-dev/ui';
@@ -45,15 +45,7 @@ const upstreamNames = computed<Map<string, string>>(() => {
   return map;
 });
 
-const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
-  const map = new Map<string, BackoffRow[]>();
-  for (const row of proxiesStore.backoffs.value ?? []) {
-    const list = map.get(row.proxy_id);
-    if (list) list.push(row);
-    else map.set(row.proxy_id, [row]);
-  }
-  return map;
-});
+const backoffsByProxyId = proxiesStore.backoffsByProxyId;
 
 // Reorder is persisted as a single atomic POST: the server writes every
 // row's sort_order in one statement, so a half-applied write is impossible
@@ -65,7 +57,7 @@ const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
 // can't fan out into overlapping requests, which would otherwise race the
 // server-side rewrite of `sort_order` against a stale client snapshot.
 // Dropping the click is fine: the move-arrow buttons reflect
-// `reorderInFlight` and the user retries once the operation lands.
+// `reorderInFlight` and the operator retries once the operation lands.
 const reorderInFlight = ref(false);
 const persistReorder = async (next: ProxyRecord[]) => {
   if (next.every((p, i) => p.sort_order === i)) return;

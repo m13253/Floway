@@ -1,4 +1,4 @@
-import { getProviderRepo as getRepo, type Fetcher } from '@floway-dev/provider';
+import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
 const COPILOT_BASE_URLS = {
   individual: 'https://api.githubcopilot.com',
@@ -96,7 +96,10 @@ async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefine
       // AbortError is a deliberate caller cancellation — propagate
       // immediately rather than walk N retries with the same already-
       // aborted signal, which would burn the proxy chain on each cycle.
-      if (e instanceof Error && e.name === 'AbortError') throw e;
+      // `isAbortError` recognises every shape we see in practice — bare
+      // `Error { name: 'AbortError' }`, `DOMException`, and wrapped
+      // `TypeError { cause: AbortError }` from Workers/undici fetch.
+      if (isAbortError(e)) throw e;
       // Token-fetch failures with a known-non-transient status surface as
       // CopilotTokenFetchError; bypass retry there. Everything else
       // (network/connect errors, transient 5xx, etc.) walks the backoff.

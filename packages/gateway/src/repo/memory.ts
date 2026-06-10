@@ -754,7 +754,7 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(cloneProxyRecord(record));
   }
 
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve(null);
 
@@ -773,7 +773,7 @@ class MemoryProxyRepo implements ProxyRepo {
       lastTestedAt: urlChanged ? null : existing.lastTestedAt,
     };
     this.store.set(id, updated);
-    return Promise.resolve(cloneProxyRecord(updated));
+    return Promise.resolve({ record: cloneProxyRecord(updated), urlChanged });
   }
 
   async delete(id: string): Promise<boolean> {

@@ -227,7 +227,11 @@ export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;
   insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null>;
+  // Returns the updated record alongside the bit `url` actually changed by
+  // this patch — the route layer needs that bit to decide whether to wipe
+  // the proxy's outstanding backoff rows on a URL edit, and recomputing it
+  // upstream would force a redundant getById round-trip.
+  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null>;
   // Upsert used by the operator import path: an id collision overwrites the
   // configurable columns (name, url, sort_order, dial_timeout_seconds) and
   // refreshes updated_at; created_at and the runtime-observed test fields

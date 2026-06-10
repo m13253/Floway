@@ -3,23 +3,20 @@ import { useNow } from '@vueuse/core';
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui';
 import { computed } from 'vue';
 
-import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
+import type { ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { formatCountdown } from '../../utils/format-countdown.ts';
 
 const DIRECT = 'direct';
 
+const list = defineModel<string[]>({ required: true });
+
 const props = defineProps<{
-  modelValue: string[];
   // null in create mode; backoff rows need a saved upstream id.
   upstreamId: string | null;
 }>();
 
-const emit = defineEmits<{
-  'update:modelValue': [list: string[]];
-}>();
-
-const { proxies, backoffs } = useProxiesStore();
+const { proxies, backoffsByProxyId } = useProxiesStore();
 
 const proxiesById = computed<Map<string, ProxyRecord>>(() => {
   const map = new Map<string, ProxyRecord>();
@@ -28,11 +25,11 @@ const proxiesById = computed<Map<string, ProxyRecord>>(() => {
 });
 
 const proxiesNotInList = computed<ProxyRecord[]>(() => {
-  const used = new Set(props.modelValue);
+  const used = new Set(list.value);
   return (proxies.value ?? []).filter(p => !used.has(p.id));
 });
 
-const directInList = computed(() => props.modelValue.includes(DIRECT));
+const directInList = computed(() => list.value.includes(DIRECT));
 
 const labelFor = (entry: string): string => {
   if (entry === DIRECT) return 'direct';
@@ -52,16 +49,6 @@ const isOrphan = (entry: string): boolean => entry !== DIRECT && !proxiesById.va
 // Live tick so the badge countdown ticks visibly without the parent reloading.
 const now = useNow({ interval: 1000 });
 
-const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
-  const map = new Map<string, BackoffRow[]>();
-  for (const row of backoffs.value ?? []) {
-    const list = map.get(row.proxy_id);
-    if (list) list.push(row);
-    else map.set(row.proxy_id, [row]);
-  }
-  return map;
-});
-
 interface ActiveBackoff {
   expiresIn: string;
   failCount: number;
@@ -72,7 +59,7 @@ const activeBackoffByEntry = computed<Map<string, ActiveBackoff>>(() => {
   if (props.upstreamId === null) return new Map();
   const map = new Map<string, ActiveBackoff>();
   const nowSec = Math.floor(now.value.getTime() / 1000);
-  for (const entry of props.modelValue) {
+  for (const entry of list.value) {
     if (entry === DIRECT) continue;
     const rows = backoffsByProxyId.value.get(entry);
     // `>=` keeps the entry's badge visible during its expiry second so the
@@ -91,47 +78,47 @@ const activeBackoffByEntry = computed<Map<string, ActiveBackoff>>(() => {
 });
 
 const removeAt = (index: number) => {
-  const next = [...props.modelValue];
+  const next = [...list.value];
   next.splice(index, 1);
-  emit('update:modelValue', next);
+  list.value = next;
 };
 
 const moveUp = (index: number) => {
   if (index <= 0) return;
-  const next = [...props.modelValue];
+  const next = [...list.value];
   const tmp = next[index]!;
   next[index] = next[index - 1]!;
   next[index - 1] = tmp;
-  emit('update:modelValue', next);
+  list.value = next;
 };
 
 const moveDown = (index: number) => {
-  if (index >= props.modelValue.length - 1) return;
-  const next = [...props.modelValue];
+  if (index >= list.value.length - 1) return;
+  const next = [...list.value];
   const tmp = next[index]!;
   next[index] = next[index + 1]!;
   next[index + 1] = tmp;
-  emit('update:modelValue', next);
+  list.value = next;
 };
 
 const append = (entry: string) => {
-  emit('update:modelValue', [...props.modelValue, entry]);
+  list.value = [...list.value, entry];
 };
 </script>
 
 <template>
   <section>
     <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-      Proxy Fallback List <span class="text-accent-cyan">({{ modelValue.length }})</span>
+      Proxy Fallback List <span class="text-accent-cyan">({{ list.length }})</span>
     </p>
 
-    <div v-if="modelValue.length === 0" class="rounded-md border border-dashed border-white/[0.08] bg-surface-900/40 px-3 py-2.5 text-xs text-gray-500">
+    <div v-if="list.length === 0" class="rounded-md border border-dashed border-white/[0.08] bg-surface-900/40 px-3 py-2.5 text-xs text-gray-500">
       No fallback list configured — defaults to direct.
     </div>
 
     <ul v-else class="divide-y divide-white/[0.06]">
       <li
-        v-for="(entry, index) in modelValue"
+        v-for="(entry, index) in list"
         :key="entry"
         class="flex items-center gap-2 px-1 py-2 text-sm"
       >
@@ -151,7 +138,7 @@ const append = (entry: string) => {
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-md p-1 text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
-            :disabled="index === modelValue.length - 1"
+            :disabled="index === list.length - 1"
             aria-label="Move entry down"
             title="Move down"
             @click="moveDown(index)"

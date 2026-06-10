@@ -468,9 +468,9 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
   });
 
   it('closes the underlying transport writer after a server close frame', async () => {
-    // Without this teardown step every server-initiated close left the
-    // transport's write half locked under our frame writer — the underlying
-    // socket / userspace TLS stream stayed alive until GC instead of being
+    // Every server-initiated close releases the transport's write half;
+    // without this teardown the underlying socket / userspace TLS stream
+    // would stay locked under our frame writer until GC instead of being
     // released alongside the WS-level close.
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -481,9 +481,9 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
   });
 
   it('closes the underlying transport writer when the supplied signal aborts', async () => {
-    // The signal-abort path used to leak the transport writer the same way
-    // the server-close path did. Mirror tls.ts: every teardown event must
-    // cascade through to the transport writer.
+    // Every teardown event cascades the transport-writer release: the
+    // signal-abort path drives the same teardown as the server-close path
+    // (mirrors tls.ts's policy of releasing the writer on every exit).
     const fake = makeFakeDuplex();
     const ac = new AbortController();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/', signal: ac.signal });

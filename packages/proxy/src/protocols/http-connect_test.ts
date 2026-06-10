@@ -255,8 +255,9 @@ describe('dialHttpConnect — auth header encoding', () => {
     const srv = await fake.awaitConnect();
     const head = await drainCONNECTRequest(srv);
     // base64(UTF-8("u:pä")) = base64([0x75, 0x3a, 0x70, 0xc3, 0xa4]) =
-    // "dTpww6Q=". The Latin-1 encoding "dTpw5A==" is the bug we just
-    // fixed.
+    // "dTpww6Q=". A Latin-1 encoding would instead emit "dTpw5A=="; RFC
+    // 7617 §2.1 mandates the UTF-8 form, so the encoder must
+    // UTF-8-then-base64.
     expect(head).toContain('Proxy-Authorization: Basic dTpww6Q=\r\n');
     srv.respond('HTTP/1.1 200 OK\r\n\r\n');
     await promise;

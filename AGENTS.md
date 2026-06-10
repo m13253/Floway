@@ -42,9 +42,10 @@ Node.js (`node:sqlite` + `sharp` + filesystem) is a parallel deployment
 target with the same Hono app and the same `packages/gateway/migrations` SQL.
 The `@floway-dev/platform` package owns the abstract runtime contracts
 (`FileProvider`, `ImageProcessor`, `SqlDatabase`, `BackgroundScheduler`,
-`EnvGetter`); each `apps/platform-*` app supplies the concrete impls and
-its own entry. `packages/gateway` (the gateway core) imports only platform
-contracts and is ESLint-prohibited from reaching into any `apps/platform-*`.
+`EnvGetter`, `SocketDial`); each `apps/platform-*` app supplies the
+concrete impls and its own entry. `packages/gateway` (the gateway core)
+imports only platform contracts and is ESLint-prohibited from reaching
+into any `apps/platform-*`.
 
 ## Workspace Layout
 

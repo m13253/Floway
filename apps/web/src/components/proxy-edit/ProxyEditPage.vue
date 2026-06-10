@@ -136,8 +136,7 @@ const parseLabel = computed(() => {
 
 const backoffsForProxy = computed<BackoffRow[]>(() => {
   if (!props.record) return [];
-  const all = proxiesStore.backoffs.value ?? [];
-  return all.filter(b => b.proxy_id === props.record!.id);
+  return proxiesStore.backoffsByProxyId.value.get(props.record.id) ?? [];
 });
 
 const upstreamNames = computed<Map<string, string>>(() => {
@@ -181,8 +180,15 @@ const save = async () => {
   const trimmedUrl = url.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (!trimmedUrl) { saveError.value = 'URL is required'; return; }
-  if (urlError.value) {
-    saveError.value = `Invalid proxy URI: ${urlError.value}`;
+  // Re-parse the URL we are about to submit so per-field invalid states in
+  // the form panel (an empty REALITY pbk, an empty Trojan/SS password, an
+  // out-of-range port) reach the same client-side guard as text typed
+  // directly into the URL field. The config→url watcher zeroes urlError
+  // on every form edit and would otherwise let a structurally invalid URL
+  // sneak through to the server.
+  const parsed = tryParse(trimmedUrl);
+  if (parsed && !parsed.ok) {
+    saveError.value = `Invalid proxy URI: ${parsed.error}`;
     return;
   }
   if ('error' in dialTimeoutParsed.value) {

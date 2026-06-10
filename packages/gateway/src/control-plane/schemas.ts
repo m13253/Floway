@@ -354,9 +354,12 @@ export const reorderProxiesBody = z.object({
 });
 
 // `upstream_id` narrows the reset to a single (proxy, upstream) pair; without
-// it the handler clears every backoff row for the proxy.
+// it the handler clears every backoff row for the proxy. `min(1)` rejects
+// `""` at the boundary — the handler treats undefined as "clear all" and
+// would otherwise read the empty string as a real id, deleting nothing and
+// reporting success on malformed input.
 export const resetBackoffBody = z.object({
-  upstream_id: z.string().optional(),
+  upstream_id: z.string().min(1).optional(),
 });
 
 // --- search config ---

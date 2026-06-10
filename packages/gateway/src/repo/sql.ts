@@ -1326,7 +1326,7 @@ class SqlProxyRepo implements ProxyRepo {
     };
   }
 
-  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<ProxyRecord | null> {
+  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
     const existing = await this.getById(id);
     if (!existing) return null;
 
@@ -1364,14 +1364,17 @@ class SqlProxyRepo implements ProxyRepo {
       .run();
 
     return {
-      ...existing,
-      name: nextName,
-      url: nextUrl,
-      sortOrder: nextSortOrder,
-      dialTimeoutSeconds: nextDialTimeout,
-      updatedAt,
-      lastEgressIp: urlChanged ? null : existing.lastEgressIp,
-      lastTestedAt: urlChanged ? null : existing.lastTestedAt,
+      record: {
+        ...existing,
+        name: nextName,
+        url: nextUrl,
+        sortOrder: nextSortOrder,
+        dialTimeoutSeconds: nextDialTimeout,
+        updatedAt,
+        lastEgressIp: urlChanged ? null : existing.lastEgressIp,
+        lastTestedAt: urlChanged ? null : existing.lastTestedAt,
+      },
+      urlChanged,
     };
   }
 

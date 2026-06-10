@@ -16,8 +16,6 @@
 //
 // First plaintext chunk: SOCKS5-style address: [ATYP][addr][port BE]
 
-import { gcm } from '@noble/ciphers/aes.js';
-import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { md5, sha1 } from '@noble/hashes/legacy.js';
 
@@ -27,6 +25,7 @@ import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -35,7 +34,6 @@ const METHOD_KEY_LEN: Record<SsMethod, number> = {
 };
 
 const TAG_LEN = 16;
-const NONCE_LEN = 12;
 const MAX_PAYLOAD = 0x3fff;
 
 export const dialShadowsocks = async (
@@ -113,7 +111,7 @@ const dialShadowsocksInner = async (
           recvCipher = makeAead(method, recvSubkey);
         }
         const lenSealed = await readExactly(2 + TAG_LEN);
-        const lenPlain = recvCipher.decrypt(nonceBytes(recvNonce), lenSealed);
+        const lenPlain = recvCipher.decrypt(leNonce(recvNonce), lenSealed);
         recvNonce++;
         const payloadLen = (lenPlain[0]! << 8) | lenPlain[1]!;
         if (payloadLen === 0 || payloadLen > MAX_PAYLOAD) {
@@ -121,7 +119,7 @@ const dialShadowsocksInner = async (
           return;
         }
         const payloadSealed = await readExactly(payloadLen + TAG_LEN);
-        const payloadPlain = recvCipher.decrypt(nonceBytes(recvNonce), payloadSealed);
+        const payloadPlain = recvCipher.decrypt(leNonce(recvNonce), payloadSealed);
         recvNonce++;
         recvBootstrapped = true;
         controller.enqueue(payloadPlain as Uint8Array<ArrayBuffer>);
@@ -166,43 +164,18 @@ const dialShadowsocksInner = async (
   return { readable: ssReadable, writable: ssWritable };
 };
 
-interface Aead {
-  encrypt(nonce: Uint8Array, plaintext: Uint8Array): Uint8Array;
-  decrypt(nonce: Uint8Array, ciphertext: Uint8Array): Uint8Array;
-}
-
-const makeAead = (method: SsMethod, key: Uint8Array): Aead => {
-  if (method === 'chacha20-ietf-poly1305') {
-    return {
-      encrypt: (nonce, pt) => chacha20poly1305(key, nonce).encrypt(pt),
-      decrypt: (nonce, ct) => chacha20poly1305(key, nonce).decrypt(ct),
-    };
-  }
-  return {
-    encrypt: (nonce, pt) => gcm(key, nonce).encrypt(pt),
-    decrypt: (nonce, ct) => gcm(key, nonce).decrypt(ct),
-  };
-};
+const makeAead = (method: SsMethod, key: Uint8Array): Aead =>
+  makeAeadShared(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', key);
 
 const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {
   const lenBytes = new Uint8Array(2);
   lenBytes[0] = (payload.byteLength >> 8) & 0xff;
   lenBytes[1] = payload.byteLength & 0xff;
-  const lenSealed = cipher.encrypt(nonceBytes(baseNonce), lenBytes);
-  const payloadSealed = cipher.encrypt(nonceBytes(baseNonce + 1n), payload);
+  const lenSealed = cipher.encrypt(leNonce(baseNonce), lenBytes);
+  const payloadSealed = cipher.encrypt(leNonce(baseNonce + 1n), payload);
   const out = new Uint8Array(lenSealed.byteLength + payloadSealed.byteLength);
   out.set(lenSealed, 0);
   out.set(payloadSealed, lenSealed.byteLength);
-  return out;
-};
-
-const nonceBytes = (counter: bigint): Uint8Array<ArrayBuffer> => {
-  const out = new Uint8Array(NONCE_LEN);
-  let c = counter;
-  for (let i = 0; i < NONCE_LEN; i++) {
-    out[i] = Number(c & 0xffn);
-    c >>= 8n;
-  }
   return out;
 };
 

@@ -2,6 +2,7 @@ import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import type { Fetcher } from '@floway-dev/provider';
+import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
 // Surfaced both at the upfront gate (when a non-direct entry is in play)
@@ -253,19 +254,6 @@ const tryOne = async (
     }
     throw err;
   }
-};
-
-// AbortError can land as a DOMException (Web Streams / fetch / browsers /
-// modern Node) or, when the caller manually wraps it, as any object whose
-// `name === 'AbortError'`. Some runtimes (notably Workers and undici)
-// further wrap aborts as `TypeError` with `{ cause: AbortError }`, so we
-// walk the cause chain too. Treat all of them as cancellation.
-const isAbortError = (err: unknown): boolean => {
-  for (let cur: unknown = err; cur != null; cur = (cur as { cause?: unknown }).cause) {
-    if (cur instanceof DOMException && cur.name === 'AbortError') return true;
-    if (cur instanceof Error && cur.name === 'AbortError') return true;
-  }
-  return false;
 };
 
 const buildProxiedRequest = async (url: string, init: RequestInit): Promise<ProxiedRequest> => {

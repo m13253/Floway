@@ -2,7 +2,7 @@
 // Used both for native sockets that expose readable/writable directly and
 // for our userspace-TLS-wrapped streams.
 
-import { utf8Bytes } from './bytes.ts';
+import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
@@ -49,7 +49,7 @@ const validateRequestMethod = (method: string): void => {
   // RFC 9110 §9.1: the method is a token. The same anti-smuggling rationale
   // as header names applies — a CR/LF/SP smuggled into the method would split
   // the request line and inject a forged head onto the wire.
-  if (method.length === 0 || !TCHAR.test(method)) {
+  if (!TCHAR.test(method)) {
     throw new HttpProtocolError(
       `caller-supplied method is not a valid token: ${JSON.stringify(method)}`,
       'BAD_HEADERS',
@@ -143,10 +143,7 @@ export const fetchOnStream = async (
     // contains both the prefix and the request head (see
     // FetchOnStreamOptions.prefix).
     if (opts?.prefix && opts.prefix.byteLength > 0) {
-      const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
-      merged.set(opts.prefix, 0);
-      merged.set(headBytes, opts.prefix.byteLength);
-      await writer.write(merged);
+      await writer.write(concat(opts.prefix, headBytes));
     } else {
       await writer.write(headBytes);
     }
