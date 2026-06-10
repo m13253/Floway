@@ -197,6 +197,12 @@ const config: Linter.Config[] = [
     // in dialers, userspace TLS, and Node `crypto` that have no place in
     // the SPA bundle. Enforce the boundary at lint so a future careless
     // import doesn't quietly inflate the bundle.
+    //
+    // Flat-config rule entries don't merge per-key — the last matching
+    // file's override fully replaces commonConfig's `no-restricted-imports`,
+    // so the platform-impl ban repeated below has to be carried explicitly
+    // to keep AGENTS.md's "no `@floway-dev/platform-*` package import" rule
+    // honoured for `apps/web` files too.
     files: ['apps/web/**/*.{ts,tsx,vue}'],
     rules: {
       'no-restricted-imports': ['error', {
@@ -204,6 +210,15 @@ const config: Linter.Config[] = [
           {
             group: ['@floway-dev/*/src/**'],
             message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
+          },
+          {
+            group: [
+              '@floway-dev/platform-cloudflare',
+              '@floway-dev/platform-cloudflare/*',
+              '@floway-dev/platform-node',
+              '@floway-dev/platform-node/*',
+            ],
+            message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
           },
           {
             // Match the bare specifier only, not the `/url`, `/url-kind`,

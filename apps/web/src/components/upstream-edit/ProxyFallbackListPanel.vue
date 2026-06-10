@@ -75,7 +75,10 @@ const activeBackoffByEntry = computed<Map<string, ActiveBackoff>>(() => {
   for (const entry of props.modelValue) {
     if (entry === DIRECT) continue;
     const rows = backoffsByProxyId.value.get(entry);
-    const row = rows?.find(r => r.upstream_id === props.upstreamId && r.expires_at > nowSec);
+    // `>=` keeps the entry's badge visible during its expiry second so the
+    // countdown's `now` edge label is reachable; a strict `>` would hide it
+    // before the displayed delta could hit zero.
+    const row = rows?.find(r => r.upstream_id === props.upstreamId && r.expires_at >= nowSec);
     if (row) {
       map.set(entry, {
         expiresIn: formatCountdown((row.expires_at - nowSec) * 1000),

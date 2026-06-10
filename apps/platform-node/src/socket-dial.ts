@@ -2,7 +2,7 @@ import net from 'node:net';
 import { Readable } from 'node:stream';
 import tls from 'node:tls';
 
-import { throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
+import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // Hand-rolled adapter from a node:net.Socket to a WritableStream<Uint8Array>.
 // Writable.toWeb only wires `close()` to socket.end(); writer.abort() is
@@ -62,6 +62,7 @@ const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
 export const nodeSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
+    const dialHost = normalizeDialHost(host);
     // node:net / node:tls accept `signal` natively; passing it lets the
     // runtime tear down a connect that has not yet fired 'connect' /
     // 'secureConnect' without us having to race anything ourselves.
@@ -76,8 +77,8 @@ export const nodeSocketDial: SocketDial = {
     const signal = opts?.signal;
     const socket = opts?.tls
       // @ts-expect-error – tls.ConnectionOptions does not yet declare `signal` in @types/node, but tls.connect accepts and honours it at runtime.
-      ? tls.connect({ host, port, servername: host, signal })
-      : net.connect({ host, port, allowHalfOpen: true, signal });
+      ? tls.connect({ host: dialHost, port, servername: dialHost, signal })
+      : net.connect({ host: dialHost, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
       const onReady = (): void => {

@@ -38,6 +38,16 @@ export const assertValidTargetPort = (port: number, protocol: string): void => {
 
 /**
  * Enforce the `DialTarget.host` ASCII + non-empty contract before any I/O.
+ * Also reject the C0 control set (NUL, CR, LF, the rest of 0x00-0x1F),
+ * SP, and DEL: a host containing one of those bytes that flows into the
+ * HTTP CONNECT request line as `${target.host}:${target.port}` would
+ * split the request line and inject a forged head onto the wire — the
+ * same anti-smuggling defense `@floway-dev/http`'s ws-upgrade and
+ * fetch-on-stream already apply at their layer. The binary-framed dialers
+ * (SOCKS5 / SS / SS2022 / Trojan / VLESS) are length-prefixed and not
+ * exposed to that smuggling shape, but we centralize the byte filter here
+ * so every dialer (current and future) inherits the same defense.
+ *
  * SOCKS-style ATYP-domain framing carries the host as a 1-byte length-
  * prefix + bytes, so callers wiring those protocols pass `maxBytes: 255`.
  * Rejecting here surfaces as 'config' before any TCP slot is burned,
@@ -53,9 +63,16 @@ export const assertValidTargetHost = (
     throw new ProxyDialError(`${protocol}: target host is empty`, 'config');
   }
   for (let i = 0; i < host.length; i++) {
-    if (host.charCodeAt(i) > 0x7f) {
+    const c = host.charCodeAt(i);
+    if (c > 0x7f) {
       throw new ProxyDialError(
         `${protocol}: target host must be ASCII (punycode IDN before dial): ${host}`,
+        'config',
+      );
+    }
+    if (c < 0x21 || c === 0x7f) {
+      throw new ProxyDialError(
+        `${protocol}: target host contains a forbidden byte 0x${c.toString(16).padStart(2, '0')}`,
         'config',
       );
     }

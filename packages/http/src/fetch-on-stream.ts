@@ -116,8 +116,6 @@ export const fetchOnStream = async (
   validateRequestMethod(request.method);
   validateRequestPath(request.path);
 
-  const writer = stream.writable.getWriter();
-  const enc = new TextEncoder();
   // Normalize the request header block in a single pass:
   //   - drop Content-Length / Transfer-Encoding — the buffered body's
   //     exact length is the source of truth at this layer, and a chunked
@@ -132,6 +130,9 @@ export const fetchOnStream = async (
   //   - validate every name/value the caller passes through so a
   //     ${k}: ${v}\r\n serialization can't smuggle a fresh header line
   //     onto the wire.
+  // Validation runs before getWriter() so a forbidden byte rejects without
+  // ever taking the writer lock — otherwise a pre-write throw would leave
+  // the lock pinned and the caller's writable.abort() would TypeError.
   const headers: Record<string, string> = {};
   let hasAcceptEncoding = false;
   for (const [k, v] of Object.entries(request.headers)) {
@@ -150,32 +151,42 @@ export const fetchOnStream = async (
   const bodyLen = request.body?.byteLength ?? 0;
   if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
 
+  const enc = new TextEncoder();
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
   head += '\r\n';
   const headBytes = enc.encode(head);
-  // Prepend the optional prefix into the same write so the leading record
-  // contains both the prefix and the request head (see
-  // FetchOnStreamOptions.prefix).
-  if (opts?.prefix && opts.prefix.byteLength > 0) {
-    const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
-    merged.set(opts.prefix, 0);
-    merged.set(headBytes, opts.prefix.byteLength);
-    await writer.write(merged);
-  } else {
-    await writer.write(headBytes);
-  }
-  if (request.body?.byteLength) {
-    const chunkSize = opts?.bodyWriteChunkSize ?? 16384;
-    let off = 0;
-    while (off < request.body.byteLength) {
-      const slice = request.body.subarray(off, Math.min(off + chunkSize, request.body.byteLength));
-      await writer.write(slice);
-      off += slice.byteLength;
+
+  const writer = stream.writable.getWriter();
+  try {
+    // Prepend the optional prefix into the same write so the leading record
+    // contains both the prefix and the request head (see
+    // FetchOnStreamOptions.prefix).
+    if (opts?.prefix && opts.prefix.byteLength > 0) {
+      const merged = new Uint8Array(opts.prefix.byteLength + headBytes.byteLength);
+      merged.set(opts.prefix, 0);
+      merged.set(headBytes, opts.prefix.byteLength);
+      await writer.write(merged);
+    } else {
+      await writer.write(headBytes);
     }
+    if (request.body?.byteLength) {
+      const chunkSize = opts?.bodyWriteChunkSize ?? 16384;
+      let off = 0;
+      while (off < request.body.byteLength) {
+        const slice = request.body.subarray(off, Math.min(off + chunkSize, request.body.byteLength));
+        await writer.write(slice);
+        off += slice.byteLength;
+      }
+    }
+  } finally {
+    // Release on every exit so a write rejection doesn't pin the lock —
+    // Web Streams errors the stream on rejection but does NOT release the
+    // writer, which would then make the caller's writable.abort() fail
+    // with "Cannot abort a stream that already has a writer".
+    writer.releaseLock();
   }
-  writer.releaseLock();
 
   return toWebResponse(await parseHttpResponse(stream.readable));
 };

@@ -1,6 +1,6 @@
 import { connect } from 'cloudflare:sockets';
 
-import { throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
+import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // `tls: true` switches to workerd's native TLS — used by HTTPS CONNECT and
 // VLESS-TCP+TLS, where the outer leg to the proxy is the runtime-side cert
@@ -20,8 +20,9 @@ import { throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/plat
 export const cloudflareSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
+    const dialHost = normalizeDialHost(host);
     const socket = connect(
-      { hostname: host, port },
+      { hostname: dialHost, port },
       {
         // Half-open is honoured for plain TCP only. On the TLS leg, close-notify
         // makes half-close fragile across TLS 1.3 implementations, so we mirror

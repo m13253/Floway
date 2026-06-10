@@ -99,11 +99,19 @@ async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefine
       const delay = baseDelayMs * Math.pow(2, attempt);
       console.warn(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${e instanceof Error ? e.message : String(e)}`);
       // Honour the signal during backoff so a cancellation that fires
-      // mid-sleep also unwinds promptly.
+      // mid-sleep also unwinds promptly. `{ once: true }` only fires-then-
+      // detaches; on the timer-resolve happy path we have to remove the
+      // listener ourselves, otherwise a long-lived caller signal (one
+      // shared across many retries / requests) accumulates one closure
+      // per sleep pinning the closed-over `reject`.
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, delay);
+        let onAbort: (() => void) | null = null;
+        const timer = setTimeout(() => {
+          if (onAbort && signal) signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, delay);
         if (signal) {
-          const onAbort = (): void => {
+          onAbort = (): void => {
             clearTimeout(timer);
             reject(signal.reason ?? new DOMException('aborted', 'AbortError'));
           };

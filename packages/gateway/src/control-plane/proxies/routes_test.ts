@@ -90,6 +90,10 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
   const body = (await resp.json()) as { error?: string };
   assertEquals(typeof body.error, 'string');
   assertEquals(body.error?.startsWith('Invalid proxy URI:'), true);
+  // Pin "no doubled prefix" — parseProxyUri's URL-constructor branch
+  // raises 'malformed proxy URI: …' which the gateway used to re-wrap
+  // verbatim, producing 'Invalid proxy URI: malformed proxy URI: …'.
+  assertEquals(body.error?.includes('proxy URI: malformed proxy URI'), false);
 });
 
 test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', async () => {

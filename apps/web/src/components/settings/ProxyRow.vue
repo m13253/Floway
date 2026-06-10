@@ -74,8 +74,12 @@ const lastTestedAgo = computed(() => {
 
 const activeBackoffs = computed(() => {
   const nowSec = Math.floor(now.value.getTime() / 1000);
+  // `>=` keeps the row visible during its expiry second so the countdown's
+  // last tick renders the 'now' edge label `format-countdown.ts` documents.
+  // A strict `>` would hide the row before the delta could go ≤ 0, leaving
+  // that label unreachable.
   return props.backoffsForProxy
-    .filter(b => b.expires_at > nowSec)
+    .filter(b => b.expires_at >= nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
 

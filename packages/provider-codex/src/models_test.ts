@@ -2,13 +2,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION } from './constants.ts';
 import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
+import { directFetcher } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-
-// `fetchCodexCatalog` requires an explicit fetcher; the test surface uses
-// the runtime `fetch` directly so we can spy on outbound requests without
-// pulling in the full per-request dial chain.
-const directFetcher: typeof fetch = (input, init) => fetch(input as string, init);
 
 afterEach(() => vi.restoreAllMocks());
 

@@ -495,14 +495,20 @@ const frameDuplexOnTransport = (
 
   const readable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
+    // Mirror closePlain (and tls.ts plainReadable.cancel): a non-Error
+    // reason is a clean consumer cancel — emit a polite close frame and
+    // FIN; an Error reason means the consumer hit a failure mid-body, so
+    // RST the writer rather than graceful-end a half whose readable just
+    // errored.
     cancel(reason) {
       plainClosed = true;
       detachAbortListener?.();
       detachAbortListener = null;
       void reader.cancel(reason).catch(() => {});
-      // Best-effort close frame; if the writer is already torn down
-      // the catch in sendCloseFrame swallows the error.
-      void sendCloseFrame(1000, '').then(() => frameWriter.close().catch(() => {}));
+      void sendCloseFrame(1000, '').then(() => {
+        if (reason instanceof Error) return frameWriter.abort(reason).catch(() => {});
+        return frameWriter.close().catch(() => {});
+      });
     },
   });
 

@@ -8,6 +8,7 @@ export {
   getSocketDial,
   resetSocketDialForTesting,
   throwAbort,
+  normalizeDialHost,
   type SocketDial,
   type DialedSocket,
 } from './socket-dial.ts';

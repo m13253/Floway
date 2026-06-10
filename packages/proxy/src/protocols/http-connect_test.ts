@@ -376,6 +376,28 @@ describe('dialHttpConnect — pre-dial target validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
+
+  // CR/LF/SP/NUL/DEL inside the target host would split the CONNECT
+  // request line as `${target.host}:${target.port}` and inject a forged
+  // head onto the wire — same anti-smuggling defense the http package's
+  // ws-upgrade and fetch-on-stream apply to their interpolated strings.
+  it.each([
+    ['CR', 'evil\r.example'],
+    ['LF', 'evil\n.example'],
+    ['SP', 'evil .example'],
+    ['NUL', 'evil\0.example'],
+    ['DEL', 'evil\x7f.example'],
+  ])('rejects a target host containing %s at stage=config', async (_label, host) => {
+    const fake = makeFakeSocketDial();
+    await expect(
+      dialHttpConnect(httpConfig(), { host, port: 443 }, { socketDial: fake.socketDial }),
+    ).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('forbidden byte'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
 });
 
 describe('dialHttpConnect — response status code matrix', () => {

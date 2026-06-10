@@ -64,3 +64,14 @@ export const throwAbort = (signal: AbortSignal): never => {
   if (reason instanceof Error) throw reason;
   throw new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
+
+/**
+ * WHATWG `URL.hostname` keeps the `[...]` envelope around IPv6 literals,
+ * but the runtime TCP APIs (`node:net`, workerd's `cloudflare:sockets`)
+ * treat the host string as either a DNS name or a bare IP literal — a
+ * bracketed `[::1]` is rejected as ENOTFOUND by both. The proxy URL
+ * parser hands `url.hostname` to us unchanged, so every concrete dial
+ * impl strips the envelope here before reaching the runtime call.
+ */
+export const normalizeDialHost = (host: string): string =>
+  host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;

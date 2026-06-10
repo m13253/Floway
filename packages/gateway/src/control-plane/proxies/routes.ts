@@ -9,7 +9,13 @@ import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, typ
 
 const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
-const proxyUriValidationError = (err: unknown): string => `Invalid proxy URI: ${err instanceof Error ? err.message : String(err)}`;
+const proxyUriValidationError = (err: unknown): string => {
+  const raw = err instanceof Error ? err.message : String(err);
+  // The URL-constructor branch of parseProxyUri prepends "malformed proxy
+  // URI: ..." which would double up under our own "Invalid proxy URI: "
+  // wrap. Strip it so the dashboard sees one prefix.
+  return `Invalid proxy URI: ${raw.replace(/^malformed proxy URI: /, '')}`;
+};
 
 export const listProxies = async (c: Context) => {
   const proxies = await getRepo().proxies.list();
@@ -72,10 +78,11 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
   }
 
   const repo = getRepo();
-  // Capture the existing URL before patch so we know whether to sweep
-  // backoff state — the patch itself only signals URL change via clearing
-  // the test-result fields, which would otherwise leave operators waiting
-  // for the geometric schedule to recover after they fixed a broken proxy.
+  // Read the existing row so we can compare URLs ourselves — the patch
+  // helper does not return whether `url` actually changed. The bit lets a
+  // URL edit also wipe the proxy's outstanding backoff rows; otherwise an
+  // operator who fixed a broken proxy would wait through the geometric
+  // schedule before the next dial retried it.
   const existing = await repo.proxies.getById(id);
   if (!existing) return c.json({ error: 'Proxy not found' }, 404);
   const urlChanged = body.url !== undefined && body.url !== existing.url;
