@@ -427,7 +427,6 @@ export const parseShimOperations = (args: Record<string, unknown> | null): Parse
   };
 };
 
-// Safety cap; see usage in `planShimSlots`.
 export const ITERATION_CAP = 30;
 
 // One web_search backend op's result data: the action shape downstream

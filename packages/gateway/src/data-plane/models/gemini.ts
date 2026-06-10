@@ -27,7 +27,6 @@ interface GeminiModel {
   cost?: ModelPricing;
 }
 
-// All three methods are listed unconditionally; no capability filter applies at this layer.
 const GEMINI_GENERATION_METHODS: GeminiGenerationMethod[] = ['generateContent', 'streamGenerateContent', 'countTokens'];
 
 const toGeminiModel = (model: InternalModel): GeminiModel => {
@@ -55,10 +54,10 @@ const geminiError = (status: number, message: string): Response =>
     { status: status as 400 | 404 | 500 | 502 },
   );
 
-// Same split as the OpenAI-shaped /models endpoint: ProviderModelsUnavailableError
-// is genuine upstream HTTP/parse failure and must not leak upstream identity;
-// other errors (e.g. the registry's "no upstream configured" hint) carry
-// actionable operator guidance and surface verbatim.
+// ProviderModelsUnavailableError is genuine upstream HTTP/parse failure and
+// must not leak upstream identity; other errors (e.g. the registry's "no
+// upstream configured" hint) carry actionable operator guidance and surface
+// verbatim.
 const geminiModelLoadError = (error: unknown): Response => {
   if (error instanceof ProviderModelsUnavailableError) {
     return geminiError(502, MODEL_LISTING_FAILURE_MESSAGE);

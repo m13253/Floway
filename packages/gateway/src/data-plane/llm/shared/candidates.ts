@@ -7,9 +7,8 @@ export type { ProviderCandidate };
 
 // Returns the candidates that satisfy both the model resolution and the
 // target-endpoint pick, plus a `sawModel` flag that distinguishes the
-// "model is missing entirely" error kind (`model-missing`) from "model
-// exists but doesn't expose the endpoint this source needs"
-// (`model-unsupported`).
+// "model is missing entirely" failure from "model exists but does not
+// expose the endpoint this source needs".
 export const enumerateProviderCandidates = async ({
   upstreamIds, model, pickTarget,
 }: {

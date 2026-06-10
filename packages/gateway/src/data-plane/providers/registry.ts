@@ -23,9 +23,6 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   codex: createCodexProvider,
 };
 
-// Build a single provider instance for one upstream record. The fetcher is
-// supplied per call (to getProvidedModels and to each call* method); the
-// instance carries no fetcher.
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record);
 
@@ -196,7 +193,6 @@ export const getModels = async (
   return [];
 };
 
-// Strips planner-only and provider-binding fields, leaving the InternalModel projection.
 export const getInternalModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,

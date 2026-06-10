@@ -153,7 +153,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
 
   // Most tests need an admin-authenticated dashboard caller; expose a fresh
   // session token tied to user 1 (the seed admin) for
-  // `x-floway-session: adminSession`. ADMIN_KEY is not a data-plane credential.
+  // `x-floway-session: adminSession`.
   const adminSession = (await repo.sessions.create(1)).id;
 
   return { repo, adminKey, adminSession, apiKey, githubAccount, copilotUpstream };

@@ -234,7 +234,7 @@ test('collectImageSources reads input_image blocks and image_generation_call res
   assertEquals(sources.length, 2);
 });
 
-test('collectImageSources skips http(s) image urls (remote fetch deferred)', () => {
+test('collectImageSources skips http(s) image urls (remote fetch unsupported)', () => {
   const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [

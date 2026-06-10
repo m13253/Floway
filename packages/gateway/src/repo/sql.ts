@@ -742,14 +742,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
       .bind(...performanceDimensionBinds(record));
   }
 
-  private addBucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number): SqlPreparedStatement {
-    return this.bucketStatement(sample, lowerMs, upperMs, count, 'add');
-  }
-
-  private setBucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number): SqlPreparedStatement {
-    return this.bucketStatement(sample, lowerMs, upperMs, count, 'set');
-  }
-
   private bucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number, mode: 'add' | 'set'): SqlPreparedStatement {
     return this.db
       .prepare(

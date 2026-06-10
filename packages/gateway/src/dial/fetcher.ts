@@ -6,11 +6,9 @@ import type { Fetcher } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
-// Per-proxy dial parameters loaded once per request and looked up by
-// fallback-list entry. Carries both the parsed wire config and the
-// optional per-proxy dial deadline override so a slow but real proxy can
-// be granted more time than the gateway default without raising the bar
-// for everyone.
+// Pairs the parsed wire config with an optional per-proxy dial deadline so
+// a slow but real proxy can be granted more time without raising the bar
+// for the whole gateway.
 export interface ProxyEntry {
   config: ProxyConfig;
   /** ms; null means "use the dialer's default". */
@@ -22,9 +20,8 @@ interface CreateFetcherInput {
   upstreamId: string;
   fallbackList: string[];
   proxyById: Map<string, ProxyEntry>;
-  // Inject runProxied/runDirect/socketDial so the gateway-side fetcher
-  // stays free of any direct dependency on a runtime fetch implementation;
-  // the data-plane composition root supplies them.
+  // Injected so the fetcher stays runtime-agnostic — the composition root
+  // chooses the concrete dial/fetch implementations.
   runProxied: (
     config: ProxyConfig,
     target: ProxyRequestTarget,
@@ -45,8 +42,8 @@ interface CreateFetcherInput {
 /**
  * Buffered request shape extracted from a Fetcher call. Splits the
  * transport target (host/port/tls/sni) from the HTTP-shaped request
- * (method/path/headers/body) so each layer of @floway-dev/proxy and
- * @floway-dev/http receives only what it needs.
+ * (method/path/headers/body) so the dial layer and request-shaping layer
+ * each receive only what they need.
  */
 interface ProxiedRequest {
   target: ProxyRequestTarget;
@@ -131,10 +128,6 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   };
 };
 
-// Synthesise a fresh RequestInit whose body is the buffered Uint8Array
-// (a stable, multi-readable shape) and whose headers carry the synthesised
-// Content-Type from the original FormData/URLSearchParams body. Other init
-// fields (method, signal) ride through unchanged.
 const rebuildInitFromProxied = (original: RequestInit, proxied: ProxiedRequest): RequestInit => {
   const headers = new Headers(original.headers);
   const targetCt = proxied.request.headers['content-type'];

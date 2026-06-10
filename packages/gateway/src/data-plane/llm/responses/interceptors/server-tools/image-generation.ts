@@ -106,7 +106,7 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
 
 // Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string into
 // raw bytes. Returns null for non-data URLs (e.g. http(s)): fetching remote
-// images for edit binding is deferred — only inline image bytes are bound.
+// images for edit binding is not supported — only inline image bytes are bound.
 const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
   const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
   if (dataUrlMatch === null) {
@@ -285,8 +285,7 @@ const validateHostedImageGenerationEntry = (
 };
 
 // Validate every hosted `image_generation` entry; the LAST entry's config
-// wins (most-recent declaration), but any earlier entry's invalid field
-// still rejects the request.
+// wins (most-recent declaration).
 export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
@@ -300,10 +299,10 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 };
 
 // Single optional `prompt` parameter — matches the native `image_gen.imagegen`
-// tool dumped 6/6-consistently from the orchestrator (size/quality/etc. are
-// NOT model-chosen; the shim layers them on from the client config, exactly
-// like Azure). A minimal description elicits native-quality refined prompts
-// while costing ~50 input tokens vs the native hosted tool's ~2300.
+// tool's surface (size/quality/etc. are NOT model-chosen; the shim layers them
+// on from the client config, exactly like Azure). A minimal description
+// elicits native-quality refined prompts while costing ~50 input tokens vs
+// the native hosted tool's ~2300.
 export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
@@ -821,15 +820,12 @@ const streamImageGeneration = (
 // downstream client on the synthesized `image_generation_call` item.
 //
 // Fidelity across requests: a client may echo a prior call back as a bare id
-// with the bytes dropped. Such a reference is restored before this seam runs —
-// the stored-items layer persists every synthesized output item as a portable
-// row and inline-expands a by-id reference back to the full `payload.item`
-// (result bytes included) ahead of the source interceptors — so this seam, and
-// `collectImageSources`, already receive the complete item. The
-// `image_generation_call` shape needs no out-of-band payload for this to be
-// lossless: every field required to rebuild the pair, INCLUDING the error
-// (`status` + `error{message,code,type}`), has a public home on the item, so
-// persisting the public item alone suffices.
+// with the bytes dropped. By the time this seam runs the input item already
+// carries the full result payload — collectImageSources can bind result bytes
+// directly without any out-of-band lookup. The `image_generation_call` shape
+// needs no out-of-band payload for this to be lossless: every field required
+// to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
+// type}`), has a public home on the item.
 export const transformInputItemsForImageGeneration = (
   input: ResponsesInputItem[],
   toolName: string,

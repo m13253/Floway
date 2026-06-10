@@ -34,8 +34,7 @@ export const tokenUsageFromPromptTokenResponse = (usage: unknown): TokenUsage | 
 // When a details object is missing but its total is present, the whole total is
 // charged on the bare dimension rather than inventing a split. A present field
 // that is a non-number is treated as a malformed upstream payload (return
-// null) rather than silently coerced — matching the anti-fallback rule in
-// AGENTS.md.
+// null) rather than silently coerced.
 export const tokenUsageFromImagesResponse = (usage: unknown): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;
   const { input_tokens: inputTotal, output_tokens: outputTotal, input_tokens_details: inputDetails, output_tokens_details: outputDetails } = usage as ImagesUsageShape;

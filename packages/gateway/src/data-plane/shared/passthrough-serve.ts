@@ -1,17 +1,16 @@
-// Shared serve scaffold for non-LLM data-plane endpoints (embeddings, image
-// generations, image edits). These bypass the LLM source/target executor
-// because they have no protocol translation — the request body is forwarded
-// to the chosen provider's matching endpoint and the JSON response is
-// passed through back to the client. The shape is:
+// Shared serve scaffold for non-LLM passthrough data-plane endpoints. These
+// bypass the LLM source/target executor because they have no protocol
+// translation — the request body is forwarded to the chosen provider's
+// matching endpoint and the JSON response is passed through back to the
+// client. The shape is:
 //
 //   resolve model -> iterate provider bindings -> first matching binding
 //     -> provider call -> passthrough response -> fire-and-forget usage + perf
 //
 // Usage extraction is provided by the caller because each endpoint family
-// reports usage differently (OpenAI embeddings use `prompt_tokens`, images
-// use `input_tokens`/`output_tokens`). Usage and request-performance writes
-// are scheduled through the runtime's background scheduler so transient
-// repo failures cannot turn a successful 200 from upstream into a 502.
+// reports usage differently. Usage and request-performance writes are
+// scheduled through the runtime's background scheduler so transient repo
+// failures cannot turn a successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -94,9 +93,7 @@ export interface PassthroughServeContext {
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
   readonly model: string;
-  // Selects which provider binding can serve this endpoint family. For
-  // embeddings this is `kind === 'embedding'`; for images it gates on the
-  // specific `endpoints` entry.
+  // Selects which provider binding can serve this endpoint family.
   readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —
@@ -112,8 +109,6 @@ export interface PassthroughServeContext {
   readonly extractUsage: (usage: unknown) => TokenUsage | null;
   // Returned as the 400 body when no provider binding matched. Phrased
   // per-endpoint so the error tells the client which capability is missing.
-  // The helper interpolates the resolved model id by calling
-  // `noBindingMessage(modelId)`.
   readonly noBindingMessage: (modelId: string) => string;
 }
 
