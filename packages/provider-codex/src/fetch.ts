@@ -45,14 +45,9 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   cache: CacheRepo;
   effects: CodexCallEffects;
-  // Per-call options threaded from the gateway. `call.fetcher` is the
-  // per-upstream proxy-aware indirection covering BOTH the upstream
-  // `/responses` POST AND the OAuth refresh hop that may run inside it, so a
-  // single fallback chain covers them both under restricted egress.
-  // `call.recordUpstreamLatency` wraps the actual upstream fetch so the
-  // gateway records pure round-trip latency, excluding token refresh, header
-  // building, and SSE parsing; on a 401-retry the second call's measurement
-  // is the one that lands in `upstream_success`.
+  // Per-call options; see UpstreamCallOptions for the fetcher /
+  // recordUpstreamLatency contract. The fetcher covers both the /responses
+  // POST and the OAuth refresh hop that may run inside it.
   call: UpstreamCallOptions;
 }
 

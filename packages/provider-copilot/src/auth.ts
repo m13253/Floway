@@ -96,9 +96,6 @@ async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefine
       // AbortError is a deliberate caller cancellation — propagate
       // immediately rather than walk N retries with the same already-
       // aborted signal, which would burn the proxy chain on each cycle.
-      // `isAbortError` recognises every shape we see in practice — bare
-      // `Error { name: 'AbortError' }`, `DOMException`, and wrapped
-      // `TypeError { cause: AbortError }` from Workers/undici fetch.
       if (isAbortError(e)) throw e;
       // Token-fetch failures with a known-non-transient status surface as
       // CopilotTokenFetchError; bypass retry there. Everything else

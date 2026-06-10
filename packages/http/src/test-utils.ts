@@ -1,11 +1,10 @@
-// Helper duplex for @floway-dev/http tests.
+// Helper duplex for HTTP-layer tests.
 //
 // Pairs a duplex that the HTTP layer reads/writes against with a server-side
 // handle for asserting on emitted bytes and feeding crafted server responses
 // (chunked, malformed, CL+TE smuggling vectors, …).
 
 export interface FakeDuplex {
-  // Consumed by @floway-dev/http as the network side.
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
 
