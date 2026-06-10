@@ -90,9 +90,9 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
   const body = (await resp.json()) as { error?: string };
   assertEquals(typeof body.error, 'string');
   assertEquals(body.error?.startsWith('Invalid proxy URI:'), true);
-  // Pin "no doubled prefix" — parseProxyUri's URL-constructor branch
-  // raises 'malformed proxy URI: …' which the gateway used to re-wrap
-  // verbatim, producing 'Invalid proxy URI: malformed proxy URI: …'.
+  // Pin no doubled prefix: parseProxyUri's URL-constructor branch raises
+  // 'malformed proxy URI: …'; the wrapper must strip that internal prefix
+  // so the operator sees a single 'Invalid proxy URI: …' framing.
   assertEquals(body.error?.includes('proxy URI: malformed proxy URI'), false);
 });
 
