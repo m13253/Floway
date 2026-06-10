@@ -7,7 +7,7 @@ import type { Repo } from './types.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// Both backends must agree on the proxy / proxy-backoff repo contract.
+// Both backends must agree on the proxies repo contract.
 // Memory drives the unit tests by default, but the production deployments
 // run on D1 and node:sqlite — running the same scenarios against SqlRepo
 // (with sql.js applying every migration) is what catches schema drift,
