@@ -13,7 +13,6 @@ import { getRepo } from '../../repo/index.ts';
 import type { PerformanceMetricScope, PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
 import { resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
-import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -127,14 +126,14 @@ export const performanceTelemetry = async (c: Ctx) => {
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ records, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
+    return c.json({ records, users: userMetadata });
   }
 
   if (query.include_key_metadata !== '1') return c.json({ records });
   const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
   const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  return c.json({ records, keys: keyMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
+  return c.json({ records, keys: keyMetadata });
 };
 
 export const performanceOverview = async (c: Ctx) => {
@@ -163,7 +162,7 @@ export const performanceOverview = async (c: Ctx) => {
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ series, summaryRows, modelRows, runtimeRows, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
+    return c.json({ series, summaryRows, modelRows, runtimeRows, users: userMetadata });
   }
 
   return c.json({ series, summaryRows, modelRows, runtimeRows });

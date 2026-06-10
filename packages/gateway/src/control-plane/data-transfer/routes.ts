@@ -21,7 +21,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { PerformanceApiName, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { isCopilotAccountType } from '@floway-dev/provider-copilot';
@@ -41,7 +41,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 4;
+  version: 6;
   exportedAt: string;
   data: {
     users: User[];
@@ -56,10 +56,9 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 4;
+const EXPORT_VERSION = 6;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
-const PERFORMANCE_API_NAMES = new Set<PerformanceApiName>(['messages', 'responses', 'chat-completions', 'gemini', 'embeddings', 'images_generations', 'images_edits']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot', 'codex']);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
@@ -501,8 +500,6 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       (typeof item.upstream === 'string' && isLegacyUpstreamIdentity(item.upstream)) ||
       typeof item.modelKey !== 'string' ||
       item.modelKey.length === 0 ||
-      !isPerformanceApiName(item.sourceApi) ||
-      !isPerformanceApiName(item.targetApi) ||
       typeof item.stream !== 'boolean' ||
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
@@ -531,8 +528,6 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       model: item.model,
       upstream: item.upstream as string | null,
       modelKey: item.modelKey,
-      sourceApi: item.sourceApi,
-      targetApi: item.targetApi,
       stream: item.stream,
       runtimeLocation: item.runtimeLocation,
       requests: item.requests,
@@ -548,8 +543,6 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
-
-const isPerformanceApiName = (value: unknown): value is PerformanceApiName => typeof value === 'string' && PERFORMANCE_API_NAMES.has(value as PerformanceApiName);
 
 const proxyRecordToExportEntry = (record: ProxyRecord): SerializedProxy => ({
   id: record.id,

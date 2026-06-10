@@ -357,8 +357,8 @@ export const listUpstreamModels = async (c: Context) => {
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    const instance = await createProviderInstance(record, fetcherForUpstream(record.id));
-    const models = await instance.provider.getProvidedModels();
+    const instance = await createProviderInstance(record);
+    const models = await instance.provider.getProvidedModels(fetcherForUpstream(record.id));
     const data = models.map(model => ({
       upstreamModelId: model.id,
       publicModelId: model.id,

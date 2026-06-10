@@ -1,3 +1,4 @@
+import type { Fetcher } from './options.ts';
 import type { ModelProviderInstance, ProviderModelRecord } from './provider.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
@@ -12,11 +13,15 @@ export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 // the per-binding flag set; `provider` is the resolved upstream provider
 // instance the binding came from, retained alongside the binding so the
 // call site can register telemetry, invalidate caches, and dispatch the
-// upstream call without re-resolving the registry.
+// upstream call without re-resolving the registry. `fetcher` is the
+// per-upstream proxy-aware indirection minted by the per-request fetcher
+// builder, carried with the candidate so every provider call leg routes
+// through the same fallback chain.
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
   readonly binding: ProviderModelRecord;
   readonly targetApi: LlmTargetApi;
+  readonly fetcher: Fetcher;
 }
 
 // Per-protocol invocation shape passed to gateway-side interceptors. Carries

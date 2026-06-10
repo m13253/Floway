@@ -86,8 +86,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
    agent config.
 
-Import/export of upstreams, keys, and search config is in Settings; it uses the
-latest `version: 3` payload shape.
+Import/export of upstreams, keys, and search config is in Settings. The
+payload format is tied to the running deployment, so import only accepts a
+file produced by a deployment at the same version — re-export from the
+current deployment before importing.
 
 ## Server Tools
 

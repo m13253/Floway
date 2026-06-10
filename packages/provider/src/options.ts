@@ -12,11 +12,11 @@ export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 // token exchange (the upstream is created from the response).
 export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 
-export interface FetchOptions {
+// Per-call shape for the small low-level `*Fetch*` helpers each provider
+// keeps in `fetch.ts`. `fetcher` is the per-upstream proxy-aware indirection
+// for outbound HTTP; `extraHeaders` are merged on top of the helper's own
+// auth/intent/UA headers (provider boundary interceptors populate this).
+export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
-  fetcher: Fetcher;
-}
-
-export interface ProviderFactoryOptions {
   fetcher: Fetcher;
 }

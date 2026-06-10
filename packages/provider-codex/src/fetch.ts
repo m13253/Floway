@@ -21,7 +21,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type Fetcher, type UpstreamModel } from '@floway-dev/provider';
+import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // Hooks for D1 state transitions, applied with optimistic concurrency. Only
 // refresh-token rotations and terminal-state transitions go through D1;
@@ -45,13 +45,15 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   cache: CacheRepo;
   effects: CodexCallEffects;
-  /** Proxy-aware indirection threaded through every outbound HTTP from
-   *  this call: the upstream Codex `/responses` POST AND the OAuth refresh
-   *  hop that may run inside it. The data plane builds the per-upstream
-   *  fetcher via createPerRequestFetcher and hands the same one to both
-   *  legs so a single fallback chain covers them both under restricted
-   *  egress. */
-  fetcher: Fetcher;
+  // Per-call options threaded from the gateway. `call.fetcher` is the
+  // per-upstream proxy-aware indirection covering BOTH the upstream
+  // `/responses` POST AND the OAuth refresh hop that may run inside it, so a
+  // single fallback chain covers them both under restricted egress.
+  // `call.recordUpstreamLatency` wraps the actual upstream fetch so the
+  // gateway records pure round-trip latency, excluding token refresh, header
+  // building, and SSE parsing; on a 401-retry the second call's measurement
+  // is the one that lands in `upstream_success`.
+  call: UpstreamCallOptions;
 }
 
 // Refresh window: refresh proactively if the cached access_token expires within
@@ -60,18 +62,27 @@ export interface CallCodexResponsesOptions {
 const REFRESH_LEAD_SECONDS = 5 * 60;
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  // Pre-fetch gates short-circuit before reaching the network. The gateway
+  // recorder still needs the contract observed (it throws on a provider that
+  // returns without ever wrapping), so each synthetic response rides through
+  // `recordUpstreamLatency` once. The captured ~0 ms is never read — the
+  // gateway records `upstream_success` failures as a counter, not a latency.
+  const syntheticReturn = async (response: Response): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: false,
+    modelKey: opts.model.id,
+    response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
+  });
+
   if (opts.account.state !== 'active') {
-    return { ok: false, modelKey: opts.model.id, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
+    return await syntheticReturn(synthetic503(`Codex upstream is ${opts.account.state}`));
   }
 
   const now = new Date();
   const quotaSnapshot = await getCodexQuota(opts.cache, opts.upstreamId);
   if (isCodexRateLimited(quotaSnapshot, now)) {
-    return {
-      ok: false,
-      modelKey: opts.model.id,
-      response: synthetic429(`Codex upstream rate-limited until ${quotaSnapshot!.ratelimited_until!}`, quotaSnapshot!.ratelimited_until!, now),
-    };
+    return await syntheticReturn(
+      synthetic429(`Codex upstream rate-limited until ${quotaSnapshot!.ratelimited_until!}`, quotaSnapshot!.ratelimited_until!, now),
+    );
   }
 
   let accessToken: string;
@@ -80,7 +91,7 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-      return { ok: false, modelKey: opts.model.id, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
+      return await syntheticReturn(synthetic503(`Codex refresh failed: ${err.upstreamMessage}`));
     }
     throw err;
   }
@@ -98,7 +109,7 @@ const ensureAccessToken = async (opts: CallCodexResponsesOptions, now: Date): Pr
 };
 
 const refreshAndCache = async (opts: CallCodexResponsesOptions): Promise<string> => {
-  const tokens = await refreshCodexAccessToken(opts.account.refresh_token, opts.fetcher);
+  const tokens = await refreshCodexAccessToken(opts.account.refresh_token, opts.call.fetcher);
   const newCache: CodexAccessTokenCache = {
     access_token: tokens.access_token,
     expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
@@ -133,12 +144,12 @@ const performUpstreamCall = async (
     'content-type': 'application/json',
   };
 
-  const upstreamFetch = opts.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
+  const upstreamFetch = opts.call.recordUpstreamLatency(opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...opts.body, model: opts.model.id, store: false, stream: true }),
     signal: opts.signal,
-  }).then(async response => {
+  })).then(async response => {
     if (response.ok) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });

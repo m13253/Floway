@@ -4,7 +4,7 @@ import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.t
 import { clearModelsStore, ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { createCustomProvider } from '@floway-dev/provider-custom';
-import { jsonResponse, sseResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',
@@ -27,7 +27,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
 });
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const instance = createCustomProvider(baseRecord(), { fetcher: directFetcher });
+  const instance = createCustomProvider(baseRecord());
   const provider = instance.provider;
   const bodies: Record<string, Record<string, unknown>> = {};
 
@@ -66,14 +66,14 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels();
+      const [model] = await provider.getProvidedModels(directFetcher);
       assertEquals(model.id, 'echo');
 
-      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callResponses(model, { input: [] });
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callEmbeddings(model, { input: 'hi' });
+      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callResponses(model, { input: [] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callEmbeddings(model, { input: 'hi' }, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 
@@ -103,13 +103,13 @@ test('Custom provider serves from L2 within the 10 min soft window', async () =>
   await withMockedFetch(
     () => { fetches++; return jsonResponse({ object: 'list', data: [{ id: `m-${fetches}` }] }); },
     async () => {
-      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' }), { fetcher: directFetcher }).provider;
+      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' })).provider;
       await withMutableNow(1_000_000, async setNow => {
-        const first = await provider.getProvidedModels();
+        const first = await provider.getProvidedModels(directFetcher);
         assertEquals(first[0].id, 'm-1');
         setNow(1_000_000 + 5 * 60_000);
         // 5 min exceeds L1 TTL so the second call re-enters the inner closure and serves from L2.
-        const second = await provider.getProvidedModels();
+        const second = await provider.getProvidedModels(directFetcher);
         assertEquals(second[0].id, 'm-1');
       });
     },
@@ -125,13 +125,13 @@ test('Custom provider re-fetches after the 10 min soft window', async () => {
   await withMockedFetch(
     () => { fetches++; return jsonResponse({ object: 'list', data: [{ id: `m-${fetches}` }] }); },
     async () => {
-      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' }), { fetcher: directFetcher }).provider;
+      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' })).provider;
       await withMutableNow(1_000_000, async setNow => {
-        const first = await provider.getProvidedModels();
+        const first = await provider.getProvidedModels(directFetcher);
         assertEquals(first[0].id, 'm-1');
         setNow(1_000_000 + 11 * 60_000);
         clearModelsStore(); // drop L1 so we exercise L2 expiry
-        const second = await provider.getProvidedModels();
+        const second = await provider.getProvidedModels(directFetcher);
         assertEquals(second[0].id, 'm-2');
       });
     },
@@ -151,13 +151,13 @@ test('Custom provider reuses stale L2 on 429 within hard window', async () => {
       return new Response('rate limit', { status: 429 });
     },
     async () => {
-      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' }), { fetcher: directFetcher }).provider;
+      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' })).provider;
       await withMutableNow(1_000_000, async setNow => {
-        const fresh = await provider.getProvidedModels();
+        const fresh = await provider.getProvidedModels(directFetcher);
         assertEquals(fresh[0].id, 'stable');
         setNow(1_000_000 + 30 * 60_000);
         clearModelsStore();
-        const stale = await provider.getProvidedModels();
+        const stale = await provider.getProvidedModels(directFetcher);
         assertEquals(stale[0].id, 'stable');
       });
     },
@@ -178,12 +178,12 @@ test('Custom provider throws ProviderModelsUnavailableError when fetch fails bey
       return new Response('rate limit', { status: 429 });
     },
     async () => {
-      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' }), { fetcher: directFetcher }).provider;
+      const provider = createCustomProvider(baseRecord({ id: 'up_custom_cache' })).provider;
       await withMutableNow(1_000_000, async setNow => {
-        await provider.getProvidedModels();
+        await provider.getProvidedModels(directFetcher);
         setNow(1_000_000 + 3 * 60 * 60_000); // beyond 2h hard window
         clearModelsStore();
-        try { await provider.getProvidedModels(); } catch (e) { thrown = e; }
+        try { await provider.getProvidedModels(directFetcher); } catch (e) { thrown = e; }
       });
     },
   );
@@ -208,8 +208,8 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
           bearerToken: 'sk-test',
           endpoints: { chatCompletions: {} },
         },
-      }), { fetcher: directFetcher }).provider;
-      const [model] = await provider.getProvidedModels();
+      })).provider;
+      const [model] = await provider.getProvidedModels(directFetcher);
       assertEquals(model.endpoints, { chatCompletions: {} });
       assertEquals(model.kind, 'chat');
     },
@@ -233,8 +233,8 @@ test('Custom provider projects display_name / created / limits / cost from a flo
       }],
     }),
     async () => {
-      const instance = createCustomProvider(baseRecord({ id: 'up_custom_rich' }), { fetcher: directFetcher });
-      const [model] = await instance.provider.getProvidedModels();
+      const instance = createCustomProvider(baseRecord({ id: 'up_custom_rich' }));
+      const [model] = await instance.provider.getProvidedModels(directFetcher);
       assertEquals(model.display_name, 'Rich Model');
       // 2026-04-01T00:00:00Z → 1774569600
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
@@ -260,7 +260,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-named', name: 'Named Model' }] }),
     async () => {
-      const [model] = await createCustomProvider(baseRecord({ id: 'up_custom_named' }), { fetcher: directFetcher }).provider.getProvidedModels();
+      const [model] = await createCustomProvider(baseRecord({ id: 'up_custom_named' })).provider.getProvidedModels(directFetcher);
       assertEquals(model.display_name, 'Named Model');
     },
   );
@@ -281,8 +281,8 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record, { fetcher: directFetcher }).provider;
-      const models = await provider.getProvidedModels();
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
       assertEquals(models[0].kind, 'image');
@@ -309,9 +309,9 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record, { fetcher: directFetcher }).provider;
-      const models = await provider.getProvidedModels();
-      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' });
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' }, undefined, undefined, noopUpstreamCallOptions);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -339,12 +339,12 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record, { fetcher: directFetcher }).provider;
-      const models = await provider.getProvidedModels();
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels(directFetcher);
       const form = new FormData();
       form.append('prompt', 'add a kite');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
-      const result = await provider.callImagesEdits(models[0], form);
+      const result = await provider.callImagesEdits(models[0], form, undefined, undefined, noopUpstreamCallOptions);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -380,9 +380,9 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
             },
           ],
         },
-      }), { fetcher: directFetcher }).provider;
+      })).provider;
 
-      const models = await provider.getProvidedModels();
+      const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'pinned');
       assertEquals(models[0].kind, 'chat');
@@ -433,9 +433,9 @@ test('Custom provider with a manual override sharing an upstream id wins over th
             },
           ],
         },
-      }), { fetcher: directFetcher }).provider;
+      })).provider;
 
-      const models = await provider.getProvidedModels();
+      const models = await provider.getProvidedModels(directFetcher);
       // [manual, ...autoFiltered] — the upstream 'shared' copy is dropped.
       assertEquals(models.map(m => m.id), ['shared', 'auto-only']);
       const shared = models.find(m => m.id === 'shared');
@@ -455,7 +455,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
 });
 
 test('Custom provider forwards the source-derived anthropicBeta slice as the anthropic-beta header', async () => {
-  const instance = createCustomProvider(baseRecord(), { fetcher: directFetcher });
+  const instance = createCustomProvider(baseRecord());
   const provider = instance.provider;
   const seen: Array<string | null> = [];
 
@@ -469,15 +469,15 @@ test('Custom provider forwards the source-derived anthropicBeta slice as the ant
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels();
+      const [model] = await provider.getProvidedModels(directFetcher);
       // The data plane hands the parsed beta slice as the 5th argument; custom
       // upstreams register no filter interceptor, so the provider merges it.
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14']);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20']);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14'], noopUpstreamCallOptions);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20'], noopUpstreamCallOptions);
       // No beta slice → no header on the wire (the regression guard for the
       // pre-86ef9aa drop).
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, []);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, [], noopUpstreamCallOptions);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 

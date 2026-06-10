@@ -373,7 +373,7 @@ export const searchConfigSchema = z.object({
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(4, { error: 'version must be 4 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(6, { error: 'version must be 6 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
@@ -408,7 +408,7 @@ export const searchUsageQuery = z.object({
 export const performanceQuery = z.object({
   ...usageBaseQuery,
   metric_scope: z.enum(['request_total', 'upstream_success']).optional(),
-  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'sourceApi', 'targetApi', 'runtimeLocation']).optional(),
+  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
 });

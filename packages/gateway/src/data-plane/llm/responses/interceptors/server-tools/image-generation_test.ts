@@ -23,6 +23,7 @@ import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../../items/store.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
+import { directFetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertStringIncludes } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
@@ -37,6 +38,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
     binding: {
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
     } as never,
+    fetcher: directFetcher,
   },
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
@@ -52,6 +54,7 @@ const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
+  runtimeLocation: 'test',
   scheduleBackground: () => {},
   requestStartedAt: 0,
 });

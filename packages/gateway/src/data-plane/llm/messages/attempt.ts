@@ -10,6 +10,7 @@ import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
+import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -53,14 +54,16 @@ export const messagesAttempt = {
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
+        const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.binding.provider.callMessages(
           candidate.binding.upstreamModel,
           body,
           ctx.abortSignal,
           invocation.headers,
           invocation.anthropicBeta,
+          { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
@@ -101,6 +104,7 @@ export const messagesAttempt = {
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
       headers: { ...(inheritedInvocationHeaders ?? {}) },
     };
+    const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.binding.provider.callMessagesCountTokens(
@@ -109,9 +113,16 @@ export const messagesAttempt = {
         ctx.abortSignal,
         invocation.headers,
         invocation.anthropicBeta,
+        { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
       );
       return response;
     });
+    // count_tokens is excluded from the `upstream_success` metric — the
+    // dashboard only tracks generation-shaped traffic — but the recorder
+    // contract still has to fire so a provider that forgets to wrap fails
+    // loud on the happy path. Discarding the duration is intentional;
+    // upstream throws are already loud via the await above.
+    void recorder.durationMs();
     return await plainResultFromResponse(response);
   },
 };

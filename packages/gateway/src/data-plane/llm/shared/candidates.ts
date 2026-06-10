@@ -20,19 +20,20 @@ export const enumerateProviderCandidates = async ({
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
 }): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }> => {
   const fetcherForUpstream = await createPerRequestFetcher();
-  const providers = await listModelProviders(upstreamIds, fetcherForUpstream);
+  const providers = await listModelProviders(upstreamIds);
   const candidates: ProviderCandidate[] = [];
   let sawModel = false;
 
   for (const provider of providers) {
-    const resolved = await resolveModelForProvider(provider, model);
+    const fetcher = fetcherForUpstream(provider.upstream);
+    const resolved = await resolveModelForProvider(provider, model, fetcher);
     if (!resolved) continue;
     sawModel = true;
 
     const targetApi = pickTarget(resolved.binding.upstreamModel.endpoints);
     if (!targetApi) continue;
 
-    candidates.push({ provider, binding: resolved.binding, targetApi });
+    candidates.push({ provider, binding: resolved.binding, targetApi, fetcher });
   }
 
   return { candidates, sawModel };

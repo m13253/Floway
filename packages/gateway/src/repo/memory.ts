@@ -379,8 +379,6 @@ const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: Pe
   a.model.localeCompare(b.model) ||
   (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
   a.modelKey.localeCompare(b.modelKey) ||
-  a.sourceApi.localeCompare(b.sourceApi) ||
-  a.targetApi.localeCompare(b.targetApi) ||
   Number(a.stream) - Number(b.stream) ||
   a.runtimeLocation.localeCompare(b.runtimeLocation);
 
@@ -388,7 +386,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   private summaries = new Map<string, PerformanceTelemetryRecord>();
 
   private key(r: PerformanceDimensions): string {
-    return [r.hour, r.metricScope, r.keyId, r.model, r.upstream ?? '', r.modelKey, r.sourceApi, r.targetApi, r.stream ? '1' : '0', r.runtimeLocation].join('\0');
+    return [r.hour, r.metricScope, r.keyId, r.model, r.upstream ?? '', r.modelKey, r.stream ? '1' : '0', r.runtimeLocation].join('\0');
   }
 
   private summary(sample: PerformanceDimensions): PerformanceTelemetryRecord {
@@ -402,8 +400,6 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         model: sample.model,
         upstream: sample.upstream ?? null,
         modelKey: sample.modelKey,
-        sourceApi: sample.sourceApi,
-        targetApi: sample.targetApi,
         stream: sample.stream,
         runtimeLocation: sample.runtimeLocation,
         requests: 0,

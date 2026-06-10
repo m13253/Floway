@@ -13,7 +13,6 @@ import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { searchUsageQuery } from '../schemas.ts';
 import { resolveTelemetryView } from '../telemetry-view.ts';
-import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -51,7 +50,6 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     return c.json({
       records,
       users: userMetadata,
-      keyColorOrder: USAGE_KEY_COLOR_ORDER,
       activeProvider: searchConfig.provider,
     });
   }
@@ -92,7 +90,6 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   return c.json({
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
-    keyColorOrder: USAGE_KEY_COLOR_ORDER,
     activeProvider: searchConfig.provider,
   });
 };

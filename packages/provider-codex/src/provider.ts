@@ -9,7 +9,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderFactoryOptions, type ProviderStreamResult, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // L1 (in-process) memo lifetime. Kept short so an operator-triggered model
 // list change propagates within minutes even before the L2 ledger ages out.
@@ -25,11 +25,10 @@ interface CodexModelsLedger {
   models: CodexRawModel[];
 }
 
-export const createCodexProvider = async (record: UpstreamRecord, options: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
+export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
-  const { fetcher } = options;
   // v1 of the codex provider always operates on the first account in the
   // pool. The schema carries an array so a future fan-out can pick a
   // different active account per call without a wire migration.
@@ -75,7 +74,7 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const provider: ModelProvider = {
-    getProvidedModels: () =>
+    getProvidedModels: fetcher =>
       inProcessMemo(record.id, MODELS_MEMO_TTL_MS, async () => {
         const cached = await readModelsStore<CodexModelsLedger>(record.id);
         const ledgerFresh = cached !== null && Date.now() - cached.fetchedAt < MODELS_LEDGER_FRESH_MS;
@@ -116,7 +115,7 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, headers) => {
+    callResponses: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: { ...(headers ?? {}) },
@@ -135,13 +134,13 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
             signal,
             cache: getProviderRepo().cache,
             effects,
-            fetcher,
+            call: opts,
           });
         },
       );
     },
 
-    callResponsesCompact: async (model, body, signal, headers) => {
+    callResponsesCompact: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: { ...(headers ?? {}) },
@@ -160,7 +159,7 @@ export const createCodexProvider = async (record: UpstreamRecord, options: Provi
             signal,
             cache: getProviderRepo().cache,
             effects,
-            fetcher,
+            call: opts,
           });
         },
       );

@@ -5,7 +5,7 @@
 
 import { copilotAuthedFetch, isCopilotTokenFetchError } from './auth.ts';
 import type { CopilotUpstreamConfig } from './config.ts';
-import type { FetchOptions } from '@floway-dev/provider';
+import type { UpstreamFetchOptions } from '@floway-dev/provider';
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
@@ -27,7 +27,7 @@ const copilotFetchInternal = async (
   config: CopilotFetchConfig,
   path: string,
   init: RequestInit,
-  options: FetchOptions,
+  options: UpstreamFetchOptions,
 ): Promise<Response> => {
   try {
     return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, { headers: options.extraHeaders, fetcher: options.fetcher });
@@ -43,15 +43,15 @@ const copilotFetchInternal = async (
 // Typed transports — one per logical endpoint Copilot serves. Copilot has no
 // `/responses/compact`; the provider fabricates compaction by POSTing a
 // compaction_trigger item to `/responses` via `copilotFetchResponses`.
-export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
-export const copilotFetchResponses = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchResponses = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/responses', init, options);
-export const copilotFetchMessages = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchMessages = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages', init, options);
-export const copilotFetchMessagesCountTokens = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchMessagesCountTokens = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/messages/count_tokens', init, options);
-export const copilotFetchEmbeddings = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchEmbeddings = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/embeddings', init, options);
-export const copilotFetchModels = (config: CopilotFetchConfig, init: RequestInit, options: FetchOptions): Promise<Response> =>
+export const copilotFetchModels = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/models', init, options);

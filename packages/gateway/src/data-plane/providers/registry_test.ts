@@ -82,7 +82,7 @@ test('compareModelIds keeps case-only differences adjacent via lowercase tie-bre
 
 test('createCopilotProvider exposes provider-owned requested model aliases', async () => {
   const { copilotUpstream } = await setupAppTest();
-  const instance = await createCopilotProvider(copilotUpstream, { fetcher: directFetcher });
+  const instance = await createCopilotProvider(copilotUpstream);
   const resolveAlias = instance.resolveRequestedModelId;
 
   assertEquals(resolveAlias?.('claude-opus-4-7-20300101'), 'claude-opus-4-7');
@@ -121,7 +121,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
   await repo.upstreams.save(buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
 
-  const providers = await listModelProviders(null, () => directFetcher);
+  const providers = await listModelProviders(null);
   assertEquals(providers.map(provider => provider.upstream), ['up_custom', 'up_azure', 'up_copilot']);
 });
 
@@ -258,7 +258,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
     config: { baseUrl: 'https://second.example.com', bearerToken: 'sk-second', endpoints: { responses: {} } },
   }));
 
-  const providers = await listModelProviders(null, () => directFetcher);
+  const providers = await listModelProviders(null);
   let secondModelsFetches = 0;
 
   await withMockedFetch(
@@ -274,7 +274,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForProvider(providers[0], 'target-model');
+      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher);
 
       assertEquals(resolved?.model.id, 'target-model');
       assertEquals(resolved?.binding.upstream, 'up_first');
@@ -291,7 +291,7 @@ test('listModelProviders without a filter returns global sort_order', async () =
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 20 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_c', name: 'C', sortOrder: 30 }));
 
-  const providers = await listModelProviders(null, () => directFetcher);
+  const providers = await listModelProviders(null);
   assertEquals(providers.map(p => p.upstream), ['up_a', 'up_b', 'up_c']);
 });
 
@@ -303,7 +303,7 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_c', name: 'C', sortOrder: 30 }));
 
   // Subset, reverse order, with the planner's fallback head explicitly chosen.
-  const providers = await listModelProviders(['up_c', 'up_a'], () => directFetcher);
+  const providers = await listModelProviders(['up_c', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_c', 'up_a']);
 });
 
@@ -391,9 +391,9 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
     state: null,
   });
 
-  const [provider] = await listModelProviders(null, () => directFetcher);
-  assertEquals(await resolveModelForProvider(provider, 'enabled-model').then(r => r?.id), 'enabled-model');
-  assertEquals(await resolveModelForProvider(provider, 'disabled-model').then(r => r?.id), undefined);
+  const [provider] = await listModelProviders(null);
+  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher).then(r => r?.id), 'enabled-model');
+  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher).then(r => r?.id), undefined);
 });
 
 test('listModelProviders drops stale ids (deleted or disabled upstreams) from a whitelist', async () => {
@@ -403,6 +403,6 @@ test('listModelProviders drops stale ids (deleted or disabled upstreams) from a 
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 20, enabled: false }));
 
   // up_ghost was never saved; up_b is disabled. Both vanish silently.
-  const providers = await listModelProviders(['up_ghost', 'up_b', 'up_a'], () => directFetcher);
+  const providers = await listModelProviders(['up_ghost', 'up_b', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_a']);
 });

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { codexAccessTokenKey } from './access-token-cache.ts';
 import { createCodexProvider } from './provider.ts';
-import { clearModelsStore, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { clearModelsStore, directFetcher, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
   const store = new Map<string, string>();
@@ -61,7 +61,7 @@ const sseResponse = (): Response => new Response(
 
 describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
-    const instance = await createCodexProvider(record, { fetcher: directFetcher });
+    const instance = await createCodexProvider(record);
     expect(instance.providerKind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
@@ -77,8 +77,8 @@ describe('createCodexProvider', () => {
         { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
       ],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const instance = await createCodexProvider(record, { fetcher: directFetcher });
-    const models = await instance.provider.getProvidedModels();
+    const instance = await createCodexProvider(record);
+    const models = await instance.provider.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
@@ -89,10 +89,13 @@ describe('createCodexProvider', () => {
     const farFuture = Math.floor(Date.now() / 1000) + 86400;
     cache._store.set(codexAccessTokenKey('up_codex'), JSON.stringify({ access_token: 'at', expires_at: farFuture, refreshed_at: 'now' }));
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const instance = await createCodexProvider(record, { fetcher: directFetcher });
+    const instance = await createCodexProvider(record);
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
+      undefined,
+      undefined,
+      noopUpstreamCallOptions,
     );
     expect(result.ok).toBe(true);
   });
@@ -101,10 +104,13 @@ describe('createCodexProvider', () => {
     const farFuture = Math.floor(Date.now() / 1000) + 86400;
     cache._store.set(codexAccessTokenKey('up_codex'), JSON.stringify({ access_token: 'at', expires_at: farFuture, refreshed_at: 'now' }));
     getByIdSpy.mockResolvedValueOnce({ ...record, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z' }] } });
-    const instance = await createCodexProvider(record, { fetcher: directFetcher });
+    const instance = await createCodexProvider(record);
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [], stream: true },
+      undefined,
+      undefined,
+      noopUpstreamCallOptions,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
@@ -116,7 +122,7 @@ describe('createCodexProvider', () => {
     'callImagesEdits',
     'callMessagesCountTokens',
   ] as const)('%s throws (data plane never dispatches these to Codex)', async method => {
-    const instance = await createCodexProvider(record, { fetcher: directFetcher });
+    const instance = await createCodexProvider(record);
     const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
     // @ts-expect-error: each method has a different param shape; we just want to assert throw.
     await expect(instance.provider[method](model, {}, undefined, {})).rejects.toThrow(/Codex/);

@@ -32,11 +32,6 @@ export interface UpstreamRecord {
   proxyFallbackList: string[];
 }
 
-// API names the telemetry pipeline records dimensions against. Used by
-// PerformanceTelemetryContext below; the proxy-side recorder narrows further
-// per source/target lane.
-export type PerformanceApiName = 'messages' | 'responses' | 'chat-completions' | 'gemini' | 'embeddings' | 'images_generations' | 'images_edits';
-
 // Pure data identifying the model served by one provider call. Travels alongside
 // every event/error result so downstream telemetry never has to re-resolve.
 export interface TelemetryModelIdentity {
@@ -53,8 +48,6 @@ export interface PerformanceTelemetryContext {
   model: string;
   upstream: string | null;
   modelKey: string;
-  sourceApi: PerformanceApiName;
-  targetApi: PerformanceApiName;
   stream: boolean;
   runtimeLocation: string;
 }

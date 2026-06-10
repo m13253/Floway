@@ -9,7 +9,6 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
 import { resolveTelemetryView } from '../telemetry-view.ts';
-import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
@@ -38,7 +37,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ records, users: userMetadata, keyColorOrder: USAGE_KEY_COLOR_ORDER });
+    return c.json({ records, users: userMetadata });
   }
 
   const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId);
@@ -70,6 +69,5 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   return c.json({
     records: recordsWithKeyMetadata,
     keys: keyMetadata,
-    keyColorOrder: USAGE_KEY_COLOR_ORDER,
   });
 };

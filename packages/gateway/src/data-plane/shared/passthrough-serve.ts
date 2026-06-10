@@ -18,7 +18,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
+import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -27,7 +27,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { ProviderCallResult, ProviderModelRecord } from '@floway-dev/provider';
+import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream JSON response.
 // The set is intentionally narrow and matches the passthrough contract that
@@ -66,11 +66,10 @@ const forwardUpstreamResponse = (resp: Response): Response =>
 
 const recordUpstreamPerformance = (
   scheduler: BackgroundScheduler,
-  context: PerformanceTelemetryContext | undefined,
+  context: PerformanceTelemetryContext,
   failed: boolean,
   durationMs: number,
 ): void => {
-  if (!context) return;
   scheduler(failed ? recordPerformanceError(context, 'upstream_success') : recordPerformanceLatency(context, 'upstream_success', durationMs));
 };
 
@@ -103,14 +102,11 @@ const performanceContextFor = (
   binding: ProviderModelRecord,
   modelKey: string,
   runtimeLocation: string,
-  sourceApi: NonLlmServeApiName,
 ): PerformanceTelemetryContext => ({
   keyId: apiKeyId,
   model: modelId,
   upstream: binding.upstream,
   modelKey,
-  sourceApi,
-  targetApi: sourceApi,
   stream: false,
   runtimeLocation,
 });
@@ -129,7 +125,10 @@ export interface PassthroughServeContext {
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —
   // exceptions thrown from the actual fetch must not be silently swallowed.
-  readonly call: (binding: ProviderModelRecord) => Promise<ProviderCallResult>;
+  // `opts` carries the per-call hooks the gateway threads in (today: the
+  // recordUpstreamLatency wrapper for the upstream_success metric); the
+  // callback forwards it verbatim to the chosen provider call method.
+  readonly call: (binding: ProviderModelRecord, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   // Extracts a usage row from the `usage` block of a parsed 2xx upstream
   // body. The helper does the shallow `parsed.usage` lookup so each
   // extractor only has to validate the usage shape. Return null when the
@@ -160,18 +159,19 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
     for (const binding of resolved.providers) {
       if (!bindingServesEndpoint(binding)) continue;
 
-      const upstreamStartedAt = performance.now();
-      const { response, modelKey } = await call(binding);
-      const performanceContext = performanceContextFor(apiKeyId, modelId, binding, modelKey, runtimeLocation, sourceApi);
+      const recorder = createUpstreamLatencyRecorder();
+      const { response, modelKey } = await call(binding, { fetcher: fetcherForUpstream(binding.upstream), recordUpstreamLatency: recorder.record });
+      const upstreamDurationMs = recorder.durationMs();
+      const performanceContext = performanceContextFor(apiKeyId, modelId, binding, modelKey, runtimeLocation);
       lastPerformance = performanceContext;
 
       if (!response.ok) {
-        recordUpstreamPerformance(scheduleBackground, performanceContext, true, performance.now() - upstreamStartedAt);
-        recordRequestPerformance(apiKeyId, scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
+        recordUpstreamPerformance(scheduleBackground, performanceContext, true, upstreamDurationMs);
+        recordRequestPerformance(scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
         return forwardUpstreamResponse(response);
       }
 
-      recordUpstreamPerformance(scheduleBackground, performanceContext, false, performance.now() - upstreamStartedAt);
+      recordUpstreamPerformance(scheduleBackground, performanceContext, false, upstreamDurationMs);
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
@@ -190,7 +190,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
           ),
         );
       }
-      recordRequestPerformance(apiKeyId, scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
+      recordRequestPerformance(scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
       return forwardUpstreamResponse(response);
     }
 
@@ -200,7 +200,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) return forwarded;
     }
-    recordRequestPerformance(apiKeyId, scheduleBackground, lastPerformance, true, performance.now() - requestStartedAt);
+    recordRequestPerformance(scheduleBackground, lastPerformance, true, performance.now() - requestStartedAt);
     return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
   }
 };

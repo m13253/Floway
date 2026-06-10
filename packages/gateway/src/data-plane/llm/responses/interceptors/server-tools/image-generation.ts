@@ -1,6 +1,7 @@
 import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
@@ -17,7 +18,7 @@ import type {
   ResponsesPayload,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import type { ProviderModelRecord } from '@floway-dev/provider';
+import type { Fetcher, PerformanceTelemetryContext, ProviderModelRecord } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -447,6 +448,7 @@ interface ShimState {
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
   scheduleBackground: GatewayCtx['scheduleBackground'];
+  runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
@@ -529,12 +531,12 @@ const serverError = (e: unknown): ImageError => ({
 const resolveImageBinding = async (
   isEdit: boolean,
   state: ShimState,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
 ): Promise<{ ok: true; binding: ProviderModelRecord } | { ok: false; error: ImageError }> => {
   const endpointKey = isEdit ? 'imagesEdits' : 'imagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    const fetcherForUpstream = await createPerRequestFetcher();
     resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream);
   } catch (e) {
     return { ok: false, error: serverError(e) };
@@ -584,6 +586,12 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
   return null;
 };
 
+// The image-generation sub-call is a real upstream HTTP request that lands
+// under its own `(model, upstream, modelKey)` dimensions in
+// `upstream_success` — distinct from the outer Responses orchestrator's
+// recording. Each attempt of the 429-retry loop records on its own; the
+// intermediate failures land as error counters and the final outcome's
+// latency (success or failure) is the one operators see at the dimension.
 // On 429, sleep for the upstream's retry hint (or jittered exponential
 // backoff when absent) and replay the same backend call up to
 // MAX_RATE_LIMIT_RETRIES times. The returned `response` always has a fresh,
@@ -591,6 +599,7 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 // the underlying socket can be reused while we sleep.
 const issueImageCall = async (
   binding: ProviderModelRecord,
+  fetcher: Fetcher,
   prompt: string,
   isEdit: boolean,
   sources: readonly ImageSource[],
@@ -598,9 +607,24 @@ const issueImageCall = async (
   stream: boolean,
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
+    const recorder = createUpstreamLatencyRecorder();
     const { response, modelKey } = await (isEdit
-      ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal)
-      : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal));
+      ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, undefined, { fetcher, recordUpstreamLatency: recorder.record })
+      : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, undefined, { fetcher, recordUpstreamLatency: recorder.record }));
+    const context: PerformanceTelemetryContext = {
+      keyId: state.apiKeyId,
+      model: binding.upstreamModel.id,
+      upstream: binding.upstream,
+      modelKey,
+      stream: false,
+      runtimeLocation: state.runtimeLocation,
+    };
+    if (response.ok) {
+      const durationMs = recorder.durationMs();
+      state.scheduleBackground(() => recordPerformanceLatency(context, 'upstream_success', durationMs));
+    } else {
+      state.scheduleBackground(() => recordPerformanceError(context, 'upstream_success'));
+    }
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -737,13 +761,17 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageBinding(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
+  const fetcherForUpstream = await createPerRequestFetcher();
+  const resolved = await resolveImageBinding(isEdit, state, fetcherForUpstream);
+  if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { binding } = resolved;
+  const fetcher = fetcherForUpstream(binding.upstream);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(binding, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(binding, fetcher, prompt, isEdit, sources, state, wantsPartials));
   } catch (e) {
     return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }
@@ -936,6 +964,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     scheduleBackground: gatewayCtx.scheduleBackground,
+    runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,
   };

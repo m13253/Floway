@@ -1,4 +1,8 @@
-const ITERATIONS = 600_000;
+// Cloudflare Workers' Web Crypto refuses PBKDF2 with iterations above 100k as a
+// CPU-time DoS guard ("Pbkdf2 failed: iteration counts above 100000 are not
+// supported"). 100k is below OWASP's current 600k recommendation for
+// PBKDF2-SHA256 but is the runtime ceiling we have.
+const ITERATIONS = 100_000;
 const SALT_BYTES = 16;
 const HASH_BITS = 256;
 export const PASSWORD_HASH_SCHEME = 'pbkdf2-sha256';

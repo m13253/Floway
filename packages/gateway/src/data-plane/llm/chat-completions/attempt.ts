@@ -9,6 +9,7 @@ import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
+import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -106,11 +107,13 @@ const callChatCompletionsAsExecuteResult = async (
   invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
+  const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.binding.provider.callChatCompletions(
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
     invocationHeaders,
+    { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
   );
-  return await providerStreamResultToExecuteResult(providerResult, candidate);
+  return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
 };

@@ -29,7 +29,6 @@ interface DisplayUsageRecord {
 interface UsageResponse {
   records: DisplayUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt?: string }>;
-  keyColorOrder: string[];
 }
 
 interface SearchUsageRecord { provider: string; keyId: string; keyName?: string; keyCreatedAt?: string; hour: string; requests: number }
@@ -37,7 +36,6 @@ interface SearchUsageRecord { provider: string; keyId: string; keyName?: string;
 interface SearchUsageResponse {
   records: SearchUsageRecord[];
   keys: Array<{ id: string; name: string; createdAt?: string }>;
-  keyColorOrder: string[];
   activeProvider: string;
 }
 
@@ -51,13 +49,11 @@ interface UsageByUserResponse {
     cost: number;
   }>;
   users: Array<{ id: number; username: string }>;
-  keyColorOrder: string[];
 }
 
 interface SearchUsageByUserResponse {
   records: Array<{ provider: string; userId: number; hour: string; requests: number }>;
   users: Array<{ id: number; username: string }>;
-  keyColorOrder: string[];
   activeProvider: string;
 }
 
@@ -78,10 +74,10 @@ const fetchUsageForView = async (
     ]);
     return {
       usage: usageRes.data
-        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: usageRes.data.keyColorOrder }
+        ? { records: usageRes.data.records.map(r => ({ keyId: userBucketId(r.userId), model: r.model, hour: r.hour, requests: r.requests, tokens: r.tokens, cost: r.cost })), keys: usageRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })) }
         : null,
       search: searchRes.data
-        ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), keyColorOrder: searchRes.data.keyColorOrder, activeProvider: searchRes.data.activeProvider }
+        ? { records: searchRes.data.records.map(r => ({ provider: r.provider, keyId: userBucketId(r.userId), hour: r.hour, requests: r.requests })), keys: searchRes.data.users.map(u => ({ id: userBucketId(u.id), name: u.username })), activeProvider: searchRes.data.activeProvider }
         : null,
     };
   }
@@ -103,8 +99,8 @@ export const useUsagePageData = defineBasicLoader(async () => {
   ]);
   return {
     view,
-    usage: usage ?? { records: [], keys: [], keyColorOrder: [] },
-    search: search ?? { records: [], keys: [], keyColorOrder: [], activeProvider: 'disabled' },
+    usage: usage ?? { records: [], keys: [] },
+    search: search ?? { records: [], keys: [], activeProvider: 'disabled' },
   };
 });
 </script>
@@ -275,53 +271,26 @@ interface ChartEntry {
   colorSlot: number;
 }
 
-const compareKeyIds = (a: string, b: string, keyMetaMap: Map<string, KeyMeta>) => {
-  const am = keyMetaMap.get(a);
-  const bm = keyMetaMap.get(b);
-  if (am?.createdAt && bm?.createdAt && am.createdAt !== bm.createdAt) return am.createdAt.localeCompare(bm.createdAt);
-  if (am?.createdAt !== bm?.createdAt) return am?.createdAt ? -1 : 1;
-  return a.localeCompare(b);
-};
-
-const keyColorSlots = (colorOrder: readonly string[]) => {
-  const explicitSlotById = new Map<string, number>();
-  const futureSlotByIndex = new Map<number, number>();
-  let maxFutureIndex = 0;
-  for (let i = 0; i < colorOrder.length; i++) {
-    const token = colorOrder[i]!;
-    const futureMatch = token.match(/^future-(\d+)$/);
-    if (futureMatch) {
-      const futureIndex = Number(futureMatch[1]);
-      futureSlotByIndex.set(futureIndex, i);
-      maxFutureIndex = Math.max(maxFutureIndex, futureIndex);
-    } else {
-      explicitSlotById.set(token, i);
-    }
-  }
-  return { explicitSlotById, futureSlotByIndex, maxFutureIndex };
-};
-
-const futureColorSlot = (futureIndex: number, colorOrderLength: number, futureSlotByIndex: Map<number, number>, maxFutureIndex: number) =>
-  futureSlotByIndex.get(futureIndex) ?? colorOrderLength + futureIndex - maxFutureIndex - 1;
-
 const keyChartEntries = (
   presentKeyIds: readonly string[],
   keyMetaMap: Map<string, KeyMeta>,
   keyIdsForOrder: readonly string[],
-  colorOrder: readonly string[],
 ): ChartEntry[] => {
-  const present = new Set(presentKeyIds);
-  const { explicitSlotById, futureSlotByIndex, maxFutureIndex } = keyColorSlots(colorOrder);
-  const futureKeyIds = [...new Set([...keyIdsForOrder, ...presentKeyIds])]
-    .filter(keyId => !explicitSlotById.has(keyId))
-    .sort((a, b) => compareKeyIds(a, b, keyMetaMap));
-  const futureSlotByKeyId = new Map(
-    futureKeyIds.map((keyId, i) => [keyId, futureColorSlot(i + 1, colorOrder.length, futureSlotByIndex, maxFutureIndex)]),
-  );
-  return [...present]
-    .map(keyId => ({ id: keyId, label: redactKeyLabel(keyMetaMap.get(keyId)?.name ?? keyId.slice(0, 8), keyId), colorSlot: explicitSlotById.get(keyId) ?? futureSlotByKeyId.get(keyId) }))
-    .filter((entry): entry is ChartEntry => entry.colorSlot !== undefined)
-    .sort((a, b) => a.colorSlot - b.colorSlot || compareKeyIds(a.id, b.id, keyMetaMap));
+  // Color slot = the entity's index in the server-sorted metadata. The server
+  // sorts by stable id (numeric for users, uuid lex for keys) so colors don't
+  // shift on rename; new entities slot in by id. Records whose id is missing
+  // from the metadata (deleted-with-no-row left a synthetic bucket) get
+  // appended after the known entries by id.
+  const slotById = new Map<string, number>(keyIdsForOrder.map((id, i) => [id, i]));
+  const orphanIds = [...new Set(presentKeyIds)].filter(id => !slotById.has(id)).sort();
+  orphanIds.forEach((id, i) => slotById.set(id, keyIdsForOrder.length + i));
+  return [...new Set(presentKeyIds)]
+    .map(id => ({
+      id,
+      label: redactKeyLabel(keyMetaMap.get(id)?.name ?? id.slice(0, 8), id),
+      colorSlot: slotById.get(id)!,
+    }))
+    .sort((a, b) => a.colorSlot - b.colorSlot);
 };
 
 const modelChartEntries = (presentModelIds: readonly string[]): ChartEntry[] => {
@@ -433,7 +402,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
   // color no matter how cross-filtering changes which groups remain.
   const presentGroups = new Set(allRecords.map(r => r[groupKey]));
   const entries = groupKey === 'keyId'
-    ? keyChartEntries([...presentGroups], keyMetadataForTokenRecords(allRecords, data.value?.keys ?? []), data.value?.keys.map(k => k.id) ?? [...presentGroups], data.value?.keyColorOrder ?? [])
+    ? keyChartEntries([...presentGroups], keyMetadataForTokenRecords(allRecords, data.value?.keys ?? []), data.value?.keys.map(k => k.id) ?? [...presentGroups])
     : modelChartEntries([...presentGroups]);
   // Cross-filtering can leave a group with all-zero (or, for percent metrics,
   // all-null) values. Drop those datasets outright — legend entry and line both
@@ -545,7 +514,7 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
     groups.set(r.keyId, inner);
     presentGroups.add(r.keyId);
   }
-  const entries = keyChartEntries([...presentGroups], meta, searchData.value?.keys.map(k => k.id) ?? [...presentGroups], searchData.value?.keyColorOrder ?? []);
+  const entries = keyChartEntries([...presentGroups], meta, searchData.value?.keys.map(k => k.id) ?? [...presentGroups]);
   return {
     type: 'line',
     data: {

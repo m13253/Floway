@@ -11,8 +11,6 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
     metricScope: 'request_total' as const,
     keyId: apiKey.id,
     upstream: 'copilot:1',
-    sourceApi: 'messages' as const,
-    targetApi: 'responses' as const,
     stream: true,
     runtimeLocation: 'unknown',
   };
@@ -72,8 +70,6 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
     hour: '2026-04-30T10',
     metricScope: 'request_total' as const,
     upstream: null,
-    sourceApi: 'responses' as const,
-    targetApi: 'responses' as const,
     stream: false,
     runtimeLocation: 'unknown',
   };
@@ -99,8 +95,6 @@ test('/api/performance can include key metadata', async () => {
     model: 'gpt-5',
     upstream: null,
     modelKey: 'gpt-5',
-    sourceApi: 'responses',
-    targetApi: 'responses',
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 50,
@@ -140,8 +134,6 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
     model: 'gpt-5',
     modelKey: 'gpt-5',
     upstream: null,
-    sourceApi: 'responses' as const,
-    targetApi: 'responses' as const,
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 100,
@@ -190,8 +182,6 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
     model: 'gpt-5',
     modelKey: 'gpt-5',
     upstream: null,
-    sourceApi: 'responses' as const,
-    targetApi: 'responses' as const,
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 100,
@@ -234,8 +224,6 @@ test('/api/performance/overview series pivots to per-user under all-by-user view
     model: 'gpt-5',
     modelKey: 'gpt-5',
     upstream: null,
-    sourceApi: 'responses' as const,
-    targetApi: 'responses' as const,
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 100,
@@ -251,7 +239,6 @@ test('/api/performance/overview series pivots to per-user under all-by-user view
   const seriesGroups = body.series.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(seriesGroups, [['1', 1], ['2', 1]]);
   assertEquals(body.users.map((u: { id: number }) => u.id).sort(), [1, 2]);
-  assertEquals(Array.isArray(body.keyColorOrder), true);
 });
 
 test('/api/performance/overview returns dashboard aggregates from one repo query', async () => {
@@ -270,8 +257,6 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
     model: 'claude-sonnet-4-5',
     upstream: 'copilot:1',
     modelKey: 'claude-sonnet-4.5-xhigh',
-    sourceApi: 'messages',
-    targetApi: 'responses',
     stream: true,
     runtimeLocation: 'SJC',
     durationMs: 250,
@@ -298,8 +283,6 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
     model: 'gpt-5.5-pro-2026-04-23',
     upstream: 'up_copilot',
     modelKey: 'gpt-5.5-pro-2026-04-23',
-    sourceApi: 'responses',
-    targetApi: 'responses',
     stream: true,
     runtimeLocation: 'SJC',
   });
@@ -340,8 +323,6 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
     model: 'gpt-5',
     modelKey: 'gpt-5',
     upstream: null,
-    sourceApi: 'responses',
-    targetApi: 'responses',
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 100,
@@ -368,8 +349,6 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
     model: 'gpt-5',
     modelKey: 'gpt-5',
     upstream: null,
-    sourceApi: 'responses',
-    targetApi: 'responses',
     stream: false,
     runtimeLocation: 'unknown',
     durationMs: 200,

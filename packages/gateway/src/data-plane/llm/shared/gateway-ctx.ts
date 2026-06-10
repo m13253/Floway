@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
@@ -13,6 +14,10 @@ export interface GatewayCtx {
   // Stamped at ctx construction so request-total latency telemetry can subtract
   // from `performance.now()` at response completion.
   readonly requestStartedAt: number;
+  // The deployment colo / region, recorded as the `runtimeLocation` performance
+  // dimension. Request-scoped, so it is resolved once here rather than at the
+  // provider-call boundary.
+  readonly runtimeLocation: string;
 }
 
 const buildScheduleBackground = (c: Context): GatewayCtx['scheduleBackground'] => {
@@ -31,6 +36,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     wantsStream,
     scheduleBackground: buildScheduleBackground(c),
     requestStartedAt: performance.now(),
+    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
   };
 };
 
@@ -49,5 +55,6 @@ export const createGatewayCtxForWs = (
     downstreamAbortController,
     scheduleBackground: buildScheduleBackground(c),
     requestStartedAt: performance.now(),
+    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
   };
 };

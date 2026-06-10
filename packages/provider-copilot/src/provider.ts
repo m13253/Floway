@@ -18,7 +18,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderFactoryOptions, type ProviderStreamResult, type TelemetryModelIdentity, type FetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -170,35 +170,52 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
   return models;
 };
 
-export const createCopilotProvider = async (record: UpstreamRecord, options: ProviderFactoryOptions): Promise<ModelProviderInstance> => {
+export const createCopilotProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const { fetcher } = options;
   const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer). Azure recomputes per deployment.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
   const call = async (
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
+    opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
-    const response = await transport(upstreamConfig, { method: 'POST', body: JSON.stringify({ ...body, model: rawModel.id }), signal }, { extraHeaders: headers, fetcher });
+    const response = await opts.recordUpstreamLatency(transport(
+      upstreamConfig,
+      {
+        method: 'POST',
+        body: JSON.stringify({ ...body, model: rawModel.id }),
+        signal,
+      },
+      { extraHeaders: headers, fetcher: opts.fetcher },
+    ));
     return { response, modelKey: rawModel.id };
   };
 
   const callStreaming = <TEvent>(
-    transport: (config: typeof upstreamConfig, init: RequestInit, options: FetchOptions) => Promise<Response>,
+    transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
     headers: Record<string, string> | undefined,
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
+    opts: UpstreamCallOptions,
   ) =>
     streamingProviderCall(
-      transport(upstreamConfig, { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModel.id }), signal }, { extraHeaders: headers, fetcher }),
+      opts.recordUpstreamLatency(transport(
+        upstreamConfig,
+        {
+          method: 'POST',
+          body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
+          signal,
+        },
+        { extraHeaders: headers, fetcher: opts.fetcher },
+      )),
       parser,
       rawModel.id,
       signal,
@@ -255,7 +272,7 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
     });
 
   const provider: ModelProvider = {
-    getProvidedModels: () =>
+    getProvidedModels: fetcher =>
       inProcessMemo(copilot.id, L1_TTL_MS, async () => {
         const ledger = (await readModelsStore<CopilotLedger>(copilot.id)) ?? emptyLedger();
         const now = Date.now();
@@ -274,7 +291,7 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
         }
       }),
     getPricingForModelKey: pricingForCopilotModelKey,
-    callChatCompletions: async (model, body, signal, headers) => {
+    callChatCompletions: async (model, body, signal, headers, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: ChatCompletionsBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -284,12 +301,12 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
       const result = await runInterceptors<ChatCompletionsBoundaryCtx, object, ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>>(
         ctx, {}, COPILOT_CHATCOMPLETIONS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchChatCompletions, wireBody, signal, rawModel, ctx.headers, parseChatCompletionsStream));
+          return await liftStream(callStreaming(copilotFetchChatCompletions, wireBody, signal, rawModel, ctx.headers, parseChatCompletionsStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
     },
-    callResponses: async (model, body, signal, headers) => {
+    callResponses: async (model, body, signal, headers, opts) => {
       const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -299,12 +316,12 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
       const result = await runInterceptors<ResponsesBoundaryCtx, object, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>(
         ctx, {}, COPILOT_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream));
+          return await liftStream(callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
     },
-    callResponsesCompact: async (model, body, signal, headers) => {
+    callResponsesCompact: async (model, body, signal, headers, opts) => {
       const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -323,18 +340,18 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
           const { model: _ignored, ...wireBody } = ctx.payload;
           const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
           const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-          const response = await copilotFetchResponses(
+          const response = await opts.recordUpstreamLatency(copilotFetchResponses(
             upstreamConfig,
             { method: 'POST', body: JSON.stringify(triggered), signal },
-            { extraHeaders: ctx.headers, fetcher },
-          );
+            { extraHeaders: ctx.headers, fetcher: opts.fetcher },
+          ));
           if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
           const generated = (await response.json()) as ResponsesResult;
           return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
         },
       );
     },
-    callMessages: async (model, body, signal, headers, anthropicBeta) => {
+    callMessages: async (model, body, signal, headers, anthropicBeta, opts) => {
       const rawModel = messagesRawModel(model, body, anthropicBeta);
       const ctx: MessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -345,12 +362,12 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
       const result = await runInterceptors<MessagesBoundaryCtx, object, ExecuteResult<ProtocolFrame<MessagesStreamEvent>>>(
         ctx, {}, COPILOT_MESSAGES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, ctx.headers, parseMessagesStream));
+          return await liftStream(callStreaming(copilotFetchMessages, wireBody, signal, rawModel, ctx.headers, parseMessagesStream, opts));
         },
       );
       return lowerToStream(result, rawModel.id);
     },
-    callMessagesCountTokens: async (model, body, signal, headers, anthropicBeta) => {
+    callMessagesCountTokens: async (model, body, signal, headers, anthropicBeta, opts) => {
       const rawModel = messagesRawModel(model, body, anthropicBeta);
       const ctx: MessagesCountTokensBoundaryCtx = {
         payload: { ...body, model: model.id },
@@ -361,13 +378,13 @@ export const createCopilotProvider = async (record: UpstreamRecord, options: Pro
       const response = await runInterceptors<MessagesCountTokensBoundaryCtx, object, Response>(
         ctx, {}, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, ctx.headers);
+          const { response } = await call(copilotFetchMessagesCountTokens, wireBody, signal, rawModel, ctx.headers, opts);
           return response;
         },
       );
       return { response, modelKey: rawModel.id };
     },
-    callEmbeddings: (model, body, signal, headers) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers),
+    callEmbeddings: (model, body, signal, headers, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers, opts),
     // Copilot has no /images/... upstream. getProvidedModels never emits a
     // kind='image' model for Copilot bindings, so the source-side dispatcher
     // in packages/gateway/src/data-plane/images/serve.ts never selects this provider

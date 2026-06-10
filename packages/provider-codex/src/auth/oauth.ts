@@ -89,7 +89,7 @@ const codexTokenRequest = async (
 
 // PKCE exchange has no upstream context — the upstream is created from this
 // response — so it always egresses through `directFetcher`. Mirrors the
-// FetchOptions design note: paths inherently outside an upstream's
+// UpstreamFetchOptions design note: paths inherently outside an upstream's
 // fallback chain don't take a `Fetcher`.
 export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({

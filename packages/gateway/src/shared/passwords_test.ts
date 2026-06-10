@@ -8,7 +8,7 @@ describe('passwords', () => {
     const parts = encoded.split('$');
     expect(parts).toHaveLength(4);
     expect(parts[0]).toBe('pbkdf2-sha256');
-    expect(parts[1]).toBe('600000');
+    expect(parts[1]).toBe('100000');
     expect(parts[2]).toMatch(/^[A-Za-z0-9+/]+=*$/);
     expect(parts[3]).toMatch(/^[A-Za-z0-9+/]+=*$/);
   });

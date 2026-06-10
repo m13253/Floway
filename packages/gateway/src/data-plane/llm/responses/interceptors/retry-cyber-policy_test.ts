@@ -41,6 +41,7 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
+  runtimeLocation: 'test',
   scheduleBackground: () => {},
   requestStartedAt: 0,
   ...overrides,
@@ -151,8 +152,6 @@ const performanceFor = (modelKey: string) => ({
   model: 'gpt-test',
   upstream: 'test-upstream',
   modelKey,
-  sourceApi: 'responses' as const,
-  targetApi: 'responses' as const,
   stream: true,
   runtimeLocation: 'test',
 });
