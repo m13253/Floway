@@ -214,12 +214,6 @@ const config: Linter.Config[] = [
     },
   },
   {
-    // The dashboard reuses proxy code only via the four subpath exports
-    // (/url, /url-kind, /proxy-config, /constants); the root export pulls
-    // in dialers, userspace TLS, and Node `crypto` that have no place in
-    // the SPA bundle. Enforce the boundary at lint so a future careless
-    // import doesn't quietly inflate the bundle.
-    //
     // Redefining a single rule replaces its whole option value (the
     // option array is not deep-merged with the earlier declaration), so
     // the platform-impl patterns from commonConfig's `no-restricted-imports`
