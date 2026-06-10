@@ -1,11 +1,9 @@
 import tls from 'node:tls';
 
-import type { GetRuntimeRootCAs } from '@floway-dev/platform';
-
 // `tls.rootCertificates` is Node's bundled Mozilla CA list, shipped in
 // lockstep with the Node release, plus anything Node folded in from
 // `NODE_EXTRA_CA_CERTS` at process startup. Reading this snapshot at
 // init time and pushing it through the userspace TLS path is what lets
 // userspace TLS track the runtime's trust set instead of the frozen
 // snapshot baked into `@reclaimprotocol/tls@0.1.2`.
-export const nodeGetRuntimeRootCAs: GetRuntimeRootCAs = () => tls.rootCertificates;
+export const nodeRuntimeRootCAs: readonly string[] = tls.rootCertificates;

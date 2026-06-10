@@ -2,10 +2,6 @@ import { connect } from 'cloudflare:sockets';
 
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
-// `tls: true` switches to workerd's native TLS — used by HTTPS CONNECT,
-// VLESS-TCP+TLS, and VLESS-WS+TLS, where the outer leg to the proxy is
-// the runtime-side cert chain we already trust.
-//
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
 // before opening a socket; once opened, an abort closes the socket — the

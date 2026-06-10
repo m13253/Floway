@@ -1,7 +1,7 @@
 import { cloudflareKvImageCache, createCloudflareImageProcessor, type ImagesBinding, type KvNamespace } from './image-processor.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
-import { cloudflareGetRuntimeRootCAs } from './tls-trust.ts';
+import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   initEnv,
@@ -39,6 +39,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initFileProvider(new R2FileProvider(env.FILES));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES, cloudflareKvImageCache(env.KV)));
   initSocketDial(cloudflareSocketDial);
-  addTrustedRootCAs(cloudflareGetRuntimeRootCAs() ?? []);
+  addTrustedRootCAs(cloudflareRuntimeRootCAs);
   return { db: env.DB };
 };
