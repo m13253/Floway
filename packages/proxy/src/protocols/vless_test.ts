@@ -68,10 +68,6 @@ describe('dialVlessTcpTls — pre-dial target validation', () => {
 });
 
 describe('dialVlessWsTls — pre-dial target validation', () => {
-  // The WS dialer now goes through the same `socketDial.connect(tls=true)`
-  // path as the TCP dialer (the WS upgrade lives on top of that duplex), so
-  // these tests pin the pre-dial guards firing before any TCP slot is burnt
-  // — same shape as the TCP variant above.
   it('rejects an out-of-range target port at stage=config, before any TCP connect', async () => {
     const fake = makeFakeSocketDial();
     await expect(
