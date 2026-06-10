@@ -350,4 +350,32 @@ describe('createFetcher', () => {
     const [row] = await repo.proxyBackoffs.listForUpstream('u');
     expect(row!.lastError).toBe('[inner-tls] cert mismatch');
   });
+
+  it('does not discard a healthy Response when the success-path backoff clear rejects', async () => {
+    // Pre-record a failure so recordDialSuccess has a row to DELETE; then
+    // wedge the backoff repo so the clear write rejects mid-call. The
+    // Response we already hold MUST reach the caller — bookkeeping
+    // failures cannot shadow request outcomes (mirrors the failure
+    // path's existing log-and-swallow policy).
+    const repo = new InMemoryRepo();
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
+    const original = repo.proxyBackoffs.recordDialSuccess.bind(repo.proxyBackoffs);
+    repo.proxyBackoffs.recordDialSuccess = async () => { throw new Error('transient store outage'); };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async () => new Response('ok'),
+      runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
+    });
+    const res = await fetcher('https://api.openai.com', { method: 'GET' });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(warnSpy).toHaveBeenCalledOnce();
+    repo.proxyBackoffs.recordDialSuccess = original;
+    warnSpy.mockRestore();
+  });
 });

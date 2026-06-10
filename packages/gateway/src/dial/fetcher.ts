@@ -209,8 +209,15 @@ const tryOne = async (
     );
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
-    // schedule from where it left off.
-    await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
+    // schedule from where it left off. Mirror the failure-path policy: a
+    // transient backoff-store write must not shadow the actual outcome —
+    // here that means a bookkeeping rejection cannot discard a healthy
+    // upstream Response we already hold.
+    try {
+      await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
+    } catch (recordErr) {
+      console.warn(`failed to clear proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
+    }
     return response;
   } catch (err) {
     // Caller-driven cancellation must propagate up immediately. Without

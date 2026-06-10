@@ -2,6 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_REFRESH_DEBOUNCE_MS, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { ProxyReorderConflictError } from './types.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -1430,11 +1431,11 @@ class SqlProxyRepo implements ProxyRepo {
     const existingSet = new Set(existing.map(p => p.id));
     const incoming = new Set(ids);
     if (ids.length !== existing.length || ids.length !== incoming.size) {
-      throw new Error(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${existing.length} rows)`);
+      throw new ProxyReorderConflictError(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${existing.length} rows)`);
     }
     for (const id of ids) {
       if (!existingSet.has(id)) {
-        throw new Error(`bulkReorder: unknown proxy id ${id}`);
+        throw new ProxyReorderConflictError(`bulkReorder: unknown proxy id ${id}`);
       }
     }
     if (ids.length === 0) return;

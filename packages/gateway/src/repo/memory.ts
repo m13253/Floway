@@ -2,6 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
+import { ProxyReorderConflictError } from './types.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -814,11 +815,11 @@ class MemoryProxyRepo implements ProxyRepo {
   bulkReorder(ids: string[]): Promise<void> {
     const incoming = new Set(ids);
     if (ids.length !== this.store.size || ids.length !== incoming.size) {
-      return Promise.reject(new Error(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${this.store.size} rows)`));
+      return Promise.reject(new ProxyReorderConflictError(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${this.store.size} rows)`));
     }
     for (const id of ids) {
       if (!this.store.has(id)) {
-        return Promise.reject(new Error(`bulkReorder: unknown proxy id ${id}`));
+        return Promise.reject(new ProxyReorderConflictError(`bulkReorder: unknown proxy id ${id}`));
       }
     }
     const now = new Date().toISOString();

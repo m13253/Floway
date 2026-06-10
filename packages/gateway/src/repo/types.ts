@@ -214,6 +214,15 @@ export interface ProxyRecord {
   dialTimeoutSeconds: number | null;
 }
 
+// Surfaced by `bulkReorder` when the supplied id set is not an exact
+// permutation of the catalog (stale snapshot, concurrent insert/delete).
+// The route handler pattern-matches this class to reply 400 — every other
+// repo throw is infrastructure (DB write failure) and propagates as a 500.
+export class ProxyReorderConflictError extends Error {
+  override readonly name = 'ProxyReorderConflictError';
+  constructor(message: string) { super(message); }
+}
+
 export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;

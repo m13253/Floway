@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { ProxyReorderConflictError } from '../../repo/types.ts';
 import type { createProxyBody, reorderProxiesBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
@@ -28,11 +29,16 @@ export const reorderProxies = async (c: CtxWithJson<typeof reorderProxiesBody>) 
   // The repo enforces "ids is a permutation of the catalog" atomically.
   // Surface its complaint as 400 so the dashboard can react: a stale
   // snapshot (concurrent insert/delete) is the operator's signal to
-  // refresh the list and try again.
+  // refresh the list and try again. Only the typed conflict error becomes
+  // a 400 — a DB write failure further into bulkReorder propagates as 500
+  // so an infra outage isn't mislabelled as bad input.
   try {
     await repo.proxies.bulkReorder(ids);
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    if (err instanceof ProxyReorderConflictError) {
+      return c.json({ error: err.message }, 400);
+    }
+    throw err;
   }
   const updated = await repo.proxies.list();
   return c.json(updated.map(proxyRecordToJson));

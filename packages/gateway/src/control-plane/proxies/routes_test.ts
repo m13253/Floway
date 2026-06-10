@@ -118,6 +118,22 @@ test('POST /api/proxies/reorder rejects a non-permutation with 400', async () =>
   assertEquals(resp.status, 400);
 });
 
+test('POST /api/proxies/reorder lets non-conflict repo errors propagate as 500 (not 400)', async () => {
+  // A DB write failure inside bulkReorder is infrastructure, not bad
+  // input. A blanket-400 catch would mislabel it as the operator's
+  // problem and tell the dashboard to "refresh and try again" forever.
+  const { repo, adminSession } = await setupAppTest();
+  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  const original = repo.proxies.bulkReorder.bind(repo.proxies);
+  repo.proxies.bulkReorder = async () => { throw new Error('disk full'); };
+  try {
+    const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_a'] }));
+    assertEquals(resp.status, 500);
+  } finally {
+    repo.proxies.bulkReorder = original;
+  }
+});
+
 test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
