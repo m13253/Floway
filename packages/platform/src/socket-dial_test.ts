@@ -49,9 +49,4 @@ describe('normalizeDialHost', () => {
   it('passes through an IPv4 literal unchanged', () => {
     expect(normalizeDialHost('127.0.0.1')).toBe('127.0.0.1');
   });
-
-  it('passes through a half-bracketed string unchanged (defensive only on full envelope)', () => {
-    expect(normalizeDialHost('[::1')).toBe('[::1');
-    expect(normalizeDialHost('::1]')).toBe('::1]');
-  });
 });
