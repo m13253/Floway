@@ -184,10 +184,12 @@ const config: Linter.Config[] = [
       },
     },
     rules: {
-      // Flat-config rule entries don't merge per-key — without re-spreading
-      // commonConfig.rules here, this block's `rules:` would replace the
-      // common map wholesale and SFCs would get only the four vue rules
-      // below (no import/order, no stylistic, no async-safety).
+      // `{ ...commonConfig, rules: {…} }` shadows the spread `rules` (plain
+      // JS object-spread within a single literal), and .vue files match no
+      // earlier block carrying the common rules — only the **/*.{ts,tsx}
+      // block above does. Re-spread commonConfig.rules so SFCs run
+      // import/order, stylistic, and async-safety alongside the four vue
+      // rules below.
       ...commonConfig.rules,
       'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
       'vue/multi-word-component-names': 'off',
@@ -202,11 +204,12 @@ const config: Linter.Config[] = [
     // the SPA bundle. Enforce the boundary at lint so a future careless
     // import doesn't quietly inflate the bundle.
     //
-    // Flat-config rule entries don't merge per-key — the last matching
-    // file's override fully replaces commonConfig's `no-restricted-imports`,
-    // so the platform-impl ban repeated below has to be carried explicitly
-    // to keep AGENTS.md's "no `@floway-dev/platform-*` package import" rule
-    // honoured for `apps/web` files too.
+    // Redefining a single rule replaces its whole option value (the
+    // option array is not deep-merged with the earlier declaration), so
+    // the platform-impl patterns from commonConfig's `no-restricted-imports`
+    // must be re-listed here alongside the proxy-root ban. Other common
+    // rules still apply to apps/web via flat-config's per-rule merge
+    // across matching config objects.
     files: ['apps/web/**/*.{ts,tsx,vue}'],
     rules: {
       'no-restricted-imports': ['error', {
