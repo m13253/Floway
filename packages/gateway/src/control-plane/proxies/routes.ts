@@ -4,11 +4,12 @@ import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { ProxyReorderConflictError } from '../../repo/types.ts';
+import { shortId } from '../../shared/short-id.ts';
 import type { createProxyBody, reorderProxiesBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
-const newId = (): string => `proxy_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+const newId = (): string => shortId('proxy');
 
 const proxyUriValidationError = (err: unknown): string => {
   const raw = err instanceof Error ? err.message : String(err);

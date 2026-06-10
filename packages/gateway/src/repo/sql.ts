@@ -1199,15 +1199,15 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
   let config: unknown;
   try {
     config = JSON.parse(row.config_json) as unknown;
-  } catch {
-    throw new Error(`Malformed upstream config JSON for ${row.id}`);
+  } catch (cause) {
+    throw new Error(`Malformed upstream config JSON for ${row.id}`, { cause });
   }
   let state: unknown = null;
   if (row.state_json !== null) {
     try {
       state = JSON.parse(row.state_json) as unknown;
-    } catch {
-      throw new Error(`Malformed upstream state JSON for ${row.id}`);
+    } catch (cause) {
+      throw new Error(`Malformed upstream state JSON for ${row.id}`, { cause });
     }
   }
 

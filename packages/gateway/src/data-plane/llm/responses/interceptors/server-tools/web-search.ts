@@ -6,6 +6,7 @@ import { searchWebAndRecordUsage } from '../../../../tools/web-search/search.ts'
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
+import { shortId } from '../../../../../shared/short-id.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 
@@ -490,13 +491,11 @@ const isWebSearchCallPrivatePayload = (value: unknown): value is WebSearchCallPr
   return irObj.action !== undefined && Array.isArray(irObj.results);
 };
 
-export const synthesizeWebSearchCallId = (): string =>
-  `ws_gw_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+export const synthesizeWebSearchCallId = (): string => shortId('ws_gw');
 
 // Distinct id namespace (cc_replay_*) from synthesized wsc ids (ws_gw_*)
 // so a replay call_id never reads as a wsc id in logs.
-const synthesizeReplayCallId = (): string =>
-  `cc_replay_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
+const synthesizeReplayCallId = (): string => shortId('cc_replay');
 
 const searchIr = (
   query: string,
