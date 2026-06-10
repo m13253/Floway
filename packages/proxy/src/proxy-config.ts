@@ -5,7 +5,7 @@
 // the `?type=` + `?security=` query params (see url.ts for the
 // discrimination logic).
 // Adding a new protocol = add a variant here, a parser branch in url.ts,
-// and a dispatch branch in dialer.ts.
+// a label case in url-kind.ts, and a dispatch branch in dialer.ts.
 
 export type ProxyConfig =
   | HttpProxyConfig

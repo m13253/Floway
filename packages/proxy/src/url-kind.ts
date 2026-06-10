@@ -3,8 +3,9 @@
 // input instead of throwing, and (b) it does scheme-only discrimination —
 // no required-field validation, no SS / VLESS userinfo decode beyond the
 // minimum needed to pick the kind label. Pure function, no SocketDial /
-// TLS dependencies. Adding a new protocol = add a parser branch in
-// `url.ts` and a case here.
+// TLS dependencies. Adding a new protocol = add a variant in
+// proxy-config.ts, a parser branch in url.ts, a label case here, and a
+// dispatch branch in dialer.ts.
 
 export const kindFromUri = (url: string): string => {
   let parsed: URL;

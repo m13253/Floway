@@ -8,8 +8,9 @@
 // to produce a real HTTP `Response` for callers that don't want to manage
 // the duplex themselves.
 //
-// Adding a new protocol = add a variant to ProxyConfig, a parser branch
-// in url.ts, and a case in `dial` here.
+// Adding a new protocol = add a variant in proxy-config.ts, a parser
+// branch in url.ts, a label case in url-kind.ts, and a case in `dial`
+// here.
 
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
 import { ProxyDialError } from './errors.ts';

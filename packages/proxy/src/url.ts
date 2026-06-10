@@ -17,6 +17,10 @@
 // for every supported variant. The serialized string is canonical-shaped
 // but not byte-for-byte identical with arbitrary inputs — query order,
 // percent-encoding, and SS-2022 base64 padding may vary.
+//
+// Adding a new protocol = add a variant in proxy-config.ts, a parser
+// branch here, a label case in url-kind.ts, and a dispatch branch in
+// dialer.ts.
 
 import { ProxyUriError } from './errors.ts';
 import {
