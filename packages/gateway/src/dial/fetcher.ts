@@ -5,12 +5,6 @@ import type { Fetcher } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
-// Surfaced both at the upfront gate (when a non-direct entry is in play)
-// and from collectBody (where the actual buffer step would fail), so
-// streaming-body callers see the same message regardless of which gate
-// fires first.
-const STREAMING_BODY_ERROR_MESSAGE = 'streaming request bodies are not supported through proxies — buffer before calling';
-
 // Per-proxy dial parameters loaded once per request and looked up by
 // fallback-list entry. Carries both the parsed wire config and the
 // optional per-proxy dial deadline override so a slow but real proxy can
@@ -86,12 +80,12 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const directBeforeProxy = hasNonDirect && list.includes(DIRECT_PROXY_ID) && list.indexOf(DIRECT_PROXY_ID) < list.length - 1;
   return async (url, init) => {
     // Reject streaming bodies upfront whenever any non-direct entry is in
-    // play. Without this the rejection would land inside collectBody, which
-    // only fires when a proxy attempt is actually reached — for a list like
-    // ['a','direct'] where 'a' is in active backoff, pass 1 hits direct and
-    // the runtime consumes the stream, then pass 2 throws far too late.
+    // play. The two-pass dial can replay a request and a stream is
+    // single-shot; for a list like ['a','direct'] where 'a' is in active
+    // backoff, pass 1 would consume the stream via the runtime fetch and
+    // strand pass 2 with empty bytes.
     if (hasNonDirect && init.body instanceof ReadableStream) {
-      throw new Error(STREAMING_BODY_ERROR_MESSAGE);
+      throw new Error('streaming request bodies are not supported through proxies — buffer before calling');
     }
     let proxied: ProxiedRequest | undefined;
     let effectiveInit = init;
@@ -316,12 +310,6 @@ const collectBody = async (
   if (body instanceof Uint8Array) return { body };
   if (body instanceof ArrayBuffer) return { body: new Uint8Array(body) };
   if (body instanceof Blob) return { body: new Uint8Array(await body.arrayBuffer()) };
-  if (body instanceof ReadableStream) {
-    // The two-pass dial can replay a request, and a stream is single-shot.
-    // Surface this constraint as an explicit error — the caller must buffer
-    // streaming bodies before they reach the proxy fetcher.
-    throw new Error(STREAMING_BODY_ERROR_MESSAGE);
-  }
   // FormData / URLSearchParams: round-trip through Request so the runtime
   // produces a canonical multipart/url-encoded byte stream we can buffer
   // alongside the synthesized Content-Type (with boundary or charset).
