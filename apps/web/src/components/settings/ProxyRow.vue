@@ -63,9 +63,8 @@ const urlPreview = computed(() => {
   } catch {
     return raw.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^@/]*@/, '$1');
   }
-  const host = parsed.hostname.includes(':') ? `[${parsed.hostname}]` : parsed.hostname;
   const port = parsed.port ? `:${parsed.port}` : '';
-  return `${parsed.protocol}//${host}${port}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+  return `${parsed.protocol}//${parsed.hostname}${port}${parsed.pathname === '/' ? '' : parsed.pathname}`;
 });
 
 const lastTestedAgo = computed(() => {
