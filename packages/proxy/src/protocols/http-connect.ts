@@ -84,11 +84,12 @@ const dialHttpConnectInner = async (
   await writer.write(enc.encode(`${lines.join('\r\n')}\r\n\r\n`));
   writer.releaseLock();
 
-  // Drain the CONNECT response from the readable. We can't use getReader here
-  // because we'd then have to release/replay any buffered post-header bytes
-  // into a brand-new stream. Use a TransformStream to peel off the CONNECT
-  // response and forward the rest to a downstream stream that we hand back
-  // to the orchestrator.
+  // Peel the CONNECT response off the socket reader, then mint a fresh
+  // readable via a TransformStream and hand it to the orchestrator. Trailing
+  // bytes from the same read that completes the headers, plus everything
+  // the socket reader sees afterwards, flow into the forwarded stream so
+  // the post-CONNECT consumer (userspace TLS / fetchOnStream) starts from
+  // a clean byte boundary.
 
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
