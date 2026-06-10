@@ -43,8 +43,6 @@ const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'
 
 const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
-// Ephemeral test result for the current dialog session — fresh open starts
-// with nothing; `test()` populates this from the response.
 const lastEgressIp = ref<string | null>(null);
 
 const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false; error: string } | null => {
@@ -218,9 +216,6 @@ const save = async () => {
 };
 
 const test = async () => {
-  // Test runs against the live URL the operator currently has in the
-  // editor, no persistence; same call shape in create and edit so the
-  // experience matches before the row exists and after.
   const trimmedUrl = url.value.trim();
   if (!trimmedUrl) { testError.value = 'URL is required'; return; }
   const parsed = tryParse(trimmedUrl);

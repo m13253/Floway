@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Per-kind form panel two-way bound via defineModel<ProxyConfig>.
-
 import { computed } from 'vue';
 
 import {
@@ -112,6 +110,8 @@ const updateReality = (patch: Partial<RealityProxyConfig>) => {
 const portInvalid = computed(() => !isValidPort(config.value.port));
 const hostInvalid = computed(() => config.value.host.trim() === '');
 
+const orUndef = (v: string): string | undefined => v === '' ? undefined : v;
+
 const uuidInvalid = computed(() => {
   const c = config.value;
   if (c.kind !== 'vless-tcp' && c.kind !== 'vless-ws' && c.kind !== 'reality') return false;
@@ -178,14 +178,14 @@ const reality = computed<RealityProxyConfig | null>(() =>
           <label class="block text-xs font-medium text-gray-500">Username <span class="text-gray-600">(optional)</span></label>
           <Input
             :model-value="http.username ?? ''"
-            @update:model-value="v => updateHttp({ username: v === '' ? undefined : v })"
+            @update:model-value="v => updateHttp({ username: orUndef(v) })"
           />
         </div>
         <div class="space-y-1.5">
           <label class="block text-xs font-medium text-gray-500">Password <span class="text-gray-600">(optional)</span></label>
           <SecretInput
             :model-value="http.password ?? ''"
-            @update:model-value="v => updateHttp({ password: v === '' ? undefined : v })"
+            @update:model-value="v => updateHttp({ password: orUndef(v) })"
           />
         </div>
       </div>
@@ -197,14 +197,14 @@ const reality = computed<RealityProxyConfig | null>(() =>
           <label class="block text-xs font-medium text-gray-500">Username <span class="text-gray-600">(optional)</span></label>
           <Input
             :model-value="socks5.username ?? ''"
-            @update:model-value="v => updateSocks5({ username: v === '' ? undefined : v })"
+            @update:model-value="v => updateSocks5({ username: orUndef(v) })"
           />
         </div>
         <div class="space-y-1.5">
           <label class="block text-xs font-medium text-gray-500">Password <span class="text-gray-600">(optional)</span></label>
           <SecretInput
             :model-value="socks5.password ?? ''"
-            @update:model-value="v => updateSocks5({ password: v === '' ? undefined : v })"
+            @update:model-value="v => updateSocks5({ password: orUndef(v) })"
           />
         </div>
       </div>
@@ -269,7 +269,7 @@ const reality = computed<RealityProxyConfig | null>(() =>
             :model-value="trojan.sni ?? ''"
             placeholder="defaults to host"
             class="font-mono"
-            @update:model-value="v => updateTrojan({ sni: v === '' ? undefined : v })"
+            @update:model-value="v => updateTrojan({ sni: orUndef(v) })"
           />
         </div>
         <div class="space-y-1.5">
@@ -326,7 +326,7 @@ const reality = computed<RealityProxyConfig | null>(() =>
             :model-value="vlessWs.wsHost ?? ''"
             placeholder="defaults to host"
             class="font-mono"
-            @update:model-value="v => updateVlessWs({ wsHost: v === '' ? undefined : v })"
+            @update:model-value="v => updateVlessWs({ wsHost: orUndef(v) })"
           />
         </div>
       </div>
@@ -369,7 +369,7 @@ const reality = computed<RealityProxyConfig | null>(() =>
           :model-value="reality.shortId ?? ''"
           placeholder="hex, up to 16 chars"
           class="font-mono"
-          @update:model-value="v => updateReality({ shortId: v === '' ? undefined : v })"
+          @update:model-value="v => updateReality({ shortId: orUndef(v) })"
         />
       </div>
     </template>

@@ -1,14 +1,10 @@
-// Control-plane DTOs the SPA consumes. These mirror the serialized shapes that
-// the gateway emits from the unified /api endpoints — keeping them here (rather
-// than re-using internal repo types) prevents the bundler from pulling Worker
-// runtime code into the browser bundle.
+// Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex';
 
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
-// Structured per-endpoint capability map. Mirrors @floway-dev/protocols
-// ModelEndpoints: a present key means the model is served by that endpoint.
+// A present key means the model is served by that endpoint.
 export interface ModelEndpoints {
   chatCompletions?: {};
   responses?: {};
@@ -20,8 +16,7 @@ export interface ModelEndpoints {
 
 export type ModelEndpointKey = keyof ModelEndpoints;
 
-// USD per million tokens, keyed by billing dimension. Mirrors
-// @floway-dev/protocols ModelPricing; every key is optional.
+// USD per million tokens, keyed by billing dimension.
 export type ModelPricing = Partial<Record<'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image', number>>;
 
 export interface UpstreamModelConfig {
@@ -40,9 +35,8 @@ export interface CustomModelsFetch {
   endpoint?: string;
 }
 
-// Raw model entries returned by the draft /models browse endpoint
-// (POST /api/upstreams/fetch-models). Permissive superset of the OpenAI,
-// Anthropic, and floway-native /models shapes the backend parser admits.
+// Raw model entries returned by POST /api/upstreams/fetch-models; permissive
+// superset over the shapes the backend accepts.
 export interface CustomRawModel {
   id: string;
   display_name?: string;
@@ -159,8 +153,6 @@ export interface FlagDef {
   defaultFor: UpstreamProviderKind[];
 }
 
-// Mirrors SerializedProxyRecord from packages/gateway/src/control-plane/proxies/serialize.ts.
-// Field names stay snake_case to match the wire format the dashboard receives.
 // Importing the gateway's source-of-truth type as the actual definition (rather
 // than redeclaring the shape) makes any future field rename a compile error
 // here instead of a runtime mismatch the next time someone refreshes the page.

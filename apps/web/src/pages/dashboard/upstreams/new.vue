@@ -33,12 +33,7 @@ const initialProvider: UpstreamProviderKind = (() => {
 })();
 
 const onSaved = async () => {
-  // Refetch the list so the settings page sees the new upstream when the
-  // editor navigates back. The Copilot device-flow and Codex import paths
-  // both end on the new upstream's edit page (see
-  // UpstreamEditPage.onCopilotCompleted / onCodexImported), so the
-  // just-authorised account can be configured straight away without a
-  // round-trip through settings.
+  // Refetch so navigations back to listings see the new upstream.
   await store.load();
 };
 </script>

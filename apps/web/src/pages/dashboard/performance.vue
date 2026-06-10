@@ -49,7 +49,6 @@ export const usePerformancePageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-type Range = DashboardRange;
 type Scope = 'request_total' | 'upstream_success';
 type ChartView = 'model' | 'percentile';
 type PercentileKey = 'p50Ms' | 'p95Ms' | 'p99Ms';
@@ -58,8 +57,8 @@ const api = useApi();
 const auth = useAuthStore();
 const initialOverview = usePerformancePageData();
 
-const performanceRange = ref<Range>('today');
-const loadedPerformanceRange = ref<Range>('today');
+const performanceRange = ref<DashboardRange>('today');
+const loadedPerformanceRange = ref<DashboardRange>('today');
 const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');

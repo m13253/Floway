@@ -257,9 +257,7 @@ const save = async () => {
       } else if (activeProvider.value === 'azure') {
         body = { provider: 'azure', ...baseFields(), config: buildAzureConfig() };
       } else {
-        // Copilot creates flow through the device-flow panel; codex creates
-        // flow through the codex-import panel. Both hide the Save button in
-        // create mode (see showSaveButton) so this branch is unreachable.
+        // Unreachable: see showSaveButton.
         saveError.value = `${activeProvider.value} upstreams are created through their dedicated panel.`;
         return;
       }
@@ -291,9 +289,6 @@ const onCopilotCompleted = async (newRecord: UpstreamRecord | undefined) => {
   if (newRecord) await router.replace(`/dashboard/upstreams/${newRecord.id}`);
 };
 
-// Codex import / re-import / refresh-now all run inside CodexConfigPanel and
-// emit the updated record back to the page. Route to that record's id so the
-// loader re-runs and the page mounts with the freshly-rotated state.
 const onCodexImported = async (newRecord: UpstreamRecord) => {
   emit('saved', newRecord);
   await router.replace(`/dashboard/upstreams/${newRecord.id}`);
@@ -340,11 +335,9 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   const items: { value: string; label: string }[] = [];
   const collect = (list: UpstreamModelConfig[]) => {
     for (const m of list) {
-      // An empty trimmed publicModelId falls back to upstreamModelId — `||`
-      // (not `??`) is intentional: a whitespace-only override should not
-      // shadow the upstream id.
-      const trimmed = m.publicModelId?.trim();
-      const id = trimmed !== undefined && trimmed !== '' ? trimmed : m.upstreamModelId;
+      // `||` (not `??`) is intentional: a whitespace-only override should
+      // not shadow the upstream id.
+      const id = m.publicModelId?.trim() || m.upstreamModelId;
       if (!id || seen.has(id)) continue;
       seen.add(id);
       items.push({ value: id, label: id });

@@ -16,9 +16,9 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 
-// `kind: 'http'` covers both plain HTTP CONNECT and HTTPS CONNECT via the
-// `tls` flag. The form selector exposes the two separately so an operator
-// picks the wire shape directly rather than toggling a checkbox.
+// `kind: 'http'` covers both plain HTTP CONNECT and HTTPS CONNECT; the
+// http and https form kinds emit the same `kind: 'http'` config differing
+// only by the `tls` flag.
 export type FormKind =
   | 'http' | 'https'
   | 'socks5'

@@ -30,11 +30,7 @@ defineProps<{
   fetchLoading: boolean;
   fetchError: string | null;
   fetchStatus: string | null;
-  // Public ids currently surfaced in the model grid — fed to the
-  // disabled-models combobox as autocomplete suggestions. Orphan ids in
-  // `disabledIds` (no longer present in the catalog) still render as
-  // removable chips because TagCombobox falls back to the raw id when an
-  // entry is not in the items map.
+  // Catalog suggestions for the disabled-models combobox.
   availableModelItems: { value: string; label: string }[];
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;

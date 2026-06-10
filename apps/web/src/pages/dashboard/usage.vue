@@ -368,8 +368,6 @@ const tooltipHeader = (labelWidth: number) =>
 
 const tooltipRow = (label: string, labelWidth: number, detail: TokenDetail) => {
   const cached = detail.cacheRead;
-  // Input/output columns mix text and image token counts; pricing already
-  // differs per dimension, so the display does not split them out.
   const prompt = detail.input + detail.cacheRead + detail.cacheCreation + detail.inputImage;
   const output = detail.output + detail.outputImage;
   const total = prompt + output;

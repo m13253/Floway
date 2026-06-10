@@ -39,5 +39,5 @@ export const useProxiesStore = () => {
     loading.value = false;
   };
 
-  return { proxies, backoffs, backoffsByProxyId, loading, error, load };
+  return { proxies, backoffsByProxyId, loading, error, load };
 };

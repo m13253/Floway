@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // Owns codex create + re-import end-to-end so the page-level Save button
-// stays out of this provider's path, mirroring CopilotConfigPanel's
-// device-flow ownership.
+// stays out of this provider's path.
 
 import { computed, ref, watch } from 'vue';
 

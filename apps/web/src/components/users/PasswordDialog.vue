@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
-import { Button, Dialog, Spinner } from '@floway-dev/ui';
+import { Button, Dialog } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 
@@ -91,7 +91,6 @@ const title = computed(() => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" type="button" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" type="submit">
-          <Spinner v-if="saving" class="size-3.5" />
           Save
         </Button>
       </footer>

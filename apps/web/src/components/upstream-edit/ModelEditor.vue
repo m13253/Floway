@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Auto rows render the same form read-only with a "Switch to Manual" CTA;
-// manual rows are fully editable.
-
 import { computed } from 'vue';
 
 import EndpointsField from './EndpointsField.vue';
