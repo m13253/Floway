@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // URL parsing runs on every keystroke via parseProxyUri. Import from the
-// package's /url and /proxy-config subpaths rather than the barrel — the
-// barrel pulls in runProxiedRequest and the userspace TLS stack, which
-// transitively depend on Node's crypto and inflate the dashboard bundle.
-// The parser itself is pure (no SocketDial, no TLS), so the subpath gives
-// live feedback without dial-time code. The gateway re-parses on
-// POST/PATCH, so this client check is not load-bearing for security.
+// package's /url, /proxy-config, and /constants subpaths rather than the
+// barrel — the barrel pulls in runProxiedRequest and the userspace TLS
+// stack, which transitively depend on Node's crypto and inflate the
+// dashboard bundle. The parser itself is pure (no SocketDial, no TLS),
+// so the subpath gives live feedback without dial-time code. The gateway
+// re-parses on POST/PATCH, so this client check is not load-bearing for
+// security.
 //
 // The page hosts a bidirectional sync between the URL field and a
 // `ProxyConfigForm`: typing in the URL repopulates the form, editing the
