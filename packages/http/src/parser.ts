@@ -1,7 +1,7 @@
 // HTTP/1.1 response-head parser + body-framing decoders + the
 // wire-faithful → Web Response bridge.
 
-import { concat, copy, findDoubleCrlf } from './bytes.ts';
+import { concat, copy, findDoubleCrlfFrom } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
 import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
@@ -99,8 +99,14 @@ const readResponseHead = async (
   // forever can't exhaust the runtime's heap. 64 KiB is two orders of
   // magnitude over any sane response-header block.
   const HEADER_BUFFER_CAP = 64 * 1024;
-  let headerEnd = findDoubleCrlf(buffer);
+  let headerEnd = findDoubleCrlfFrom(buffer, 0);
   while (headerEnd < 0) {
+    // Resume from the last position where a partial terminator could have
+    // started straddling the seam — three bytes back covers `CR LF CR ?`
+    // landing across the read boundary. Without this resume index the
+    // per-read scan is O(n) on the whole buffer, turning a 1-byte drip
+    // up to HEADER_BUFFER_CAP into O(n²).
+    const scanFrom = Math.max(0, buffer.byteLength - 3);
     const { value, done } = await reader.read();
     if (done) {
       throw new HttpProtocolError(
@@ -109,7 +115,7 @@ const readResponseHead = async (
       );
     }
     buffer = concat(buffer, value);
-    headerEnd = findDoubleCrlf(buffer);
+    headerEnd = findDoubleCrlfFrom(buffer, scanFrom);
     if (headerEnd < 0 && buffer.byteLength > HEADER_BUFFER_CAP) {
       throw new HttpProtocolError(
         `HTTP/1.1 response headers exceeded ${HEADER_BUFFER_CAP} bytes without a terminator`,

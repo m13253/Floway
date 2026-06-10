@@ -16,7 +16,7 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 
 import { signalAbortReason } from './abort.ts';
-import { base64EncodeBytes, concat, copy, findDoubleCrlf, utf8Bytes } from './bytes.ts';
+import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import type { DuplexStream } from './types.ts';
@@ -229,6 +229,10 @@ const readUpgradeResponse = async (
   let buffer = new Uint8Array(0);
   let headerEnd = -1;
   while (headerEnd < 0) {
+    // Resume from the last position where a partial terminator could have
+    // started straddling the seam — mirrors the parser.ts readResponseHead
+    // scan-from index so a drip-fed upgrade response stays O(n).
+    const scanFrom = Math.max(0, buffer.byteLength - 3);
     const { value, done } = await reader.read();
     if (done) {
       throw new HttpProtocolError(
@@ -237,7 +241,7 @@ const readUpgradeResponse = async (
       );
     }
     buffer = concat(buffer, value);
-    headerEnd = findDoubleCrlf(buffer);
+    headerEnd = findDoubleCrlfFrom(buffer, scanFrom);
     if (headerEnd < 0 && buffer.byteLength > WS_HEAD_BUFFER_CAP) {
       throw new HttpProtocolError(
         `WS upgrade response head exceeded ${WS_HEAD_BUFFER_CAP} bytes without a terminator`,
