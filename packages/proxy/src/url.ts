@@ -173,7 +173,7 @@ const parseSs = (
   // method; if so, the suffix is the raw base64 key (URL parsing already
   // split userinfo on the first ':' for us via username/password, and
   // percent-encoded any `=` padding on the way through).
-  const username = pctDecode(url.username, 'ss method');
+  const username = pctDecode(url.username, 'ss userinfo');
   if (SS2022_METHOD_SET.has(username)) {
     return {
       kind: 'ss2022',
@@ -187,15 +187,17 @@ const parseSs = (
 
   // Legacy: the entire userinfo is base64(method:password). The base64
   // alphabet contains no ':' so the URL parser leaves the whole blob in
-  // url.username and never splits it across username/password.
+  // url.username and never splits it across username/password. Decode
+  // through the pctDecoded `username` so `=` padding (which the WHATWG
+  // URL constructor percent-encodes inside userinfo) reaches `atob` raw.
   let decoded: string;
   try {
-    decoded = atob(url.username);
+    decoded = atob(username);
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
   const sep = decoded.indexOf(':');
-  if (sep < 0) throw new ProxyUriError(`malformed ss userinfo: ${url.username}`);
+  if (sep < 0) throw new ProxyUriError(`malformed ss userinfo: ${username}`);
   const method = decoded.slice(0, sep);
   if (!SS_METHOD_SET.has(method)) {
     throw new ProxyUriError(`unknown ss method: ${method}`);

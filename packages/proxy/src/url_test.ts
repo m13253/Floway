@@ -86,6 +86,21 @@ describe('parseProxyUri', () => {
       });
   });
 
+  it('parses Shadowsocks legacy when base64 padding survives the URL parser as %3D', () => {
+    // base64('aes-128-gcm:abcd') = 'YWVzLTEyOC1nY206YWJjZA==' — non-quad
+    // input bytes force `=` padding, which the WHATWG URL constructor
+    // percent-encodes inside userinfo to %3D before atob ever sees it.
+    expect(parseProxyUri('ss://YWVzLTEyOC1nY206YWJjZA==@h:8388#p'))
+      .toEqual({
+        kind: 'ss',
+        method: 'aes-128-gcm',
+        password: 'abcd',
+        host: 'h',
+        port: 8388,
+        name: 'p',
+      });
+  });
+
   it('parses Shadowsocks 2022', () => {
     // userinfo = '2022-blake3-aes-128-gcm:<base64key>'
     expect(parseProxyUri(
@@ -222,6 +237,7 @@ describe('formatProxyUri', () => {
     'https://example.com:443',
     'socks5://u:p@1.2.3.4:1080#jp',
     'ss://YWVzLTI1Ni1nY206c2VjcmV0@1.2.3.4:8388#tag',
+    'ss://YWVzLTEyOC1nY206YWJjZA==@h:8388#p',
     'ss://2022-blake3-aes-128-gcm:MTIzNDU2Nzg5MGFiY2RlZg==@1.2.3.4:8388#tag',
     'trojan://pw@example.com:443?sni=example.com&allowInsecure=0#t',
     'vless://aaaa-uuid@h:443?type=tcp&security=tls#v',
