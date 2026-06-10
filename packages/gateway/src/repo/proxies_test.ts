@@ -34,146 +34,146 @@ const upstreamFixture = (id: string, proxyFallbackList: string[]): UpstreamRecor
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {
 
-test(`[${backend}] proxies repo inserts and lists ordered by sortOrder, then createdAt`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  // Sleep to guarantee a distinct createdAt for tie-breaks within the same sort_order bucket.
-  await new Promise(resolve => setTimeout(resolve, 5));
-  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  const list = await repo.proxies.list();
-  assertEquals(list.map(p => p.id), ['a', 'b']);
-});
+  test(`[${backend}] proxies repo inserts and lists ordered by sortOrder, then createdAt`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    // Sleep to guarantee a distinct createdAt for tie-breaks within the same sort_order bucket.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    const list = await repo.proxies.list();
+    assertEquals(list.map(p => p.id), ['a', 'b']);
+  });
 
-test(`[${backend}] proxies repo clears lastEgressIp and lastTestedAt when url changes`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.recordTestSuccess('a', '1.2.3.4');
-  const before = await repo.proxies.getById('a');
-  assertEquals(before?.lastEgressIp, '1.2.3.4');
-  if (before?.lastTestedAt === null || before?.lastTestedAt === undefined) {
-    throw new Error('expected lastTestedAt to be populated after recordTestSuccess');
-  }
+  test(`[${backend}] proxies repo clears lastEgressIp and lastTestedAt when url changes`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.recordTestSuccess('a', '1.2.3.4');
+    const before = await repo.proxies.getById('a');
+    assertEquals(before?.lastEgressIp, '1.2.3.4');
+    if (before?.lastTestedAt === null || before?.lastTestedAt === undefined) {
+      throw new Error('expected lastTestedAt to be populated after recordTestSuccess');
+    }
 
-  await repo.proxies.patch('a', { url: 'socks5://host-b:1080' });
-  const after = await repo.proxies.getById('a');
-  assertEquals(after?.url, 'socks5://host-b:1080');
-  assertEquals(after?.lastEgressIp, null);
-  assertEquals(after?.lastTestedAt, null);
-});
+    await repo.proxies.patch('a', { url: 'socks5://host-b:1080' });
+    const after = await repo.proxies.getById('a');
+    assertEquals(after?.url, 'socks5://host-b:1080');
+    assertEquals(after?.lastEgressIp, null);
+    assertEquals(after?.lastTestedAt, null);
+  });
 
-test(`[${backend}] proxies repo keeps lastEgressIp when patching name only`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.recordTestSuccess('a', '1.2.3.4');
+  test(`[${backend}] proxies repo keeps lastEgressIp when patching name only`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.recordTestSuccess('a', '1.2.3.4');
 
-  await repo.proxies.patch('a', { name: 'A2' });
-  const after = await repo.proxies.getById('a');
-  assertEquals(after?.name, 'A2');
-  assertEquals(after?.lastEgressIp, '1.2.3.4');
-});
+    await repo.proxies.patch('a', { name: 'A2' });
+    const after = await repo.proxies.getById('a');
+    assertEquals(after?.name, 'A2');
+    assertEquals(after?.lastEgressIp, '1.2.3.4');
+  });
 
-test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.upstreams.save(upstreamFixture('up_1', ['p', 'direct']));
-  await repo.upstreams.save(upstreamFixture('up_2', ['direct', 'p']));
-  await repo.upstreams.save(upstreamFixture('up_3', ['direct']));
+  test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.upstreams.save(upstreamFixture('up_1', ['p', 'direct']));
+    await repo.upstreams.save(upstreamFixture('up_2', ['direct', 'p']));
+    await repo.upstreams.save(upstreamFixture('up_3', ['direct']));
 
-  const ids = (await repo.proxies.findUpstreamsReferencing('p')).toSorted();
-  assertEquals(ids, ['up_1', 'up_2']);
-});
+    const ids = (await repo.proxies.findUpstreamsReferencing('p')).toSorted();
+    assertEquals(ids, ['up_1', 'up_2']);
+  });
 
-test(`[${backend}] proxies repo delete returns false when id is unknown`, async () => {
-  const repo = await makeRepo();
-  assertEquals(await repo.proxies.delete('nope'), false);
-});
+  test(`[${backend}] proxies repo delete returns false when id is unknown`, async () => {
+    const repo = await makeRepo();
+    assertEquals(await repo.proxies.delete('nope'), false);
+  });
 
-test(`[${backend}] proxies repo delete returns true and removes the row`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  assertEquals(await repo.proxies.delete('a'), true);
-  assertEquals(await repo.proxies.getById('a'), null);
-});
+  test(`[${backend}] proxies repo delete returns true and removes the row`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    assertEquals(await repo.proxies.delete('a'), true);
+    assertEquals(await repo.proxies.getById('a'), null);
+  });
 
-test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
-  const repo = await makeRepo();
-  assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
-});
+  test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
+    const repo = await makeRepo();
+    assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
+  });
 
-test(`[${backend}] proxies repo bulkReorder rewrites sort_order to match the input array`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'c', name: 'C', url: 'socks5://host-c:1080', sortOrder: 2, dialTimeoutSeconds: null });
+  test(`[${backend}] proxies repo bulkReorder rewrites sort_order to match the input array`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'c', name: 'C', url: 'socks5://host-c:1080', sortOrder: 2, dialTimeoutSeconds: null });
 
-  await repo.proxies.bulkReorder(['c', 'a', 'b']);
-  const list = await repo.proxies.list();
-  assertEquals(list.map(p => p.id), ['c', 'a', 'b']);
-  assertEquals(list.map(p => p.sortOrder), [0, 1, 2]);
-});
+    await repo.proxies.bulkReorder(['c', 'a', 'b']);
+    const list = await repo.proxies.list();
+    assertEquals(list.map(p => p.id), ['c', 'a', 'b']);
+    assertEquals(list.map(p => p.sortOrder), [0, 1, 2]);
+  });
 
-test(`[${backend}] proxies repo bulkReorder rejects a non-permutation`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+  test(`[${backend}] proxies repo bulkReorder rejects a non-permutation`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
 
-  // Missing id.
-  await repo.proxies.bulkReorder(['a']).then(
-    () => { throw new Error('expected bulkReorder to reject a missing id'); },
-    () => undefined,
-  );
-  // Unknown id.
-  await repo.proxies.bulkReorder(['a', 'b', 'c']).then(
-    () => { throw new Error('expected bulkReorder to reject an unknown id'); },
-    () => undefined,
-  );
-  // Duplicate id.
-  await repo.proxies.bulkReorder(['a', 'a']).then(
-    () => { throw new Error('expected bulkReorder to reject duplicate ids'); },
-    () => undefined,
-  );
-});
+    // Missing id.
+    await repo.proxies.bulkReorder(['a']).then(
+      () => { throw new Error('expected bulkReorder to reject a missing id'); },
+      () => undefined,
+    );
+    // Unknown id.
+    await repo.proxies.bulkReorder(['a', 'b', 'c']).then(
+      () => { throw new Error('expected bulkReorder to reject an unknown id'); },
+      () => undefined,
+    );
+    // Duplicate id.
+    await repo.proxies.bulkReorder(['a', 'a']).then(
+      () => { throw new Error('expected bulkReorder to reject duplicate ids'); },
+      () => undefined,
+    );
+  });
 
-test(`[${backend}] proxies repo save inserts a new row with createdAt and updatedAt set to now`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: 30 });
-  const row = await repo.proxies.getById('a');
-  assertEquals(row?.name, 'A');
-  assertEquals(row?.url, 'socks5://host:1080');
-  assertEquals(row?.sortOrder, 0);
-  assertEquals(row?.dialTimeoutSeconds, 30);
-  assertEquals(row?.lastEgressIp, null);
-  assertEquals(row?.lastTestedAt, null);
-  assertEquals(typeof row?.createdAt, 'string');
-  assertEquals(row?.createdAt, row?.updatedAt);
-});
+  test(`[${backend}] proxies repo save inserts a new row with createdAt and updatedAt set to now`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: 30 });
+    const row = await repo.proxies.getById('a');
+    assertEquals(row?.name, 'A');
+    assertEquals(row?.url, 'socks5://host:1080');
+    assertEquals(row?.sortOrder, 0);
+    assertEquals(row?.dialTimeoutSeconds, 30);
+    assertEquals(row?.lastEgressIp, null);
+    assertEquals(row?.lastTestedAt, null);
+    assertEquals(typeof row?.createdAt, 'string');
+    assertEquals(row?.createdAt, row?.updatedAt);
+  });
 
-test(`[${backend}] proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'Old', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.recordTestSuccess('a', '1.2.3.4');
-  const before = await repo.proxies.getById('a');
-  const originalCreatedAt = before?.createdAt;
-  if (!originalCreatedAt) throw new Error('expected createdAt to be populated');
+  test(`[${backend}] proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'Old', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.recordTestSuccess('a', '1.2.3.4');
+    const before = await repo.proxies.getById('a');
+    const originalCreatedAt = before?.createdAt;
+    if (!originalCreatedAt) throw new Error('expected createdAt to be populated');
 
-  await new Promise(resolve => setTimeout(resolve, 5));
-  await repo.proxies.save({ id: 'a', name: 'New', url: 'http://host-b:3128', sortOrder: 7, dialTimeoutSeconds: 60 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await repo.proxies.save({ id: 'a', name: 'New', url: 'http://host-b:3128', sortOrder: 7, dialTimeoutSeconds: 60 });
 
-  const after = await repo.proxies.getById('a');
-  assertEquals(after?.name, 'New');
-  assertEquals(after?.url, 'http://host-b:3128');
-  assertEquals(after?.sortOrder, 7);
-  assertEquals(after?.dialTimeoutSeconds, 60);
-  assertEquals(after?.createdAt, originalCreatedAt);
-  assertEquals(after?.lastEgressIp, '1.2.3.4');
-});
+    const after = await repo.proxies.getById('a');
+    assertEquals(after?.name, 'New');
+    assertEquals(after?.url, 'http://host-b:3128');
+    assertEquals(after?.sortOrder, 7);
+    assertEquals(after?.dialTimeoutSeconds, 60);
+    assertEquals(after?.createdAt, originalCreatedAt);
+    assertEquals(after?.lastEgressIp, '1.2.3.4');
+  });
 
-test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
-  const repo = await makeRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
-  await repo.proxies.deleteAll();
-  assertEquals(await repo.proxies.list(), []);
-});
+  test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
+    const repo = await makeRepo();
+    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
+    await repo.proxies.deleteAll();
+    assertEquals(await repo.proxies.list(), []);
+  });
 
 }
