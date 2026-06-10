@@ -125,6 +125,22 @@ const dialTimeoutParsed = computed<{ value: number | null } | { error: string }>
   return { value: n };
 });
 
+// Match the URL example to the current form kind so the placeholder
+// reflects what the bidirectional sync would emit for an empty form.
+const urlPlaceholder = computed(() => {
+  switch (config.value?.kind) {
+  case 'http': return config.value.tls ? 'https://user:pass@host:443' : 'http://user:pass@host:8080';
+  case 'socks5': return 'socks5://user:pass@host:1080';
+  case 'ss': return 'ss://method:password@host:port';
+  case 'ss2022': return 'ss://2022-blake3-aes-128-gcm:base64-key@host:port';
+  case 'trojan': return 'trojan://password@host:443?sni=server.example.com';
+  case 'vless-tcp': return 'vless://uuid@host:443?type=tcp&security=tls&sni=server.example.com';
+  case 'vless-ws': return 'vless://uuid@host:443?type=ws&security=tls&sni=server.example.com&path=/ws';
+  case 'reality': return 'vless://uuid@host:443?type=tcp&security=reality&pbk=...&sni=...&sid=...';
+  default: return 'vless://uuid@host:443?...';
+  }
+});
+
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 
@@ -334,20 +350,22 @@ const remove = async () => {
       <Input v-model="name" placeholder="My JP server" />
     </div>
 
-    <div class="space-y-2">
-      <label class="block text-xs font-medium text-gray-500">URL</label>
-      <Input
-        v-model="url"
-        placeholder="vless://uuid@host:443?type=tcp&security=reality&pbk=..."
-        :invalid="urlError !== null"
-        class="font-mono"
-      />
-      <div v-if="urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
-        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 8v4M12 16h.01" />
-        </svg>
-        {{ urlError }}
+    <div class="space-y-4">
+      <div class="space-y-1.5">
+        <label class="block text-xs font-medium text-gray-500">URL</label>
+        <Input
+          v-model="url"
+          :placeholder="urlPlaceholder"
+          :invalid="urlError !== null"
+          class="font-mono"
+        />
+        <div v-if="urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
+          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4M12 16h.01" />
+          </svg>
+          {{ urlError }}
+        </div>
       </div>
       <ProxyConfigForm
         v-if="config"

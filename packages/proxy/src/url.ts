@@ -346,9 +346,13 @@ const formatAuthority = (
 };
 
 const formatFragment = (name: string, host: string, port: number): string => {
-  // Match the parser's default: when `name` was synthesized from
-  // `host:port`, drop the fragment so the round trip stays stable.
-  return name === `${host}:${port}` ? '' : `#${encodeURIComponent(name)}`;
+  // Drop the fragment in two cases: an explicitly empty name (nothing to
+  // label), or the parser's synthesized `host:port` placeholder when no
+  // fragment was present on the original URL. Either way emitting a bare
+  // `#` would break the round trip and surface as trailing punctuation in
+  // the editor's live URL preview.
+  if (name === '' || name === `${host}:${port}`) return '';
+  return `#${encodeURIComponent(name)}`;
 };
 
 const formatQuery = (params: Record<string, string | undefined>): string => {
