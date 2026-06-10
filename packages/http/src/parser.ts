@@ -352,34 +352,37 @@ const lengthBody = (
       }
     },
     async pull(controller) {
-      while (consumed < total) {
-        const { value, done } = await reader.read();
-        if (done) {
-          controller.error(new HttpProtocolError(
-            `upstream EOF after ${consumed}/${total} body bytes`,
-            'EOF',
-          ));
-          return;
-        }
-        const remain = total - consumed;
-        if (value.byteLength <= remain) {
-          controller.enqueue(copy(value));
-          consumed += value.byteLength;
-        } else {
-          controller.enqueue(copy(value.subarray(0, remain)));
-          consumed += remain;
-          controller.error(new HttpProtocolError(
-            `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
-            'TRAILING_BODY_BYTES',
-          ));
-          try { await reader.cancel(); } catch { /* reader already cancelled */ }
-          return;
-        }
-        if (consumed >= total) {
-          controller.close();
-          try { await reader.cancel(); } catch { /* reader already cancelled */ }
-          return;
-        }
+      // One transport read per pull — the stream's desiredSize is
+      // re-evaluated between pulls, so a `while (consumed < total)` here
+      // would drain the entire CL body into the controller queue at once
+      // and bypass back-pressure (mirrors `untilEofBody` and the chunked
+      // decoder's data branch). A 20 MiB JSON body under a slow consumer
+      // would otherwise pin its full size in memory.
+      const { value, done } = await reader.read();
+      if (done) {
+        controller.error(new HttpProtocolError(
+          `upstream EOF after ${consumed}/${total} body bytes`,
+          'EOF',
+        ));
+        return;
+      }
+      const remain = total - consumed;
+      if (value.byteLength <= remain) {
+        controller.enqueue(copy(value));
+        consumed += value.byteLength;
+      } else {
+        controller.enqueue(copy(value.subarray(0, remain)));
+        consumed += remain;
+        controller.error(new HttpProtocolError(
+          `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
+          'TRAILING_BODY_BYTES',
+        ));
+        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        return;
+      }
+      if (consumed >= total) {
+        controller.close();
+        try { await reader.cancel(); } catch { /* reader already cancelled */ }
       }
     },
     cancel(reason) {
