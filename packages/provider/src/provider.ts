@@ -17,11 +17,7 @@ export interface ProviderModelRecord {
   supportsResponsesItemReference: boolean;
 }
 
-// endpoints describes which endpoints this model is served by on its
-// upstream side; it lives on ResolvedModel for planner-only use. The public
-// catalog does not expose upstream endpoint identity — the gateway always
-// translates between protocols on the data plane, so downstream clients see
-// all source endpoints as available for any generation-capable model.
+// `endpoints` carries the set of upstream endpoints this model is served by.
 export interface ResolvedModel extends InternalModel {
   endpoints: ModelEndpoints;
   providers: readonly ProviderModelRecord[];
@@ -31,9 +27,7 @@ export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
   name: string;
-  // Public model ids the operator switched off for this upstream. The registry
-  // drops these from the collected catalog (hidden + unroutable); the per-upstream
-  // dashboard view bypasses the registry and still sees them so they can be toggled.
+  // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
@@ -91,9 +85,7 @@ export interface ModelProvider {
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
   getProvidedModels(fetcher: Fetcher): Promise<readonly UpstreamModel[]>;
-  // Resolve pricing for a usage record's `model_key` (the raw upstream model
-  // id). Used by aggregation-time cost computation. Public-model-name lookups
-  // happen elsewhere by reading `UpstreamModel.cost` directly.
+  // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
   getPricingForModelKey(modelKey: string): ModelPricing | null;
   // `headers` is the mutable header bag the caller seeds. A provider may run
   // its own boundary interceptor chain that populates headers (vision,
@@ -104,10 +96,6 @@ export interface ModelProvider {
   // boundary chain today, but the parameter stays for interface uniformity.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  // `/responses/compact` is non-streaming — the upstream returns a single
-  // `response.compaction` envelope. Providers either pass the native
-  // sub-path through or synthesize the envelope client-side; either way
-  // the value is returned directly.
   callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire

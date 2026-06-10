@@ -32,10 +32,8 @@ export interface CodexCallEffects {
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
 }
 
-// The transport sees one account at a time. Provider-level code picks the
-// active account out of the pool (currently always accounts[0]) and passes
-// only the credential here, so the transport stays pool-agnostic — a future
-// fan-out adds per-call account selection without touching this module.
+// The transport is account-agnostic — the caller selects the credential
+// and passes it in.
 export interface CallCodexResponsesOptions {
   upstreamId: string;
   account: CodexAccountCredential;

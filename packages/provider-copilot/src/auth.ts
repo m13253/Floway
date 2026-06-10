@@ -26,9 +26,9 @@ const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
 const COPILOT_API_VERSION = '2026-01-09';
 const GITHUB_API_VERSION = '2025-04-01';
 
-// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path;
-// applied by the Messages-boundary Claude-Code detection path. Bump alongside
-// COPILOT_VERSION when caozhiyuan/copilot-api upgrades it upstream.
+// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path.
+// Bump alongside COPILOT_VERSION when caozhiyuan/copilot-api upgrades it
+// upstream.
 export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
 
 // Stable per-isolate device id, like real VSCode generates once per install.
@@ -48,7 +48,6 @@ const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status ==
 
 // Two-level Copilot token cache: in-process (60s) + KV (cross-datacenter).
 // In-process avoids KV reads on every request. KV avoids HTTP fetches on cold starts.
-const LEGACY_COPILOT_TOKEN_KV_KEY = 'copilot_token';
 const COPILOT_TOKEN_KV_KEY_PREFIX = 'copilot_token_v2';
 const IN_PROCESS_TTL_MS = 60_000;
 const inProcessTokenCache = new Map<
@@ -76,7 +75,6 @@ export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenF
 export async function clearCopilotTokenCache(): Promise<void> {
   inProcessTokenCache.clear();
   try {
-    await getRepo().cache.delete(LEGACY_COPILOT_TOKEN_KV_KEY);
     await getRepo().cache.deletePrefix(`${COPILOT_TOKEN_KV_KEY_PREFIX}:`);
   } catch {
     // Ignore — KV may not be available during initialization
@@ -92,9 +90,6 @@ async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefine
       // immediately rather than walk N retries with the same already-
       // aborted signal, which would burn the proxy chain on each cycle.
       if (isAbortError(e)) throw e;
-      // Token-fetch failures with a known-non-transient status surface as
-      // CopilotTokenFetchError; bypass retry there. Everything else
-      // (network/connect errors, transient 5xx, etc.) walks the backoff.
       if (isCopilotTokenFetchError(e) && isCopilotTokenFetchTerminalStatus(e.status)) {
         throw e;
       }

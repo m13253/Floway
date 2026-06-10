@@ -86,10 +86,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // Manual models always emit, and their upstream ids shadow any auto copy.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: UpstreamModel[] = config.models.map(model => {
-    // The model's flag overrides are gated by a dashboard toggle: `enabled:
-    // false` skips the model layer entirely (the upstream layer wins),
-    // `enabled: true` applies `values` as a final layer. See
-    // `resolveEffectiveFlags` for layer semantics.
     const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
     const enabledFlags = resolveEffectiveFlags(defaultsForProvider('custom'), [record.flagOverrides, modelLayer]);
     const endpoints = model.endpoints;

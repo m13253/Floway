@@ -47,11 +47,7 @@ export const resetSocketDialForTesting = (): void => {
   current = null;
 };
 
-/**
- * Convert an aborted signal into a thrown error. A structured Error reason
- * is rethrown as-is so its stack/cause survives; a primitive or absent
- * reason becomes a DOMException('AbortError').
- */
+/** Throws using the same policy described on SocketDialOptions.signal. */
 export const throwAbort = (signal: AbortSignal): never => {
   const reason = signal.reason;
   if (reason instanceof Error) throw reason;
@@ -60,8 +56,7 @@ export const throwAbort = (signal: AbortSignal): never => {
 
 /**
  * WHATWG `URL.hostname` keeps the `[...]` envelope around IPv6 literals,
- * but runtime TCP APIs reject bracketed literals as ENOTFOUND. Each
- * concrete dial impl strips the envelope before reaching the runtime call.
+ * but runtime TCP APIs reject bracketed literals as ENOTFOUND.
  */
 export const normalizeDialHost = (host: string): string =>
   host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;

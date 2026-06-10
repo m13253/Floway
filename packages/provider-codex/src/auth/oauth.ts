@@ -11,7 +11,7 @@ export interface CodexOAuthTokens {
   access_token: string;
   refresh_token: string;
   id_token: string;
-  // Lifetime in seconds; the server's clock + this number define expires_at.
+  // Lifetime in seconds, relative to the server's clock at issue time.
   expires_in: number;
 }
 

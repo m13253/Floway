@@ -41,10 +41,7 @@ const customFetchInternal = async (
   return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
-// Typed transports — one per logical endpoint Custom serves. count_tokens /
-// responses_compact derive their path by suffixing the (possibly admin-
-// overridden) parent endpoint, so renaming `messages` to `/custom/messages`
-// implicitly moves `messages/count_tokens` to `/custom/messages/count_tokens`.
+// Typed transports — one per logical endpoint Custom serves.
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, 'chat_completions'), init, options);
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

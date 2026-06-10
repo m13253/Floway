@@ -80,9 +80,7 @@ const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined 
 const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpointKey): boolean => {
   if ((model.supported_endpoints ?? []).some(path => copilotPathToModelEndpoint(path) === endpoint)) return true;
   // Copilot's Anthropic-family entries have historically under-reported their
-  // native Messages path. Treating claude-* as Messages-capable is a
-  // Copilot-provider workaround only; custom providers must declare their own
-  // supported endpoints.
+  // native Messages path, so treat claude-* as Messages-capable.
   if (endpoint === 'messages' && model.id.startsWith('claude-')) return true;
   if (endpoint === 'chatCompletions') {
     return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
@@ -129,8 +127,7 @@ const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, un
 
   // OpenAI-compatible clients may send scalar string input, but Copilot's
   // upstream /embeddings endpoint currently returns 400 unless text input is
-  // wrapped as an array. Keep this workaround at the Copilot provider boundary
-  // so custom OpenAI-compatible upstreams receive the caller's body unchanged.
+  // wrapped as an array.
   // References:
   // https://platform.openai.com/docs/api-reference/embeddings/create
   // https://github.com/ericc-ch/copilot-api/blob/0ea08febdd7e3e055b03dd298bf57e669500b5c1/src/services/copilot/create-embeddings.ts#L19-L21
@@ -167,7 +164,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   const copilot = assertCopilotUpstreamRecord(record);
   const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
-  // (no per-model override layer). Azure recomputes per deployment.
+  // (no per-model override layer).
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
 
   const call = async (

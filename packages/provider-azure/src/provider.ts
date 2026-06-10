@@ -4,25 +4,9 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ModelProvider, type ModelProviderInstance, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { type ModelProvider, type ModelProviderInstance, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord, defaultsForProvider, mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
-interface AzureProviderData {
-  upstreamModelId: string;
-}
-
-const providerData = (model: UpstreamModel): AzureProviderData => model.providerData as AzureProviderData;
-
-// Project an Azure model config row into the slim provider-neutral fields.
-// kind/endpoints/providerData/enabledFlags are added by the caller.
-const azureInternalModel = (model: UpstreamModelConfig): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
-  const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
-    id: publicModelId(model),
-    limits: { ...(model.limits ?? {}) },
-  };
-  if (model.display_name !== undefined) internal.display_name = model.display_name;
-  if (model.cost) internal.cost = model.cost;
-  return internal;
-};
+const providerData = (model: UpstreamModel): { upstreamModelId: string } => model.providerData as { upstreamModelId: string };
 
 type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>;
 
@@ -60,20 +44,17 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
   const provider: ModelProvider = {
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
-        // The model's flag overrides are gated by a dashboard toggle: `enabled: false`
-        // skips the model layer entirely (the upstream layer wins), `enabled: true`
-        // applies `values` as a final layer that can re-enable or remove flags seeded by
-        // defaults or the upstream. See `resolveEffectiveFlags` for layer semantics.
         const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
         const effective = resolveEffectiveFlags(defaultsForProvider('azure'), [azure.flagOverrides, modelLayer]);
         const endpoints = model.endpoints;
         return {
-          ...azureInternalModel(model),
+          id: publicModelId(model),
+          limits: { ...(model.limits ?? {}) },
+          ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+          ...(model.cost ? { cost: model.cost } : {}),
           kind: kindForEndpoints(endpoints),
           endpoints,
-          providerData: {
-            upstreamModelId: model.upstreamModelId,
-          } satisfies AzureProviderData,
+          providerData: { upstreamModelId: model.upstreamModelId },
           enabledFlags: effective,
         };
       }));

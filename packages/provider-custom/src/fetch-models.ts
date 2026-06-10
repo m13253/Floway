@@ -3,13 +3,11 @@
 //   1. OpenAI:       { object: 'list', data: [{ id, object?, owned_by?, created? }] }
 //   2. Anthropic:    { data: [{ type: 'model', id, display_name?, created_at? }],
 //                      has_more, first_id, last_id }     (no top-level `object`)
-//   3. floway's own /models (superset of 1+2 with display_name,
-//      created_at, limits, cost, kind).
+//   3. OpenAI/Anthropic superset with optional display_name, created_at,
+//      limits, cost, kind on the model and a `data` array on the container.
 //
-// The parser is intentionally tolerant: a model is admitted if it has a string
-// `id`; everything else is best-effort metadata. The container is admitted if
-// `data` is an array. The parser carries `kind` through when present and
-// never inspects per-model endpoint hints.
+// A model is admitted if it has a string `id`; everything else is best-
+// effort metadata. The container is admitted if `data` is an array.
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
@@ -18,17 +16,15 @@ import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
-  // OpenAI / our-gateway use `created` (unix seconds). Anthropic / our-gateway
-  // also expose `created_at` (ISO-8601). We carry both and let the projection
-  // step decide which to use.
+  // OpenAI uses `created` (unix seconds). Anthropic uses `created_at`
+  // (ISO-8601). We carry both and let the projection step decide.
   created?: number;
   created_at?: string;
-  // OpenAI uses no display name. Anthropic / our-gateway use `display_name`.
-  // Some OpenAI-compat upstreams use the non-standard `name`.
   display_name?: string;
+  // Non-standard OpenAI-compat alternative for the display name.
   name?: string;
   owned_by?: string;
-  // floway-only superset fields.
+  // Optional superset fields, absent on minimal OpenAI-compat upstreams.
   limits?: {
     max_output_tokens?: number;
     max_context_window_tokens?: number;

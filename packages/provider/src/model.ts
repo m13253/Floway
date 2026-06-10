@@ -1,9 +1,9 @@
 import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
-// A provider's data instance — one row in the upstreams table. Pure data; the
-// per-kind provider package validates `config` against its own schema.
 export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex';
 
+// A provider's data instance — one row in the upstreams table. Pure data; the
+// per-kind provider package validates `config` against its own schema.
 export interface UpstreamRecord {
   id: string;
   provider: UpstreamProviderKind;
@@ -29,8 +29,8 @@ export interface UpstreamRecord {
   proxyFallbackList: string[];
 }
 
-// Pure data identifying the model served by one provider call. Travels alongside
-// every event/error result so downstream telemetry never has to re-resolve.
+// Model identity attached to every provider result at the provider boundary
+// so the identity is decided once.
 export interface TelemetryModelIdentity {
   model: string;
   upstream: string;
@@ -38,8 +38,6 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
-// Context the gateway's telemetry recorder reads when writing latency /
-// error metrics.
 export interface PerformanceTelemetryContext {
   keyId: string;
   model: string;
@@ -50,15 +48,13 @@ export interface PerformanceTelemetryContext {
 }
 
 // The internal model shape: what providers produce and what the registry
-// stores. Only fields the data plane actually consumes — to expose downstream
-// (id, display_name, owned_by, created, limits) or to drive request-time
-// decisions (max_output_tokens as the translation fallback). Provider-internal
-// raw fields stay inside that provider's own types and projections; nothing
-// upstream-shaped leaks onto this neutral type.
+// stores. Provider-internal raw fields stay inside that provider's own
+// types and projections; nothing upstream-shaped leaks onto this neutral
+// type.
 //
-// `kind` is the high-level endpoint-family discriminator; `endpoints`
-// (on UpstreamModel) is the precise per-protocol availability map used by
-// the planner. They are linked invariants enforced at the producer boundary:
+// `kind` is the high-level endpoint-family discriminator; `endpoints` (on
+// UpstreamModel) is the precise per-protocol availability map. They are
+// linked invariants enforced at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.

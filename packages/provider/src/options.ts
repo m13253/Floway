@@ -7,7 +7,7 @@ export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
 export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 
 // Per-call options for upstream fetch helpers: a per-upstream Fetcher plus
-// optional headers merged on top of the helper's own auth/intent/UA headers.
+// optional headers merged on top of the helper's own default headers.
 export interface UpstreamFetchOptions {
   extraHeaders?: Record<string, string>;
   fetcher: Fetcher;

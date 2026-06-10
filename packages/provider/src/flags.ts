@@ -131,6 +131,12 @@ export const parseFlagOverridesWire = (value: unknown): Record<string, boolean> 
 // flags seeded by provider defaults — admins explicitly toggled Off to opt out).
 export type FlagOverrides = Record<string, boolean>;
 
+// Reduce a sequence of override layers atop the provider defaults to the
+// effective enabled set. Layers are applied left-to-right; a later layer's
+// explicit `true` re-enables a previously-off flag, and an explicit `false`
+// overrides any earlier `true` (and any default seed). At call sites a
+// per-model overrides bag with `enabled: false` is contributed as `undefined`
+// so the model layer is skipped entirely.
 export const resolveEffectiveFlags = (
   providerDefaults: ReadonlySet<string>,
   layers: readonly (FlagOverrides | undefined)[],

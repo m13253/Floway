@@ -1,7 +1,5 @@
-// Copilot upstream transport. The auth.ts layer owns the GitHub-token → short
-// lived Copilot-token exchange and KV cache; this module maps each logical
-// endpoint to the path Copilot serves it on, then dispatches through the
-// authed fetch.
+// Copilot upstream transport. Maps each logical endpoint to the path
+// Copilot serves it on, then dispatches through the authed fetch.
 
 import { copilotAuthedFetch, isCopilotTokenFetchError } from './auth.ts';
 import type { CopilotUpstreamConfig } from './config.ts';
@@ -36,9 +34,6 @@ const copilotFetchInternal = async (
   }
 };
 
-// Copilot has no native `/responses/compact`; the provider fabricates
-// compaction by POSTing a compaction_trigger item to `/responses` via
-// `copilotFetchResponses`.
 export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
 export const copilotFetchResponses = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

@@ -91,9 +91,9 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 };
 
 // Shared scaffold for "fetch the upstream's /models, decode JSON, validate
-// shape" — error envelope identical across providers (network failure ⇒
-// ProviderModelsUnavailableError(null, cause); non-2xx ⇒ status+headers+
-// body; JSON-parse failure ⇒ null+cause; shape-invalid ⇒ Error).
+// shape" — error envelope identical across providers (network / JSON-parse
+// / shape-invalid ⇒ ProviderModelsUnavailableError(null, cause); non-2xx
+// ⇒ status+headers+body).
 export const fetchUpstreamModels = async <T>(
   doFetch: () => Promise<Response>,
   parse: (json: unknown) => T | null,
