@@ -1,4 +1,4 @@
-// Compact "in Xm Ys" formatter for backoff badges. Pass the precomputed delta (callers control which 'now' they sample, usually a useNow ref). expiredLabel = 'now' for list-row badges (about to disappear) vs 'expiring' for the edit-page row (last tick before clear).
+// Compact "in Xm Ys" formatter for backoff badges. Pass the precomputed delta (callers control which 'now' they sample, usually a useNow ref). expiredLabel = 'now' for list-row badges (about to disappear) vs 'expiring' for the edit-dialog row (last tick before clear).
 
 export const formatCountdown = (ms: number, expiredLabel: 'now' | 'expiring' = 'now'): string => {
   if (ms <= 0) return expiredLabel;

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Per-kind form panel for the proxy URI builder. Two-way bound to a
-// `ProxyConfig`: the page owns the canonical config and feeds parsed
+// `ProxyConfig`: the parent owns the canonical config and feeds parsed
 // updates into our `modelValue`; we emit `update:modelValue` whenever a
-// field changes. The page re-runs `formatProxyUri` after each emission to
-// keep the URL field in sync. The protocol selector swaps the active
+// field changes. The parent re-runs `formatProxyUri` after each emission
+// to keep the URL field in sync. The protocol selector swaps the active
 // variant via `switchKind`, which preserves host/port/name and resets
 // every kind-specific field.
 
@@ -36,7 +36,7 @@ import { Input, Select, Switch } from '@floway-dev/ui';
 const config = defineModel<ProxyConfig>({ required: true });
 
 defineProps<{
-  /** Page-level URL parse error: dim the form while typing in the URL produces invalid output. */
+  /** Parent-level URL parse error: dim the form while typing in the URL produces invalid output. */
   urlError: string | null;
 }>();
 

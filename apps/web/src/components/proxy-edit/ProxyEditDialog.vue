@@ -34,9 +34,9 @@ import { Button, Dialog, Input } from '@floway-dev/ui';
 const open = defineModel<boolean>('open', { required: true });
 
 const props = defineProps<{
-  // null = create; non-null = edit. The parent re-mounts the dialog with
-  // a fresh key on every open so we don't need to reset local refs in a
-  // watcher.
+  // null = create; non-null = edit. The parent toggles a v-if around this
+  // component so close-then-open re-runs setup with a clean slate — no
+  // manual reset of local refs in a watcher.
   record: ProxyRecord | null;
 }>();
 

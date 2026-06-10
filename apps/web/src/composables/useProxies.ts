@@ -3,15 +3,15 @@ import { computed, ref, shallowRef } from 'vue';
 import { callApi, useApi } from '../api/client.ts';
 import type { BackoffRow, ProxyRecord } from '../api/types.ts';
 
-// Module-scoped cache mirrors useUpstreams; settings card and fallback editor share one fetch.
+// Module-scoped cache so concurrent callers share one fetch instead of
+// re-fetching per mount.
 const proxies = shallowRef<ProxyRecord[] | null>(null);
 const backoffs = shallowRef<BackoffRow[] | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
-// Group `backoffs` by `proxy_id` once, so every consumer (settings card,
-// fallback panel, edit page) reads the (proxy_id → rows[]) lookup off the
-// same Map instead of re-folding the array per render.
+// Group `backoffs` by `proxy_id` once so consumers read a
+// (proxy_id → rows[]) Map instead of re-folding the array per render.
 const backoffsByProxyId = computed<Map<string, BackoffRow[]>>(() => {
   const map = new Map<string, BackoffRow[]>();
   for (const row of backoffs.value ?? []) {
