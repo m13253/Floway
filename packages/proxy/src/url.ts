@@ -186,7 +186,7 @@ const parseSs = (
   // url.username and never splits it across username/password.
   let decoded: string;
   try {
-    decoded = base64Decode(url.username);
+    decoded = atob(url.username);
   } catch (cause) {
     throw new ProxyUriError('malformed ss userinfo (invalid base64)', { cause });
   }
@@ -299,10 +299,6 @@ const parseReality = (
   if (sid) config.shortId = sid;
   return config;
 };
-
-// `atob` is universally available in all our runtime targets per the
-// workspace's `engines.node >= 22`.
-const base64Decode = (s: string): string => atob(s);
 
 export const formatProxyUri = (config: ProxyConfig): string => {
   // The output is canonical, not byte-for-byte identical to the input — for

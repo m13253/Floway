@@ -45,3 +45,22 @@ export const findDoubleCrlf = (buf: Uint8Array): number => {
   }
   return -1;
 };
+
+/**
+ * UTF-8-encode a string. Equivalent to `new TextEncoder().encode(s)` but
+ * short enough to use inline at call sites (request-head serialization,
+ * RFC 6455 close-frame reasons, the WS-GUID concatenation feeding sha1)
+ * without forcing each caller to keep its own encoder around.
+ */
+export const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+/**
+ * Base64-encode a raw byte buffer. `btoa` requires a binary-string input
+ * (one code-unit per byte), so we map each byte to its corresponding
+ * Latin-1 code unit via `String.fromCharCode` before calling btoa.
+ */
+export const base64EncodeBytes = (bytes: Uint8Array): string => {
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+};

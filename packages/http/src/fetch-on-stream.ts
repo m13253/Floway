@@ -2,6 +2,7 @@
 // Used both for native sockets that expose readable/writable directly and
 // for our userspace-TLS-wrapped streams.
 
+import { utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
@@ -130,12 +131,11 @@ export const fetchOnStream = async (
   const bodyLen = request.body?.byteLength ?? 0;
   if (bodyLen > 0) headers['Content-Length'] = String(bodyLen);
 
-  const enc = new TextEncoder();
   const requestLine = `${request.method} ${request.path} HTTP/1.1\r\n`;
   let head = requestLine;
   for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
   head += '\r\n';
-  const headBytes = enc.encode(head);
+  const headBytes = utf8Bytes(head);
 
   const writer = stream.writable.getWriter();
   try {

@@ -17,7 +17,7 @@
 
 import { sha224 } from '@noble/hashes/sha2.js';
 
-import { encodeAtypAddress } from '../bytes.ts';
+import { encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -91,8 +91,7 @@ const dialTrojanInner = async (
  */
 export const buildTrojanRequestHeader = (password: string, target: DialTarget): Uint8Array => {
   assertValidTargetPort(target.port, 'Trojan');
-  const enc = new TextEncoder();
-  const hash = sha224(enc.encode(password));
+  const hash = sha224(utf8Bytes(password));
   const hashHex = bytesToHex(hash);
 
   const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x03, v6: 0x04 });

@@ -16,7 +16,7 @@
 import { sha1 } from '@noble/hashes/legacy.js';
 
 import { signalAbortReason } from './abort.ts';
-import { concat, copy, findDoubleCrlf } from './bytes.ts';
+import { base64EncodeBytes, concat, copy, findDoubleCrlf, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import type { DuplexStream } from './types.ts';
@@ -110,8 +110,8 @@ export const wsUpgradeAndFrame = async (
   // a stale Sec-WebSocket-Accept that looks valid against an old key.
   const keyBytes = new Uint8Array(16);
   crypto.getRandomValues(keyBytes);
-  const clientKey = base64Encode(keyBytes);
-  const expectedAccept = base64Encode(sha1(utf8Bytes(clientKey + WS_GUID)));
+  const clientKey = base64EncodeBytes(keyBytes);
+  const expectedAccept = base64EncodeBytes(sha1(utf8Bytes(clientKey + WS_GUID)));
 
   const writer = transport.writable.getWriter();
   const reader = transport.readable.getReader();
@@ -707,8 +707,6 @@ const joinChunks = (parts: Uint8Array[], total: number): Uint8Array => {
   return out;
 };
 
-const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
-
 // Truncate a UTF-8 byte buffer to at most `max` bytes without splitting a
 // multi-byte code point. UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF);
 // step back from the cap until we land on a byte that is either ASCII
@@ -719,10 +717,4 @@ const truncateUtf8 = (bytes: Uint8Array, max: number): Uint8Array => {
   let cut = max;
   while (cut > 0 && (bytes[cut]! & 0xc0) === 0x80) cut--;
   return bytes.subarray(0, cut);
-};
-
-const base64Encode = (bytes: Uint8Array): string => {
-  let bin = '';
-  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
 };

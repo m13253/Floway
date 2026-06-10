@@ -4,7 +4,7 @@
 // the SOCKS5 handshake we hand the post-handshake byte stream back to the
 // orchestrator, which layers userspace TLS for the upstream's HTTPS handshake.
 
-import { concat, copy, encodeAtypAddress } from '../bytes.ts';
+import { concat, copy, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -76,9 +76,8 @@ const dialSocks5Inner = async (
   // 2. User/pass sub-negotiation
   if (sel[1] === 0x02) {
     if (!auth) throw new ProxyDialError('SOCKS5 server demanded user/pass but no creds', 'proxy-handshake');
-    const enc = new TextEncoder();
-    const u = enc.encode(auth.username);
-    const p = enc.encode(auth.password);
+    const u = utf8Bytes(auth.username);
+    const p = utf8Bytes(auth.password);
     if (u.byteLength > 255 || p.byteLength > 255) throw new ProxyDialError('SOCKS5 cred too long', 'proxy-handshake');
     const greet = new Uint8Array(3 + u.byteLength + p.byteLength);
     let off = 0;

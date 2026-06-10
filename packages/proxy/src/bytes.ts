@@ -221,7 +221,7 @@ export const encodeAtypAddress = (
     out.set(v6, 1);
     return out;
   }
-  const dom = new TextEncoder().encode(host);
+  const dom = utf8Bytes(host);
   const out = new Uint8Array(1 + 1 + dom.byteLength);
   out[0] = atyp.domain;
   out[1] = dom.byteLength;

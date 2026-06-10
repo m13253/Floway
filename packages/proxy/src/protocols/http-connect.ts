@@ -9,7 +9,7 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
-import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
+import { base64EncodeBytes, concat, copy, findDoubleCrlf, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -66,7 +66,6 @@ const dialHttpConnectInner = async (
   target: DialTarget,
 ): Promise<DialResult> => {
   const writer = socket.writable.getWriter();
-  const enc = new TextEncoder();
   const lines = [
     `CONNECT ${target.host}:${target.port} HTTP/1.1`,
     `Host: ${target.host}:${target.port}`,
@@ -78,11 +77,10 @@ const dialHttpConnectInner = async (
     // U+0080..U+00FF would go on the wire as that single Latin-1 byte
     // and a code point > U+00FF would throw InvalidCharacterError mid-
     // dial. Encode to UTF-8 bytes first, then base64.
-    const credBytes = enc.encode(`${auth.username}:${auth.password}`);
-    const token = base64EncodeBytes(credBytes);
+    const token = base64EncodeBytes(utf8Bytes(`${auth.username}:${auth.password}`));
     lines.push(`Proxy-Authorization: Basic ${token}`);
   }
-  await writer.write(enc.encode(`${lines.join('\r\n')}\r\n\r\n`));
+  await writer.write(utf8Bytes(`${lines.join('\r\n')}\r\n\r\n`));
   writer.releaseLock();
 
   // Peel the CONNECT response off the socket reader, then mint a fresh
@@ -129,10 +127,7 @@ const dialHttpConnectInner = async (
         }
         const { value, done } = await reader.read();
         if (done) throw new ProxyDialError(`CONNECT: EOF before status (${buf.byteLength} bytes read)`, 'proxy-handshake');
-        const next = new Uint8Array(buf.byteLength + value.byteLength);
-        next.set(buf, 0);
-        next.set(value, buf.byteLength);
-        buf = next;
+        buf = concat(buf, value);
         if (buf.byteLength > HEADER_BUFFER_CAP) {
           throw new ProxyDialError(`CONNECT response exceeded ${HEADER_BUFFER_CAP} bytes without a header terminator`, 'proxy-handshake');
         }
