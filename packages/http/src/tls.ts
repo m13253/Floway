@@ -102,9 +102,9 @@ export const userspaceTls = async (
   // independent paths can drop the plaintext stream out from under us:
   // (1) reclaim's TLS client fires `onTlsEnd` once for the peer CLOSE_NOTIFY
   //     alert and again when the underlying transport reader returns done;
-  // (2) the consumer (Hono / fetch) cancels the readable after it has the
-  //     full response, which closes the controller from the outside. Either
-  //     way, a follow-up `controller.close()` / `controller.error()` /
+  // (2) the consumer cancels the readable after it has the full response,
+  //     which closes the controller from the outside. Either way, a
+  //     follow-up `controller.close()` / `controller.error()` /
   //     `controller.enqueue()` throws ERR_INVALID_STATE — and on Node there
   //     is no error event to swallow it, so the whole worker crashes. Latch
   //     the close on our side, and treat any throw from the controller as
