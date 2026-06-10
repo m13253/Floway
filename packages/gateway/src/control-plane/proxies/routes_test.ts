@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test } from 'vitest';
 
-import type { SerializedProxyRecord } from './serialize.ts';
+import type { SerializedBackoffRow, SerializedProxyRecord } from './serialize.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -264,7 +264,7 @@ test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () 
 
   const resp = await requestApp('/api/proxies/p_a/backoffs', authed(adminSession));
   assertEquals(resp.status, 200);
-  const rows = (await resp.json()) as Array<{ proxy_id: string; upstream_id: string; fail_count: number; last_error: string | null }>;
+  const rows = (await resp.json()) as SerializedBackoffRow[];
   assertEquals(rows.length, 1);
   assertEquals(rows[0].proxy_id, 'p_a');
   assertEquals(rows[0].upstream_id, 'up_a');
@@ -279,7 +279,7 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
 
   const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
   assertEquals(resp.status, 200);
-  const rows = (await resp.json()) as Array<{ proxy_id: string; upstream_id: string }>;
+  const rows = (await resp.json()) as SerializedBackoffRow[];
   assertEquals(rows.length, 2);
   const pairs = rows.map(r => `${r.proxy_id}/${r.upstream_id}`).sort();
   assertEquals(pairs, ['p_a/up_a', 'p_b/up_b']);
