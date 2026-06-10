@@ -24,11 +24,8 @@ export const listProxies = async (c: Context) => {
 export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
   const body = c.req.valid('json');
 
-  // The URI parser owns the full scheme matrix (http, https, socks5, ss,
-  // trojan, vless — `ss://` auto-detects SS-2022 ciphers,
-  // `vless://?security=reality` reaches REALITY); failing here surfaces the
-  // same message the dashboard would otherwise see only on the first dial
-  // attempt.
+  // Validate the URI up front so a parse failure surfaces as a 400 instead
+  // of waiting for the first dial attempt.
   try {
     parseProxyUri(body.url);
   } catch (err) {
@@ -82,9 +79,9 @@ export const deleteProxy = async (c: Context) => {
   const repo = getRepo();
 
   // Refuse to orphan an upstream's `proxy_fallback_list`: the foreign-key
-  // semantics are "remove the reference first, then drop the proxy". 409 with
-  // the referencing upstream ids lets the dashboard offer a one-click
-  // detach-and-retry instead of forcing the operator to hunt manually.
+  // semantics are "remove the reference first, then drop the proxy". 409
+  // returns the referencing upstream ids so the caller can detach before
+  // retrying.
   const referencing = await repo.proxies.findUpstreamsReferencing(id);
   if (referencing.length > 0) {
     return c.json({ error: 'Proxy is referenced by upstreams', referencing_upstream_ids: referencing }, 409);
@@ -121,10 +118,10 @@ const ANCHORS = {
 // IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
 // hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
 // chars before sniffing — a misbehaving anchor could otherwise feed an
-// arbitrary HTML page into the dashboard's ephemeral test-result panel. We
-// validate octet ranges and canonical v6 shape (one optional `::`
-// shorthand, 1-4 hex digits per group, RFC 4291 group counts), so anchor
-// strings like `999.999.999.999` or `aaaa::bbbb::cccc` cannot pass.
+// arbitrary HTML page into the test-response payload. We validate octet
+// ranges and canonical v6 shape (one optional `::` shorthand, 1-4 hex
+// digits per group, RFC 4291 group counts), so anchor strings like
+// `999.999.999.999` or `aaaa::bbbb::cccc` cannot pass.
 const isIpV4 = (s: string): boolean => {
   const octets = s.split('.');
   if (octets.length !== 4) return false;
@@ -173,8 +170,6 @@ const isIpV6 = (s: string): boolean => {
   return groups.every(validGroup);
 };
 
-const isIpLike = (s: string): boolean => isIpV4(s) || isIpV6(s);
-
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
   const body = c.req.valid('json');
   const anchorName = body.anchor ?? 'ipify';
@@ -213,7 +208,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       return c.json({ ok: false, error: `anchor returned status ${response.status}` });
     }
     const truncated = (await response.text()).slice(0, 256).trim();
-    if (!isIpLike(truncated)) {
+    if (!isIpV4(truncated) && !isIpV6(truncated)) {
       return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
     }
     // 6.ident.me is v6-only (AAAA-only), so a v4-only proxy fails to dial

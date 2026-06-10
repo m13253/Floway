@@ -7,6 +7,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
@@ -32,7 +33,7 @@ import {
   putCodexAccessToken,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '@floway-dev/provider-copilot';
+import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
 // Serialize for the HTTP response, attaching the live KV codex_quota snapshot
@@ -47,22 +48,7 @@ const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedU
   return serialized;
 };
 
-interface CopilotUpstreamUser {
-  login: string;
-  avatar_url: string;
-  name: string | null;
-  id: number;
-}
-
-interface CopilotUpstreamConfig {
-  githubToken: string;
-  accountType: CopilotAccountType;
-  user: CopilotUpstreamUser;
-}
-
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const validationError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -71,48 +57,8 @@ const validationError = (error: unknown): string => (error instanceof Error ? er
 // boundary so a manually-edited or migrated row that violates the runtime
 // invariants surfaces with an actionable message instead of crashing later.
 
-const stringField = (value: unknown, field: string): string => {
-  if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
-  return value;
-};
-
-const nonEmptyStringField = (value: unknown, field: string): string => {
-  const str = stringField(value, field).trim();
-  if (str === '') throw new Error(`Malformed copilot upstream config: ${field} must be a non-empty string`);
-  return str;
-};
-
-const nullableStringField = (value: unknown, field: string): string | null => {
-  if (value !== null && typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string or null`);
-  return value;
-};
-
-const numberField = (value: unknown, field: string): number => {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error(`Malformed copilot upstream config: ${field} must be an integer`);
-  return value;
-};
-
-const copilotUserField = (value: unknown): CopilotUpstreamUser => {
-  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: user must be an object');
-  return {
-    login: stringField(value.login, 'user.login'),
-    avatar_url: stringField(value.avatar_url, 'user.avatar_url'),
-    name: nullableStringField(value.name, 'user.name'),
-    id: numberField(value.id, 'user.id'),
-  };
-};
-
-const copilotConfigField = (value: unknown): CopilotUpstreamConfig => {
-  if (!isRecord(value)) throw new Error('Malformed copilot upstream config: config must be an object');
-  if (!isCopilotAccountType(value.accountType)) {
-    throw new Error('Malformed copilot upstream config: accountType must be one of individual, business, enterprise');
-  }
-  return {
-    githubToken: nonEmptyStringField(value.githubToken, 'githubToken'),
-    accountType: value.accountType,
-    user: copilotUserField(value.user),
-  };
-};
+const copilotErrorBuilder = (field: string, expected: string) =>
+  new Error(`Malformed copilot upstream config: ${field} must be ${expected}`);
 
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
@@ -122,7 +68,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
       assertCodexUpstreamRecord(record);
       return { ok: true, value: record.config };
     }
-    return { ok: true, value: copilotConfigField(record.config) };
+    return { ok: true, value: copilotConfigField(record.config, copilotErrorBuilder) };
   } catch (error) {
     return { ok: false, error: validationError(error) };
   }

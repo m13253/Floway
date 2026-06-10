@@ -1,7 +1,6 @@
 // Wire-format projection for proxy and backoff repo records. Proxy URLs are
 // returned verbatim — the URI itself carries the secret material (password /
-// shadowsocks key) and the dashboard needs the canonical form to render a
-// copy affordance and re-edit existing rows.
+// shadowsocks key) that callers need to round-trip when re-editing a row.
 
 import type { BackoffRow, ProxyRecord } from '../../repo/types.ts';
 

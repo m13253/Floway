@@ -18,13 +18,13 @@ import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
+import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
 import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
-import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
 
@@ -62,45 +62,11 @@ const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PREFIXES.some(prefix => value.startsWith(prefix));
 
-const nonEmptyString = (value: unknown, field: string): string => {
-  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${field} must be a non-empty string`);
-  return value.trim();
-};
+const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
-const stringField = (value: unknown, field: string): string => {
-  if (typeof value !== 'string') throw new Error(`${field} must be a string`);
-  return value;
-};
-
-const nullableStringField = (value: unknown, field: string): string | null => {
-  if (value !== null && typeof value !== 'string') throw new Error(`${field} must be a string or null`);
-  return value;
-};
-
-const safeIntegerField = (value: unknown, field: string): number => {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new Error(`${field} must be an integer`);
-  return value;
-};
-
-const copilotConfigField = (value: unknown): unknown => {
-  if (!isRecord(value)) throw new Error('config must be an object');
-  if (!isCopilotAccountType(value.accountType)) throw new Error('config.accountType must be one of individual, business, enterprise');
-  if (!isRecord(value.user)) throw new Error('config.user must be an object');
-  return {
-    githubToken: nonEmptyString(value.githubToken, 'config.githubToken'),
-    accountType: value.accountType,
-    user: {
-      login: stringField(value.user.login, 'config.user.login'),
-      avatar_url: stringField(value.user.avatar_url, 'config.user.avatar_url'),
-      name: nullableStringField(value.user.name, 'config.user.name'),
-      id: safeIntegerField(value.user.id, 'config.user.id'),
-    },
-  };
-};
+const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
 
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   if (record.provider === 'custom') return assertCustomUpstreamRecord(record).config;
@@ -109,7 +75,7 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
     assertCodexUpstreamRecord(record);
     return record.config;
   }
-  return copilotConfigField(record.config);
+  return copilotConfigField(record.config, importErrorBuilder);
 };
 
 // State is persisted only for providers that own autonomous runtime state. Codex

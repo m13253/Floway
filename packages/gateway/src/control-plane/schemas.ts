@@ -2,8 +2,7 @@
 // body or non-trivial query string. Two purposes:
 //
 // 1. Runtime guard — zValidator rejects malformed input before it reaches a
-//    handler, with a 400 + `{ error: msg }` response matching the pre-existing
-//    hand-written validation shape.
+//    handler, with a 400 + `{ error: msg }` response.
 //
 // 2. Type inference for the Hono RPC client — `hc<AppType>(...)` reads the
 //    schemas attached to each route to type `$post({ json })`, `$patch({ json })`,
@@ -93,8 +92,7 @@ const upstreamModelSchema = z.object({
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
   // Records written before authStyle existed default to bearer; the runtime
-  // parser in shared/upstream/custom.ts uses the same default, so accept
-  // omitted authStyle here for parity with import/legacy payloads.
+  // parser uses the same default, so accept omitted authStyle here.
   authStyle: z.enum(['bearer', 'anthropic']).optional(),
   // Structured capability map — the runtime parser permits an empty map for
   // an upstream serving only kind-derived models.

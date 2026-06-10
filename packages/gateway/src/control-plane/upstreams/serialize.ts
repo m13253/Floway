@@ -14,8 +14,7 @@ export interface SerializedUpstreamRecord {
   proxy_fallback_list: string[];
   config: unknown;
   state: unknown;
-  // Present only for provider === 'codex'. Route handlers attach the live
-  // snapshot after serialization so this module stays free of provider I/O.
+  // Present only for provider === 'codex'.
   codex_quota?: CodexQuotaSnapshot | null;
 }
 
@@ -92,8 +91,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   case 'copilot':
   case 'custom':
   case 'azure':
-    // No autonomous state today. The column is null in D1 for these; do not
-    // synthesize anything.
+    // These providers have no autonomous state.
     return null;
   default: {
     const exhaustive: never = upstream.provider;

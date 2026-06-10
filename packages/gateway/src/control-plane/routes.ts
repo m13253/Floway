@@ -24,12 +24,11 @@ const adminOnlyMiddleware = async (c: Context, next: Next) => {
 
 // Chained route registration is required so Hono flows per-path types into
 // the exported `controlPlaneRoutes` type; RPC clients consume it for path/
-// method autocomplete and request/response inference. Bodies/queries declare
-// their shapes via zValidator; schemas live in ./schemas.ts.
+// method autocomplete and request/response inference.
 export const controlPlaneRoutes = new Hono()
   .get('/api/health', c => c.json({ status: 'ok', service: 'floway' }))
-  // Quiet 204 so browser favicon probes don't fall through into the
-  // auth-gated control-plane catchall.
+  // Quiet 204 to suppress 404 noise from favicon probes; the path is
+  // already in PUBLIC_PATHS so auth lets it through.
   .get('/favicon.ico', () => new Response(null, { status: 204 }))
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)
@@ -77,10 +76,8 @@ export const controlPlaneRoutes = new Hono()
     .get('/upstreams/:id/models', listUpstreamModels)
     .patch('/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
     .delete('/upstreams/:id', deleteUpstream)
-    // Proxies. Literal `/proxies/backoffs` and the per-id sub-paths are
-    // registered before the catch-all `/:id` routes so Hono matches the
-    // literal segments first; same constraint applies to test/backoffs/reset
-    // before the bare PATCH/DELETE on `/:id`.
+    // Proxies. Literal `/proxies/backoffs` is registered before any `/:id`
+    // route so Hono matches the literal segment first.
     .get('/proxies', listProxies)
     .get('/proxies/backoffs', listAllBackoffs)
     .post('/proxies', zValidator('json', createProxyBody), createProxy)
