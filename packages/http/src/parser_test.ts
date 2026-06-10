@@ -489,8 +489,8 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
   });
 
   it('accepts Transfer-Encoding: gzip, chunked (chunked is the final coding)', async () => {
-    // RFC 9112 §6.1: legal — the gateway just sees chunked framing and
-    // delivers the gzip-encoded body bytes through. Decoding gzip is the
+    // RFC 9112 §6.1: legal — the parser only consumes chunked framing and
+    // exposes the gzip-encoded body bytes verbatim. Decoding gzip is the
     // caller's job.
     const r = await parseHttpResponse(respondAndEnd(
       'HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',

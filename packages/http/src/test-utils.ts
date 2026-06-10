@@ -1,9 +1,8 @@
 // Helper duplex for @floway-dev/http tests.
 //
-// Same intent as packages/proxy's fake-socket-dial: pair a duplex that the
-// HTTP layer reads/writes against with a server-side handle that asserts on
-// emitted bytes and feeds in crafted server responses (chunked, malformed,
-// CL+TE smuggling vectors, …).
+// Pairs a duplex that the HTTP layer reads/writes against with a server-side
+// handle for asserting on emitted bytes and feeding crafted server responses
+// (chunked, malformed, CL+TE smuggling vectors, …).
 
 export interface FakeDuplex {
   // Consumed by @floway-dev/http as the network side.
