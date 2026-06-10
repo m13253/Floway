@@ -25,7 +25,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
+import { formatCountdown } from '../../utils/format-countdown.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
 import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
 import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
@@ -55,7 +55,7 @@ const url = ref(props.record?.url ?? '');
 // Ephemeral test result for the current dialog session. The gateway no
 // longer persists egress observations on the proxy row; a fresh open
 // starts with nothing and `test()` populates this from the response.
-const lastTestResult = ref<{ egressIp: string; testedAt: number } | null>(null);
+const lastEgressIp = ref<string | null>(null);
 
 const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false; error: string } | null => {
   const trimmed = raw.trim();
@@ -179,11 +179,6 @@ const activeBackoffs = computed(() => {
     .sort((a, b) => a.expires_at - b.expires_at);
 });
 
-const lastTestedAgo = computed<string | null>(() => {
-  if (lastTestResult.value === null) return null;
-  return formatRelativeAgo(now.value.getTime() - lastTestResult.value.testedAt);
-});
-
 const { start: startTestCooldown } = useTimeoutFn(
   () => { testCoolingDown.value = false; },
   3000,
@@ -261,7 +256,7 @@ const test = async () => {
     );
     if (error) { testError.value = error.message; return; }
     if (!data.ok || !data.egress_ip) { testError.value = data.error ?? 'Test failed'; return; }
-    lastTestResult.value = { egressIp: data.egress_ip, testedAt: Date.now() };
+    lastEgressIp.value = data.egress_ip;
   } finally {
     testing.value = false;
     testCoolingDown.value = true;
@@ -359,12 +354,10 @@ const title = computed(() => mode.value === 'create' ? 'Create Proxy' : `Edit Pr
           v-model="config"
           :url-error="urlError"
         />
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
+        <div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-gray-500">
           <span>Egress:</span>
-          <span v-if="lastTestResult" class="font-mono text-gray-300">{{ lastTestResult.egressIp }}</span>
-          <span v-else class="italic">untested</span>
-          <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
-          <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" class="ml-auto" @click="test">Test</Button>
+          <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
+          <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" @click="test">Test</Button>
         </div>
         <p v-if="testError" class="text-xs text-accent-rose">{{ testError }}</p>
       </div>
