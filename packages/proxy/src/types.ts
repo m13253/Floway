@@ -153,24 +153,11 @@ export interface DialedSocket {
   close(): Promise<void>;
 }
 
+// Structurally identical to @floway-dev/platform's SocketDialOptions;
+// duplicated rather than imported so @floway-dev/proxy stays runtime-
+// agnostic and the platform's impl is assignable by structural typing.
 interface SocketDialOptions {
-  /**
-   * Wrap the connection with the runtime's native TLS implementation.
-   * The hostname is reused as SNI and as the certificate-verify name.
-   * Useful when the proxy protocol's outer leg is plain TLS — userspace
-   * TLS works too but native TLS is faster.
-   */
   tls?: boolean;
-  /**
-   * Caller-supplied cancellation. When the signal aborts:
-   *   - mid-connect dials are torn down immediately;
-   *   - established sockets are closed by the runtime impl, which then
-   *     surfaces as read/write rejections to the proxy library.
-   * The signal is also honoured pre-connect: a signal that is already
-   * aborted at call time throws synchronously without opening a socket —
-   * its Error reason is rethrown as-is, and a primitive or absent reason
-   * becomes a DOMException('AbortError').
-   */
   signal?: AbortSignal;
 }
 

@@ -5,6 +5,9 @@
 // imports a runtime module like `cloudflare:sockets` directly, so the same
 // dialers run on Workers (cloudflare:sockets) and Node (node:net).
 
+// @floway-dev/proxy carries a structural twin of this shape so its dialers
+// stay runtime-agnostic; keep the two in sync when adding or renaming
+// options.
 interface SocketDialOptions {
   /**
    * Wrap the connection with the runtime's native TLS implementation.
