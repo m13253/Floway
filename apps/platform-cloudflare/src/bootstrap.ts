@@ -7,7 +7,6 @@ import {
   initEnv,
   initFileProvider,
   initImageProcessor,
-  initRuntimeRootCAs,
   initSocketDial,
   type SqlDatabase,
 } from '@floway-dev/platform';
@@ -40,10 +39,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initFileProvider(new R2FileProvider(env.FILES));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES, cloudflareKvImageCache(env.KV)));
   initSocketDial(cloudflareSocketDial);
-  initRuntimeRootCAs(cloudflareGetRuntimeRootCAs);
-  // workerd surfaces no runtime trust store — the impl returns null and we
-  // fall back to `@reclaimprotocol/tls`'s bundled Mozilla snapshot.
-  const runtimeCAs = cloudflareGetRuntimeRootCAs();
-  if (runtimeCAs) addTrustedRootCAs(runtimeCAs);
+  addTrustedRootCAs(cloudflareGetRuntimeRootCAs() ?? []);
   return { db: env.DB };
 };

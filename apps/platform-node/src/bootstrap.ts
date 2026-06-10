@@ -8,7 +8,6 @@ import {
   initEnv,
   initFileProvider,
   initImageProcessor,
-  initRuntimeRootCAs,
   initSocketDial,
   type ImageCache,
   type SqlDatabase,
@@ -37,8 +36,6 @@ export const bootstrapNodePlatform = (opts: NodePlatformOptions): { db: SqlDatab
   initFileProvider(new FsFileProvider(opts.filesDir));
   initImageProcessor(createSharpImageProcessor({ cache: opts.imageCache ?? createMemoryImageCache() }));
   initSocketDial(nodeSocketDial);
-  initRuntimeRootCAs(nodeGetRuntimeRootCAs);
-  const runtimeCAs = nodeGetRuntimeRootCAs();
-  if (runtimeCAs) addTrustedRootCAs(runtimeCAs);
+  addTrustedRootCAs(nodeGetRuntimeRootCAs() ?? []);
   return { db: createNodeSqliteDatabase(opts.dbPath) };
 };

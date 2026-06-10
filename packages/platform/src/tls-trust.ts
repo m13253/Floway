@@ -1,4 +1,5 @@
-// Resolves the runtime's trust set for userspace TLS.
+// Contract each apps/platform-* app implements to surface the runtime's
+// trust set to userspace TLS.
 //
 // `@reclaimprotocol/tls@0.1.2` validates server certificates against a frozen
 // snapshot of Mozilla's CA list baked into the package — a snapshot that
@@ -11,19 +12,3 @@
 // null and userspace TLS falls back to the library bundle.
 
 export type GetRuntimeRootCAs = () => readonly string[] | null;
-
-let current: GetRuntimeRootCAs | null = null;
-
-export const initRuntimeRootCAs = (fn: GetRuntimeRootCAs): void => {
-  current = fn;
-};
-
-export const getRuntimeRootCAs = (): GetRuntimeRootCAs => {
-  if (!current) throw new Error('RuntimeRootCAs not initialized');
-  return current;
-};
-
-/** Test-only: clears the module singleton. */
-export const resetRuntimeRootCAsForTesting = (): void => {
-  current = null;
-};

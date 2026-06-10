@@ -90,11 +90,10 @@ export interface UserspaceTlsOptions {
    * bundled Mozilla snapshot. Effective only if no userspace-TLS
    * handshake has built the library's `ROOT_CAS` cache yet — once that
    * cache is frozen at first handshake, further additions are silently
-   * ignored by the library. Bootstrap-time wiring is the primary path
-   * for runtime trust stores (see `getRuntimeRootCAs` in
-   * `@floway-dev/platform`); this option exists for callers with
-   * caller-specific trust needs that must reach the TLS layer at dial
-   * time.
+   * ignored by the library. Bootstrap-time `addTrustedRootCAs` is the
+   * primary path for runtime trust stores; this option exists for
+   * callers with caller-specific trust needs that must reach the TLS
+   * layer at dial time.
    */
   additionalRootCAs?: readonly string[];
 }
