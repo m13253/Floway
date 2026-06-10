@@ -1,9 +1,8 @@
 // VLESS dialer composition: two transport variants for the VLESS protocol —
-// TCP+TLS and WebSocket+TLS — each going through `socketDial(tls=true)`
-// to the proxy and delegating header construction + reply-prefix framing
-// to `vlessFrameOverStream` in vless-core.ts. The WS variant inserts
-// `wsUpgradeAndFrame` from @floway-dev/http between the outer TLS and the
-// VLESS framing so it stays runtime-agnostic.
+// TCP+TLS and WebSocket+TLS. Both run the shared VLESS framing over the
+// outer transport via `vlessFrameOverStream` in vless-core.ts; the WS
+// variant inserts `wsUpgradeAndFrame` between the outer TLS and the VLESS
+// framing.
 
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';

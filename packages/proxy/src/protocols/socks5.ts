@@ -1,8 +1,4 @@
 // SOCKS5 client (TCP CONNECT only).
-//
-// We avoid `socket.startTls()` because of the workerd #2712 edge bug. After
-// the SOCKS5 handshake we hand the post-handshake byte stream back to the
-// orchestrator, which layers userspace TLS for the upstream's HTTPS handshake.
 
 import { concat, copy, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';

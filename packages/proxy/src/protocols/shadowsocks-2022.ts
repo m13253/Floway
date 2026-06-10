@@ -19,7 +19,7 @@ import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
+import { type Aead, leNonce, makeAead } from './shadowsocks-aead.ts';
 
 const KEY_LEN_2022: Record<Ss2022Method, number> = {
   '2022-blake3-aes-128-gcm': 16,
@@ -79,7 +79,7 @@ const dialShadowsocks2022Inner = async (
 ): Promise<DialResult> => {
   const sendSalt = randomBytes(keyLen);
   const sendKey = blake3(concat(psk, sendSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
-  const sendCipher = makeAead(method, sendKey);
+  const sendCipher = makeAead(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', sendKey);
   let sendNonce = 0n;
   let recvCipher: Aead | null = null;
   let recvNonce = 0n;
@@ -109,10 +109,6 @@ const dialShadowsocks2022Inner = async (
   await writer.write(initialOut);
   writer.releaseLock();
 
-  // See shadowsocks.ts for the same fail-classification rationale: an AEAD
-  // auth failure before the receive side has produced any plaintext is
-  // overwhelmingly a misconfigured key, so flag the dial as
-  // proxy-handshake to let the dial layer fall through cleanly.
   let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -120,7 +116,7 @@ const dialShadowsocks2022Inner = async (
         if (!recvCipher) {
           const recvSalt = await readN(keyLen);
           const recvKey = blake3(concat(psk, recvSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
-          recvCipher = makeAead(method, recvKey);
+          recvCipher = makeAead(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', recvKey);
           // Read response fixed header AEAD: [type=0x01 | timestamp(u64be) | salt-echo(keyLen) | len(u16be)] + tag
           const respFixedSealed = await readN(1 + 8 + keyLen + 2 + TAG);
           const respFixedPlain = recvCipher.decrypt(leNonce(recvNonce++), respFixedSealed);
@@ -203,9 +199,6 @@ const dialShadowsocks2022Inner = async (
 
   return { readable: ssReadable, writable: ssWritable };
 };
-
-const makeAead = (method: Ss2022Method, key: Uint8Array): Aead =>
-  makeAeadShared(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', key);
 
 /**
  * Build the SS2022 variable header for a target. Exported for tests.

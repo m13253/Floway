@@ -9,11 +9,10 @@
 // gives us full control of record framing.
 //
 // The Trojan request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-
-// like address) MUST land in the same record as the first inner-protocol
-// bytes — the inner-TLS ClientHello when the orchestrator wraps the
-// post-trojan stream in userspace TLS, or the HTTP/1.1 request line when
-// it doesn't. We surface the header as `prefix` on the DialResult so
-// whichever wrapper consumes the next bytes folds it into its first write.
+// like address) MUST land in the same record as the first follow-up bytes
+// from whichever wrapper consumes the post-trojan stream. We surface the
+// header as `prefix` on the DialResult so whoever owns the next write
+// folds it in.
 
 import { sha224 } from '@noble/hashes/sha2.js';
 

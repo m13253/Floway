@@ -1,12 +1,4 @@
 // The dial dispatcher and the proxied-fetch orchestrator.
-//
-// `dial` opens a duplex byte stream to `target.host:target.port` through
-// the proxy described by `config`. It returns a transport-only stream —
-// inner-TLS to the upstream and HTTP/1.1 framing live above this layer.
-//
-// `runProxiedRequest` composes `dial` → optional `userspaceTls` → `fetchOnStream`
-// to produce a real HTTP `Response` for callers that don't want to manage
-// the duplex themselves.
 
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
@@ -20,7 +12,6 @@ import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { resolveSni, resolveVerifyHost } from './types.ts';
 import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**
@@ -123,17 +114,15 @@ export const runProxiedRequest = async (
   const dialed = await dial(config, target, options);
   let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
-    // Trojan plain-HTTP needs its 56-byte auth header to ride in the same
-    // TLS record as the request line; Trojan TLS-upstream needs it as the
-    // outer prefix to the inner-TLS ClientHello. Route the prefix to
-    // whichever wrapper consumes the next bytes.
+    // Route DialResult.prefix to the next byte sink: as the userspace-TLS
+    // outer prefix when wrapping, otherwise as the fetch-body prefix.
     let fetchPrefix: Uint8Array | undefined;
     if (target.tls) {
       let tls: TlsStream;
       try {
         tls = await userspaceTls(stream, {
-          host: resolveSni(target),
-          verifyHost: resolveVerifyHost(target),
+          host: target.sni ?? target.host,
+          verifyHost: target.verifyHost ?? target.sni ?? target.host,
           alpn: target.alpn,
           prefix: dialed.prefix,
           signal: options.signal,
@@ -153,7 +142,21 @@ export const runProxiedRequest = async (
     // Synthesize a Host header from the dial target if the caller didn't
     // provide one. The proxy package owns the host-vs-Host distinction —
     // @floway-dev/http stays transport-target-agnostic.
-    const headers = ensureHostHeader(request.headers, target);
+    let hasHost = false;
+    for (const k of Object.keys(request.headers)) {
+      if (k.toLowerCase() === 'host') { hasHost = true; break; }
+    }
+    let headers = request.headers;
+    if (!hasHost) {
+      // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when
+      // it is the scheme's default (443 for HTTPS, 80 for plain HTTP) —
+      // strict virtual-host upstreams interpret a bare hostname as "client
+      // wants the default port" and route or reject accordingly.
+      const hostUriPart = formatHostForUri(target.host);
+      const defaultPort = target.tls ? 443 : 80;
+      const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
+      headers = { ...headers, Host: hostValue };
+    }
     return await fetchOnStream(stream, { ...request, headers }, { prefix: fetchPrefix });
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
@@ -166,18 +169,4 @@ export const runProxiedRequest = async (
     void stream.readable.cancel(err).catch(() => {});
     throw err;
   }
-};
-
-const ensureHostHeader = (headers: Record<string, string>, target: ProxyRequestTarget): Record<string, string> => {
-  for (const k of Object.keys(headers)) {
-    if (k.toLowerCase() === 'host') return headers;
-  }
-  // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when it
-  // is the scheme's default (443 for HTTPS, 80 for plain HTTP) — strict
-  // virtual-host upstreams interpret a bare hostname as "client wants the
-  // default port" and route or reject accordingly.
-  const hostUriPart = formatHostForUri(target.host);
-  const defaultPort = target.tls ? 443 : 80;
-  const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
-  return { ...headers, Host: hostValue };
 };

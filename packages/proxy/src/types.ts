@@ -129,14 +129,6 @@ export interface ProxyRequestTarget extends DialTarget {
   alpn?: string[];
 }
 
-/** SNI for a request target. `sni` if set, else `host`. */
-export const resolveSni = (target: ProxyRequestTarget): string =>
-  target.sni ?? target.host;
-
-/** Cert-verify hostname for a request target. `verifyHost` if set, else `sni`, else `host`. */
-export const resolveVerifyHost = (target: ProxyRequestTarget): string =>
-  target.verifyHost ?? target.sni ?? target.host;
-
 // SocketDial is a runtime-agnostic byte-stream dial primitive. The proxy
 // package does NOT depend on any runtime — the caller threads in a
 // concrete impl (Workers' `cloudflare:sockets`, Node's `node:net`, etc.)

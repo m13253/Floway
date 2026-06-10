@@ -25,7 +25,7 @@ import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
-import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
+import { type Aead, leNonce, makeAead } from './shadowsocks-aead.ts';
 
 const METHOD_KEY_LEN: Record<SsMethod, number> = {
   'chacha20-ietf-poly1305': 32,
@@ -67,7 +67,7 @@ const dialShadowsocksInner = async (
   // Per-direction salts and subkeys
   const sendSalt = randomBytes(keyLen);
   const sendSubkey = hkdf(sha1, masterKey, sendSalt, utf8Bytes('ss-subkey'), keyLen);
-  const sendCipher = makeAead(method, sendSubkey);
+  const sendCipher = makeAead(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', sendSubkey);
   let sendNonce = 0n;
 
   // Receive subkey is derived after we read the server's salt.
@@ -86,12 +86,6 @@ const dialShadowsocksInner = async (
   await writer.write(initialOut);
   writer.releaseLock();
 
-  // Track whether the SS receive side has produced any successful payload
-  // yet — before the first plaintext is enqueued, an AEAD auth failure is
-  // overwhelmingly likely to mean wrong password / wrong cipher (i.e. a
-  // misconfigured proxy), and tagging it as `proxy-handshake` lets the dial
-  // layer fall through to the next entry instead of masquerading the cause
-  // as an opaque inner-TLS failure.
   let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -99,7 +93,7 @@ const dialShadowsocksInner = async (
         if (!recvCipher) {
           const saltBuf = await readExactly(keyLen);
           const recvSubkey = hkdf(sha1, masterKey, saltBuf, utf8Bytes('ss-subkey'), keyLen);
-          recvCipher = makeAead(method, recvSubkey);
+          recvCipher = makeAead(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', recvSubkey);
         }
         const lenSealed = await readExactly(2 + TAG_LEN);
         const lenPlain = recvCipher.decrypt(leNonce(recvNonce), lenSealed);
@@ -153,9 +147,6 @@ const dialShadowsocksInner = async (
 
   return { readable: ssReadable, writable: ssWritable };
 };
-
-const makeAead = (method: SsMethod, key: Uint8Array): Aead =>
-  makeAeadShared(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', key);
 
 const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {
   const lenBytes = new Uint8Array(2);

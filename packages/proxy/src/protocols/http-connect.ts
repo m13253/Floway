@@ -5,9 +5,8 @@
 //   1. Open a plain TCP socket to the proxy (or, if the proxy is HTTPS, ask
 //      the runtime to wrap the proxy hop in TLS via the dial `tls` option).
 //   2. Write CONNECT + auth, parse 2xx response.
-//   3. Hand the post-CONNECT byte stream back to the orchestrator, which
-//      layers userspace TLS for the upstream's HTTPS handshake. This avoids
-//      `startTls()` entirely.
+//   3. Hand the post-CONNECT byte stream back as the dial result. This
+//      avoids `startTls()` entirely.
 
 import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, formatHostForUri, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
@@ -73,8 +72,8 @@ const dialHttpConnectInner = async (
   // readable via a TransformStream and hand it to the orchestrator. Trailing
   // bytes from the same read that completes the headers, plus everything
   // the socket reader sees afterwards, flow into the forwarded stream so
-  // the post-CONNECT consumer (userspace TLS / fetchOnStream) starts from
-  // a clean byte boundary.
+  // the next consumer of the forwarded stream starts from a clean byte
+  // boundary.
 
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
@@ -128,9 +127,8 @@ const dialHttpConnectInner = async (
     }
   })();
   // Always-on terminal handler routes peel errors into the forward stream
-  // so the orchestrator's next consumer (userspace TLS / fetchOnStream)
-  // sees them as transport failures, and prevents an unhandled rejection
-  // on the failure path. The outer dial-time try/catch has already exited
+  // so the next consumer sees them as transport failures rather than an
+  // unhandled rejection. The outer dial-time try/catch has already exited
   // by the time this fires, so we ALSO close the socket here — the
   // orchestrator only holds wrapper streams and has no way to reach the
   // raw fd otherwise.

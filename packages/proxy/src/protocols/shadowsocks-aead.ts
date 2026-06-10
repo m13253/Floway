@@ -5,6 +5,12 @@
 // encoder, the `Aead` interface, and the cipher factory are byte-identical
 // across the two specs; only the cipher-id literal each dialer recognises
 // differs, so we let the caller pre-classify it.
+//
+// Both dialers track a `recvBootstrapped` flag so an AEAD auth failure
+// before the receive side has produced any plaintext can be tagged as
+// `proxy-handshake` (overwhelmingly a wrong-password/wrong-cipher
+// misconfiguration). That lets the dial layer fall through to the next
+// entry instead of masquerading the cause as an opaque inner-TLS failure.
 
 import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';

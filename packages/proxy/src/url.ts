@@ -64,10 +64,8 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   try {
     url = new URL(uri);
   } catch (cause) {
-    // The URL constructor throws TypeError for any malformed authority,
-    // missing scheme, etc. Re-shape as ProxyUriError so callers can
-    // `instanceof`-discriminate URI failures from arbitrary upstream
-    // errors via a single class, per the documented contract.
+    // URL constructor failure becomes ProxyUriError — see pctDecode for the
+    // rationale.
     throw new ProxyUriError(`malformed proxy URI: ${uri}`, { cause });
   }
   const host = url.hostname;
@@ -303,10 +301,6 @@ const parseReality = (
 };
 
 export const formatProxyUri = (config: ProxyConfig): string => {
-  // The output is canonical, not byte-for-byte identical to the input — for
-  // example `formatProxyUri` always emits `security=tls` for VLESS-TLS
-  // variants and may reorder query params. Round-tripping through
-  // `parseProxyUri` is preserved.
   switch (config.kind) {
   case 'http': return formatHttp(config);
   case 'socks5': return formatSocks5(config);
