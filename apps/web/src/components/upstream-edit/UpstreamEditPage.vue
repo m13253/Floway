@@ -337,6 +337,7 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
     for (const m of list) {
       // `||` (not `??`) is intentional: a whitespace-only override should
       // not shadow the upstream id.
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
       const id = m.publicModelId?.trim() || m.upstreamModelId;
       if (!id || seen.has(id)) continue;
       seen.add(id);

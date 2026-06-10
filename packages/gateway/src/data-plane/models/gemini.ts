@@ -2,8 +2,8 @@ import type { Context } from 'hono';
 
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { geminiStatusForHttpStatus } from '../llm/gemini/errors.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { geminiStatusForHttpStatus } from '../llm/gemini/errors.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';

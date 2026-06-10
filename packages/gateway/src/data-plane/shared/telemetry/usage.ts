@@ -1,6 +1,6 @@
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const currentHour = (): string => new Date().toISOString().slice(0, 13);
