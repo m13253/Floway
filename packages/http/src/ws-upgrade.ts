@@ -211,8 +211,8 @@ const sendUpgradeRequest = async (
         { rfc: 'RFC 9110 §5.6.2' },
       );
     }
-    validateFieldValueBytes(value, () => new HttpProtocolError(
-      `caller-supplied WS upgrade header value for ${JSON.stringify(name)} contains a forbidden control byte`,
+    validateFieldValueBytes(value, hex => new HttpProtocolError(
+      `caller-supplied WS upgrade header value for ${JSON.stringify(name)} contains a forbidden control byte 0x${hex}`,
       'BAD_HEADERS',
       { rfc: 'RFC 9110 §5.5' },
     ));
@@ -545,8 +545,9 @@ const frameDuplexOnTransport = (
           }
           buffer = concat(buffer, value);
         }
-        // `buffer` is `concat`'s fresh allocation (or the owned `head` from
-        // `frameDuplexOnTransport`), so subarrays onto it are already off
+        // `buffer` is `concat`'s fresh allocation (or the owned `initialBytes`
+        // handed in to `frameDuplexOnTransport`, already detached by
+        // `readUpgradeResponse`), so subarrays onto it are already off
         // transport-pooled memory. Copying just the remainder breaks the
         // backing-buffer aliasing between `payload` and the next iteration's
         // `buffer`; an extra `copy` on `payload` would duplicate up to

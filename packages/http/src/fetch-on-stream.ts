@@ -38,8 +38,8 @@ const validateRequestHeaderName = (name: string): void => {
 };
 
 const validateRequestHeaderValue = (name: string, value: string): void => {
-  validateFieldValueBytes(value, () => new HttpProtocolError(
-    `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte`,
+  validateFieldValueBytes(value, hex => new HttpProtocolError(
+    `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte 0x${hex}`,
     'BAD_HEADERS',
     { rfc: 'RFC 9110 §5.5' },
   ));
