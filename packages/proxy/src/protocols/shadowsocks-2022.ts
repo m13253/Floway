@@ -15,7 +15,7 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 
-import { concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
+import { concat, encodeAtypAddress, randomBytes, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
@@ -33,7 +33,7 @@ const NONCE = 12;
 // SIP022 uses a u16 length field. Servers can send up to 0xffff per record;
 // AEAD-2018's 0x3fff limit does not apply.
 const MAX = 0xffff;
-const SUBKEY_CONTEXT_BYTES = new TextEncoder().encode('shadowsocks 2022 session subkey');
+const SUBKEY_CONTEXT_BYTES = utf8Bytes('shadowsocks 2022 session subkey');
 
 const REQ_HEADER_TYPE = 0x00;
 const RESP_HEADER_TYPE = 0x01;

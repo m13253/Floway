@@ -31,7 +31,8 @@ export interface WsUpgradeOptions {
   /** Extra request headers to send with the upgrade. Names are validated
    *  as RFC 9110 tokens; values must not contain CR/LF/NUL. The handshake
    *  layer owns `Host`, `Upgrade`, `Connection`, `Sec-WebSocket-Version`,
-   *  and `Sec-WebSocket-Key` — supplying any of those throws. */
+   *  `Sec-WebSocket-Key`, and `Sec-WebSocket-Protocol` (use the
+   *  `subprotocols` option instead) — supplying any of those throws. */
   additionalHeaders?: Record<string, string>;
   /** Optional `Sec-WebSocket-Protocol` value. The server's reply protocol,
    *  if any, is validated to be one of the offered protocols. */
