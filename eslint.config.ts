@@ -7,6 +7,26 @@ import vueParser from 'vue-eslint-parser';
 
 import type { Linter } from 'eslint';
 
+const projectList = [
+  './apps/platform-cloudflare/tsconfig.json',
+  './apps/platform-node/tsconfig.json',
+  './apps/web/tsconfig.json',
+  './packages/gateway/tsconfig.json',
+  './packages/http/tsconfig.json',
+  './packages/interceptor/tsconfig.json',
+  './packages/platform/tsconfig.json',
+  './packages/protocols/tsconfig.json',
+  './packages/provider/tsconfig.json',
+  './packages/provider-azure/tsconfig.json',
+  './packages/provider-codex/tsconfig.json',
+  './packages/provider-copilot/tsconfig.json',
+  './packages/provider-custom/tsconfig.json',
+  './packages/proxy/tsconfig.json',
+  './packages/test-utils/tsconfig.json',
+  './packages/translate/tsconfig.json',
+  './packages/ui/tsconfig.json',
+];
+
 const commonConfig: Linter.Config = {
   plugins: {
     import: importPlugin,
@@ -49,11 +69,7 @@ const commonConfig: Linter.Config = {
     // Belt-and-suspenders for the package-name ban above: relative imports
     // bypass `no-restricted-imports`, so a file inside one platform-target app
     // could still reach into another via `../../platform-X/...`. Forbid that
-    // sibling crossing here. Also enforce the `apps/web` → `@floway-dev/proxy`
-    // boundary documented in AGENTS.md: the dashboard reuses proxy URI parse
-    // / format / config types via the four subpath exports, but pulling the
-    // root would drag dialers, userspace TLS, and Node `crypto` into the SPA
-    // bundle.
+    // sibling crossing here.
     'import/no-restricted-paths': ['error', {
       zones: [
         { target: './apps/platform-cloudflare', from: './apps/platform-node', message: 'Platform-target apps cannot import each other; share via packages/.' },
@@ -140,7 +156,7 @@ const commonConfig: Linter.Config = {
     'import/internal-regex': '^@floway-dev/',
     'import/resolver': {
       typescript: {
-        project: ['./apps/platform-cloudflare/tsconfig.json', './apps/platform-node/tsconfig.json', './apps/web/tsconfig.json', './packages/gateway/tsconfig.json', './packages/http/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/platform/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-codex/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/proxy/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
+        project: projectList,
         noWarnOnMultipleProjects: true,
       },
     },
@@ -151,7 +167,7 @@ const parserOptions: Linter.ParserOptions = {
   parser: tsParser,
   ecmaVersion: 'latest',
   sourceType: 'module',
-  project: ['./apps/platform-cloudflare/tsconfig.json', './apps/platform-node/tsconfig.json', './apps/web/tsconfig.json', './packages/gateway/tsconfig.json', './packages/http/tsconfig.json', './packages/interceptor/tsconfig.json', './packages/platform/tsconfig.json', './packages/protocols/tsconfig.json', './packages/provider/tsconfig.json', './packages/provider-azure/tsconfig.json', './packages/provider-codex/tsconfig.json', './packages/provider-copilot/tsconfig.json', './packages/provider-custom/tsconfig.json', './packages/proxy/tsconfig.json', './packages/test-utils/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
+  project: projectList,
   noWarnOnMultipleProjects: true,
 };
 
