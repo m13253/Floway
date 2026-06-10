@@ -161,6 +161,10 @@ const runRealityHandshake = async (
 
   // Latch teardown so a follow-up onTlsEnd / EOF can't double-close the
   // controller (Node throws ERR_INVALID_STATE on a second close/error).
+  // Mirror userspaceTls / ws-upgrade's split: an error path RSTs the writer
+  // so the transport tears down hard rather than blocking on a graceful
+  // FIN to a peer whose readable just errored; a clean teardown emits the
+  // polite write-half close.
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
@@ -170,7 +174,8 @@ const runRealityHandshake = async (
       if (error) plainController.error(error);
       else plainController.close();
     } catch { /* already closed/errored */ }
-    void writer.close().catch(() => {});
+    if (error) void writer.abort(error).catch(() => {});
+    else void writer.close().catch(() => {});
   };
 
   const tlsClient = makeTLSClient(({
@@ -289,7 +294,12 @@ const runRealityHandshake = async (
       detachAbortListener = null;
       void tlsClient.end().catch(() => {});
       void reader.cancel(reason).catch(() => {});
-      void writer.close().catch(() => {});
+      // Mirror closePlain (and userspaceTls / ws-upgrade): a non-Error
+      // reason is a clean consumer cancel — emit a polite FIN; an Error
+      // reason means the consumer hit a failure mid-body, so RST the
+      // writer rather than graceful-end a half whose readable just errored.
+      if (reason instanceof Error) void writer.abort(reason).catch(() => {});
+      else void writer.close().catch(() => {});
     },
   });
 
