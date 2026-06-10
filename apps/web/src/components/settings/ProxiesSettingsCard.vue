@@ -26,19 +26,6 @@ const upstreamNames = computed<Map<string, string>>(() => {
   return map;
 });
 
-const backoffsByProxyId = proxiesStore.backoffsByProxyId;
-
-const resetBackoffs = async (record: ProxyRecord) => {
-  const { error } = await callApi(
-    () => api.api.proxies[':id'].backoffs.reset.$post({ param: { id: record.id }, json: {} }),
-  );
-  if (error) {
-    window.alert(`Reset failed: ${error.message}`);
-    return;
-  }
-  emit('changed');
-};
-
 const deleteProxy = async (record: ProxyRecord) => {
   if (!window.confirm(`Delete proxy "${record.name}"?`)) return;
   const { error } = await callApi(() => api.api.proxies[':id'].$delete({ param: { id: record.id } }));
@@ -82,9 +69,6 @@ const deleteProxy = async (record: ProxyRecord) => {
         v-for="proxy in proxies"
         :key="proxy.id"
         :proxy="proxy"
-        :backoffs-for-proxy="backoffsByProxyId.get(proxy.id) ?? []"
-        :upstream-names="upstreamNames"
-        @reset-backoffs="resetBackoffs(proxy)"
         @edit="emit('edit', proxy)"
         @delete="deleteProxy(proxy)"
       />

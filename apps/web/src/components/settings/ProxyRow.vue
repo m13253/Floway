@@ -1,26 +1,17 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core';
 import { computed } from 'vue';
 
-import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
-import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
+import type { ProxyRecord } from '../../api/types.ts';
 import { kindFromUri } from '@floway-dev/proxy/url-kind';
 
 const props = defineProps<{
   proxy: ProxyRecord;
-  backoffsForProxy: BackoffRow[];
-  upstreamNames: Map<string, string>;
 }>();
 
 defineEmits<{
-  resetBackoffs: [];
   edit: [];
   delete: [];
 }>();
-
-// Live tick so backoff countdowns visibly decrement without a parent reload.
-// 1s granularity matches the "in Xm Ys" precision we render.
-const now = useNow({ interval: 1000 });
 
 // Amber is reserved for backoff/warning everywhere in the dashboard, so no proxy-kind label uses it.
 const kindBadgeClass = (kind: string) => {
@@ -57,29 +48,6 @@ const urlPreview = computed(() => {
   const port = parsed.port ? `:${parsed.port}` : '';
   return `${parsed.protocol}//${parsed.hostname}${port}${parsed.pathname === '/' ? '' : parsed.pathname}`;
 });
-
-const lastTestedAgo = computed(() => {
-  if (props.proxy.last_tested_at == null) return null;
-  return formatRelativeAgo(now.value.getTime() - props.proxy.last_tested_at * 1000);
-});
-
-const activeBackoffs = computed(() => {
-  const nowSec = Math.floor(now.value.getTime() / 1000);
-  // `>=` keeps the row visible during its expiry second so the countdown's
-  // last tick renders the 'now' edge label. A strict `>` would hide the row
-  // before the delta could go ≤ 0, leaving that label unreachable.
-  return props.backoffsForProxy
-    .filter(b => b.expires_at >= nowSec)
-    .sort((a, b) => a.expires_at - b.expires_at);
-});
-
-// First active backoff drives the soonest-expiring countdown shown inline;
-// the rest collapse into the +N more chip with a tooltip listing them all.
-const soonestBackoff = computed(() => activeBackoffs.value[0] ?? null);
-const extraBackoffCount = computed(() => Math.max(0, activeBackoffs.value.length - 1));
-const backoffTooltip = computed(() => activeBackoffs.value
-  .map(b => `${props.upstreamNames.get(b.upstream_id) ?? b.upstream_id}: in ${formatCountdown(b.expires_at * 1000 - now.value.getTime())}${b.last_error ? ` — ${b.last_error}` : ''}`)
-  .join('\n'));
 </script>
 
 <template>
@@ -89,28 +57,8 @@ const backoffTooltip = computed(() => activeBackoffs.value
       :class="kindBadgeClass(kind)"
     >{{ kind }}</span>
 
-    <div class="min-w-0 flex-1">
-      <div class="flex items-baseline gap-2 min-w-0">
-        <span class="truncate text-sm font-semibold text-white">{{ proxy.name }}</span>
-        <span class="truncate text-xs text-gray-500" :title="urlPreview">{{ urlPreview }}</span>
-      </div>
-    </div>
-
-    <div v-if="proxy.last_egress_ip || lastTestedAgo" class="hidden shrink-0 items-baseline gap-1.5 text-xs text-gray-500 md:flex">
-      <span v-if="proxy.last_egress_ip" class="font-mono text-gray-400">{{ proxy.last_egress_ip }}</span>
-      <span v-else class="italic">untested</span>
-      <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
-    </div>
-
-    <button
-      v-if="soonestBackoff"
-      type="button"
-      class="shrink-0 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-2 py-1 text-xs text-accent-amber transition-colors hover:bg-accent-amber/20"
-      :title="`${backoffTooltip}\n\nClick to reset all backoffs.`"
-      @click="$emit('resetBackoffs')"
-    >
-      backoff in {{ formatCountdown(soonestBackoff.expires_at * 1000 - now.getTime()) }}<span v-if="extraBackoffCount > 0"> +{{ extraBackoffCount }}</span>
-    </button>
+    <span class="truncate text-sm font-semibold text-white">{{ proxy.name }}</span>
+    <span class="min-w-0 flex-1 truncate text-xs text-gray-500" :title="urlPreview">{{ urlPreview }}</span>
 
     <div class="flex shrink-0 items-center gap-1">
       <button
