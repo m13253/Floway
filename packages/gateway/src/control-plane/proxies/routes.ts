@@ -245,11 +245,11 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     if (!isIpLike(truncated)) {
       return c.json({ ok: false, error: `anchor returned non-IP body: ${truncated.slice(0, 80)}` });
     }
-    // The v6 anchor exists specifically to confirm an operator has a v6
-    // egress path. 6.ident.me has both A and AAAA records, so a v4-only
-    // proxy still gets a routable answer — but reporting that v4 back as
-    // a "v6" check would silently mislead. Reject the v4 shape on the v6
-    // anchor explicitly.
+    // 6.ident.me is v6-only (AAAA-only), so a v4-only proxy fails to dial
+    // it at all and never reaches this branch. The v4-shape rejection is
+    // defense-in-depth in case the anchor's records change upstream, or a
+    // NAT64/DNS64 synthesizer hands the runtime a v4 path that round-trips
+    // a v4 address through a "v6" check.
     if (anchorName === 'ident.me-v6' && !truncated.includes(':')) {
       return c.json({ ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` });
     }

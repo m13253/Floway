@@ -54,11 +54,10 @@ describe('createPerRequestFetcher', () => {
     const badFetcher = fetcherFor('u_bad');
     await expect(badFetcher('https://example.com', { method: 'GET' }))
       .rejects.toThrow(/u_bad references malformed proxy p_bad/);
-    // The isolation half: u_ok's fetcher must build cleanly without the
-    // bad-refs branch firing, since u_ok's empty fallback list never
-    // references p_bad.
-    const okFetcher = fetcherFor('u_ok');
-    expect(typeof okFetcher).toBe('function');
+    // u_ok's empty fallback list never references p_bad, so resolving its
+    // fetcher must not throw at build time the way the malformed row did
+    // when first parsed.
+    fetcherFor('u_ok');
   });
 
   it('does not load the proxy catalog when no upstream references one', async () => {

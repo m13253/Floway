@@ -15,7 +15,7 @@ declare module 'cloudflare:sockets' {
   }
   interface SocketOptions {
     allowHalfOpen: boolean;
-    secureTransport?: 'off' | 'on' | 'starttls';
+    secureTransport?: 'off' | 'on';
   }
   export const connect: (address: SocketAddress, options?: SocketOptions) => CloudflareSocket;
 }
