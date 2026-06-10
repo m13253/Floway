@@ -122,6 +122,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, sortOrder: 0 }));
 
   const providers = await listModelProviders(null, () => directFetcher);
+  assertEquals(providers.map(provider => provider.upstream), ['up_custom', 'up_azure', 'up_copilot']);
   assertEquals(providers.some(provider => provider.upstream.includes(':')), false);
 });
 

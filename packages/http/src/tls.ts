@@ -139,7 +139,13 @@ export const userspaceTls = async (
     cleanupSignal();
     if (error) safeError(error);
     else safeClose();
-    void writer.close().catch(logTlsTeardownError);
+    // Mirror ws-upgrade's closePlain: abort the underlying writer on error so
+    // the transport tears down hard, but emit a polite FIN on a clean
+    // teardown. A bare `writer.close()` on the error path would have us
+    // graceful-end a half whose readable just errored, leaving an in-flight
+    // write awaiting a peer that's already gone.
+    if (error) void writer.abort(error).catch(logTlsTeardownError);
+    else void writer.close().catch(logTlsTeardownError);
   };
   const safeEnqueue = (chunk: Uint8Array<ArrayBuffer>): void => {
     // Once `plainClosed` is set, the controller has been closed/errored by

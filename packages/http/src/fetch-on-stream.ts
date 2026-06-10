@@ -57,6 +57,43 @@ const validateRequestHeaderValue = (name: string, value: string): void => {
   }
 };
 
+const validateRequestMethod = (method: string): void => {
+  // RFC 9110 §9.1: the method is a token. The same anti-smuggling rationale
+  // as header names applies — a CR/LF/SP smuggled into the method would split
+  // the request line and inject a forged head onto the wire.
+  if (method.length === 0 || !TCHAR.test(method)) {
+    throw new HttpProtocolError(
+      `caller-supplied method is not a valid token: ${JSON.stringify(method)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §9.1' },
+    );
+  }
+};
+
+const validateRequestPath = (path: string): void => {
+  // RFC 9112 §3.2: request-target. We don't validate the full URI grammar —
+  // callers above us own that — but we do reject CTL bytes (NUL, CR, LF, the
+  // rest of C0, DEL) and SP, all of which would split the request line and
+  // smuggle a fresh head past the same defense the header validators close.
+  if (path.length === 0) {
+    throw new HttpProtocolError(
+      'caller-supplied path is empty',
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    );
+  }
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    if (c < 0x21 || c === 0x7f) {
+      throw new HttpProtocolError(
+        `caller-supplied path contains a forbidden byte 0x${c.toString(16).padStart(2, '0')}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9112 §3.2' },
+      );
+    }
+  }
+};
+
 export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
@@ -75,6 +112,9 @@ export const fetchOnStream = async (
       { rfc: 'RFC 9110 §6.4.1' },
     );
   }
+
+  validateRequestMethod(request.method);
+  validateRequestPath(request.path);
 
   const writer = stream.writable.getWriter();
   const enc = new TextEncoder();

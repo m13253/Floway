@@ -21,12 +21,12 @@ const upstreamFixture = (id: string, proxyFallbackList: string[]): UpstreamRecor
 
 test('proxies repo inserts and lists ordered by sortOrder, then createdAt', async () => {
   const repo = new InMemoryRepo();
-  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   // Sleep to guarantee a distinct createdAt for tie-breaks within the same sort_order bucket.
   await new Promise(resolve => setTimeout(resolve, 5));
   await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 0, dialTimeoutSeconds: null });
   const list = await repo.proxies.list();
-  assertEquals(list.map(p => p.id), ['b', 'a']);
+  assertEquals(list.map(p => p.id), ['a', 'b']);
 });
 
 test('proxies repo clears lastEgressIp and lastTestedAt when url changes', async () => {

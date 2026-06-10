@@ -152,8 +152,11 @@ const now = useNow({ interval: 1000 });
 
 const activeBackoffs = computed(() => {
   const nowSec = Math.floor(now.value.getTime() / 1000);
+  // `>=` keeps the row visible during its expiry second so the countdown's
+  // last tick renders the 'expiring' label. A strict `>` would hide the row
+  // before the delta could go ≤ 0, leaving the edge label unreachable.
   return backoffsForProxy.value
-    .filter(b => b.expires_at > nowSec)
+    .filter(b => b.expires_at >= nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
 

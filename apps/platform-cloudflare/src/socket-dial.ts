@@ -23,7 +23,11 @@ export const cloudflareSocketDial: SocketDial = {
     const socket = connect(
       { hostname: host, port },
       {
-        allowHalfOpen: true,
+        // Half-open is honoured for plain TCP only. On the TLS leg, close-notify
+        // makes half-close fragile across TLS 1.3 implementations, so we mirror
+        // Node's deliberate no-half-open-on-TLS choice — write-side close from
+        // the consumer tears down the whole socket.
+        allowHalfOpen: !opts?.tls,
         secureTransport: opts?.tls ? 'on' : 'off',
       },
     );
