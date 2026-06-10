@@ -20,7 +20,7 @@ import { sha224 } from '@noble/hashes/sha2.js';
 import { encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { userspaceTls, type TlsStream } from '@floway-dev/http';
 
@@ -31,16 +31,7 @@ export const dialTrojan = async (
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'Trojan');
   assertValidTargetHost(target.host, 'Trojan', { maxBytes: 255 });
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
     return await dialTrojanInner(socket, config, target, options.signal);

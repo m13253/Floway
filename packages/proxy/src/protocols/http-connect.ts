@@ -12,7 +12,7 @@
 import { base64EncodeBytes, concat, copy, findDoubleCrlfFrom, formatHostForUri, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { STATUS_LINE } from '@floway-dev/http';
 
@@ -31,16 +31,7 @@ export const dialHttpConnect = async (
   // workerd performs the outer TLS handshake inside connect() when tls=true,
   // so a TLS handshake error to the proxy surfaces as a connect failure here
   // — we can't tell the two apart from this layer.
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { tls: config.tls, signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { tls: config.tls, signal: options.signal });
 
   try {
     return await dialHttpConnectInner(socket, auth, target);

@@ -5,10 +5,9 @@
 // `wsUpgradeAndFrame` from @floway-dev/http between the outer TLS and the
 // VLESS framing so it stays runtime-agnostic.
 
-import { ProxyDialError } from '../errors.ts';
 import type { VlessTcpTlsProxyConfig, VlessWsTlsProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
-import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
+import type { DialOptions, DialResult, DialTarget } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 import { wsUpgradeAndFrame } from '@floway-dev/http';
 
@@ -22,16 +21,7 @@ export const dialVlessTcpTls = async (
   // workerd handles outer TLS to the VLESS server inside connect(tls=true);
   // we can't distinguish a TCP RST from a TLS handshake failure here, so any
   // dial-time error is reported as tcp-connect.
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { tls: true, signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { tls: true, signal: options.signal });
 
   try {
     return await vlessFrameOverStream(socket, config.uuid, target);
@@ -48,16 +38,7 @@ export const dialVlessWsTls = async (
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'VLESS');
   assertValidTargetHost(target.host, 'VLESS', { maxBytes: 255 });
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { tls: true, signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { tls: true, signal: options.signal });
 
   try {
     const wsStream = await wsUpgradeAndFrame(socket, {

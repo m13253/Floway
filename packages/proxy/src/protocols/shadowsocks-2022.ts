@@ -17,7 +17,7 @@ import { base64DecodeBytes, concat, encodeAtypAddress, randomBytes, utf8Bytes } 
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
 
@@ -60,16 +60,7 @@ export const dialShadowsocks2022 = async (
     );
   }
 
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
     return await dialShadowsocks2022Inner(socket, config.method, psk, keyLen, target);

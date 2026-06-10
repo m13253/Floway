@@ -175,6 +175,25 @@ interface SocketDialOptions {
 }
 
 /**
+ * Open a TCP socket and rewrap any failure as a typed `tcp-connect`
+ * ProxyDialError. Every dialer's outer `socket = await socketDial.connect(…)`
+ * needs the same wrap so the fallback chain sees a uniform discriminant —
+ * this is that wrap, centralised.
+ */
+export const connectOrDialError = async (
+  socketDial: SocketDial,
+  host: string,
+  port: number,
+  opts?: SocketDialOptions,
+): Promise<DialedSocket> => {
+  try {
+    return await socketDial.connect(host, port, opts);
+  } catch (cause) {
+    throw new ProxyDialError(`tcp connect to ${host}:${port} failed`, 'tcp-connect', { cause });
+  }
+};
+
+/**
  * Output of a per-protocol `dial`. The duplex stream points at
  * `target.host:target.port` (after the proxy's framing has been peeled
  * off). `prefix`, when present, is bytes the dialer wants prepended to

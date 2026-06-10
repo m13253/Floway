@@ -7,7 +7,7 @@
 import { concat, copy, encodeAtypAddress, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { Socks5ProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 
 export const dialSocks5 = async (
@@ -22,16 +22,7 @@ export const dialSocks5 = async (
     ? { username: config.username, password: config.password ?? '' }
     : undefined;
 
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
     return await dialSocks5Inner(socket, auth, target);

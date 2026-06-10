@@ -23,7 +23,7 @@ import { utf8Bytes, concat, encodeAtypAddress, randomBytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { ShadowsocksProxyConfig, SsMethod } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { type Aead, leNonce, makeAead as makeAeadShared } from './shadowsocks-aead.ts';
 
@@ -45,16 +45,7 @@ export const dialShadowsocks = async (
   assertValidTargetHost(target.host, 'SS', { maxBytes: 255 });
   const keyLen = METHOD_KEY_LEN[config.method];
 
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
     return await dialShadowsocksInner(socket, config.method, config.password, keyLen, target);

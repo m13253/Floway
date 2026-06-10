@@ -48,7 +48,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { base64DecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
-import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
+import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
 import { signalAbortReason } from '@floway-dev/http';
@@ -92,16 +92,7 @@ export const dialReality = async (
   const shortId = parseShortId(config.shortId);
 
   // Plain TCP — userspace TLS will do the entire handshake.
-  let socket: DialedSocket;
-  try {
-    socket = await options.socketDial.connect(config.host, config.port, { signal: options.signal });
-  } catch (cause) {
-    throw new ProxyDialError(
-      `tcp connect to ${config.host}:${config.port} failed`,
-      'tcp-connect',
-      { cause },
-    );
-  }
+  const socket = await connectOrDialError(options.socketDial, config.host, config.port, { signal: options.signal });
 
   try {
     const post = await runRealityHandshake(socket, config, serverPub, shortId, options.signal);
