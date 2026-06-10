@@ -256,8 +256,12 @@ const buildProxiedRequest = async (url: string, init: RequestInit): Promise<Prox
   if (collected?.contentType !== undefined && headers['content-type'] === undefined) {
     headers['content-type'] = collected.contentType;
   }
+  // `URL#hostname` keeps the `[…]` envelope on IPv6 literals; the
+  // `DialTarget.host` contract requires the bare address. Strip the
+  // brackets here at the URL→DialTarget seam so every dialer sees a
+  // canonical host.
   const target: ProxyRequestTarget = {
-    host: u.hostname,
+    host: stripIpv6Brackets(u.hostname),
     port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
     tls: u.protocol === 'https:',
   };
@@ -269,6 +273,11 @@ const buildProxiedRequest = async (url: string, init: RequestInit): Promise<Prox
   };
   return { target, request };
 };
+
+const stripIpv6Brackets = (hostname: string): string =>
+  hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
 
 // Lower-case keys here so the request is canonical at the seam; the http
 // package also lowercases internally, but normalizing at the boundary

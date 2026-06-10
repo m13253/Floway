@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import type { HttpRequest } from '@floway-dev/http';
-import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
+import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type SocketDial } from '@floway-dev/proxy';
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
@@ -377,5 +377,27 @@ describe('createFetcher', () => {
     expect(warnSpy).toHaveBeenCalledOnce();
     repo.proxyBackoffs.recordDialSuccess = original;
     warnSpy.mockRestore();
+  });
+
+  it('strips the IPv6 envelope from URL.hostname before handing the target to the dialer', async () => {
+    const repo = new InMemoryRepo();
+    let captured: ProxyRequestTarget | undefined;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['a'],
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_c, target) => {
+        captured = target;
+        return new Response('ok');
+      },
+      runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
+    });
+    await fetcher('https://[::1]:8443/v1/models', { method: 'GET' });
+    // `URL#hostname` keeps the brackets ([::1]); the DialTarget contract
+    // requires the bare address. The fetcher must strip them at the seam.
+    expect(captured?.host).toBe('::1');
+    expect(captured?.port).toBe(8443);
   });
 });
