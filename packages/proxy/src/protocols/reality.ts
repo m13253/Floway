@@ -43,7 +43,7 @@ import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { setCryptoImplementation, makeTLSClient } from '@reclaimprotocol/tls';
 import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 
-import { copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
+import { base64DecodeBytes, copy, utf8Bytes, randomBytes, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -426,13 +426,8 @@ export const verifyRealityLeaf = (authKey: Uint8Array, leafDer: Uint8Array, leaf
   }
 };
 
-const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> => {
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(s.length + ((4 - (s.length % 4)) % 4), '=');
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-};
+const base64UrlDecode = (s: string): Uint8Array<ArrayBuffer> =>
+  base64DecodeBytes(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(s.length + ((4 - (s.length % 4)) % 4), '='));
 
 /**
  * Parse REALITY's `sid` URI parameter into the 8-byte slice that fills the

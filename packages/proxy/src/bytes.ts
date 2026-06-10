@@ -98,6 +98,19 @@ export const base64EncodeBytes = (bytes: Uint8Array): string => {
 };
 
 /**
+ * Base64-decode the inverse of {@link base64EncodeBytes}. `atob` returns
+ * a Latin-1 binary string; map each code unit back to its byte value.
+ * Throws (via `atob`) on invalid base64. The url-safe variant lives in
+ * the REALITY dialer because the alphabet fixup is its own concern.
+ */
+export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
+
+/**
  * Parse an IPv4 dotted-quad literal into 4 octets, or return null if `s`
  * isn't a literal IPv4. Strict: each component must be a decimal in
  * 0..255 with no leading zeros (the "no leading zeros" rule prevents

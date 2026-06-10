@@ -15,7 +15,7 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { blake3 } from '@noble/hashes/blake3.js';
 
-import { concat, encodeAtypAddress, randomBytes, utf8Bytes } from '../bytes.ts';
+import { base64DecodeBytes, concat, encodeAtypAddress, randomBytes, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import { makeExactReader } from '../exact-reader.ts';
 import type { Shadowsocks2022ProxyConfig, Ss2022Method } from '../proxy-config.ts';
@@ -48,7 +48,7 @@ export const dialShadowsocks2022 = async (
   const keyLen = KEY_LEN_2022[config.method];
   let psk: Uint8Array<ArrayBuffer>;
   try {
-    psk = base64Decode(config.passwordBase64);
+    psk = base64DecodeBytes(config.passwordBase64);
   } catch (cause) {
     throw new ProxyDialError('SS2022: invalid base64 in PSK', 'config', { cause });
   }
@@ -275,11 +275,4 @@ const nonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
 
 const writeU64BE = (buf: Uint8Array, off: number, value: bigint): void => {
   new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setBigUint64(off, value, false);
-};
-
-const base64Decode = (s: string): Uint8Array<ArrayBuffer> => {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 };
