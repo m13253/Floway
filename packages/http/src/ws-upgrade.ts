@@ -18,7 +18,7 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { signalAbortReason } from './abort.ts';
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import { ASCII_DECODER, TCHAR } from './grammar.ts';
+import { ASCII_DECODER, STATUS_LINE, TCHAR } from './grammar.ts';
 import type { DuplexStream } from './types.ts';
 
 export interface WsUpgradeOptions {
@@ -276,7 +276,7 @@ const readUpgradeResponse = async (
   // RFC 6455 §4.1: the upgrade response is HTTP/1.1; its status code MUST
   // be 101. We surface non-101 verbatim so the caller can include the
   // server's reason phrase in a debug log.
-  const m = /^HTTP\/(1\.[01]) (\d{3}) (\S.*|)$/.exec(statusLine);
+  const m = STATUS_LINE.exec(statusLine);
   if (!m) {
     throw new HttpProtocolError(
       `WS upgrade: bad status line ${JSON.stringify(statusLine)}`,
@@ -284,10 +284,10 @@ const readUpgradeResponse = async (
       { rfc: 'RFC 9112 §4' },
     );
   }
-  const status = parseInt(m[2]!, 10);
+  const status = parseInt(m[1]!, 10);
   if (status !== 101) {
     throw new HttpProtocolError(
-      `WS upgrade replied ${status} ${JSON.stringify(m[3]!)}`,
+      `WS upgrade replied ${status} ${JSON.stringify(m[2]!)}`,
       'BAD_STATUS_LINE',
       { rfc: 'RFC 6455 §4.1' },
     );

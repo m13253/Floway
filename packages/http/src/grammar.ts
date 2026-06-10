@@ -15,3 +15,12 @@ export const TCHAR = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 // 1 KiB chunk-size-line cap and the only field actually parsed is the
 // pre-`;` hex prefix, which the regex enforces.
 export const ASCII_DECODER = new TextDecoder();
+
+// RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
+// Shared by parser.ts and ws-upgrade.ts so the two response-side framings
+// can't drift apart. The version group is non-capturing — neither caller
+// reads it — so capture indices are status=m[1], reason=m[2]. The reason
+// alternation `(\S.*|)` permits an empty reason (RFC 7230 erratum 4087)
+// while forbidding a leading SP, which would otherwise be silently
+// absorbed from a double SP between code and reason.
+export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) (\S.*|)$/;

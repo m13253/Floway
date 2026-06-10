@@ -4,7 +4,7 @@
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
-import { ASCII_DECODER, TCHAR } from './grammar.ts';
+import { ASCII_DECODER, STATUS_LINE, TCHAR } from './grammar.ts';
 import type { RawHttpResponse } from './types.ts';
 
 /**
@@ -154,7 +154,7 @@ const readResponseHead = async (
       { rfc: 'RFC 9112 §4' },
     );
   }
-  const m = /^HTTP\/(1\.[01]) (\d{3}) (\S.*|)$/.exec(statusLine);
+  const m = STATUS_LINE.exec(statusLine);
   if (!m) {
     throw new HttpProtocolError(
       `bad status line: ${JSON.stringify(statusLine)}`,
@@ -162,14 +162,14 @@ const readResponseHead = async (
       { rfc: 'RFC 9112 §4' },
     );
   }
-  const status = parseInt(m[2]!, 10);
+  const status = parseInt(m[1]!, 10);
   // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). The reason-phrase grammar
   // forbids leading OWS (enforced by the `\S` first-byte anchor) but
   // greedy `.*` keeps trailing SP/HTAB up to the CRLF, so a misbehaving
   // upstream sending `HTTP/1.1 200 OK   ` would otherwise surface
   // trailing whitespace through statusText. Trim it to match the
   // RawHttpResponse.statusText contract.
-  const statusText = m[3]!.replace(/[ \t]+$/, '');
+  const statusText = m[2]!.replace(/[ \t]+$/, '');
 
   const respHeaders = new Headers();
   // Track raw header lines so we can validate framing-related fields off
