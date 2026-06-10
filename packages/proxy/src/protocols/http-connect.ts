@@ -22,12 +22,6 @@ export const dialHttpConnect = async (
   options: DialOptions,
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'CONNECT');
-  // The CONNECT request-line and the Host header both serialize the
-  // target host as wire bytes. RFC 9110 §5.4 + §3.4 expect a valid
-  // ASCII uri-host; punycode IDN labels happen at the gateway layer
-  // before they reach this dialer. Reject up-front so we don't straddle
-  // Latin-1 / UTF-8 framing on the wire and so we never burn a TCP
-  // connection on a request the proxy is guaranteed to reject.
   assertValidTargetHost(target.host, 'CONNECT');
 
   const auth = config.username !== undefined

@@ -103,7 +103,7 @@ const dialSocks5Inner = async (
   // RFC 1928 §6: RSV MUST be 0x00. A non-zero byte points at a broken or
   // hostile proxy and we'd rather surface the spec violation than parse
   // an ambiguous reply.
-  if (head[2] !== 0x00) throw new ProxyDialError(`SOCKS5 reply RSV byte non-zero (got 0x${head[2]!.toString(16).padStart(2, '0')}, RFC 1928 §6)`, 'proxy-handshake');
+  if (head[2] !== 0x00) throw new ProxyDialError(`SOCKS5 reply RSV byte non-zero (got 0x${head[2]!.toString(16).padStart(2, '0')})`, 'proxy-handshake');
   let bndLen = 0;
   const atyp = head[3];
   if (atyp === 0x01) bndLen = 4;
