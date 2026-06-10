@@ -62,6 +62,7 @@ floway/
 │   ├── provider-copilot/    # @floway-dev/provider-copilot — GitHub Copilot provider
 │   ├── provider-custom/     # @floway-dev/provider-custom — generic OpenAI-compatible
 │   ├── proxy/               # @floway-dev/proxy — proxy URI parsing + per-protocol byte-stream dialers
+│   ├── test-utils/          # @floway-dev/test-utils — shared Vitest fixtures and stubs (test-only)
 │   ├── translate/           # @floway-dev/translate — cross-protocol translation pairs
 │   └── ui/                  # @floway-dev/ui — internal Vue component library
 └── apps/

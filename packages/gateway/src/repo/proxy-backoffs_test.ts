@@ -1,8 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { SqlRepo } from './sql.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
+import type { Repo } from './types.ts';
 
-describe('proxy_upstream_backoffs repo', () => {
+// The geometric backoff schedule and the per-(proxy, upstream) row state
+// are spec'd identically across both backends — but the SQL impl reaches
+// the schedule through SQLite's UPDATE eval-order ('reads RHS column refs
+// at the start of the UPDATE, before the increment is applied'), so the
+// memory-only test would never have caught a drift between the JS mirror
+// and the SQL expression. Run the suite against both backends.
+const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
+  ['memory', async () => new InMemoryRepo()],
+  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+];
+
+for (const [backend, makeRepo] of REPO_BACKENDS) {
+
+describe(`[${backend}] proxy_upstream_backoffs repo`, () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
@@ -12,7 +28,7 @@ describe('proxy_upstream_backoffs repo', () => {
   const baseUnix = Math.floor(Date.UTC(2026, 5, 1) / 1000);
 
   it('records first failure with 60s expiry', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'u', 'tcp refused');
     const rows = await repo.proxyBackoffs.listForUpstream('u');
     expect(rows).toEqual([
@@ -28,7 +44,7 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('exponentially backs off and caps at 1h', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     const expected = [60, 120, 240, 480, 960, 1920, 3600, 3600];
     for (let n = 0; n < expected.length; n++) {
       await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
@@ -39,7 +55,7 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('saturates at 3600s even after thousands of failures (no JS shift overflow)', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     // Force the row to a fail_count well past 31 — without the exponent
     // clamp the next recordDialFailure would compute `1 << 31 = -2^31` and
     // collapse `Math.min(neg, 3600)` to a negative expiresAt.
@@ -52,21 +68,21 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('clears the row on dial success', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'u', 'x');
     await repo.proxyBackoffs.recordDialSuccess('p', 'u');
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
   it('isolates state between upstreams', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'uA', 'x');
     expect(await repo.proxyBackoffs.listForUpstream('uB')).toEqual([]);
     expect(await repo.proxyBackoffs.listForUpstream('uA')).toHaveLength(1);
   });
 
   it('reset removes all rows for the proxy', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'u1', 'x');
     await repo.proxyBackoffs.recordDialFailure('p', 'u2', 'x');
     await repo.proxyBackoffs.resetForProxy('p');
@@ -74,7 +90,7 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('reset for a single (proxy, upstream)', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p', 'u1', 'x');
     await repo.proxyBackoffs.recordDialFailure('p', 'u2', 'x');
     await repo.proxyBackoffs.reset('p', 'u1');
@@ -83,7 +99,7 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('resetForUpstream removes every row scoped to the upstream', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('pA', 'u1', 'x');
     await repo.proxyBackoffs.recordDialFailure('pB', 'u1', 'x');
     await repo.proxyBackoffs.recordDialFailure('pA', 'u2', 'x');
@@ -93,9 +109,11 @@ describe('proxy_upstream_backoffs repo', () => {
   });
 
   it('listAll returns every row', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await makeRepo();
     await repo.proxyBackoffs.recordDialFailure('p1', 'u1', 'x');
     await repo.proxyBackoffs.recordDialFailure('p2', 'u2', 'x');
     expect(await repo.proxyBackoffs.listAll()).toHaveLength(2);
   });
 });
+
+}

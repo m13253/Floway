@@ -1,8 +1,21 @@
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { SqlRepo } from './sql.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
+import type { Repo } from './types.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+
+// Both backends must agree on the proxy / proxy-backoff repo contract.
+// Memory drives the unit tests by default, but the production deployments
+// run on D1 and node:sqlite — running the same scenarios against SqlRepo
+// (with sql.js applying every migration) is what catches schema drift,
+// SQLite-specific eval-order assumptions, and missing column wiring.
+const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
+  ['memory', async () => new InMemoryRepo()],
+  ['sql', async () => new SqlRepo(await createSqliteTestDb())],
+];
 
 const upstreamFixture = (id: string, proxyFallbackList: string[]): UpstreamRecord => ({
   id,
@@ -19,8 +32,10 @@ const upstreamFixture = (id: string, proxyFallbackList: string[]): UpstreamRecor
   proxyFallbackList,
 });
 
-test('proxies repo inserts and lists ordered by sortOrder, then createdAt', async () => {
-  const repo = new InMemoryRepo();
+for (const [backend, makeRepo] of REPO_BACKENDS) {
+
+test(`[${backend}] proxies repo inserts and lists ordered by sortOrder, then createdAt`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   // Sleep to guarantee a distinct createdAt for tie-breaks within the same sort_order bucket.
   await new Promise(resolve => setTimeout(resolve, 5));
@@ -29,8 +44,8 @@ test('proxies repo inserts and lists ordered by sortOrder, then createdAt', asyn
   assertEquals(list.map(p => p.id), ['a', 'b']);
 });
 
-test('proxies repo clears lastEgressIp and lastTestedAt when url changes', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo clears lastEgressIp and lastTestedAt when url changes`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('a', '1.2.3.4');
   const before = await repo.proxies.getById('a');
@@ -46,8 +61,8 @@ test('proxies repo clears lastEgressIp and lastTestedAt when url changes', async
   assertEquals(after?.lastTestedAt, null);
 });
 
-test('proxies repo keeps lastEgressIp when patching name only', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo keeps lastEgressIp when patching name only`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('a', '1.2.3.4');
 
@@ -57,8 +72,8 @@ test('proxies repo keeps lastEgressIp when patching name only', async () => {
   assertEquals(after?.lastEgressIp, '1.2.3.4');
 });
 
-test('proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.upstreams.save(upstreamFixture('up_1', ['p', 'direct']));
   await repo.upstreams.save(upstreamFixture('up_2', ['direct', 'p']));
@@ -68,25 +83,25 @@ test('proxies repo findUpstreamsReferencing returns ids of upstreams whose fallb
   assertEquals(ids, ['up_1', 'up_2']);
 });
 
-test('proxies repo delete returns false when id is unknown', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo delete returns false when id is unknown`, async () => {
+  const repo = await makeRepo();
   assertEquals(await repo.proxies.delete('nope'), false);
 });
 
-test('proxies repo delete returns true and removes the row', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo delete returns true and removes the row`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: null });
   assertEquals(await repo.proxies.delete('a'), true);
   assertEquals(await repo.proxies.getById('a'), null);
 });
 
-test('proxies repo patch returns null for unknown id', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
+  const repo = await makeRepo();
   assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
 });
 
-test('proxies repo bulkReorder rewrites sort_order to match the input array', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo bulkReorder rewrites sort_order to match the input array`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'c', name: 'C', url: 'socks5://host-c:1080', sortOrder: 2, dialTimeoutSeconds: null });
@@ -97,8 +112,8 @@ test('proxies repo bulkReorder rewrites sort_order to match the input array', as
   assertEquals(list.map(p => p.sortOrder), [0, 1, 2]);
 });
 
-test('proxies repo bulkReorder rejects a non-permutation', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo bulkReorder rejects a non-permutation`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
 
@@ -119,8 +134,8 @@ test('proxies repo bulkReorder rejects a non-permutation', async () => {
   );
 });
 
-test('proxies repo save inserts a new row with createdAt and updatedAt set to now', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo save inserts a new row with createdAt and updatedAt set to now`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', sortOrder: 0, dialTimeoutSeconds: 30 });
   const row = await repo.proxies.getById('a');
   assertEquals(row?.name, 'A');
@@ -133,8 +148,8 @@ test('proxies repo save inserts a new row with createdAt and updatedAt set to no
   assertEquals(row?.createdAt, row?.updatedAt);
 });
 
-test('proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo save on id collision preserves createdAt and runtime test fields while overwriting config`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'Old', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.recordTestSuccess('a', '1.2.3.4');
   const before = await repo.proxies.getById('a');
@@ -153,10 +168,12 @@ test('proxies repo save on id collision preserves createdAt and runtime test fie
   assertEquals(after?.lastEgressIp, '1.2.3.4');
 });
 
-test('proxies repo deleteAll drops every row', async () => {
-  const repo = new InMemoryRepo();
+test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
+  const repo = await makeRepo();
   await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', sortOrder: 0, dialTimeoutSeconds: null });
   await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', sortOrder: 1, dialTimeoutSeconds: null });
   await repo.proxies.deleteAll();
   assertEquals(await repo.proxies.list(), []);
 });
+
+}
