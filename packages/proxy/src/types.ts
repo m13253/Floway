@@ -18,6 +18,12 @@ export interface DialTarget {
    * support frames the hostname as length-prefixed bytes, and a raw UTF-8
    * IDN would muddle Latin-1 / UTF-8 framing on the wire. Dialers reject
    * non-ASCII hosts up-front with a typed dial error.
+   *
+   * IPv6 literals: pass the bare address without `[…]` brackets — the proxy
+   * library does not normalise the envelope, and downstream Host-header synth
+   * re-adds the brackets when pushing the host back into a uri-host context.
+   * `URL#hostname` keeps the brackets on IPv6 literals, so callers building a
+   * DialTarget from a parsed URL must strip them first.
    */
   host: string;
   /** TCP port. */

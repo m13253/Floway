@@ -269,9 +269,9 @@ describe('runProxiedRequest — Host header synthesis', () => {
   });
 
   it('wraps an IPv6 literal target in its uri-host envelope (RFC 3986 §3.2.2)', async () => {
-    // The proxy library strips IPv6 brackets in `target.host` for ATYP
-    // framing; re-adding them here keeps the Host header parseable as
-    // a uri-host. Without the envelope, `2001:db8::1:443` reads as a
+    // Per the `DialTarget.host` contract IPv6 literals arrive without the
+    // `[…]` envelope; the Host-header synth re-adds them so the value parses
+    // as a uri-host. Without the envelope, `2001:db8::1:443` reads as a
     // hostname "2001" with port "db8::1:443" and strict upstreams 400.
     const cap = buildCapturingDial(ok200);
     cap.setupMock();
