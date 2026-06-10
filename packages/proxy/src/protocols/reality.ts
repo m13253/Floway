@@ -18,10 +18,12 @@
 //      bytes of the leaf's DER (the BIT STRING content of signatureValue) with
 //      the HMAC tag (XTLS/REALITY handshake_server_tls13.go:149-151). The
 //      client-side check matches Xray-core's certs[0].Signature ==
-//      hmac.Sum(nil) (Xray-core reality.go:84-87). The TLS-protocol
-//      CertificateVerify is a separate, real Ed25519 signature over the
-//      transcript and is validated by reclaim-tls's standard path; we only
-//      replace the chain validation, since REALITY's leaf cert is forged.
+//      hmac.Sum(nil) (Xray-core reality.go:84-87). Returning false from
+//      onRecvCertificateVerify skips reclaim-tls's standard transcript-
+//      signature check; verifyServerCertificate:false additionally suppresses
+//      chain validation. Both layers of the default cert-trust pipeline are
+//      replaced because REALITY's leaf cert is forged and its signatureValue
+//      slot holds an HMAC tag rather than a real signature.
 //
 // We layer this on top of @reclaimprotocol/tls via three patched hooks:
 //   - onKeyPairGenerated: capture the TLS keyshare X25519 private key so
@@ -284,8 +286,9 @@ const runRealityHandshake = async (
   }) as Parameters<typeof makeTLSClient>[0]);
 
   // The duplex pair handed back to VLESS framing after the handshake.
-  // Hooks fire only after the pair has been returned to the consumer, so
-  // tlsClient is fully initialized by then.
+  // tlsClient is initialized synchronously by makeTLSClient above, so by the
+  // time the reader pump or startHandshake invokes any hook it is already in
+  // scope.
   const plainReadable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
     cancel(reason) {
@@ -365,35 +368,23 @@ const runRealityHandshake = async (
 
   // Trigger the handshake with our pre-built sessionId and random.
   // onClientHelloPack runs inside startHandshake and may throw a typed
-  // ProxyDialError (config-stage) for an off-curve / mistyped pbk. Catch it
-  // here so it surfaces with its stage tag instead of escaping unwrapped to
-  // the framework's 500 handler.
+  // ProxyDialError (config-stage) for an off-curve / mistyped pbk;
+  // onRecvCertificateVerify runs during handshakeDone and may throw a typed
+  // ProxyDialError (proxy-handshake stage) on HMAC mismatch or wrong leaf
+  // cert type. Both must surface with their original stage tag instead of
+  // being rewrapped as 'outer-tls', since callers branch on stage to
+  // distinguish auth-shaped rejections from transport-shaped ones. For
+  // anything else we can't tell whether the server rejected the seal or the
+  // TLS handshake itself failed, so we tag the whole leg as outer-tls.
   try {
     await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]);
-  } catch (cause) {
-    detachAbortListener?.();
-    detachAbortListener = null;
-    void reader.cancel(cause).catch(() => {});
-    try { writer.releaseLock(); } catch { /* lock already released */ }
-    if (cause instanceof ProxyDialError) throw cause;
-    throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
-  }
-  try {
     await handshakeDone;
   } catch (cause) {
     detachAbortListener?.();
     detachAbortListener = null;
     void reader.cancel(cause).catch(() => {});
     try { writer.releaseLock(); } catch { /* lock already released */ }
-    // A ProxyDialError raised by onRecvCertificateVerify (HMAC mismatch,
-    // wrong leaf cert type) must surface with its original 'proxy-handshake'
-    // stage rather than be rewrapped as 'outer-tls' — callers branching on
-    // stage distinguish auth-shaped rejections from transport-shaped ones.
     if (cause instanceof ProxyDialError) throw cause;
-    // The REALITY handshake combines outer TLS framing with the auth seal in
-    // session_id; for everything else we can't tell whether the server
-    // rejected the seal or the TLS handshake itself failed, so we tag the
-    // whole leg as outer-tls.
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
   // Leave the abort listener live for the streaming session so a caller-
