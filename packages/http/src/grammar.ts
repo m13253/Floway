@@ -50,3 +50,48 @@ export const trimFieldValueOws = (value: string): string => value.replace(/^[\t 
 // forbidding a leading SP, which would otherwise be silently absorbed
 // from a double SP between code and reason.
 export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) (\S.*|)$/;
+
+// RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold;
+// field-vchar = VCHAR / obs-text. The legal byte set inside a value is
+// HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text (0x80-0xFF).
+// Anything else — NUL and the rest of the C0 control set (0x01-0x08,
+// 0x0B-0x1F; CR/LF call out the smuggling shape directly) plus DEL
+// (0x7F) — violates the grammar. Hoisted here so the request-side
+// (fetch-on-stream + ws-upgrade) and response-side (parser) checks
+// can't drift apart. Each caller passes a builder so the error
+// message stays caller-shaped (header name, Host, WS-upgrade context)
+// while the byte set lives in one place.
+export const validateFieldValueBytes = (
+  value: string,
+  makeError: (hex: string) => HttpProtocolError,
+): void => {
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
+      throw makeError(c.toString(16).padStart(2, '0'));
+    }
+  }
+};
+
+// RFC 9112 §3.2 request-target. We don't validate the full URI grammar
+// — callers above us own that — but a CR/LF/SP/NUL/CTL/DEL byte would
+// split the request line and smuggle a forged head past the header
+// validators. The legal byte set is therefore VCHAR + obs-text
+// (≥ 0x21, excluding DEL). Empty path is rejected up front; the field
+// is mandatory. Hoisted so the fetch and WS-upgrade request-line
+// builders can't drift apart.
+export const validateRequestTargetBytes = (
+  path: string,
+  makeEmptyError: () => HttpProtocolError,
+  makeByteError: (hex: string) => HttpProtocolError,
+): void => {
+  if (path.length === 0) {
+    throw makeEmptyError();
+  }
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i);
+    if (c < 0x21 || c === 0x7f) {
+      throw makeByteError(c.toString(16).padStart(2, '0'));
+    }
+  }
+};

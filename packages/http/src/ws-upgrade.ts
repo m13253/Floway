@@ -18,7 +18,7 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { signalAbortReason } from './abort.ts';
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws } from './grammar.ts';
+import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import type { DuplexStream } from './types.ts';
 
 export interface WsUpgradeOptions {
@@ -164,33 +164,24 @@ const sendUpgradeRequest = async (
   // RFC 9112 §3.2 + §5: a CR/LF/SP/NUL/control byte in the path or Host
   // header would split the request line / header section and inject a
   // forged head onto the wire. Reject before serializing.
-  if (opts.path.length === 0) {
-    throw new HttpProtocolError(
+  validateRequestTargetBytes(
+    opts.path,
+    () => new HttpProtocolError(
       'caller-supplied WS upgrade path is empty',
       'BAD_HEADERS',
       { rfc: 'RFC 9112 §3.2' },
-    );
-  }
-  for (let i = 0; i < opts.path.length; i++) {
-    const c = opts.path.charCodeAt(i);
-    if (c < 0x21 || c === 0x7f) {
-      throw new HttpProtocolError(
-        `caller-supplied WS upgrade path contains a forbidden byte 0x${c.toString(16).padStart(2, '0')}`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9112 §3.2' },
-      );
-    }
-  }
-  for (let i = 0; i < opts.host.length; i++) {
-    const c = opts.host.charCodeAt(i);
-    if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
-      throw new HttpProtocolError(
-        `caller-supplied WS upgrade Host contains a forbidden control byte 0x${c.toString(16).padStart(2, '0')}`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9110 §7.2' },
-      );
-    }
-  }
+    ),
+    hex => new HttpProtocolError(
+      `caller-supplied WS upgrade path contains a forbidden byte 0x${hex}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    ),
+  );
+  validateFieldValueBytes(opts.host, hex => new HttpProtocolError(
+    `caller-supplied WS upgrade Host contains a forbidden control byte 0x${hex}`,
+    'BAD_HEADERS',
+    { rfc: 'RFC 9110 §7.2' },
+  ));
   const lines: string[] = [
     `GET ${opts.path} HTTP/1.1`,
     `Host: ${opts.host}`,
@@ -216,16 +207,11 @@ const sendUpgradeRequest = async (
         { rfc: 'RFC 9110 §5.6.2' },
       );
     }
-    for (let i = 0; i < value.length; i++) {
-      const c = value.charCodeAt(i);
-      if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
-        throw new HttpProtocolError(
-          `caller-supplied WS upgrade header value for ${JSON.stringify(name)} contains a forbidden control byte`,
-          'BAD_HEADERS',
-          { rfc: 'RFC 9110 §5.5' },
-        );
-      }
-    }
+    validateFieldValueBytes(value, () => new HttpProtocolError(
+      `caller-supplied WS upgrade header value for ${JSON.stringify(name)} contains a forbidden control byte`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §5.5' },
+    ));
     lines.push(`${name}: ${value}`);
   }
   const head = `${lines.join('\r\n')}\r\n\r\n`;

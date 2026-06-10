@@ -4,7 +4,7 @@
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
-import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws } from './grammar.ts';
+import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 import type { RawHttpResponse } from './types.ts';
 
 /**
@@ -206,29 +206,11 @@ const readResponseHead = async (
       );
     }
     const value = trimFieldValueOws(line.slice(idx + 1));
-    // After the §5 non-ASCII reject above, any remaining byte is ASCII; the
-    // only valid ones inside a field-value are HTAB (0x09), SP (0x20), and
-    // VCHAR (0x21-0x7E). Reject everything else — NUL, the rest of the C0
-    // controls (0x01-0x08, 0x0B-0x1F; CR/LF already split the line), and
-    // DEL (0x7F) — which points at either a smuggling shape (CR/LF/NUL) or
-    // a transport-level garbage byte.
-    for (let i = 0; i < value.length; i++) {
-      const c = value.charCodeAt(i);
-      if (c < 0x20 && c !== 0x09) {
-        throw new HttpProtocolError(
-          `invalid control byte 0x${c.toString(16).padStart(2, '0')} in header value for ${JSON.stringify(name)}`,
-          'BAD_HEADERS',
-          { rfc: 'RFC 9110 §5.5' },
-        );
-      }
-      if (c === 0x7f) {
-        throw new HttpProtocolError(
-          `invalid byte in header value for ${JSON.stringify(name)}`,
-          'BAD_HEADERS',
-          { rfc: 'RFC 9110 §5.5' },
-        );
-      }
-    }
+    validateFieldValueBytes(value, hex => new HttpProtocolError(
+      `invalid control byte 0x${hex} in header value for ${JSON.stringify(name)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §5.5' },
+    ));
     const lower = name.toLowerCase();
     if (lower === 'content-length') rawContentLengths.push(value);
     else if (lower === 'transfer-encoding') rawTransferEncodings.push(value);

@@ -3,7 +3,7 @@
 // for our userspace-TLS-wrapped streams.
 
 import { HttpProtocolError } from './errors.ts';
-import { TCHAR } from './grammar.ts';
+import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
@@ -37,24 +37,11 @@ const validateRequestHeaderName = (name: string): void => {
 };
 
 const validateRequestHeaderValue = (name: string, value: string): void => {
-  // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold;
-  // field-vchar = VCHAR / obs-text. The legal byte set inside a value is
-  // therefore HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text
-  // (0x80-0xFF). Anything else — NUL and the rest of the C0 control set
-  // (0x01-0x08, 0x0B-0x1F; CR/LF call out the smuggling shape directly)
-  // plus DEL (0x7F) — violates the grammar. The serialised `${k}: ${v}\r\n`
-  // line would otherwise carry a control byte onto the wire, smuggling a
-  // fresh header on CR/LF or rendering the value lossy on the others.
-  for (let i = 0; i < value.length; i++) {
-    const c = value.charCodeAt(i);
-    if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
-      throw new HttpProtocolError(
-        `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9110 §5.5' },
-      );
-    }
-  }
+  validateFieldValueBytes(value, () => new HttpProtocolError(
+    `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte`,
+    'BAD_HEADERS',
+    { rfc: 'RFC 9110 §5.5' },
+  ));
 };
 
 const validateRequestMethod = (method: string): void => {
@@ -71,27 +58,19 @@ const validateRequestMethod = (method: string): void => {
 };
 
 const validateRequestPath = (path: string): void => {
-  // RFC 9112 §3.2: request-target. We don't validate the full URI grammar —
-  // callers above us own that — but we do reject CTL bytes (NUL, CR, LF, the
-  // rest of C0, DEL) and SP, all of which would split the request line and
-  // smuggle a fresh head past the same defense the header validators close.
-  if (path.length === 0) {
-    throw new HttpProtocolError(
+  validateRequestTargetBytes(
+    path,
+    () => new HttpProtocolError(
       'caller-supplied path is empty',
       'BAD_HEADERS',
       { rfc: 'RFC 9112 §3.2' },
-    );
-  }
-  for (let i = 0; i < path.length; i++) {
-    const c = path.charCodeAt(i);
-    if (c < 0x21 || c === 0x7f) {
-      throw new HttpProtocolError(
-        `caller-supplied path contains a forbidden byte 0x${c.toString(16).padStart(2, '0')}`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9112 §3.2' },
-      );
-    }
-  }
+    ),
+    hex => new HttpProtocolError(
+      `caller-supplied path contains a forbidden byte 0x${hex}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    ),
+  );
 };
 
 export const fetchOnStream = async (
