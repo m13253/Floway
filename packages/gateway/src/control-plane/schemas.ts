@@ -336,11 +336,16 @@ export const updateProxyBody = z.object({
   dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
 });
 
-// Anchor names the test endpoint maps to known IP-echo HTTPS services. Three
-// distinct anchors (ipify, AWS checkip, ident.me v6-only) so an operator
-// debugging "wrong egress IP" or "v4 vs v6 routing" can rerun the test against
-// a different anchor without needing to teach the gateway a new endpoint.
+// `url` carries the live URL the operator currently has in the editor so the
+// test runs against the in-progress form before any persistence; the endpoint
+// validates the URL parses but does not load a stored row. `anchor` names a
+// known IP-echo HTTPS service — three distinct anchors (ipify, AWS checkip,
+// ident.me v6-only) so an operator debugging "wrong egress IP" or "v4 vs v6
+// routing" can rerun the test against a different anchor without needing to
+// teach the gateway a new endpoint.
 export const testProxyBody = z.object({
+  url: z.string().min(1),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
   anchor: z.enum(['ipify', 'aws', 'ident.me-v6']).optional(),
 });
 

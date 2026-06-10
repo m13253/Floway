@@ -189,13 +189,10 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
   assertExists(await repo.proxies.getById('p_ref'));
 });
 
-test('POST /api/proxies/:id/test surfaces the dial error in the ok:false response shape without touching the row', async () => {
+test('POST /api/proxies/test runs against the body URL without touching any row', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, dialTimeoutSeconds: null });
-  const before = await repo.proxies.getById('p_test');
-  assertExists(before);
 
-  const resp = await requestApp('/api/proxies/p_test/test', authed(adminSession, {}));
+  const resp = await requestApp('/api/proxies/test', authed(adminSession, { url: HTTP_URL }));
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { ok: boolean; error?: string; egress_ip?: string };
   assertEquals(body.ok, false);
@@ -205,16 +202,17 @@ test('POST /api/proxies/:id/test surfaces the dial error in the ok:false respons
   // still the actionable surface (operator sees which dial leg failed).
   assertEquals(body.error?.includes('tcp connect to 198.51.100.20:3128 failed'), true);
 
-  // The test endpoint is read-only — the proxy row must look identical to
-  // before the call, including updated_at.
-  const after = await repo.proxies.getById('p_test');
-  assertEquals(after, before);
+  // The endpoint is body-driven; no proxies should be created or modified
+  // as a side effect, even if the URL happened to round-trip.
+  assertEquals((await repo.proxies.list()).length, 0);
 });
 
-test('POST /api/proxies/:id/test returns 404 for an unknown proxy', async () => {
+test('POST /api/proxies/test returns 400 for an unparseable URL', async () => {
   const { adminSession } = await setupAppTest();
-  const resp = await requestApp('/api/proxies/unknown/test', authed(adminSession, {}));
-  assertEquals(resp.status, 404);
+  const resp = await requestApp('/api/proxies/test', authed(adminSession, { url: 'gibberish-no-scheme' }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.startsWith('Invalid proxy URI:'), true);
 });
 
 test('GET /api/proxies/:id/backoffs returns rows scoped to the proxy', async () => {

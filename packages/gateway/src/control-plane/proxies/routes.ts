@@ -178,22 +178,16 @@ const isIpV6 = (s: string): boolean => {
 const isIpLike = (s: string): boolean => isIpV4(s) || isIpV6(s);
 
 export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
-  const id = c.req.param('id') ?? '';
   const body = c.req.valid('json');
   const anchorName = body.anchor ?? 'ipify';
   const anchor = ANCHORS[anchorName];
 
-  const repo = getRepo();
-  const proxy = await repo.proxies.getById(id);
-  if (!proxy) return c.json({ error: 'Proxy not found' }, 404);
-
-  // Stored-data validation: a row whose URL no longer parses is operator-
-  // actionable D1 drift, not a transient dial failure. 400 surfaces it as
-  // a config problem so the dashboard can prompt the operator to fix the
-  // row instead of styling it as a network error.
+  // The endpoint runs against the live URL the operator is editing, so a
+  // parse failure here is a form-validation failure (400), not a dial
+  // failure (which would be reported through the result envelope).
   let config: ProxyConfig;
   try {
-    config = parseProxyUri(proxy.url);
+    config = parseProxyUri(body.url);
   } catch (err) {
     return c.json({ error: proxyUriValidationError(err) }, 400);
   }
@@ -214,7 +208,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       },
       {
         socketDial: getSocketDial(),
-        ...(proxy.dialTimeoutSeconds === null ? {} : { dialTimeoutMs: proxy.dialTimeoutSeconds * 1000 }),
+        ...(body.dial_timeout_seconds == null ? {} : { dialTimeoutMs: body.dial_timeout_seconds * 1000 }),
       },
     );
     if (!response.ok) {

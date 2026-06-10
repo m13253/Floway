@@ -244,23 +244,23 @@ const save = async () => {
 };
 
 const test = async () => {
-  // Capture the id once: the parent passes `record` reactively from the
-  // store, so props.record can go null mid-flight if the row is deleted
-  // by another action. Read the id synchronously and let the request
-  // finish against the captured value rather than crashing on a non-null
-  // assertion later.
-  const id = props.record?.id;
-  if (!id) return;
+  // Test runs against the live URL the operator currently has in the
+  // editor, no persistence; same call shape in create and edit so the
+  // experience matches before the row exists and after.
+  const trimmedUrl = url.value.trim();
+  if (!trimmedUrl) { testError.value = 'URL is required'; return; }
+  const parsed = tryParse(trimmedUrl);
+  if (parsed && !parsed.ok) { testError.value = `Invalid proxy URI: ${parsed.error}`; return; }
+  const dialTimeoutSeconds = 'value' in dialTimeoutParsed.value ? dialTimeoutParsed.value.value : null;
+
   testing.value = true;
   testError.value = null;
   try {
     const { data, error } = await callApi<{ ok: boolean; egress_ip?: string; error?: string }>(
-      () => api.api.proxies[':id'].test.$post({ param: { id }, json: {} }),
+      () => api.api.proxies.test.$post({ json: { url: trimmedUrl, dial_timeout_seconds: dialTimeoutSeconds } }),
     );
     if (error) { testError.value = error.message; return; }
     if (!data.ok || !data.egress_ip) { testError.value = data.error ?? 'Test failed'; return; }
-    // Result lives only in this dialog session; closing and reopening
-    // wipes it. The gateway does not persist test observations.
     lastTestResult.value = { egressIp: data.egress_ip, testedAt: Date.now() };
   } finally {
     testing.value = false;
@@ -359,14 +359,14 @@ const title = computed(() => mode.value === 'create' ? 'Create Proxy' : `Edit Pr
           v-model="config"
           :url-error="urlError"
         />
-        <div v-if="mode === 'edit' && record" class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
           <span>Egress:</span>
           <span v-if="lastTestResult" class="font-mono text-gray-300">{{ lastTestResult.egressIp }}</span>
           <span v-else class="italic">untested</span>
           <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
           <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" class="ml-auto" @click="test">Test</Button>
         </div>
-        <p v-if="mode === 'edit' && testError" class="text-xs text-accent-rose">{{ testError }}</p>
+        <p v-if="testError" class="text-xs text-accent-rose">{{ testError }}</p>
       </div>
 
       <div class="space-y-1.5">
