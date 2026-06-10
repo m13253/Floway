@@ -15,7 +15,7 @@
 // pushed an update marks itself as the source and the other side skips
 // re-deriving.
 
-import { useNow, useTimeoutFn } from '@vueuse/core';
+import { useNow } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
@@ -149,7 +149,6 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 
 const testing = ref(false);
-const testCoolingDown = ref(false);
 const testError = ref<string | null>(null);
 
 const deleting = ref(false);
@@ -178,14 +177,6 @@ const activeBackoffs = computed(() => {
     .filter(b => b.expires_at >= nowSec)
     .sort((a, b) => a.expires_at - b.expires_at);
 });
-
-const { start: startTestCooldown } = useTimeoutFn(
-  () => { testCoolingDown.value = false; },
-  3000,
-  // Anti double-spend on the anchor: rapid retries against ipify / AWS
-  // checkip would look like abuse from a single deployment.
-  { immediate: false },
-);
 
 const save = async () => {
   saveError.value = null;
@@ -259,8 +250,6 @@ const test = async () => {
     lastEgressIp.value = data.egress_ip;
   } finally {
     testing.value = false;
-    testCoolingDown.value = true;
-    startTestCooldown();
   }
 };
 
@@ -357,7 +346,7 @@ const title = computed(() => mode.value === 'create' ? 'Create Proxy' : `Edit Pr
         <div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-gray-500">
           <span>Egress:</span>
           <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
-          <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" @click="test">Test</Button>
+          <Button variant="secondary" size="sm" :loading="testing" :disabled="saving" @click="test">Test</Button>
         </div>
         <p v-if="testError" class="text-xs text-accent-rose">{{ testError }}</p>
       </div>
@@ -414,7 +403,7 @@ const title = computed(() => mode.value === 'create' ? 'Create Proxy' : `Edit Pr
       </template>
 
       <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
-        <Button :loading="saving" :disabled="testing || testCoolingDown" @click="save">Save</Button>
+        <Button :loading="saving" :disabled="testing" @click="save">Save</Button>
         <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
 
         <template v-if="mode === 'edit' && record">
