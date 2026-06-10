@@ -180,12 +180,15 @@ const save = async () => {
   const trimmedUrl = url.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (!trimmedUrl) { saveError.value = 'URL is required'; return; }
-  // Re-parse the URL we are about to submit so per-field invalid states in
-  // the form panel (an empty REALITY pbk, an empty Trojan/SS password, an
-  // out-of-range port) reach the same client-side guard as text typed
-  // directly into the URL field. The config→url watcher zeroes urlError
-  // on every form edit and would otherwise let a structurally invalid URL
-  // sneak through to the server.
+  // Re-parse the URL we are about to submit so structural URL-grammar
+  // failures (an empty REALITY pbk, a non-hex REALITY shortId) surface as
+  // the same `Invalid proxy URI` save error as text typed directly into
+  // the URL field. The config→url watcher zeroes urlError on every form
+  // edit, so without this check a config edited via the form panel into a
+  // structurally invalid state would skip past the URL-field guard.
+  // Per-field semantic checks (empty Trojan/SS password, port=0) round-
+  // trip cleanly through the formatter and rely on the server-side
+  // config-stage validator to reject.
   const parsed = tryParse(trimmedUrl);
   if (parsed && !parsed.ok) {
     saveError.value = `Invalid proxy URI: ${parsed.error}`;
