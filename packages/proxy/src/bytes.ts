@@ -150,22 +150,19 @@ const parseIpv4Literal = (s: string): Uint8Array | null => {
 };
 
 /**
- * Parse an IPv6 literal (with optional `[...]` brackets) into 16 octets,
- * or return null if `s` isn't a literal IPv6. Defers to the WHATWG `URL`
- * parser, which has a fully spec-compliant IPv6 grammar and handles
- * `::`, IPv4-mapped suffixes (`::ffff:1.2.3.4`), and the all-the-shapes
- * cases that a regex couldn't cover.
+ * Parse an IPv6 literal into 16 octets, or return null if `s` isn't a
+ * literal IPv6. Defers to the WHATWG `URL` parser, which has a fully
+ * spec-compliant IPv6 grammar and handles `::`, IPv4-mapped suffixes
+ * (`::ffff:1.2.3.4`), and the all-the-shapes cases that a regex couldn't
+ * cover.
  */
 const parseIpv6Literal = (s: string): Uint8Array | null => {
-  // `URL` reads bracketed IPv6 hostnames. Strip the brackets if the
-  // caller passed them in literal form; add them otherwise. A plain IPv4
-  // would parse too but with a colon-less hostname — we filter that out
-  // with the colon check.
+  // A plain IPv4 would parse as a `URL` hostname too but without colons —
+  // filter that out so this helper only ever returns IPv6 octets.
   if (!s.includes(':')) return null;
-  const unbracketed = s.startsWith('[') && s.endsWith(']') ? s.slice(1, -1) : s;
   let url: URL;
   try {
-    url = new URL(`http://[${unbracketed}]/`);
+    url = new URL(`http://[${s}]/`);
   } catch {
     return null;
   }
