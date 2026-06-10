@@ -52,8 +52,10 @@ const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'
 
 const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
-const lastEgressIp = computed(() => props.record?.last_egress_ip ?? null);
-const lastTestedAt = computed(() => props.record?.last_tested_at ?? null);
+// Ephemeral test result for the current dialog session. The gateway no
+// longer persists egress observations on the proxy row; a fresh open
+// starts with nothing and `test()` populates this from the response.
+const lastTestResult = ref<{ egressIp: string; testedAt: number } | null>(null);
 
 const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false; error: string } | null => {
   const trimmed = raw.trim();
@@ -178,18 +180,15 @@ const activeBackoffs = computed(() => {
 });
 
 const lastTestedAgo = computed<string | null>(() => {
-  if (lastTestedAt.value === null) return null;
-  return formatRelativeAgo(now.value.getTime() - lastTestedAt.value * 1000);
+  if (lastTestResult.value === null) return null;
+  return formatRelativeAgo(now.value.getTime() - lastTestResult.value.testedAt);
 });
 
 const { start: startTestCooldown } = useTimeoutFn(
   () => { testCoolingDown.value = false; },
   3000,
-  // The cooldown blocks both Test (anti double-spend on the anchor) and
-  // Save: a save during the post-test window would race the parent's
-  // store reload that's bringing in the just-persisted egress_ip /
-  // last_tested_at, and a save before that lands could overwrite the
-  // freshly-tested URL with a stale display.
+  // Anti double-spend on the anchor: rapid retries against ipify / AWS
+  // checkip would look like abuse from a single deployment.
   { immediate: false },
 );
 
@@ -259,11 +258,10 @@ const test = async () => {
       () => api.api.proxies[':id'].test.$post({ param: { id }, json: {} }),
     );
     if (error) { testError.value = error.message; return; }
-    if (!data.ok) { testError.value = data.error ?? 'Test failed'; return; }
-    // The test endpoint persists egress_ip and last_tested_at into the
-    // proxy row; emitting `saved` triggers the parent store reload, which
-    // surfaces the new test result through props.record.
-    emit('saved');
+    if (!data.ok || !data.egress_ip) { testError.value = data.error ?? 'Test failed'; return; }
+    // Result lives only in this dialog session; closing and reopening
+    // wipes it. The gateway does not persist test observations.
+    lastTestResult.value = { egressIp: data.egress_ip, testedAt: Date.now() };
   } finally {
     testing.value = false;
     testCoolingDown.value = true;
@@ -363,7 +361,7 @@ const title = computed(() => mode.value === 'create' ? 'Create Proxy' : `Edit Pr
         />
         <div v-if="mode === 'edit' && record" class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-gray-500">
           <span>Egress:</span>
-          <span v-if="lastEgressIp" class="font-mono text-gray-300">{{ lastEgressIp }}</span>
+          <span v-if="lastTestResult" class="font-mono text-gray-300">{{ lastTestResult.egressIp }}</span>
           <span v-else class="italic">untested</span>
           <span v-if="lastTestedAgo" class="text-gray-600">{{ lastTestedAgo }}</span>
           <Button variant="secondary" size="sm" :loading="testing" :disabled="saving || testCoolingDown" class="ml-auto" @click="test">Test</Button>

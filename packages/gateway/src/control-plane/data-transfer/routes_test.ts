@@ -707,16 +707,16 @@ const SOCKS_PROXY_URL = 'socks5://user:pass@198.51.100.10:1080';
 
 test('export includes proxies with full credential URIs and round-trips through import', async () => {
   const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: 45 });
-  await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 });
+  await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
   const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: ['p_socks', 'p_http', 'direct'] };
   await repo.upstreams.save(upstreamWithFallback);
 
   const exported = await doExport(app);
 
   assertEquals(exported.data.proxies, [
-    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sort_order: 0, dial_timeout_seconds: 45 },
-    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sort_order: 1, dial_timeout_seconds: null },
+    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dial_timeout_seconds: 45 },
+    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dial_timeout_seconds: null },
   ]);
 
   const fresh = new InMemoryRepo();
@@ -728,13 +728,10 @@ test('export includes proxies with full credential URIs and round-trips through 
   assertEquals(result.body.imported.proxies, 2);
 
   const restored = await fresh.proxies.list();
-  assertEquals(restored.map(p => ({ id: p.id, name: p.name, url: p.url, sortOrder: p.sortOrder, dialTimeoutSeconds: p.dialTimeoutSeconds })), [
-    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: 45 },
-    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, sortOrder: 1, dialTimeoutSeconds: null },
+  assertEquals(restored.map(p => ({ id: p.id, name: p.name, url: p.url, dialTimeoutSeconds: p.dialTimeoutSeconds })).sort((a, b) => a.id.localeCompare(b.id)), [
+    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null },
+    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 },
   ]);
-  // last_egress_ip / last_tested_at are deployment-local observations that the
-  // import contract does not carry; assert they reset on the destination side.
-  assertEquals(restored.every(p => p.lastEgressIp === null && p.lastTestedAt === null), true);
 
   const restoredUpstream = await fresh.upstreams.getById(upstreamWithFallback.id);
   assertEquals(restoredUpstream?.proxyFallbackList, ['p_socks', 'p_http', 'direct']);
@@ -756,7 +753,7 @@ test('import in replace mode rejects an upstream fallback reference that does no
 
 test('import in merge mode accepts an upstream fallback reference that resolves to an existing local proxy', async () => {
   const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
 
   // The imported payload carries no proxies of its own, only an upstream that
   // references the destination's existing 'p_local'. Merge mode keeps the
@@ -775,7 +772,7 @@ test('import in merge mode accepts an upstream fallback reference that resolves 
 
 test('import in merge mode rejects an upstream fallback reference that resolves to neither an imported nor an existing proxy', async () => {
   const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.save({ id: 'p_local', name: 'Local', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
 
   const result = await doImport(app, 'merge', latestImportData({
     upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), proxy_fallback_list: ['p_phantom'] }],
@@ -790,19 +787,19 @@ test('import rejects a proxy whose url does not parse', async () => {
   const { app } = setup();
 
   const result = await doImport(app, 'replace', latestImportData({
-    proxies: [{ id: 'p_bad', name: 'Bad', url: 'gibberish', sort_order: 0, dial_timeout_seconds: null }],
+    proxies: [{ id: 'p_bad', name: 'Bad', url: 'gibberish', dial_timeout_seconds: null }],
   }));
 
   assertEquals(result.status, 400);
   assertEquals(String(result.body.error).startsWith('invalid proxies at index 0: url did not parse:'), true);
 });
 
-test('import upserts proxies on id collision (last-writer-wins on name / url / sort_order / timeout)', async () => {
+test('import upserts proxies on id collision (last-writer-wins on name / url / timeout)', async () => {
   const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p1', name: 'Original', url: HTTP_PROXY_URL, sortOrder: 5, dialTimeoutSeconds: null });
+  await repo.proxies.save({ id: 'p1', name: 'Original', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
 
   const result = await doImport(app, 'merge', latestImportData({
-    proxies: [{ id: 'p1', name: 'Renamed', url: SOCKS_PROXY_URL, sort_order: 2, dial_timeout_seconds: 90 }],
+    proxies: [{ id: 'p1', name: 'Renamed', url: SOCKS_PROXY_URL, dial_timeout_seconds: 90 }],
   }));
 
   assertEquals(result.status, 200);
@@ -811,7 +808,6 @@ test('import upserts proxies on id collision (last-writer-wins on name / url / s
   const after = await repo.proxies.getById('p1');
   assertEquals(after?.name, 'Renamed');
   assertEquals(after?.url, SOCKS_PROXY_URL);
-  assertEquals(after?.sortOrder, 2);
   assertEquals(after?.dialTimeoutSeconds, 90);
 });
 
@@ -821,13 +817,13 @@ test('import replace wipes proxy_upstream_backoffs alongside the proxies it cool
   // one would otherwise have its first dials short-circuited by a stale
   // cool-down row from the prior catalog.
   const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.save({ id: 'p_old', name: 'Old', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
   await repo.upstreams.save(CUSTOM_UPSTREAM);
   await repo.proxyBackoffs.recordDialFailure('p_old', CUSTOM_UPSTREAM.id, 'transport reset');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 1);
 
   const result = await doImport(app, 'replace', latestImportData({
-    proxies: [{ id: 'p_old', name: 'New', url: SOCKS_PROXY_URL, sort_order: 0, dial_timeout_seconds: null }],
+    proxies: [{ id: 'p_old', name: 'New', url: SOCKS_PROXY_URL, dial_timeout_seconds: null }],
     upstreams: [upstreamRecordToFullJson(CUSTOM_UPSTREAM)],
   }));
 

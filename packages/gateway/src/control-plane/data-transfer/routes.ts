@@ -28,15 +28,13 @@ import { isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
 
-// Wire shape of a proxy entry in the export/import payload. The runtime
-// observation fields (last_egress_ip, last_tested_at) and the backoff rows
+// Wire shape of a proxy entry in the export/import payload. The backoff rows
 // are deliberately excluded — they describe what this deployment saw, not
 // what the operator configured.
 interface SerializedProxy {
   id: string;
   name: string;
   url: string;
-  sort_order: number;
   dial_timeout_seconds: number | null;
 }
 
@@ -203,12 +201,11 @@ const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedPro
       } catch (err) {
         throw new Error(`url did not parse: ${err instanceof Error ? err.message : String(err)}`);
       }
-      if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');
       const dialTimeoutSeconds = item.dial_timeout_seconds;
       if (dialTimeoutSeconds !== null && (typeof dialTimeoutSeconds !== 'number' || !Number.isInteger(dialTimeoutSeconds) || dialTimeoutSeconds < 1)) {
         throw new Error('dial_timeout_seconds must be null or a positive integer');
       }
-      records.push({ id, name, url, sort_order: Math.floor(item.sort_order), dial_timeout_seconds: dialTimeoutSeconds });
+      records.push({ id, name, url, dial_timeout_seconds: dialTimeoutSeconds });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
     }
@@ -548,7 +545,6 @@ const proxyRecordToExportEntry = (record: ProxyRecord): SerializedProxy => ({
   id: record.id,
   name: record.name,
   url: record.url,
-  sort_order: record.sortOrder,
   dial_timeout_seconds: record.dialTimeoutSeconds,
 });
 
@@ -713,7 +709,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       id: proxy.id,
       name: proxy.name,
       url: proxy.url,
-      sortOrder: proxy.sort_order,
       dialTimeoutSeconds: proxy.dial_timeout_seconds,
     });
   }

@@ -197,59 +197,32 @@ export interface ProxyRecord {
   id: string;
   name: string;
   url: string;
-  sortOrder: number;
   createdAt: string;
   updatedAt: string;
-  // Egress IP observed during the most recent successful test run. Cleared
-  // whenever `url` changes so the dashboard never shows a stale IP for a
-  // freshly re-pointed proxy. Unix seconds for `lastTestedAt` matches what
-  // SQLite stores in the integer column.
-  lastEgressIp: string | null;
-  lastTestedAt: number | null;
   // Operator-set per-proxy override of the dial-stage deadline (seconds).
   // null falls back to the gateway-wide default in @floway-dev/proxy so an
   // unconfigured row keeps behaving like one that pre-dates this column.
   dialTimeoutSeconds: number | null;
 }
 
-// Surfaced by `bulkReorder` when the supplied id set is not an exact
-// permutation of the catalog (stale snapshot, concurrent insert/delete).
-// The route handler pattern-matches this class to reply 400 — every other
-// repo throw is infrastructure (DB write failure) and propagates as a 500.
-export class ProxyReorderConflictError extends Error {
-  override readonly name = 'ProxyReorderConflictError';
-  constructor(message: string) { super(message); }
-}
-
 export interface ProxyRepo {
   list(): Promise<ProxyRecord[]>;
   getById(id: string): Promise<ProxyRecord | null>;
-  insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
+  insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord>;
   // Returns the updated record alongside the bit `url` actually changed by
   // this patch — the route layer needs that bit to decide whether to wipe
   // the proxy's outstanding backoff rows on a URL edit, and recomputing it
   // upstream would force a redundant getById round-trip.
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null>;
+  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null>;
   // Upsert used by the operator import path: an id collision overwrites the
-  // configurable columns (name, url, sort_order, dial_timeout_seconds) and
-  // refreshes updated_at; created_at and the runtime-observed test fields
-  // (last_egress_ip, last_tested_at) belong to the local deployment and are
-  // never carried over from the import file.
-  save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void>;
+  // configurable columns (name, url, dial_timeout_seconds) and refreshes
+  // updated_at; created_at belongs to the local deployment and is preserved
+  // across imports.
+  save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void>;
   delete(id: string): Promise<boolean>;
   // Operator-import "replace" path: drops every proxy row in one statement.
   // Backoff rows live in a separate table and are wiped by their own repo.
   deleteAll(): Promise<void>;
-  // Atomically rewrite sort_order of every proxy from `ids` to its index in
-  // the array. The set must equal the full proxies catalog — both sides of
-  // a mismatch (ids missing from the array or unknown ids in it) abort the
-  // call so a half-applied write never leaves the table in a hybrid order.
-  bulkReorder(ids: string[]): Promise<void>;
-  // Records the egress IP observed by a successful proxy test, alongside the
-  // current timestamp. Pairs with `patch`'s url-change detection: a url edit
-  // wipes both fields back to null in the same statement. Test results do
-  // not bump `updated_at` — only operator edits to name/url/sort_order do.
-  recordTestSuccess(id: string, egressIp: string): Promise<void>;
   // Returns the ids of every upstream whose `proxyFallbackList` currently
   // includes the given proxy id. The control-plane DELETE handler reads this
   // before allowing a proxy to be removed.

@@ -51,10 +51,11 @@ const deleteAuthed = (adminSession: string): RequestInit => ({
   headers: { 'x-floway-session': adminSession },
 });
 
-test('GET /api/proxies returns rows ordered by sort_order', async () => {
+test('GET /api/proxies returns rows ordered by createdAt', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, sortOrder: 2, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'p_a', name: 'First', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_a', name: 'First', url: HTTP_URL, dialTimeoutSeconds: null });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await repo.proxies.insert({ id: 'p_b', name: 'Second', url: SOCKS_URL, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies', authed(adminSession));
   assertEquals(resp.status, 200);
@@ -62,20 +63,16 @@ test('GET /api/proxies returns rows ordered by sort_order', async () => {
   assertEquals(list.map(p => p.id), ['p_a', 'p_b']);
   assertEquals(list[0].name, 'First');
   assertEquals(list[0].url, HTTP_URL);
-  assertEquals(list[0].last_egress_ip, null);
-  assertEquals(list[0].last_tested_at, null);
 });
 
-test('POST /api/proxies creates a row and assigns the next sort_order', async () => {
+test('POST /api/proxies creates a row', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_first', name: 'First', url: HTTP_URL, sortOrder: 7, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies', authed(adminSession, { name: 'New', url: SOCKS_URL }));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as SerializedProxyRecord;
   assertEquals(created.name, 'New');
   assertEquals(created.url, SOCKS_URL);
-  assertEquals(created.sort_order, 8);
 
   const stored = await repo.proxies.getById(created.id);
   assertExists(stored);
@@ -95,47 +92,9 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
   assertEquals(body.error?.includes('proxy URI: malformed proxy URI'), false);
 });
 
-test('POST /api/proxies/reorder rewrites every row\'s sort_order in one shot', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'p_c', name: 'C', url: HTTP_URL, sortOrder: 2, dialTimeoutSeconds: null });
-
-  const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_c', 'p_a', 'p_b'] }));
-  assertEquals(resp.status, 200);
-  const list = (await resp.json()) as SerializedProxyRecord[];
-  assertEquals(list.map(p => p.id), ['p_c', 'p_a', 'p_b']);
-  assertEquals(list.map(p => p.sort_order), [0, 1, 2]);
-});
-
-test('POST /api/proxies/reorder rejects a non-permutation with 400', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.insert({ id: 'p_b', name: 'B', url: HTTP_URL, sortOrder: 1, dialTimeoutSeconds: null });
-
-  const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_a'] }));
-  assertEquals(resp.status, 400);
-});
-
-test('POST /api/proxies/reorder lets non-conflict repo errors propagate as 500 (not 400)', async () => {
-  // A DB write failure inside bulkReorder is infrastructure, not bad
-  // input. A blanket-400 catch would mislabel it as the operator's
-  // problem and tell the dashboard to "refresh and try again" forever.
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_a', name: 'A', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
-  const original = repo.proxies.bulkReorder.bind(repo.proxies);
-  repo.proxies.bulkReorder = async () => { throw new Error('disk full'); };
-  try {
-    const resp = await requestApp('/api/proxies/reorder', authed(adminSession, { ids: ['p_a'] }));
-    assertEquals(resp.status, 500);
-  } finally {
-    repo.proxies.bulkReorder = original;
-  }
-});
-
 test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
@@ -144,29 +103,9 @@ test('PATCH /api/proxies/:id partially updates a proxy row', async () => {
   assertEquals(updated.url, HTTP_URL);
 });
 
-test('PATCH /api/proxies/:id with a new url clears the cached egress ip', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
-  await repo.proxies.recordTestSuccess('p1', '203.0.113.1');
-
-  const before = await repo.proxies.getById('p1');
-  assertEquals(before?.lastEgressIp, '203.0.113.1');
-
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { url: SOCKS_URL }));
-  assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as SerializedProxyRecord;
-  assertEquals(updated.url, SOCKS_URL);
-  assertEquals(updated.last_egress_ip, null);
-  assertEquals(updated.last_tested_at, null);
-
-  const after = await repo.proxies.getById('p1');
-  assertEquals(after?.lastEgressIp, null);
-  assertEquals(after?.lastTestedAt, null);
-});
-
 test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
   // Two upstreams have already escalated this proxy through several failures.
   // After the URL changes the operator expects an immediate retry; the dial
   // layer must not keep skipping the row up to an hour against stale state.
@@ -181,7 +120,7 @@ test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', as
 
 test('PATCH /api/proxies/:id without changing the url leaves backoff rows intact', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
@@ -192,7 +131,7 @@ test('PATCH /api/proxies/:id without changing the url leaves backoff rows intact
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: 120 }));
   assertEquals(resp.status, 200);
@@ -205,7 +144,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=120 stores the override',
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existing value', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, dialTimeoutSeconds: 90 });
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
   assertEquals(resp.status, 200);
@@ -218,7 +157,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds absent leaves the existin
 
 test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to default', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: 90 });
+  await repo.proxies.insert({ id: 'p1', name: 'P', url: HTTP_URL, dialTimeoutSeconds: 90 });
 
   const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { dial_timeout_seconds: null }));
   assertEquals(resp.status, 200);
@@ -231,7 +170,7 @@ test('PATCH /api/proxies/:id with dial_timeout_seconds=null clears it back to de
 
 test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_del', name: 'Doomed', url: HTTP_URL, dialTimeoutSeconds: null });
 
   const resp = await requestApp('/api/proxies/p_del', deleteAuthed(adminSession));
   assertEquals(resp.status, 204);
@@ -240,7 +179,7 @@ test('DELETE /api/proxies/:id returns 204 when no upstream references the proxy'
 
 test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, dialTimeoutSeconds: null });
   await repo.upstreams.save({ ...copilotUpstream, proxyFallbackList: ['p_ref'] });
 
   const resp = await requestApp('/api/proxies/p_ref', deleteAuthed(adminSession));
@@ -250,9 +189,11 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
   assertExists(await repo.proxies.getById('p_ref'));
 });
 
-test('POST /api/proxies/:id/test surfaces the dial error in the ok:false response shape', async () => {
+test('POST /api/proxies/:id/test surfaces the dial error in the ok:false response shape without touching the row', async () => {
   const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, sortOrder: 0, dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_test', name: 'Test', url: HTTP_URL, dialTimeoutSeconds: null });
+  const before = await repo.proxies.getById('p_test');
+  assertExists(before);
 
   const resp = await requestApp('/api/proxies/p_test/test', authed(adminSession, {}));
   assertEquals(resp.status, 200);
@@ -264,9 +205,10 @@ test('POST /api/proxies/:id/test surfaces the dial error in the ok:false respons
   // still the actionable surface (operator sees which dial leg failed).
   assertEquals(body.error?.includes('tcp connect to 198.51.100.20:3128 failed'), true);
 
-  // The handler must not record a fake egress ip on failure.
-  const stored = await repo.proxies.getById('p_test');
-  assertEquals(stored?.lastEgressIp, null);
+  // The test endpoint is read-only — the proxy row must look identical to
+  // before the call, including updated_at.
+  const after = await repo.proxies.getById('p_test');
+  assertEquals(after, before);
 });
 
 test('POST /api/proxies/:id/test returns 404 for an unknown proxy', async () => {

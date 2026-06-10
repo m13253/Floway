@@ -2,7 +2,6 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
-import { ProxyReorderConflictError } from './types.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -724,7 +723,7 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(
       [...this.store.values()]
         .map(cloneProxyRecord)
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)),
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     );
   }
 
@@ -733,24 +732,21 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve(found ? cloneProxyRecord(found) : null);
   }
 
-  insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+  insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
     const now = new Date().toISOString();
     const record: ProxyRecord = {
       id: input.id,
       name: input.name,
       url: input.url,
-      sortOrder: input.sortOrder,
       createdAt: now,
       updatedAt: now,
-      lastEgressIp: null,
-      lastTestedAt: null,
       dialTimeoutSeconds: input.dialTimeoutSeconds,
     };
     this.store.set(record.id, record);
     return Promise.resolve(cloneProxyRecord(record));
   }
 
-  patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
+  patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
     const existing = this.store.get(id);
     if (!existing) return Promise.resolve(null);
 
@@ -762,11 +758,8 @@ class MemoryProxyRepo implements ProxyRepo {
       ...existing,
       name: patch.name ?? existing.name,
       url: patch.url ?? existing.url,
-      sortOrder: patch.sortOrder ?? existing.sortOrder,
       dialTimeoutSeconds: nextDialTimeout,
       updatedAt: new Date().toISOString(),
-      lastEgressIp: urlChanged ? null : existing.lastEgressIp,
-      lastTestedAt: urlChanged ? null : existing.lastTestedAt,
     };
     this.store.set(id, updated);
     return Promise.resolve({ record: cloneProxyRecord(updated), urlChanged });
@@ -787,51 +780,21 @@ class MemoryProxyRepo implements ProxyRepo {
     return Promise.resolve();
   }
 
-  save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void> {
+  save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
     // Upsert that mirrors the SQL ON CONFLICT path: preserve the existing
-    // row's createdAt and runtime test fields on collision so the import
-    // never overwrites observations local to this deployment.
+    // row's createdAt on collision so the import never overwrites the
+    // local deployment's first-seen timestamp.
     const existing = this.store.get(record.id);
     const now = new Date().toISOString();
     const next: ProxyRecord = {
       id: record.id,
       name: record.name,
       url: record.url,
-      sortOrder: record.sortOrder,
       dialTimeoutSeconds: record.dialTimeoutSeconds,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now,
-      lastEgressIp: existing ? existing.lastEgressIp : null,
-      lastTestedAt: existing ? existing.lastTestedAt : null,
     };
     this.store.set(record.id, next);
-    return Promise.resolve();
-  }
-
-  bulkReorder(ids: string[]): Promise<void> {
-    const incoming = new Set(ids);
-    if (ids.length !== this.store.size || ids.length !== incoming.size) {
-      return Promise.reject(new ProxyReorderConflictError(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${this.store.size} rows)`));
-    }
-    for (const id of ids) {
-      if (!this.store.has(id)) {
-        return Promise.reject(new ProxyReorderConflictError(`bulkReorder: unknown proxy id ${id}`));
-      }
-    }
-    const now = new Date().toISOString();
-    ids.forEach((id, index) => {
-      const existing = this.store.get(id)!;
-      if (existing.sortOrder === index) return;
-      this.store.set(id, { ...existing, sortOrder: index, updatedAt: now });
-    });
-    return Promise.resolve();
-  }
-
-  recordTestSuccess(id: string, egressIp: string): Promise<void> {
-    const existing = this.store.get(id);
-    if (!existing) return Promise.resolve();
-    existing.lastEgressIp = egressIp;
-    existing.lastTestedAt = Math.floor(Date.now() / 1000);
     return Promise.resolve();
   }
 

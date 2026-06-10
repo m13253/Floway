@@ -12,9 +12,8 @@
 // like address) MUST land in the same record as the first inner-protocol
 // bytes — the inner-TLS ClientHello when the orchestrator wraps the
 // post-trojan stream in userspace TLS, or the HTTP/1.1 request line when
-// it doesn't. We surface the header as `prefix` on the DialResult so the
-// orchestrator passes it to whichever wrapper consumes the next bytes
-// (userspaceTls.prefix or fetchOnStream.prefix).
+// it doesn't. We surface the header as `prefix` on the DialResult so
+// whichever wrapper consumes the next bytes folds it into its first write.
 
 import { sha224 } from '@noble/hashes/sha2.js';
 

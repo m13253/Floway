@@ -3,9 +3,8 @@ import type { Context } from 'hono';
 import { backoffRowToJson, proxyRecordToJson } from './serialize.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { ProxyReorderConflictError } from '../../repo/types.ts';
 import { shortId } from '../../shared/short-id.ts';
-import type { createProxyBody, reorderProxiesBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
+import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody } from '../schemas.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
@@ -24,27 +23,6 @@ export const listProxies = async (c: Context) => {
   return c.json(proxies.map(proxyRecordToJson));
 };
 
-export const reorderProxies = async (c: CtxWithJson<typeof reorderProxiesBody>) => {
-  const { ids } = c.req.valid('json');
-  const repo = getRepo();
-  // The repo enforces "ids is a permutation of the catalog" atomically.
-  // Surface its complaint as 400 so the dashboard can react: a stale
-  // snapshot (concurrent insert/delete) is the operator's signal to
-  // refresh the list and try again. Only the typed conflict error becomes
-  // a 400 — a DB write failure further into bulkReorder propagates as 500
-  // so an infra outage isn't mislabelled as bad input.
-  try {
-    await repo.proxies.bulkReorder(ids);
-  } catch (err) {
-    if (err instanceof ProxyReorderConflictError) {
-      return c.json({ error: err.message }, 400);
-    }
-    throw err;
-  }
-  const updated = await repo.proxies.list();
-  return c.json(updated.map(proxyRecordToJson));
-};
-
 export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
   const body = c.req.valid('json');
 
@@ -60,13 +38,10 @@ export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
   }
 
   const repo = getRepo();
-  const existing = await repo.proxies.list();
-  const sortOrder = existing.reduce((acc, p) => Math.max(acc, p.sortOrder), -1) + 1;
   const record = await repo.proxies.insert({
     id: newId(),
     name: body.name,
     url: body.url,
-    sortOrder,
     dialTimeoutSeconds: body.dial_timeout_seconds ?? null,
   });
   return c.json(proxyRecordToJson(record), 201);
@@ -88,7 +63,6 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
   const result = await repo.proxies.patch(id, {
     name: body.name,
     url: body.url,
-    sortOrder: body.sort_order,
     // Forward the absent / null distinction so the repo can tell "leave it"
     // from "clear it back to default" — Object.hasOwn carries the bit
     // through the spread below.
@@ -149,10 +123,10 @@ const ANCHORS = {
 // IP-echo anchors return either an IPv4 in dot-notation or an IPv6 in mixed
 // hex/colon (with an optional embedded IPv4 tail). Cap the response at 256
 // chars before sniffing — a misbehaving anchor could otherwise feed an
-// arbitrary HTML page into `last_egress_ip`. We validate octet ranges and
-// canonical v6 shape (one optional `::` shorthand, 1-4 hex digits per
-// group, RFC 4291 group counts), so anchor strings like `999.999.999.999`
-// or `aaaa::bbbb::cccc` cannot pass.
+// arbitrary HTML page into the dashboard's ephemeral test-result panel. We
+// validate octet ranges and canonical v6 shape (one optional `::`
+// shorthand, 1-4 hex digits per group, RFC 4291 group counts), so anchor
+// strings like `999.999.999.999` or `aaaa::bbbb::cccc` cannot pass.
 const isIpV4 = (s: string): boolean => {
   const octets = s.split('.');
   if (octets.length !== 4) return false;
@@ -258,7 +232,6 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
     if (anchorName === 'ident.me-v6' && !truncated.includes(':')) {
       return c.json({ ok: false, error: `v6 anchor returned a v4 address (${truncated}); proxy has no v6 path` });
     }
-    await repo.proxies.recordTestSuccess(id, truncated);
     return c.json({ ok: true, egress_ip: truncated });
   } catch (err) {
     // Every dial-shaped failure inside runProxiedRequest surfaces as a typed

@@ -7,14 +7,10 @@ CREATE TABLE proxies (
   id                   TEXT PRIMARY KEY,
   name                 TEXT NOT NULL,
   url                  TEXT NOT NULL,
-  sort_order           INTEGER NOT NULL DEFAULT 0,
   dial_timeout_seconds INTEGER,
   created_at           TEXT NOT NULL,
-  updated_at           TEXT NOT NULL,
-  last_egress_ip       TEXT,
-  last_tested_at       INTEGER
+  updated_at           TEXT NOT NULL
 );
-CREATE INDEX idx_proxies_sort_order ON proxies (sort_order, created_at);
 
 -- proxy_id always references a proxies.id. We omit the FK because the
 -- API layer sweeps backoff rows unconditionally on proxy/upstream DELETE

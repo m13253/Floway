@@ -9,11 +9,8 @@ export interface SerializedProxyRecord {
   id: string;
   name: string;
   url: string;
-  sort_order: number;
   created_at: string;
   updated_at: string;
-  last_egress_ip: string | null;
-  last_tested_at: number | null;
   dial_timeout_seconds: number | null;
 }
 
@@ -30,11 +27,8 @@ export const proxyRecordToJson = (record: ProxyRecord): SerializedProxyRecord =>
   id: record.id,
   name: record.name,
   url: record.url,
-  sort_order: record.sortOrder,
   created_at: record.createdAt,
   updated_at: record.updatedAt,
-  last_egress_ip: record.lastEgressIp,
-  last_tested_at: record.lastTestedAt,
   dial_timeout_seconds: record.dialTimeoutSeconds,
 });
 

@@ -33,7 +33,7 @@ export const useProxiesStore = () => {
       callApi<BackoffRow[]>(() => api.api.proxies.backoffs.$get()),
     ]);
     if (listRes.error) error.value = listRes.error.message;
-    else if (listRes.data) proxies.value = [...listRes.data].sort((a, b) => a.sort_order - b.sort_order);
+    else if (listRes.data) proxies.value = [...listRes.data].sort((a, b) => a.created_at.localeCompare(b.created_at));
     if (backoffsRes.error && !error.value) error.value = backoffsRes.error.message;
     else if (backoffsRes.data) backoffs.value = backoffsRes.data;
     loading.value = false;

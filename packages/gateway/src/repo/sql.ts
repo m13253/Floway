@@ -2,7 +2,6 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_REFRESH_DEBOUNCE_MS, serializeStoredResponsesPayload } from './responses-payload.ts';
-import { ProxyReorderConflictError } from './types.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -1282,45 +1281,41 @@ class SqlProxyRepo implements ProxyRepo {
 
   async list(): Promise<ProxyRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds FROM proxies ORDER BY sort_order, created_at')
+      .prepare('SELECT id, name, url, created_at, updated_at, dial_timeout_seconds FROM proxies ORDER BY created_at')
       .all<ProxyRow>();
     return results.map(toProxyRecord);
   }
 
   async getById(id: string): Promise<ProxyRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds FROM proxies WHERE id = ?')
+      .prepare('SELECT id, name, url, created_at, updated_at, dial_timeout_seconds FROM proxies WHERE id = ?')
       .bind(id)
       .first<ProxyRow>();
     return row ? toProxyRecord(row) : null;
   }
 
-  async insert(input: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
+  async insert(input: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<ProxyRecord> {
     const now = new Date().toISOString();
     await this.db
-      .prepare('INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)')
-      .bind(input.id, input.name, input.url, input.sortOrder, now, now, input.dialTimeoutSeconds)
+      .prepare('INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(input.id, input.name, input.url, now, now, input.dialTimeoutSeconds)
       .run();
     return {
       id: input.id,
       name: input.name,
       url: input.url,
-      sortOrder: input.sortOrder,
       createdAt: now,
       updatedAt: now,
-      lastEgressIp: null,
-      lastTestedAt: null,
       dialTimeoutSeconds: input.dialTimeoutSeconds,
     };
   }
 
-  async patch(id: string, patch: { name?: string; url?: string; sortOrder?: number; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
+  async patch(id: string, patch: { name?: string; url?: string; dialTimeoutSeconds?: number | null }): Promise<{ record: ProxyRecord; urlChanged: boolean } | null> {
     const existing = await this.getById(id);
     if (!existing) return null;
 
     const nextName = patch.name ?? existing.name;
     const nextUrl = patch.url ?? existing.url;
-    const nextSortOrder = patch.sortOrder ?? existing.sortOrder;
     // dialTimeoutSeconds is nullable, so distinguish "not in patch" from
     // "set to null" by hasOwn — `??` would collapse a deliberate clear.
     const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
@@ -1328,27 +1323,8 @@ class SqlProxyRepo implements ProxyRepo {
     const updatedAt = new Date().toISOString();
 
     await this.db
-      .prepare(
-        `UPDATE proxies SET
-           name = ?,
-           url = ?,
-           sort_order = ?,
-           dial_timeout_seconds = ?,
-           updated_at = ?,
-           last_egress_ip = CASE WHEN ? THEN NULL ELSE last_egress_ip END,
-           last_tested_at = CASE WHEN ? THEN NULL ELSE last_tested_at END
-         WHERE id = ?`,
-      )
-      .bind(
-        nextName,
-        nextUrl,
-        nextSortOrder,
-        nextDialTimeout,
-        updatedAt,
-        urlChanged ? 1 : 0,
-        urlChanged ? 1 : 0,
-        id,
-      )
+      .prepare('UPDATE proxies SET name = ?, url = ?, dial_timeout_seconds = ?, updated_at = ? WHERE id = ?')
+      .bind(nextName, nextUrl, nextDialTimeout, updatedAt, id)
       .run();
 
     return {
@@ -1356,11 +1332,8 @@ class SqlProxyRepo implements ProxyRepo {
         ...existing,
         name: nextName,
         url: nextUrl,
-        sortOrder: nextSortOrder,
         dialTimeoutSeconds: nextDialTimeout,
         updatedAt,
-        lastEgressIp: urlChanged ? null : existing.lastEgressIp,
-        lastTestedAt: urlChanged ? null : existing.lastTestedAt,
       },
       urlChanged,
     };
@@ -1391,72 +1364,19 @@ class SqlProxyRepo implements ProxyRepo {
     await this.db.prepare('DELETE FROM proxies').run();
   }
 
-  async save(record: { id: string; name: string; url: string; sortOrder: number; dialTimeoutSeconds: number | null }): Promise<void> {
-    // Mirrors SqlUpstreamRepo.save: ON CONFLICT preserves created_at and the
-    // runtime test-result columns (last_egress_ip / last_tested_at). The
-    // import payload deliberately does not carry those — they describe
-    // observations from the deployment that created the row, not the row's
-    // intended config.
+  async save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
+    // Mirrors SqlUpstreamRepo.save: ON CONFLICT preserves created_at.
     const now = new Date().toISOString();
     await this.db
       .prepare(
-        `INSERT INTO proxies (id, name, url, sort_order, created_at, updated_at, last_egress_ip, last_tested_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        `INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            name = excluded.name,
            url = excluded.url,
-           sort_order = excluded.sort_order,
            updated_at = excluded.updated_at,
            dial_timeout_seconds = excluded.dial_timeout_seconds`,
       )
-      .bind(record.id, record.name, record.url, record.sortOrder, now, now, record.dialTimeoutSeconds)
-      .run();
-  }
-
-  async bulkReorder(ids: string[]): Promise<void> {
-    // Validate the ids form an exact partition of the current catalog
-    // before touching any row. A mismatched call would otherwise either
-    // skip rows (leaving them at their old sort_order) or update non-
-    // existent ids (no-op, but the caller is now lying about its intent),
-    // both of which violate "atomic" — fail loudly instead.
-    const existing = await this.list();
-    const existingSet = new Set(existing.map(p => p.id));
-    const incoming = new Set(ids);
-    if (ids.length !== existing.length || ids.length !== incoming.size) {
-      throw new ProxyReorderConflictError(`bulkReorder: ids must be a permutation of the proxies table (got ${ids.length} ids, ${incoming.size} unique, ${existing.length} rows)`);
-    }
-    for (const id of ids) {
-      if (!existingSet.has(id)) {
-        throw new ProxyReorderConflictError(`bulkReorder: unknown proxy id ${id}`);
-      }
-    }
-    if (ids.length === 0) return;
-
-    // One UPDATE keyed off json_each unrolling the requested order. The
-    // subselect maps each row's id to its array index in the input; the
-    // outer WHERE limits the update to ids actually in the array (already
-    // validated above to equal the full table). updated_at is bumped per
-    // row whose sort_order changes — a no-op reorder leaves timestamps
-    // unchanged so the dashboard doesn't appear to "edit" rows.
-    const json = JSON.stringify(ids);
-    const now = new Date().toISOString();
-    await this.db
-      .prepare(
-        `UPDATE proxies
-            SET sort_order = (SELECT j.key FROM json_each(?) j WHERE j.value = proxies.id),
-                updated_at = CASE
-                  WHEN sort_order = (SELECT j.key FROM json_each(?) j WHERE j.value = proxies.id) THEN updated_at
-                  ELSE ?
-                END
-          WHERE id IN (SELECT j.value FROM json_each(?) j)`,
-      )
-      .bind(json, json, now, json)
-      .run();
-  }
-
-  async recordTestSuccess(id: string, egressIp: string): Promise<void> {
-    await this.db
-      .prepare('UPDATE proxies SET last_egress_ip = ?, last_tested_at = ? WHERE id = ?')
-      .bind(egressIp, Math.floor(Date.now() / 1000), id)
+      .bind(record.id, record.name, record.url, now, now, record.dialTimeoutSeconds)
       .run();
   }
 
@@ -1476,11 +1396,8 @@ interface ProxyRow {
   id: string;
   name: string;
   url: string;
-  sort_order: number;
   created_at: string;
   updated_at: string;
-  last_egress_ip: string | null;
-  last_tested_at: number | null;
   dial_timeout_seconds: number | null;
 }
 
@@ -1488,11 +1405,8 @@ const toProxyRecord = (row: ProxyRow): ProxyRecord => ({
   id: row.id,
   name: row.name,
   url: row.url,
-  sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  lastEgressIp: row.last_egress_ip,
-  lastTestedAt: row.last_tested_at,
   dialTimeoutSeconds: row.dial_timeout_seconds,
 });
 

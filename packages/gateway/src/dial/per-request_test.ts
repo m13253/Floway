@@ -48,7 +48,7 @@ describe('createPerRequestFetcher', () => {
     // surfaces the parse error, and only when actually called.
     await repo.upstreams.save(upstream('u_bad', ['p_bad']));
     await repo.upstreams.save(upstream('u_ok', []));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
 
     const fetcherFor = await createPerRequestFetcher();
     const badFetcher = fetcherFor('u_bad');
@@ -67,7 +67,7 @@ describe('createPerRequestFetcher', () => {
     // direct-only upstreams: we only parse rows that are reachable via some
     // upstream's fallback list.
     await repo.upstreams.save(upstream('u_direct', []));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', sortOrder: 0, dialTimeoutSeconds: null });
+    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
 
     let proxyListCalls = 0;
     const realList = repo.proxies.list.bind(repo.proxies);
