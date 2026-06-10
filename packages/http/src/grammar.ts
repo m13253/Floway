@@ -42,13 +42,13 @@ export const decodeAsciiHeaderSection = (bytes: Uint8Array, context: string): st
 export const trimFieldValueOws = (value: string): string => value.replace(/^[\t ]+|[\t ]+$/g, '');
 
 // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
-// Shared by parser.ts, ws-upgrade.ts, and the proxy package's CONNECT
-// peel so the three response-side framings can't drift apart. The
-// version group is non-capturing — no caller reads it — so capture
-// indices are status=m[1], reason=m[2]. The reason alternation
-// `(\S.*|)` permits an empty reason (RFC 7230 erratum 4087) while
-// forbidding a leading SP, which would otherwise be silently absorbed
-// from a double SP between code and reason.
+// Hoisted so every response-line parser — in this package and across the
+// public surface — shares one regex and can't drift apart. The version
+// group is non-capturing — no caller reads it — so capture indices are
+// status=m[1], reason=m[2]. The reason alternation `(\S.*|)` permits an
+// empty reason (RFC 7230 erratum 4087) while forbidding a leading SP,
+// which would otherwise be silently absorbed from a double SP between
+// code and reason.
 export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) (\S.*|)$/;
 
 // RFC 9110 §5.5: field-content = field-vchar / SP / HTAB / obs-fold;
