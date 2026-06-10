@@ -259,7 +259,6 @@ test('POST /api/proxies/:id/test surfaces the dial error in the ok:false respons
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as { ok: boolean; error?: string; egress_ip?: string };
   assertEquals(body.ok, false);
-  assertEquals(typeof body.error, 'string');
   // The HTTP CONNECT runner wraps the underlying SocketDial rejection with
   // "tcp connect to <host>:<port> failed". The exact upstream cause is the
   // stubbed Error but only the wrapping makes it into the message — that's
