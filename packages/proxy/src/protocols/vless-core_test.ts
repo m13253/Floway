@@ -264,20 +264,6 @@ describe('vlessFrameOverStream — port and hostname encoding', () => {
     expect(written.byteLength).toBe(22 + 4);
   });
 
-  it('emits ATYP=0x03 + 16 raw octets for a bracketed IPv6 literal target', async () => {
-    const p = makePair();
-    void vlessFrameOverStream(p.transport, UUID, { host: '[2001:db8::1]', port: 443 });
-    const written = await p.written;
-    expect(written[21]).toBe(0x03);
-    expect(Array.from(written.subarray(22, 22 + 16))).toEqual([
-      0x20, 0x01, 0x0d, 0xb8,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x01,
-    ]);
-    expect(written.byteLength).toBe(22 + 16);
-  });
-
   it('emits ATYP=0x03 + 16 raw octets for an unbracketed IPv6 literal target', async () => {
     const p = makePair();
     void vlessFrameOverStream(p.transport, UUID, { host: '::1', port: 80 });

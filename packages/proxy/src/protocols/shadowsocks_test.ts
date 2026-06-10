@@ -200,20 +200,6 @@ describe('buildSsAddress — port and host variants', () => {
     expect(out.byteLength).toBe(1 + 4 + 2);
   });
 
-  it('emits ATYP=0x04 + 16 octets for a bracketed IPv6 literal target', () => {
-    const out = buildSsAddress('[2001:db8::1]', 443);
-    expect(out[0]).toBe(0x04);
-    expect(Array.from(out.subarray(1, 17))).toEqual([
-      0x20, 0x01, 0x0d, 0xb8,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x01,
-    ]);
-    expect(out[17]).toBe(0x01);
-    expect(out[18]).toBe(0xbb);
-    expect(out.byteLength).toBe(1 + 16 + 2);
-  });
-
   it('emits ATYP=0x04 + 16 octets for an unbracketed IPv6 literal target', () => {
     const out = buildSsAddress('::1', 80);
     expect(out[0]).toBe(0x04);

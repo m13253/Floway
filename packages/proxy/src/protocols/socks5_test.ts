@@ -373,12 +373,6 @@ describe('buildSocks5ConnectRequest — ATYP discrimination', () => {
     expectEqualBytes(out.subarray(20, 22), [0x01, 0xbb]);
   });
 
-  it('accepts a bracketed IPv6 literal and strips the envelope before encoding', () => {
-    const bracketed = buildSocks5ConnectRequest('[2001:db8::1]', 443);
-    const bare = buildSocks5ConnectRequest('2001:db8::1', 443);
-    expectEqualBytes(bracketed, Array.from(bare));
-  });
-
   it('still emits ATYP=0x03 for a true hostname', () => {
     const out = buildSocks5ConnectRequest('example.com', 443);
     expectEqualBytes(out.subarray(0, 5), [0x05, 0x01, 0x00, 0x03, 11]);

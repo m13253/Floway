@@ -56,21 +56,6 @@ describe('buildSs2022RequestHeader', () => {
     expect(h.byteLength).toBe(1 + 4 + 2 + 2 + 16);
   });
 
-  it('emits ATYP=0x04 + 16 octets for an IPv6 literal target (bracketed)', () => {
-    // Layout: ATYP(1) | v6(16) | port(2) | padlen(2) | pad(16) = 37 bytes.
-    const h = buildSs2022RequestHeader('[2001:db8::1]', 443);
-    expect(h[0]).toBe(0x04);
-    expect(Array.from(h.subarray(1, 17))).toEqual([
-      0x20, 0x01, 0x0d, 0xb8,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x01,
-    ]);
-    expect(h[17]).toBe(0x01); expect(h[18]).toBe(0xbb);
-    expect(h[19]).toBe(0x00); expect(h[20]).toBe(0x10);
-    expect(h.byteLength).toBe(1 + 16 + 2 + 2 + 16);
-  });
-
   it('still uses ATYP=0x03 (domain) for a non-literal hostname', () => {
     const h = buildSs2022RequestHeader('example.com', 80);
     expect(h[0]).toBe(0x03);

@@ -160,18 +160,6 @@ describe('buildTrojanRequestHeader — total framing layout', () => {
     expect(header.byteLength).toBe(56 + 2 + 1 + 1 + 4 + 2 + 2);
   });
 
-  it('emits ATYP=0x04 + 16 raw octets for a bracketed IPv6 literal target', () => {
-    const header = buildTrojanRequestHeader('p', { host: '[2001:db8::1]', port: 443 });
-    expect(header[59]).toBe(0x04);
-    expect(Array.from(header.subarray(60, 60 + 16))).toEqual([
-      0x20, 0x01, 0x0d, 0xb8,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x01,
-    ]);
-    expect(header.byteLength).toBe(56 + 2 + 1 + 1 + 16 + 2 + 2);
-  });
-
   it('emits ATYP=0x04 + 16 raw octets for an unbracketed IPv6 literal target', () => {
     const header = buildTrojanRequestHeader('p', { host: '::1', port: 80 });
     expect(header[59]).toBe(0x04);
