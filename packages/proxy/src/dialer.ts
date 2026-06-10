@@ -12,6 +12,7 @@
 // branch in url.ts, a label case in url-kind.ts, and a case in `dial`
 // here.
 
+import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
 import { ProxyDialError } from './errors.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
@@ -178,12 +179,8 @@ const ensureHostHeader = (headers: Record<string, string>, target: ProxyRequestT
   // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when it
   // is the scheme's default (443 for HTTPS, 80 for plain HTTP) — strict
   // virtual-host upstreams interpret a bare hostname as "client wants the
-  // default port" and route or reject accordingly. Per the `DialTarget.host`
-  // contract IPv6 literals arrive WITHOUT the `[…]` envelope, so wrap them
-  // here (RFC 3986 §3.2.2) when pushing the target back into a uri-host
-  // context.
-  const isIpv6 = target.host.includes(':');
-  const hostUriPart = isIpv6 ? `[${target.host}]` : target.host;
+  // default port" and route or reject accordingly.
+  const hostUriPart = formatHostForUri(target.host);
   const defaultPort = target.tls ? 443 : 80;
   const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
   return { ...headers, Host: hostValue };

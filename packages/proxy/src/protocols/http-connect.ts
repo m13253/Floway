@@ -9,7 +9,7 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
-import { base64EncodeBytes, concat, copy, findDoubleCrlf, utf8Bytes } from '../bytes.ts';
+import { base64EncodeBytes, concat, copy, findDoubleCrlf, formatHostForUri, utf8Bytes } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
@@ -66,9 +66,10 @@ const dialHttpConnectInner = async (
   target: DialTarget,
 ): Promise<DialResult> => {
   const writer = socket.writable.getWriter();
+  const hostUriPart = formatHostForUri(target.host);
   const lines = [
-    `CONNECT ${target.host}:${target.port} HTTP/1.1`,
-    `Host: ${target.host}:${target.port}`,
+    `CONNECT ${hostUriPart}:${target.port} HTTP/1.1`,
+    `Host: ${hostUriPart}:${target.port}`,
     'Proxy-Connection: keep-alive',
   ];
   if (auth) {

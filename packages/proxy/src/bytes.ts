@@ -15,6 +15,16 @@ export const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
 };
 
 /**
+ * Format a `DialTarget.host` for embedding back into a uri-host context
+ * (Host header value, CONNECT request-line authority-form, etc.). Per the
+ * `DialTarget.host` contract IPv6 literals arrive without `[…]` brackets;
+ * RFC 3986 §3.2.2 requires the envelope whenever the host sits next to a
+ * `:port` suffix or a colon-bearing context.
+ */
+export const formatHostForUri = (host: string): string =>
+  host.includes(':') ? `[${host}]` : host;
+
+/**
  * Concatenate two byte buffers into a freshly-allocated ArrayBuffer-backed
  * Uint8Array. The empty-input branches go through `copy()` so the returned
  * buffer is always detached from the inputs' backing storage — accumulators
