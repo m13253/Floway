@@ -10,10 +10,11 @@
 //
 // The Trojan request header (56-byte hex(SHA-224(password)) + CRLF + SOCKS-
 // like address) MUST land in the same record as the first inner-protocol
-// bytes — the inner-TLS ClientHello when target.tls=true, or the HTTP/1.1
-// request line when target.tls=false. We surface the header as `prefix` on
-// the DialResult so the orchestrator passes it to whichever wrapper consumes
-// the next bytes (userspaceTls.prefix or fetchOnStream.prefix).
+// bytes — the inner-TLS ClientHello when the orchestrator wraps the
+// post-trojan stream in userspace TLS, or the HTTP/1.1 request line when
+// it doesn't. We surface the header as `prefix` on the DialResult so the
+// orchestrator passes it to whichever wrapper consumes the next bytes
+// (userspaceTls.prefix or fetchOnStream.prefix).
 
 import { sha224 } from '@noble/hashes/sha2.js';
 

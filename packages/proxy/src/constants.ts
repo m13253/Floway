@@ -11,7 +11,6 @@
 // from stalling the call: a healthy outer-TCP + outer-TLS + proxy-
 // handshake + inner-TLS round-trip finishes well under that even on
 // latency-bound links, and the fallback chain advances quickly when one
-// hop is dead. Operators with a genuinely slow link can override per-
-// proxy via the `dial_timeout_seconds` column; runProxiedRequest's
-// options.dialTimeoutMs takes the override.
+// hop is dead. Operators with a genuinely slow link can override per call
+// by passing options.dialTimeoutMs to runProxiedRequest.
 export const DEFAULT_DIAL_DEADLINE_MS = 10_000;
