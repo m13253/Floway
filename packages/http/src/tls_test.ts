@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
-import { userspaceTls } from './tls.ts';
+import { addTrustedRootCAs, userspaceTls } from './tls.ts';
 
 describe('userspaceTls — input validation', () => {
   it('rejects synchronously when the supplied AbortSignal is already aborted', async () => {
@@ -196,6 +196,44 @@ describe('userspaceTls — prefix coalescing', () => {
     const text = new TextDecoder('latin1').decode(written);
     expect(text).toContain(host);
 
+    ac.abort(new DOMException('done', 'AbortError'));
+    await handshake.catch(() => { /* expected */ });
+  });
+});
+
+interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
+
+describe('addTrustedRootCAs', () => {
+  it('deduplicates additions against the existing global list', () => {
+    const g = globalThis as unknown as TrustGlobals;
+    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
+    const pem = '-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----';
+    addTrustedRootCAs([pem, pem]);
+    addTrustedRootCAs([pem]);
+    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual([pem]);
+  });
+
+  it('initialises the global list if it is missing', () => {
+    const g = globalThis as unknown as TrustGlobals;
+    delete g.TLS_ADDITIONAL_ROOT_CA_LIST;
+    addTrustedRootCAs(['pem-a']);
+    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual(['pem-a']);
+  });
+});
+
+describe('userspaceTls — additionalRootCAs option', () => {
+  it('appends the option PEMs to globalThis.TLS_ADDITIONAL_ROOT_CA_LIST before the handshake', async () => {
+    const g = globalThis as unknown as TrustGlobals;
+    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
+    const fake = makeFakeDuplex();
+    const ac = new AbortController();
+    const extra = '-----BEGIN CERTIFICATE-----\nEXTRA\n-----END CERTIFICATE-----';
+    const handshake = userspaceTls(
+      { readable: fake.readable, writable: fake.writable },
+      { host: 'example.com', signal: ac.signal, additionalRootCAs: [extra] },
+    );
+    handshake.catch(() => { /* expected — we abort below */ });
+    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toContain(extra);
     ac.abort(new DOMException('done', 'AbortError'));
     await handshake.catch(() => { /* expected */ });
   });

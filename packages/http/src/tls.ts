@@ -26,6 +26,25 @@ const ensureCrypto = (): void => {
   cryptoInstalled = true;
 };
 
+// `@reclaimprotocol/tls`'s `loadRootCAs()` is module-memoised — it merges
+// `MOZILLA_ROOT_CA_LIST` with `globalThis.TLS_ADDITIONAL_ROOT_CA_LIST` on
+// first call and freezes the result, ignoring later additions. So every
+// PEM that should reach the userspace TLS trust set has to land in the
+// global *before* the first handshake. We push deduplicated by exact PEM
+// string; the library normalises whitespace internally when parsing.
+interface TrustGlobals { TLS_ADDITIONAL_ROOT_CA_LIST?: string[] }
+export const addTrustedRootCAs = (pems: readonly string[]): void => {
+  if (pems.length === 0) return;
+  const g = globalThis as unknown as TrustGlobals;
+  const list = (g.TLS_ADDITIONAL_ROOT_CA_LIST ??= []);
+  const seen = new Set(list);
+  for (const pem of pems) {
+    if (seen.has(pem)) continue;
+    seen.add(pem);
+    list.push(pem);
+  }
+};
+
 export interface UserspaceTlsOptions {
   /**
    * TLS ClientHello server_name extension and (unless `verifyHost` is set)
@@ -66,6 +85,18 @@ export interface UserspaceTlsOptions {
    * caller's ReadableStream cancel/WritableStream abort drive teardown.
    */
   signal?: AbortSignal;
+  /**
+   * Extra PEM-encoded root CAs to trust beyond `@reclaimprotocol/tls`'s
+   * bundled Mozilla snapshot. Effective only if no userspace-TLS
+   * handshake has built the library's `ROOT_CAS` cache yet — once that
+   * cache is frozen at first handshake, further additions are silently
+   * ignored by the library. Bootstrap-time wiring is the primary path
+   * for runtime trust stores (see `getRuntimeRootCAs` in
+   * `@floway-dev/platform`); this option exists for callers with
+   * caller-specific trust needs that must reach the TLS layer at dial
+   * time.
+   */
+  additionalRootCAs?: readonly string[];
 }
 
 export type TlsStream = DuplexStream;
@@ -80,6 +111,10 @@ export const userspaceTls = async (
   opts: UserspaceTlsOptions,
 ): Promise<TlsStream> => {
   ensureCrypto();
+
+  if (opts.additionalRootCAs?.length) {
+    addTrustedRootCAs(opts.additionalRootCAs);
+  }
 
   if (opts.signal?.aborted) {
     throw signalAbortReason(opts.signal);

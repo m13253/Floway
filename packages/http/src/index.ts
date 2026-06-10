@@ -21,7 +21,7 @@ export type { FetchOnStreamOptions } from './fetch-on-stream.ts';
 export { parseHttpResponse, toWebResponse } from './parser.ts';
 export { decodeChunked } from './chunked.ts';
 
-export { userspaceTls } from './tls.ts';
+export { userspaceTls, addTrustedRootCAs } from './tls.ts';
 export type { UserspaceTlsOptions, TlsStream } from './tls.ts';
 
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
