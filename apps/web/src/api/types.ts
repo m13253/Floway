@@ -25,7 +25,7 @@ export interface UpstreamModelConfig {
   kind: ModelKind;
   endpoints: ModelEndpoints;
   display_name?: string;
-  limits?: { max_context_window_tokens?: number; max_prompt_tokens?: number; max_output_tokens?: number };
+  limits?: ModelLimits;
   cost?: ModelPricing;
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
 }
@@ -45,7 +45,7 @@ export interface CustomRawModel {
   owned_by?: string;
   limits?: ModelLimits;
   cost?: ModelPricing;
-  kind?: 'chat' | 'embedding' | 'image';
+  kind?: ModelKind;
 }
 
 export interface CustomUpstreamConfig {
@@ -192,7 +192,7 @@ export interface PublicModel {
   limits?: ModelLimits;
   endpoints?: Record<string, ModelEndpointInfo>;
   cost?: ModelPricing;
-  kind?: 'chat' | 'embedding' | 'image';
+  kind?: ModelKind;
 }
 
 export interface ControlPlaneModel extends PublicModel {

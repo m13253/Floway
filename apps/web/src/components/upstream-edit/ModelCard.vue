@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Single model card in the horizontal grid. Click anywhere outside the
-// active controls selects this card; inner controls use @click.stop.
-
 import { ref } from 'vue';
 
 import { Switch } from '@floway-dev/ui';
@@ -11,7 +8,6 @@ defineProps<{
   publicId: string;
   enabled: boolean;
   selected: boolean;
-  /** Whether to render the Auto/Manual mode pills. */
   showModePills: boolean;
   mode: 'auto' | 'manual';
 }>();

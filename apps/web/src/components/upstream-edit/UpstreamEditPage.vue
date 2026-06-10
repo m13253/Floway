@@ -2,8 +2,7 @@
 // Top-level upstream editor page. Owns the entire draft state (provider,
 // name, enabled, flag overrides, disabled model ids, plus the
 // provider-specific custom/azure drafts) and the live /models fetch for
-// custom upstreams. Renders the two-column workbench: UpstreamConfigPanel on
-// the left, ModelsPanel on the right.
+// custom upstreams.
 
 import type { InferRequestType } from 'hono/client';
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';

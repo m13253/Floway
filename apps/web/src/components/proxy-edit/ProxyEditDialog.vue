@@ -4,9 +4,7 @@
 // barrel — the barrel pulls in runProxiedRequest and the userspace TLS
 // stack, which transitively depend on Node's crypto and inflate the
 // dashboard bundle. The parser itself is pure (no SocketDial, no TLS),
-// so the subpath gives live feedback without dial-time code. The gateway
-// re-parses on POST/PATCH, so this client check is not load-bearing for
-// security.
+// so the subpath gives live feedback without dial-time code.
 
 import { useNow } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';

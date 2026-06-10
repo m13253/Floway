@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// Right-side composite that owns the model row reconciliation: keeps the
-// merged manual+auto list in sync with the props, and hands the selected
-// row down to ModelEditor.
+// Owns the model row reconciliation: keeps the merged manual+auto list in
+// sync with the props, and hands the selected row down to ModelEditor.
 
 import { computed, reactive, ref, watch } from 'vue';
 

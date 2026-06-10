@@ -9,7 +9,7 @@ const props = defineProps<{
   models: ControlPlaneModel[];
 }>();
 
-const baseUrl = computed(() => (typeof window !== 'undefined' ? window.location.origin : ''));
+const baseUrl = computed(() => window.location.origin);
 
 // Picker buckets — Claude Code only accepts claude-* generation ids, Codex
 // accepts gpt-* / codex-* generation ids. Backend already collapses dated /

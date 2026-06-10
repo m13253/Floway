@@ -36,8 +36,6 @@ const formatPercent = (n: number | undefined): string => {
   return `${Math.max(0, Math.min(100, Math.round(n)))}%`;
 };
 
-// Severity ordering: credential health failures dominate (red), then an active
-// 429 (red), then heavy usage warnings (amber). Otherwise the account is green.
 const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; detail?: string }>(() => {
   const c = credential.value;
   if (c?.state === 'session_terminated') {

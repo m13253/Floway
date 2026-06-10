@@ -7,7 +7,6 @@ import { useLoading } from '../composables/useLoading.ts';
 import { type AuthUser, useAuthStore } from '../stores/auth.ts';
 import { Input } from '@floway-dev/ui';
 
-// Public route — skipped by the auth guard via meta.public.
 definePage({ meta: { public: true } });
 
 const api = useApi();

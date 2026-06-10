@@ -1,4 +1,5 @@
-// Compact "Xm Ys" countdown. expiredLabel is what to render once the delta is <= 0 ('now' disappears immediately, 'expiring' reads as the final tick before reset).
+// expiredLabel is what to render once the delta is <= 0: 'now' disappears
+// immediately, 'expiring' reads as a final tick instead of vanishing.
 
 export const formatCountdown = (ms: number, expiredLabel: 'now' | 'expiring' = 'now'): string => {
   if (ms <= 0) return expiredLabel;

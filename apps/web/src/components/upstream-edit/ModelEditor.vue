@@ -19,7 +19,7 @@ const props = defineProps<{
   isUpstreamIdLocked: boolean;
   // Controls visibility of the "Switch to Auto / Manual" toggle in the header.
   hasAutoCounterpart: boolean;
-  // True when the parent allows mode switching at all (false for Copilot).
+  // True when the parent allows mode switching at all.
   modeSwitchable: boolean;
 }>();
 

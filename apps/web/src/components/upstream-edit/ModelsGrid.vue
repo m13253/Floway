@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // Horizontal model card grid. Cards auto-fit to min 280px; the container
 // caps height at ~2.5 rows so the cut-off third row reads as "scroll for
-// more". Adding a manual model is driven by a button in ModelsPanel's
-// header — this component is purely the grid.
+// more".
 
 import ModelCard from './ModelCard.vue';
 import { publicIdOf, type Row, titleFor } from './modelRows.ts';
