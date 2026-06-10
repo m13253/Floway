@@ -17,20 +17,14 @@ export interface FakeServer {
   read(n: number): Promise<Uint8Array>;
   /** Returns all bytes the dialer wrote so far without removing them. */
   peekWritten(): Uint8Array;
-  /** Resolves once the dialer's writable is fully closed. */
-  waitWritableClosed(): Promise<void>;
   /** Push bytes into the dialer's readable. */
   respond(bytes: Uint8Array | string): void;
   /** Close the dialer's readable (server EOF). */
   endResponse(): void;
-  /** Reject any pending read on the dialer's readable with `err`. */
-  errorResponse(err: unknown): void;
 }
 
 export interface FakeSocketDial {
   socketDial: SocketDial;
-  /** The single accepted connection. Throws if `connect` was not called yet. */
-  server(): FakeServer;
   /** Awaits the next connect call (or the first if not yet observed). */
   awaitConnect(): Promise<FakeServer>;
   /** Throw when the dialer connects, simulating a TCP-level failure. */
@@ -65,10 +59,6 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
 
   return {
     socketDial,
-    server: () => {
-      if (!server) throw new Error('fake socket: connect has not been called');
-      return server;
-    },
     awaitConnect: async () => server ?? await serverReady,
     failNextConnect: err => { pendingConnectError = err; },
     connectCount: () => connectCount,
@@ -81,11 +71,8 @@ interface MakeFakeSocketResult {
 }
 
 const makeFakeSocket = (): MakeFakeSocketResult => {
-  // Dialer-side writable → server-side read buffer.
   let writeBuffer = new Uint8Array(0);
   let writableClosed = false;
-  let writableClosedResolve!: () => void;
-  const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
   const readWaiters: Array<{ n: number; resolve: (v: Uint8Array) => void; reject: (e: unknown) => void }> = [];
 
   const tryDispatchReads = (): void => {
@@ -115,17 +102,14 @@ const makeFakeSocket = (): MakeFakeSocketResult => {
     },
     close() {
       writableClosed = true;
-      writableClosedResolve();
       tryDispatchReads();
     },
     abort() {
       writableClosed = true;
-      writableClosedResolve();
       tryDispatchReads();
     },
   });
 
-  // Server-side respond → dialer-side readable.
   let readableController!: ReadableStreamDefaultController<Uint8Array>;
   const readable = new ReadableStream<Uint8Array>({
     start(c) { readableController = c; },
@@ -151,13 +135,11 @@ const makeFakeSocket = (): MakeFakeSocketResult => {
       });
     },
     peekWritten: () => new Uint8Array(writeBuffer),
-    waitWritableClosed: () => writableClosedPromise,
     respond(bytes) {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;
       readableController.enqueue(new Uint8Array(u));
     },
     endResponse() { readableController.close(); },
-    errorResponse(err) { readableController.error(err); },
   };
 
   let closed = false;

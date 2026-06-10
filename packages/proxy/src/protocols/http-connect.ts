@@ -68,10 +68,6 @@ const dialHttpConnectInner = async (
   await writer.write(utf8Bytes(`${lines.join('\r\n')}\r\n\r\n`));
   writer.releaseLock();
 
-  // The TransformStream mints a fresh readable so trailing bytes from the
-  // header-terminating read and everything after it reach the next consumer
-  // through one clean byte boundary.
-
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
 

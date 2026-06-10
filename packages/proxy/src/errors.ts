@@ -1,7 +1,6 @@
 // Surfaced by every protocol runner when the dial / proxy-handshake /
 // inner-TLS handshake fails — i.e. when the upstream server has not
-// observed any byte of our request yet. Callers use this signal to drive
-// retry/backoff decisions across a list of candidate proxies.
+// observed any byte of our request yet.
 //
 // Anything thrown after the upstream sees our request is NOT a
 // ProxyDialError — that's the upstream's problem.
@@ -41,9 +40,7 @@ export class ProxyDialError extends Error {
 
 /**
  * URI parser failures. Distinct from `ProxyDialError` because URI parsing
- * runs ahead of any dial — there is no stage taxonomy that applies. Re-
- * exported from the package root so callers can `instanceof`-discriminate
- * parse failures from arbitrary `Error`s thrown elsewhere in their stack.
+ * runs ahead of any dial — there is no stage taxonomy that applies.
  */
 export class ProxyUriError extends Error {
   override readonly name = 'ProxyUriError';

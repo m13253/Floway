@@ -49,12 +49,10 @@ export const assertValidTargetPort = (port: number, protocol: string): void => {
  * Also reject the C0 control set (NUL, CR, LF, the rest of 0x00-0x1F),
  * SP, and DEL: a host containing one of those bytes that flows into the
  * HTTP CONNECT request line as `${target.host}:${target.port}` would
- * split the request line and inject a forged head onto the wire — the
- * same anti-smuggling defense `@floway-dev/http`'s ws-upgrade and
- * fetch-on-stream already apply at their layer. The binary-framed dialers
- * (SOCKS5 / SS / SS2022 / Trojan / VLESS) are length-prefixed and not
- * exposed to that smuggling shape, but we centralize the byte filter here
- * so every dialer (current and future) inherits the same defense.
+ * split the request line and inject a forged head onto the wire. Length-
+ * prefixed dialers are not exposed to that smuggling shape, but
+ * centralizing the byte filter here lets every dialer inherit the same
+ * defense.
  *
  * SOCKS-style ATYP-domain framing carries the host as a 1-byte length-
  * prefix + bytes, so callers wiring those protocols pass `maxBytes: 255`.

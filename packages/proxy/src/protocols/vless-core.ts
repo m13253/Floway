@@ -79,9 +79,9 @@ const stripVlessReplyPrefix = (source: ReadableStream<Uint8Array>): ReadableStre
           }
           buf = concat(buf, r.value);
         }
-        // Fail closed with a typed proxy-handshake error rather than letting
-        // non-VLESS bytes flow into the inner TLS handshake and surface as
-        // an opaque TLS failure.
+        // Fail closed with a typed proxy-handshake error so non-VLESS
+        // bytes never reach the payload stream and surface as an opaque
+        // downstream failure.
         if (buf[0] !== 0x00) {
           controller.error(new ProxyDialError(`VLESS reply: bad version 0x${buf[0]!.toString(16)}`, 'proxy-handshake'));
           return;

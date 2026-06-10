@@ -33,9 +33,6 @@ import {
   type VlessWsTlsProxyConfig,
 } from './proxy-config.ts';
 
-// Runtime tables backing the SsMethod / Ss2022Method literal validation.
-// Kept inside the parser because url.ts is the only consumer that needs to
-// reify the literal union at runtime.
 const SS_METHOD_SET: ReadonlySet<string> = new Set<SsMethod>([
   'aes-128-gcm',
   'aes-256-gcm',
@@ -64,8 +61,6 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   try {
     url = new URL(uri);
   } catch (cause) {
-    // URL constructor failure becomes ProxyUriError — see pctDecode for the
-    // rationale.
     throw new ProxyUriError(`malformed proxy URI: ${uri}`, { cause });
   }
   const host = url.hostname;

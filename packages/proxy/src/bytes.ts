@@ -4,9 +4,9 @@
 // enqueue downstream or retain past the next read needs to own its memory.
 
 /**
- * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
- * Detaches the resulting buffer from any transport-owned backing storage
- * so the consumer can hold or mutate it safely.
+ * Allocate a fresh ArrayBuffer-backed Uint8Array detached from any
+ * transport-owned backing storage so the consumer can hold or mutate it
+ * safely.
  */
 export const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
   const r = new Uint8Array(u.byteLength);
@@ -191,10 +191,9 @@ const ipv6StringToBytes = (s: string): Uint8Array => {
 
 /**
  * ATYP byte triplet for a proxy protocol's SOCKS-style address frame.
- * SOCKS5 / Shadowsocks / Shadowsocks-2022 / Trojan all share the
- * 0x01/0x03/0x04 numbering; VLESS uses 0x01/0x02/0x03 instead. The
- * dialers thread their own values into `encodeAtypAddress` so the
- * IP-literal vs. domain discrimination stays in one place.
+ * SOCKS-style protocols disagree on the v4/domain/v6 numbering, so the
+ * dialers thread their own values into `encodeAtypAddress` and the IP-
+ * literal vs. domain discrimination stays in one place.
  */
 interface AtypBytes {
   v4: number;

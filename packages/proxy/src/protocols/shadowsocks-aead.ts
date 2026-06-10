@@ -17,8 +17,8 @@ export interface Aead {
 }
 
 /**
- * Encode a bigint counter as the 12-byte little-endian AEAD nonce both
- * Shadowsocks specs prescribe.
+ * 12-byte little-endian counter nonce as both Shadowsocks AEAD specs
+ * prescribe.
  */
 export const leNonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
   const out = new Uint8Array(NONCE_LEN);
@@ -31,9 +31,7 @@ export const leNonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
 };
 
 /**
- * Construct an `Aead` over the caller-supplied subkey, choosing between the
- * two AEAD families both Shadowsocks variants permit. Each call to
- * encrypt/decrypt instantiates a fresh cipher state — `@noble/ciphers`
+ * Each encrypt/decrypt instantiates a fresh cipher state — `@noble/ciphers`
  * exposes a one-shot API only.
  */
 export const makeAead = (kind: 'chacha' | 'gcm', key: Uint8Array): Aead => {

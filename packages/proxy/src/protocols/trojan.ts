@@ -70,7 +70,7 @@ const dialTrojanInner = async (
 };
 
 /**
- * Trojan request header (exported for tests).
+ * Trojan request header.
  *
  *   hex(SHA-224(password))[56] | CRLF | CMD=0x01 | ATYP | addr | port[BE] | CRLF
  *

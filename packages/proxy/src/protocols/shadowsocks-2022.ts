@@ -109,11 +109,9 @@ const dialShadowsocks2022Inner = async (
   await writer.write(initialOut);
   writer.releaseLock();
 
-  // Tag an AEAD auth failure before the receive side produces any
-  // plaintext as `proxy-handshake` (overwhelmingly a wrong-password /
-  // wrong-cipher misconfiguration) so the dial layer can fall through to
-  // the next entry instead of masquerading it as an opaque inner-TLS
-  // failure.
+  // AEAD auth failure on the very first frame is overwhelmingly a wrong-
+  // password / wrong-cipher misconfig, so tag it as `proxy-handshake`
+  // rather than letting a raw decrypt error surface.
   let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {

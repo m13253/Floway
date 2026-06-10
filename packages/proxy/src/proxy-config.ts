@@ -72,7 +72,6 @@ export interface VlessWsTlsProxyConfig extends ProxyConfigBase {
   uuid: string;
   /** WebSocket Host header; defaults to host. */
   wsHost?: string;
-  /** WebSocket path. */
   path: string;
 }
 

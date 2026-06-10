@@ -17,9 +17,6 @@ import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type
  * through the named proxy. The returned stream is plain bytes — no inner
  * TLS to the upstream and no HTTP/1.1 framing — so the caller is free to
  * layer those (or anything else) on top.
- *
- * `result.prefix`, when present, is bytes the protocol wants prepended to
- * the very first record the caller emits next (see DialResult.prefix).
  */
 export const dial = async (
   config: ProxyConfig,
@@ -138,8 +135,7 @@ export const runProxiedRequest = async (
       fetchPrefix = dialed.prefix;
     }
     // Synthesize a Host header from the dial target if the caller didn't
-    // provide one. The proxy package owns the host-vs-Host distinction —
-    // @floway-dev/http stays transport-target-agnostic.
+    // provide one.
     let hasHost = false;
     for (const k of Object.keys(request.headers)) {
       if (k.toLowerCase() === 'host') { hasHost = true; break; }

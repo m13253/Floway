@@ -149,15 +149,14 @@ const runRealityHandshake = async (
   });
   // Register a passive sink so a pump-driven rejection never lands as
   // unhandled if it fires before the outer `await handshakeDone` attaches
-  // its real handler. Same pattern as @floway-dev/http's userspaceTls.
+  // its real handler.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
   // Latch teardown so a follow-up onTlsEnd / EOF can't double-close the
-  // controller (Node throws ERR_INVALID_STATE on a second close/error).
-  // Mirror userspaceTls / ws-upgrade's split: an error path RSTs the writer
-  // so the transport tears down hard rather than blocking on a graceful
-  // FIN to a peer whose readable just errored; a clean teardown emits the
-  // polite write-half close.
+  // controller (Node throws ERR_INVALID_STATE on a second close/error). An
+  // error path RSTs the writer so the transport tears down hard rather
+  // than blocking on a graceful FIN to a peer whose readable just errored;
+  // a clean teardown emits the polite write-half close.
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
@@ -288,10 +287,10 @@ const runRealityHandshake = async (
       detachAbortListener = null;
       void tlsClient.end().catch(() => {});
       void reader.cancel(reason).catch(() => {});
-      // Mirror closePlain (and userspaceTls / ws-upgrade): a non-Error
-      // reason is a clean consumer cancel — emit a polite FIN; an Error
-      // reason means the consumer hit a failure mid-body, so RST the
-      // writer rather than graceful-end a half whose readable just errored.
+      // A non-Error reason is a clean consumer cancel — emit a polite
+      // FIN; an Error reason means the consumer hit a failure mid-body,
+      // so RST the writer rather than graceful-end a half whose readable
+      // just errored.
       if (reason instanceof Error) void writer.abort(reason).catch(() => {});
       else void writer.close().catch(() => {});
     },
