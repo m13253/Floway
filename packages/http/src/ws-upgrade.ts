@@ -65,10 +65,12 @@ const RESERVED_HEADER_NAMES = new Set([
 const WS_SHORT_LEN_MAX = 125;
 const WS_16BIT_LEN_MAX = 0xffff;
 
-// Cap on a single message reassembled across continuation frames. A
-// rogue server that streams a fragmented message indefinitely would
-// otherwise pin unbounded heap in `messageParts`. 64 MiB is far past
-// any reasonable WebSocket message a sane peer would emit.
+// Cap on a single message reassembled across continuation frames, and
+// equivalently on a single non-fragmented frame's payload. Without it a
+// rogue server could announce a 64-bit `payloadLen` that pins unbounded
+// heap before the reader pump finishes accumulating the bytes, or stream
+// fragmented continuation frames indefinitely. 64 MiB is far past any
+// reasonable WebSocket message a sane peer would emit.
 const WS_MAX_MESSAGE_SIZE = 64 * 1024 * 1024;
 
 // Cap on the upgrade-response head accumulation. RFC has no defined
@@ -446,12 +448,6 @@ const frameDuplexOnTransport = (
       );
     }
     messageSize += payload.byteLength;
-    if (messageSize > WS_MAX_MESSAGE_SIZE) {
-      throw new HttpProtocolError(
-        `WS message exceeded ${WS_MAX_MESSAGE_SIZE} bytes across continuation frames`,
-        'WS_MESSAGE_TOO_LARGE',
-      );
-    }
     messageParts.push(payload);
     if (!fin) return;
     const message = messageParts.length === 1
@@ -504,6 +500,17 @@ const frameDuplexOnTransport = (
             'WS frame: server-to-client frame is masked (RFC 6455 §5.1)',
             'BAD_HEADERS',
             { rfc: 'RFC 6455 §5.1' },
+          );
+        }
+        // Reject an oversized data frame on its header alone — otherwise the
+        // accumulating read below would pin `header.payloadLen` bytes in
+        // `buffer` before the post-decode size check at handleFrame fires.
+        // Control frames (opcode ≥ 0x8) are already capped at 125 bytes by
+        // tryParseFrameHeader and never enter the cross-continuation total.
+        if (header.opcode < 0x8 && messageSize + header.payloadLen > WS_MAX_MESSAGE_SIZE) {
+          throw new HttpProtocolError(
+            `WS message exceeded ${WS_MAX_MESSAGE_SIZE} bytes across continuation frames`,
+            'WS_MESSAGE_TOO_LARGE',
           );
         }
         const total = header.headerLen + header.payloadLen;

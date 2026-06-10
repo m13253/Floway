@@ -478,4 +478,44 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const reasonBytes = frame!.payload.subarray(2);
     expect(() => new TextDecoder('utf-8', { fatal: true }).decode(reasonBytes)).not.toThrow();
   });
+
+  it('rejects a single-frame payload that announces more than the 64 MiB cap before draining it', async () => {
+    // A rogue server can announce a 64-bit payloadLen the runtime would have
+    // to buffer in full before the post-decode size check fires. Reject the
+    // frame on its header alone so the reader pump never reads the bytes.
+    const fake = makeFakeDuplex();
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    // 65 MiB > 64 MiB cap. Build the 10-byte 64-bit length header only;
+    // the test asserts rejection happens before any payload bytes are sent.
+    const announced = 65 * 1024 * 1024;
+    const hi = Math.floor(announced / 0x100000000);
+    const lo = announced >>> 0;
+    fake.respond(new Uint8Array([
+      0x82, 127,
+      (hi >> 24) & 0xff, (hi >> 16) & 0xff, (hi >> 8) & 0xff, hi & 0xff,
+      (lo >>> 24) & 0xff, (lo >>> 16) & 0xff, (lo >>> 8) & 0xff, lo & 0xff,
+    ]));
+    const reader = stream.readable.getReader();
+    await expect(reader.read()).rejects.toMatchObject({
+      code: 'WS_MESSAGE_TOO_LARGE',
+    });
+  });
+
+  it('rejects a fragmented message whose accumulated size would exceed the cap', async () => {
+    // Two non-final frames each just under the cap: the first fits, the
+    // second pushes the running total over.
+    const fake = makeFakeDuplex();
+    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
+    await completeHandshake(fake);
+    const stream = await upgrade;
+    const reader = stream.readable.getReader();
+    const half = 40 * 1024 * 1024;
+    fake.respond(buildServerFrame(0x2, new Uint8Array(half), false));
+    fake.respond(buildServerFrame(0x0, new Uint8Array(half), true));
+    await expect(reader.read()).rejects.toMatchObject({
+      code: 'WS_MESSAGE_TOO_LARGE',
+    });
+  });
 });
