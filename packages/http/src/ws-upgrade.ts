@@ -502,9 +502,8 @@ const frameDuplexOnTransport = (
             { rfc: 'RFC 6455 §5.1' },
           );
         }
-        // Reject an oversized data frame on its header alone — otherwise the
-        // accumulating read below would pin `header.payloadLen` bytes in
-        // `buffer` before the post-decode size check at handleFrame fires.
+        // Reject an oversized data frame on its header alone, before the
+        // accumulating read below pins `header.payloadLen` bytes in `buffer`.
         // Control frames (opcode ≥ 0x8) are already capped at 125 bytes by
         // tryParseFrameHeader and never enter the cross-continuation total.
         if (header.opcode < 0x8 && messageSize + header.payloadLen > WS_MAX_MESSAGE_SIZE) {

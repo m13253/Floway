@@ -1334,7 +1334,7 @@ class SqlProxyRepo implements ProxyRepo {
     const nextSortOrder = patch.sortOrder ?? existing.sortOrder;
     // dialTimeoutSeconds is nullable, so distinguish "not in patch" from
     // "set to null" by hasOwn — `??` would collapse a deliberate clear.
-    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? (patch.dialTimeoutSeconds ?? null) : existing.dialTimeoutSeconds;
+    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
     const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     const updatedAt = new Date().toISOString();
 
@@ -1392,7 +1392,7 @@ class SqlProxyRepo implements ProxyRepo {
       )
       .bind(id)
       .run();
-    return ((result.meta.changes as number) ?? 0) > 0;
+    return (result.meta.changes ?? 0) > 0;
   }
 
   async deleteAll(): Promise<void> {

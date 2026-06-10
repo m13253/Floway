@@ -760,7 +760,7 @@ class MemoryProxyRepo implements ProxyRepo {
     const urlChanged = patch.url !== undefined && patch.url !== existing.url;
     // Distinguish "absent" from "explicit null" — `??` would collapse a
     // deliberate clear back to the existing value.
-    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? (patch.dialTimeoutSeconds ?? null) : existing.dialTimeoutSeconds;
+    const nextDialTimeout = Object.hasOwn(patch, 'dialTimeoutSeconds') ? patch.dialTimeoutSeconds! : existing.dialTimeoutSeconds;
     const updated: ProxyRecord = {
       ...existing,
       name: patch.name ?? existing.name,
