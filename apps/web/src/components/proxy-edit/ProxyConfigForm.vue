@@ -141,7 +141,7 @@ const reality = computed<RealityProxyConfig | null>(() =>
 
 <template>
   <div
-    class="rounded-xl border border-white/[0.06] bg-surface-800/40 p-4 space-y-4"
+    class="space-y-4"
     :class="urlError && 'opacity-60'"
   >
     <p v-if="urlError" class="rounded-md border border-accent-amber/30 bg-accent-amber/10 px-2 py-1 text-xs text-accent-amber">

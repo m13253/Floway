@@ -19,7 +19,7 @@ import { useNow, useTimeoutFn } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
-import { FORM_KIND_LABELS, defaultsFor, formKindOf } from './proxy-form-defaults.ts';
+import { defaultsFor } from './proxy-form-defaults.ts';
 import ProxyConfigForm from './ProxyConfigForm.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
@@ -134,11 +134,6 @@ const testError = ref<string | null>(null);
 
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
-
-const parseLabel = computed(() => {
-  const c = config.value!;
-  return `${FORM_KIND_LABELS[formKindOf(c)]} · ${c.host}:${c.port}`;
-});
 
 const backoffsForProxy = computed<BackoffRow[]>(() => {
   if (!props.record) return [];
@@ -347,13 +342,7 @@ const remove = async () => {
         :invalid="urlError !== null"
         class="font-mono"
       />
-      <div v-if="config && !urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-emerald/30 bg-accent-emerald/10 px-2 py-1 text-xs text-accent-emerald">
-        <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-          <path d="m5 13 4 4L19 7" />
-        </svg>
-        {{ parseLabel }}
-      </div>
-      <div v-else-if="urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
+      <div v-if="urlError" class="inline-flex items-center gap-1 rounded-md border border-accent-rose/30 bg-accent-rose/10 px-2 py-1 text-xs text-accent-rose">
         <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10" />
           <path d="M12 8v4M12 16h.01" />
