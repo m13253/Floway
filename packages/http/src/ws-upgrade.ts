@@ -610,10 +610,10 @@ const tryParseFrameHeader = (buf: Uint8Array): FrameHeader | null => {
   } else {
     if (buf.byteLength < 10) return null;
     // RFC 6455 §5.2: the 64-bit length's MSB MUST be 0. We additionally
-    // refuse anything above Number.MAX_SAFE_INTEGER / 2 — the JS number
-    // representation is bit-exact up to 2^53 and our consumers (typed
-    // arrays) cap at 2^32 anyway, so a payload that doesn't fit a safe
-    // integer is a protocol violation in practice.
+    // refuse anything that isn't a safe integer — the JS number
+    // representation is bit-exact up to 2^53 - 1 and our consumers (typed
+    // arrays) cap at 2^32 anyway, so a payload above MAX_SAFE_INTEGER
+    // would not survive the rest of the pipeline.
     if ((buf[2]! & 0x80) !== 0) {
       throw new HttpProtocolError(
         'WS frame: 64-bit length with MSB set',
