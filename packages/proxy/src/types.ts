@@ -15,9 +15,11 @@ export interface DialTarget {
    *
    * MUST be ASCII. Callers are responsible for punycoding IDN labels before
    * the dial layer sees them — the wire format for every proxy protocol we
-   * support frames the hostname as length-prefixed bytes, and a raw UTF-8
-   * IDN would muddle Latin-1 / UTF-8 framing on the wire. Dialers reject
-   * non-ASCII hosts up-front with a typed dial error.
+   * support either frames the hostname as length-prefixed bytes (SOCKS-style
+   * ATYP-domain for SOCKS5 / SS / SS2022 / Trojan / VLESS) or embeds it raw
+   * in an ASCII request line (HTTP CONNECT); a raw UTF-8 IDN would muddle
+   * Latin-1 / UTF-8 framing in the former and break the ASCII grammar in the
+   * latter. Dialers reject non-ASCII hosts up-front with a typed dial error.
    *
    * IPv6 literals: pass the bare address without `[…]` brackets — the proxy
    * library does not normalise the envelope, and downstream Host-header synth
