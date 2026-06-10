@@ -9,6 +9,8 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
+import { STATUS_LINE } from '@floway-dev/http';
+
 import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
@@ -108,11 +110,12 @@ const dialHttpConnectInner = async (
         const idx = findDoubleCrlf(buf);
         if (idx >= 0) {
           const head = new TextDecoder().decode(buf.subarray(0, idx));
-          const m = /^HTTP\/1\.[01] (\d{3})(?: (.*))?\r\n/.exec(`${head}\r\n`);
-          if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(head.split('\r\n')[0])}`, 'proxy-handshake');
+          const statusLine = head.split('\r\n')[0]!;
+          const m = STATUS_LINE.exec(statusLine);
+          if (!m) throw new ProxyDialError(`CONNECT bad status line: ${JSON.stringify(statusLine)}`, 'proxy-handshake');
           const status = parseInt(m[1]!, 10);
           if (status < 200 || status >= 300) {
-            throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2] ?? ''}`.trimEnd(), 'proxy-handshake');
+            throw new ProxyDialError(`CONNECT replied ${m[1]} ${m[2]!}`.trimEnd(), 'proxy-handshake');
           }
           const trailing = buf.subarray(idx + 4);
           if (trailing.byteLength) await fwdWriter.write(copy(trailing));

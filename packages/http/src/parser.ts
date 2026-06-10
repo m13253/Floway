@@ -4,7 +4,7 @@
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
-import { ASCII_DECODER, STATUS_LINE, TCHAR } from './grammar.ts';
+import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws } from './grammar.ts';
 import type { RawHttpResponse } from './types.ts';
 
 /**
@@ -121,20 +121,7 @@ const readResponseHead = async (
   const headerBytes = buffer.subarray(0, headerEnd);
   const remainder = copy(buffer.subarray(headerEnd + 4));
 
-  // RFC 9112 §5: the header section MUST be ASCII. Reject any byte ≥ 0x80
-  // up front — TextDecoder fatal-UTF-8 alone would accept valid UTF-8
-  // sequences like 0xc3 0xa9 ("é") that the spec forbids in the header
-  // section.
-  for (let i = 0; i < headerBytes.byteLength; i++) {
-    if (headerBytes[i]! >= 0x80) {
-      throw new HttpProtocolError(
-        `non-ASCII byte 0x${headerBytes[i]!.toString(16).padStart(2, '0')} at offset ${i} in response headers`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9112 §5' },
-      );
-    }
-  }
-  const headerText = ASCII_DECODER.decode(headerBytes);
+  const headerText = decodeAsciiHeaderSection(headerBytes, 'response headers');
   const lines = headerText.split('\r\n');
   const statusLine = lines.shift()!;
   // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
@@ -218,7 +205,7 @@ const readResponseHead = async (
         { rfc: 'RFC 9110 §5.1' },
       );
     }
-    const value = line.slice(idx + 1).replace(/^[\t ]+|[\t ]+$/g, '');
+    const value = trimFieldValueOws(line.slice(idx + 1));
     // After the §5 non-ASCII reject above, any remaining byte is ASCII; the
     // only valid ones inside a field-value are HTAB (0x09), SP (0x20), and
     // VCHAR (0x21-0x7E). Reject everything else — NUL, the rest of the C0

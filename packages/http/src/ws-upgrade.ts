@@ -18,7 +18,7 @@ import { sha1 } from '@noble/hashes/legacy.js';
 import { signalAbortReason } from './abort.ts';
 import { concat, copy, findDoubleCrlf } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
-import { ASCII_DECODER, STATUS_LINE, TCHAR } from './grammar.ts';
+import { decodeAsciiHeaderSection, STATUS_LINE, TCHAR, trimFieldValueOws } from './grammar.ts';
 import type { DuplexStream } from './types.ts';
 
 export interface WsUpgradeOptions {
@@ -261,16 +261,7 @@ const readUpgradeResponse = async (
   }
   const headBytes = buffer.subarray(0, headerEnd);
   const remainder = copy(buffer.subarray(headerEnd + 4));
-  for (let i = 0; i < headBytes.byteLength; i++) {
-    if (headBytes[i]! >= 0x80) {
-      throw new HttpProtocolError(
-        `WS upgrade: non-ASCII byte 0x${headBytes[i]!.toString(16).padStart(2, '0')} at offset ${i} in response head`,
-        'BAD_HEADERS',
-        { rfc: 'RFC 9112 §5' },
-      );
-    }
-  }
-  const text = ASCII_DECODER.decode(headBytes);
+  const text = decodeAsciiHeaderSection(headBytes, 'WS upgrade response head');
   const lines = text.split('\r\n');
   const statusLine = lines.shift()!;
   // RFC 6455 §4.1: the upgrade response is HTTP/1.1; its status code MUST
@@ -303,7 +294,7 @@ const readUpgradeResponse = async (
       );
     }
     const name = line.slice(0, idx).toLowerCase();
-    const value = line.slice(idx + 1).replace(/^[\t ]+|[\t ]+$/g, '');
+    const value = trimFieldValueOws(line.slice(idx + 1));
     headers.set(name, value);
   }
   return { headers, remainder };

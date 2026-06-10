@@ -31,3 +31,5 @@ export { signalAbortReason } from './abort.ts';
 
 export { HttpProtocolError } from './errors.ts';
 export type { HttpProtocolErrorCode } from './errors.ts';
+
+export { STATUS_LINE } from './grammar.ts';
