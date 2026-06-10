@@ -78,6 +78,10 @@ const WS_MAX_MESSAGE_SIZE = 64 * 1024 * 1024;
 // cap; we mirror the response parser's 64 KiB ceiling.
 const WS_HEAD_BUFFER_CAP = 64 * 1024;
 
+// Close-frame status codes per RFC 6455 §7.4.
+const WS_CLOSE_NORMAL = 1000;
+const WS_CLOSE_INTERNAL_ERROR = 1011;
+
 interface FrameHeader {
   fin: boolean;
   opcode: number;
@@ -421,7 +425,7 @@ const frameDuplexOnTransport = (
       // Close frame: respond with our own close, drain reader, signal end-
       // of-stream upward. RFC 6455 §5.5.1: the server's close payload (if
       // any) leads with a 2-byte status code followed by UTF-8 reason.
-      await sendCloseFrame(1000, '');
+      await sendCloseFrame(WS_CLOSE_NORMAL, '');
       closePlain();
       return;
     }
@@ -487,7 +491,7 @@ const frameDuplexOnTransport = (
       detachAbortListener?.();
       detachAbortListener = null;
       void reader.cancel(reason).catch(() => {});
-      void sendCloseFrame(1000, '').then(() => {
+      void sendCloseFrame(WS_CLOSE_NORMAL, '').then(() => {
         if (reason instanceof Error) return frameWriter.abort(reason).catch(() => {});
         return frameWriter.close().catch(() => {});
       });
@@ -566,12 +570,11 @@ const frameDuplexOnTransport = (
       await writeFrame(frameWriter, 0x2, chunk);
     },
     async close() {
-      await sendCloseFrame(1000, '');
+      await sendCloseFrame(WS_CLOSE_NORMAL, '');
       try { await frameWriter.close(); } catch { /* peer already gone */ }
     },
     async abort(reason) {
-      const code = 1011;
-      await sendCloseFrame(code, String(reason ?? ''));
+      await sendCloseFrame(WS_CLOSE_INTERNAL_ERROR, String(reason ?? ''));
       try { await frameWriter.abort(reason); } catch { /* peer already gone */ }
     },
   });
