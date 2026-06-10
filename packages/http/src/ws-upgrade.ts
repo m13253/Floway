@@ -541,7 +541,13 @@ const frameDuplexOnTransport = (
           }
           buffer = concat(buffer, value);
         }
-        const payload = copy(buffer.subarray(header.headerLen, total));
+        // `buffer` is `concat`'s fresh allocation (or the owned `head` from
+        // `frameDuplexOnTransport`), so subarrays onto it are already off
+        // transport-pooled memory. Copying just the remainder breaks the
+        // backing-buffer aliasing between `payload` and the next iteration's
+        // `buffer`; an extra `copy` on `payload` would duplicate up to
+        // WS_MAX_MESSAGE_SIZE bytes per frame for no aliasing benefit.
+        const payload = buffer.subarray(header.headerLen, total);
         buffer = copy(buffer.subarray(total));
         await handleFrame(header.fin, header.opcode, payload);
       }
