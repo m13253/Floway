@@ -84,9 +84,17 @@ const hexNibble = (code: number): number => {
  * (RFC 9112 §2.2). Returns the index of the first CR, or -1 if the buffer
  * doesn't contain a full terminator yet. Used by the CONNECT-response peel
  * in the HTTP proxy dialer.
+ *
+ * The `from` resume index lets a drip-fed accumulator avoid rescanning
+ * the prefix on every read: a caller that already searched up to
+ * `buf.byteLength` then concats more bytes can pass
+ * `Math.max(0, prevByteLength - 3)` to re-examine only the tail where a
+ * partial terminator could have started straddling the seam. Without it
+ * the per-read search is O(n) on the whole buffer, turning a 1-byte
+ * drip up to the 64 KiB header cap into O(n²).
  */
-export const findDoubleCrlf = (buf: Uint8Array): number => {
-  for (let i = 0; i + 3 < buf.byteLength; i++) {
+export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
+  for (let i = from; i + 3 < buf.byteLength; i++) {
     if (buf[i] === 0x0d && buf[i + 1] === 0x0a && buf[i + 2] === 0x0d && buf[i + 3] === 0x0a) return i;
   }
   return -1;
