@@ -53,8 +53,8 @@ const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
 //
 // `tls: true` switches to node:tls — the SNI and cert-verify name both
 // default to `host`. Used by the proxy library's outer-TLS legs (HTTPS
-// CONNECT, VLESS-TCP+TLS) where the runtime's native TLS is faster than
-// userspace TLS.
+// CONNECT, VLESS-TCP+TLS, VLESS-WS+TLS) where the runtime's native TLS
+// is faster than userspace TLS.
 //
 // `signal` is honoured at three layers: (1) pre-connect short-circuit, (2)
 // node:net / node:tls native abort during the connect handshake, (3) post-
