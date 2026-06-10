@@ -64,10 +64,6 @@ interface ProxiedRequest {
 // Body buffering is deferred until a non-`direct` proxy actually needs it;
 // the direct-only fast path passes `init` straight to runtime `fetch`,
 // which is how non-buffered shapes like FormData stay supported.
-//
-// Streaming bodies (`init.body instanceof ReadableStream`) are rejected
-// upfront because the two-pass dial can replay a request, and a stream is
-// single-shot. Buffer streaming bodies in the caller before reaching here.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take

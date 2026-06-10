@@ -3,7 +3,7 @@ import { getRepo } from '../repo/index.ts';
 import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
-import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
+import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
 
 // Build a per-request mapper that hands each upstream id its own
 // proxy-aware Fetcher. The proxies catalog and the request's set of
@@ -11,8 +11,7 @@ import { parseProxyUri, runProxiedRequest } from '@floway-dev/proxy';
 // per-upstream fetcher can be constructed synchronously by id at the
 // provider-factory boundary. Upstreams whose `proxyFallbackList` is empty
 // receive a fetcher that walks the implicit ['direct'] list — i.e. plain
-// runtime `fetch`, but still through the same instrumentation seam so a
-// future global default proxy hook only has to land here.
+// runtime `fetch`.
 //
 // Parse failures on individual proxy rows are isolated to the upstreams
 // that actually reference them: a single malformed URL must not take down
@@ -32,7 +31,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
   }
 
   const proxyById = new Map<string, ProxyEntry>();
-  const proxyParseErrors = new Map<string, Error>();
+  const proxyParseErrors = new Map<string, ProxyUriError>();
   if (referencedProxyIds.size > 0) {
     const proxies = await repo.proxies.list();
     for (const p of proxies) {
@@ -46,7 +45,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
           dialTimeoutMs: p.dialTimeoutSeconds === null ? null : p.dialTimeoutSeconds * 1000,
         });
       } catch (err) {
-        proxyParseErrors.set(p.id, err instanceof Error ? err : new Error(String(err)));
+        proxyParseErrors.set(p.id, err as ProxyUriError);
       }
     }
   }
