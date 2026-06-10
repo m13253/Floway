@@ -58,7 +58,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
 };
 
 /** Feed `head` to a fresh fake duplex, EOF the server side, and return the
- *  readable for the parser/fetch tests to consume in one shot. */
+ *  readable for the parser tests to consume in one shot. */
 export const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
   const fake = makeFakeDuplex();
   fake.respond(head);
