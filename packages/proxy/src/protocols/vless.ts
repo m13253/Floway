@@ -17,9 +17,6 @@ export const dialVlessTcpTls = async (
 ): Promise<DialResult> => {
   assertValidTargetPort(target.port, 'VLESS');
   assertValidTargetHost(target.host, 'VLESS', { maxBytes: 255 });
-  // workerd handles outer TLS to the VLESS server inside connect(tls=true);
-  // we can't distinguish a TCP RST from a TLS handshake failure here, so any
-  // dial-time error is reported as tcp-connect.
   const socket = await connectOrDialError(options.socketDial, config.host, config.port, { tls: true, signal: options.signal });
 
   try {

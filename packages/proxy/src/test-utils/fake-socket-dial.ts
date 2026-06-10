@@ -8,11 +8,6 @@
 
 import type { DialedSocket, SocketDial } from '../types.ts';
 
-// Mirror SocketDial.connect's `opts` slot structurally; the proxy library
-// keeps the option-bag interface non-exported, so derive its shape from the
-// public method signature instead of duplicating it here.
-type SocketDialConnectOpts = Parameters<SocketDial['connect']>[2];
-
 export interface FakeServer {
   /**
    * Resolves once the dialer has written at least `n` bytes; consumes them
@@ -30,7 +25,6 @@ export interface FakeServer {
   endResponse(): void;
   /** Reject any pending read on the dialer's readable with `err`. */
   errorResponse(err: unknown): void;
-  connect: { host: string; port: number; opts: SocketDialConnectOpts };
 }
 
 export interface FakeSocketDial {
@@ -54,14 +48,14 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
   let connectCount = 0;
 
   const socketDial: SocketDial = {
-    connect: async (host, port, opts) => {
+    connect: async () => {
       connectCount++;
       if (pendingConnectError) {
         const err = pendingConnectError;
         pendingConnectError = null;
         throw err;
       }
-      const { socket, srv } = makeFakeSocket(host, port, opts);
+      const { socket, srv } = makeFakeSocket();
       server = srv;
       resolveServer?.(srv);
       resolveServer = null;
@@ -86,11 +80,7 @@ interface MakeFakeSocketResult {
   srv: FakeServer;
 }
 
-const makeFakeSocket = (
-  host: string,
-  port: number,
-  opts: SocketDialConnectOpts,
-): MakeFakeSocketResult => {
+const makeFakeSocket = (): MakeFakeSocketResult => {
   // Dialer-side writable → server-side read buffer.
   let writeBuffer = new Uint8Array(0);
   let writableClosed = false;
@@ -168,7 +158,6 @@ const makeFakeSocket = (
     },
     endResponse() { readableController.close(); },
     errorResponse(err) { readableController.error(err); },
-    connect: { host, port, opts },
   };
 
   let closed = false;

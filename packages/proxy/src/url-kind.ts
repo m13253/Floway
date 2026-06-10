@@ -2,8 +2,7 @@
 // from `parseProxyUri` because (a) it returns a `PROXY` fallback on garbled
 // input instead of throwing, and (b) it does scheme-only discrimination —
 // no required-field validation, no SS / VLESS userinfo decode beyond the
-// minimum needed to pick the kind label. Pure function, no SocketDial /
-// TLS dependencies.
+// minimum needed to pick the kind label.
 
 export const kindFromUri = (url: string): string => {
   let parsed: URL;

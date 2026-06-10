@@ -1,8 +1,5 @@
-// Buffered "read exactly N bytes" helper for byte-framed consumers on a
-// Web Streams reader. Shadowsocks AEAD-2018 and Shadowsocks-2022 both
-// walk fixed-size handshake records off a transport reader and need the
-// same loop: pull until N bytes are buffered, hand N to the caller, keep
-// the rest for the next call.
+// Buffered "read exactly N bytes" helper over a Web Streams reader.
+// `label` only flavours the EOF error message.
 
 export const makeExactReader = (
   reader: ReadableStreamDefaultReader<Uint8Array>,

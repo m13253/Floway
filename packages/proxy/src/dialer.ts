@@ -1,5 +1,3 @@
-// The dial dispatcher and the proxied-fetch orchestrator.
-
 import { formatHostForUri } from './bytes.ts';
 import { DEFAULT_DIAL_DEADLINE_MS } from './constants.ts';
 import { ProxyDialError } from './errors.ts';

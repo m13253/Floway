@@ -15,11 +15,10 @@ export const copy = (u: Uint8Array): Uint8Array<ArrayBuffer> => {
 };
 
 /**
- * Format a `DialTarget.host` for embedding back into a uri-host context
- * (Host header value, CONNECT request-line authority-form, etc.). Per the
- * `DialTarget.host` contract IPv6 literals arrive without `[…]` brackets;
- * RFC 3986 §3.2.2 requires the envelope whenever the host sits next to a
- * `:port` suffix or a colon-bearing context.
+ * Format a `DialTarget.host` for embedding back into a uri-host context.
+ * Per the `DialTarget.host` contract IPv6 literals arrive without `[…]`
+ * brackets; RFC 3986 §3.2.2 requires the envelope whenever the host sits
+ * next to a `:port` suffix or a colon-bearing context.
  */
 export const formatHostForUri = (host: string): string =>
   host.includes(':') ? `[${host}]` : host;
@@ -42,9 +41,8 @@ export const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> =>
 
 /**
  * UTF-8-encode a string. Equivalent to `new TextEncoder().encode(s)` but
- * short enough to use inline at call sites — HKDF info / context-binding
- * literals, the SS user password feeding EVP_BytesToKey, and so on —
- * without forcing each caller to keep its own encoder around.
+ * short enough to use inline without forcing each caller to keep its own
+ * encoder around.
  */
 export const utf8Bytes = (s: string): Uint8Array<ArrayBuffer> =>
   new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
@@ -82,8 +80,7 @@ const hexNibble = (code: number): number => {
 /**
  * Locate a CR/LF/CR/LF sequence — the HTTP/1.1 header-section terminator
  * (RFC 9112 §2.2). Returns the index of the first CR, or -1 if the buffer
- * doesn't contain a full terminator yet. Used by the CONNECT-response peel
- * in the HTTP proxy dialer.
+ * doesn't contain a full terminator yet.
  *
  * The `from` resume index lets a drip-fed accumulator avoid rescanning
  * the prefix on every read: a caller that already searched up to
@@ -101,13 +98,13 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
 };
 
 /**
- * Base64-encode a raw byte buffer. `btoa` requires a binary-string input
+ * Base64-encode a raw byte buffer. RFC 7617 §2.1 mandates UTF-8 bytes for
+ * HTTP Basic auth credentials: the caller encodes the credential string to
+ * UTF-8 with TextEncoder, then base64s those bytes (NOT the JS string code
+ * units of the original credentials, which would emit Latin-1 bytes and
+ * crash on code points > U+00FF). `btoa` requires a binary-string input
  * (one code-unit per byte), so we map each byte to its corresponding
- * Latin-1 code unit via `String.fromCharCode` before calling btoa. Used
- * for HTTP CONNECT Basic-auth where RFC 7617 §2.1 mandates UTF-8 bytes —
- * the caller encodes credentials to UTF-8 with TextEncoder, then base64s
- * those bytes (NOT the JS string code units of the original credentials,
- * which would emit Latin-1 bytes and crash on code points > U+00FF).
+ * Latin-1 code unit via `String.fromCharCode` before calling btoa.
  */
 export const base64EncodeBytes = (bytes: Uint8Array): string => {
   let bin = '';
@@ -118,8 +115,7 @@ export const base64EncodeBytes = (bytes: Uint8Array): string => {
 /**
  * Base64-decode the inverse of {@link base64EncodeBytes}. `atob` returns
  * a Latin-1 binary string; map each code unit back to its byte value.
- * Throws (via `atob`) on invalid base64. The url-safe variant lives in
- * the REALITY dialer because the alphabet fixup is its own concern.
+ * Throws (via `atob`) on invalid base64.
  */
 export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
   const bin = atob(s);
@@ -133,7 +129,7 @@ export const base64DecodeBytes = (s: string): Uint8Array<ArrayBuffer> => {
  * isn't a literal IPv4. Strict: each component must be a decimal in
  * 0..255 with no leading zeros (the "no leading zeros" rule prevents
  * "0123" being read as 123 — some resolvers interpret leading zeros as
- * octal). Used to switch a SOCKS-family address to ATYP=0x01.
+ * octal).
  */
 const parseIpv4Literal = (s: string): Uint8Array | null => {
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s)) return null;

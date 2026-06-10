@@ -129,11 +129,6 @@ export interface ProxyRequestTarget extends DialTarget {
   alpn?: string[];
 }
 
-// SocketDial is a runtime-agnostic byte-stream dial primitive. The proxy
-// package does NOT depend on any runtime — the caller threads in a
-// concrete impl (Workers' `cloudflare:sockets`, Node's `node:net`, etc.)
-// via DialOptions.socketDial.
-
 export interface SocketDial {
   connect(host: string, port: number, opts?: SocketDialOptions): Promise<DialedSocket>;
 }
@@ -176,10 +171,7 @@ export const connectOrDialError = async (
  * Output of a per-protocol `dial`. The duplex stream points at
  * `target.host:target.port` (after the proxy's framing has been peeled
  * off). `prefix`, when present, is bytes the dialer wants prepended to
- * the very first record the orchestrator emits next — Trojan uses this
- * to inline its 56-byte auth header into the same TLS record / TCP
- * segment as the request line, so a sing-box inbound's `conn.Read(56)`
- * doesn't short-read on a leading fragment.
+ * the very first record the orchestrator emits next.
  */
 export interface DialResult {
   readable: ReadableStream<Uint8Array>;

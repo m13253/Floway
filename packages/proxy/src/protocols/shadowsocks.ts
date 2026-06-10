@@ -86,6 +86,11 @@ const dialShadowsocksInner = async (
   await writer.write(initialOut);
   writer.releaseLock();
 
+  // Tag an AEAD auth failure before the receive side produces any
+  // plaintext as `proxy-handshake` (overwhelmingly a wrong-password /
+  // wrong-cipher misconfiguration) so the dial layer can fall through to
+  // the next entry instead of masquerading it as an opaque inner-TLS
+  // failure.
   let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -160,16 +165,7 @@ const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uin
   return out;
 };
 
-/**
- * OpenSSL's EVP_BytesToKey — MD5-chained key derivation. Used by SS to turn
- * a UTF-8 password into a fixed-length symmetric key.
- *
- *   M0 = MD5(password)
- *   Mi = MD5(M(i-1) || password)
- *   key = (M0 || M1 || …)[0..keyLen]
- *
- * Exported for tests.
- */
+/** Exported for tests; see header comment for the EVP_BytesToKey derivation. */
 export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<ArrayBuffer> => {
   const pw = utf8Bytes(password);
   const out = new Uint8Array(keyLen);

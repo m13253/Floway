@@ -109,6 +109,11 @@ const dialShadowsocks2022Inner = async (
   await writer.write(initialOut);
   writer.releaseLock();
 
+  // Tag an AEAD auth failure before the receive side produces any
+  // plaintext as `proxy-handshake` (overwhelmingly a wrong-password /
+  // wrong-cipher misconfiguration) so the dial layer can fall through to
+  // the next entry instead of masquerading it as an opaque inner-TLS
+  // failure.
   let recvBootstrapped = false;
   const ssReadable = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -147,7 +152,6 @@ const dialShadowsocks2022Inner = async (
               throw new ProxyDialError('SS2022: salt-echo mismatch', 'proxy-handshake');
             }
           }
-          // First-payload length
           const firstLen = (respFixedPlain[1 + 8 + keyLen]! << 8) | respFixedPlain[1 + 8 + keyLen + 1]!;
           const firstSealed = await readN(firstLen + TAG);
           const firstPlain = recvCipher.decrypt(leNonce(recvNonce++), firstSealed);

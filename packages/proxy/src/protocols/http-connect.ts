@@ -37,8 +37,8 @@ export const dialHttpConnect = async (
   } catch (err) {
     // Any throw past `connect()` means the dial won't be returning a
     // stream — the response-body lifecycle that normally drives socket
-    // teardown never starts. Close the socket explicitly so we don't leak
-    // an FD on the Node side / a connection slot on Workers.
+    // teardown never starts. Close the socket explicitly so the resource
+    // doesn't leak.
     void socket.close().catch(() => {});
     throw err;
   }
@@ -68,21 +68,18 @@ const dialHttpConnectInner = async (
   await writer.write(utf8Bytes(`${lines.join('\r\n')}\r\n\r\n`));
   writer.releaseLock();
 
-  // Peel the CONNECT response off the socket reader, then mint a fresh
-  // readable via a TransformStream and hand it to the orchestrator. Trailing
-  // bytes from the same read that completes the headers, plus everything
-  // the socket reader sees afterwards, flow into the forwarded stream so
-  // the next consumer of the forwarded stream starts from a clean byte
-  // boundary.
+  // The TransformStream mints a fresh readable so trailing bytes from the
+  // header-terminating read and everything after it reach the next consumer
+  // through one clean byte boundary.
 
   const { readable: postConnect, writable: forward } = new TransformStream<Uint8Array, Uint8Array>();
   const fwdWriter = forward.getWriter();
 
   // Cap the CONNECT-response accumulation. A hostile or broken proxy that
   // streams data without ever emitting the double-CRLF would otherwise grow
-  // `buf` until the Worker's heap cap (~128 MiB) kills the request. 64 KiB
-  // is two orders of magnitude over the real CONNECT-response size and
-  // still bounds the worst case.
+  // `buf` until the host runtime's heap cap kills the request. 64 KiB is
+  // two orders of magnitude over the real CONNECT-response size and still
+  // bounds the worst case.
   const HEADER_BUFFER_CAP = 64 * 1024;
   const reader = socket.readable.getReader();
   const peelDone = (async () => {
@@ -129,9 +126,9 @@ const dialHttpConnectInner = async (
   // Always-on terminal handler routes peel errors into the forward stream
   // so the next consumer sees them as transport failures rather than an
   // unhandled rejection. The outer dial-time try/catch has already exited
-  // by the time this fires, so we ALSO close the socket here — the
-  // orchestrator only holds wrapper streams and has no way to reach the
-  // raw fd otherwise.
+  // by the time this fires, so we ALSO close the socket here — once we
+  // return, the caller only holds wrapper streams and has no way to reach
+  // the raw socket.
   peelDone.catch(e => {
     fwdWriter.abort(e).catch(() => {});
     void socket.close().catch(() => {});

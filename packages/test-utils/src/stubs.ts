@@ -71,7 +71,7 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callImagesEdits: autoWrap(overrides.callImagesEdits) ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
 });
 
-export const stubProviderInstance = (overrides: Partial<ModelProviderInstance> = {}): ModelProviderInstance => ({
+const stubProviderInstance = (overrides: Partial<ModelProviderInstance> = {}): ModelProviderInstance => ({
   upstream: 'test-upstream',
   providerKind: 'custom',
   name: 'Test Upstream',
@@ -81,7 +81,7 @@ export const stubProviderInstance = (overrides: Partial<ModelProviderInstance> =
   ...overrides,
 });
 
-export const stubProviderModelRecord = (overrides: Partial<ProviderModelRecord> = {}): ProviderModelRecord => {
+const stubProviderModelRecord = (overrides: Partial<ProviderModelRecord> = {}): ProviderModelRecord => {
   const provider = overrides.provider ?? stubProvider();
   return {
     upstream: 'test-upstream',

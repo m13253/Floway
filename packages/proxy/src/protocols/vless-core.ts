@@ -1,9 +1,6 @@
 // Shared VLESS core: write VLESS header to a transport, peel the server's
 // reply prefix off the readable, and return the post-framing duplex stream.
-//
-// Used by reality.ts (after the REALITY-tls is established) and by vless.ts
-// (after the outer TLS for vless-tcp, or after the outer TLS + WebSocket
-// upgrade for vless-ws).
+// Callers must pass a transport whose framing/TLS is already established.
 
 import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';

@@ -340,7 +340,7 @@ const formatFragment = (name: string, host: string, port: number): string => {
   // label), or the parser's synthesized `host:port` placeholder when no
   // fragment was present on the original URL. Either way emitting a bare
   // `#` would break the round trip and surface as trailing punctuation in
-  // the editor's live URL preview.
+  // any rendered URL.
   if (name === '' || name === `${host}:${port}`) return '';
   return `#${encodeURIComponent(name)}`;
 };
