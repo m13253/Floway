@@ -1,7 +1,4 @@
-// Shared HTTP/1.1 grammar primitives. Lives one level under the framing
-// modules so they don't have to import each other (the parser ↔ chunked
-// dependency would otherwise be circular) and so the request- and
-// response-side TCHAR check can't drift apart.
+// Shared HTTP/1.1 grammar primitives (RFC 9110 / RFC 9112).
 
 import { HttpProtocolError } from './errors.ts';
 
@@ -10,10 +7,6 @@ import { HttpProtocolError } from './errors.ts';
 export const TCHAR = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 // Module-scope so we never allocate a fresh decoder per request/response.
-// The chunked decoder reuses the same instance without the §5 ≥0x80
-// pre-scan that decodeAsciiHeaderSection performs — its inputs are
-// bounded to the 1 KiB chunk-size-line cap and the only field actually
-// parsed is the pre-`;` hex prefix, which the regex enforces.
 export const ASCII_DECODER = new TextDecoder();
 
 // RFC 9112 §5 forbids any non-ASCII byte in the header section. Reject

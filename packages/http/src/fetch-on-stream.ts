@@ -1,6 +1,4 @@
 // Run an HTTP/1.1 request over an already-established duplex byte stream.
-// Used both for native sockets that expose readable/writable directly and
-// for our userspace-TLS-wrapped streams.
 
 import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
@@ -9,28 +7,10 @@ import { parseHttpResponse, toWebResponse } from './parser.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
 // Plaintext chunk size used when streaming the request body to the writer.
-// Each writer.write() maps 1:1 to one userspace-TLS record when the writer
-// is a userspaceTls stream, so the value tunes the trade-off between
-// AEAD-record overhead and per-write microtask cost.
+// Each writer.write() maps 1:1 to one record on a record-framed writer, so
+// this tunes the trade-off between per-record overhead and per-write
+// microtask cost.
 const BODY_WRITE_CHUNK_SIZE = 16384;
-
-const validateRequestHeaderName = (name: string): void => {
-  if (!TCHAR.test(name)) {
-    throw new HttpProtocolError(
-      `caller-supplied header name is not a valid token: ${JSON.stringify(name)}`,
-      'BAD_HEADERS',
-      { rfc: 'RFC 9110 §5.6.2' },
-    );
-  }
-};
-
-const validateRequestHeaderValue = (name: string, value: string): void => {
-  validateFieldValueBytes(value, hex => new HttpProtocolError(
-    `caller-supplied header value for ${JSON.stringify(name)} contains a forbidden control byte 0x${hex}`,
-    'BAD_HEADERS',
-    { rfc: 'RFC 9110 §5.5' },
-  ));
-};
 
 export const fetchOnStream = async (
   stream: DuplexStream,
@@ -95,8 +75,18 @@ export const fetchOnStream = async (
   const headers: Record<string, string> = {};
   let hasAcceptEncoding = false;
   for (const [k, v] of Object.entries(request.headers)) {
-    validateRequestHeaderName(k);
-    validateRequestHeaderValue(k, v);
+    if (!TCHAR.test(k)) {
+      throw new HttpProtocolError(
+        `caller-supplied header name is not a valid token: ${JSON.stringify(k)}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9110 §5.6.2' },
+      );
+    }
+    validateFieldValueBytes(v, hex => new HttpProtocolError(
+      `caller-supplied header value for ${JSON.stringify(k)} contains a forbidden control byte 0x${hex}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §5.5' },
+    ));
     const lk = k.toLowerCase();
     if (lk === 'content-length' || lk === 'transfer-encoding' || lk === 'connection') continue;
     if (lk === 'accept-encoding') hasAcceptEncoding = true;

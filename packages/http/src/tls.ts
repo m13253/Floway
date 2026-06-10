@@ -155,11 +155,11 @@ export const userspaceTls = async (
     } else {
       try { plainController.close(); } catch { /* already closed/errored */ }
     }
-    // Mirror ws-upgrade's closePlain: abort the underlying writer on error so
-    // the transport tears down hard, but emit a polite FIN on a clean
-    // teardown. A bare `writer.close()` on the error path would have us
-    // graceful-end a half whose readable just errored, leaving an in-flight
-    // write awaiting a peer that's already gone.
+    // On error, abort the underlying writer so the transport tears down
+    // hard; on a clean teardown, emit a polite FIN. A bare `writer.close()`
+    // on the error path would graceful-end a half whose readable just
+    // errored, leaving an in-flight write awaiting a peer that's already
+    // gone.
     if (error) void writer.abort(error).catch(logTlsTeardownError);
     else void writer.close().catch(logTlsTeardownError);
   };

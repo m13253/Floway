@@ -1,7 +1,7 @@
-// Tiny byte-buffer primitives used by the HTTP/1.1 framing layer.
-// Buffers come in from a transport-owned ReadableStream — those buffers may
-// be pooled or reused by the runtime (most visibly on Node), so anything we
-// enqueue downstream or retain past the next read needs to own its memory.
+// Tiny byte-buffer primitives. Buffers come in from a transport-owned
+// ReadableStream — those buffers may be pooled or reused by the runtime
+// (most visibly on Node), so anything we enqueue downstream or retain past
+// the next read needs to own its memory.
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
@@ -51,9 +51,8 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
 };
 
 /**
- * UTF-8-encode a string. Equivalent to `new TextEncoder().encode(s)` but
- * short enough to use inline at call sites without forcing each caller to
- * keep its own TextEncoder around.
+ * UTF-8-encode a string. Short enough to use inline at call sites without
+ * each caller holding its own TextEncoder.
  */
 export const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 

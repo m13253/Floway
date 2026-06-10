@@ -8,9 +8,7 @@ export interface FakeDuplex {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
 
-  /** Returns all bytes the HTTP layer has written so far. */
   written(): Uint8Array;
-  /** Resolves once the writable is closed by the HTTP layer. */
   waitWritableClosed(): Promise<void>;
 
   /** Push bytes into the readable. */
@@ -73,8 +71,7 @@ export const collectBody = async (resp: { body: ReadableStream<Uint8Array> } | R
   return new TextDecoder().decode(buf);
 };
 
-/** Drain a `ReadableStream<Uint8Array>` to a single `Uint8Array`. Rejects
- *  with the stream's error if pull fires one. */
+/** Drain a `ReadableStream<Uint8Array>` to a single `Uint8Array`. */
 export const collectBodyBytes = async (resp: { body: ReadableStream<Uint8Array> }): Promise<Uint8Array> => {
   const reader = resp.body.getReader();
   const chunks: Uint8Array[] = [];

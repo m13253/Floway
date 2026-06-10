@@ -1,5 +1,4 @@
 // Errors raised when an HTTP/1.1 message is malformed or smuggling-shaped.
-// Covers smuggling, header-shape, body-framing, and DoS-cap categories.
 // Transport errors propagate as the underlying error.
 
 /**

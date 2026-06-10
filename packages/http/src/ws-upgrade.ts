@@ -351,9 +351,9 @@ const frameDuplexOnTransport = (
 
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
-  // Mirror userspaceTls's detach pattern: a long-lived caller signal
-  // (e.g. a request controller shared across many dials) would otherwise
-  // accumulate one closure per ws upgrade pinning the closed-over streams.
+  // A long-lived caller signal — e.g. a request controller shared across
+  // many dials — would otherwise accumulate one closure per ws upgrade
+  // pinning the closed-over streams.
   let detachAbortListener: (() => void) | null = null;
 
   const closePlain = (cause?: unknown): void => {
@@ -370,8 +370,7 @@ const frameDuplexOnTransport = (
     // Close (or abort) the underlying writer too. Without this, every teardown
     // path that doesn't originate from the consumer's writable.close — server
     // close frame, transport EOF, signal abort, internal frame error — leaks
-    // the transport's write half locked under our frameWriter. Mirror tls.ts
-    // closePlain.
+    // the transport's write half locked under our frameWriter.
     if (cause) void frameWriter.abort(cause).catch(() => {});
     else void frameWriter.close().catch(() => {});
   };
@@ -406,11 +405,10 @@ const frameDuplexOnTransport = (
   };
 
   // Reassembly state for fragmented messages. RFC 6455 §5.4 allows a
-  // message to span FIN=0 frames followed by a FIN=1 continuation; we
-  // concatenate the parts and only enqueue once the message is whole, so
-  // the consumer never sees a partial inner-protocol record. Text and
-  // binary opcodes (0x1, 0x2) are not distinguished here — the inner
-  // protocol is byte-oriented and treats them equally.
+  // message to span FIN=0 frames followed by a FIN=1 continuation;
+  // concatenate the parts and only enqueue once the message is whole. Text
+  // and binary opcodes (0x1, 0x2) are reassembled identically — the framer
+  // treats payloads as opaque bytes.
   let inMessage = false;
   const messageParts: Uint8Array[] = [];
   let messageSize = 0;
@@ -488,11 +486,10 @@ const frameDuplexOnTransport = (
 
   const readable = new ReadableStream<Uint8Array>({
     start(c) { plainController = c; },
-    // Mirror closePlain (and tls.ts plainReadable.cancel): a non-Error
-    // reason is a clean consumer cancel — emit a polite close frame and
-    // FIN; an Error reason means the consumer hit a failure mid-body, so
-    // RST the writer rather than graceful-end a half whose readable just
-    // errored.
+    // A non-Error reason is a clean consumer cancel — emit a polite close
+    // frame and FIN; an Error reason means the consumer hit a failure
+    // mid-body, so RST the writer rather than graceful-end a half whose
+    // readable just errored.
     cancel(reason) {
       plainClosed = true;
       detachAbortListener?.();
