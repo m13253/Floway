@@ -157,7 +157,7 @@ const parseIpv6Literal = (s: string): Uint8Array | null => {
   return ipv6StringToBytes(norm);
 };
 
-const ipv6StringToBytes = (s: string): Uint8Array | null => {
+const ipv6StringToBytes = (s: string): Uint8Array => {
   // Input always arrives via parseIpv6Literal → `new URL('http://[…]/').hostname`,
   // and the WHATWG URL serializer collapses any IPv4-mapped tail into hex groups
   // (`::ffff:1.2.3.4` → `[::ffff:102:304]`). The expansion below is therefore a
@@ -168,7 +168,6 @@ const ipv6StringToBytes = (s: string): Uint8Array | null => {
   const groups: number[] = [];
   for (const p of leftParts) groups.push(parseInt(p, 16));
   const zerosNeeded = 8 - leftParts.length - rightParts.length;
-  if (zerosNeeded < 0) return null;
   for (let i = 0; i < zerosNeeded; i++) groups.push(0);
   for (const p of rightParts) groups.push(parseInt(p, 16));
   const out = new Uint8Array(16);
