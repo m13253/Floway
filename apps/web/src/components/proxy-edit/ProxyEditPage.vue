@@ -209,7 +209,7 @@ const save = async () => {
       );
       if (error) { saveError.value = error.message; return; }
       emit('saved');
-      if (data) await router.push(`/dashboard/proxies/${data.id}`);
+      await router.push(`/dashboard/proxies/${data.id}`);
     } else if (props.record) {
       const { error } = await callApi(
         () => api.api.proxies[':id'].$patch({
@@ -245,7 +245,7 @@ const test = async () => {
       () => api.api.proxies[':id'].test.$post({ param: { id }, json: {} }),
     );
     if (error) { testError.value = error.message; return; }
-    if (data && !data.ok) { testError.value = data.error ?? 'Test failed'; return; }
+    if (!data.ok) { testError.value = data.error ?? 'Test failed'; return; }
     // The test endpoint persists egress_ip and last_tested_at into the
     // proxy row; emitting `saved` triggers the parent store reload, which
     // surfaces the new test result through props.record.

@@ -130,7 +130,7 @@ const testProxy = async (record: ProxyRecord) => {
     );
     if (error) {
       testError.value = setMapEntry(testError.value, record.id, error.message);
-    } else if (data && !data.ok) {
+    } else if (!data.ok) {
       testError.value = setMapEntry(testError.value, record.id, data.error ?? 'Test failed');
     } else {
       emit('changed');
