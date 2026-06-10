@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 
+import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { geminiStatusForHttpStatus } from '../llm/gemini/errors.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
@@ -25,9 +27,7 @@ interface GeminiModel {
   cost?: ModelPricing;
 }
 
-// All three Gemini generation methods are always supported because the gateway
-// translates from Gemini to whichever native target shape the chosen provider
-// binding exposes; no upstream-level capability filter applies here.
+// All three methods are listed unconditionally; no capability filter applies at this layer.
 const GEMINI_GENERATION_METHODS: GeminiGenerationMethod[] = ['generateContent', 'streamGenerateContent', 'countTokens'];
 
 const toGeminiModel = (model: InternalModel): GeminiModel => {
@@ -49,35 +49,11 @@ const toGeminiModel = (model: InternalModel): GeminiModel => {
   };
 };
 
-const geminiStatusForHttpStatus = (status: number): string => {
-  switch (status) {
-  case 401:
-    return 'UNAUTHENTICATED';
-  case 403:
-    return 'PERMISSION_DENIED';
-  case 404:
-    return 'NOT_FOUND';
-  case 429:
-    return 'RESOURCE_EXHAUSTED';
-  case 502:
-  case 503:
-    return 'UNAVAILABLE';
-  default:
-    return status >= 500 ? 'INTERNAL' : 'INVALID_ARGUMENT';
-  }
-};
-
-const geminiError = (status: number, message: string): Response => {
-  const code = status >= 400 && status <= 599 ? status : 500;
-  return Response.json(
-    {
-      error: { code, message, status: geminiStatusForHttpStatus(code) },
-    },
-    { status: code },
+const geminiError = (status: number, message: string): Response =>
+  Response.json(
+    { error: { code: status, message, status: geminiStatusForHttpStatus(status) } },
+    { status: status as 400 | 404 | 500 | 502 },
   );
-};
-
-const modelListingFailureMessage = 'Upstream model listing failed';
 
 // Same split as the OpenAI-shaped /models endpoint: ProviderModelsUnavailableError
 // is genuine upstream HTTP/parse failure and must not leak upstream identity;
@@ -85,7 +61,7 @@ const modelListingFailureMessage = 'Upstream model listing failed';
 // actionable operator guidance and surface verbatim.
 const geminiModelLoadError = (error: unknown): Response => {
   if (error instanceof ProviderModelsUnavailableError) {
-    return geminiError(502, modelListingFailureMessage);
+    return geminiError(502, MODEL_LISTING_FAILURE_MESSAGE);
   }
   return geminiError(502, error instanceof Error ? error.message : String(error));
 };
@@ -95,9 +71,7 @@ const loadGeminiModels = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
 ): Promise<GeminiModel[]> => {
   const models = await getInternalModels(upstreamFilter, fetcherForUpstream);
-  // The Gemini /models surface represents only generative chat models;
-  // embedding and image kinds are intentionally skipped because the
-  // gateway exposes no Gemini-shaped endpoint for them.
+  // Only chat models are representable in the Gemini /models shape.
   return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
 

@@ -200,8 +200,7 @@ export interface ProxyRecord {
   createdAt: string;
   updatedAt: string;
   // Operator-set per-proxy override of the dial-stage deadline (seconds).
-  // null falls back to the gateway-wide default in @floway-dev/proxy so an
-  // unconfigured row keeps behaving like one that pre-dates this column.
+  // null falls back to the gateway-wide dial-stage default.
   dialTimeoutSeconds: number | null;
 }
 

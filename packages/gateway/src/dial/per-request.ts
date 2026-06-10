@@ -50,16 +50,6 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
     }
   }
 
-  // Resolve the platform's socket-dial impl lazily so a direct-only
-  // data-plane call (no fallback list references a proxy) can run without
-  // an installed SocketDial — that path never reaches a dialer, and many
-  // tests stop at `direct` without ever wiring one in.
-  let cachedSocketDial: ReturnType<typeof getSocketDial> | null = null;
-  const lazySocketDial = (): ReturnType<typeof getSocketDial> => {
-    cachedSocketDial ??= getSocketDial();
-    return cachedSocketDial;
-  };
-
   return upstreamId => {
     // Fail loud on an unknown upstream id. Silently substituting `[]`
     // would route the request through `direct` only, masking a stale
@@ -87,7 +77,7 @@ export const createPerRequestFetcher = async (): Promise<(upstreamId: string) =>
       proxyById,
       runProxied: runProxiedRequest,
       runDirect: directFetcher,
-      socketDial: lazySocketDial,
+      socketDial: getSocketDial,
     });
   };
 };

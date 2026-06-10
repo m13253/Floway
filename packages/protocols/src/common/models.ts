@@ -10,6 +10,10 @@
 // confirmed its usage object never emits cached fields.
 export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image';
 
+// Tuple form of BillingDimension for iteration; the type union is the source
+// of truth and the tuple is enforced by TypeScript to match it.
+export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
+
 // Per-model pricing in USD per million tokens, aligned with the sst/models.dev
 // `Cost` schema (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
 // Keys are billing dimensions: bare `input`/`output` are the text/fallback rate

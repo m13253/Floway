@@ -1,13 +1,9 @@
-// Sentinel value used in `proxy_fallback_list` for "no proxy — connect
-// directly". The only legal non-id entry. Centralised here so the
-// validator and the dial layer can both reference the same string instead
-// of repeating a literal.
+// Sentinel for "no proxy — connect directly"; the only legal non-id entry in
+// proxy_fallback_list.
 export const DIRECT_PROXY_ID = 'direct';
 
-// Defensive copy of `proxyFallbackList`: trimmed, with empty entries dropped
-// and duplicates removed while preserving first-seen order. Entries are bare
-// proxy ids or the literal 'direct' marker; we do not validate references
-// against the proxies table here, that's the API layer's job.
+// Entries are bare proxy ids or the literal 'direct' marker; entries are not
+// validated against the proxies table.
 //
 // We treat the list as a SET in semantics, even though it's stored as an
 // ordered array — a duplicate proxy entry has no meaning beyond "try once",

@@ -37,7 +37,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const SEARCH_CONFIG_KEY = 'search_config';
@@ -369,8 +369,6 @@ class SqlSessionsRepo implements SessionsRepo {
   }
 }
 
-const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
-
 const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] =>
   BILLING_DIMENSIONS.flatMap(dimension => {
     const tokens = record.tokens[dimension] ?? 0;
@@ -595,7 +593,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   async recordLatency(sample: PerformanceLatencySample): Promise<void> {
     const durationMs = Math.max(0, Math.round(sample.durationMs));
     const bucket = latencyBucketForMs(durationMs);
-    await runStatements(this.db, [this.addSummaryStatement(sample, 1, 0, durationMs), this.addBucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1)]);
+    await runStatements(this.db, [this.addSummaryStatement(sample, 1, 0, durationMs), this.bucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1, 'add')]);
   }
 
   async recordError(sample: PerformanceErrorSample): Promise<void> {
@@ -624,7 +622,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await runStatements(this.db, [
       this.setSummaryStatement(record),
       this.deleteBucketsStatement(record),
-      ...record.buckets.map(bucket => this.setBucketStatement(record, bucket.lowerMs, bucket.upperMs, bucket.count)),
+      ...record.buckets.map(bucket => this.bucketStatement(record, bucket.lowerMs, bucket.upperMs, bucket.count, 'set')),
     ]);
   }
 

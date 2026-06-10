@@ -62,10 +62,9 @@ export const chatCompletionsAttempt = {
   },
 };
 
-// Mirror of `messagesAttempt` rewrite — Chat Completions carries stored
-// Responses reasoning ids on `assistant.reasoning_items`, which the
-// translate-package view exposes as Responses items so this same rewrite
-// pass works across protocols.
+// Chat Completions carries stored Responses reasoning ids on
+// `assistant.reasoning_items`; the translate-package view exposes them as
+// Responses items so the shared rewrite pass works here too.
 const rewriteOrRenderChatCompletionsFailure = async (
   payload: ChatCompletionsPayload,
   store: StatefulResponsesStore,

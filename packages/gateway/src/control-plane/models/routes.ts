@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 
 import { toPublicModel } from '../../data-plane/models/load.ts';
+import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -25,8 +26,6 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
   ...toPublicModel(model),
   upstreams: model.providers.map(binding => ({ kind: binding.providerKind, id: binding.upstream, name: binding.upstreamName })),
 });
-
-const modelListingFailureMessage = 'Upstream model listing failed';
 
 export const controlPlaneModels = async (c: Context) => {
   try {
@@ -57,7 +56,7 @@ export const controlPlaneModels = async (c: Context) => {
     // Genuine upstream HTTP/parse failures are squashed to a generic 502 so
     // the control plane does not leak provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: modelListingFailureMessage, type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     return c.json({ error: { message: e instanceof Error ? e.message : String(e), type: 'api_error' } }, 502);
   }

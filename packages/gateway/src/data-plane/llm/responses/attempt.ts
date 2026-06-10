@@ -33,8 +33,7 @@ export interface ResponsesAttemptGenerateArgs {
   // Optional invocation-headers inheritance from a source attempt that
   // translated INTO this target protocol. Source-side interceptors write
   // trace headers into the source invocation; passing them in here keeps
-  // them on the wire for the translated upstream call. Same shape lives on
-  // messages/attempt.ts and chat-completions/attempt.ts.
+  // them on the wire for the translated upstream call.
   readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 

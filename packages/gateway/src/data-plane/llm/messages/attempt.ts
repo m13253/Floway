@@ -126,10 +126,10 @@ export const messagesAttempt = {
 
 // Rewrites stored Responses item carriers (assistant thinking blocks whose
 // signature packs a gateway-stored reasoning id) to the upstream-owned id
-// the chosen candidate's wire requires. Failures only originate from
-// `item_reference` against a candidate without item_reference support, which
-// the affinity walk already excluded — but defensive rewrite is cheap and
-// keeps the attempt closed-loop.
+// the chosen candidate's wire requires. The failure path translates a
+// missing-item lookup into a 400 invalid_request_error so a caller that
+// referenced an item the gateway no longer has gets a useful error envelope
+// rather than a generic 500.
 const rewriteOrRenderMessagesFailure = async (
   payload: MessagesPayload,
   store: StatefulResponsesStore,

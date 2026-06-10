@@ -35,10 +35,8 @@ import { serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
-
-const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
 
 const SEED_ADMIN_USER: User = {
   id: 1,
@@ -766,10 +764,10 @@ class MemoryProxyRepo implements ProxyRepo {
   }
 
   async delete(id: string): Promise<boolean> {
-    // Mirror the SQL repo's atomic delete: refuse if any upstream's
-    // fallback list still references the row, so an admin race adding the
-    // reference between findUpstreamsReferencing and delete in the route
-    // is rejected at the storage layer.
+    // Mirror the SQL repo's atomic delete: refuse if any upstream's fallback
+    // list still references the row, so an admin race adding the reference
+    // between a prior findUpstreamsReferencing read and this delete is
+    // rejected at the storage layer.
     const upstreams = await this.upstreams.list();
     if (upstreams.some(u => u.proxyFallbackList.includes(id))) return false;
     return this.store.delete(id);

@@ -12,6 +12,8 @@ interface ProviderModelsResult {
   lastError: unknown;
 }
 
+const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
+
 type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
@@ -21,11 +23,9 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   codex: createCodexProvider,
 };
 
-// Build a single provider instance for one upstream record. Used by the
-// control plane to list a saved upstream's resolved catalog; the fetcher is
-// supplied per-call to `getProvidedModels` and per-call by the data plane to
-// each `call*` method, so a provider instance no longer captures one at
-// construction.
+// Build a single provider instance for one upstream record. The fetcher is
+// supplied per call (to getProvidedModels and to each call* method); the
+// instance carries no fetcher.
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record);
 
@@ -178,17 +178,15 @@ export const compareModelIds = (a: string, b: string): number => {
     || cmp(a, b, -1);
 };
 
-// `fetcherForUpstream` decides each upstream's catalog-fetch HTTP. The data
-// plane and the control-plane catalog views funnel through the same per-upstream
-// proxy chain, so dashboard listings work behind GFW when the operator has
-// configured proxies.
+// `fetcherForUpstream` routes each upstream's catalog fetch through its
+// per-upstream proxy chain.
 export const getModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
 ): Promise<ResolvedModel[]> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
-    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
+    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
   const { models, sawSuccess, lastError } = await collectProviderModels(providers, fetcherForUpstream);
@@ -198,8 +196,7 @@ export const getModels = async (
   return [];
 };
 
-// Strips planner-only and provider-binding fields, leaving the InternalModel
-// shape consumed by the public /models DTO projection and the dashboard.
+// Strips planner-only and provider-binding fields, leaving the InternalModel projection.
 export const getInternalModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -247,7 +244,7 @@ export const resolveModelForRequest = async (
 ): Promise<ModelResolution> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
-    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
+    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
   const { models, lastError } = await collectProviderModels(providers, fetcherForUpstream);

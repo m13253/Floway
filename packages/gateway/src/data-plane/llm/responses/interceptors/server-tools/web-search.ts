@@ -246,22 +246,14 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {
-  let hostedSeen = false;
   let lastHostedFilters: ShimToolFilters = {};
   for (const tool of tools) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
       if (reject !== null) return { ok: false, error: reject };
-      hostedSeen = true;
       lastHostedFilters = extractFilters(tool);
-      continue;
     }
   }
-
-  if (!hostedSeen) {
-    return { ok: true, filters: {} };
-  }
-
   return { ok: true, filters: lastHostedFilters };
 };
 

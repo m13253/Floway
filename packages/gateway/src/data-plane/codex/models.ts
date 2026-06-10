@@ -71,9 +71,9 @@ const computeCatalog = async (
     }),
   };
   // codex-auto-review has no upstream of its own and gets rewritten to
-  // CODEX_AUTO_REVIEW_TARGET (gpt-5.4) at request time, so its catalog
-  // entry should advertise the target's actual window — bundled's value
-  // would otherwise leak the OpenAI 1p limits through the alias.
+  // CODEX_AUTO_REVIEW_TARGET at request time, so its catalog entry should
+  // advertise the target's actual window — bundled's value would otherwise
+  // leak the OpenAI 1p limits through the alias.
   const contextWindowOf: ContextWindowResolver = slug => slugContextWindow.get(slug === CODEX_AUTO_REVIEW_ALIAS ? CODEX_AUTO_REVIEW_TARGET : slug) ?? null;
   return applyContextWindowFromRegistry(filtered, contextWindowOf);
 };

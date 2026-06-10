@@ -6,15 +6,14 @@ import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
 export type { ProviderCandidate };
 
 // Returns the candidates that satisfy both the model resolution and the
-// target-endpoint pick, plus a `sawModel` flag that distinguishes "model is
-// missing entirely" (false → `model-missing` 404) from "model exists but
-// doesn't expose the endpoint this source needs" (true → `model-unsupported`
-// 400).
+// target-endpoint pick, plus a `sawModel` flag that distinguishes the
+// "model is missing entirely" error kind (`model-missing`) from "model
+// exists but doesn't expose the endpoint this source needs"
+// (`model-unsupported`).
 export const enumerateProviderCandidates = async ({
   upstreamIds, model, pickTarget,
 }: {
-  // Effective per-actor whitelist (per-user cap intersected with per-key
-  // whitelist; null = unrestricted).
+  // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
   model: string;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
