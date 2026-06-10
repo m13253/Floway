@@ -278,7 +278,7 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-test('export emits the v5 envelope with users and upstreams', async () => {
+test('export emits the v6 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
   // Seed the admin user 1 — exports always carry the users table.
   await repo.users.save(SEED_ADMIN);
@@ -657,7 +657,7 @@ test('import rejects legacy enabled_fixes payloads before mutating', async () =>
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
-test('import rejects missing latest-v5 arrays before clearing existing data', async () => {
+test('import rejects missing latest-v6 arrays before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await repo.upstreams.save(CUSTOM_UPSTREAM);
