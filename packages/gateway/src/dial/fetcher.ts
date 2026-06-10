@@ -1,6 +1,7 @@
 import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
+import { normalizeDialHost } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
@@ -261,7 +262,7 @@ const buildProxiedRequest = async (url: string, init: RequestInit): Promise<Prox
   // brackets here at the URL→DialTarget seam so every dialer sees a
   // canonical host.
   const target: ProxyRequestTarget = {
-    host: stripIpv6Brackets(u.hostname),
+    host: normalizeDialHost(u.hostname),
     port: u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80),
     tls: u.protocol === 'https:',
   };
@@ -273,11 +274,6 @@ const buildProxiedRequest = async (url: string, init: RequestInit): Promise<Prox
   };
   return { target, request };
 };
-
-const stripIpv6Brackets = (hostname: string): string =>
-  hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
 
 // Lower-case keys here so the request is canonical at the seam; the http
 // package also lowercases internally, but normalizing at the boundary
