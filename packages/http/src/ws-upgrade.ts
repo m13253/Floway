@@ -7,11 +7,6 @@
 // (opcode 0x2); each incoming binary or continuation-of-binary frame is
 // re-assembled into a single Uint8Array and enqueued on the readable.
 // Control frames are handled internally — ping → pong, close → tear down.
-//
-// This is the runtime-agnostic alternative to workerd's
-// `fetch().webSocket` trick. Lets WebSocket-tunnelled byte-stream
-// protocols stay runtime-agnostic the same way TCP+TLS protocols already
-// are: dial → optional outer TLS → WS upgrade → caller's framing.
 
 import { sha1 } from '@noble/hashes/legacy.js';
 
