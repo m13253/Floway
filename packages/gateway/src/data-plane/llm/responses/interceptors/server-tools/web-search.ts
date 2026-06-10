@@ -1,3 +1,4 @@
+import { shortId } from '../../../../../shared/short-id.ts';
 import { normalizeDomainEntry, normalizeDomainList } from '../../../../tools/web-search/domain-normalize.ts';
 import { fetchPageAndRecordUsage } from '../../../../tools/web-search/fetch-page.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
@@ -6,7 +7,6 @@ import { searchWebAndRecordUsage } from '../../../../tools/web-search/search.ts'
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from '../../../../tools/web-search/types.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
-import { shortId } from '../../../../../shared/short-id.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 

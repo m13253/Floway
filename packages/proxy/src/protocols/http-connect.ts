@@ -9,13 +9,12 @@
 //      layers userspace TLS for the upstream's HTTPS handshake. This avoids
 //      `startTls()` entirely.
 
-import { STATUS_LINE } from '@floway-dev/http';
-
 import { base64EncodeBytes, copy, findDoubleCrlf } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
 import type { HttpProxyConfig } from '../proxy-config.ts';
 import { assertValidTargetHost, assertValidTargetPort } from '../types.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
+import { STATUS_LINE } from '@floway-dev/http';
 
 export const dialHttpConnect = async (
   config: HttpProxyConfig,
