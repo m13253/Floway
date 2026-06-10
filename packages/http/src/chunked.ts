@@ -64,7 +64,7 @@ export const decodeChunked = (
           // a smuggling-adjacent path. Require a pure run of hex digits;
           // chunk extensions (after the `;`) are dropped by the slice
           // above before we get here.
-          if (hex.length === 0 || !/^[0-9a-fA-F]+$/.test(hex)) {
+          if (!/^[0-9a-fA-F]+$/.test(hex)) {
             controller.error(new HttpProtocolError(
               `chunked: bad size line ${JSON.stringify(sizeLine)}`,
               'CHUNK_BAD_SIZE',
