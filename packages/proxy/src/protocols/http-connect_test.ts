@@ -272,8 +272,8 @@ describe('dialHttpConnect — auth header encoding', () => {
     const srv = await fake.awaitConnect();
     const head = await drainCONNECTRequest(srv);
     // base64(UTF-8("u:p中")) = base64([0x75, 0x3a, 0x70, 0xe4, 0xb8, 0xad])
-    // = "dTpw5Lit". Before the fix, btoa(`u:p中`) blew up with
-    // InvalidCharacterError because "中" > U+00FF can't be Latin1-encoded.
+    // = "dTpw5Lit". btoa() rejects code points > U+00FF, so the encoder
+    // must UTF-8-then-base64 rather than feed the raw JS string.
     expect(head).toContain('Proxy-Authorization: Basic dTpw5Lit\r\n');
     srv.respond('HTTP/1.1 200 OK\r\n\r\n');
     await promise;
