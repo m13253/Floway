@@ -384,7 +384,7 @@ const frameDuplexOnTransport = (
     payload[1] = code & 0xff;
     payload.set(reasonBytes, 2);
     try {
-      await writeFrame(frameWriter, 0x8, payload, true);
+      await writeFrame(frameWriter, 0x8, payload);
     } catch {
       /* peer already gone */
     }
@@ -392,7 +392,7 @@ const frameDuplexOnTransport = (
 
   const sendPongFrame = async (payload: Uint8Array): Promise<void> => {
     try {
-      await writeFrame(frameWriter, 0xa, payload, true);
+      await writeFrame(frameWriter, 0xa, payload);
     } catch {
       /* peer already gone */
     }
@@ -553,7 +553,7 @@ const frameDuplexOnTransport = (
   const writable = new WritableStream<Uint8Array>({
     async write(chunk) {
       if (chunk.byteLength === 0) return;
-      await writeFrame(frameWriter, 0x2, chunk, true);
+      await writeFrame(frameWriter, 0x2, chunk);
     },
     async close() {
       await sendCloseFrame(1000, '');
@@ -656,7 +656,6 @@ const writeFrame = async (
   writer: WritableStreamDefaultWriter<Uint8Array>,
   opcode: number,
   payload: Uint8Array,
-  fin: boolean,
 ): Promise<void> => {
   const len = payload.byteLength;
   // RFC 6455 §5.3: every client-to-server frame is masked with a fresh
@@ -668,7 +667,7 @@ const writeFrame = async (
   else if (len <= WS_16BIT_LEN_MAX) headerLen = 4;
   else headerLen = 10;
   const frame = new Uint8Array(headerLen + 4 + len);
-  frame[0] = (fin ? 0x80 : 0x00) | (opcode & 0x0f);
+  frame[0] = 0x80 | (opcode & 0x0f);
   if (len <= WS_SHORT_LEN_MAX) {
     frame[1] = 0x80 | len;
   } else if (len <= WS_16BIT_LEN_MAX) {
