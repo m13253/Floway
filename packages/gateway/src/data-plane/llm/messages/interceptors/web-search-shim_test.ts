@@ -54,6 +54,7 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   apiKeyId,
   upstreamIds: null,
   wantsStream: false,
+  runtimeLocation: 'test',
   scheduleBackground: () => {},
   requestStartedAt: 0,
 });

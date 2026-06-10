@@ -633,7 +633,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
     const { results: summaries } = await this.db
       .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, source_api, target_api, stream, runtime_location, requests, errors, total_ms_sum
+        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum
          FROM performance_summary WHERE ${where} ORDER BY hour`,
       )
       .bind(...binds)
@@ -651,7 +651,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
     const { results: buckets } = await this.db
       .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, source_api, target_api, stream, runtime_location, lower_ms, upper_ms, count
+        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count
          FROM performance_latency_buckets WHERE ${where} ORDER BY hour, upper_ms`,
       )
       .bind(...binds)
@@ -683,8 +683,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
   private addSummaryStatement(sample: PerformanceDimensions, requests: number, errors: number, totalMsSum: number): SqlPreparedStatement {
     return this.db
       .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, source_api, target_api, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT DO UPDATE SET
            requests = requests + excluded.requests,
            errors = errors + excluded.errors,
@@ -697,8 +697,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
         sample.model,
         sample.upstream,
         sample.modelKey,
-        sample.sourceApi,
-        sample.targetApi,
         sample.stream ? 1 : 0,
         sample.runtimeLocation,
         requests,
@@ -710,8 +708,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
   private setSummaryStatement(record: PerformanceTelemetryRecord): SqlPreparedStatement {
     return this.db
       .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, source_api, target_api, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT DO UPDATE SET
            requests = excluded.requests,
            errors = excluded.errors,
@@ -724,8 +722,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
         record.model,
         record.upstream,
         record.modelKey,
-        record.sourceApi,
-        record.targetApi,
         record.stream ? 1 : 0,
         record.runtimeLocation,
         record.requests,
@@ -738,7 +734,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
     return this.db
       .prepare(
         `DELETE FROM performance_latency_buckets
-         WHERE hour = ? AND metric_scope = ? AND key_id = ? AND model = ? AND upstream IS ? AND model_key = ? AND source_api = ? AND target_api = ? AND stream = ? AND runtime_location = ?`,
+         WHERE hour = ? AND metric_scope = ? AND key_id = ? AND model = ? AND upstream IS ? AND model_key = ? AND stream = ? AND runtime_location = ?`,
       )
       .bind(...performanceDimensionBinds(record));
   }
@@ -754,8 +750,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
   private bucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number, mode: 'add' | 'set'): SqlPreparedStatement {
     return this.db
       .prepare(
-        `INSERT INTO performance_latency_buckets (hour, metric_scope, key_id, model, upstream, model_key, source_api, target_api, stream, runtime_location, lower_ms, upper_ms, count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO performance_latency_buckets (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT DO UPDATE SET
            count = ${mode === 'add' ? 'count + excluded.count' : 'excluded.count'}`,
       )
@@ -766,8 +762,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
         sample.model,
         sample.upstream,
         sample.modelKey,
-        sample.sourceApi,
-        sample.targetApi,
         sample.stream ? 1 : 0,
         sample.runtimeLocation,
         lowerMs,
@@ -784,8 +778,6 @@ type PerformanceDimensionRow = {
   model: string;
   upstream: string | null;
   model_key: string;
-  source_api: string;
-  target_api: string;
   stream: number;
   runtime_location: string;
 };
@@ -809,19 +801,17 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
   model: row.model,
   upstream: row.upstream ?? null,
   modelKey: row.model_key,
-  sourceApi: row.source_api as PerformanceTelemetryRecord['sourceApi'],
-  targetApi: row.target_api as PerformanceTelemetryRecord['targetApi'],
   stream: row.stream === 1,
   runtimeLocation: row.runtime_location,
 });
 
 const performanceRecordKey = (record: PerformanceDimensions): string =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? '1' : '0', record.runtimeLocation].join(
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? '1' : '0', record.runtimeLocation].join(
     '\0',
   );
 
 const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.sourceApi, record.targetApi, record.stream ? 1 : 0, record.runtimeLocation];
+  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? 1 : 0, record.runtimeLocation];
 
 const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
   a.hour.localeCompare(b.hour) ||
@@ -830,8 +820,6 @@ const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: Pe
   a.model.localeCompare(b.model) ||
   (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
   a.modelKey.localeCompare(b.modelKey) ||
-  a.sourceApi.localeCompare(b.sourceApi) ||
-  a.targetApi.localeCompare(b.targetApi) ||
   Number(a.stream) - Number(b.stream) ||
   a.runtimeLocation.localeCompare(b.runtimeLocation);
 

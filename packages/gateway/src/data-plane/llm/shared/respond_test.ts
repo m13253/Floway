@@ -19,8 +19,6 @@ const testPerformanceContext: PerformanceTelemetryContext = {
   model: 'claude-test',
   upstream: 'copilot:1',
   modelKey: 'claude-test-raw',
-  sourceApi: 'messages',
-  targetApi: 'messages',
   stream: true,
   runtimeLocation: 'SJC',
 };
@@ -42,6 +40,7 @@ const setup = (): Harness => {
       apiKeyId: overrides.apiKeyId ?? 'key_a',
       upstreamIds: null,
       wantsStream: true,
+      runtimeLocation: 'test',
       scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
       requestStartedAt: overrides.requestStartedAt ?? 0,
     }),

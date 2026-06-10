@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { codexAccessTokenKey } from './access-token-cache.ts';
 import { createCodexProvider } from './provider.ts';
 import { clearModelsStore, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
   const store = new Map<string, string>();
@@ -91,6 +92,9 @@ describe('createCodexProvider', () => {
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
+      undefined,
+      undefined,
+      noopUpstreamCallOptions,
     );
     expect(result.ok).toBe(true);
   });
@@ -103,6 +107,9 @@ describe('createCodexProvider', () => {
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [], stream: true },
+      undefined,
+      undefined,
+      noopUpstreamCallOptions,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);

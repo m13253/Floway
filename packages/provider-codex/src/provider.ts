@@ -105,7 +105,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, headers) => {
+    callResponses: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: { ...(headers ?? {}) },
@@ -124,12 +124,13 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             signal,
             cache: getProviderRepo().cache,
             effects,
+            opts,
           });
         },
       );
     },
 
-    callResponsesCompact: async (model, body, signal, headers) => {
+    callResponsesCompact: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: { ...(headers ?? {}) },
@@ -148,6 +149,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             signal,
             cache: getProviderRepo().cache,
             effects,
+            opts,
           });
         },
       );

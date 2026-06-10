@@ -32,7 +32,6 @@ export {
 
 export type {
   InternalModel,
-  PerformanceApiName,
   PerformanceTelemetryContext,
   TelemetryModelIdentity,
   UpstreamModel,
@@ -48,6 +47,7 @@ export type {
   ProviderModelRecord,
   ProviderStreamResult,
   ResolvedModel,
+  UpstreamCallOptions,
 } from './provider.ts';
 export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';
 

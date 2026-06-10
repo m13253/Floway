@@ -4,7 +4,7 @@ import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.t
 import { clearModelsStore, ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { createCustomProvider } from '@floway-dev/provider-custom';
-import { jsonResponse, sseResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',
@@ -68,11 +68,11 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       const [model] = await provider.getProvidedModels();
       assertEquals(model.id, 'echo');
 
-      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callResponses(model, { input: [] });
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callEmbeddings(model, { input: 'hi' });
+      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callResponses(model, { input: [] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callEmbeddings(model, { input: 'hi' }, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 
@@ -310,7 +310,7 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
     async () => {
       const provider = createCustomProvider(record).provider;
       const models = await provider.getProvidedModels();
-      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' });
+      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' }, undefined, undefined, noopUpstreamCallOptions);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -343,7 +343,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       const form = new FormData();
       form.append('prompt', 'add a kite');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
-      const result = await provider.callImagesEdits(models[0], form);
+      const result = await provider.callImagesEdits(models[0], form, undefined, undefined, noopUpstreamCallOptions);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -471,12 +471,12 @@ test('Custom provider forwards the source-derived anthropicBeta slice as the ant
       const [model] = await provider.getProvidedModels();
       // The data plane hands the parsed beta slice as the 5th argument; custom
       // upstreams register no filter interceptor, so the provider merges it.
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14']);
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20']);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14'], noopUpstreamCallOptions);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20'], noopUpstreamCallOptions);
       // No beta slice → no header on the wire (the regression guard for the
       // pre-86ef9aa drop).
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, []);
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, [], noopUpstreamCallOptions);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 

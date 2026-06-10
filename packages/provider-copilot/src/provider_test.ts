@@ -6,7 +6,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearModelsStore, initProviderRepo, ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, memoryCacheRepo, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, jsonResponse, memoryCacheRepo, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -215,7 +215,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
       await provider.callMessages(model, {
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hello' }],
-      });
+      }, undefined, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 
@@ -270,7 +270,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
       await provider.callResponses(model, {
         input: [],
         reasoning: { effort: 'xhigh' },
-      });
+      }, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 
@@ -337,7 +337,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
           },
         ],
         service_tier: 'priority',
-      });
+      }, undefined, undefined, noopUpstreamCallOptions);
 
       if (!result.ok) throw new Error('expected ok compaction result');
       assertEquals(result.result.object, 'response.compaction');
@@ -471,11 +471,11 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const models = await provider.getProvidedModels();
       const byId = new Map(models.map(model => [model.id, model]));
 
-      await provider.callChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callResponses(byId.get('gpt-resp')!, { input: [] });
-      await provider.callMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await provider.callEmbeddings(byId.get('emb-mini')!, { input: 'hi' });
+      await provider.callChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callResponses(byId.get('gpt-resp')!, { input: [] }, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
+      await provider.callEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 
@@ -497,7 +497,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   // interceptor reads the payload, sets the header in the boundary header
   // bag, and the upstream sees it.
   const driveMessages = async (model: Awaited<ReturnType<typeof instance.provider.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
-    await provider.callMessages(model, body);
+    await provider.callMessages(model, body, undefined, undefined, undefined, noopUpstreamCallOptions);
   };
 
   await withMockedFetch(
@@ -611,7 +611,7 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
       await provider.callChatCompletions(model, {
         messages: [{ role: 'user', content: 'hi' }],
         metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' }) },
-      });
+      }, undefined, undefined, noopUpstreamCallOptions);
     },
   );
 

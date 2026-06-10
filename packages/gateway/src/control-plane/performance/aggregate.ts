@@ -2,7 +2,7 @@ import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { type HistogramBucket, percentileFromHistogramBuckets } from '../../shared/performance-histogram.ts';
 
 export type PerformanceBucketGranularity = 'hour' | '4h' | '8h' | 'day' | 'all';
-export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'sourceApi' | 'targetApi' | 'runtimeLocation';
+export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'runtimeLocation';
 
 export interface PerformanceDisplayRecord {
   bucket: string;

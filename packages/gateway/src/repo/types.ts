@@ -1,7 +1,7 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
-import type { PerformanceApiName, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -76,8 +76,6 @@ export interface PerformanceDimensions {
   model: string;
   upstream: string | null;
   modelKey: string;
-  sourceApi: PerformanceApiName;
-  targetApi: PerformanceApiName;
   stream: boolean;
   runtimeLocation: string;
 }

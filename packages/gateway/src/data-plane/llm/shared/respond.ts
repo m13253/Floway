@@ -63,5 +63,5 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 // an await).
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
   const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
-  recordRequestPerformance(ctx.apiKeyId, scheduler, context, failed, performance.now() - ctx.requestStartedAt);
+  recordRequestPerformance(scheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };

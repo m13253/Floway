@@ -65,6 +65,20 @@ export type ProviderCompactionResult =
   | { ok: true; result: ResponsesResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
+// Per-call observation hooks the gateway threads through to the provider.
+//
+// `recordUpstreamLatency` measures the precise upstream round-trip — request
+// leaves the gateway, response returns to the gateway — and explicitly excludes
+// in-process work the provider does around the call (boundary interceptors,
+// auth-token refresh, request/response shaping, SSE parsing). The provider is
+// required to wrap the actual upstream fetch promise with this helper at least
+// once; the gateway throws on a violation so missing wraps fail loud. On
+// retries (e.g. invalidate-token-and-redo), only the most recent invocation's
+// measurement is kept.
+export interface UpstreamCallOptions {
+  recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
+}
+
 export interface ModelProvider {
   getProvidedModels(): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model
@@ -78,14 +92,14 @@ export interface ModelProvider {
   // shape is uniform across protocols so provider implementations never
   // branch on which protocol they are serving. Image endpoints have no
   // boundary chain today, but the parameter stays for interface uniformity.
-  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   // `/responses/compact` is non-streaming: the upstream returns a single
   // `response.compaction` envelope rather than a token stream. Azure/custom
   // pass the native sub-path straight through; Copilot has no native endpoint
   // and replicates codex's RemoteCompactionV2 inside the provider, returning
   // the synthesized envelope as the result value.
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCompactionResult>;
+  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire
   // headers. Copilot uses it to pick a raw upstream model variant
@@ -93,15 +107,15 @@ export interface ModelProvider {
   // anthropic-beta boundary interceptor filters the wire header down to the
   // Copilot allow-list. Variant selection must see the caller's full intent
   // even when the beta value itself is dropped before hitting the wire.
-  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, anthropicBeta: readonly string[] | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
-  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
-  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
-  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, anthropicBeta: readonly string[] | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // The provider takes ownership of `body` and may mutate it (e.g. append
   // the upstream-specific model/deployment id). Callers must allocate a
   // fresh FormData per call — see images/serve.ts, which builds a new
   // FormData per binding for that reason.
-  callImagesEdits(model: UpstreamModel, body: FormData, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callImagesEdits(model: UpstreamModel, body: FormData, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }

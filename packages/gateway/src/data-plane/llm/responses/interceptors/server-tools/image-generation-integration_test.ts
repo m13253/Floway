@@ -40,17 +40,17 @@ vi.mock('../../../../providers/registry.ts', () => ({
         upstreamModel: { id: 'gpt-image-2', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
         provider: {
           getPricingForModelKey: () => null,
-          callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
+          callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, _headers: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
             stub.generationsCalls.push(body);
             const response = stub.nextGenerations.shift();
             if (response === undefined) throw new Error('test did not enqueue a generations response');
-            return { response, modelKey: 'gpt-image-2' };
+            return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
           },
-          callImagesEdits: async (_model: unknown, form: FormData) => {
+          callImagesEdits: async (_model: unknown, form: FormData, _signal: unknown, _headers: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
             stub.editsForms.push(form);
             const response = stub.nextEdits.shift();
             if (response === undefined) throw new Error('test did not enqueue an edits response');
-            return { response, modelKey: 'gpt-image-2' };
+            return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
           },
         },
       }],
@@ -136,6 +136,7 @@ const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
+  runtimeLocation: 'test',
   scheduleBackground: () => {},
   requestStartedAt: 0,
 });
