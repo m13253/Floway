@@ -4,10 +4,9 @@
 // more". Adding a manual model is driven by a button in ModelsPanel's
 // header — this component is purely the grid.
 
-import { OverlayScrollbars } from '@floway-dev/ui';
-
-import { publicIdOf, type Row, titleFor } from './modelRows.ts';
 import ModelCard from './ModelCard.vue';
+import { publicIdOf, type Row, titleFor } from './modelRows.ts';
+import { OverlayScrollbars } from '@floway-dev/ui';
 
 defineProps<{
   rows: Row[];

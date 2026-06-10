@@ -3,12 +3,11 @@
 // /models toggle, path overrides). The model list is owned by ModelsPanel on
 // the right side — this panel only carries the connection-shaped config.
 
-import { Button, Input, Switch } from '@floway-dev/ui';
-
 import type { CustomDraft } from './customConfig.ts';
 import { PATH_KEYS } from './customConfig.ts';
 import EndpointsField from './EndpointsField.vue';
 import SecretInput from '../shared/SecretInput.vue';
+import { Button, Input, Switch } from '@floway-dev/ui';
 
 const draft = defineModel<CustomDraft>({ required: true });
 

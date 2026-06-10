@@ -2,10 +2,9 @@
 // Azure provider-specific fields. Deployments are always manual (no live
 // /models browse) — the model list itself lives in ModelsPanel on the right.
 
-import { Input } from '@floway-dev/ui';
-
 import type { AzureDraft } from './customConfig.ts';
 import SecretInput from '../shared/SecretInput.vue';
+import { Input } from '@floway-dev/ui';
 
 const draft = defineModel<AzureDraft>({ required: true });
 

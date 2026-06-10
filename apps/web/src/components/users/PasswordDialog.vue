@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Button, Dialog, Spinner } from '@floway-dev/ui';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import SecretInput from '../shared/SecretInput.vue';
+import { Button, Dialog, Spinner } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 

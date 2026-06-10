@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { cn } from './utils/cn.ts';
 import Spinner from './Spinner.vue';
+import { cn } from './utils/cn.ts';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 type Size = 'sm' | 'md' | 'lg';

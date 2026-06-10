@@ -14,21 +14,21 @@
 // pushed an update marks itself as the source and the other side skips
 // re-deriving.
 
-import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
-import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
-import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
-import { Button, Input, Spinner } from '@floway-dev/ui';
 import { useNow, useTimeoutFn } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
-import ProxyConfigForm from './ProxyConfigForm.vue';
 import { FORM_KIND_LABELS, formKindOf } from './proxy-form-defaults.ts';
+import ProxyConfigForm from './ProxyConfigForm.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
+import { DEFAULT_DIAL_DEADLINE_MS } from '@floway-dev/proxy/constants';
+import type { ProxyConfig } from '@floway-dev/proxy/proxy-config';
+import { formatProxyUri, parseProxyUri } from '@floway-dev/proxy/url';
+import { Button, Input, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
   mode: 'create' | 'edit';
@@ -65,7 +65,7 @@ const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false;
 // good config so the form does not reset under the operator and dim it
 // via the urlError prop instead.
 const initialParse = tryParse(url.value);
-const config = ref<ProxyConfig | null>(initialParse && initialParse.ok ? initialParse.config : null);
+const config = ref<ProxyConfig | null>(initialParse?.ok ? initialParse.config : null);
 const urlError = ref<string | null>(initialParse && !initialParse.ok ? initialParse.error : null);
 
 // Single-tick guard: whichever side just pushed a change tags itself as

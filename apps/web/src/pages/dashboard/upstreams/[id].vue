@@ -1,9 +1,11 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
+import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../../api/client.ts';
 import type { CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, UpstreamModelConfig } from '../../../api/types.ts';
-import { useProxiesStore as useProxiesStoreForLoader } from '../../../composables/useProxies.ts';
+import UpstreamEditPage from '../../../components/upstream-edit/UpstreamEditPage.vue';
+import { useProxiesStore } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 
 // Pre-fetch the provider-specific model list (and Copilot's premium quota)
@@ -14,7 +16,7 @@ import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]', async route => {
   const api = useApi();
   const store = useUpstreamsStore();
-  await Promise.all([store.load(), useProxiesStoreForLoader().load()]);
+  await Promise.all([store.load(), useProxiesStore().load()]);
   if (store.error.value) throw new Error(store.error.value);
   if (store.upstreams.value === null || store.flagCatalog.value === null) {
     throw new Error('upstreams store not populated after a successful load()');
@@ -93,10 +95,6 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
 </script>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
-
-import UpstreamEditPage from '../../../components/upstream-edit/UpstreamEditPage.vue';
-
 definePage({ meta: { requiresAdmin: true } });
 
 const data = useEditUpstreamData();

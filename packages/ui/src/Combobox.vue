@@ -13,7 +13,7 @@ interface Item {
 
 const value = defineModel<T | T[]>();
 
-const props = withDefaults(defineProps<{
+withDefaults(defineProps<{
   items: Item[];
   placeholder?: string;
   emptyText?: string;

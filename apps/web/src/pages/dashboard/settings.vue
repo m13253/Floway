@@ -1,11 +1,19 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
+import { ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { SearchConfig } from '../../api/types.ts';
-import { useModelsStore as useModelsStoreForLoader } from '../../composables/useModels.ts';
-import { useProxiesStore as useProxiesStoreForLoader } from '../../composables/useProxies.ts';
-import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../composables/useUpstreams.ts';
+import type { ProxyRecord, SearchConfig, UpstreamRecord } from '../../api/types.ts';
+import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
+import ExportSection from '../../components/settings/ExportSection.vue';
+import ImportSection from '../../components/settings/ImportSection.vue';
+import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.vue';
+import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
+import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
+import { useModelsStore } from '../../composables/useModels.ts';
+import { useProxiesStore } from '../../composables/useProxies.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 
 const defaultSearchConfig: SearchConfig = {
   provider: 'disabled',
@@ -17,9 +25,9 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   const api = useApi();
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
-    useUpstreamsStoreForLoader().load(),
-    useModelsStoreForLoader().load(),
-    useProxiesStoreForLoader().load(),
+    useUpstreamsStore().load(),
+    useModelsStore().load(),
+    useProxiesStore().load(),
   ]);
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
@@ -29,19 +37,6 @@ export const useSettingsPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-
-import type { ProxyRecord, UpstreamRecord } from '../../api/types.ts';
-import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
-import ExportSection from '../../components/settings/ExportSection.vue';
-import ImportSection from '../../components/settings/ImportSection.vue';
-import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.vue';
-import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
-import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
-import { useModelsStore } from '../../composables/useModels.ts';
-import { useProxiesStore } from '../../composables/useProxies.ts';
-import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 
 definePage({ meta: { requiresAdmin: true } });
 

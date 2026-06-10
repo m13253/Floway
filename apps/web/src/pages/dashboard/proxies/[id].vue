@@ -1,34 +1,33 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
+import { computed, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
-import { useProxiesStore as useProxiesStoreForLoader } from '../../../composables/useProxies.ts';
-import { useUpstreamsStore as useUpstreamsStoreForLoader } from '../../../composables/useUpstreams.ts';
+import ProxyEditPage from '../../../components/proxy-edit/ProxyEditPage.vue';
+import { useProxiesStore } from '../../../composables/useProxies.ts';
+import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
+import { Button } from '@floway-dev/ui';
 
 // The loader populates the proxies and upstreams stores before the page
 // mounts. The page reads the live row out of the store via a `computed`,
 // so server-side state changes (admin reset, sibling test, etc.)
 // propagate into props.record on the next store reload.
 export const useEditProxyData = defineBasicLoader('/dashboard/proxies/[id]', async () => {
-  const proxiesStore = useProxiesStoreForLoader();
+  const proxiesStore = useProxiesStore();
   await Promise.all([
     proxiesStore.load(),
-    useUpstreamsStoreForLoader().load(),
+    useUpstreamsStore().load(),
   ]);
   return {};
 });
 </script>
 
 <script setup lang="ts">
-import { Button } from '@floway-dev/ui';
-import { computed, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-
-import ProxyEditPage from '../../../components/proxy-edit/ProxyEditPage.vue';
-import { useProxiesStore } from '../../../composables/useProxies.ts';
-
 definePage({ meta: { requiresAdmin: true } });
 
-useEditProxyData();
+// The loader's promise resolves before the page mounts (Suspense awaits
+// it for us); calling it here just registers the route's data dependency.
+void useEditProxyData();
 const route = useRoute('/dashboard/proxies/[id]');
 const router = useRouter();
 const store = useProxiesStore();

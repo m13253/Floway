@@ -4,9 +4,8 @@
 // browser, then paste the redirected URL. The parent owns PKCE-start + the
 // v-model values so flushing/closing belong with the outer panel.
 
-import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
-
 import type { CodexImportTab, CodexPkceStartResult } from './codex-import-types.ts';
+import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
 const props = defineProps<{
   pkce: CodexPkceStartResult | null;
@@ -24,8 +23,7 @@ const importTabs = [
 
 const copyAuthorizeUrl = async () => {
   if (!props.pkce) return;
-  try { await navigator.clipboard.writeText(props.pkce.authorize_url); }
-  catch { /* clipboard is best-effort; the visible link still works */ }
+  try { await navigator.clipboard.writeText(props.pkce.authorize_url); } catch { /* clipboard is best-effort; the visible link still works */ }
 };
 </script>
 

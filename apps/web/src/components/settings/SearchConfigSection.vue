@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { Button, Input, Spinner } from '@floway-dev/ui';
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { SearchConfig } from '../../api/types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
-
 import SecretInput from '../shared/SecretInput.vue';
+import { Button, Input } from '@floway-dev/ui';
 
 interface SearchTestResult {
   ok: boolean;

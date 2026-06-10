@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 import { onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
-
-import type { CopilotQuotaSnapshot, FlagDef, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 
 import AzureConfigPanel from './AzureConfigPanel.vue';
 import CodexConfigPanel from './CodexConfigPanel.vue';
 import CopilotConfigPanel from './CopilotConfigPanel.vue';
-import CustomConfigPanel from './CustomConfigPanel.vue';
 import type { AzureDraft, CustomDraft } from './customConfig.ts';
+import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
+import type { CopilotQuotaSnapshot, FlagDef, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
 const activeProvider = defineModel<UpstreamProviderKind>('provider', { required: true });
 const name = defineModel<string>('name', { required: true });

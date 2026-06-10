@@ -5,13 +5,9 @@
 // custom upstreams. Renders the two-column workbench: UpstreamConfigPanel on
 // the left, ModelsPanel on the right.
 
-import { Button } from '@floway-dev/ui';
 import type { InferRequestType } from 'hono/client';
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
-
-import { callApi, useApi } from '../../api/client.ts';
-import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 
 import {
   type AzureDraft,
@@ -23,6 +19,9 @@ import {
 } from './customConfig.ts';
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
+import { callApi, useApi } from '../../api/client.ts';
+import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{
   mode: 'create' | 'edit';
@@ -341,7 +340,11 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   const items: { value: string; label: string }[] = [];
   const collect = (list: UpstreamModelConfig[]) => {
     for (const m of list) {
-      const id = m.publicModelId?.trim() || m.upstreamModelId;
+      // An empty trimmed publicModelId falls back to upstreamModelId — `||`
+      // (not `??`) is intentional: a whitespace-only override should not
+      // shadow the upstream id.
+      const trimmed = m.publicModelId?.trim();
+      const id = trimmed !== undefined && trimmed !== '' ? trimmed : m.upstreamModelId;
       if (!id || seen.has(id)) continue;
       seen.add(id);
       items.push({ value: id, label: id });

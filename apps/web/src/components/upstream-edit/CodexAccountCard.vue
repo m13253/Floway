@@ -2,10 +2,10 @@
 // Identity + state + quota summary for one Codex account in an upstream's
 // pool. Pure presentational card — no API calls live here.
 
-import { Badge, Card } from '@floway-dev/ui';
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, CodexUpstreamConfig, CodexUpstreamState, UpstreamRecord } from '../../api/types.ts';
+import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
   record: UpstreamRecord;

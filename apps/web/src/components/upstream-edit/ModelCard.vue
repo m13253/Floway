@@ -4,8 +4,9 @@
 // rows that have an auto twin — the Auto/Manual mode pills. Click anywhere
 // (outside the active controls) selects this card.
 
-import { Switch } from '@floway-dev/ui';
 import { ref } from 'vue';
+
+import { Switch } from '@floway-dev/ui';
 
 defineProps<{
   displayName: string;

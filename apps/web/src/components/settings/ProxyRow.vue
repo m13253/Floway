@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { kindFromUri } from '@floway-dev/proxy/url-kind';
-import { Spinner } from '@floway-dev/ui';
 import { useNow } from '@vueuse/core';
 import { computed } from 'vue';
 
 import type { BackoffRow, ProxyRecord } from '../../api/types.ts';
 import { formatCountdown, formatRelativeAgo } from '../../utils/format-countdown.ts';
+import { kindFromUri } from '@floway-dev/proxy/url-kind';
+import { Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
   proxy: ProxyRecord;

@@ -7,6 +7,17 @@
 // variant via `switchKind`, which preserves host/port/name and resets
 // every kind-specific field.
 
+import { computed } from 'vue';
+
+import {
+  FORM_KIND_LABELS,
+  formKindOf,
+  isValidPort,
+  isValidUuid,
+  switchKind,
+  type FormKind,
+} from './proxy-form-defaults.ts';
+import SecretInput from '../shared/SecretInput.vue';
 import type {
   HttpProxyConfig,
   ProxyConfig,
@@ -21,17 +32,6 @@ import type {
   VlessWsTlsProxyConfig,
 } from '@floway-dev/proxy/proxy-config';
 import { Input, Select, Switch } from '@floway-dev/ui';
-import { computed } from 'vue';
-
-import {
-  FORM_KIND_LABELS,
-  formKindOf,
-  isValidPort,
-  isValidUuid,
-  switchKind,
-  type FormKind,
-} from './proxy-form-defaults.ts';
-import SecretInput from '../shared/SecretInput.vue';
 
 const config = defineModel<ProxyConfig>({ required: true });
 

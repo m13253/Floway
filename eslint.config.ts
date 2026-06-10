@@ -184,7 +184,11 @@ const config: Linter.Config[] = [
       },
     },
     rules: {
-      // Block-order keeps SFCs predictable; everything else flows through commonConfig.
+      // Flat-config rule entries don't merge per-key — without re-spreading
+      // commonConfig.rules here, this block's `rules:` would replace the
+      // common map wholesale and SFCs would get only the four vue rules
+      // below (no import/order, no stylistic, no async-safety).
+      ...commonConfig.rules,
       'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
       'vue/multi-word-component-names': 'off',
       'vue/no-mutating-props': 'error',

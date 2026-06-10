@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Code } from '@floway-dev/ui';
 import { computed, ref, watchEffect } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
+import { Code } from '@floway-dev/ui';
 
 const props = defineProps<{
   apiKey: string;

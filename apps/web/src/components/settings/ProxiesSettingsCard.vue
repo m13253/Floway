@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Spinner } from '@floway-dev/ui';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
+import ProxyRow from './ProxyRow.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import ProxyRow from './ProxyRow.vue';
+import { Spinner } from '@floway-dev/ui';
 
 const emit = defineEmits<{
   'add': [];
