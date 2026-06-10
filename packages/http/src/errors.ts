@@ -1,9 +1,11 @@
 // Errors raised when an HTTP/1.1 message is malformed or smuggling-shaped.
 //
-// fetchOnStream and the response/chunked parsers throw HttpProtocolError
-// for everything that's an HTTP-layer framing problem (bad status line,
-// multiple Content-Length, chunked size garbage, header validation, …).
-// Transport errors propagate as the underlying error.
+// fetchOnStream, the response/chunked parsers, and wsUpgradeAndFrame throw
+// HttpProtocolError for everything that's an HTTP-layer framing problem
+// (bad status line, multiple Content-Length, chunked size garbage, header
+// validation, WS handshake / frame violations, control-frame caps,
+// fragmented-message size caps, …). Transport errors propagate as the
+// underlying error.
 
 /**
  * Stable discriminator for an HttpProtocolError. Lets callers branch on
