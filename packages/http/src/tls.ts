@@ -127,18 +127,15 @@ export const userspaceTls = async (
   // a passive observer.
   handshakeDone.catch(() => { /* main handler is the await below */ });
 
-  const safeClose = (): void => {
-    try { plainController.close(); } catch { /* already closed/errored */ }
-  };
-  const safeError = (error: unknown): void => {
-    try { plainController.error(error); } catch { /* already closed/errored */ }
-  };
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
     cleanupSignal();
-    if (error) safeError(error);
-    else safeClose();
+    if (error) {
+      try { plainController.error(error); } catch { /* already closed/errored */ }
+    } else {
+      try { plainController.close(); } catch { /* already closed/errored */ }
+    }
     // Mirror ws-upgrade's closePlain: abort the underlying writer on error so
     // the transport tears down hard, but emit a polite FIN on a clean
     // teardown. A bare `writer.close()` on the error path would have us
