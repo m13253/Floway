@@ -100,7 +100,6 @@ export const decodeChunked = (
           const take = Math.min(buf.byteLength, need);
           controller.enqueue(copy(buf.subarray(0, take)));
           buf = buf.subarray(take);
-          scanFrom = 0;
           need -= take;
           if (need === 0) state = 'after-data-crlf';
           return;
