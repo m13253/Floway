@@ -142,14 +142,18 @@ const performUpstreamCall = async (
     if (response.ok) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-      void putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow));
+      // Quota cache is best-effort — getCodexQuota already treats missing
+      // entries as null, so a KV write failure is recoverable noise rather
+      // than something to crash the request on. Mirror auth.ts's
+      // .catch(() => {}) on the Copilot token KV write.
+      putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow)).catch(() => {});
       return ensureSseContentType(response);
     }
 
     if (response.status === 429) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-      void putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow));
+      putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow)).catch(() => {});
       return response;
     }
 

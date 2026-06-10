@@ -37,7 +37,14 @@ export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sd
 let editorDeviceId: string | null = null;
 const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID());
 
-const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429 || status === 500;
+// Statuses that indicate the GitHub→Copilot token exchange will not improve
+// on retry. 403 = the GitHub token is unauthorized for Copilot; 429 = the
+// upstream rate-limits the token endpoint, and waiting out the window inside
+// our retry budget burns the dial deadline without changing the verdict. The
+// HTTP-convention 5xx range falls through to the retry path because GitHub
+// returns 500/502/503/504 transiently when api.github.com itself is having
+// a bad minute (caozhiyuan/copilot-api retries every refresh failure).
+const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
 
 // Two-level Copilot token cache: in-process (60s) + KV (cross-datacenter).
 // In-process avoids KV reads on every request. KV avoids HTTP fetches on cold starts.
@@ -90,11 +97,12 @@ async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefine
       // immediately rather than walk N retries with the same already-
       // aborted signal, which would burn the proxy chain on each cycle.
       if (e instanceof Error && e.name === 'AbortError') throw e;
-      // Don't retry client errors (4xx) — they won't change on retry
+      // Token-fetch failures with a known-non-transient status surface as
+      // CopilotTokenFetchError; bypass retry there. Everything else
+      // (network/connect errors, transient 5xx, etc.) walks the backoff.
       if (isCopilotTokenFetchError(e) && isCopilotTokenFetchTerminalStatus(e.status)) {
         throw e;
       }
-      if (e instanceof Error && /failed: 4\d{2} /.test(e.message)) throw e;
       if (attempt >= maxRetries) throw e;
       const delay = baseDelayMs * Math.pow(2, attempt);
       console.warn(`Retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${e instanceof Error ? e.message : String(e)}`);
@@ -129,15 +137,20 @@ function isTokenValid(token: string | null, expiresAt: number): boolean {
   return expiresAt > now + 60;
 }
 
-async function copilotTokenCacheKey(githubToken: string, accountType: string): Promise<string> {
-  const bytes = new TextEncoder().encode(`${accountType}:${githubToken}`);
+async function copilotTokenCacheKey(githubToken: string): Promise<string> {
+  // Namespace the hash with a literal `copilot:` prefix so a future cache
+  // sharing the same backend (e.g. another provider) couldn't collide on
+  // a SHA-256 of the same GitHub token. The exchange depends only on the
+  // GitHub token, not on individual/business/enterprise account type, so
+  // there's no per-account-type keying to surface in the signature.
+  const bytes = new TextEncoder().encode(`copilot:${githubToken}`);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   return `${COPILOT_TOKEN_KV_KEY_PREFIX}:${hash}`;
 }
 
 async function getCopilotToken(githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<string> {
-  const cacheKey = await copilotTokenCacheKey(githubToken, 'copilot');
+  const cacheKey = await copilotTokenCacheKey(githubToken);
 
   // Level 1: in-process cache (avoids KV read on hot path)
   const now = Date.now();
