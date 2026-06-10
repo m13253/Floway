@@ -1,7 +1,7 @@
 import type { CopilotUpstreamConfig } from './config.ts';
 import { copilotFetchModels } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { ProviderModelsUnavailableError, type Fetcher } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;
@@ -26,31 +26,8 @@ const MODELS_HEADER_OVERRIDES: Record<string, string> = {
   'content-type': '',
 };
 
-export const fetchCopilotModels = async (config: Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>, fetcher: Fetcher): Promise<CopilotModelsResponse> => {
-  let response: Response;
-  try {
-    response = await copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher });
-  } catch (cause) {
-    throw new ProviderModelsUnavailableError(null, cause);
-  }
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new ProviderModelsUnavailableError({
-      status: response.status,
-      headers: new Headers(response.headers),
-      body,
-    });
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch (cause) {
-    throw new ProviderModelsUnavailableError(null, cause);
-  }
-  if (!isCopilotModelsResponse(parsed)) {
-    throw new ProviderModelsUnavailableError(null, new Error('Invalid /models response shape'));
-  }
-  return parsed;
-};
+export const fetchCopilotModels = (config: Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
+  fetchUpstreamModels(
+    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher }),
+    v => (isCopilotModelsResponse(v) ? v : null),
+  );

@@ -57,6 +57,7 @@ export { getProviderRepo, initProviderRepo } from './repo.ts';
 export {
   ProviderModelsUnavailableError,
   clearModelsStore,
+  fetchUpstreamModels,
   httpResponseToResponse,
   inProcessMemo,
   invalidateModelsStore,

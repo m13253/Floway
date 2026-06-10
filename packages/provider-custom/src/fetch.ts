@@ -3,8 +3,6 @@ import { type FetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
-const trimTrailingSlash = (s: string): string => s.replace(/\/+$/, '');
-
 // Per-endpoint default paths. Admin pathOverrides (see config.ts) replace
 // these one-for-one; messages_count_tokens / responses_compact track the
 // override of their parent endpoint (suffix appended).
@@ -43,7 +41,7 @@ const customFetchInternal = async (
     for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
   }
   const dispatch = options.fetcher;
-  return await dispatch(joinBaseAndPath(trimTrailingSlash(config.baseUrl), path), { ...init, headers });
+  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 // Typed transports — one per logical endpoint Custom serves. count_tokens /

@@ -90,3 +90,40 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
     headers: new Headers(httpResponse.headers),
   });
 };
+
+// Shared scaffold for "fetch the upstream's /models, decode JSON, validate
+// shape" — error envelope identical across providers (network failure ⇒
+// ProviderModelsUnavailableError(null, cause); non-2xx ⇒ status+headers+
+// body; JSON-parse failure ⇒ null+cause; shape-invalid ⇒ Error). Keeping
+// this in one place makes the upstream-/models error contract
+// authoritative — a future change (attaching the request URL, splitting
+// JSON-parse from shape-invalid, etc.) lands in one spot.
+export const fetchUpstreamModels = async <T>(
+  doFetch: () => Promise<Response>,
+  parse: (json: unknown) => T | null,
+): Promise<T> => {
+  let response: Response;
+  try {
+    response = await doFetch();
+  } catch (cause) {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  if (!response.ok) {
+    throw new ProviderModelsUnavailableError({
+      status: response.status,
+      headers: new Headers(response.headers),
+      body: await response.text(),
+    });
+  }
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch (cause) {
+    throw new ProviderModelsUnavailableError(null, cause);
+  }
+  const result = parse(parsed);
+  if (result === null) {
+    throw new ProviderModelsUnavailableError(null, new Error('Invalid /models response shape'));
+  }
+  return result;
+};
