@@ -31,22 +31,24 @@ const kindBadgeClass = (kind: string) => {
 
 const kind = computed(() => kindFromUri(props.proxy.url));
 
-// Strip userinfo before display: shadowsocks and trojan URIs embed the
-// secret as the userinfo segment, and we do not want it leaking into a
-// tooltip. URL parsing is preferred — but on parse failure we still scrub
-// the raw string with a minimal scheme://userinfo@ regex so a malformed
-// row (e.g. one our parser rejects but contains userinfo anyway) cannot
-// leak credentials through the fallback path.
-const urlPreview = computed(() => {
+// Strip userinfo AND the scheme before display: the kind badge already
+// carries the protocol, so showing `ss://` next to an `SS` chip is noise.
+// Shadowsocks and trojan URIs embed the secret as the userinfo segment,
+// and we do not want it leaking into a tooltip. URL parsing is preferred —
+// but on parse failure we still scrub the raw string with a minimal
+// scheme+userinfo regex so a malformed row (e.g. one our parser rejects
+// but contains userinfo anyway) cannot leak credentials through the
+// fallback path.
+const hostPreview = computed(() => {
   const raw = props.proxy.url;
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    return raw.replace(/^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^@/]*@/, '$1');
+    return raw.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/(?:[^@/]*@)?/, '');
   }
   const port = parsed.port ? `:${parsed.port}` : '';
-  return `${parsed.protocol}//${parsed.hostname}${port}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+  return `${parsed.hostname}${port}${parsed.pathname === '/' ? '' : parsed.pathname}`;
 });
 </script>
 
@@ -58,7 +60,7 @@ const urlPreview = computed(() => {
     >{{ kind }}</span>
 
     <span class="truncate text-sm font-semibold text-white">{{ proxy.name }}</span>
-    <span class="min-w-0 flex-1 truncate text-xs text-gray-500" :title="urlPreview">{{ urlPreview }}</span>
+    <span class="min-w-0 flex-1 truncate font-mono text-xs text-gray-500" :title="hostPreview">{{ hostPreview }}</span>
 
     <div class="flex shrink-0 items-center gap-1">
       <button
