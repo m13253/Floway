@@ -22,11 +22,7 @@ export interface ChatCompletionsAttemptArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  // Optional invocation-headers inheritance from a source attempt that
-  // translated INTO chat-completions. Source-side interceptors (e.g. Messages
-  // claude-agent / interaction-id setters) write trace headers into the
-  // source `MessagesInvocation.headers` bag; passing them in here keeps them
-  // on the wire for the translated upstream call.
+  // See responses/attempt.ts for the inherited-headers contract.
   readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 

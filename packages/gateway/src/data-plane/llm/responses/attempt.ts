@@ -12,7 +12,8 @@ import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
-import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, recordUpstreamLatency, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
+import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
+import { recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,8 +31,10 @@ export interface ResponsesAttemptGenerateArgs {
   // 'none' so the outer source owns snapshot persistence.
   readonly snapshotMode: ResponsesSnapshotMode;
   // Optional invocation-headers inheritance from a source attempt that
-  // translated INTO responses. Source-side interceptors write trace headers
-  // into the source invocation; passing them in here keeps them on the wire.
+  // translated INTO this target protocol. Source-side interceptors write
+  // trace headers into the source invocation; passing them in here keeps
+  // them on the wire for the translated upstream call. Same shape lives on
+  // messages/attempt.ts and chat-completions/attempt.ts.
   readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
@@ -244,7 +247,7 @@ const callResponsesCompactAsExecuteResult = async (
     recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamError(providerResult.response)), performance: context };
   }
-  recordUpstreamLatency(ctx, context, recorder.durationMs());
+  ctx.scheduleBackground(() => recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

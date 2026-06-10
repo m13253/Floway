@@ -14,9 +14,8 @@ export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 // instance the binding came from, retained alongside the binding so the
 // call site can register telemetry, invalidate caches, and dispatch the
 // upstream call without re-resolving the registry. `fetcher` is the
-// per-upstream proxy-aware indirection minted by the per-request fetcher
-// builder, carried with the candidate so every provider call leg routes
-// through the same fallback chain.
+// per-upstream Fetcher minted by the per-request fetcher builder; see
+// UpstreamCallOptions.fetcher for the call-leg contract.
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
   readonly binding: ProviderModelRecord;

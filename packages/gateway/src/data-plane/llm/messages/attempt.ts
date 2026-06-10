@@ -24,10 +24,7 @@ export interface MessagesAttemptGenerateArgs {
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
   readonly anthropicBeta?: readonly string[];
-  // Optional invocation-headers inheritance from a source attempt that
-  // translated INTO messages. Source-side interceptors write trace headers
-  // into the source invocation; passing them in here keeps them on the wire
-  // for the translated upstream call.
+  // See responses/attempt.ts for the inherited-headers contract.
   readonly inheritedInvocationHeaders?: Record<string, string>;
 }
 
