@@ -1,4 +1,4 @@
-// Hand-rolled ambient declaration matching this app's convention for runtime types (cf. R2BucketLike, ImagesBinding, KvNamespace) — only the surface used here.
+// Hand-rolled ambient declaration for the surface this app uses from cloudflare:sockets; @cloudflare/workers-types does not yet ship it.
 declare module 'cloudflare:sockets' {
   interface CloudflareSocket {
     readonly readable: ReadableStream<Uint8Array>;

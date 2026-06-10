@@ -47,9 +47,8 @@ class NodeSqliteDatabase implements SqlDatabase {
     return new NodeSqlitePreparedStatement(this.db.prepare(query));
   }
 
-  // batch() runs the supplied statements inside one transaction so the
-  // multi-statement repo writes are atomic on this backend, matching D1's
-  // batch semantics.
+  // Wraps the supplied statements in a single transaction to match D1's
+  // batch atomicity.
   async batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
     const results: SqlResult[] = [];
     this.db.exec('BEGIN');

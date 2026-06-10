@@ -23,9 +23,6 @@ const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
     start(c) { controller = c; },
     write(chunk) {
       return new Promise<void>((resolve, reject) => {
-        // The chunk callback fires once the chunk is flushed past the
-        // internal buffer; that's the right moment to release the writer
-        // because it gives the runtime its natural backpressure window.
         socket.write(chunk, err => {
           if (err) reject(err);
           else resolve();
@@ -71,7 +68,7 @@ export const nodeSocketDial: SocketDial = {
     // cast silently absorb future shape changes.
     const signal = opts?.signal;
     const socket = opts?.tls
-      // @ts-expect-error – tls.ConnectionOptions does not yet declare `signal` in @types/node, but tls.connect accepts and honours it at runtime.
+      // @ts-expect-error – see block comment above
       ? tls.connect({ host: dialHost, port, servername: dialHost, signal })
       : net.connect({ host: dialHost, port, allowHalfOpen: true, signal });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';

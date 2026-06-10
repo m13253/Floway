@@ -6,9 +6,7 @@ import type { SqlDatabase } from '@floway-dev/platform';
 
 // Resolve packages/gateway/migrations/ relative to this file's location in the
 // workspace. The Node deployment target runs under tsx against the source
-// tree, so the workspace layout is the source of truth — we walk three
-// directories up from apps/platform-node/src/ to the workspace root, then
-// down into packages/gateway/migrations/.
+// tree, so the workspace layout is the source of truth.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MIGRATIONS_DIR = join(HERE, '..', '..', '..', 'packages', 'gateway', 'migrations');
 

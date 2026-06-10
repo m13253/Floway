@@ -45,10 +45,8 @@ export const cloudflareSocketDial: SocketDial = {
       abortListener = (): void => { void safeClose(); };
       signal.addEventListener('abort', abortListener, { once: true });
     }
-    // Drop the abort listener on natural close as well, so a signal that
-    // outlives this dial doesn't accumulate stale closures. The catch is
-    // explicit so an unhandled-rejection observer doesn't see the
-    // socket.closed rejection that fires on every connect failure.
+    // Explicit catch so an unhandled-rejection observer doesn't see
+    // socket.closed rejecting on connect failure.
     void socket.closed.catch(() => { /* errors observed via opened/streams */ }).finally(removeAbortListener);
 
     try {
