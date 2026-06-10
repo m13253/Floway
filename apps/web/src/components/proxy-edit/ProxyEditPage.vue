@@ -19,7 +19,7 @@ import { useNow, useTimeoutFn } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 
-import { FORM_KIND_LABELS, formKindOf } from './proxy-form-defaults.ts';
+import { FORM_KIND_LABELS, defaultsFor, formKindOf } from './proxy-form-defaults.ts';
 import ProxyConfigForm from './ProxyConfigForm.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { BackoffRow, ProxyConflictBody, ProxyRecord } from '../../api/types.ts';
@@ -60,13 +60,18 @@ const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false;
   }
 };
 
-// Canonical form-side state. Seeded from the initial URL on mount.
-// Cleared to null only when the URL field is empty (panel hides via
-// v-if). When the URL becomes unparseable mid-edit, we keep the last
-// good config so the form does not reset under the operator and dim it
-// via the urlError prop instead.
+// Canonical form-side state. In edit mode, seeded by parsing the row's URL;
+// in create mode, seeded with an empty HTTP default so the form panel
+// renders before the operator has typed a URL — the panel's own kind
+// selector then lets them switch protocols and start building the URL
+// field via the bidirectional sync. When the URL becomes unparseable
+// mid-edit we keep the last good config so the form does not reset under
+// the operator and dim it via the urlError prop instead.
 const initialParse = tryParse(url.value);
-const config = ref<ProxyConfig | null>(initialParse?.ok ? initialParse.config : null);
+const initialConfig: ProxyConfig | null = initialParse?.ok
+  ? initialParse.config
+  : (props.mode === 'create' ? defaultsFor('http', { host: '', port: 0, name: '' }) : null);
+const config = ref<ProxyConfig | null>(initialConfig);
 const urlError = ref<string | null>(initialParse && !initialParse.ok ? initialParse.error : null);
 
 // Single-tick guard: whichever side just pushed a change tags itself as

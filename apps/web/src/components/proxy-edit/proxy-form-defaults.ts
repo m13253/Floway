@@ -67,7 +67,7 @@ const portFor = (kind: FormKind, current: number): number => {
   }
 };
 
-const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig => {
+export const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig => {
   const base = { host: ctx.host, port: portFor(kind, ctx.port), name: ctx.name };
   switch (kind) {
   case 'http': {
