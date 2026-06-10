@@ -17,15 +17,13 @@ export const kindFromUri = (url: string): string => {
   case 'http:': return 'HTTP';
   case 'https:': return 'HTTPS';
   case 'socks5:': return 'SOCKS5';
-  case 'ss:': {
+  case 'ss:':
     // ss2022 userinfo is plaintext `method:base64key` whose prefix is the
-    // literal cipher name (e.g. `2022-blake3-aes-128-gcm`). Legacy SS
-    // userinfo is `base64(method:password)`, an opaque blob that never
-    // starts with the cipher name in cleartext. Matching the literal
-    // `2022-blake3-` prefix picks ss2022 unambiguously.
-    const userinfo = decodeURIComponent(parsed.username);
-    return userinfo.startsWith('2022-blake3-') ? 'SS-2022' : 'SS';
-  }
+    // literal cipher name (e.g. `2022-blake3-aes-128-gcm`). The discriminator
+    // is ASCII letters/digits/hyphens — bytes the URL parser never percent-
+    // encodes, so `parsed.username` already carries the literal prefix and
+    // a percent-decode would only widen the throw surface.
+    return parsed.username.startsWith('2022-blake3-') ? 'SS-2022' : 'SS';
   case 'trojan:': return 'TROJAN';
   case 'vless:': {
     // REALITY uses `security=reality`; vless-over-WS uses `type=ws`. Anything

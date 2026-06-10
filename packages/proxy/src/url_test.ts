@@ -201,6 +201,14 @@ describe('parseProxyUri', () => {
       // never have to special-case TypeError from the URL constructor.
       'not-a-url',
       '',
+      // Malformed percent-encoding lands in URL.username / URL.password /
+      // URL.hash raw — `decodeURIComponent` would raise URIError otherwise,
+      // bypassing the `instanceof ProxyUriError` discriminator.
+      'http://u:%zz@h:80',
+      'http://h:80#10%',
+      // Port 0 is reserved (RFC 6335 §6); the URL parser accepts the literal
+      // `:0` even though it never opens a socket.
+      'socks5://h:0',
     ];
     for (const uri of cases) {
       expect(() => parseProxyUri(uri)).toThrow(ProxyUriError);

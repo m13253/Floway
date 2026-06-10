@@ -47,6 +47,18 @@ const SS2022_METHOD_SET: ReadonlySet<string> = new Set<Ss2022Method>([
   '2022-blake3-chacha20-poly1305',
 ]);
 
+// Percent-decode a userinfo / fragment field, re-shaping `decodeURIComponent`'s
+// raw `URIError` (thrown on a bare `%` or `%xz` sequence the WHATWG URL parser
+// leaves untouched in userinfo and fragments) as a `ProxyUriError` so the
+// public contract that every parse failure is `instanceof ProxyUriError` holds.
+const pctDecode = (s: string, field: string): string => {
+  try {
+    return decodeURIComponent(s);
+  } catch (cause) {
+    throw new ProxyUriError(`malformed percent-encoding in ${field}`, { cause });
+  }
+};
+
 export const parseProxyUri = (uri: string): ProxyConfig => {
   let url: URL;
   try {
@@ -61,7 +73,7 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
   const host = url.hostname;
   const port = resolvePort(url, uri);
   const name = url.hash
-    ? decodeURIComponent(url.hash.slice(1))
+    ? pctDecode(url.hash.slice(1), 'fragment')
     : `${host}:${port}`;
 
   switch (url.protocol) {
@@ -77,6 +89,19 @@ export const parseProxyUri = (uri: string): ProxyConfig => {
 };
 
 const resolvePort = (url: URL, uri: string): number => {
+  const port = readRawPort(url, uri);
+  // 0 reserves the wildcard port (RFC 6335 §6); anything outside 1..65535
+  // is a wire-shape failure the URL parser already accepts at the upper
+  // bound for some schemes. Reject here so the dial stage's typed
+  // assertValidTargetPort isn't the only line of defense, and so a
+  // dashboard editor surfaces the failure on save instead of on first dial.
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ProxyUriError(`port out of range (1..65535): ${uri}`);
+  }
+  return port;
+};
+
+const readRawPort = (url: URL, uri: string): number => {
   if (url.port) return Number(url.port);
   // The URL constructor strips a scheme's default port from `url.port`, so
   // `http://host:80` and `http://host` both produce `url.port === ''`.
@@ -116,8 +141,8 @@ const parseHttp = (
   tls: boolean,
 ): HttpProxyConfig => {
   const config: HttpProxyConfig = { kind: 'http', tls, host, port, name };
-  if (url.username) config.username = decodeURIComponent(url.username);
-  if (url.password) config.password = decodeURIComponent(url.password);
+  if (url.username) config.username = pctDecode(url.username, 'http username');
+  if (url.password) config.password = pctDecode(url.password, 'http password');
   return config;
 };
 
@@ -128,8 +153,8 @@ const parseSocks5 = (
   name: string,
 ): Socks5ProxyConfig => {
   const config: Socks5ProxyConfig = { kind: 'socks5', host, port, name };
-  if (url.username) config.username = decodeURIComponent(url.username);
-  if (url.password) config.password = decodeURIComponent(url.password);
+  if (url.username) config.username = pctDecode(url.username, 'socks5 username');
+  if (url.password) config.password = pctDecode(url.password, 'socks5 password');
   return config;
 };
 
@@ -144,12 +169,12 @@ const parseSs = (
   // method; if so, the suffix is the raw base64 key (URL parsing already
   // split userinfo on the first ':' for us via username/password, and
   // percent-encoded any `=` padding on the way through).
-  const username = decodeURIComponent(url.username);
+  const username = pctDecode(url.username, 'ss method');
   if (SS2022_METHOD_SET.has(username)) {
     return {
       kind: 'ss2022',
       method: username as Ss2022Method,
-      passwordBase64: decodeURIComponent(url.password),
+      passwordBase64: pctDecode(url.password, 'ss-2022 password'),
       host,
       port,
       name,
@@ -189,7 +214,7 @@ const parseTrojan = (
 ): TrojanProxyConfig => {
   const config: TrojanProxyConfig = {
     kind: 'trojan',
-    password: decodeURIComponent(url.username),
+    password: pctDecode(url.username, 'trojan password'),
     host,
     port,
     name,
@@ -207,7 +232,7 @@ const parseVless = (
   port: number,
   name: string,
 ): VlessTcpTlsProxyConfig | VlessWsTlsProxyConfig | RealityProxyConfig => {
-  const uuid = decodeURIComponent(url.username);
+  const uuid = pctDecode(url.username, 'vless uuid');
   const type = url.searchParams.get('type') ?? 'tcp';
   const security = url.searchParams.get('security') ?? 'tls';
 
