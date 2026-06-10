@@ -54,11 +54,11 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       }
     });
 
-    it('saturates at 3600s even after thousands of failures (no JS shift overflow)', async () => {
+    it('saturates at 3600s once fail_count climbs past the exponent clamp (no JS shift overflow)', async () => {
       const repo = await makeRepo();
-      // Force the row to a fail_count well past 31 — without the exponent
-      // clamp the next recordDialFailure would compute `1 << 31 = -2^31` and
-      // collapse `Math.min(neg, 3600)` to a negative expiresAt.
+      // Push fail_count well past the exponent clamp at 6 — both backends
+      // saturate the schedule at 3600s regardless of how high fail_count
+      // climbs, with no JS 32-bit shift surprise creeping back in.
       for (let n = 0; n < 50; n++) {
         await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
       }
