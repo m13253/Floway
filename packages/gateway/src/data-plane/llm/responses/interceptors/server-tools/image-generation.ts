@@ -759,8 +759,6 @@ const streamImageGeneration = (
   sources: readonly ImageSource[],
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
-  const resolved = await resolveImageBinding(isEdit, state);
-  if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const fetcherForUpstream = await createPerRequestFetcher();
   const resolved = await resolveImageBinding(isEdit, state, fetcherForUpstream);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
