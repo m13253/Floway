@@ -4,10 +4,10 @@ import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } fro
 
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
-// before opening a socket; once opened, an abort closes the socket — the
-// proxy runners observe that as a read/write rejection. The listener is
-// detached on close() and on natural socket close so a long-lived caller
-// signal doesn't accumulate one pinned closure per dial.
+// before opening a socket; once opened, an abort closes the socket so
+// subsequent reads/writes reject. The listener is detached on close() and on
+// natural socket close so a long-lived caller signal doesn't accumulate one
+// pinned closure per dial.
 //
 // We `await socket.opened` before resolving so a TLS handshake error or
 // connect-refused surfaces as a connect-time rejection (with `cause`)
@@ -56,8 +56,7 @@ export const cloudflareSocketDial: SocketDial = {
       await safeClose();
       // If the failure was caused by the caller's abort, surface as
       // AbortError (preserving the original reason if it was an Error)
-      // so the dial chain's AbortError fast-path classifies it correctly
-      // instead of treating it as a generic connect failure.
+      // instead of an opaque connect failure.
       if (opts?.signal?.aborted) throwAbort(opts.signal);
       throw new Error(`dial ${host}:${port} failed`, { cause });
     }

@@ -24,10 +24,9 @@ export interface NodePlatformOptions {
 // shared implementation (e.g. backed by Redis) without touching this code.
 //
 // Trust set is seeded here, before any data-plane request can fire a
-// userspace-TLS handshake: `@reclaimprotocol/tls`'s root-CA cache is built
-// on first handshake and frozen thereafter, so the Node runtime's bundled
-// CA list (plus anything Node folded in from NODE_EXTRA_CA_CERTS) must
-// land in `globalThis.TLS_ADDITIONAL_ROOT_CA_LIST` before then.
+// userspace-TLS handshake — the Node runtime's bundled CA list plus
+// anything Node folded in from NODE_EXTRA_CA_CERTS. `addTrustedRootCAs`
+// documents the underlying freeze-on-first-handshake constraint.
 export const bootstrapNodePlatform = (opts: NodePlatformOptions): { db: SqlDatabase } => {
   initEnv(name => process.env[name] ?? '');
   initFileProvider(new FsFileProvider(opts.filesDir));

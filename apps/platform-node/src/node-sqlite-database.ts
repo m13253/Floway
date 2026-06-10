@@ -35,7 +35,7 @@ class NodeSqlitePreparedStatement implements SqlPreparedStatement {
     return Promise.resolve({
       results: [],
       success: true,
-      meta: { changes: Number(result.changes ?? 0) },
+      meta: { changes: Number(result.changes) },
     });
   }
 }
