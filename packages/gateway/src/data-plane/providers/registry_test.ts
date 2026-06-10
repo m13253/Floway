@@ -123,7 +123,6 @@ test('listModelProviders creates enabled provider instances with upstream row id
 
   const providers = await listModelProviders(null, () => directFetcher);
   assertEquals(providers.map(provider => provider.upstream), ['up_custom', 'up_azure', 'up_copilot']);
-  assertEquals(providers.some(provider => provider.upstream.includes(':')), false);
 });
 
 test('getInternalModels returns the catalog projection without execution bindings', async () => {

@@ -160,6 +160,36 @@ const sendUpgradeRequest = async (
   opts: WsUpgradeOptions,
   clientKey: string,
 ): Promise<void> => {
+  // RFC 9112 §3.2 + §5: a CR/LF/SP/NUL/control byte in the path or Host
+  // header would split the request line / header section and inject a
+  // forged head onto the wire. Reject before serializing.
+  if (opts.path.length === 0) {
+    throw new HttpProtocolError(
+      'caller-supplied WS upgrade path is empty',
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    );
+  }
+  for (let i = 0; i < opts.path.length; i++) {
+    const c = opts.path.charCodeAt(i);
+    if (c < 0x21 || c === 0x7f) {
+      throw new HttpProtocolError(
+        `caller-supplied WS upgrade path contains a forbidden byte 0x${c.toString(16).padStart(2, '0')}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9112 §3.2' },
+      );
+    }
+  }
+  for (let i = 0; i < opts.host.length; i++) {
+    const c = opts.host.charCodeAt(i);
+    if ((c < 0x20 && c !== 0x09) || c === 0x7f) {
+      throw new HttpProtocolError(
+        `caller-supplied WS upgrade Host contains a forbidden control byte 0x${c.toString(16).padStart(2, '0')}`,
+        'BAD_HEADERS',
+        { rfc: 'RFC 9110 §7.2' },
+      );
+    }
+  }
   const lines: string[] = [
     `GET ${opts.path} HTTP/1.1`,
     `Host: ${opts.host}`,

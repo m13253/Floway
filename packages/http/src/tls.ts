@@ -225,13 +225,17 @@ export const userspaceTls = async (
     start(c) { plainController = c; },
     // Consumer-initiated cancel (response body fully read or aborted) tears
     // down our side of the duplex — flag so subsequent TLS-end callbacks
-    // skip their controller calls, and signal end-of-stream upward.
+    // skip their controller calls, and signal end-of-stream upward. Mirror
+    // closePlain's split: an Error reason means the consumer hit a failure,
+    // so we abort the underlying writer rather than emit a polite FIN that
+    // would block on a peer already gone; a clean cancel still closes.
     cancel(reason) {
       plainClosed = true;
       cleanupSignal();
       void tlsClient.end().catch(logTlsTeardownError);
       void reader.cancel(reason).catch(() => {});
-      void writer.close().catch(logTlsTeardownError);
+      if (reason instanceof Error) void writer.abort(reason).catch(logTlsTeardownError);
+      else void writer.close().catch(logTlsTeardownError);
     },
   });
 

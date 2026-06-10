@@ -235,6 +235,50 @@ describe('wsUpgradeAndFrame — handshake', () => {
       message: expect.stringContaining('reserved'),
     });
   });
+
+  // The path is interpolated into `GET ${path} HTTP/1.1` and the host into
+  // the `Host:` line. CR/LF/SP/NUL bytes would split the request line or
+  // header section and inject a forged head onto the wire — same anti-
+  // smuggling defense the additionalHeaders validators close.
+  const tryUpgrade = async (overrides: { host?: string; path?: string }): Promise<unknown> => {
+    const fake = makeFakeDuplex();
+    return await wsUpgradeAndFrame(fake, {
+      host: overrides.host ?? 'h',
+      path: overrides.path ?? '/',
+    }).catch((e: unknown) => e);
+  };
+
+  it('rejects an empty path', async () => {
+    expect(await tryUpgrade({ path: '' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a path containing SP (smuggling shape)', async () => {
+    expect(await tryUpgrade({ path: '/hi there' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a path containing CR (CRLF injection prevention)', async () => {
+    expect(await tryUpgrade({ path: '/foo\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a path containing LF (LF injection prevention)', async () => {
+    expect(await tryUpgrade({ path: '/foo\nEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a path containing NUL', async () => {
+    expect(await tryUpgrade({ path: '/foo\0bar' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a Host containing CR', async () => {
+    expect(await tryUpgrade({ host: 'h\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a Host containing LF', async () => {
+    expect(await tryUpgrade({ host: 'h\nEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
+
+  it('rejects a Host containing NUL', async () => {
+    expect(await tryUpgrade({ host: 'h\0evil' })).toMatchObject({ code: 'BAD_HEADERS' });
+  });
 });
 
 describe('wsUpgradeAndFrame — frame layer round-trip', () => {

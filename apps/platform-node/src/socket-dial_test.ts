@@ -74,6 +74,12 @@ describe('nodeSocketDial', () => {
     await new Promise(r => setTimeout(r, 20));
 
     const remote = server.lastSocket();
-    expect(remote?.destroyed ?? remote?.readableEnded).toBeTruthy();
+    // Either signal counts as torn-down: socket.destroy() flips `destroyed`
+    // immediately on the local side, but a peer-driven FIN can leave the
+    // local socket as `destroyed: false, readableEnded: true` for a tick
+    // before the close event lands. Both readings prove the abort reached
+    // the underlying fd; `||` is semantically what we want — `??` would
+    // miss the `destroyed: false` case.
+    expect(remote?.destroyed === true || remote?.readableEnded === true).toBe(true);
   });
 });
