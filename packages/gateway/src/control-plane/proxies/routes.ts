@@ -244,7 +244,7 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
       },
     );
     if (!response.ok) {
-      return c.json({ ok: false, error: `Anchor returned status ${response.status}` });
+      return c.json({ ok: false, error: `anchor returned status ${response.status}` });
     }
     const truncated = (await response.text()).slice(0, 256).trim();
     if (!isIpLike(truncated)) {
