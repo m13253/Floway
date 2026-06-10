@@ -57,7 +57,14 @@ class NodeSqliteDatabase implements SqlDatabase {
       for (const stmt of statements) results.push(await stmt.run());
       this.db.exec('COMMIT');
     } catch (e) {
-      this.db.exec('ROLLBACK');
+      // SQLite auto-rolls-back on a hard error class (SQLITE_FULL,
+      // SQLITE_IOERR, SQLITE_BUSY, SQLITE_NOMEM, SQLITE_INTERRUPT — see
+      // https://www.sqlite.org/lang_transaction.html "Response To Errors
+      // Within A Transaction"); the explicit ROLLBACK then throws
+      // "cannot rollback - no transaction is active" and would replace
+      // the original failure on the way out. Swallow that recovery throw
+      // so `throw e` always wins and the operator sees the real cause.
+      try { this.db.exec('ROLLBACK'); } catch { /* txn already auto-rolled-back */ }
       throw e;
     }
     return results;

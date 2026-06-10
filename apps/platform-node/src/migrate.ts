@@ -44,7 +44,11 @@ export const applyMigrations = async (db: SqlDatabase, dir: string = DEFAULT_MIG
       await db.prepare('INSERT INTO _migrations (name) VALUES (?)').bind(file).run();
       await db.exec('COMMIT');
     } catch (e) {
-      await db.exec('ROLLBACK');
+      // SQLite auto-rolls-back on hard errors (SQLITE_FULL, SQLITE_IOERR,
+      // …) — the explicit ROLLBACK then throws "no transaction is active"
+      // and would shadow the real DDL/IO failure in the operator's logs.
+      // Swallow it so the genuine cause survives.
+      try { await db.exec('ROLLBACK'); } catch { /* txn already auto-rolled-back */ }
       throw e;
     }
   }
