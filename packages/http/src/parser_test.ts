@@ -856,11 +856,11 @@ describe('toWebResponse', () => {
 });
 
 describe('parseHttpResponse — reader-lock release on error', () => {
-  // The orchestrator's teardown calls `stream.readable.cancel(reason)` on a
-  // failed dial. If parseHttpResponse rejects with the reader still locked
-  // onto its readable, that cancel hits a locked stream and the cancel
-  // cascade silently no-ops. Pin the contract: every throw path releases
-  // the reader so the upstream cancel reaches the underlying transport.
+  // A downstream teardown calls `stream.readable.cancel(reason)` on a failed
+  // dial. If parseHttpResponse rejects with the reader still locked onto its
+  // readable, that cancel hits a locked stream and the cancel cascade
+  // silently no-ops. Pin the contract: every throw path releases the reader
+  // so the downstream cancel reaches the underlying transport.
 
   it('releases the reader lock when the head fails to parse (BAD_STATUS_LINE)', async () => {
     const readable = respondAndEnd('not an http response\r\n\r\n');
