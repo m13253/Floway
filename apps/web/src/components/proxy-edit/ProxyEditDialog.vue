@@ -7,13 +7,6 @@
 // so the subpath gives live feedback without dial-time code. The gateway
 // re-parses on POST/PATCH, so this client check is not load-bearing for
 // security.
-//
-// The dialog hosts a bidirectional sync between the URL field and a
-// `ProxyConfigForm`: typing in the URL repopulates the form, editing the
-// form regenerates the URL via formatProxyUri. A per-tick `lastSource`
-// guard prevents the two watchers from ping-ponging — whichever side just
-// pushed an update marks itself as the source and the other side skips
-// re-deriving.
 
 import { useNow } from '@vueuse/core';
 import { computed, nextTick, ref, watch } from 'vue';
@@ -34,9 +27,7 @@ import { Button, Dialog, Input } from '@floway-dev/ui';
 const open = defineModel<boolean>('open', { required: true });
 
 const props = defineProps<{
-  // null = create; non-null = edit. The parent toggles a v-if around this
-  // component so close-then-open re-runs setup with a clean slate — no
-  // manual reset of local refs in a watcher.
+  /** null = create; non-null = edit. */
   record: ProxyRecord | null;
 }>();
 
@@ -52,9 +43,8 @@ const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'
 
 const name = ref(props.record?.name ?? '');
 const url = ref(props.record?.url ?? '');
-// Ephemeral test result for the current dialog session. The gateway no
-// longer persists egress observations on the proxy row; a fresh open
-// starts with nothing and `test()` populates this from the response.
+// Ephemeral test result for the current dialog session — fresh open starts
+// with nothing; `test()` populates this from the response.
 const lastEgressIp = ref<string | null>(null);
 
 const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false; error: string } | null => {
@@ -69,11 +59,9 @@ const tryParse = (raw: string): { ok: true; config: ProxyConfig } | { ok: false;
 
 // Canonical form-side state. In edit mode, seeded by parsing the row's URL;
 // in create mode, seeded with an empty HTTP default so the form panel
-// renders before the operator has typed a URL — the panel's own kind
-// selector then lets them switch protocols and start building the URL
-// field via the bidirectional sync. When the URL becomes unparseable
-// mid-edit we keep the last good config so the form does not reset under
-// the operator and dim it via the urlError prop instead.
+// renders before the operator types a URL. When the URL becomes
+// unparseable mid-edit we keep the last good config so the form does not
+// reset under the operator, and dim it via the urlError prop instead.
 const initialParse = tryParse(url.value);
 const initialConfig: ProxyConfig | null = initialParse?.ok
   ? initialParse.config

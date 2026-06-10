@@ -39,17 +39,6 @@ export const FORM_KIND_LABELS: Record<FormKind, string> = {
   'reality': 'VLESS / REALITY',
 };
 
-export const formKindOf = (config: ProxyConfig): FormKind => {
-  if (config.kind === 'http') return config.tls ? 'https' : 'http';
-  return config.kind;
-};
-
-interface DefaultsContext {
-  host: string;
-  port: number;
-  name: string;
-}
-
 const portFor = (kind: FormKind, current: number): number => {
   if (current > 0) return current;
   switch (kind) {
@@ -67,7 +56,15 @@ const portFor = (kind: FormKind, current: number): number => {
   }
 };
 
-export const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig => {
+// Switching protocols preserves transport coordinates (host, port, name)
+// and resets every kind-specific field. Any port the operator already
+// typed carries over verbatim — clobbering it would surprise someone who
+// is just toggling between vless-tcp and vless-ws — and only an unset
+// port (0) is replaced with the new kind's canonical default.
+export const defaultsFor = (
+  kind: FormKind,
+  ctx: { host: string; port: number; name: string },
+): ProxyConfig => {
   const base = { host: ctx.host, port: portFor(kind, ctx.port), name: ctx.name };
   switch (kind) {
   case 'http': {
@@ -119,19 +116,6 @@ export const defaultsFor = (kind: FormKind, ctx: DefaultsContext): ProxyConfig =
     return c;
   }
   }
-};
-
-// Switching protocols preserves transport coordinates (host, port, name)
-// and resets every kind-specific field. Any port the operator already
-// typed carries over verbatim — clobbering it would surprise someone who
-// is just toggling between vless-tcp and vless-ws — and only an unset
-// port (0) is replaced with the new kind's canonical default.
-export const switchKind = (current: ProxyConfig, next: FormKind): ProxyConfig => {
-  return defaultsFor(next, {
-    host: current.host,
-    port: current.port,
-    name: current.name,
-  });
 };
 
 export const isValidUuid = (s: string): boolean => {

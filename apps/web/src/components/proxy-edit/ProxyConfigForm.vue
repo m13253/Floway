@@ -1,20 +1,13 @@
 <script setup lang="ts">
-// Per-kind form panel for the proxy URI builder. Two-way bound to a
-// `ProxyConfig`: the parent owns the canonical config and feeds parsed
-// updates into our `modelValue`; we emit `update:modelValue` whenever a
-// field changes. The parent re-runs `formatProxyUri` after each emission
-// to keep the URL field in sync. The protocol selector swaps the active
-// variant via `switchKind`, which preserves host/port/name and resets
-// every kind-specific field.
+// Per-kind form panel two-way bound via defineModel<ProxyConfig>.
 
 import { computed } from 'vue';
 
 import {
   FORM_KIND_LABELS,
-  formKindOf,
+  defaultsFor,
   isValidPort,
   isValidUuid,
-  switchKind,
   type FormKind,
 } from './proxy-form-defaults.ts';
 import SecretInput from '../shared/SecretInput.vue';
@@ -56,7 +49,10 @@ const SS2022_METHOD_OPTIONS: { value: Ss2022Method; label: string }[] = [
   { value: '2022-blake3-chacha20-poly1305', label: '2022-blake3-chacha20-poly1305' },
 ];
 
-const formKind = computed<FormKind>(() => formKindOf(config.value));
+const formKind = computed<FormKind>(() => {
+  const c = config.value;
+  return c.kind === 'http' ? (c.tls ? 'https' : 'http') : c.kind;
+});
 
 const portString = computed<string>({
   get: () => String(config.value.port),
@@ -69,7 +65,8 @@ const portString = computed<string>({
 
 const onKindChange = (next: FormKind | undefined) => {
   if (next === undefined) return;
-  config.value = switchKind(config.value, next);
+  const current = config.value;
+  config.value = defaultsFor(next, { host: current.host, port: current.port, name: current.name });
 };
 
 const setHost = (host: string) => {

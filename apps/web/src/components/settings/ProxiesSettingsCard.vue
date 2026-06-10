@@ -54,8 +54,7 @@ const deleteProxy = async (record: ProxyRecord) => {
     </div>
 
     <!-- Surface a list-load error so an empty render after a failure isn't
-         confused with the "no proxies configured" empty state. The store
-         already exposes the message; this card is its only consumer. -->
+         confused with the "no proxies configured" empty state. -->
     <p v-if="proxiesStore.error.value" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
       Failed to load proxies: {{ proxiesStore.error.value }}
     </p>

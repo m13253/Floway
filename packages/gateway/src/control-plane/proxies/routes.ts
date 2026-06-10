@@ -8,8 +8,6 @@ import type { createProxyBody, resetBackoffBody, testProxyBody, updateProxyBody 
 import { getSocketDial } from '@floway-dev/platform';
 import { parseProxyUri, ProxyDialError, runProxiedRequest, type ProxyConfig, type ProxyRequestTarget } from '@floway-dev/proxy';
 
-const newId = (): string => shortId('proxy');
-
 const proxyUriValidationError = (err: unknown): string => {
   const raw = err instanceof Error ? err.message : String(err);
   // The URL-constructor branch of parseProxyUri prepends "malformed proxy
@@ -39,7 +37,7 @@ export const createProxy = async (c: CtxWithJson<typeof createProxyBody>) => {
 
   const repo = getRepo();
   const record = await repo.proxies.insert({
-    id: newId(),
+    id: shortId('proxy'),
     name: body.name,
     url: body.url,
     dialTimeoutSeconds: body.dial_timeout_seconds ?? null,
