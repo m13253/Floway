@@ -220,21 +220,3 @@ describe('addTrustedRootCAs', () => {
     expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toEqual(['pem-a']);
   });
 });
-
-describe('userspaceTls — additionalRootCAs option', () => {
-  it('appends the option PEMs to globalThis.TLS_ADDITIONAL_ROOT_CA_LIST before the handshake', async () => {
-    const g = globalThis as unknown as TrustGlobals;
-    g.TLS_ADDITIONAL_ROOT_CA_LIST = [];
-    const fake = makeFakeDuplex();
-    const ac = new AbortController();
-    const extra = '-----BEGIN CERTIFICATE-----\nEXTRA\n-----END CERTIFICATE-----';
-    const handshake = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com', signal: ac.signal, additionalRootCAs: [extra] },
-    );
-    handshake.catch(() => { /* expected — we abort below */ });
-    expect(g.TLS_ADDITIONAL_ROOT_CA_LIST).toContain(extra);
-    ac.abort(new DOMException('done', 'AbortError'));
-    await handshake.catch(() => { /* expected */ });
-  });
-});

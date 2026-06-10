@@ -8,24 +8,11 @@ import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './gr
 import { parseHttpResponse, toWebResponse } from './parser.ts';
 import type { DuplexStream, HttpRequest } from './types.ts';
 
-export interface FetchOnStreamOptions {
-  /**
-   * Bytes prepended to the very first network write — concatenated with the
-   * HTTP/1.1 request head into a single `writer.write()` call. Lets a
-   * caller coalesce a transport-handshake fragment with the request head
-   * into one packet when an inspecting peer expects them in the same
-   * record.
-   */
-  prefix?: Uint8Array;
-  /**
-   * Plaintext chunk size used when streaming the request body to the
-   * writer. Each `writer.write()` maps 1:1 to one userspace-TLS record
-   * (when the writer is a `userspaceTls` stream), so the value tunes the
-   * trade-off between AEAD-record overhead and per-write microtask cost.
-   * Defaults to 16384 bytes.
-   */
-  bodyWriteChunkSize?: number;
-}
+// Plaintext chunk size used when streaming the request body to the writer.
+// Each writer.write() maps 1:1 to one userspace-TLS record when the writer
+// is a userspaceTls stream, so the value tunes the trade-off between
+// AEAD-record overhead and per-write microtask cost.
+const BODY_WRITE_CHUNK_SIZE = 16384;
 
 const validateRequestHeaderName = (name: string): void => {
   if (!TCHAR.test(name)) {
@@ -48,7 +35,7 @@ const validateRequestHeaderValue = (name: string, value: string): void => {
 export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
-  opts?: FetchOnStreamOptions,
+  prefix?: Uint8Array,
 ): Promise<Response> => {
   // RFC 9110 §6.4.1: a HEAD response carries no body even when
   // Content-Length is set. Detecting that here is a one-line carve-out,
@@ -131,16 +118,15 @@ export const fetchOnStream = async (
 
   const writer = stream.writable.getWriter();
   try {
-    if (opts?.prefix && opts.prefix.byteLength > 0) {
-      await writer.write(concat(opts.prefix, headBytes));
+    if (prefix && prefix.byteLength > 0) {
+      await writer.write(concat(prefix, headBytes));
     } else {
       await writer.write(headBytes);
     }
     if (request.body?.byteLength) {
-      const chunkSize = opts?.bodyWriteChunkSize ?? 16384;
       let off = 0;
       while (off < request.body.byteLength) {
-        const slice = request.body.subarray(off, Math.min(off + chunkSize, request.body.byteLength));
+        const slice = request.body.subarray(off, Math.min(off + BODY_WRITE_CHUNK_SIZE, request.body.byteLength));
         await writer.write(slice);
         off += slice.byteLength;
       }

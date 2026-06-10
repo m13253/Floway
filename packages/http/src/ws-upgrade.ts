@@ -405,14 +405,6 @@ const frameDuplexOnTransport = (
     }
   };
 
-  const sendPongFrame = async (payload: Uint8Array): Promise<void> => {
-    try {
-      await writeFrame(frameWriter, 0xa, payload);
-    } catch {
-      /* peer already gone */
-    }
-  };
-
   // Reassembly state for fragmented messages. RFC 6455 §5.4 allows a
   // message to span FIN=0 frames followed by a FIN=1 continuation; we
   // concatenate the parts and only enqueue once the message is whole, so
@@ -438,7 +430,7 @@ const frameDuplexOnTransport = (
     }
     if (opcode === 0x9) {
       // Ping: per RFC 6455 §5.5.2 the pong payload echoes the ping payload.
-      await sendPongFrame(payload);
+      try { await writeFrame(frameWriter, 0xa, payload); } catch { /* peer already gone */ }
       return;
     }
     if (opcode === 0xa) {

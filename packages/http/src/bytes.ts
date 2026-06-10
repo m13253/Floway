@@ -41,9 +41,7 @@ export const concat = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> =>
  * `Math.max(0, prevByteLength - 3)` to re-examine only the tail where a
  * partial terminator could have started straddling the seam. Without it
  * the per-read search is O(n) on the whole buffer, turning a 1-byte
- * drip up to the 64 KiB header cap into O(n²) — the same shape
- * `decodeChunked`'s `findCrlfFrom` resume index eliminates for chunked
- * trailers.
+ * drip up to the 64 KiB header cap into O(n²).
  */
 export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
   for (let i = from; i + 3 < buf.byteLength; i++) {
@@ -54,9 +52,8 @@ export const findDoubleCrlfFrom = (buf: Uint8Array, from: number): number => {
 
 /**
  * UTF-8-encode a string. Equivalent to `new TextEncoder().encode(s)` but
- * short enough to use inline at call sites (request-head serialization,
- * RFC 6455 close-frame reasons, the WS-GUID concatenation feeding sha1)
- * without forcing each caller to keep its own encoder around.
+ * short enough to use inline at call sites without forcing each caller to
+ * keep its own TextEncoder around.
  */
 export const utf8Bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
 

@@ -64,11 +64,7 @@ export const respondAndEnd = (head: string): ReadableStream<Uint8Array> => {
   return fake.readable;
 };
 
-export const collectBody = async (resp: { body: ReadableStream<Uint8Array> } | Response): Promise<string> => {
-  if (resp instanceof Response) {
-    const buf = await resp.arrayBuffer();
-    return new TextDecoder().decode(buf);
-  }
+export const collectBody = async (resp: { body: ReadableStream<Uint8Array> }): Promise<string> => {
   const buf = await collectBodyBytes(resp);
   return new TextDecoder().decode(buf);
 };

@@ -157,7 +157,7 @@ export const runProxiedRequest = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = { ...headers, Host: hostValue };
     }
-    return await fetchOnStream(stream, { ...request, headers }, { prefix: fetchPrefix });
+    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix);
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when

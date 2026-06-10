@@ -6,8 +6,7 @@ import { concat, copy } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { ASCII_DECODER } from './grammar.ts';
 
-// Decode an HTTP/1.1 chunked transfer-encoding body. Exported for advanced
-// callers that already hold a reader into a chunked stream.
+// Decode an HTTP/1.1 chunked transfer-encoding body.
 export const decodeChunked = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
