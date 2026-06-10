@@ -58,10 +58,10 @@ export const parseHttpResponse = async (readable: ReadableStream<Uint8Array>): P
   let buffer: Uint8Array = new Uint8Array(0);
   // Hand-off contract: on the success path the reader is moved into the body
   // framing stream, which then owns the lock. On every throw before that
-  // hand-off the reader must release the lock — otherwise the orchestrator's
-  // teardown `stream.readable.cancel(reason)` lands on a still-locked
-  // readable and a swallowed TypeError, leaving the underlying transport
-  // dangling until GC.
+  // hand-off the reader must release the lock — otherwise a downstream
+  // `stream.readable.cancel(reason)` would land on a still-locked readable
+  // and a swallowed TypeError, leaving the underlying transport dangling
+  // until GC.
   try {
     while (true) {
       const result = await readResponseHead(reader, buffer);

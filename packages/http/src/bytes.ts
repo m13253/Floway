@@ -4,8 +4,8 @@
 // enqueue downstream or retain past the next read needs to own its memory.
 //
 // These helpers stay internal to @floway-dev/http: they are not exported
-// from the package surface. The chunked decoder, response parser, and
-// userspace-TLS adapter all consume them through this module.
+// from the package surface. Every framing module in this package consumes
+// them through here.
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
