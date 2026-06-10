@@ -182,10 +182,7 @@ describe('dialSocks5 — failure modes', () => {
   });
 });
 
-// Helpers shared by the expanded coverage matrix below.
-const drainGreeting = async (srv: { read: (n: number) => Promise<Uint8Array> }, hasAuth: boolean): Promise<void> => {
-  await srv.read(hasAuth ? 4 : 3);
-};
+// Shared helpers for the coverage matrix below.
 
 const drainConnectRequest = async (
   srv: { read: (n: number) => Promise<Uint8Array> },
@@ -261,7 +258,7 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
       { socketDial: fake.socketDial },
     );
     const srv = await fake.awaitConnect();
-    await drainGreeting(srv, true);
+    await srv.read(4);
     srv.respond(arr(0x05, 0x02));
     const subNeg = await srv.read(1 + 1 + 1 + 1 + 1);
     expectEqualBytes(subNeg, [
@@ -285,7 +282,7 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
       { socketDial: fake.socketDial },
     );
     const srv = await fake.awaitConnect();
-    await drainGreeting(srv, true);
+    await srv.read(4);
     srv.respond(arr(0x05, 0x02));
     // total: 1 (ver) + 1 (ulen) + 255 + 1 (plen) + 255 = 513
     const subNeg = await srv.read(1 + 1 + 255 + 1 + 255);
@@ -306,7 +303,7 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
       { socketDial: fake.socketDial },
     );
     const srv = await fake.awaitConnect();
-    await drainGreeting(srv, true);
+    await srv.read(4);
     srv.respond(arr(0x05, 0x02));
     await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
@@ -322,7 +319,7 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
       { socketDial: fake.socketDial },
     );
     const srv = await fake.awaitConnect();
-    await drainGreeting(srv, true);
+    await srv.read(4);
     srv.respond(arr(0x05, 0x02));
     await srv.read(1 + 1 + 1 + 1 + 1);
     srv.respond(arr(0x02, 0x00));

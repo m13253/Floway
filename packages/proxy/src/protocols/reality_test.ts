@@ -90,9 +90,8 @@ const realityConfig = (overrides: Partial<RealityProxyConfig> = {}): RealityProx
 });
 
 describe('dialReality — pre-connect config validation', () => {
-  // Wrap the decoder + length checks as ProxyDialError so a malformed config
-  // doesn't fly past the gateway's `instanceof ProxyDialError` gate and kill
-  // the rest of the fallback chain.
+  // Pre-connect failures must surface as ProxyDialError so the caller's
+  // fallback chain still triggers.
   it('rejects an unparseable pbk base64 string as a typed dial error', async () => {
     const fake = makeFakeSocketDial();
     await expect(

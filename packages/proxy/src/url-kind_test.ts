@@ -28,10 +28,8 @@ describe('kindFromUri', () => {
   });
 
   it('does not throw on a malformed percent-escape — the URL parser leaves them raw in userinfo', () => {
-    // kindFromUri must be total: malformed percent-escapes in userinfo
-    // land in URL.username raw, and decoding them with decodeURIComponent
-    // would raise URIError. The dashboard renders one row per stored URI,
-    // so a single bad row must not throw out of the discriminator.
+    // kindFromUri must be total — a single malformed URI in a list must
+    // surface as a generic label rather than throw out of the discriminator.
     expect(() => kindFromUri('ss://%zz@h:8388')).not.toThrow();
     expect(kindFromUri('ss://%zz@h:8388')).toBe('SS');
   });

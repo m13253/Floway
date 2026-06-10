@@ -1,10 +1,10 @@
-// AEAD primitives shared between the AEAD-2018 (`shadowsocks.ts`) and SIP022
-// (`shadowsocks-2022.ts`) dialers. Both protocols frame each direction as
-// independent AEAD streams keyed by a per-direction subkey, with a 12-byte
-// little-endian counter nonce and a runtime choice of ChaCha20-Poly1305 or
-// AES-GCM. The nonce encoder, the `Aead` interface, and the cipher factory
-// are byte-identical across the two specs; only the cipher-id literal each
-// dialer recognises differs, so we let the caller pre-classify it.
+// AEAD primitives shared between the AEAD-2018 and SIP022 Shadowsocks
+// dialers. Both protocols frame each direction as independent AEAD streams
+// keyed by a per-direction subkey, with a 12-byte little-endian counter
+// nonce and a runtime choice of ChaCha20-Poly1305 or AES-GCM. The nonce
+// encoder, the `Aead` interface, and the cipher factory are byte-identical
+// across the two specs; only the cipher-id literal each dialer recognises
+// differs, so we let the caller pre-classify it.
 
 import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';

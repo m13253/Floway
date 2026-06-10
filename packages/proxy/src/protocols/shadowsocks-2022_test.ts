@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Shadowsocks2022ProxyConfig } from '../proxy-config.ts';
 import { buildSs2022RequestHeader, dialShadowsocks2022 } from './shadowsocks-2022.ts';
 import { concat } from '../bytes.ts';
-import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import { makeFakeSocketDial, type FakeServer } from '../test-utils/fake-socket-dial.ts';
 import type { DialTarget } from '../types.ts';
 
 const target: DialTarget = { host: 'api.openai.com', port: 443 };
@@ -122,9 +122,8 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
 });
 
 describe('dialShadowsocks2022 — pre-connect config validation', () => {
-  // Wrap the decoder + length checks as ProxyDialError so a malformed config
-  // doesn't fly past the gateway's `instanceof ProxyDialError` gate and kill
-  // the rest of the fallback chain.
+  // Pre-connect failures must surface as ProxyDialError so the caller's
+  // fallback chain still triggers.
   it('rejects an unparseable PSK base64 string as a typed dial error', async () => {
     const fake = makeFakeSocketDial();
     await expect(
@@ -372,12 +371,8 @@ const runWithServerHandshakeOptions = async (
   return await reader.read();
 };
 
-interface FakeServerLike {
-  respond: (b: Uint8Array) => void;
-}
-
 const sendServerHandshake = (
-  srv: FakeServerLike,
+  srv: FakeServer,
   sendSaltToEcho: Uint8Array,
   keyLen: number,
   skewSec: number,

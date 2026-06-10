@@ -105,7 +105,7 @@ const dialShadowsocks2022Inner = async (
   const variableHeader = buildSs2022RequestHeader(target.host, target.port);
   const fixedPlain = new Uint8Array(1 + 8 + 2);
   fixedPlain[0] = REQ_HEADER_TYPE;
-  writeU64BE(fixedPlain, 1, BigInt(Math.floor(Date.now() / 1000)));
+  new DataView(fixedPlain.buffer, fixedPlain.byteOffset, fixedPlain.byteLength).setBigUint64(1, BigInt(Math.floor(Date.now() / 1000)), false);
   fixedPlain[9] = (variableHeader.byteLength >> 8) & 0xff;
   fixedPlain[10] = variableHeader.byteLength & 0xff;
 
@@ -244,8 +244,4 @@ export const buildSs2022RequestHeader = (host: string, port: number): Uint8Array
   out[off++] = padLen & 0xff;
   out.set(pad, off);
   return out;
-};
-
-const writeU64BE = (buf: Uint8Array, off: number, value: bigint): void => {
-  new DataView(buf.buffer, buf.byteOffset, buf.byteLength).setBigUint64(off, value, false);
 };

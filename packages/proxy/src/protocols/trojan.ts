@@ -92,12 +92,15 @@ const dialTrojanInner = async (
 export const buildTrojanRequestHeader = (password: string, target: DialTarget): Uint8Array => {
   assertValidTargetPort(target.port, 'Trojan');
   const hash = sha224(utf8Bytes(password));
-  const hashHex = bytesToHex(hash);
 
   const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x03, v6: 0x04 });
   const header = new Uint8Array(56 + 2 + 1 + addr.byteLength + 2 + 2);
   let off = 0;
-  for (let i = 0; i < 56; i++) header[off++] = hashHex.charCodeAt(i);
+  for (let i = 0; i < hash.byteLength; i++) {
+    const b = hash[i]!;
+    header[off++] = HEX_CHARS[b >> 4]!;
+    header[off++] = HEX_CHARS[b & 0xf]!;
+  }
   header[off++] = 0x0d; header[off++] = 0x0a;
   header[off++] = 0x01;
   header.set(addr, off); off += addr.byteLength;
@@ -107,8 +110,7 @@ export const buildTrojanRequestHeader = (password: string, target: DialTarget): 
   return header;
 };
 
-const bytesToHex = (b: Uint8Array): string => {
-  let s = '';
-  for (let i = 0; i < b.byteLength; i++) s += b[i]!.toString(16).padStart(2, '0');
-  return s;
-};
+const HEX_CHARS = new Uint8Array([
+  0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+  0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+]);

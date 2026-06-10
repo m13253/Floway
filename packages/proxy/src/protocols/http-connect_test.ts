@@ -187,7 +187,7 @@ describe('dialHttpConnect — failure modes', () => {
   });
 });
 
-// Helpers shared by the expanded coverage matrix below.
+// Shared helpers for the coverage matrix below.
 const drainCONNECTRequest = async (srv: { peekWritten: () => Uint8Array; read: (n: number) => Promise<Uint8Array> }): Promise<string> => {
   const dec = new TextDecoder();
   let head = '';
