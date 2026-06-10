@@ -381,7 +381,19 @@ const frameDuplexOnTransport = (
     // status code leaves 123 bytes for the reason. Encode first, then byte-
     // truncate at a UTF-8 boundary — slicing the JS string is char-level and
     // a single multi-byte code point at the cap would split mid-sequence.
-    const reasonBytes = truncateUtf8(utf8Bytes(reason), 123);
+    // UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF); step back from the
+    // cap until we land on a byte that is either ASCII (0x00..0x7F) or a
+    // leading byte (0xC0..0xFF), at which point the prefix is a complete
+    // sequence of code points.
+    const fullReason = utf8Bytes(reason);
+    let reasonBytes: Uint8Array;
+    if (fullReason.byteLength <= 123) {
+      reasonBytes = fullReason;
+    } else {
+      let cut = 123;
+      while (cut > 0 && (fullReason[cut]! & 0xc0) === 0x80) cut--;
+      reasonBytes = fullReason.subarray(0, cut);
+    }
     const payload = new Uint8Array(2 + reasonBytes.byteLength);
     payload[0] = (code >> 8) & 0xff;
     payload[1] = code & 0xff;
@@ -461,9 +473,17 @@ const frameDuplexOnTransport = (
     messageSize += payload.byteLength;
     messageParts.push(payload);
     if (!fin) return;
-    const message = messageParts.length === 1
-      ? messageParts[0]!
-      : joinChunks(messageParts, messageSize);
+    let message: Uint8Array;
+    if (messageParts.length === 1) {
+      message = messageParts[0]!;
+    } else {
+      message = new Uint8Array(messageSize);
+      let off = 0;
+      for (const p of messageParts) {
+        message.set(p, off);
+        off += p.byteLength;
+      }
+    }
     inMessage = false;
     messageParts.length = 0;
     messageSize = 0;
@@ -703,26 +723,4 @@ const writeFrame = async (
     frame[headerLen + 4 + i] = payload[i]! ^ maskKey[i & 3]!;
   }
   await writer.write(frame);
-};
-
-const joinChunks = (parts: Uint8Array[], total: number): Uint8Array => {
-  const out = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    out.set(p, off);
-    off += p.byteLength;
-  }
-  return out;
-};
-
-// Truncate a UTF-8 byte buffer to at most `max` bytes without splitting a
-// multi-byte code point. UTF-8 continuation bytes are 10xxxxxx (0x80..0xBF);
-// step back from the cap until we land on a byte that is either ASCII
-// (0x00..0x7F) or a leading byte (0xC0..0xFF), at which point the prefix is
-// a complete sequence of code points.
-const truncateUtf8 = (bytes: Uint8Array, max: number): Uint8Array => {
-  if (bytes.byteLength <= max) return bytes;
-  let cut = max;
-  while (cut > 0 && (bytes[cut]! & 0xc0) === 0x80) cut--;
-  return bytes.subarray(0, cut);
 };

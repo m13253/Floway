@@ -45,35 +45,6 @@ const validateRequestHeaderValue = (name: string, value: string): void => {
   ));
 };
 
-const validateRequestMethod = (method: string): void => {
-  // RFC 9110 §9.1: the method is a token. The same anti-smuggling rationale
-  // as header names applies — a CR/LF/SP smuggled into the method would split
-  // the request line and inject a forged head onto the wire.
-  if (!TCHAR.test(method)) {
-    throw new HttpProtocolError(
-      `caller-supplied method is not a valid token: ${JSON.stringify(method)}`,
-      'BAD_HEADERS',
-      { rfc: 'RFC 9110 §9.1' },
-    );
-  }
-};
-
-const validateRequestPath = (path: string): void => {
-  validateRequestTargetBytes(
-    path,
-    () => new HttpProtocolError(
-      'caller-supplied path is empty',
-      'BAD_HEADERS',
-      { rfc: 'RFC 9112 §3.2' },
-    ),
-    hex => new HttpProtocolError(
-      `caller-supplied path contains a forbidden byte 0x${hex}`,
-      'BAD_HEADERS',
-      { rfc: 'RFC 9112 §3.2' },
-    ),
-  );
-};
-
 export const fetchOnStream = async (
   stream: DuplexStream,
   request: HttpRequest,
@@ -93,8 +64,29 @@ export const fetchOnStream = async (
     );
   }
 
-  validateRequestMethod(request.method);
-  validateRequestPath(request.path);
+  // RFC 9110 §9.1: the method is a token. The same anti-smuggling rationale
+  // as header names applies — a CR/LF/SP smuggled into the method would split
+  // the request line and inject a forged head onto the wire.
+  if (!TCHAR.test(request.method)) {
+    throw new HttpProtocolError(
+      `caller-supplied method is not a valid token: ${JSON.stringify(request.method)}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9110 §9.1' },
+    );
+  }
+  validateRequestTargetBytes(
+    request.path,
+    () => new HttpProtocolError(
+      'caller-supplied path is empty',
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    ),
+    hex => new HttpProtocolError(
+      `caller-supplied path contains a forbidden byte 0x${hex}`,
+      'BAD_HEADERS',
+      { rfc: 'RFC 9112 §3.2' },
+    ),
+  );
 
   // Normalize the request header block in a single pass:
   //   - drop Content-Length / Transfer-Encoding — the buffered body's
@@ -139,9 +131,6 @@ export const fetchOnStream = async (
 
   const writer = stream.writable.getWriter();
   try {
-    // Prepend the optional prefix into the same write so the leading record
-    // contains both the prefix and the request head (see
-    // FetchOnStreamOptions.prefix).
     if (opts?.prefix && opts.prefix.byteLength > 0) {
       await writer.write(concat(opts.prefix, headBytes));
     } else {

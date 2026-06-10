@@ -19,8 +19,8 @@ export const ASCII_DECODER = new TextDecoder();
 // RFC 9112 §5 forbids any non-ASCII byte in the header section. Reject
 // ≥ 0x80 before decoding — TextDecoder fatal-UTF-8 alone would accept
 // valid UTF-8 sequences like 0xc3 0xa9 ("é") that the spec forbids in
-// the header section. Shared by parser.ts and ws-upgrade.ts so the two
-// response-side header framings can't drift apart.
+// the header section. Hoisted so every response-header framing in this
+// package shares one decode + ASCII gate and can't drift apart.
 export const decodeAsciiHeaderSection = (bytes: Uint8Array, context: string): string => {
   for (let i = 0; i < bytes.byteLength; i++) {
     if (bytes[i]! >= 0x80) {
@@ -35,10 +35,9 @@ export const decodeAsciiHeaderSection = (bytes: Uint8Array, context: string): st
 };
 
 // RFC 9110 §5.6.3: OWS = *( SP / HTAB ). Strip from both ends of a
-// field-value. Shared by parser.ts and ws-upgrade.ts. Wrapped in a
-// helper rather than exporting the bare `/g`-flag regex because a
-// module-scope `/g` regex carries `lastIndex` and would become a
-// footgun if anyone later switched to `.test`/`.exec`.
+// field-value. Wrapped in a helper rather than exporting the bare
+// `/g`-flag regex because a module-scope `/g` regex carries `lastIndex`
+// and would become a footgun if anyone later switched to `.test`/`.exec`.
 export const trimFieldValueOws = (value: string): string => value.replace(/^[\t ]+|[\t ]+$/g, '');
 
 // RFC 9112 §4: status-line = HTTP-version SP status-code SP reason-phrase.
@@ -56,11 +55,11 @@ export const STATUS_LINE = /^HTTP\/(?:1\.[01]) (\d{3}) (\S.*|)$/;
 // HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text (0x80-0xFF).
 // Anything else — NUL and the rest of the C0 control set (0x01-0x08,
 // 0x0B-0x1F; CR/LF call out the smuggling shape directly) plus DEL
-// (0x7F) — violates the grammar. Hoisted here so the request-side
-// (fetch-on-stream + ws-upgrade) and response-side (parser) checks
-// can't drift apart. Each caller passes a builder so the error
-// message stays caller-shaped (header name, Host, WS-upgrade context)
-// while the byte set lives in one place.
+// (0x7F) — violates the grammar. Hoisted so request-side and
+// response-side header-value checks share one byte gate and can't
+// drift apart. Each caller passes a builder so the error message
+// stays caller-shaped (header name, Host, WS-upgrade context) while
+// the byte set lives in one place.
 export const validateFieldValueBytes = (
   value: string,
   makeError: (hex: string) => HttpProtocolError,
@@ -78,8 +77,8 @@ export const validateFieldValueBytes = (
 // split the request line and smuggle a forged head past the header
 // validators. The legal byte set is therefore VCHAR + obs-text
 // (≥ 0x21, excluding DEL). Empty path is rejected up front; the field
-// is mandatory. Hoisted so the fetch and WS-upgrade request-line
-// builders can't drift apart.
+// is mandatory. Hoisted so request-line builders share one byte gate
+// and can't drift apart.
 export const validateRequestTargetBytes = (
   path: string,
   makeEmptyError: () => HttpProtocolError,

@@ -2,10 +2,6 @@
 // Buffers come in from a transport-owned ReadableStream — those buffers may
 // be pooled or reused by the runtime (most visibly on Node), so anything we
 // enqueue downstream or retain past the next read needs to own its memory.
-//
-// These helpers stay internal to @floway-dev/http: they are not exported
-// from the package surface. Every framing module in this package consumes
-// them through here.
 
 /**
  * Allocate a fresh ArrayBuffer-backed Uint8Array and copy `u` into it.
