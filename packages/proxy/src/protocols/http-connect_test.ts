@@ -311,9 +311,12 @@ describe('dialHttpConnect — request authority forms', () => {
     await promise;
   });
 
-  it('preserves a bracketed IPv6 literal in request-target and Host header', async () => {
+  it('brackets a bare IPv6 literal in request-target and Host header', async () => {
+    // DialTarget.host arrives WITHOUT the `[…]` envelope (see types.ts);
+    // the CONNECT emitter is responsible for re-adding the brackets when
+    // pushing the host back into a uri-host context (RFC 3986 §3.2.2).
     const fake = makeFakeSocketDial();
-    const promise = dialHttpConnect(httpConfig(), { host: '[2001:db8::1]', port: 443 }, { socketDial: fake.socketDial });
+    const promise = dialHttpConnect(httpConfig(), { host: '2001:db8::1', port: 443 }, { socketDial: fake.socketDial });
     const srv = await fake.awaitConnect();
     const head = await drainCONNECTRequest(srv);
     expect(head).toContain('CONNECT [2001:db8::1]:443 HTTP/1.1\r\n');
