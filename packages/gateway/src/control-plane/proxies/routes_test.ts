@@ -88,7 +88,6 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
   const resp = await requestApp('/api/proxies', authed(adminSession, { name: 'Bad', url: 'gibberish' }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error?: string };
-  assertEquals(typeof body.error, 'string');
   assertEquals(body.error?.startsWith('Invalid proxy URI:'), true);
   // Pin no doubled prefix: parseProxyUri's URL-constructor branch raises
   // 'malformed proxy URI: …'; the wrapper must strip that internal prefix
