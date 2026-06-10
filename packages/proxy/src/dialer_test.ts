@@ -267,4 +267,32 @@ describe('runProxiedRequest — Host header synthesis', () => {
     );
     expect(cap.written()).toContain('Host: origin.example.com:9000\r\n');
   });
+
+  it('wraps an IPv6 literal target in its uri-host envelope (RFC 3986 §3.2.2)', async () => {
+    // The proxy library strips IPv6 brackets in `target.host` for ATYP
+    // framing; re-adding them here keeps the Host header parseable as
+    // a uri-host. Without the envelope, `2001:db8::1:443` reads as a
+    // hostname "2001" with port "db8::1:443" and strict upstreams 400.
+    const cap = buildCapturingDial(ok200);
+    cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: '2001:db8::1', port: 8080, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: [2001:db8::1]:8080\r\n');
+  });
+
+  it('wraps an IPv6 literal target without a port suffix when the port matches the scheme default', async () => {
+    const cap = buildCapturingDial(ok200);
+    cap.setupMock();
+    await runProxiedRequest(
+      socks,
+      { host: '::1', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      baseOptions(),
+    );
+    expect(cap.written()).toContain('Host: [::1]\r\n');
+  });
 });

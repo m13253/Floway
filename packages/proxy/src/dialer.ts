@@ -177,8 +177,13 @@ const ensureHostHeader = (headers: Record<string, string>, target: ProxyRequestT
   // RFC 9110 §7.2: Host = uri-host [ ":" port ]. Omit the port only when it
   // is the scheme's default (443 for HTTPS, 80 for plain HTTP) — strict
   // virtual-host upstreams interpret a bare hostname as "client wants the
-  // default port" and route or reject accordingly.
+  // default port" and route or reject accordingly. Wrap an IPv6 literal in
+  // its `[…]` envelope (RFC 3986 §3.2.2) — the proxy library strips the
+  // brackets in `target.host` for ATYP framing, so re-add them when we
+  // push the target back into a uri-host context.
+  const isIpv6 = target.host.includes(':');
+  const hostUriPart = isIpv6 ? `[${target.host}]` : target.host;
   const defaultPort = target.tls ? 443 : 80;
-  const hostValue = target.port === defaultPort ? target.host : `${target.host}:${target.port}`;
+  const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
   return { ...headers, Host: hostValue };
 };
