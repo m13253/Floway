@@ -13,7 +13,7 @@ export const decodeChunked = (
   head: Uint8Array,
 ): ReadableStream<Uint8Array> => {
   let buf = head;
-  // Search position into `buf` for the next CR. `findCrlf` is otherwise
+  // Search position into `buf` for the next CR. `findCrlfFrom` is otherwise
   // O(n) per call across the whole buffer; on a stream of small chunks
   // that turns into O(n²) total work. We track how far we've already
   // scanned so each new search resumes where the previous one left off.

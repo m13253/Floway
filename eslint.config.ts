@@ -49,7 +49,11 @@ const commonConfig: Linter.Config = {
     // Belt-and-suspenders for the package-name ban above: relative imports
     // bypass `no-restricted-imports`, so a file inside one platform-target app
     // could still reach into another via `../../platform-X/...`. Forbid that
-    // sibling crossing here.
+    // sibling crossing here. Also enforce the `apps/web` → `@floway-dev/proxy`
+    // boundary documented in AGENTS.md: the dashboard reuses proxy URI parse
+    // / format / config types via the four subpath exports, but pulling the
+    // root would drag dialers, userspace TLS, and Node `crypto` into the SPA
+    // bundle.
     'import/no-restricted-paths': ['error', {
       zones: [
         { target: './apps/platform-cloudflare', from: './apps/platform-node', message: 'Platform-target apps cannot import each other; share via packages/.' },
@@ -185,6 +189,30 @@ const config: Linter.Config[] = [
       'vue/multi-word-component-names': 'off',
       'vue/no-mutating-props': 'error',
       'vue/require-explicit-emits': 'error',
+    },
+  },
+  {
+    // The dashboard reuses proxy code only via the four subpath exports
+    // (/url, /url-kind, /proxy-config, /constants); the root export pulls
+    // in dialers, userspace TLS, and Node `crypto` that have no place in
+    // the SPA bundle. Enforce the boundary at lint so a future careless
+    // import doesn't quietly inflate the bundle.
+    files: ['apps/web/**/*.{ts,tsx,vue}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: ['@floway-dev/*/src/**'],
+            message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
+          },
+          {
+            // Match the bare specifier only, not the `/url`, `/url-kind`,
+            // etc. subpaths the dashboard is allowed to import.
+            regex: '^@floway-dev/proxy$',
+            message: 'apps/web must reach @floway-dev/proxy only via its /url, /url-kind, /proxy-config, or /constants subpath exports — the root pulls in dialers and userspace TLS.',
+          },
+        ],
+      }],
     },
   },
   {

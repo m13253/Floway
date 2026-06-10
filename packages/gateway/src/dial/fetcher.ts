@@ -140,9 +140,9 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
 };
 
 // Synthesise a fresh RequestInit whose body is the buffered Uint8Array
-// (a stable, multi-readable shape) and whose synthesised Content-Type
-// matches the original FormData/URLSearchParams body. Other init fields
-// (method, signal, headers) ride through unchanged.
+// (a stable, multi-readable shape) and whose headers carry the synthesised
+// Content-Type from the original FormData/URLSearchParams body. Other init
+// fields (method, signal) ride through unchanged.
 const rebuildInitFromProxied = (original: RequestInit, proxied: ProxiedRequest): RequestInit => {
   const headers = new Headers(original.headers);
   const targetCt = proxied.request.headers['content-type'];

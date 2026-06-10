@@ -87,7 +87,11 @@ const codexTokenRequest = async (
   };
 };
 
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher?: Fetcher }): Promise<CodexOAuthTokens> => {
+// PKCE exchange has no upstream context — the upstream is created from this
+// response — so it always egresses through `directFetcher`. Mirrors the
+// FetchOptions design note: paths inherently outside an upstream's
+// fallback chain don't take a `Fetcher`.
+export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: CODEX_CLIENT_ID,
@@ -99,7 +103,7 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   // exchange typically means the operator pasted a stale or wrong callback
   // URL, which is recoverable by restarting the PKCE flow rather than
   // re-importing.
-  return await codexTokenRequest(body, new Set(['app_session_terminated']), opts.fetcher ?? directFetcher);
+  return await codexTokenRequest(body, new Set(['app_session_terminated']), directFetcher);
 };
 
 // Refresh the Codex access token. `fetcher` is required so every refresh

@@ -20,7 +20,7 @@ const upstreamsStore = useUpstreamsStore();
 
 const ordered = ref<ProxyRecord[]>([]);
 watch(proxiesStore.proxies, list => {
-  ordered.value = list ? [...list].sort((a, b) => a.sort_order - b.sort_order) : [];
+  ordered.value = list ? [...list] : [];
 }, { immediate: true });
 
 // Per-proxy in-flight, post-test cooldown, and last error for the Test button.

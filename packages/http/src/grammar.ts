@@ -7,10 +7,11 @@
 // "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
 export const TCHAR = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
-// RFC 9112 §5 forbids any non-ASCII byte in the header section, so every
-// consumer pre-scans for ≥ 0x80 up front and only feeds guaranteed-ASCII
-// bytes here. Module-scope so we never allocate a fresh decoder per
-// request/response. The chunked decoder reuses the same instance — its
-// inputs are bounded to the 1 KiB chunk-size-line cap and the only field
-// actually parsed is the pre-`;` hex prefix.
+// RFC 9112 §5 forbids any non-ASCII byte in the header section, so the
+// parser and ws-upgrade pre-scan their header bytes for ≥ 0x80 before
+// decoding through this instance. Module-scope so we never allocate a
+// fresh decoder per request/response. The chunked decoder reuses the same
+// instance without an up-front pre-scan — its inputs are bounded to the
+// 1 KiB chunk-size-line cap and the only field actually parsed is the
+// pre-`;` hex prefix, which the regex enforces.
 export const ASCII_DECODER = new TextDecoder();
