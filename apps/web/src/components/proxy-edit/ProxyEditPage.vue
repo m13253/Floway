@@ -95,9 +95,8 @@ watch(url, next => {
 
 watch(config, next => {
   if (lastSource === 'url') { lastSource = null; return; }
-  if (next === null) return;
   lastSource = 'form';
-  url.value = formatProxyUri(next);
+  url.value = formatProxyUri(next!);
   urlError.value = null;
   void nextTick(() => { if (lastSource === 'form') lastSource = null; });
 });
@@ -222,11 +221,11 @@ const cancel = async () => {
 };
 
 const test = async () => {
-  // Capture the id once: with the parent now passing `record` reactively
-  // from the store, props.record could go null mid-flight if the row is
-  // deleted by another action. Read the id synchronously and let the
-  // request finish against the captured value rather than crashing on a
-  // non-null assertion later.
+  // Capture the id once: the parent passes `record` reactively from the
+  // store, so props.record can go null mid-flight if the row is deleted
+  // by another action. Read the id synchronously and let the request
+  // finish against the captured value rather than crashing on a non-null
+  // assertion later.
   const id = props.record?.id;
   if (!id) return;
   testing.value = true;
