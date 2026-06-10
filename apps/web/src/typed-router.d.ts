@@ -46,8 +46,6 @@ declare module 'vue-router/auto-routes' {
       | '/dashboard/keys'
       | '/dashboard/models'
       | '/dashboard/performance'
-      | '/dashboard/proxies/[id]'
-      | '/dashboard/proxies/new'
       | '/dashboard/settings'
       | '/dashboard/upstreams/[id]'
       | '/dashboard/upstreams/new'
@@ -78,20 +76,6 @@ declare module 'vue-router/auto-routes' {
     '/dashboard/performance': RouteRecordInfo<
       '/dashboard/performance',
       '/dashboard/performance',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    '/dashboard/proxies/[id]': RouteRecordInfo<
-      '/dashboard/proxies/[id]',
-      '/dashboard/proxies/:id',
-      { id: ParamValue<true> },
-      { id: ParamValue<false> },
-      | never
-    >,
-    '/dashboard/proxies/new': RouteRecordInfo<
-      '/dashboard/proxies/new',
-      '/dashboard/proxies/new',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -170,8 +154,6 @@ declare module 'vue-router/auto-routes' {
         | '/dashboard/keys'
         | '/dashboard/models'
         | '/dashboard/performance'
-        | '/dashboard/proxies/[id]'
-        | '/dashboard/proxies/new'
         | '/dashboard/settings'
         | '/dashboard/upstreams/[id]'
         | '/dashboard/upstreams/new'
@@ -201,18 +183,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/dashboard/performance.vue': {
       routes:
         | '/dashboard/performance'
-      views:
-        | never
-    }
-    'src/pages/dashboard/proxies/[id].vue': {
-      routes:
-        | '/dashboard/proxies/[id]'
-      views:
-        | never
-    }
-    'src/pages/dashboard/proxies/new.vue': {
-      routes:
-        | '/dashboard/proxies/new'
       views:
         | never
     }

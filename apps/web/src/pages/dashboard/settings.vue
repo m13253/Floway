@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyRecord, SearchConfig, UpstreamRecord } from '../../api/types.ts';
+import ProxyEditDialog from '../../components/proxy-edit/ProxyEditDialog.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
@@ -57,6 +58,15 @@ watch(upstreams, list => {
 const reloadAll = async () => {
   await Promise.all([load(), modelsStore.load(), loadProxies()]);
 };
+
+// Proxy editor is hosted as a modal — v-if drives the unmount on close
+// so the next open boots from a fresh script setup (no manual reset).
+const proxyDialogOpen = ref(false);
+const proxyDialogRecord = ref<ProxyRecord | null>(null);
+const openProxyDialog = (record: ProxyRecord | null): void => {
+  proxyDialogRecord.value = record;
+  proxyDialogOpen.value = true;
+};
 </script>
 
 <template>
@@ -76,8 +86,8 @@ const reloadAll = async () => {
           @changed="reloadAll"
         />
         <ProxiesSettingsCard
-          @add="() => router.push('/dashboard/proxies/new')"
-          @edit="(record: ProxyRecord) => router.push(`/dashboard/proxies/${record.id}`)"
+          @add="() => openProxyDialog(null)"
+          @edit="(record: ProxyRecord) => openProxyDialog(record)"
           @changed="reloadAll"
         />
         <SearchConfigSection
@@ -95,5 +105,12 @@ const reloadAll = async () => {
         </div>
       </div>
     </div>
+
+    <ProxyEditDialog
+      v-if="proxyDialogOpen"
+      v-model:open="proxyDialogOpen"
+      :record="proxyDialogRecord"
+      @saved="reloadAll"
+    />
   </div>
 </template>
