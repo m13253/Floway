@@ -13,7 +13,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, ProxyRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -144,7 +144,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
       const item = value[i];
       if (!isRecord(item)) throw new Error('record must be an object');
       if (hasOwn(item, 'enabled_fixes')) {
-        throw new Error("legacy 'enabled_fixes' field is no longer supported; this export predates the flag_overrides refactor — re-export with current code");
+        throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
       }
       if (typeof item.provider !== 'string' || !UPSTREAM_PROVIDERS.has(item.provider as UpstreamProviderKind)) {
         throw new Error('provider must be one of custom, azure, copilot, codex');
@@ -541,14 +541,6 @@ const isNonNegativeSafeInteger = (value: unknown): value is number => typeof val
 
 const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
 
-const proxyRecordToExportEntry = (record: ProxyRecord): SerializedProxy => ({
-  id: record.id,
-  name: record.name,
-  url: record.url,
-  dial_timeout_seconds: record.dialTimeoutSeconds,
-});
-
-/** GET /api/export — dump all data as JSON. The payload includes proxy URIs verbatim (passwords / UUIDs / PSKs) and every other stored credential; handle the file with the same care as a database backup. */
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
@@ -571,7 +563,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
       users,
       apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
-      proxies: proxies.map(proxyRecordToExportEntry),
+      proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,
       searchUsage,
       performanceIncluded: includePerformance,
@@ -583,7 +575,6 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   return c.json(payload);
 };
 
-/** POST /api/import — import data with merge or replace mode */
 export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const body = c.req.valid('json');
   const { mode, data } = body;

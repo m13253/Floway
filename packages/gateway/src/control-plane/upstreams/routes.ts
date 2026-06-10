@@ -319,9 +319,6 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
 
   let assertedConfig;
   try {
-    // assertCustomUpstreamRecord validates the record and surfaces the typed
-    // config; a malformed draft or an empty bearerToken with no stored secret
-    // to substitute surfaces here.
     assertedConfig = assertCustomUpstreamRecord(record).config;
   } catch (e) {
     return c.json({ error: validationError(e) }, 400);
@@ -388,8 +385,6 @@ export const copilotAuthStart = async (c: Context) => {
   }
 };
 
-const copilotUpstreamName = (user: CopilotUpstreamUser): string => (user.login ? `GitHub Copilot (${user.login})` : 'GitHub Copilot');
-
 const copilotConfigUserId = (config: unknown): number | null => {
   if (!isRecord(config) || !isRecord(config.user)) return null;
   return typeof config.user.id === 'number' && Number.isSafeInteger(config.user.id) ? config.user.id : null;
@@ -432,7 +427,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
       : {
           id: newId(),
           provider: 'copilot',
-          name: copilotUpstreamName(user),
+          name: user.login ? `GitHub Copilot (${user.login})` : 'GitHub Copilot',
           enabled: true,
           sortOrder: nextSortOrder(upstreams),
           createdAt: now,
@@ -461,11 +456,7 @@ const CODEX_PKCE_PENDING_PREFIX = 'codex_oauth_pending:';
 // for token exchange anyway.
 const CODEX_PKCE_TTL_MS = 5 * 60 * 1000;
 
-interface CodexPkcePendingEntry {
-  verifier: string;
-}
-
-const parseCodexPkcePendingEntry = (raw: string): CodexPkcePendingEntry => {
+const parseCodexPkcePendingEntry = (raw: string): string => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -479,7 +470,7 @@ const parseCodexPkcePendingEntry = (raw: string): CodexPkcePendingEntry => {
   if (typeof obj.verifier !== 'string' || obj.verifier === '') {
     throw new Error('Codex PKCE pending entry is missing a non-empty `verifier`');
   }
-  return { verifier: obj.verifier };
+  return obj.verifier;
 };
 
 export const codexPkceStart = async (c: CtxWithJson<typeof codexPkceStartBody>) => {
@@ -538,8 +529,8 @@ const ingestCodexCredential = async (
     if (!pendingRaw) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const pending = parseCodexPkcePendingEntry(pendingRaw);
-    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
+    const verifier = parseCodexPkcePendingEntry(pendingRaw);
+    const out = await importCodexFromCallback({ code, codeVerifier: verifier });
     // Consume the cached PKCE entry so the same state cannot be replayed;
     // cache eviction handles the timeout case (it's idempotent).
     await getRepo().cache.delete(cacheKey);

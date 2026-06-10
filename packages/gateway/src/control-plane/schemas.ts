@@ -96,13 +96,12 @@ const customConfigSchema = z.object({
   // parser in shared/upstream/custom.ts uses the same default, so accept
   // omitted authStyle here for parity with import/legacy payloads.
   authStyle: z.enum(['bearer', 'anthropic']).optional(),
-  // Structured capability map (one concept, all endpoints) — the runtime parser
-  // permits an empty map for an upstream serving only kind-derived models.
+  // Structured capability map — the runtime parser permits an empty map for
+  // an upstream serving only kind-derived models.
   endpoints: modelEndpointsSchema,
   bearerToken: z.string().optional(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
-  // that escape hatch. The `/models` path no longer lives here — it is part of
-  // the modelsFetch toggle below.
+  // that escape hatch.
   pathOverrides: z.record(z.string(), z.string()).nullable().optional(),
   // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
   modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),

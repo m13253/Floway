@@ -22,15 +22,14 @@ const adminOnlyMiddleware = async (c: Context, next: Next) => {
   await next();
 };
 
-// Chained route registration is required for Hono RPC to flow the per-path
-// types into `typeof controlPlaneRoutes`, which apps/web consumes as the
-// AppType generic parameter of `hc<AppType>()` to get path/method autocomplete
-// and request/response inference. Each route that takes a body or query string
-// declares its shape via zValidator(target, schema); the schemas live in
-// ./schemas.ts and double as the RPC client's input contract.
+// Chained route registration is required so Hono flows per-path types into
+// the exported `controlPlaneRoutes` type; RPC clients consume it for path/
+// method autocomplete and request/response inference. Bodies/queries declare
+// their shapes via zValidator; schemas live in ./schemas.ts.
 export const controlPlaneRoutes = new Hono()
   .get('/api/health', c => c.json({ status: 'ok', service: 'floway' }))
-  // Fallback 204 until a static favicon is committed and shadows this route.
+  // Quiet 204 so browser favicon probes don't fall through into the
+  // auth-gated control-plane catchall.
   .get('/favicon.ico', () => new Response(null, { status: 204 }))
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)

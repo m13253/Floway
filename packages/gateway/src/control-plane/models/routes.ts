@@ -10,13 +10,9 @@ import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every provider binding for this model as { kind, id, name }
-// triples so the picker can group, the upstream rows can count their bound
-// models, and the chat panel can render each providing upstream as a labeled
-// badge without re-fetching the admin-only /api/upstreams endpoint (non-admin
-// users can see the models tab). A single model id can be served by mixed
-// provider kinds (e.g. one azure deployment + one custom upstream both expose
-// `gpt-5.5`), so a flat `provider`/`upstream_ids` split would misrepresent
-// that.
+// triples. A single model id can be served by mixed provider kinds (e.g. one
+// azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
+// `provider`/`upstream_ids` split would misrepresent that.
 interface ControlPlaneModel extends PublicModel {
   upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
 }
@@ -31,14 +27,6 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
 });
 
 const modelListingFailureMessage = 'Upstream model listing failed';
-
-const emptyResponse = (): ControlPlaneModelsResponse => ({
-  object: 'list',
-  has_more: false,
-  first_id: null,
-  last_id: null,
-  data: [],
-});
 
 export const controlPlaneModels = async (c: Context) => {
   try {
@@ -64,7 +52,7 @@ export const controlPlaneModels = async (c: Context) => {
     // dashboard's Models tab should render an empty grid + the operator
     // guidance message inline instead of flashing a 502 in devtools.
     if (e instanceof Error && e.message.startsWith('No upstream provider configured')) {
-      return c.json(emptyResponse());
+      return c.json({ object: 'list', has_more: false, first_id: null, last_id: null, data: [] });
     }
     // Genuine upstream HTTP/parse failures are squashed to a generic 502 so
     // the control plane does not leak provider identity.

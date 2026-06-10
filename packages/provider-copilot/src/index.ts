@@ -5,3 +5,4 @@ export {
   isCopilotAccountType,
   type CopilotAccountType,
 } from './auth.ts';
+export { assertCopilotUpstreamRecord } from './config.ts';
