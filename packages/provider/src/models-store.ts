@@ -2,9 +2,9 @@
 // hot-isolate reads, repo cache (L2) for cross-isolate persistence. Each
 // provider owns when and how to use these; this module has no policy.
 //
-// Memo keys are caller-chosen strings (providers pass `upstream.id` bare so
-// `invalidateModelsStore(upstream.id)` clears both tiers). L2 row keys are
-// prefixed internally so the repo cache namespace stays isolated.
+// The same key passed to `inProcessMemo` must be passed to
+// `invalidateModelsStore` for invalidation to hit both tiers. L2 row keys
+// are prefixed internally so the repo cache namespace stays isolated.
 
 import { getProviderRepo } from './repo.ts';
 
@@ -79,10 +79,9 @@ export class ProviderModelsUnavailableError extends Error {
 export const isProviderModelsHttpStatus = (error: unknown, status: number): boolean =>
   error instanceof ProviderModelsUnavailableError && error.httpResponse?.status === status;
 
-// Build a Response that mirrors an upstream model-listing HTTP failure for
-// real-API consumers that want to passthrough status/headers/body. Returns
-// null when there is no captured upstream HTTP frame (e.g. network errors
-// or malformed bodies), so callers can decide their own fallback shape.
+// Reconstruct a Response from the captured upstream HTTP frame, or null
+// when none was captured (e.g. network errors or malformed bodies) — that
+// null lets callers choose their own fallback shape.
 export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableError['httpResponse']): Response | null => {
   if (!httpResponse) return null;
   return new Response(httpResponse.body, {
@@ -94,10 +93,7 @@ export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableEr
 // Shared scaffold for "fetch the upstream's /models, decode JSON, validate
 // shape" — error envelope identical across providers (network failure ⇒
 // ProviderModelsUnavailableError(null, cause); non-2xx ⇒ status+headers+
-// body; JSON-parse failure ⇒ null+cause; shape-invalid ⇒ Error). Keeping
-// this in one place makes the upstream-/models error contract
-// authoritative — a future change (attaching the request URL, splitting
-// JSON-parse from shape-invalid, etc.) lands in one spot.
+// body; JSON-parse failure ⇒ null+cause; shape-invalid ⇒ Error).
 export const fetchUpstreamModels = async <T>(
   doFetch: () => Promise<Response>,
   parse: (json: unknown) => T | null,

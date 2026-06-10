@@ -56,12 +56,12 @@ export type ProviderStreamResult<TEvent> =
   | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
-// `/responses/compact` is non-streaming: the provider produces the
-// `response.compaction` envelope as a value — Azure/custom parse it from the
-// native endpoint, Copilot reshapes it from a `compaction_trigger` turn — so
-// the target builds the event frames itself rather than re-parsing a
-// synthesized SSE body. An upstream failure carries the raw Response so the
-// boundary reports it verbatim.
+// `/responses/compact` is non-streaming — the upstream returns a single
+// `response.compaction` envelope. Some upstreams expose a native compaction
+// endpoint and produce the envelope directly; others synthesize the
+// envelope from a regular `/responses` turn — both return the typed value
+// rather than a re-parsed synthesized SSE body. An upstream failure
+// carries the raw Response so the boundary reports it verbatim.
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
@@ -104,19 +104,18 @@ export interface ModelProvider {
   // boundary chain today, but the parameter stays for interface uniformity.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  // `/responses/compact` is non-streaming: the upstream returns a single
-  // `response.compaction` envelope rather than a token stream. Azure/custom
-  // pass the native sub-path straight through; Copilot has no native endpoint
-  // and replicates codex's RemoteCompactionV2 inside the provider, returning
-  // the synthesized envelope as the result value.
+  // `/responses/compact` is non-streaming — the upstream returns a single
+  // `response.compaction` envelope. Providers either pass the native
+  // sub-path through or synthesize the envelope client-side; either way
+  // the value is returned directly.
   callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
   // Messages and count_tokens additionally receive the source-derived
   // `anthropicBeta` slice as a typed read-only input separate from the wire
-  // headers. Copilot uses it to pick a raw upstream model variant
-  // (claude-*-1m-internal vs the standard variant) BEFORE the
-  // anthropic-beta boundary interceptor filters the wire header down to the
-  // Copilot allow-list. Variant selection must see the caller's full intent
-  // even when the beta value itself is dropped before hitting the wire.
+  // headers. Some providers select among raw upstream model variants based
+  // on caller-declared anthropic-beta values BEFORE a boundary interceptor
+  // filters the wire header down to an upstream allow-list. The typed slice
+  // gives variant selection access to the caller's full intent even when
+  // the beta is dropped before hitting the wire.
   callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, anthropicBeta: readonly string[] | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
@@ -125,7 +124,6 @@ export interface ModelProvider {
   callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // The provider takes ownership of `body` and may mutate it (e.g. append
   // the upstream-specific model/deployment id). Callers must allocate a
-  // fresh FormData per call — see images/serve.ts, which builds a new
-  // FormData per binding for that reason.
+  // fresh FormData per call.
   callImagesEdits(model: UpstreamModel, body: FormData, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }

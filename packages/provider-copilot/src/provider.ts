@@ -124,13 +124,6 @@ const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: Mo
   return resolveCopilotRawModel({ object: 'list', data: rawModels }, model.id, hints) ?? rawModels[0];
 };
 
-// The Messages and count_tokens call paths receive the UNFILTERED
-// anthropic-beta as a typed parameter so variant selection (e.g.
-// context-1m-2025-08-07 -> the claude-*-1m-internal variant) sees the
-// caller's full intent. The wire `anthropic-beta` header that ultimately
-// reaches the upstream is the filtered subset written by
-// withAnthropicBetaHeaderFiltered into `invocation.headers`; that header is
-// passed through unchanged by the `call` helper below.
 const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, unknown> => {
   if (typeof body.input !== 'string') return body;
 
@@ -235,8 +228,6 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
 
   // Materialize an upstream error body up-front so any interceptor that
   // inspects `result.body` (e.g. rewriteContextWindowError) sees the bytes.
-  // Success flows through as the events iterable; the placeholder identity
-  // is replaced by the gateway with the candidate-aware identity downstream.
   const liftStream = async <TEvent>(
     streamPromise: Promise<ProviderStreamResult<TEvent>>,
   ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
@@ -386,10 +377,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     },
     callEmbeddings: (model, body, signal, headers, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers, opts),
     // Copilot has no /images/... upstream. getProvidedModels never emits a
-    // kind='image' model for Copilot bindings, so the source-side dispatcher
-    // in packages/gateway/src/data-plane/images/serve.ts never selects this
-    // provider for image requests. These stubs satisfy the ModelProvider
-    // interface only; they are unreachable in normal operation.
+    // kind='image' model for Copilot, so these stubs are unreachable; they
+    // exist only to satisfy the ModelProvider interface.
     callImagesGenerations: () => {
       throw new Error('Copilot provider does not implement images_generations');
     },

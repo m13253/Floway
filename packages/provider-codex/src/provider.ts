@@ -165,9 +165,8 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       );
     },
 
-    // Codex serves only /responses; getProvidedModels advertises that single
-    // endpoint, so the data plane translates Messages / ChatCompletions /
-    // Gemini through `responsesAttempt` and never calls the methods below.
+    // Codex upstream only exposes /responses; getProvidedModels advertises
+    // that single endpoint and no other entry point is reachable.
     callMessages: () => Promise.reject(new Error('Codex provider does not implement callMessages')),
     callChatCompletions: () => Promise.reject(new Error('Codex provider does not implement callChatCompletions')),
     callMessagesCountTokens: () => Promise.reject(new Error('Codex provider does not implement callMessagesCountTokens')),

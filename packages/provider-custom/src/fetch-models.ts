@@ -8,10 +8,8 @@
 //
 // The parser is intentionally tolerant: a model is admitted if it has a string
 // `id`; everything else is best-effort metadata. The container is admitted if
-// `data` is an array. We do NOT read any per-model endpoint hint — endpoint
-// routing for an auto custom model is inferred by the provider (Tier 1 reads
-// the published `kind` here if the upstream emits it; Tier 2 falls back to an id
-// heuristic; the chat default takes the per-upstream `endpoints` config).
+// `data` is an array. The parser carries `kind` through when present and
+// never inspects per-model endpoint hints.
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
@@ -37,10 +35,8 @@ export interface CustomRawModel {
     max_prompt_tokens?: number;
   };
   cost?: ModelPricing;
-  // Tier 1 embedding-vs-chat signal: present when the upstream is another
-  // floway and emits its own ModelKind. Other OpenAI-compat providers
-  // (OpenAI, Anthropic, Groq, DeepSeek) never set this; the provider's id
-  // heuristic (Tier 2) then takes over.
+  // Optional ModelKind published by floway upstreams; absent on plain
+  // OpenAI-compat upstreams.
   kind?: ModelKind;
 }
 

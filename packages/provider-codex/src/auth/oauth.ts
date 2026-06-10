@@ -15,9 +15,9 @@ export interface CodexOAuthTokens {
   expires_in: number;
 }
 
-// Terminal error: refresh_token is dead, operator must re-import. Distinct from
-// generic OAuth 4xx so the request lifecycle can mark the upstream
-// `refresh_failed` instead of merely surfacing the upstream message.
+// Terminal error: refresh_token is dead, operator must re-import. Distinct
+// from generic OAuth 4xx so callers can react to session-termination
+// separately from a transient upstream message.
 export class CodexOAuthSessionTerminatedError extends Error {
   constructor(public readonly upstreamMessage: string) {
     super(`Codex OAuth session terminated: ${upstreamMessage}`);
@@ -87,10 +87,8 @@ const codexTokenRequest = async (
   };
 };
 
-// PKCE exchange has no upstream context — the upstream is created from this
-// response — so it always egresses through `directFetcher`. Mirrors the
-// UpstreamFetchOptions design note: paths inherently outside an upstream's
-// fallback chain don't take a `Fetcher`.
+// PKCE exchange has no upstream context yet — the upstream is minted from
+// this response.
 export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -106,11 +104,9 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   return await codexTokenRequest(body, new Set(['app_session_terminated']), directFetcher);
 };
 
-// Refresh the Codex access token. `fetcher` is required so every refresh
-// — whether triggered by the data-plane hot path or by an operator-pressed
-// Refresh in the dashboard — flows through the upstream's proxy-aware
-// fallback chain. There is no implicit direct-egress default; an admin-
-// side call without an upstream context must construct one explicitly.
+// Refresh the Codex access token. `fetcher` is required because the refresh
+// has an associated upstream and must flow through that upstream's
+// proxy-aware fallback chain rather than direct egress.
 export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',

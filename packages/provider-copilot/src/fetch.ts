@@ -11,18 +11,14 @@ import type { UpstreamFetchOptions } from '@floway-dev/provider';
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
 // `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
 // paths reflect Copilot's contract and are not admin-configurable.
-// `responses_compact` is intentionally absent — Copilot has no native
-// `/responses/compact` endpoint; compaction is fabricated by the provider via
-// `compaction_trigger` against `/responses`.
 
 // Subset of the persisted copilot upstream record's config the transport needs;
 // `user` is irrelevant on the wire, so the parameter type only names the auth
 // fields. Any CopilotUpstreamConfig satisfies it structurally.
 type CopilotFetchConfig = Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>;
 
-// Private base dispatcher. Wraps `copilotAuthedFetch` (which owns the token
-// exchange + KV cache) and converts a CopilotTokenFetchError into a regular
-// Response so callers treat token-exchange failures like any other 4xx/5xx.
+// Convert a CopilotTokenFetchError into a regular Response so callers treat
+// token-exchange failures like any other 4xx/5xx.
 const copilotFetchInternal = async (
   config: CopilotFetchConfig,
   path: string,
@@ -40,9 +36,9 @@ const copilotFetchInternal = async (
   }
 };
 
-// Typed transports — one per logical endpoint Copilot serves. Copilot has no
-// `/responses/compact`; the provider fabricates compaction by POSTing a
-// compaction_trigger item to `/responses` via `copilotFetchResponses`.
+// Copilot has no native `/responses/compact`; the provider fabricates
+// compaction by POSTing a compaction_trigger item to `/responses` via
+// `copilotFetchResponses`.
 export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
 export const copilotFetchResponses = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

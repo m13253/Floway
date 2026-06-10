@@ -13,12 +13,9 @@ export interface UpstreamRecord {
   createdAt: string;
   updatedAt: string;
   config: unknown;
-  // Gateway-managed runtime state, persisted in upstreams.state_json. Null for
-  // providers that have no autonomous persistent state; populated by the
-  // per-kind provider package's state type when present (e.g. Codex's rotated
-  // refresh-token + health). Operator HTTP edits never write this column;
-  // only the gateway's autonomous flows do, via UpstreamRepo.saveState with
-  // optimistic concurrency.
+  // Gateway-managed runtime state, persisted in upstreams.state_json. Null
+  // for providers with no autonomous persistent state. Operator HTTP edits
+  // never write this column; only the gateway's autonomous flows do.
   state: unknown;
   flagOverrides: Record<string, boolean>;
   // Public model ids the operator switched off for this upstream. Orthogonal to
@@ -41,8 +38,8 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
-// Context that the proxy-side recorder reads when writing latency/error metrics.
-// Provider-layer code only constructs and forwards it; never reads fields.
+// Context the gateway's telemetry recorder reads when writing latency /
+// error metrics.
 export interface PerformanceTelemetryContext {
   keyId: string;
   model: string;

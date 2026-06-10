@@ -26,9 +26,9 @@ const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
 const COPILOT_API_VERSION = '2026-01-09';
 const GITHUB_API_VERSION = '2025-04-01';
 
-// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path, used
-// by `withClaudeAgentHeadersSet` when we detect Claude Code traffic. Bump this
-// alongside COPILOT_VERSION when caozhiyuan/copilot-api upgrades it upstream.
+// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path;
+// applied by the Messages-boundary Claude-Code detection path. Bump alongside
+// COPILOT_VERSION when caozhiyuan/copilot-api upgrades it upstream.
 export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
 
 // Stable per-isolate device id, like real VSCode generates once per install.
@@ -73,7 +73,6 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-/** Clear the cached Copilot token from both in-process and KV storage */
 export async function clearCopilotTokenCache(): Promise<void> {
   inProcessTokenCache.clear();
   try {
@@ -82,10 +81,6 @@ export async function clearCopilotTokenCache(): Promise<void> {
   } catch {
     // Ignore — KV may not be available during initialization
   }
-}
-
-function copilotBaseUrl(accountType: CopilotAccountType): string {
-  return COPILOT_BASE_URLS[accountType];
 }
 
 async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefined, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
@@ -224,7 +219,7 @@ export interface CopilotFetchOptions {
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options: CopilotFetchOptions): Promise<Response> {
   const token = await getCopilotToken(githubToken, options.fetcher, init.signal ?? undefined);
-  const baseUrl = copilotBaseUrl(accountType);
+  const baseUrl = COPILOT_BASE_URLS[accountType];
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.

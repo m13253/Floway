@@ -16,16 +16,11 @@ const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-const withAzureFoundryServicesHost = (url: URL): URL => {
-  const next = new URL(url.href);
-  if (next.hostname.endsWith('.openai.azure.com')) {
-    next.hostname = `${next.hostname.slice(0, -'.openai.azure.com'.length)}.services.ai.azure.com`;
-  }
-  return next;
-};
-
 const azureAnthropicBaseUrl = (endpoint: string): string => {
-  const url = withAzureFoundryServicesHost(new URL(trimTrailingSlash(endpoint)));
+  const url = new URL(trimTrailingSlash(endpoint));
+  if (url.hostname.endsWith('.openai.azure.com')) {
+    url.hostname = `${url.hostname.slice(0, -'.openai.azure.com'.length)}.services.ai.azure.com`;
+  }
   const path = trimTrailingSlash(url.pathname);
   if (path === '/anthropic/v1/messages') {
     url.pathname = path.slice(0, -'/v1/messages'.length);
@@ -39,10 +34,6 @@ const azureAnthropicBaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-// Private base dispatcher: applies the right credential header per surface
-// (api-key for OpenAI v1, x-api-key + anthropic-version for /anthropic),
-// JSON Content-Type when carrying a body, plus any extra headers, then
-// resolves URL on the per-surface base.
 const azureFetchInternal = async (
   config: AzureUpstreamConfig,
   surface: 'openai' | 'anthropic',
@@ -75,10 +66,6 @@ const azureFetchInternal = async (
   return await dispatch(parsed.href, { ...init, headers });
 };
 
-// Typed transports — one per logical endpoint Azure serves. Streaming and
-// non-streaming alike return a raw Response; per-endpoint return-type
-// wrapping (event stream parse, compaction envelope parse) lives in the
-// provider call methods that consume these.
 export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/chat/completions', init, options);
 export const azureFetchResponses = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

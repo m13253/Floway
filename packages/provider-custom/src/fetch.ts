@@ -15,12 +15,9 @@ const CUSTOM_DEFAULT_PATHS = {
   images_edits: '/v1/images/edits',
 } as const;
 
-// Internal: parent path for a logical endpoint, honouring admin overrides.
 const resolveOverridable = (config: CustomUpstreamConfig, key: keyof typeof CUSTOM_DEFAULT_PATHS): string =>
   config.pathOverrides?.[key] ?? CUSTOM_DEFAULT_PATHS[key];
 
-// Private base dispatcher: applies the configured auth header per authStyle,
-// JSON Content-Type when carrying a body, plus any extra headers.
 const customFetchInternal = async (
   config: CustomUpstreamConfig,
   path: string,

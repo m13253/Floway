@@ -8,10 +8,6 @@ import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
 import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
-interface CustomProviderData {
-  rawModelId: string;
-}
-
 interface CustomModelsBlob {
   response: CustomModelsResponse;
   fetchedAt: number;
@@ -20,12 +16,8 @@ interface CustomModelsBlob {
 const SOFT_MS = 10 * 60 * 1000;
 const HARD_MS = 2 * 60 * 60 * 1000;
 const L1_TTL_MS = 120_000;
-const providerData = (model: UpstreamModel): CustomProviderData => model.providerData as CustomProviderData;
+const rawModelIdOf = (model: UpstreamModel): string => model.providerData as string;
 
-// Projects a raw custom model into the slim provider-neutral fields; the
-// caller adds kind / endpoints / providerData / enabledFlags. Display metadata
-// (display_name / created) and `cost` pass through to the public catalog when
-// the upstream chose to publish them.
 const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
@@ -76,7 +68,7 @@ const finalizeCustomModels = (
       ...customInternalModel(rawModel),
       kind: kindForEndpoints(endpoints),
       endpoints,
-      providerData: { rawModelId: rawModel.id } satisfies CustomProviderData,
+      providerData: rawModel.id,
       enabledFlags,
     });
   }
@@ -106,7 +98,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       limits: { ...(model.limits ?? {}) },
       kind: kindForEndpoints(endpoints),
       endpoints,
-      providerData: { rawModelId: model.upstreamModelId } satisfies CustomProviderData,
+      providerData: model.upstreamModelId,
       enabledFlags,
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
@@ -137,8 +129,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     return finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags);
   };
 
-  // The emitted list is always manual-first: manual overrides precede any auto
-  // models so their pinned ids win.
   const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
   const call = (
@@ -149,10 +139,10 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     headers: Record<string, string> | undefined,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> =>
-    opts.recordUpstreamLatency(transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: providerData(model).rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher }))
+    opts.recordUpstreamLatency(transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelIdOf(model) }), signal }, { extraHeaders: headers, fetcher: opts.fetcher }))
       .then(response => ({
         response,
-        modelKey: providerData(model).rawModelId,
+        modelKey: rawModelIdOf(model),
       }));
 
   const callStreaming = <TEvent>(
@@ -164,7 +154,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {
-    const rawModelId = providerData(model).rawModelId;
+    const rawModelId = rawModelIdOf(model);
     return streamingProviderCall(
       opts.recordUpstreamLatency(transport(
         config,
@@ -209,7 +199,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callChatCompletions: (model, body, signal, headers, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, headers, opts) => callStreaming(customFetchResponses, model, body, signal, headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, headers, opts) => {
-      const rawModelId = providerData(model).rawModelId;
+      const rawModelId = rawModelIdOf(model);
       const response = await opts.recordUpstreamLatency(customFetchResponsesCompact(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
@@ -226,9 +216,9 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callImagesEdits: async (model, body, signal, headers, opts) => {
       // Custom forwards the resolved upstream model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
-      body.append('model', providerData(model).rawModelId);
+      body.append('model', rawModelIdOf(model));
       const response = await opts.recordUpstreamLatency(customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher: opts.fetcher }));
-      return { response, modelKey: providerData(model).rawModelId };
+      return { response, modelKey: rawModelIdOf(model) };
     },
   };
 

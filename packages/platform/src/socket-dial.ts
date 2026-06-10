@@ -1,21 +1,17 @@
 // Runtime-agnostic byte-stream dial primitive. Each runtime supplies a
 // concrete impl via initSocketDial; callers obtain it via getSocketDial().
-// The same SocketDial shape lets the same dialers run on workerd
-// (cloudflare:sockets) and Node (node:net).
 
 interface SocketDialOptions {
   /**
-   * Wrap the connection with the runtime's native TLS implementation.
-   * The hostname is reused as SNI and as the certificate-verify name.
-   * Useful when the proxy protocol's outer leg is plain TLS — userspace
-   * TLS works too but native TLS is faster.
+   * Wrap the connection with the runtime's native TLS implementation. The
+   * hostname is reused as SNI and as the certificate-verify name.
    */
   tls?: boolean;
   /**
    * Caller-supplied cancellation. When the signal aborts:
    *   - mid-connect dials are torn down immediately;
    *   - established sockets are closed by the runtime impl, which then
-   *     surfaces as read/write rejections to the proxy library.
+   *     surfaces as read/write rejections on the returned streams.
    * The signal is also honoured pre-connect: a signal that is already
    * aborted at call time throws synchronously without opening a socket —
    * its Error reason is rethrown as-is, and a primitive or absent reason
@@ -52,9 +48,8 @@ export const resetSocketDialForTesting = (): void => {
 };
 
 /**
- * Convert a caller-supplied abort signal into a thrown error shaped for
- * the dial chain's AbortError fast-path. A structured Error reason is
- * rethrown as-is so its stack/cause survives; a primitive or absent
+ * Convert an aborted signal into a thrown error. A structured Error reason
+ * is rethrown as-is so its stack/cause survives; a primitive or absent
  * reason becomes a DOMException('AbortError').
  */
 export const throwAbort = (signal: AbortSignal): never => {
@@ -65,11 +60,8 @@ export const throwAbort = (signal: AbortSignal): never => {
 
 /**
  * WHATWG `URL.hostname` keeps the `[...]` envelope around IPv6 literals,
- * but the runtime TCP APIs (`node:net`, workerd's `cloudflare:sockets`)
- * treat the host string as either a DNS name or a bare IP literal — a
- * bracketed `[::1]` is rejected as ENOTFOUND by both. The proxy URL
- * parser hands `url.hostname` to us unchanged, so every concrete dial
- * impl strips the envelope here before reaching the runtime call.
+ * but runtime TCP APIs reject bracketed literals as ENOTFOUND. Each
+ * concrete dial impl strips the envelope before reaching the runtime call.
  */
 export const normalizeDialHost = (host: string): string =>
   host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
