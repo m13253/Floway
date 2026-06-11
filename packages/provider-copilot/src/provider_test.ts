@@ -683,15 +683,22 @@ test('Copilot provider persists merged known-models view via saveState CAS keyed
     },
   );
 
-  assertEquals(saveStateCalls.length, 1);
-  const [call] = saveStateCalls;
-  // The CAS guard is the row's state at the time of the read — null on first
-  // call, since the seeded upstream has no state.
-  assertEquals(call.expectedState, null);
-  const persistedState = call.newState as CopilotUpstreamState;
-  assertEquals(Object.keys(persistedState.knownModels?.models ?? {}), ['m1']);
-  // copilotToken is untouched by getProvidedModels.
-  assertEquals(persistedState.copilotToken, null);
+  // Two writes happen during a `/models` round-trip: first the token mint
+  // path persists copilotToken, then the known-models projection persists
+  // knownModels. Each CAS is keyed on the state at its own read time.
+  assertEquals(saveStateCalls.length, 2);
+  const tokenWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).copilotToken !== null);
+  const modelsWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).knownModels !== null);
+  if (!tokenWrite || !modelsWrite) throw new Error('expected one token write and one models write');
+  // Both writes ran against the same seeded row (state=null) on the first
+  // call; the token write happens first and lands a non-null state, so the
+  // models write's expectedState is whatever the token write produced.
+  assertEquals(tokenWrite.expectedState, null);
+  const tokenPersisted = tokenWrite.newState as CopilotUpstreamState;
+  assertEquals(tokenPersisted.knownModels, null);
+  assertEquals(typeof tokenPersisted.copilotToken?.token, 'string');
+  const modelsPersisted = modelsWrite.newState as CopilotUpstreamState;
+  assertEquals(Object.keys(modelsPersisted.knownModels?.models ?? {}), ['m1']);
 });
 
 test('Copilot provider accumulates known-models across calls so a model dropped from the fetch still surfaces', async () => {

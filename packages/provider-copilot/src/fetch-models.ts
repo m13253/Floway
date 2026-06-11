@@ -1,5 +1,4 @@
-import type { CopilotUpstreamConfig } from './config.ts';
-import { copilotFetchModels } from './fetch.ts';
+import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
 
@@ -26,7 +25,7 @@ const MODELS_HEADER_OVERRIDES: Record<string, string> = {
   'content-type': '',
 };
 
-export const fetchCopilotModels = (config: Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
+export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
     () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher }),
     v => (isCopilotModelsResponse(v) ? v : null),

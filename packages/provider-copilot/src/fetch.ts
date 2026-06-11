@@ -1,8 +1,7 @@
 // Copilot upstream transport. Maps each logical endpoint to the path
 // Copilot serves it on, then dispatches through the authed fetch.
 
-import { copilotAuthedFetch, isCopilotTokenFetchError } from './auth.ts';
-import type { CopilotUpstreamConfig } from './config.ts';
+import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAuth } from './auth.ts';
 import type { UpstreamFetchOptions } from '@floway-dev/provider';
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
@@ -10,10 +9,10 @@ import type { UpstreamFetchOptions } from '@floway-dev/provider';
 // `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
 // paths reflect Copilot's contract and are not admin-configurable.
 
-// Subset of the persisted copilot upstream record's config the transport needs;
-// `user` is irrelevant on the wire, so the parameter type only names the auth
-// fields. Any CopilotUpstreamConfig satisfies it structurally.
-type CopilotFetchConfig = Pick<CopilotUpstreamConfig, 'githubToken' | 'accountType'>;
+// Per-call upstream identity the transport hands to the auth layer: the row
+// id (used to key the persisted token cache) plus the wire-relevant auth
+// fields. Aliased so call sites read `config`, not `auth`.
+export type CopilotFetchConfig = CopilotAuth;
 
 // Convert a CopilotTokenFetchError into a regular Response so callers treat
 // token-exchange failures like any other 4xx/5xx.
@@ -24,7 +23,7 @@ const copilotFetchInternal = async (
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   try {
-    return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, {
+    return await copilotAuthedFetch(path, init, config, {
       headers: options.extraHeaders,
       fetcher: options.fetcher,
       ...(options.recordUpstreamLatency ? { recordUpstreamLatency: options.recordUpstreamLatency } : {}),
