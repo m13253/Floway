@@ -97,17 +97,28 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     config.models.flatMap(m => (m.cost ? [[m.upstreamModelId, m.cost] as const] : [])),
   );
 
-  // Last-known pricing keyed by raw model id from the auto-fetch path.
-  // Populated whenever a fresh /models response flows through autoFromResponse;
-  // read synchronously by getPricingForModelKey after the manual map misses.
-  // Stays empty until the first list call lands.
-  let pricingByRawId: ReadonlyMap<string, ModelPricing> = new Map();
-  const rememberPricing = (response: CustomModelsResponse): void => {
-    const next = new Map<string, ModelPricing>();
+  // Last-known pricing keyed by raw model id from the auto-fetch path. Read
+  // synchronously by getPricingForModelKey after the manual map misses, so it
+  // must be populated by the time telemetry runs. Two writers keep it warm:
+  //   1. `getProvidedModels` re-stamps the whole table from a fresh /models
+  //      response (cold path / cache miss).
+  //   2. Every `call*` re-stamps the entry for the model it is dispatching
+  //      against, sourced from the `UpstreamModel.cost` already carried on
+  //      the binding. This second writer is what saves us in any isolate
+  //      where the SWR layer (`fetchUpstreamModelsCached`) returns the cached
+  //      `UpstreamModel[]` row directly without ever calling
+  //      `getProvidedModels` — without it, telemetry would see `null` cost
+  //      for auto-fetched models on every isolate that started cold against
+  //      a SOFT-fresh cache row.
+  const pricingByRawId = new Map<string, ModelPricing>();
+  const rememberPricingFromResponse = (response: CustomModelsResponse): void => {
+    pricingByRawId.clear();
     for (const raw of response.data) {
-      if (raw.id && raw.cost) next.set(raw.id, raw.cost);
+      if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);
     }
-    pricingByRawId = next;
+  };
+  const rememberPricingForModel = (model: UpstreamModel): void => {
+    if (model.cost) pricingByRawId.set(rawModelIdOf(model), model.cost);
   };
 
   // Drop any auto-fetched model whose id is pinned by a manual override so the
@@ -126,12 +137,14 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     signal: AbortSignal | undefined,
     headers: Record<string, string> | undefined,
     opts: UpstreamCallOptions,
-  ): Promise<ProviderCallResult> =>
-    transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelIdOf(model) }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
+  ): Promise<ProviderCallResult> => {
+    rememberPricingForModel(model);
+    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelIdOf(model) }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
       .then(response => ({
         response,
         modelKey: rawModelIdOf(model),
       }));
+  };
 
   const callStreaming = <TEvent>(
     transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
@@ -142,6 +155,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {
+    rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
     return streamingProviderCall(
       transport(
@@ -159,13 +173,14 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);
-      rememberPricing(response);
+      rememberPricingFromResponse(response);
       return withManual(autoFromResponse(response));
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callChatCompletions: (model, body, signal, headers, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, headers, opts) => callStreaming(customFetchResponses, model, body, signal, headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, headers, opts) => {
+      rememberPricingForModel(model);
       const rawModelId = rawModelIdOf(model);
       const response = await customFetchResponsesCompact(
         config,
@@ -181,6 +196,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callEmbeddings: (model, body, signal, headers, opts) => call(customFetchEmbeddings, model, body, signal, headers, opts),
     callImagesGenerations: (model, body, signal, headers, opts) => call(customFetchImagesGenerations, model, body, signal, headers, opts),
     callImagesEdits: async (model, body, signal, headers, opts) => {
+      rememberPricingForModel(model);
       // Custom forwards the resolved upstream model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', rawModelIdOf(model));
