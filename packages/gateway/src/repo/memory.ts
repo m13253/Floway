@@ -630,7 +630,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of items) {
       if (item.payload === null) continue;
       const existing = this.store.get(responsesItemStoreKey(item.apiKeyId, item.id));
-      if (existing?.payload !== null) continue;
+      // Row may be absent if a concurrent TTL prune removed it between load and persist;
+      // SQL's `UPDATE ... WHERE id = ?` is a no-op in the same case, so we mirror that.
+      if (existing === undefined) continue;
+      if (existing.payload !== null) continue;
       existing.payload = structuredClone(item.payload);
       existing.contentHash = item.contentHash;
       existing.encryptedContentHash = item.encryptedContentHash;

@@ -309,7 +309,6 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 20 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_c', name: 'C', sortOrder: 30 }));
 
-  // Subset, reverse order, with the planner's fallback head explicitly chosen.
   const providers = await listModelProviders(['up_c', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_c', 'up_a']);
 });

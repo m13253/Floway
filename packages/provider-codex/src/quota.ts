@@ -2,7 +2,7 @@ import { readCodexUpstreamState, type CodexQuotaSnapshotEntry, type CodexUpstrea
 import { getProviderRepo } from '@floway-dev/provider';
 
 export interface CodexQuotaSnapshot {
-  observed_at: string;           // ISO 8601
+  observed_at: string;
   active_limit?: string;
   plan_type?: string;
 
@@ -127,16 +127,10 @@ export const putCodexQuota = async (
   snapshot: CodexQuotaSnapshot,
 ): Promise<void> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) {
-    console.warn(`putCodexQuota: Codex upstream ${upstreamId} disappeared mid-request`);
-    return;
-  }
+  if (!fresh) throw new Error(`putCodexQuota: Codex upstream ${upstreamId} disappeared mid-request`);
   const state = readCodexUpstreamState(fresh.state);
   const idx = findAccountIndex(state, accountId);
-  if (idx < 0) {
-    console.warn(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
-    return;
-  }
+  if (idx < 0) throw new Error(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
   const next = replaceAccountQuota(state, idx, { fetchedAt: Date.now(), data: snapshot });
   await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };

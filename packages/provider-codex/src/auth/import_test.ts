@@ -35,7 +35,6 @@ describe('importCodexFromAuthJson', () => {
     expect(result.state.accounts[0].refresh_token).toBe('rt1');
     expect(result.state.accounts[0].state).toBe('active');
     expect(result.state.accounts[0].accessToken?.token).toBe('at1');
-    // expiresAt defaults from now + a conservative window if auth.json doesn't carry one.
     expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
   });
 

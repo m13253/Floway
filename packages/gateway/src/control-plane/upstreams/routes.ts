@@ -68,7 +68,6 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 // record before it hits the repo. Request-time zod schemas only validate JSON
 // shape; these helpers enforce the URL / endpoint-mix / path-override rules
 // that the provider packages own.
-
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
@@ -193,7 +192,6 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     state: null,
   };
 
-  // zod only checks JSON shape; per-provider asserts run the URL/endpoint-mix rules.
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 

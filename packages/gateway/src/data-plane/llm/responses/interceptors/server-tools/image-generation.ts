@@ -88,8 +88,7 @@ export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is Respon
   tool.type === 'image_generation';
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob
-// without TS narrowing complaints about SharedArrayBuffer.
+// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
 interface ImageSource {
   bytes: ArrayBuffer;
   mimeType: string;
@@ -428,7 +427,9 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
         code: typeof err.code === 'string' ? err.code : `upstream_${status}`,
       };
     }
-  } catch {}
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e;
+  }
   return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
 };
 
@@ -504,8 +505,8 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     // generated image. Sending the raw mime (rather than relabeling as png)
     // keeps a stray unsupported byte stream failing loud at the backend.
     const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
-    // `image[]` repeated parts: gpt-image accepts multiple, picking the
-    // edit target by prompt semantics. Attach order is not significant.
+    // `image[]` repeated parts: gpt-image accepts multiple, resolving "the
+    // Nth image" against attach order (see `collectImageSources`).
     form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
   }
   if (config.mask !== undefined) {

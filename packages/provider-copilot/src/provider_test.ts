@@ -389,12 +389,9 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
     },
   );
 
-  // withStoreForcedFalse reached the wire body.
   assertEquals(responsesBody?.store, false);
-  // withServiceTierStripped removed the field from the wire body.
   if (!responsesBody) throw new Error('expected /responses to be hit');
   assertEquals('service_tier' in responsesBody, false);
-  // The compaction trigger item was still appended to input.
   const wireInput = responsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
   // withVisionHeaderSet detected the input_image and set the Copilot vision
@@ -531,10 +528,8 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   const provider = instance.provider;
   const visionHeaders: (string | null)[] = [];
 
-  // The boundary chain runs inside `provider.callMessages` itself, so this
-  // exercises the integration contract end-to-end: the vision-detection
-  // interceptor reads the payload, sets the header in the boundary header
-  // bag, and the upstream sees it.
+  // The vision-detection interceptor runs inside `provider.callMessages`, so
+  // it must walk into nested `tool_result.content` to find the image.
   const driveMessages = async (model: Awaited<ReturnType<typeof instance.provider.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
     await provider.callMessages(model, body, undefined, undefined, undefined, noopUpstreamCallOptions);
   };

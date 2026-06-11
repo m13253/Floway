@@ -37,8 +37,8 @@ export interface CodexAccountCredential {
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
-  // The asserter accepts the absent-key case for these two fields and use
-  // sites alias it to `null` via `?? null`.
+  // The absent-key case is accepted for these two fields; call sites alias
+  // the absent value to `null` via `?? null`.
   accessToken: CodexAccessTokenEntry | null;
   quotaSnapshot: CodexQuotaSnapshotEntry | null;
 }

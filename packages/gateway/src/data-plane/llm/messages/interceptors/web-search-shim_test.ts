@@ -536,10 +536,59 @@ test('prepareMessagesWebSearchShimRequest creates a separate user tool_result me
   });
 });
 
-test('withMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+const initDisabledSearchRepo = async (): Promise<void> => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+};
+
+const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<MessagesStreamEvent>[]> => {
+  await initDisabledSearchRepo();
+
+  const { tools: _tools, ...payload } = makeNativeReplayPayload();
+
+  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
+    Promise.resolve({
+      type: 'events',
+      events: toAsyncIterable(
+        messagesResponseToUpstreamFrames({
+          id: messageId,
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-test',
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 1 },
+          content: [
+            {
+              type: 'text',
+              text: 'Use the docs.',
+              citations: [
+                {
+                  type: 'search_result_location',
+                  url: 'https://react.dev',
+                  title: 'React',
+                  search_result_index: 0,
+                  start_block_index: 0,
+                  end_block_index: 0,
+                  cited_text: 'Official React documentation',
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+      modelIdentity: testTelemetryModelIdentity,
+    }));
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('expected events result');
+
+  return collect(result.events);
+};
+
+test('withMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+  await initDisabledSearchRepo();
 
   const result = await withMessagesWebSearchShim(
     invocation({
@@ -555,99 +604,17 @@ test('withMessagesWebSearchShim returns internal-error when request requires dis
 });
 
 test('withMessagesWebSearchShim allows replay-only history when the search provider is disabled', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  const collected = await runReplayOnlyShim('msg_replay_only');
 
-  const { tools: _tools, ...payload } = makeNativeReplayPayload();
-
-  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
-        messagesResponseToUpstreamFrames({
-          id: 'msg_replay_only',
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
-          content: [
-            {
-              type: 'text',
-              text: 'Use the docs.',
-              citations: [
-                {
-                  type: 'search_result_location',
-                  url: 'https://react.dev',
-                  title: 'React',
-                  search_result_index: 0,
-                  start_block_index: 0,
-                  end_block_index: 0,
-                  cited_text: 'Official React documentation',
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
-    }));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  const events = (await collect(result.events)).flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
+  const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
   const citationsDelta = events.find((event): event is Extract<MessagesStreamEvent, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
 test('withMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
-  const { tools: _tools, ...payload } = makeNativeReplayPayload();
-
-  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
-        messagesResponseToUpstreamFrames({
-          id: 'msg_replay_only_stream',
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
-          content: [
-            {
-              type: 'text',
-              text: 'Use the docs.',
-              citations: [
-                {
-                  type: 'search_result_location',
-                  url: 'https://react.dev',
-                  title: 'React',
-                  search_result_index: 0,
-                  start_block_index: 0,
-                  end_block_index: 0,
-                  cited_text: 'Official React documentation',
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
-    }));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  const frames = (await collect(result.events)).map(messagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
+  const frames = collected.map(messagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
   const citationFrame = frames.find(frame => {
     if (frame.type !== 'sse' || frame.event !== 'content_block_delta') {
       return false;
