@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createCodexProvider } from './provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from './state.ts';
-import { clearModelsStore, directFetcher, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
@@ -55,7 +55,6 @@ beforeEach(() => {
     cache,
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
   }));
-  clearModelsStore();
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -71,6 +70,20 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
+const modelsResponse = (): Response => new Response(JSON.stringify({
+  models: [
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
+    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
+  ],
+}), { status: 200, headers: { 'content-type': 'application/json' } });
+
+const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number }> = {}): Response => new Response(JSON.stringify({
+  access_token: overrides.access_token ?? 'at_minted',
+  refresh_token: overrides.refresh_token ?? 'rt_v2',
+  id_token: 'id_token_v2',
+  expires_in: overrides.expires_in ?? 3600,
+}), { status: 200, headers: { 'content-type': 'application/json' } });
+
 describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
     const instance = await createCodexProvider(baseRecord);
@@ -80,19 +93,55 @@ describe('createCodexProvider', () => {
     expect(instance.supportsResponsesItemReference).toBe(false);
   });
 
-  test('getProvidedModels fetches /codex/models and filters hidden', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      models: [
-        { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
-        { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
-      ],
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const instance = await createCodexProvider(baseRecord);
     const models = await instance.provider.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
     expect(models[0].endpoints).toEqual({ responses: {} });
+    // No OAuth refresh hit: the only fetch is the catalog.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
+  });
+
+  test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
+    // Cold record: state has no accessToken. ensureCodexAccessToken must
+    // call mint, which round-trips through the OAuth /token endpoint.
+    getByIdSpy.mockImplementation(async () => baseRecord);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
+      if (url.includes('/oauth/token')) return oauthTokenResponse();
+      if (url.includes('/codex/models')) return modelsResponse();
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const instance = await createCodexProvider(baseRecord);
+    const models = await instance.provider.getProvidedModels(directFetcher);
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+    // Mint then catalog fetch.
+    const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
+    expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
+    expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
+    // Rotated refresh_token persisted via CAS write.
+    expect(saveStateSpy).toHaveBeenCalled();
+  });
+
+  test('getProvidedModels propagates catalog fetch failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
+    const instance = await createCodexProvider(baseRecord);
+    await expect(instance.provider.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
+  });
+
+  test('getProvidedModels propagates OAuth refresh failures', async () => {
+    getByIdSpy.mockImplementation(async () => baseRecord);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
+      if (url.includes('/oauth/token')) return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400, headers: { 'content-type': 'application/json' } });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const instance = await createCodexProvider(baseRecord);
+    await expect(instance.provider.getProvidedModels(directFetcher)).rejects.toThrow(/Codex OAuth session terminated/);
   });
 
   test('callResponses round-trips through fetch transport', async () => {
