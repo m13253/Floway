@@ -1,6 +1,6 @@
-// Per-kind seeds the form panel uses when the operator switches the
-// protocol selector. The values must satisfy `formatProxyUri` so the URL
-// field stays regenerable on every keystroke.
+// Per-kind seeds: switching kinds preserves transport coordinates and
+// resets every kind-specific field. Each branch returns a fully-typed
+// ProxyConfig.
 
 import type {
   HttpProxyConfig,
@@ -37,23 +37,6 @@ export const FORM_KIND_LABELS: Record<FormKind, string> = {
   'reality': 'VLESS / REALITY',
 };
 
-const portFor = (kind: FormKind, current: number): number => {
-  if (current > 0) return current;
-  switch (kind) {
-  case 'http': return 8080;
-  case 'https':
-  case 'trojan':
-  case 'vless-tcp':
-  case 'vless-ws':
-  case 'reality':
-    return 443;
-  case 'socks5': return 1080;
-  case 'ss':
-  case 'ss2022':
-    return 8388;
-  }
-};
-
 // Switching protocols preserves transport coordinates (host, port, name)
 // and resets every kind-specific field. Any port the operator already
 // typed carries over verbatim — clobbering it would surprise someone who
@@ -63,7 +46,24 @@ export const defaultsFor = (
   kind: FormKind,
   ctx: { host: string; port: number; name: string },
 ): ProxyConfig => {
-  const base = { host: ctx.host, port: portFor(kind, ctx.port), name: ctx.name };
+  const port = ctx.port > 0
+    ? ctx.port
+    : (() => {
+      switch (kind) {
+      case 'http': return 8080;
+      case 'https':
+      case 'trojan':
+      case 'vless-tcp':
+      case 'vless-ws':
+      case 'reality':
+        return 443;
+      case 'socks5': return 1080;
+      case 'ss':
+      case 'ss2022':
+        return 8388;
+      }
+    })();
+  const base = { host: ctx.host, port, name: ctx.name };
   switch (kind) {
   case 'http': {
     const c: HttpProxyConfig = { kind: 'http', tls: false, ...base };

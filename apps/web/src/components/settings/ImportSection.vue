@@ -19,7 +19,7 @@ interface ExportPayload {
 }
 
 // The dashboard only round-trips the current export format. Older exports are
-// rejected here (and by the backend) rather than silently coerced.
+// rejected rather than silently coerced.
 const EXPORT_VERSION = 6 as const;
 
 const api = useApi();

@@ -30,7 +30,6 @@ defineProps<{
   fetchLoading: boolean;
   fetchError: string | null;
   fetchStatus: string | null;
-  // Catalog suggestions for the disabled-models combobox.
   availableModelItems: { value: string; label: string }[];
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;

@@ -9,10 +9,9 @@ import { useProxiesStore } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 
 // Pre-fetch the provider-specific model list (and Copilot's premium quota)
-// during route resolution so the editor mounts with its right pane and
-// account card already populated. Without this the page would render with
-// empty bodies for a frame and then flicker once the onMount fetches
-// resolved.
+// during route resolution so the editor mounts already populated; without
+// this the page renders with empty bodies for a frame and flickers once
+// the in-component fetch resolves.
 export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]', async route => {
   const api = useApi();
   const store = useUpstreamsStore();

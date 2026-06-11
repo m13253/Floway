@@ -48,8 +48,8 @@ const proxiesStore = useProxiesStore();
 const { load: loadProxies } = proxiesStore;
 const settingsData = useSettingsPageData();
 
-// Local working copy that the child reorders via v-model:ordered; reloadAll
-// re-syncs from the store after a successful PATCH.
+// Local working copy the child reorders via v-model:ordered; reloadAll
+// re-syncs from the store after the child reports a change.
 const ordered = ref<UpstreamRecord[]>([]);
 watch(upstreams, list => {
   ordered.value = list ? [...list] : [];

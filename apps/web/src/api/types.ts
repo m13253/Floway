@@ -159,8 +159,7 @@ export interface FlagDef {
 export type { SerializedProxyRecord as ProxyRecord, SerializedBackoffRow as BackoffRow } from '@floway-dev/gateway/control-plane/proxies/serialize';
 
 // 409 body returned by DELETE /api/proxies/:id when the row is referenced
-// by an upstream's fallback list. Centralised here so each call site uses
-// the same shape instead of an inline cast.
+// by an upstream's fallback list.
 export interface ProxyConflictBody {
   error: string;
   referencing_upstream_ids?: string[];

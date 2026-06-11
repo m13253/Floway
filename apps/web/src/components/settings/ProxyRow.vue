@@ -16,7 +16,6 @@ defineEmits<{
 // Amber is reserved for backoff/warning everywhere in the dashboard, so no proxy-kind label uses it.
 const kindBadgeClass = (kind: string) => {
   switch (kind) {
-  case 'HTTP': return 'border-white/10 bg-white/5 text-gray-400';
   case 'HTTPS':
   case 'VLESS':
   case 'VLESS-WS': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
