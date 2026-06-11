@@ -166,7 +166,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   // Schema validated shape; this catches Azure-specific URL / endpoint-mix
   // rules and Custom-specific path-override URL parsing that live in the
-  // shared/upstream/* assertion helpers.
+  // per-provider assertCustomUpstreamRecord / assertAzureUpstreamRecord
+  // helpers.
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 
@@ -226,7 +227,7 @@ export const deleteUpstream = async (c: Context) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams (see migration 0029), so the cleanup is unconditional.
+  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams, so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForUpstream(id);
   await invalidateModelsStore(id);
   return c.json({ ok: true });
@@ -293,8 +294,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
 
 // List the resolved model catalog of a SAVED upstream (any provider). A
 // read-only view for the dashboard — Copilot's catalog in particular is fixed
-// by the upstream and the operator cannot edit it. Upstream listing failures
-// surface as 502, matching the control-plane /models convention.
+// by the upstream and the operator cannot edit it.
 export const listUpstreamModels = async (c: Context) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
