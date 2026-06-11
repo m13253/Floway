@@ -399,33 +399,15 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
   }
 };
 
-const CODEX_PKCE_PENDING_PREFIX = 'codex_oauth_pending:';
 // 5 minutes mirrors auth.openai.com's authorization-code lifetime. A stale
-// pending state is harmless to leave (cache evicts it) but cannot be used
-// for token exchange anyway.
+// pending state cannot be used for token exchange and is swept by the
+// scheduled maintenance job.
 const CODEX_PKCE_TTL_MS = 5 * 60 * 1000;
-
-const parseCodexPkcePendingEntry = (raw: string): string => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`Codex PKCE pending entry is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('Codex PKCE pending entry is not a JSON object');
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.verifier !== 'string' || obj.verifier === '') {
-    throw new Error('Codex PKCE pending entry is missing a non-empty `verifier`');
-  }
-  return obj.verifier;
-};
 
 export const codexPkceStart = async (c: CtxWithJson<typeof codexPkceStartBody>) => {
   const { verifier, challenge } = await generateCodexPkce();
   const state = crypto.randomUUID().replace(/-/g, '');
-  await getRepo().cache.set(`${CODEX_PKCE_PENDING_PREFIX}${state}`, JSON.stringify({ verifier }), CODEX_PKCE_TTL_MS);
+  await getRepo().codexPkcePending.put(state, verifier, Date.now() + CODEX_PKCE_TTL_MS);
 
   const url = new URL(CODEX_AUTHORIZE_URL);
   url.searchParams.set('response_type', 'code');
@@ -473,16 +455,13 @@ const ingestCodexCredential = async (
     if (!code || !state) {
       return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
     }
-    const cacheKey = `${CODEX_PKCE_PENDING_PREFIX}${state}`;
-    const pendingRaw = await getRepo().cache.get(cacheKey);
-    if (!pendingRaw) {
+    // Atomic single-use DELETE+RETURNING — a replayed callback for the same
+    // state cannot succeed twice, and rows past their TTL are filtered out.
+    const pending = await getRepo().codexPkcePending.consume(state);
+    if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const verifier = parseCodexPkcePendingEntry(pendingRaw);
-    const out = await importCodexFromCallback({ code, codeVerifier: verifier });
-    // Consume the cached PKCE entry so the same state cannot be replayed;
-    // cache eviction handles the timeout case (it's idempotent).
-    await getRepo().cache.delete(cacheKey);
+    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

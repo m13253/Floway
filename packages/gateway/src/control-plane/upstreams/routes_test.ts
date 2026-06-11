@@ -448,10 +448,77 @@ test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes 
   assertEquals(body.authorize_url.startsWith('https://auth.openai.com/oauth/authorize?'), true);
   assertEquals(body.expires_in_seconds, 300);
 
-  const stashed = await repo.cache.get(`codex_oauth_pending:${body.state}`);
-  assertEquals(typeof stashed, 'string');
-  const parsed = JSON.parse(stashed!) as { verifier: string; created_at: string };
-  assertEquals(typeof parsed.verifier, 'string');
+  const stashed = await repo.codexPkcePending.consume(body.state);
+  assertEquals(stashed !== null, true);
+  assertEquals(typeof stashed!.verifier, 'string');
+});
+
+test('POST /api/upstreams/codex-import (callback) consumes the PKCE state and returns the verifier exchange result', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  await withMockedFetch(
+    () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/codex-import',
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
+      assertEquals(created.provider, 'codex');
+      assertEquals(created.state.accounts[0].refresh_token_set, true);
+    },
+  );
+
+  // Single-use: consume() removed the row, so a follow-up consume returns null.
+  const replay = await repo.codexPkcePending.consume(state);
+  assertEquals(replay, null);
+});
+
+test('POST /api/upstreams/codex-import rejects a replayed PKCE callback', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  await withMockedFetch(
+    () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
+    async () => {
+      const first = await requestApp(
+        '/api/upstreams/codex-import',
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(first.status, 201);
+
+      const replay = await requestApp(
+        '/api/upstreams/codex-import',
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(replay.status, 400);
+      const body = (await replay.json()) as { error: string };
+      assertEquals(body.error.includes('PKCE state not found or expired'), true);
+    },
+  );
+});
+
+test('POST /api/upstreams/codex-import rejects an expired PKCE state', async () => {
+  const { repo, adminSession } = await setupAppTest();
+
+  // Plant a pending row that has already expired so the consume() filter drops it.
+  const expiredState = 'expired_state';
+  await repo.codexPkcePending.put(expiredState, 'verifier_x', Date.now() - 1000);
+
+  const resp = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state: expiredState } }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('PKCE state not found or expired'), true);
 });
 
 test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with state', async () => {
