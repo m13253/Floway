@@ -2,11 +2,13 @@ import type { Context } from 'hono';
 import type { z } from 'zod';
 
 import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
@@ -92,6 +94,21 @@ const newId = (): string => shortId('up');
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
 
+// Synchronously populate the SWR models cache for a freshly-saved upstream
+// so the dashboard's next navigation lands on a populated row. Failures do
+// not block the import response — the cache layer's runFetch persists
+// `lastError` on the row, which the dashboard surfaces separately.
+const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
+  const scheduler = backgroundSchedulerFromContext(c);
+  try {
+    const instance = await createProviderInstance(record);
+    const fetcher = (await createPerRequestFetcher())(record.id);
+    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+  } catch (err) {
+    console.warn(`Failed to warm models cache for ${record.id}:`, err);
+  }
+};
+
 // 'direct' is always valid; any other entry must reference an existing
 // proxy row. List order matters at dial time (see createFetcher),
 // and persistence layers dedupe via normalizeProxyFallbackList before
@@ -174,6 +191,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
   await invalidateModelsStore(record.id);
+  await warmModelsCache(record, c);
   return c.json(await serializeForResponse(record), 201);
 };
 
@@ -219,6 +237,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
 
   await getRepo().upstreams.save(next);
   await invalidateModelsStore(next.id);
+  await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };
 
@@ -233,27 +252,21 @@ export const deleteUpstream = async (c: Context) => {
   return c.json({ ok: true });
 };
 
-// Browse the live `/models` list of a DRAFT (possibly unsaved) custom
-// upstream so the editor can pick models before saving. Edit mode leaves the
-// bearerToken field blank to mean "keep the stored secret"; when blank and an
-// `id` is given, the stored record's secret is substituted. A brand-new draft
-// must carry its own token — when none is available the assert rejects the
-// empty bearerToken as a 400, and a genuine upstream call would 401 anyway.
+// Browse the live `/models` list of a DRAFT (unsaved) custom upstream so
+// the editor can pick models before saving. Saved upstreams use
+// GET /api/upstreams/:id/models?refresh=true instead, which routes through
+// the SWR cache.
 export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   const { id, config } = c.req.valid('json');
-
-  let bearerToken = config.bearerToken ?? '';
-  if (bearerToken.trim() === '' && id !== undefined) {
-    const existing = await getRepo().upstreams.getById(id);
-    if (existing) {
-      const stored = assertCustomUpstreamRecord(existing);
-      bearerToken = stored.config.bearerToken;
-    }
+  if (id !== undefined) {
+    return c.json({
+      error: { message: 'use GET /api/upstreams/:id/models?refresh=true for saved upstreams', type: 'invalid_request_error' },
+    }, 400);
   }
 
   const now = new Date().toISOString();
   const record: UpstreamRecord = {
-    id: id ?? newId(),
+    id: newId(),
     provider: 'custom',
     name: 'Draft custom upstream',
     enabled: true,
@@ -263,7 +276,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
-    config: { ...config, bearerToken },
+    config,
     state: null,
   };
 
@@ -275,12 +288,8 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   }
 
   try {
-    // Edit mode (`id` present) routes the upstream's catalog GET through the
-    // per-request proxy fallback chain so the dashboard's Refresh button hits
-    // the same egress path as the data plane; a brand-new draft has no saved
-    // row yet, so it falls back to direct.
-    const fetcher = id === undefined ? directFetcher : (await createPerRequestFetcher())(id);
-    const result = await fetchCustomModels(assertedConfig, fetcher);
+    // A brand-new draft has no saved row yet, so the catalog GET dials direct.
+    const result = await fetchCustomModels(assertedConfig, directFetcher);
     return c.json(result);
   } catch (e) {
     // Mirror the control-plane /models convention: squash genuine upstream
@@ -294,17 +303,21 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
 
 // List the resolved model catalog of a SAVED upstream (any provider). A
 // read-only view for the dashboard — Copilot's catalog in particular is fixed
-// by the upstream and the operator cannot edit it.
+// by the upstream and the operator cannot edit it. Routes through the SWR
+// models cache; `?refresh=true` forces a fresh upstream fetch.
 export const listUpstreamModels = async (c: Context) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
 
+  const refresh = c.req.query('refresh') === 'true';
+  const scheduler = backgroundSchedulerFromContext(c);
+  const fetcher = (await createPerRequestFetcher())(record.id);
+
   try {
-    const fetcherForUpstream = await createPerRequestFetcher();
     const instance = await createProviderInstance(record);
-    const models = await instance.provider.getProvidedModels(fetcherForUpstream(record.id));
+    const models = await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: refresh });
     const data = models.map(model => ({
       upstreamModelId: model.id,
       publicModelId: model.id,

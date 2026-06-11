@@ -94,10 +94,19 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
-
-  assertEquals(resp.status, 201);
-  const created = (await resp.json()) as Record<string, any>;
+  // Stub every outbound request: the post-save warm tries to mint a Copilot
+  // token + fetch the model catalog, neither of which the test cares about.
+  // 403 is the terminal status the Copilot auth retry loop short-circuits on,
+  // so the warm fails fast instead of burning ~7s of exponential backoff.
+  const created = await withMockedFetch(
+    () => jsonResponse({ error: 'forbidden' }, 403),
+    async () => {
+      const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
+      assertEquals(resp.status, 201);
+      const body = (await resp.json()) as Record<string, any>;
+      return body;
+    },
+  );
   assertEquals(created.provider, 'copilot');
   assertEquals(created.config.githubToken, undefined);
   assertEquals(created.config.githubTokenSet, true);
@@ -128,30 +137,49 @@ test('PATCH /api/upstreams rejects provider changes and preserves the row', asyn
   assertEquals((await repo.upstreams.getById(created.id))?.provider, 'custom');
 });
 
-test('PATCH /api/upstreams preserves omitted secrets and invalidates model cache', async () => {
+test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cache', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
-  await repo.cache.set(`models_store:${created.id}`, 'stale');
-
-  const patch = await requestApp(`/api/upstreams/${created.id}`, {
-    method: 'PATCH',
-    headers: {
-      'content-type': 'application/json',
-      'x-floway-session': adminSession,
-    },
-    body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
+  // Plant a stale row so the post-PATCH read can verify the warm overwrote
+  // it with the new upstream-supplied catalog rather than leaving the old
+  // models in place.
+  await repo.modelsCache.put(created.id, {
+    fetchedAt: 1,
+    models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
 
-  assertEquals(patch.status, 200);
-  const updated = (await patch.json()) as Record<string, any>;
-  assertEquals(updated.config.bearerTokenSet, true);
-  const stored = await repo.upstreams.getById(created.id);
-  assertEquals((stored?.config as Record<string, unknown>).bearerToken, 'sk-test');
-  assertEquals((stored?.config as Record<string, unknown>).endpoints, { responses: {} });
-  assertEquals(await repo.cache.get(`models_store:${created.id}`), null);
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'fresh-model' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const patch = await requestApp(`/api/upstreams/${created.id}`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'x-floway-session': adminSession,
+        },
+        body: JSON.stringify({ config: { endpoints: { responses: {} } } }),
+      });
+      assertEquals(patch.status, 200);
+    },
+  );
+
+  const updated = await repo.upstreams.getById(created.id);
+  assertEquals((updated?.config as Record<string, unknown>).bearerToken, 'sk-test');
+  assertEquals((updated?.config as Record<string, unknown>).endpoints, { responses: {} });
+
+  const cached = await repo.modelsCache.get(created.id);
+  assertEquals(cached?.models.map(m => m.id), ['fresh-model']);
+  // The stale fetchedAt sentinel was overwritten by the warm.
+  assertEquals((cached?.fetchedAt ?? 0) > 1, true);
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
@@ -272,13 +300,9 @@ test('POST /api/upstreams/fetch-models fetches a draft custom upstream model lis
   );
 });
 
-test('POST /api/upstreams/fetch-models substitutes the stored secret when the token is blank', async () => {
+test('POST /api/upstreams/fetch-models rejects calls that supply a saved upstream id', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // Seed a record whose secret differs from the draft fixture so the outgoing
-  // header can only carry it when the stored secret is actually loaded — a
-  // matching token would not distinguish substitution from leakage of the
-  // draft's own (blank) field.
   await repo.upstreams.save({
     id: 'up_stored_secret',
     provider: 'custom',
@@ -294,27 +318,16 @@ test('POST /api/upstreams/fetch-models substitutes the stored secret when the to
     state: null,
   });
 
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-        // The blank bearerToken in the draft must fall back to the stored
-        // record's secret rather than fetching unauthenticated.
-        assertEquals(request.headers.get('authorization'), 'Bearer sk-stored-secret');
-        return jsonResponse({ object: 'list', data: [{ id: 'kept-secret-model' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resp = await requestApp(
-        '/api/upstreams/fetch-models',
-        authed(adminSession, { id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
-      );
-      assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
-      assertEquals(body.data.map(m => m.id), ['kept-secret-model']);
-    },
+  // Saved upstreams must go through GET /api/upstreams/:id/models?refresh=true
+  // (the SWR-cached path); fetch-models stays draft-only.
+  const resp = await requestApp(
+    '/api/upstreams/fetch-models',
+    authed(adminSession, { id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
   );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: { message: string; type: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assertEquals(body.error.message.includes('refresh=true'), true);
 });
 
 test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures as 502', async () => {
@@ -348,43 +361,57 @@ test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400
   assertEquals(body.error.includes('bearerToken'), true);
 });
 
-test('POST /api/upstreams/fetch-models routes through the saved upstream\'s proxy fallback list when an id is supplied', async () => {
+test('GET /api/upstreams/:id/models?refresh=true forces a fresh upstream fetch', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  // A malformed proxy URL surfaces from the per-request fetcher as a dial-time
-  // error keyed on the upstream id. directFetcher would have ignored the list
-  // entirely and the catalog GET would succeed — so a 502 here proves the
-  // route built and used the per-upstream fetcher.
-  await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
   await repo.upstreams.save({
-    id: 'up_with_bad_proxy',
+    id: 'up_refresh',
     provider: 'custom',
-    name: 'Custom with bad proxy',
+    name: 'Refresh Custom',
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-05-22T00:00:00.000Z',
     updatedAt: '2026-05-22T00:00:00.000Z',
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: ['p_bad'],
-    config: { ...customConfig, bearerToken: 'sk-stored' },
+    proxyFallbackList: [],
+    config: { ...customConfig, bearerToken: 'sk-refresh' },
     state: null,
   });
+  // SOFT-fresh row: without ?refresh=true the cache returns it verbatim.
+  await repo.modelsCache.put('up_refresh', {
+    fetchedAt: Date.now(),
+    models: [{ id: 'cached-model', kind: 'chat', endpoints: { chatCompletions: {} }, enabledFlags: new Set(), limits: {} }],
+  });
 
+  let upstreamCalls = 0;
   await withMockedFetch(
     async request => {
-      // Reached only if the route fell back to directFetcher — failing here
-      // pins the regression rather than letting it slip past as a 200.
-      throw new Error(`unexpected direct fetch in proxy-fallback path: ${request.url}`);
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        upstreamCalls += 1;
+        return jsonResponse({ object: 'list', data: [{ id: 'fresh-model' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp(
-        '/api/upstreams/fetch-models',
-        authed(adminSession, { id: 'up_with_bad_proxy', config: { ...customConfig, bearerToken: '' } }),
-      );
-      assertEquals(resp.status, 502);
+      const cached = await requestApp('/api/upstreams/up_refresh/models', { headers: { 'x-floway-session': adminSession } });
+      assertEquals(cached.status, 200);
+      const cachedBody = (await cached.json()) as { data: Array<{ upstreamModelId: string }> };
+      assertEquals(cachedBody.data.map(m => m.upstreamModelId), ['cached-model']);
+      assertEquals(upstreamCalls, 0);
+
+      const refreshed = await requestApp('/api/upstreams/up_refresh/models?refresh=true', { headers: { 'x-floway-session': adminSession } });
+      assertEquals(refreshed.status, 200);
+      const refreshedBody = (await refreshed.json()) as { data: Array<{ upstreamModelId: string }> };
+      assertEquals(refreshedBody.data.map(m => m.upstreamModelId), ['fresh-model']);
+      assertEquals(upstreamCalls, 1);
     },
   );
+
+  // The forced refresh persisted the new row.
+  const stored = await repo.modelsCache.get('up_refresh');
+  assertEquals(stored?.models.map(m => m.id), ['fresh-model']);
 });
 
 test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s for an unknown id', async () => {
@@ -401,6 +428,81 @@ test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s f
 
   const missing = await requestApp('/api/upstreams/nope/models', { headers: { 'x-floway-session': adminSession } });
   assertEquals(missing.status, 404);
+});
+
+test('POST /api/upstreams warms the models cache before responding', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-create' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+      assertEquals(resp.status, 201);
+      return (await resp.json()) as { id: string };
+    },
+  );
+
+  const cached = await repo.modelsCache.get(created.id);
+  assertEquals(cached?.models.map(m => m.id), ['warmed-on-create']);
+});
+
+test('PATCH /api/upstreams warms the models cache before responding', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+  const created = (await create.json()) as { id: string };
+  // Drop whatever the create-time warm landed on disk so the PATCH-time warm
+  // is the only writer in this test's window.
+  await repo.modelsCache.delete(created.id);
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'warmed-on-update' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const patch = await requestApp(`/api/upstreams/${created.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+        body: JSON.stringify({ name: 'Renamed' }),
+      });
+      assertEquals(patch.status, 200);
+    },
+  );
+
+  const cached = await repo.modelsCache.get(created.id);
+  assertEquals(cached?.models.map(m => m.id), ['warmed-on-update']);
+});
+
+test('POST /api/upstreams/fetch-models without an id still serves draft preview', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'draft-only' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
+      assertEquals(body.data.map(m => m.id), ['draft-only']);
+    },
+  );
 });
 
 // --- Codex routes ---
