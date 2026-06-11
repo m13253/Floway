@@ -405,6 +405,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
     await clearCopilotTokenCache();
     clearModelsStore();
     await invalidateModelsStore(record.id);
+    await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -507,6 +508,7 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   };
   await getRepo().upstreams.save(upstream);
   await invalidateModelsStore(upstream.id);
+  await warmModelsCache(upstream, c);
   return c.json(await serializeForResponse(upstream), 201);
 };
 
@@ -530,6 +532,7 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   };
   await getRepo().upstreams.save(next);
   await invalidateModelsStore(id);
+  await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };
 
