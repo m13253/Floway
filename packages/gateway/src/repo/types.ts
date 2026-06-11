@@ -1,7 +1,7 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -173,6 +173,25 @@ export interface CacheRepo {
   deletePrefix(prefix: string): Promise<void>;
 }
 
+export interface CachedModelsRow {
+  fetchedAt: number;
+  models: UpstreamModel[];
+  lastError: { message: string; at: number } | null;
+}
+
+export interface ModelsCacheRepo {
+  get(upstreamId: string): Promise<CachedModelsRow | null>;
+  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void>;
+  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
+  delete(upstreamId: string): Promise<void>;
+}
+
+export interface CodexPkcePendingRepo {
+  put(state: string, verifier: string, expiresAt: number): Promise<void>;
+  consume(state: string): Promise<{ verifier: string } | null>;
+  sweepExpired(now: number): Promise<void>;
+}
+
 export interface SearchConfigRepo {
   get(): Promise<unknown | null>;
   save(config: unknown): Promise<void>;
@@ -303,6 +322,8 @@ export interface Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
+  modelsCache: ModelsCacheRepo;
+  codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

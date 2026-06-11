@@ -12,7 +12,10 @@ import type {
   ApiKey,
   ApiKeyRepo,
   BackoffRow,
+  CachedModelsRow,
   CacheRepo,
+  CodexPkcePendingRepo,
+  ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -42,7 +45,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: 1,
@@ -500,6 +503,19 @@ class MemoryCacheRepo implements CacheRepo {
   }
 }
 
+class MemoryModelsCacheRepo implements ModelsCacheRepo {
+  get(_id: string): Promise<CachedModelsRow | null> { throw new Error('not implemented'); }
+  put(_id: string, _row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> { throw new Error('not implemented'); }
+  setLastError(_id: string, _error: { message: string; at: number } | null): Promise<void> { throw new Error('not implemented'); }
+  delete(_id: string): Promise<void> { throw new Error('not implemented'); }
+}
+
+class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {
+  put(_state: string, _verifier: string, _expiresAt: number): Promise<void> { throw new Error('not implemented'); }
+  consume(_state: string): Promise<{ verifier: string } | null> { throw new Error('not implemented'); }
+  sweepExpired(_now: number): Promise<void> { throw new Error('not implemented'); }
+}
+
 class MemorySearchConfigRepo implements SearchConfigRepo {
   private config: unknown | null = null;
 
@@ -889,6 +905,8 @@ export class InMemoryRepo implements Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
+  modelsCache: ModelsCacheRepo;
+  codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -904,6 +922,8 @@ export class InMemoryRepo implements Repo {
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.cache = new MemoryCacheRepo();
+    this.modelsCache = new MemoryModelsCacheRepo();
+    this.codexPkcePending = new MemoryCodexPkcePendingRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

@@ -6,7 +6,10 @@ import type {
   ApiKey,
   ApiKeyRepo,
   BackoffRow,
+  CachedModelsRow,
   CacheRepo,
+  CodexPkcePendingRepo,
+  ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -38,7 +41,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const SEARCH_CONFIG_KEY = 'search_config';
 
@@ -852,6 +855,21 @@ class SqlCacheRepo implements CacheRepo {
   }
 }
 
+class SqlModelsCacheRepo implements ModelsCacheRepo {
+  constructor(_db: SqlDatabase) {}
+  get(_id: string): Promise<CachedModelsRow | null> { throw new Error('not implemented'); }
+  put(_id: string, _row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> { throw new Error('not implemented'); }
+  setLastError(_id: string, _error: { message: string; at: number } | null): Promise<void> { throw new Error('not implemented'); }
+  delete(_id: string): Promise<void> { throw new Error('not implemented'); }
+}
+
+class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
+  constructor(_db: SqlDatabase) {}
+  put(_state: string, _verifier: string, _expiresAt: number): Promise<void> { throw new Error('not implemented'); }
+  consume(_state: string): Promise<{ verifier: string } | null> { throw new Error('not implemented'); }
+  sweepExpired(_now: number): Promise<void> { throw new Error('not implemented'); }
+}
+
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
 const RESPONSES_ITEM_ID_SCOPE_SQL = "COALESCE(api_key_id, '') = COALESCE(?, '')";
 
@@ -1509,6 +1527,8 @@ export class SqlRepo implements Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
+  modelsCache: ModelsCacheRepo;
+  codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1524,6 +1544,8 @@ export class SqlRepo implements Repo {
     this.searchUsage = new SqlSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
     this.cache = new SqlCacheRepo(db);
+    this.modelsCache = new SqlModelsCacheRepo(db);
+    this.codexPkcePending = new SqlCodexPkcePendingRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
