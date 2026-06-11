@@ -6,16 +6,8 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { mergeAnthropicBetaHeader, publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
-interface CustomModelsBlob {
-  response: CustomModelsResponse;
-  fetchedAt: number;
-}
-
-const SOFT_MS = 10 * 60 * 1000;
-const HARD_MS = 2 * 60 * 60 * 1000;
-const L1_TTL_MS = 120_000;
 const rawModelIdOf = (model: UpstreamModel): string => model.providerData as string;
 
 const customInternalModel = (model: CustomRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
@@ -164,31 +156,11 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   };
 
   const provider: ModelProvider = {
-    getProvidedModels: fetcher => {
-      if (!config.modelsFetch.enabled) {
-        // No live fetch and no store read — manual models are the whole list.
-        return Promise.resolve(manualModels);
-      }
-      return inProcessMemo(record.id, L1_TTL_MS, async () => {
-        const stored = await readModelsStore<CustomModelsBlob>(record.id);
-        const now = Date.now();
-        if (stored && now - stored.fetchedAt < SOFT_MS) {
-          rememberPricing(stored.response);
-          return withManual(autoFromResponse(stored.response));
-        }
-        try {
-          const response = await fetchCustomModels(config, fetcher);
-          await writeModelsStore<CustomModelsBlob>(record.id, { response, fetchedAt: now });
-          rememberPricing(response);
-          return withManual(autoFromResponse(response));
-        } catch (err) {
-          if (stored && now - stored.fetchedAt < HARD_MS && isProviderModelsHttpStatus(err, 429)) {
-            rememberPricing(stored.response);
-            return withManual(autoFromResponse(stored.response));
-          }
-          throw err;
-        }
-      });
+    getProvidedModels: async fetcher => {
+      if (!config.modelsFetch.enabled) return manualModels;
+      const response = await fetchCustomModels(config, fetcher);
+      rememberPricing(response);
+      return withManual(autoFromResponse(response));
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callChatCompletions: (model, body, signal, headers, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headers, parseChatCompletionsStream, opts),
