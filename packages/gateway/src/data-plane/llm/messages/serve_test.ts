@@ -11,8 +11,6 @@ import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocol
 import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-// Mock the candidates seam so each test hands the serve exactly the
-// provider candidates it wants.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
@@ -200,8 +198,6 @@ test('generate translates through the Responses target when only that endpoint i
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // Drain to materialize the translated events; the test passes as long as the
-  // translate trip composes without throwing and the provider was called.
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
 });
@@ -249,8 +245,6 @@ test('generate is a routing no-op when the payload carries no reasoning carriers
   ]);
 
   const result = await messagesServe.generate({
-    // A bare user message: no reasoning blocks → affinity walk finds no
-    // refs → both candidates surface in the original order.
     payload: makePayload({ messages: [{ role: 'user', content: 'hi' }] }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),

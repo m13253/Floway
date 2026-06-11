@@ -36,11 +36,6 @@ export interface CallCodexResponsesOptions {
   headers: Record<string, string>;
   signal?: AbortSignal;
   effects: CodexCallEffects;
-  // Per-call options; see UpstreamCallOptions for the fetcher /
-  // recordUpstreamLatency contract. The recorder is threaded into the
-  // /responses fetcher's per-attempt wrap; the OAuth refresh hop calls the
-  // fetcher unwrapped because it is the gateway's own auth maintenance,
-  // not part of the user's upstream round-trip.
   call: UpstreamCallOptions;
 }
 
@@ -82,10 +77,6 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
   return await performUpstreamCall(opts, accessToken, false);
 };
 
-// Mints a fresh access token for this call's upstream — thin wrapper that
-// pins the per-call fetcher and the caller's refresh-token CAS hook.
-// `mintCodexAccessToken` (in ./access-token-cache.ts) carries the OAuth
-// round-trip and the rotation-persistence semantics; see that helper's doc.
 const mintAccessToken = (opts: CallCodexResponsesOptions, refreshToken: string) =>
   mintCodexAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
 

@@ -72,11 +72,9 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<vo
   }));
 };
 
-// Defensive JSON parse: a successful 200 with a non-JSON or unexpected body
-// (rare for these endpoints, but possible if an upstream-side proxy starts
-// returning binary or a wrapped envelope) must not 502 the client; we
-// simply skip usage extraction in that case, but log the parse failure so
-// operators can correlate when usage rows go missing.
+// A 2xx body that fails to parse must not 502 a client whose upstream call
+// already succeeded; we skip usage extraction and log so missing rows stay
+// traceable.
 const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Promise<unknown> => {
   try {
     return await resp.clone().json();

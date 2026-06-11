@@ -494,13 +494,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const path = url.pathname;
       bodies[path] = (await request.json()) as Record<string, unknown>;
 
-      if (path === '/chat/completions') {
-        return sseResponse();
-      }
-      if (path === '/responses') {
-        return sseResponse();
-      }
-      if (path === '/v1/messages') {
+      if (['/chat/completions', '/responses', '/v1/messages'].includes(path)) {
         return sseResponse();
       }
       if (path === '/v1/messages/count_tokens') {
@@ -865,7 +859,6 @@ test('Copilot provider swallows a saveState throw so a transient persistence hic
   );
 });
 
-// Pin the round-trip so a stricter reader cannot silently drop a token.
 test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {
   const seeded: CopilotUpstreamState = {
     knownModels: mergeKnownModels(

@@ -1,6 +1,5 @@
 import type { ImageCacheStore, SqlDatabase } from '@floway-dev/platform';
 
-// BLOB binding shape (Uint8Array) is the underlying node:sqlite driver's responsibility.
 export class SqliteImageCache implements ImageCacheStore {
   constructor(private readonly db: SqlDatabase) {}
 

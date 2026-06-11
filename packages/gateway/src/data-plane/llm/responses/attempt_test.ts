@@ -174,7 +174,6 @@ test('generate native success wraps the upstream event stream once', async () =>
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
 
-  // Drain so the wrapped pipeline runs and storage callbacks fire.
   const events = await collectEvents(result.events);
   assert(events.length >= 1, 'expected at least the response.completed event');
 
@@ -199,9 +198,6 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
   candidate.binding.supportsResponsesItemReference = false;
 
   const missingId = createStoredResponsesItemId('message');
-  // Pre-seed the store cache: a row with no inline payload, referenced as
-  // `item_reference`. The store will resolve the id, and rewrite will throw
-  // because the candidate cannot accept `item_reference`.
   const store = createResponsesHttpStore(API_KEY_ID, true);
   const repo = installRepo();
   await insertStoredItem(repo, { id: missingId, itemType: 'message', payload: null });
@@ -392,8 +388,7 @@ test('generate seeds store.privatePayload from rewrite references so cross-turn 
     },
   });
 
-  // Echo the stored item in the input — this is what a follow-up turn from a
-  // stateless client looks like.
+  // A stateless follow-up turn echoes the stored item back in the input.
   const completedEvent: ResponsesStreamEvent = {
     type: 'response.completed',
     sequence_number: 0,

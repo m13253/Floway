@@ -19,9 +19,6 @@ export const createSharpImageProcessor = (): ImageProcessor => ({
     if (hit) return hit;
 
     let pipeline = sharp(input);
-    // `fit: 'inside'` already implies never-enlarge; the `withoutEnlargement`
-    // flag is redundant but the sharp docs recommend stating it explicitly
-    // so the intent is unambiguous when reading the call site.
     if (target) pipeline = pipeline.resize({ width: target.width, height: target.height, fit: 'inside', withoutEnlargement: true });
     const output = new Uint8Array(await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer());
 

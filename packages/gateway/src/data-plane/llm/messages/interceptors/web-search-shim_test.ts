@@ -132,21 +132,27 @@ const activeMessagesWebSearchShimState = (overrides: Partial<Extract<MessagesWeb
   ...overrides,
 });
 
-const fakeProviderOk: WebSearchProvider = {
-  search: () =>
-    Promise.resolve({
-      type: 'ok',
-      results: [
-        {
-          source: 'https://react.dev',
-          title: 'React',
-          pageAge: '2026-04-01',
-          content: [{ type: 'text', text: 'Official React docs' }],
-        },
-      ],
-    }),
-  fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-};
+const unusedFetchPage: WebSearchProvider['fetchPage'] = () =>
+  Promise.reject(new Error('fetchPage should not be called from messages shim test'));
+
+const searchOnlyProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({
+  search,
+  fetchPage: unusedFetchPage,
+});
+
+const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
+  Promise.resolve({
+    type: 'ok',
+    results: [
+      {
+        source: 'https://react.dev',
+        title: 'React',
+        pageAge: '2026-04-01',
+        content: [{ type: 'text', text: 'Official React docs' }],
+      },
+    ],
+  }),
+);
 
 const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') => ({
   providerName: 'tavily' as const,
@@ -155,10 +161,8 @@ const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') 
 });
 
 const fakeProviderError =
-  (errorCode: Extract<WebSearchProviderResult, { type: 'error' }>['errorCode']): WebSearchProvider => ({
-    search: () => Promise.resolve({ type: 'error', errorCode }),
-    fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-  });
+  (errorCode: Extract<WebSearchProviderResult, { type: 'error' }>['errorCode']): WebSearchProvider =>
+    searchOnlyProvider(() => Promise.resolve({ type: 'error', errorCode }));
 
 const toAsyncIterable = async function* <T>(values: Iterable<T>): AsyncGenerator<T> {
   for (const value of values) {
@@ -840,13 +844,10 @@ test('rewriteMessagesWebSearchEventsToNative renumbers indices across two interc
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
@@ -876,14 +877,11 @@ test('rewriteMessagesWebSearchEventsToNative surfaces unavailable when provider 
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ priorSearchUseCount: 0 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        if (providerCalls === 2) return Promise.reject(new Error('boom'));
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      if (providerCalls === 2) return Promise.reject(new Error('boom'));
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
@@ -920,13 +918,10 @@ test('rewriteMessagesWebSearchEventsToNative emits max_uses_exceeded once limit 
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ maxUses: 1 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 1);
@@ -947,13 +942,10 @@ test('rewriteMessagesWebSearchEventsToNative honours priorSearchUseCount when co
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ priorSearchUseCount: 1, maxUses: 2 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 1);
@@ -968,13 +960,10 @@ test('rewriteMessagesWebSearchEventsToNative routes blank query to invalid_tool_
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);
@@ -991,13 +980,10 @@ test('rewriteMessagesWebSearchEventsToNative routes oversized query to query_too
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);
@@ -1014,13 +1000,10 @@ test('rewriteMessagesWebSearchEventsToNative routes malformed input json to inva
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);

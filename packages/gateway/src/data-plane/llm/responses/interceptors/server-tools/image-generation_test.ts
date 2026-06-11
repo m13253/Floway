@@ -196,7 +196,7 @@ test('prepareImageGenerationConfig decodes an inline mask once but rejects a fil
   assert(ok.ok);
   assert(ok.config.mask !== undefined);
   assertEquals(ok.config.mask.mimeType, 'image/png');
-  assertEquals(ok.config.mask.bytes.byteLength, 5); // "hello"
+  assertEquals(ok.config.mask.bytes.byteLength, 5);
 
   const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponsesTool]);
   assert(!fileId.ok);
@@ -543,7 +543,6 @@ test('image dispatch budget caps real backend calls per response, not ReAct turn
   const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 
-  // The slot generators are not run here, so no backend is hit.
   for (let i = 0; i < 10; i++) {
     const slots = dispatch({ intercepted, loopState });
     assertEquals(slots.length, 1);

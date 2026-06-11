@@ -82,7 +82,7 @@ const makeResponsesResult = (id = 'resp_test'): ResponsesResult => ({
   incomplete_details: null,
 });
 
-const makeProviderEvents = async function* (events: readonly ResponsesStreamEvent[]): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGenerator<ProtocolFrame<E>> {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
@@ -140,7 +140,7 @@ test('generate routes a native Responses candidate end to end', async () => {
   };
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
     ok: true,
-    events: makeProviderEvents([completed]),
+    events: makeProtocolFrames([completed]),
     modelKey: 'test-model-key',
   }));
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
@@ -201,7 +201,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     response: makeResponsesResult('resp_second'),
   };
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProviderEvents([completed]), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key',
   }));
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
@@ -348,10 +348,10 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
 // In-memory store backed by the layered implementation but with no repo
 // behind it, so an `expandPreviousResponseId` test can sit on a snapshot
 // that lives nowhere else.
-const memoryStore = (snapshots: readonly StoredResponsesSnapshot[], items: readonly StoredResponsesItem[]) => {
+const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items: readonly StoredResponsesItem[]) => {
   const backing = new MemoryStatefulResponsesBacking();
-  for (const item of items) void backing.insertItems([item], { durable: true });
-  for (const snapshot of snapshots) void backing.insertSnapshot(snapshot);
+  for (const item of items) await backing.insertItems([item], { durable: true });
+  for (const snapshot of snapshots) await backing.insertSnapshot(snapshot);
   return new LayeredStatefulResponsesStore({
     apiKeyId: API_KEY_ID,
     reads: [backing],
@@ -385,7 +385,7 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
     createdAt: 1_000,
     refreshedAt: 1_000,
   };
-  const store = memoryStore([snapshot], [item]);
+  const store = await memoryStore([snapshot], [item]);
 
   const expanded = await expandPreviousResponseId(
     makePayload({ previous_response_id: 'resp_mem', input: [{ type: 'message', role: 'user', content: 'new turn' }] }),
@@ -397,21 +397,11 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
   assertEquals(expanded.input[0], { type: 'item_reference', id });
 });
 
-const makeMessagesProtocolFrames = async function* (events: readonly MessagesStreamEvent[]): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeChatCompletionsProtocolFrames = async function* (events: readonly ChatCompletionsStreamEvent[]): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
 test('generate falls through translate-out to messages target', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true,
-    events: makeMessagesProtocolFrames([
+    events: makeProtocolFrames([
       {
         type: 'message_start',
         message: {
@@ -466,7 +456,7 @@ test('generate falls through translate-out to chat-completions target', async ()
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
     ok: true,
-    events: makeChatCompletionsProtocolFrames([
+    events: makeProtocolFrames([
       {
         id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
         choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
@@ -522,7 +512,7 @@ test('generate reuses an existing input row when a later turn echoes the same us
     turn += 1;
     return {
       ok: true,
-      events: makeProviderEvents([{
+      events: makeProtocolFrames([{
         type: 'response.completed',
         sequence_number: 0,
         response: makeResponsesResult(`resp_turn_${turn}`),

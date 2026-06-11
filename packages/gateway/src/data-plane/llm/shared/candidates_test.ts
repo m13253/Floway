@@ -6,15 +6,13 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// Drains the SWR background revalidate so a rejection surfaces in the
-// runner instead of being swallowed; matches the in-test scheduler used
-// across the registry tests.
+// Drains SWR background revalidate so a rejection surfaces in the runner
+// instead of being swallowed.
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
 
-// Azure provider resolves its model catalog from config without HTTP calls,
-// making it the right choice for tests that need a predictable in-memory catalog.
+// Azure resolves its catalog without HTTP, giving deterministic candidates.
 const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoints: ModelEndpoints): UpstreamRecord => ({
   id,
   provider: 'azure',

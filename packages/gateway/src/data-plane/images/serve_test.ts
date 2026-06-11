@@ -114,7 +114,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  // setupAppTest seeds only a Copilot upstream by default.
   await clearCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_images',
