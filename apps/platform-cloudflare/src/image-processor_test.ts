@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
-import type { ImageCache, ImageDimensions } from '@floway-dev/platform';
+import type { ImageCacheStore, ImageDimensions } from '@floway-dev/platform';
+import { initImageCacheStore } from '@floway-dev/platform';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const decode = (base64: string): Uint8Array => {
@@ -48,28 +49,32 @@ const recordingImages = (result: Uint8Array): { binding: ImagesBinding; transfor
   return { binding, transforms, outputs };
 };
 
-const memoryCache = (): { cache: ImageCache; store: Map<string, Uint8Array>; ttls: number[] } => {
+const installMemoryStore = (): { store: Map<string, Uint8Array>; ttls: number[] } => {
   const store = new Map<string, Uint8Array>();
   const ttls: number[] = [];
-  const cache: ImageCache = {
+  const cacheStore: ImageCacheStore = {
     get(key) {
       return Promise.resolve(store.get(key) ?? null);
     },
-    put(key, value, ttlSeconds) {
-      ttls.push(ttlSeconds);
+    put(key, value, ttlMs) {
+      ttls.push(ttlMs);
       store.set(key, value);
       return Promise.resolve();
     },
+    sweepExpired() {
+      return Promise.resolve();
+    },
   };
-  return { cache, store, ttls };
+  initImageCacheStore(cacheStore);
+  return { store, ttls };
 };
 
 const fixedTarget: ImageDimensions = { width: 50, height: 40 };
 
 test('compresses to WebP at the fixed quality, resizing to the resolved target, then caches', async () => {
   const { binding, transforms, outputs } = recordingImages(new Uint8Array([9, 9, 9]));
-  const { cache, store, ttls } = memoryCache();
-  const processor = createCloudflareImageProcessor(binding, cache);
+  const { store, ttls } = installMemoryStore();
+  const processor = createCloudflareImageProcessor(binding);
 
   const output = await processor.compressToWebp(PNG_1x1, fixedTarget);
 
@@ -79,13 +84,13 @@ test('compresses to WebP at the fixed quality, resizing to the resolved target, 
   // One entry cached, keyed by the 50x40 target and q82, with a 30-day TTL.
   assertEquals(store.size, 1);
   assert([...store.keys()][0].includes(':50x40:webp:q82'));
-  assertEquals(ttls, [30 * 24 * 60 * 60]);
+  assertEquals(ttls, [30 * 24 * 60 * 60 * 1000]);
 });
 
 test('serves a cache hit without calling the Images binding again', async () => {
   const { binding, transforms } = recordingImages(new Uint8Array([7, 7]));
-  const { cache } = memoryCache();
-  const processor = createCloudflareImageProcessor(binding, cache);
+  installMemoryStore();
+  const processor = createCloudflareImageProcessor(binding);
 
   const first = await processor.compressToWebp(PNG_1x1, fixedTarget);
   const second = await processor.compressToWebp(PNG_1x1, fixedTarget);
@@ -98,8 +103,8 @@ test('serves a cache hit without calling the Images binding again', async () => 
 
 test('forwards the encoder without a resize when target is null', async () => {
   const { binding, transforms, outputs } = recordingImages(new Uint8Array([1]));
-  const { cache } = memoryCache();
-  const processor = createCloudflareImageProcessor(binding, cache);
+  installMemoryStore();
+  const processor = createCloudflareImageProcessor(binding);
 
   await processor.compressToWebp(PNG_1x1, null);
 

@@ -30,15 +30,6 @@ export interface ImageProcessor {
   compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array>;
 }
 
-// Optional cache surface threaded through ImageProcessor implementations.
-// Keys are content-addressed by source bytes + transform; values are the
-// encoded output. ttlSeconds is mandatory on `put` so no caller can write an
-// entry that never expires.
-export interface ImageCache {
-  get(key: string): Promise<Uint8Array | null>;
-  put(key: string, value: Uint8Array, ttlSeconds: number): Promise<void>;
-}
-
 // Reads the source image's pixel dimensions from its bytes via image-size's
 // header parser. Returns null when the bytes cannot be decoded so the caller
 // can fall through to a no-resize path; image-size's `imageSize` throws on
