@@ -6,10 +6,8 @@ import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/p
 
 // node:sqlite's prepared statement is synchronous and returns plain rows.
 // We adapt it to the platform's async, enveloped contract. bind() returns a
-// fresh statement object so repeated bind calls on the same prepared statement
-// each produce an independent bound view — matching D1's immutable bind shape
-// (mutating self would cause two awaited binds on the same statement to
-// share state under load).
+// fresh statement object so two awaited binds on the same prepared statement
+// never share state.
 class NodeSqlitePreparedStatement implements SqlPreparedStatement {
   constructor(
     private readonly stmt: StatementSync,
@@ -47,8 +45,8 @@ class NodeSqliteDatabase implements SqlDatabase {
     return new NodeSqlitePreparedStatement(this.db.prepare(query));
   }
 
-  // Wraps the supplied statements in a single transaction to match D1's
-  // batch atomicity.
+  // Wraps the supplied statements in a single transaction so the batch is
+  // atomic.
   async batch(statements: SqlPreparedStatement[]): Promise<SqlResult[]> {
     const results: SqlResult[] = [];
     this.db.exec('BEGIN');
@@ -81,9 +79,8 @@ export const createNodeSqliteDatabase = (path: string): SqlDatabase => {
   // component owns its own root.
   mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
-  // Match the schema's relational expectations; node:sqlite leaves foreign
-  // key enforcement off by default while D1 keeps it on, so without this the
-  // two backends drift.
+  // node:sqlite leaves foreign keys off by default; the schema relies on FK
+  // enforcement, so turn it on at open.
   db.exec('PRAGMA foreign_keys = ON');
   return new NodeSqliteDatabase(db);
 };

@@ -9,28 +9,20 @@ import {
   initFileProvider,
   initImageProcessor,
   initSocketDial,
-  type ImageCache,
   type SqlDatabase,
 } from '@floway-dev/platform';
 
 export interface NodePlatformOptions {
   dbPath: string;
   filesDir: string;
-  imageCache?: ImageCache;
 }
 
-// `imageCache` is optional: a single-process Node deployment gets an
-// in-memory LRU by default, but a multi-instance deployment can pass a
-// shared implementation (e.g. backed by Redis) without touching this code.
-//
 // Trust set is seeded here, before any data-plane request can fire a
-// userspace-TLS handshake — the Node runtime's bundled CA list plus
-// anything Node folded in from NODE_EXTRA_CA_CERTS. `addTrustedRootCAs`
-// documents the underlying freeze-on-first-handshake constraint.
+// userspace-TLS handshake.
 export const bootstrapNodePlatform = (opts: NodePlatformOptions): { db: SqlDatabase } => {
   initEnv(name => process.env[name] ?? '');
   initFileProvider(new FsFileProvider(opts.filesDir));
-  initImageProcessor(createSharpImageProcessor({ cache: opts.imageCache ?? createMemoryImageCache() }));
+  initImageProcessor(createSharpImageProcessor({ cache: createMemoryImageCache() }));
   initSocketDial(nodeSocketDial);
   addTrustedRootCAs(nodeRuntimeRootCAs);
   return { db: createNodeSqliteDatabase(opts.dbPath) };

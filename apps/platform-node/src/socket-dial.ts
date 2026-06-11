@@ -44,10 +44,6 @@ const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
   });
 };
 
-// The connect-promise pattern is required because node:net / node:tls connect
-// synchronously and the actual handshake runs on the event loop; without the
-// await, downstream code would write into a not-yet-connected socket.
-//
 // `signal` is honoured at three layers: (1) pre-connect short-circuit, (2)
 // node:net / node:tls native abort during the connect handshake, (3) post-
 // connect socket.destroy() so subsequent reads/writes reject.
@@ -85,14 +81,9 @@ export const nodeSocketDial: SocketDial = {
       socket.once('error', onError);
     });
 
-    // Readable.toWeb hands out the Buffer chunks the underlying socket
-    // emits, and net.Socket recycles those Buffers from a shared pool —
-    // any retention across an `await` (e.g. our handshake state machines
-    // accumulate bytes into a rolling buffer) can read overwritten bytes.
-    // Wrap with a copying transform so each chunk handed to consumers
-    // owns its memory. The cost is one Uint8Array allocation per chunk,
-    // which is negligible against the syscalls and TLS work each chunk
-    // already pays for.
+    // net.Socket recycles its emitted Buffers from a shared pool, so any
+    // chunk our handshake state machines retain across an await can read
+    // overwritten bytes. Copy on the way out.
     const rawReadable = Readable.toWeb(socket) as ReadableStream<Uint8Array>;
     const readable = rawReadable.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
@@ -114,9 +105,9 @@ export const nodeSocketDial: SocketDial = {
     // gone. Without a permanent 'error' listener Node escalates any
     // post-connect socket error to uncaughtException and crashes the process.
     // The error itself surfaces via the readable/writable streams the proxy
-    // runners drive — this listener exists purely to keep Node from crashing.
-    // Surface the error at debug level when FLOWAY_DEBUG_SOCKET is set so
-    // post-teardown resets stay observable to operators.
+    // runners drive — this listener keeps Node from crashing post-connect;
+    // the debug branch below makes those errors observable when
+    // FLOWAY_DEBUG_SOCKET is set.
     socket.on('error', err => {
       if (process.env.FLOWAY_DEBUG_SOCKET) {
         console.debug('[socket-dial] post-connect error:', err);
