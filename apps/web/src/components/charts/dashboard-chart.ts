@@ -11,12 +11,9 @@ export interface DashboardRangeQuery {
   bucket: 'hour' | '4h' | 'day';
 }
 
-// Color allocation algorithm: entities are sorted by stable id (user.id ASC
-// for users; key.createdAt ASC for keys), and the chart color slot is the
-// entity's index in that sorted list (mod palette length). This palette order
-// is the one-time tuning that makes prod's user.id-sorted users land on the
-// colors they had under the original by-key chart — so renaming an account
-// or adding a new one no longer reshuffles the dashboard.
+// Palette order is tuned once so that prod entities, sorted by stable id, land
+// on the intended colors; renaming or adding an account does not reshuffle the
+// dashboard.
 export const DASHBOARD_CHART_PALETTE = [
   '#00e676',
   '#00e5ff',
@@ -136,8 +133,8 @@ export const bucketKeyForUtcHour = (range: DashboardRange, hour: string): string
 
 export const chartXAxisTick = (bucketKeys: readonly string[], labels: readonly string[], compact4h: boolean) =>
   (_value: unknown, index: number): string => {
-    const label = labels[index] ?? '';
+    const label = labels[index]!;
     if (!compact4h) return label;
-    const hour = Number(String(bucketKeys[index] ?? '').slice(11, 13));
-    return Number.isFinite(hour) && hour % 8 === 0 ? label : '';
+    const hour = Number(bucketKeys[index]!.slice(11, 13));
+    return hour % 8 === 0 ? label : '';
   };

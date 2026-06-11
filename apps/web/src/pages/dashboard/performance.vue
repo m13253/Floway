@@ -213,17 +213,12 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   };
 });
 
-const performanceSummary = computed(() => {
-  const row = overview.value.summaryRows[0];
-  return {
-    requests: row?.requests ?? 0,
-    errors: row?.errors ?? 0,
-    avgMs: row?.avgMs ?? null,
-    p50Ms: row?.p50Ms ?? null,
-    p95Ms: row?.p95Ms ?? null,
-    p99Ms: row?.p99Ms ?? null,
-  };
-});
+const emptyPerformanceSummary: PerformanceDisplayRecord = {
+  bucket: '', group: '', requests: 0, errors: 0, totalMsSum: 0,
+  avgMs: null, p50Ms: null, p95Ms: null, p99Ms: null,
+};
+
+const performanceSummary = computed(() => overview.value.summaryRows[0] ?? emptyPerformanceSummary);
 </script>
 
 <template>

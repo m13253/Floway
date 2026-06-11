@@ -139,14 +139,10 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
     }),
     async () => {
       const models = await instance.provider.getProvidedModels(directFetcher);
-      // The manual copy of `shared-id` wins, and the auto copy is filtered out
-      // entirely so each id appears exactly once in the final list.
       assertEquals(models.map(m => m.id), ['shared-id', 'auto-only']);
       assertEquals(models[0].display_name, 'Manual Override');
     },
   );
 
-  // The manual pricing layer takes precedence over the auto-fetch pricing
-  // map for ids that appear in both.
   assertEquals(instance.provider.getPricingForModelKey('shared-id'), manualCost);
 });

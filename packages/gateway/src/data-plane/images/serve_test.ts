@@ -114,8 +114,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  // setupAppTest seeds only a Copilot upstream by default; register a custom
-  // upstream whose /models response declares the requested image model.
+  // setupAppTest seeds only a Copilot upstream by default.
   await clearCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_images',
@@ -168,8 +167,6 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
 });
 
 test('/v1/images/edits forwards a multipart request through an Azure model and records usage', async () => {
-  // setupAppTest seeds a Copilot upstream by default; we also register an
-  // Azure upstream that exposes gpt-image-2 via /v1/images/edits.
   const { apiKey, repo } = await setupAppTest();
   await clearCopilotTokenCache();
   await repo.upstreams.save({

@@ -138,10 +138,11 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
   return out;
 };
 
-// Gemini's pickTarget prefers chat-completions, then messages, then
-// responses. The serve_test mocks `enumerateProviderCandidates` so each test
-// hands the serve a pre-selected `targetApi`; the three native-target tests
-// below cover each translation arm independently.
+const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K): Extract<T, { type: K }> => {
+  assertEquals(r.type, k);
+  return r as Extract<T, { type: K }>;
+};
+
 test('generate translates through native Chat Completions target end to end', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
@@ -156,9 +157,8 @@ test('generate translates through native Chat Completions target end to end', as
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  const events = expectType(result, 'events').events;
+  await collectEvents(events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 
@@ -176,9 +176,8 @@ test('generate translates through Messages when only that endpoint is exposed', 
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  const events = expectType(result, 'events').events;
+  await collectEvents(events);
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
@@ -196,9 +195,8 @@ test('generate translates through Responses when only that endpoint is exposed',
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  const events = expectType(result, 'events').events;
+  await collectEvents(events);
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -228,7 +226,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   // An upstream error from the first candidate IS the final answer — the
   // gateway does not retry on a different upstream just because the first one
   // produced an HTTP error.
-  assertEquals(result.type, 'upstream-error');
+  expectType(result, 'upstream-error');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 0);
 });
@@ -250,10 +248,8 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  // First candidate served the request; iteration short-circuits on success.
+  const events = expectType(result, 'events').events;
+  await collectEvents(events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 
@@ -268,10 +264,9 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
     model: 'unknown-model',
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const upstreamError = expectType(result, 'upstream-error');
+  assertEquals(upstreamError.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 404);
   assertEquals(body.error.status, 'NOT_FOUND');
   assert(typeof body.error.message === 'string' && body.error.message.includes('unknown-model'));
@@ -294,19 +289,15 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
     model: 'test-model',
   });
 
-  assertEquals(result.type, 'plain');
-  if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const plain = expectType(result, 'plain');
+  assertEquals(plain.status, 200);
+  const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body, { totalTokens: 17 });
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 });
 
 test('countTokens renders a Google RPC INVALID_ARGUMENT when no Messages-capable candidate exists', async () => {
   installRepo();
-  // Candidate enumeration is what filters by pickTarget; a routing planner
-  // with no candidates surfaces as model-missing here, which the renderer in
-  // errors.ts maps to a 400 INVALID_ARGUMENT envelope for countTokens.
   queueCandidates([]);
 
   const result = await geminiServe.countTokens({
@@ -316,7 +307,6 @@ test('countTokens renders a Google RPC INVALID_ARGUMENT when no Messages-capable
     model: 'no-messages-model',
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  const upstreamError = expectType(result, 'upstream-error');
+  assertEquals(upstreamError.status, 404);
 });

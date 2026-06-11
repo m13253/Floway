@@ -9,8 +9,8 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 
-// In-test scheduler: drains the background revalidate promise so its rejection
-// surfaces in the test runner instead of being swallowed.
+// Drains the background revalidate promise so its rejection surfaces in the
+// test runner instead of being swallowed.
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };

@@ -203,9 +203,6 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
   // `item_reference`. The store will resolve the id, and rewrite will throw
   // because the candidate cannot accept `item_reference`.
   const store = createResponsesHttpStore(API_KEY_ID, true);
-  // Insert into the underlying repo so `loadInputItems` populates the cache.
-  // The store uses `getRepo()` lazily, so the repo installed via `installRepo`
-  // already feeds this lookup.
   const repo = installRepo();
   await insertStoredItem(repo, { id: missingId, itemType: 'message', payload: null });
   await store.loadInputItems({
@@ -320,9 +317,6 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   wrapSpy.mockRestore();
 });
 
-// In-attempt test asserting the narrow header-inheritance contract: when an
-// outer protocol passes invocation headers, the translated Messages call sees
-// them on the wire.
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Record<string, string> | undefined;
@@ -426,7 +420,6 @@ test('generate seeds store.privatePayload from rewrite references so cross-turn 
     },
   });
 
-  // Before generate runs, no per-attempt seed exists.
   assertEquals(store.getPrivatePayload(wireId), undefined);
 
   const result = await responsesAttempt.generate({

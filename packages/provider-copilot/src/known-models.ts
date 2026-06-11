@@ -26,7 +26,6 @@ export const mergeKnownModels = (
 ): CopilotKnownModels => {
   const models: Record<string, CopilotKnownModelEntry> = { ...prev.models };
   for (const raw of response.data) {
-    if (!raw.id) continue;
     models[raw.id] = { snapshot: raw, lastSeenAt: now };
   }
   for (const [id, entry] of Object.entries(models)) {

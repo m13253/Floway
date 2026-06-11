@@ -306,9 +306,6 @@ test('compact renders routing-unavailable when no candidate exposes the response
 
 test('expandPreviousResponseId prepends snapshot items and strips the previous_response_id field', async () => {
   const repo = installRepo();
-  // Seed a snapshot referencing one stored row; the helper resolves the id
-  // through the store, then projects the snapshot's item ids as
-  // `item_reference` entries ahead of the inbound input.
   const previousMessageId = createStoredResponsesItemId('message');
   await repo.responsesItems.insertMany([{
     id: previousMessageId,
@@ -436,9 +433,6 @@ test('generate falls through translate-out to messages target', async () => {
     ]),
     modelKey: 'messages-key',
   }));
-  // Build a candidate with targetApi='messages' whose provider answers
-  // callMessages — the translate-out branch routes through messagesAttempt
-  // and calls provider.callMessages instead of provider.callResponses.
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callMessages });
   const candidate: ProviderCandidate = {
@@ -452,7 +446,6 @@ test('generate falls through translate-out to messages target', async () => {
       supportsResponsesItemReference: true,
     },
     targetApi: 'messages',
-
     fetcher: directFetcher,
   };
   queueCandidates([candidate]);
@@ -465,8 +458,6 @@ test('generate falls through translate-out to messages target', async () => {
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // The translate trip wraps the upstream Messages events back into Responses
-  // events; draining proves the cross-protocol path composes without throwing.
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
 });
@@ -495,10 +486,6 @@ test('generate falls through translate-out to chat-completions target', async ()
     ]),
     modelKey: 'chat-completions-key',
   }));
-  // Build a candidate with targetApi='chat-completions' whose provider answers
-  // callChatCompletions — the translate-out branch routes through
-  // chatCompletionsAttempt and calls provider.callChatCompletions instead of
-  // provider.callResponses.
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callChatCompletions });
   const candidate: ProviderCandidate = {
@@ -512,7 +499,6 @@ test('generate falls through translate-out to chat-completions target', async ()
       supportsResponsesItemReference: true,
     },
     targetApi: 'chat-completions',
-
     fetcher: directFetcher,
   };
   queueCandidates([candidate]);
@@ -525,9 +511,6 @@ test('generate falls through translate-out to chat-completions target', async ()
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // The translate trip wraps the upstream Chat Completions events back into
-  // Responses events; draining proves the cross-protocol path composes
-  // without throwing.
   await collectEvents(result.events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });

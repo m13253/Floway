@@ -175,8 +175,8 @@ test('/auth/me reports viaApiKey:true and the API key metadata when authed via x
 });
 
 test('old /auth GitHub management routes are removed', async () => {
-  const { adminKey: _adminKey } = await setupAppTest();
-  const session = await (await import('../../repo/index.ts')).getRepo().sessions.create(1);
+  const { repo } = await setupAppTest();
+  const session = await repo.sessions.create(1);
 
   const start = await requestApp('/auth/github', { method: 'GET', headers: { 'x-floway-session': session.id } });
   const order = await requestApp('/auth/github/order', {

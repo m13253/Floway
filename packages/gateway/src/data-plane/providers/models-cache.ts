@@ -36,9 +36,9 @@ const memoInFlight = (
   if (existing) return existing;
   const promise = fn();
   inFlight.set(key, promise);
-  promise.finally(() => {
+  void promise.finally(() => {
     if (inFlight.get(key) === promise) inFlight.delete(key);
-  }).catch(() => {});
+  });
   return promise;
 };
 
@@ -82,7 +82,10 @@ export const fetchUpstreamModelsCached = async (
 
   if (cached && now - cached.fetchedAt < HARD_MS) {
     // Joining L1 here means a second request arriving mid-flight does
-    // not enqueue a second background task.
+    // not enqueue a second background task. The trailing `.catch` is the
+    // sink for the background branch only — `runFetch` already persists
+    // the failure via `setLastError` before rethrowing, so the SWR caller
+    // who got `cached.models` does not need to learn about it.
     scheduler(memoInFlight(key, () => runFetch(instance, fetcher, key)).catch(() => {}));
     return cached.models;
   }

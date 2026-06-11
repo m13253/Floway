@@ -30,7 +30,7 @@ const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupA
     config: {
       baseUrl: 'https://passthrough.example.com',
       bearerToken: 'sk-passthrough',
-      endpoints: {  },
+      endpoints: {},
     },
   }));
 };
@@ -39,9 +39,6 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
 
-  // Replace the usage repo's record method with a rejection so the
-  // scheduled usage write fails. The 200 from upstream must still reach
-  // the client unchanged; the failure is observable via console.error.
   repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -76,8 +73,6 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
       },
     );
 
-    // The scheduled write rejected, was caught, and logged. The exact
-    // first argument matches scheduleUsageRecord's wording.
     assertEquals(errorSpy.mock.calls.some(call => call[0] === 'Failed to record token usage:'), true);
   } finally {
     errorSpy.mockRestore();
@@ -121,8 +116,6 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with n
       },
     );
 
-    // safeJsonClone returned undefined for the binary body, so extractUsage
-    // was never called and no usage row was recorded.
     const usage = await repo.usage.listAll();
     assertEquals(usage.length, 0);
     // The parse failure is observable through console.warn so operators can
@@ -179,7 +172,6 @@ test('passthrough-serve: response header allow-list forwards expected headers an
       assertEquals(response.headers.get('x-ratelimit-remaining'), '100');
       assertEquals(response.headers.get('retry-after'), '30');
       assertEquals(response.headers.get('cf-ray'), 'abc');
-      // Out-of-allow-list headers are stripped.
       assertEquals(response.headers.get('x-internal-secret'), null);
       assertEquals(response.headers.get('set-cookie'), null);
       await response.json();

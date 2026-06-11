@@ -861,7 +861,7 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 
   async setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
-    // No-op when no row exists: lastError annotates a previously-successful fetch.
+    // lastError annotates a previously-successful fetch, so we do not insert a stub row here.
     await this.db
       .prepare('UPDATE models_cache SET last_error_json = ? WHERE upstream_id = ?')
       .bind(error === null ? null : JSON.stringify(error), upstreamId)
@@ -1106,8 +1106,7 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
     const row = await this.db
       .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1')
       .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string }>();
-    // Singleton seeded by migration 0031; defensive fallback for fresh DBs.
-    if (!row) return null;
+    if (!row) throw new Error('search_config singleton missing; migration 0031 must have run');
     return {
       provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },

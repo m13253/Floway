@@ -127,7 +127,6 @@ test('Custom provider projects display_name / created / limits / cost from a flo
       const instance = createCustomProvider(baseRecord({ id: 'up_custom_rich' }));
       const [model] = await instance.provider.getProvidedModels(directFetcher);
       assertEquals(model.display_name, 'Rich Model');
-      // 2026-04-01T00:00:00Z → 1774569600
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
       assertEquals(model.limits.max_context_window_tokens, 200000);

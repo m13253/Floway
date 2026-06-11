@@ -154,8 +154,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // Drain — the translate trip wraps the Responses events back to Messages
-  // shape; the assertion here is that the chain composes without throwing.
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
 });
@@ -230,8 +228,6 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(result.performance.stream, true);
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
-  // Draining the wrapped stream to its terminal frame records the
-  // upstream_success scope from inside withUpstreamTelemetry.
   await collectEvents(result.events);
   await Promise.all(background);
   const upstreamSamples = await repo.performance.query({ metricScope: 'upstream_success', start: '0000', end: '9999' });

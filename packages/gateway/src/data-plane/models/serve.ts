@@ -1,4 +1,3 @@
-// GET /v1/models and /models — single superset handler.
 // OpenAI and Anthropic /models field names do not overlap, so one payload
 // satisfies both client shapes.
 
@@ -16,9 +15,8 @@ export const models = async (c: Context) => {
     const fetcherForUpstream = await createPerRequestFetcher();
     return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c)));
   } catch (e) {
-    const message = e instanceof ProviderModelsUnavailableError
-      ? MODEL_LISTING_FAILURE_MESSAGE
-      : (e instanceof Error ? e.message : String(e));
-    return Response.json({ error: { message, type: 'api_error' } }, { status: 502 });
+    if (e instanceof ProviderModelsUnavailableError)
+      return Response.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, { status: 502 });
+    throw e;
   }
 };

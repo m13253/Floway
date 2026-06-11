@@ -28,9 +28,7 @@ import { assert, assertEquals, assertFalse, assertStringIncludes } from '@floway
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 
-// Minimal invocation/request for driving the registration directly. The
-// registration only reads targetApi / enabledFlags / payload off the
-// invocation, so the rest is stubbed.
+// The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   candidate: {
     targetApi: 'responses',
@@ -252,13 +250,11 @@ test('collectImageSources returns empty for a plain string input', () => {
 
 test('collectImageSources reads tool-result images and preserves forward order', () => {
   const input: ResponsesInputItem[] = [
-    // A function_call_output carrying structured input_image content (tool result).
     { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
   ];
   const sources = collectImageSources(input);
   assertEquals(sources.length, 2);
-  // Declaration order: the tool-result image comes first, then the message's.
   assertEquals(sources[0].mimeType, 'image/png');
   assertEquals(sources[1].mimeType, 'image/webp');
 });
@@ -279,7 +275,6 @@ test('transformInputItemsForImageGeneration rewrites a completed call into a fun
   assertEquals(out[1].call_id, 'cc_from_ig_1');
   assert(typeof out[1].output === 'string');
   assertStringIncludes(out[1].output, '"ok":true');
-  // The generated image is fed back so the orchestrator can see it.
   assert(out[2].type === 'message');
   assert(Array.isArray(out[2].content));
   const imageBlock = out[2].content.find(b => b.type === 'input_image');
@@ -548,8 +543,7 @@ test('image dispatch budget caps real backend calls per response, not ReAct turn
   const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 
-  // The first 10 dispatches return a streaming slot (its generator is not run
-  // here, so no backend is hit); the 11th is over budget.
+  // The slot generators are not run here, so no backend is hit.
   for (let i = 0; i < 10; i++) {
     const slots = dispatch({ intercepted, loopState });
     assertEquals(slots.length, 1);

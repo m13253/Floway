@@ -176,10 +176,6 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-// Local helper that projects a MessagesResult into the canonical Messages SSE
-// event sequence used by the replay-only wiring tests below. Only handles text
-// blocks (with optional citations) because that is the shape these fixtures
-// exercise; extend if a future test needs other block kinds.
 const messagesResponseToUpstreamFrames = (response: MessagesResult): ProtocolFrame<MessagesStreamEvent>[] => {
   const frames: ProtocolFrame<MessagesStreamEvent>[] = [
     eventFrame({
@@ -679,10 +675,6 @@ test('withMessagesWebSearchShim emits native-like citation deltas for replay-onl
     end_block_index: 0,
   });
 });
-
-// Hand-built upstream event sequences below stand in for what a real Messages
-// upstream sends: each scenario exercises the streaming generator against the
-// minimal set of events needed for the rule it covers.
 
 const upstreamMessageStart = (id = 'msg_upstream'): MessagesStreamEvent => ({
   type: 'message_start',

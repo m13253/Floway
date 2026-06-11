@@ -392,7 +392,8 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
   // withStoreForcedFalse reached the wire body.
   assertEquals(responsesBody?.store, false);
   // withServiceTierStripped removed the field from the wire body.
-  assertEquals('service_tier' in (responsesBody ?? {}), false);
+  if (!responsesBody) throw new Error('expected /responses to be hit');
+  assertEquals('service_tier' in responsesBody, false);
   // The compaction trigger item was still appended to input.
   const wireInput = responsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
@@ -596,7 +597,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
         ],
       });
 
-      // No image anywhere — header must not be set.
       await driveMessages(model, {
         max_tokens: 10,
         messages: [
@@ -711,7 +711,8 @@ test('Copilot provider persists merged known-models view via saveState CAS keyed
   assertEquals(tokenPersisted.knownModels, null);
   assertEquals(typeof tokenPersisted.copilotToken?.token, 'string');
   const modelsPersisted = modelsWrite.newState as CopilotUpstreamState;
-  assertEquals(Object.keys(modelsPersisted.knownModels?.models ?? {}), ['m1']);
+  if (!modelsPersisted.knownModels) throw new Error('expected knownModels persisted');
+  assertEquals(Object.keys(modelsPersisted.knownModels.models), ['m1']);
 });
 
 test('Copilot provider persists known-models even when the token-mint write advanced the row mid-call', async () => {
@@ -864,8 +865,7 @@ test('Copilot provider swallows a saveState throw so a transient persistence hic
   );
 });
 
-// readCopilotUpstreamState is exercised indirectly via every other test; this
-// pins the round-trip so a stricter reader would not silently drop a token.
+// Pin the round-trip so a stricter reader cannot silently drop a token.
 test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {
   const seeded: CopilotUpstreamState = {
     knownModels: mergeKnownModels(
@@ -877,5 +877,6 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
   };
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken?.token, 'tok');
-  assertEquals(Object.keys(round.knownModels?.models ?? {}), ['m1']);
+  if (!round.knownModels) throw new Error('expected knownModels in round-trip');
+  assertEquals(Object.keys(round.knownModels.models), ['m1']);
 });

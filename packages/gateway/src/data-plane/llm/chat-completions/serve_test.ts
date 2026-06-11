@@ -13,7 +13,7 @@ import { directFetcher, type ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the serve exactly the
-// provider candidates it wants. Same pattern as messages/serve_test.ts.
+// provider candidates it wants.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
@@ -252,7 +252,6 @@ test('generate is a routing no-op when the payload carries no reasoning carriers
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  // Only the first candidate was needed; iteration short-circuits on success.
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 

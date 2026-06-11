@@ -80,10 +80,7 @@ test('copilotAuthedFetch overlays interceptor headers on the pinned base set', a
 });
 
 test('copilotAuthedFetch deletes a base header when the interceptor passes an empty-string value', async () => {
-  // Sentinel contract: empty string means "drop this base header". This is
-  // the deletion convention later workaround interceptors rely on; future
-  // commits will add concrete callers (e.g. clearing copilot-integration-id
-  // on Claude Code SDK proxy traffic).
+  // Sentinel contract: empty string means drop this base header from the pinned set.
   await mockTokenAndCapture({ 'copilot-integration-id': '' }, headers => {
     assertEquals(headers.has('copilot-integration-id'), false);
   });
@@ -119,7 +116,6 @@ test('copilotAuthedFetch persists the minted Copilot token into state_json.copil
 
 test('copilotAuthedFetch reads a still-valid Copilot token from state_json instead of refreshing', async () => {
   await installRepoAndClearCache();
-  // Issue one request to populate state_json with a freshly minted token.
   let tokenFetches = 0;
   let upstreamFetches = 0;
   let authHeader: string | null = null;
@@ -141,7 +137,6 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
         { id: UPSTREAM_ID, githubToken: 'ghu_test', accountType: 'individual' as const },
         { fetcher: directFetcher },
       ] as const;
-      // First call mints the token and persists it.
       await copilotAuthedFetch(...args);
       // Drop the in-process memo so the second call has to consult state_json;
       // if state_json hydration works, the token endpoint won't be hit again.

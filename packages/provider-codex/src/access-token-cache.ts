@@ -9,6 +9,9 @@ export type { CodexAccessTokenEntry };
 // upstream clock. Matches the data-plane's pre-call freshness gate.
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
+const isAccessTokenFresh = (entry: CodexAccessTokenEntry): boolean =>
+  entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
+
 const findAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
   state.accounts.findIndex(a => a.chatgptAccountId === accountId);
 
@@ -30,7 +33,7 @@ export const getCodexAccessToken = async (
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account?.accessToken) return null;
-  if (account.accessToken.expiresAt <= Date.now() + REFRESH_SKEW_MS) return null;
+  if (!isAccessTokenFresh(account.accessToken)) return null;
   return account.accessToken;
 };
 
@@ -92,7 +95,7 @@ export const ensureCodexAccessToken = async (
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account) throw new Error(`Codex account ${accountId} not found in upstream ${upstreamId}`);
-  if (account.accessToken && account.accessToken.expiresAt > Date.now() + REFRESH_SKEW_MS) {
+  if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return account.accessToken;
   }
   const minted = await mint(account.refresh_token);

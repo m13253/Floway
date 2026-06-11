@@ -491,9 +491,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
 const byKeyConfig = computed(() => buildStackedConfig('keyId'));
 const byModelConfig = computed(() => buildStackedConfig('model'));
 
-const searchUsageActiveProvider = computed(() => {
-  return searchData.value?.activeProvider ?? 'disabled';
-});
+const searchUsageActiveProvider = computed(() => searchData.value?.activeProvider ?? 'disabled');
 
 const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
   const records = searchData.value?.records ?? [];

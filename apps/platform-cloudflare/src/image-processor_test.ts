@@ -81,7 +81,6 @@ test('compresses to WebP at the fixed quality, resizing to the resolved target, 
   assertEquals(transforms, [{ width: 50, height: 40, fit: 'scale-down' }]);
   assertEquals(outputs, [{ format: 'image/webp', quality: 82 }]);
   assertEquals([...output], [9, 9, 9]);
-  // One entry cached, keyed by the 50x40 target and q82, with a 30-day TTL.
   assertEquals(store.size, 1);
   assert([...store.keys()][0].includes(':50x40:webp:q82'));
   assertEquals(ttls, [30 * 24 * 60 * 60 * 1000]);
@@ -97,7 +96,6 @@ test('serves a cache hit without calling the Images binding again', async () => 
 
   assertEquals([...first], [7, 7]);
   assertEquals([...second], [7, 7]);
-  // The transform ran once; the second call hit the cache.
   assertEquals(transforms.length, 1);
 });
 

@@ -122,7 +122,6 @@ describe('getCodexQuota', () => {
 
   test('returns null when the snapshot is past its TTL window', async () => {
     const snap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z' };
-    // No reset horizons → TTL floor is 24 h. Fetched two days ago is stale.
     const fetchedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
     current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { fetchedAt, data: snap } }] });
     expect(await getCodexQuota(upstreamId, accountId)).toBeNull();

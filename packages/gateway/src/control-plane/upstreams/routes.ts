@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 import type { z } from 'zod';
 
 import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -61,7 +62,7 @@ const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedU
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const validationError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 // Runtime defensive parsers for upstream records read back from D1. The
 // request-time zod schemas guard incoming bodies; these parsers guard the DB
@@ -84,7 +85,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
       ),
     };
   } catch (error) {
-    return { ok: false, error: validationError(error) };
+    return { ok: false, error: errorMessage(error) };
   }
 };
 
@@ -290,7 +291,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   try {
     assertedConfig = assertCustomUpstreamRecord(record).config;
   } catch (e) {
-    return c.json({ error: validationError(e) }, 400);
+    return c.json({ error: errorMessage(e) }, 400);
   }
 
   try {
@@ -301,7 +302,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     // Mirror the control-plane /models convention: squash genuine upstream
     // HTTP/parse failures to a generic 502 without leaking provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: 'Upstream model listing failed', type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     throw e;
   }
@@ -336,7 +337,7 @@ export const listUpstreamModels = async (c: Context) => {
     return c.json({ data });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: 'Upstream model listing failed', type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     throw e;
   }
@@ -348,7 +349,7 @@ export const copilotAuthStart = async (c: Context) => {
     if (!result.ok) return c.json({ error: result.error }, 502);
     return c.json(result.data);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return c.json({ error: msg }, 502);
   }
 };
@@ -412,7 +413,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
     await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return c.json({ error: msg }, 502);
   }
 };
@@ -482,7 +483,7 @@ const ingestCodexCredential = async (
     const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
     return { ok: true, ...out };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 };
 
@@ -547,7 +548,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
   try {
     assertCodexUpstreamState(existing.state);
   } catch (err) {
-    return c.json({ error: `Codex upstream state is malformed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    return c.json({ error: `Codex upstream state is malformed: ${errorMessage(err)}` }, 500);
   }
   const state = existing.state;
   // The state schema enforces exactly one account; refresh-now mutates that
@@ -611,6 +612,6 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
       // is invalid". Same pattern as control-plane/copilot-quota/routes.ts.
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
     }
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    return c.json({ error: errorMessage(err) }, 502);
   }
 };

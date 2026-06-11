@@ -40,8 +40,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
 
 let currentRecord: UpstreamRecord;
 
-// Set the in-state access token slot for the active account; mirrors what the
-// data-plane refresh hook persists when a fresh token arrives.
+// Mirrors what the data-plane refresh hook persists when a fresh token arrives.
 const seedFreshAccessToken = (entry: CodexAccessTokenEntry = farFutureAccessToken): void => {
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: entry }] });
 };
@@ -52,6 +51,10 @@ const seedAccountState = (overrides: Partial<CodexAccountCredential>): void => {
 
 const readQuotaEntry = (): CodexQuotaSnapshotEntry | null =>
   (currentRecord.state as CodexUpstreamState).accounts[0].quotaSnapshot;
+
+// putCodexQuota fires-and-forgets via .catch(() => {}); yield to the task
+// queue so the saveState promise resolves before the caller asserts on state.
+const flushMicrotasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -175,9 +178,7 @@ describe('callCodexResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
-    // putCodexQuota fires-and-forgets via .catch(() => {}); give the task queue
-    // a turn so the saveState promise resolves before we assert.
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await flushMicrotasks();
     const stored = readQuotaEntry();
     expect(stored?.data.primary_used_percent).toBe(42);
     expect(stored?.data.ratelimited_until).toBeUndefined();
@@ -238,7 +239,7 @@ describe('callCodexResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await flushMicrotasks();
     const stored = readQuotaEntry();
     expect(stored?.data.ratelimited_until).toBeTruthy();
   });
@@ -258,12 +259,10 @@ describe('callCodexResponses — upstream classification', () => {
   });
 });
 
-// Mints an enforcing recorder mirroring `createUpstreamLatencyRecorder` from
-// the gateway side: counts wraps and refuses to surrender a duration when
-// `record` was never invoked. Gives provider-level tests a way to assert the
-// contract without depending on the gateway package. The `fetcher` honours
-// the third-arg recorder so the data-plane POSTs (which thread the recorder
-// through the fetcher rather than wrapping outside) still count.
+// Provider-level tests need their own enforcing recorder so they can assert
+// the wrap-once contract without depending on the gateway package. The
+// `fetcher` honours the third-arg recorder because data-plane POSTs thread
+// the recorder through the fetcher rather than wrapping outside.
 const enforcingRecorder = () => {
   const wrappedPromises: unknown[] = [];
   let last: number | undefined;
@@ -298,7 +297,6 @@ describe('callCodexResponses — recorder contract', () => {
     });
     expect(result.ok).toBe(false);
     expect(recorder.invocations()).toBe(1);
-    // Reading durationMs must not throw.
     expect(recorder.durationMs()).toBeGreaterThanOrEqual(0);
   });
 

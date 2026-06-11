@@ -178,8 +178,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
 
   const cached = await repo.modelsCache.get(created.id);
   assertEquals(cached?.models.map(m => m.id), ['fresh-model']);
-  // The stale fetchedAt sentinel was overwritten by the warm.
-  assertEquals((cached?.fetchedAt ?? 0) > 1, true);
+  assertEquals(cached!.fetchedAt > 1, true);
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
@@ -280,7 +279,7 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
   const sample = catalog.find(e => e.id === 'vendor-kimi');
   assertEquals(typeof sample?.label, 'string');
   assertEquals(Array.isArray(sample!.defaultFor), true);
-  // `appliesTo` was dropped from the catalog during the Feature Flags refactor; guard against silent re-introduction.
+  // appliesTo is not part of the catalog shape; guard against silent re-introduction.
   assertEquals('appliesTo' in sample!, false);
 
   const forbidden = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });

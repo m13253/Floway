@@ -15,9 +15,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
-  // v1 of the codex provider always operates on the first account in the
-  // pool. The schema carries an array so a future fan-out can pick a
-  // different active account per call without a wire migration.
   const accountIdentity = config.accounts[0];
 
   // Re-read upstream state on every request rather than capturing the record's
@@ -128,8 +125,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       );
     },
 
-    // Codex upstream only exposes /responses; getProvidedModels advertises
-    // that single endpoint and no other entry point is reachable.
     callMessages: () => Promise.reject(new Error('Codex provider does not implement callMessages')),
     callChatCompletions: () => Promise.reject(new Error('Codex provider does not implement callChatCompletions')),
     callMessagesCountTokens: () => Promise.reject(new Error('Codex provider does not implement callMessagesCountTokens')),

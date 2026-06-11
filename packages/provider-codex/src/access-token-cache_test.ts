@@ -45,8 +45,7 @@ let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord |
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  // Default saveState writes the new state through to `current` so subsequent
-  // getById calls observe the update — mirrors the live D1-backed CAS.
+  // Mirror the live D1-backed CAS: write-through so subsequent getById sees the update.
   saveStateSpy = vi.fn(async (_id, newState, _opts) => {
     if (current) current = { ...current, state: newState as CodexUpstreamState };
     return { updated: true };

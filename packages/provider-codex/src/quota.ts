@@ -69,8 +69,8 @@ export const parseCodexQuotaHeaders = (headers: Headers, options: ParseCodexQuot
   setNumber('credits_balance', 'x-codex-credits-balance');
 
   if (options.isRateLimited) {
-    const primary = Number(headers.get('x-codex-primary-reset-after-seconds') ?? '0');
-    const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds') ?? '0');
+    const primary = Number(headers.get('x-codex-primary-reset-after-seconds'));
+    const secondary = Number(headers.get('x-codex-secondary-reset-after-seconds'));
     const seconds = Math.max(Number.isFinite(primary) ? primary : 0, Number.isFinite(secondary) ? secondary : 0);
     if (seconds > 0) {
       snapshot.ratelimited_until = new Date(options.now.getTime() + seconds * 1000).toISOString();
@@ -104,8 +104,8 @@ const replaceAccountQuota = (
 
 // Returns the most recent snapshot when still within its computed TTL.
 // Stale snapshots read as null — the next upstream response will overwrite
-// them. Storage no longer evicts on its own (state_json is unbounded), so
-// the freshness check moved from KV-native expiry to this inline gate.
+// them. state_json is unbounded, so freshness is gated inline by
+// computeCodexQuotaTtlMs.
 export const getCodexQuota = async (
   upstreamId: string,
   accountId: string,
@@ -121,8 +121,8 @@ export const getCodexQuota = async (
   return account.quotaSnapshot.data;
 };
 
-// Best-effort write: a losing CAS or transient storage error must not crash
-// the request. The next call re-reads state and rewrites if needed.
+// A transient storage error here must not crash the request; the next call
+// re-reads state and rewrites if needed.
 export const putCodexQuota = async (
   upstreamId: string,
   accountId: string,
@@ -140,11 +140,7 @@ export const putCodexQuota = async (
     return;
   }
   const next = replaceAccountQuota(state, idx, { fetchedAt: Date.now(), data: snapshot });
-  try {
-    await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
-  } catch (err) {
-    console.warn(`putCodexQuota: failed to persist Codex quota for ${upstreamId}/${accountId}:`, err);
-  }
+  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
 
 export const isCodexRateLimited = (snapshot: CodexQuotaSnapshot | null, now: Date): boolean => {

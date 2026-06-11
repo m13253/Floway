@@ -24,9 +24,7 @@ const baseRecord: UpstreamRecord = {
   proxyFallbackList: [],
 };
 
-// Builds a record carrying a freshly-minted access token in its state slot;
-// callResponses/getProvidedModels both read the access token through state,
-// not a separate cache.
+// Access token lives in the state slot — there is no separate cache.
 const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({
   ...baseRecord,
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: entry, quotaSnapshot: null }] },
@@ -93,8 +91,6 @@ describe('createCodexProvider', () => {
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
-    // Cold record: state has no accessToken. ensureCodexAccessToken must
-    // call mint, which round-trips through the OAuth /token endpoint.
     getByIdSpy.mockImplementation(async () => baseRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
       const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
@@ -105,7 +101,6 @@ describe('createCodexProvider', () => {
     const instance = await createCodexProvider(baseRecord);
     const models = await instance.provider.getProvidedModels(directFetcher);
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
-    // Mint then catalog fetch.
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);

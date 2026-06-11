@@ -88,7 +88,7 @@ describe('callCodexResponsesCompact', () => {
     expect(result.result.output[1]).toMatchObject({ id: 'cmp_x', type: 'compaction', encrypted_content: 'FULL_BLOB' });
   });
 
-  test('errors if upstream returns zero compaction items (defensive)', async () => {
+  test('errors if upstream returns zero compaction items', async () => {
     const badResponse = new Response(
       new ReadableStream({
         start(c) {

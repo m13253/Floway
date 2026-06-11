@@ -1,17 +1,8 @@
-// Copilot upstream transport. Maps each logical endpoint to the path
-// Copilot serves it on, then dispatches through the authed fetch.
-
 import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAuth } from './auth.ts';
 import type { UpstreamFetchOptions } from '@floway-dev/provider';
 
-// Copilot mounts its API at the host root and uses an Anthropic-style
-// `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
-// `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
-// paths reflect Copilot's contract and are not admin-configurable.
+// These paths are part of Copilot's contract and are not admin-configurable.
 
-// Per-call upstream identity the transport hands to the auth layer: the row
-// id (used to key the persisted token cache) plus the wire-relevant auth
-// fields. Aliased so call sites read `config`, not `auth`.
 export type CopilotFetchConfig = CopilotAuth;
 
 // Convert a CopilotTokenFetchError into a regular Response so callers treat

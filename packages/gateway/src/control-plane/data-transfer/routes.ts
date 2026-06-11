@@ -70,6 +70,10 @@ const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.c
 
 const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PREFIXES.some(prefix => value.startsWith(prefix));
 
+const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
+
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
 const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
@@ -332,16 +336,18 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): UsageRecord['cost'] => {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) return null;
+const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid' } => {
+  if (value === undefined || value === null) return { type: 'ok', cost: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
   const obj = value as Record<string, unknown>;
   const cost: ModelPricing = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
-    if (typeof rate === 'number') cost[dimension] = rate;
+    if (rate === undefined) continue;
+    if (typeof rate !== 'number' || !Number.isFinite(rate)) return { type: 'invalid' };
+    cost[dimension] = rate;
   }
-  return Object.keys(cost).length > 0 ? cost : null;
+  return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
 };
 
 const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
@@ -384,6 +390,8 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     }
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
+    const costResult = parseImportedCost(record.cost);
+    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid cost dimension rates' };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -392,7 +400,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      cost: parseImportedCost(record.cost),
+      cost: costResult.cost,
     });
   }
 
@@ -507,26 +515,25 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
   return { type: 'ok', records };
 };
 
-const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-
-const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
-
 // Synchronously populate the SWR models cache for each saved upstream so the
 // dashboard's next navigation lands on a populated row. In merge mode the
 // upstreams.save above is an ON CONFLICT UPDATE that does not touch the
 // models_cache row through any FK cascade, so without this call a re-import
 // that changes an upstream's config would keep serving the prior cached
 // model list until SWR's soft window expired. Replace mode wiped the table
-// before the loop; warming there is a no-op population. Failures do not
-// block the import — the cache layer persists lastError for the dashboard.
+// before the loop; warming there is a no-op population. A failed upstream
+// fetch (network blip, bad credentials) does not block the import — the
+// cache layer persists lastError on that path for the dashboard to surface.
+// Failures earlier in the chain (provider construction, fetcher wiring) are
+// gateway bugs and propagate.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
+  const instance = await createProviderInstance(record);
+  const fetcher = (await createPerRequestFetcher())(record.id);
   try {
-    const instance = await createProviderInstance(record);
-    const fetcher = (await createPerRequestFetcher())(record.id);
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch (err) {
-    console.warn(`Failed to warm models cache for ${record.id}:`, err);
+  } catch {
+    // Persisted as lastError by the cache layer; nothing to do here.
   }
 };
 
@@ -677,7 +684,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     await Promise.all(deletes);
   }
 
-  // Users land before api keys so the FK from api_keys.user_id can resolve.
   // Proxies land before upstreams so any concurrent reader (e.g. a request
   // resolving an upstream's fallback list) sees the row referenced by an
   // upstream's proxy_fallback_list as soon as the upstream is visible.

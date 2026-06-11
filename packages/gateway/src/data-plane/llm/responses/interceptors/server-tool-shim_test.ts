@@ -1361,12 +1361,12 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
 });
 
 for (const field of ['external_web_access', 'search_content_types', 'return_token_budget'] as const) {
-  test(`explicitly-set hosted ${field} is silently stripped (the shim's function tool the shim forwards never carries it)`, async () => {
-    // The shim replaces the hosted entry with its shim's function tool
-    // tool; any hosted-only field — including ones the shim has no
-    // opinion on — drops out with the entry. Mirrors native: silently
-    // stripped. Tests the request completes normally instead of being
-    // rejected as a 400.
+  test(`explicitly-set hosted ${field} is silently stripped (the function tool the shim forwards never carries it)`, async () => {
+    // The shim replaces the hosted entry with its function tool; any
+    // hosted-only field — including ones the shim has no opinion on —
+    // drops out with the entry. Mirrors native: silently stripped.
+    // Tests the request completes normally instead of being rejected
+    // as a 400.
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const fieldValue: Record<typeof field, unknown> = {
@@ -1415,10 +1415,8 @@ test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards 
   const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
   assert(body.error.message.includes('must be an object'));
   assert(body.error.message.includes('array'));
-  // The offending field is `tools[].filters` itself (not a sub-field).
-  // A previous `param: 'tools'` lied about
-  // the location — tighten to exact equality so the regression is
-  // caught next time.
+  // `param` must be exactly `tools` (not a sub-field), since
+  // `tools[].filters` itself is the offending location.
   assertEquals(body.error.param, 'tools');
 });
 
@@ -1956,11 +1954,10 @@ test('usage accumulates across three iterations', async () => {
 });
 
 test('usage cached_tokens reported on one turn carries through (last-turn omission does not zero it out)', async () => {
-  // 算的时候当 0 算，给客户端的时候尽量透传 — internal sums treat
-  // missing fields as 0, but the wire output preserves any field that
-  // at least one turn observed. Turn 1 reports cached_tokens; turn 2
-  // omits it. Final usage must still surface cached_tokens (turn 1's
-  // value).
+  // Internal sums treat missing fields as 0; the wire output preserves
+  // any field at least one turn observed. Turn 1 reports cached_tokens;
+  // turn 2 omits it. Final usage must still surface cached_tokens
+  // (turn 1's value).
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -3225,7 +3222,7 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
   assertEquals(searchFc.name, SHIM_TOOL_NAME);
   assert(searchFc.arguments.includes('hello world'));
   // No payload → output is the not-preserved placeholder, not the
-  // wire snippet. The model is told to re-search if it needs the data.
+  // wire snippet. A re-search prompt is emitted when data is needed.
   const searchOut = input[2] as { output: string };
   assert(searchOut.output.includes('not preserved'));
   assertFalse(searchOut.output.includes('snippet body'));
@@ -5595,7 +5592,7 @@ test('dispatcher start frames yield IN-LINE at function_call.done (shim call slo
 test('shim call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
   // Reserving at `.added` (rather than `.done`) keeps a non-shim call
   // item arriving between added and done from stealing the shim's
-  // would-be downstream index. See spec § Output-index allocation.
+  // would-be downstream index.
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
