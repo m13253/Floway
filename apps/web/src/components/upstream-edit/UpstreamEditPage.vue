@@ -65,6 +65,15 @@ const azureDraft = ref<AzureDraft>(blankAzureDraft());
 const upstreamModels = ref<UpstreamModelConfig[]>(props.initialUpstreamModels ?? []);
 const upstreamModelsError = ref<string | null>(props.initialUpstreamModelsError ?? null);
 
+// `props.record` is a snapshot the loader resolved against the store's array
+// at route-resolution time; once `upstreamsStore.load()` rebuilds that array
+// with brand-new objects (e.g. after a forced cache refresh), the snapshot's
+// `modelsCache` summary goes stale. Mirror it locally and re-seed from the
+// store after every reload so `ModelsCacheStatus` reflects the row the
+// gateway just rewrote.
+const liveRecord = ref<UpstreamRecord | null>(props.record);
+watch(() => props.record, r => { liveRecord.value = r; });
+
 const defaultName = (p: UpstreamProviderKind) =>
   p === 'azure' ? 'Azure AI' : p === 'copilot' ? 'GitHub Copilot' : p === 'codex' ? 'ChatGPT Codex' : 'Custom upstream';
 
@@ -229,8 +238,13 @@ const refreshCachedModels = async () => {
     upstreamModels.value = data.data;
   } finally {
     // Reload the upstream list so `modelsCache.fetchedAt` and `lastError`
-    // reflect the row the gateway just rewrote, regardless of outcome.
+    // reflect the row the gateway just rewrote, regardless of outcome. The
+    // store rebuilds `upstreams` with fresh objects, so re-read the row
+    // from it and push the new snapshot into `liveRecord` — the loader's
+    // original `props.record` reference would otherwise stay stale.
     await upstreamsStore.load();
+    const refreshed = upstreamsStore.upstreams.value?.find(u => u.id === props.record!.id) ?? null;
+    if (refreshed) liveRecord.value = refreshed;
     refreshing.value = false;
   }
 };
@@ -442,7 +456,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
     <ModelsCacheStatus
       v-if="showCacheStatus"
       class="mb-4"
-      :models-cache="record!.modelsCache"
+      :models-cache="liveRecord!.modelsCache"
       :refreshing="refreshing"
       @refresh="refreshCachedModels"
     />

@@ -140,7 +140,11 @@ export const putCodexQuota = async (
     return;
   }
   const next = replaceAccountQuota(state, idx, { fetchedAt: Date.now(), data: snapshot });
-  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  try {
+    await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  } catch (err) {
+    console.warn(`putCodexQuota: failed to persist Codex quota for ${upstreamId}/${accountId}:`, err);
+  }
 };
 
 export const isCodexRateLimited = (snapshot: CodexQuotaSnapshot | null, now: Date): boolean => {

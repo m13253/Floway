@@ -55,7 +55,7 @@ describe('assertCodexUpstreamState', () => {
   });
 
   test('accepts accessToken absent / null / populated', () => {
-    expect(() => assertCodexUpstreamState({ accounts: [goodAccount] })).not.toThrow();
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
     expect(() => assertCodexUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' } }],
@@ -94,7 +94,8 @@ describe('assertCodexUpstreamState', () => {
 
 describe('readCodexUpstreamState', () => {
   test('normalizes missing accessToken / quotaSnapshot to null', () => {
-    const out = readCodexUpstreamState({ accounts: [goodAccount] });
+    const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
+    const out = readCodexUpstreamState({ accounts: [fresh] });
     expect(out.accounts[0].accessToken).toBeNull();
     expect(out.accounts[0].quotaSnapshot).toBeNull();
   });

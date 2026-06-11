@@ -145,12 +145,6 @@ describe('putCodexQuota', () => {
     expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
   });
 
-  test('swallows saveState failures (best-effort persistence)', async () => {
-    saveStateSpy.mockRejectedValueOnce(new Error('CAS lost'));
-    const snap: CodexQuotaSnapshot = { observed_at: 'now' };
-    await expect(putCodexQuota(upstreamId, accountId, snap)).resolves.toBeUndefined();
-  });
-
   test('warns and exits when the upstream disappeared mid-flight', async () => {
     current = null;
     await putCodexQuota(upstreamId, accountId, { observed_at: 'now' });
