@@ -7,25 +7,23 @@ import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } fro
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './interceptors/messages/types.ts';
 import { COPILOT_RESPONSES_BOUNDARY, COPILOT_RESPONSES_COMPACT_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { emptyKnownModels, mergeKnownModels, projectKnownModels, type CopilotKnownModels } from './known-models.ts';
+import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
 }
-
-const SOFT_MS = 10 * 60 * 1000;
-const L1_TTL_MS = 120_000;
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields
 // shared by every provider. kind/endpoints/providerData/enabledFlags are added
@@ -260,24 +258,23 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     });
 
   const provider: ModelProvider = {
-    getProvidedModels: fetcher =>
-      inProcessMemo(copilot.id, L1_TTL_MS, async () => {
-        const knownModels = (await readModelsStore<CopilotKnownModels>(copilot.id)) ?? emptyKnownModels();
-        const now = Date.now();
-        const initial = projectKnownModels(knownModels, now);
-        if (now - knownModels.fetchedAt < SOFT_MS && initial.length > 0) {
-          return finalizeCopilotModels(initial, upstreamFlags);
-        }
-        try {
-          const response = await fetchCopilotModels(upstreamConfig, fetcher);
-          const merged = mergeKnownModels(knownModels, response, now);
-          await writeModelsStore<CopilotKnownModels>(copilot.id, merged);
-          return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
-        } catch (err) {
-          if (initial.length > 0) return finalizeCopilotModels(initial, upstreamFlags);
-          throw err;
-        }
-      }),
+    getProvidedModels: async fetcher => {
+      const fresh = await getProviderRepo().upstreams.getById(copilot.id);
+      if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
+      const state = readCopilotUpstreamState(fresh.state);
+      const known = state.knownModels ?? emptyKnownModels();
+      const response = await fetchCopilotModels(upstreamConfig, fetcher);
+      const now = Date.now();
+      const merged = mergeKnownModels(known, response, now);
+      // CAS write: a losing CAS is silently accepted — the winning state is
+      // valid; the fetched models are still returned to the caller.
+      await getProviderRepo().upstreams.saveState(
+        copilot.id,
+        { ...state, knownModels: merged } satisfies CopilotUpstreamState,
+        { expectedState: fresh.state },
+      );
+      return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
+    },
     getPricingForModelKey: pricingForCopilotModelKey,
     callChatCompletions: async (model, body, signal, headers, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
