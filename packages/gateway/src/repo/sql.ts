@@ -36,7 +36,6 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import type { SearchConfig } from '../data-plane/tools/web-search/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -1125,23 +1124,25 @@ const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSn
 class SqlSearchConfigRepo implements SearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
-  async get(): Promise<SearchConfig | null> {
+  async get(): Promise<unknown | null> {
     const row = await this.db
       .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1')
       .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string }>();
     // Singleton seeded by migration 0031; defensive fallback for fresh DBs.
     if (!row) return null;
     return {
-      provider: row.provider as SearchConfig['provider'],
+      provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },
       microsoftGrounding: { apiKey: row.microsoft_grounding_api_key },
     };
   }
 
   async save(config: unknown): Promise<void> {
-    // The only caller (`saveSearchConfig`) re-parses via `parseSearchConfigStrict`
-    // before reaching here, so the cast is safe at the contract boundary.
-    const { provider, tavily, microsoftGrounding } = config as SearchConfig;
+    const { provider, tavily, microsoftGrounding } = config as {
+      provider: string;
+      tavily: { apiKey: string };
+      microsoftGrounding: { apiKey: string };
+    };
     await this.db
       .prepare(
         `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, updated_at)
