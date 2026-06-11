@@ -37,7 +37,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
     );
   }
 
-  initEnv(name => env[name] as string);
+  initEnv(name => String(env[name] ?? ''));
   initFileProvider(new R2FileProvider(env.FILES));
   initImageCacheStore(new KvImageCache(env.KV));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));

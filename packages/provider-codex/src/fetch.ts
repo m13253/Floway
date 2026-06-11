@@ -1,4 +1,4 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken, putCodexAccessToken } from './access-token-cache.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -141,9 +141,21 @@ const performUpstreamCall = async (
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
     await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
+    // Force a mint here rather than going through ensureCodexAccessToken's
+    // read-then-maybe-mint. If the invalidate's CAS lost to a sibling write
+    // (a concurrent quota putCodexQuota, refresh-token rotation, or operator
+    // re-import all touch the same state_json row), the broken token still
+    // sits in the slot and a re-read would hand it back as fresh — Codex
+    // tokens carry multi-day expiresAt — sending us into an immediate second
+    // 401 with alreadyRetried already flipped. Minting unconditionally and
+    // persisting best-effort sidesteps that window; a CAS loss on persist is
+    // fine because the next request will re-mint if its read still sees the
+    // dead token.
     let newAccessToken: string;
     try {
-      newAccessToken = await ensureAccessToken(opts);
+      const minted = await mintAccessToken(opts, opts.account.refresh_token);
+      putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted).catch(() => {});
+      newAccessToken = minted.token;
     } catch (err) {
       if (err instanceof CodexOAuthSessionTerminatedError) {
         await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
