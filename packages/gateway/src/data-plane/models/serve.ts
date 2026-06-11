@@ -15,9 +15,6 @@ export const models = async (c: Context) => {
     const fetcherForUpstream = await createPerRequestFetcher();
     return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream));
   } catch (e) {
-    // Upstream HTTP/parse failures are squashed to a generic 502 so we do not
-    // leak upstream identity. Other errors (e.g. the registry's "no upstream
-    // configured" hint) carry actionable operator guidance and surface verbatim.
     const message = e instanceof ProviderModelsUnavailableError
       ? MODEL_LISTING_FAILURE_MESSAGE
       : (e instanceof Error ? e.message : String(e));

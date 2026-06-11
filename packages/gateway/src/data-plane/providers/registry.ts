@@ -26,7 +26,6 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
   providerFactories[record.provider](record);
 
-// Ids not in the catalog are silently dropped; null preserves global sort order.
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels, getInternalModels) so a caller can never omit it and
 // silently receive the full, unscoped catalog — a missing scope is a compile
@@ -199,12 +198,12 @@ export const getInternalModels = async (
 ): Promise<InternalModel[]> =>
   (await getModels(upstreamFilter, fetcherForUpstream)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
-export interface ModelResolution {
+interface ModelResolution {
   id: string;
   model?: ResolvedModel;
 }
 
-export interface ProviderModelResolution {
+interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
   binding: ProviderModelRecord;

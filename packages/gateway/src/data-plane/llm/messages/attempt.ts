@@ -114,8 +114,8 @@ export const messagesAttempt = {
       );
       return response;
     });
-    // count_tokens is excluded from the `upstream_success` metric — the
-    // dashboard only tracks generation-shaped traffic — but the recorder
+    // count_tokens is excluded from the `upstream_success` metric — that
+    // metric only covers generation-shaped traffic — but the recorder
     // contract still has to fire so a provider that forgets to wrap fails
     // loud on the happy path. Discarding the duration is intentional;
     // upstream throws are already loud via the await above.

@@ -1060,9 +1060,8 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
       return null;
     }
 
-    // Surface stored-JSON corruption — silently returning null would hide a
-    // corrupt config row from operators behind the load helper's default
-    // fallback.
+    // Surface stored-JSON corruption — silently returning null would mask a
+    // corrupt config row.
     try {
       return JSON.parse(row.value);
     } catch (cause) {
@@ -1355,7 +1354,6 @@ class SqlProxyRepo implements ProxyRepo {
   }
 
   async save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void> {
-    // Mirrors SqlUpstreamRepo.save: ON CONFLICT preserves created_at.
     const now = new Date().toISOString();
     await this.db
       .prepare(

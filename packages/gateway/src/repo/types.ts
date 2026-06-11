@@ -95,13 +95,12 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
 
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
-  // Includes soft-deleted rows. Telemetry attribution and operator data-transfer
-  // need every historical key so the user_id behind each row stays resolvable
-  // after the owner rotates or deletes it.
+  // Includes soft-deleted rows so the user_id behind a historical key stays
+  // resolvable after the owner rotates or deletes it.
   listIncludingDeleted(): Promise<ApiKey[]>;
   listByUserId(userId: number): Promise<ApiKey[]>;
-  // Self-scope telemetry includes the actor's own soft-deleted keys so a
-  // rotated key's name still resolves when attributing past usage.
+  // Includes the user's own soft-deleted keys so a rotated key's name still
+  // resolves when attributing past usage.
   listByUserIdIncludingDeleted(userId: number): Promise<ApiKey[]>;
   findByRawKey(rawKey: string): Promise<ApiKey | null>;
   getById(id: string): Promise<ApiKey | null>;
@@ -216,10 +215,7 @@ export interface ProxyRepo {
   // local deployment and is preserved.
   save(record: { id: string; name: string; url: string; dialTimeoutSeconds: number | null }): Promise<void>;
   delete(id: string): Promise<boolean>;
-  // Drops every proxy row in one statement.
   deleteAll(): Promise<void>;
-  // Returns the ids of every upstream whose `proxyFallbackList` currently
-  // includes the given proxy id.
   findUpstreamsReferencing(proxyId: string): Promise<string[]>;
 }
 

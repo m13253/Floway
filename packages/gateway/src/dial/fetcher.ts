@@ -167,11 +167,6 @@ const tryOne = async (
   errors: unknown[],
   recordUpstreamLatency: (<T>(promise: Promise<T>) => Promise<T>) | undefined,
 ): Promise<Response | null> => {
-  // Each attempt's dial+fetch promise is wrapped here when a recorder was
-  // supplied, so the upstream-latency metric times only the dial that
-  // actually settles last — the recorder keeps the most recent wrap's
-  // duration, so a successful retry overwrites earlier failed-attempt
-  // timings.
   const wrap = recordUpstreamLatency ?? (<T>(p: Promise<T>) => p);
   try {
     if (id === DIRECT_PROXY_ID) {

@@ -60,12 +60,11 @@ const EDIT_MIME_ALIASES: Record<string, string> = {
 const EDIT_SUPPORTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 // The canonical edit-supported mimetype for a source, or null when gpt-image
-// edit cannot accept the format. TODO(transcode): native Responses runs the
-// input through its multimodal pipeline and re-encodes it, so it edits e.g. a
-// gif input that this endpoint would reject; we forward bytes verbatim and
-// have no image codec available through @floway-dev/platform contracts, so an
-// unsupported format is rejected up front. If a platform-level image
-// transcoder is later exposed, transcode here to match native.
+// edit cannot accept the format. Native Responses runs the input through its
+// multimodal pipeline and re-encodes it, so it edits e.g. a gif input that
+// this endpoint would reject; we forward bytes verbatim and have no image
+// codec available through @floway-dev/platform contracts, so an unsupported
+// format is rejected up front.
 const editSupportedMime = (mime: string): string | null => {
   const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
   return EDIT_SUPPORTED_MIMES.has(canonical) ? canonical : null;
@@ -430,7 +429,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
       };
     }
   } catch {
-    /* */
+    // Non-JSON body falls through to the generic HTTP-status message.
   }
   return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
 };

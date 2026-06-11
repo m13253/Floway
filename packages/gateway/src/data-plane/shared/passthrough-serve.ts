@@ -93,7 +93,6 @@ export interface PassthroughServeContext {
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
   readonly model: string;
-  // Selects which provider binding can serve this endpoint family.
   readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —

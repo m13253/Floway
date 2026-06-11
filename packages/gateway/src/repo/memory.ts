@@ -2,6 +2,12 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
+import {
+  cloneStoredResponsesItem,
+  cloneStoredResponsesSnapshot,
+  compareResponsesItemsByFreshness,
+  responsesItemStoreKey,
+} from './responses-clone.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -660,11 +666,6 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   }
 }
 
-const cloneStoredResponsesItem = (item: StoredResponsesItem): StoredResponsesItem => ({
-  ...item,
-  payload: item.payload === null ? null : structuredClone(item.payload),
-});
-
 class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
@@ -702,15 +703,6 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 }
 
-const cloneStoredResponsesSnapshot = (snapshot: StoredResponsesSnapshot): StoredResponsesSnapshot => ({
-  ...snapshot,
-  itemIds: [...snapshot.itemIds],
-});
-
-const compareResponsesItemsByFreshness = (a: StoredResponsesItem, b: StoredResponsesItem): number =>
-  b.refreshedAt - a.refreshedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id);
-
-const responsesItemStoreKey = (apiKeyId: string | null, id: string): string => `${apiKeyId ?? ''}\0${id}`;
 
 class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
