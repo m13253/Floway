@@ -487,7 +487,7 @@ const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream ?? null, modelKey: row.model_key, hour: row.hour, requests: 0, tokens: {}, cost: null };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, requests: 0, tokens: {}, cost: null };
       byBucket.set(key, record);
     }
     return record;
@@ -794,7 +794,7 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
   metricScope: row.metric_scope as PerformanceMetricScope,
   keyId: row.key_id,
   model: row.model,
-  upstream: row.upstream ?? null,
+  upstream: row.upstream,
   modelKey: row.model_key,
   stream: row.stream === 1,
   runtimeLocation: row.runtime_location,

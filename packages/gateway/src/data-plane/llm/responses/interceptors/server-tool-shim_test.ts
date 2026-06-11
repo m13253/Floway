@@ -3452,7 +3452,7 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .map(e => e.item)
     .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results?.[0]?.snippet ?? '';
+  const snippet = done[0].results![0].snippet;
   assert(snippet.includes('not configured'));
 });
 
@@ -3472,7 +3472,7 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
     .map(e => e.item)
     .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results?.[0]?.snippet ?? '';
+  const snippet = done[0].results![0].snippet;
   assert(snippet.includes('tavily'));
 });
 
@@ -4501,7 +4501,6 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const drainPromise = collectFrames(result.events).catch(() => []);
 
   // Wait a microtask for the search() to be invoked and capture the signal.
-  // Drain the first frame to flush the eager start frames.
   while (observedSignal === undefined) {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
@@ -4862,8 +4861,8 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
   assertEquals(result.summary.dispatched.length, 0);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assert((ts.response.error?.message ?? '').includes('without closing shim call items'));
-  assert((ts.response.error?.message ?? '').includes('response.completed'));
+  assert(ts.response.error!.message.includes('without closing shim call items'));
+  assert(ts.response.error!.message.includes('response.completed'));
 });
 
 test('consumeTurn dispatches at function_call.done with .done args canonical over deltas', async () => {
@@ -5687,7 +5686,7 @@ test('consumeTurn synthesizes terminalStatus.failed when upstream stream ends wi
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assertEquals(ts.response.status, 'failed');
-  assert((ts.response.error?.message ?? '').includes('without a terminal event'));
+  assert(ts.response.error!.message.includes('without a terminal event'));
 });
 
 test('createMergeState starts with empty sparse usage accumulator and a synthesized response id', () => {

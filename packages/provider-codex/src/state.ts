@@ -37,11 +37,8 @@ export interface CodexAccountCredential {
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
-  // Pre-existing rows imported before these fields were introduced have
-  // neither key in state_json. The asserter accepts the absent-key case
-  // verbatim (see comment there) — declaring these required is a deliberate
-  // narrowing for ergonomics: every consumer falsy-checks before access, so
-  // a runtime `undefined` aliases the documented `null` case at use sites.
+  // The asserter accepts the absent-key case for these two fields and use
+  // sites alias it to `null` via `?? null`.
   accessToken: CodexAccessTokenEntry | null;
   quotaSnapshot: CodexQuotaSnapshotEntry | null;
 }
@@ -182,10 +179,8 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
   }
 }
 
-// Thin wrapper for callers that want a typed reader rather than asserting and
-// keeping the same reference. The asserter is non-mutating, so the absent-key
-// case for accessToken / quotaSnapshot survives this read; callers narrow it
-// with `?? null` at use sites.
+// Non-mutating: the asserter preserves the input reference, so callers can
+// CAS on the same object they read.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);
   return raw;

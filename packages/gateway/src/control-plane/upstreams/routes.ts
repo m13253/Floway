@@ -204,7 +204,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
@@ -249,7 +250,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
 };
 
 export const deleteUpstream = async (c: Context) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
@@ -515,7 +517,8 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
 };
 
 export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
@@ -538,7 +541,8 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
 };
 
 export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);

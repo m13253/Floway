@@ -529,7 +529,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
-  const visionHeaders: string[] = [];
+  const visionHeaders: (string | null)[] = [];
 
   // The boundary chain runs inside `provider.callMessages` itself, so this
   // exercises the integration contract end-to-end: the vision-detection
@@ -557,7 +557,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
         return jsonResponse(copilotModels([{ id: 'claude-msg', supported_endpoints: ['/v1/messages'] }]));
       }
       if (url.pathname === '/v1/messages') {
-        visionHeaders.push(request.headers.get('copilot-vision-request') ?? '');
+        visionHeaders.push(request.headers.get('copilot-vision-request'));
         await request.text();
         return sseResponse();
       }
@@ -567,9 +567,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
 
-      // Tool result carrying an image — the only image in the conversation
-      // lives nested inside `tool_result.content`, so the vision detector must
-      // recurse into tool_result.content to discover it.
       await driveMessages(model, {
         max_tokens: 10,
         messages: [
@@ -609,7 +606,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
     },
   );
 
-  assertEquals(visionHeaders, ['true', '']);
+  assertEquals(visionHeaders, ['true', null]);
 });
 
 test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire (translated path)', async () => {

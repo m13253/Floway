@@ -250,7 +250,6 @@ test('generate passes non-events provider result through unchanged', async () =>
   assertEquals(result.type, 'upstream-error');
   if (result.type !== 'upstream-error') throw new Error('unreachable');
   assertEquals(result.status, 502);
-  // Wrap must not run when the upstream failed before any events flowed.
   assertEquals(wrapSpy.mock.calls.length, 0);
   wrapSpy.mockRestore();
 });
@@ -304,8 +303,6 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   // — same id wrap committed the snapshot under.
   assert(isStoredResponseId(result.result.id));
 
-  // wrap-output-storage runs exactly once on the synthesized compaction
-  // events, with snapshotMode='replace'.
   assertEquals(wrapSpy.mock.calls.length, 1);
   assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
   assertEquals(wrapSpy.mock.calls[0][1].targetApi, 'responses');

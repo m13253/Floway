@@ -84,7 +84,7 @@ export interface PerformanceLatencySample extends PerformanceDimensions {
   durationMs: number;
 }
 
-export interface PerformanceErrorSample extends PerformanceDimensions {}
+export type PerformanceErrorSample = PerformanceDimensions;
 
 export interface PerformanceTelemetryRecord extends PerformanceDimensions {
   requests: number;
@@ -186,7 +186,7 @@ export interface CodexPkcePendingRepo {
 }
 
 export interface SearchConfigRepo {
-  get(): Promise<unknown | null>;
+  get(): Promise<unknown>;
   save(config: unknown): Promise<void>;
 }
 

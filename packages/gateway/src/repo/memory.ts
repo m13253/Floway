@@ -667,9 +667,9 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   deleteOlderThan(refreshedBefore: number): Promise<number> {
     let changes = 0;
-    for (const [id, row] of this.store) {
+    for (const [key, row] of this.store) {
       if (row.refreshedAt < refreshedBefore) {
-        this.store.delete(id);
+        this.store.delete(key);
         changes += 1;
       }
     }

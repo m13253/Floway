@@ -122,7 +122,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
     config: {
       baseUrl: 'https://images.example.com',
       bearerToken: 'sk-images',
-      endpoints: {  },
+      endpoints: {},
     },
   }));
 
