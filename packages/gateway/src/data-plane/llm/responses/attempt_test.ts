@@ -193,8 +193,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     throw new Error('callResponses should not be called when rewrite fails');
   });
   const candidate = makeCandidate(callResponses);
-  // Force `supportsResponsesItemReference: false` so a stored row with no
-  // inline payload triggers the rewrite-side throw.
+  // Force rewrite-side throw: a stored row without inline payload requires item-reference support upstream.
   candidate.binding.supportsResponsesItemReference = false;
 
   const missingId = createStoredResponsesItemId('message');
@@ -299,8 +298,7 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   assertEquals(result.result.object, 'response.compaction');
   assertEquals(result.result.output.length, 1);
   assertEquals((result.result.output[0] as { id: string }).id, 'cmp_1');
-  // The compact result wears a floway-minted response id, not the upstream's
-  // — same id wrap committed the snapshot under.
+  // The compact result wears a floway-minted response id, not the upstream's.
   assert(isStoredResponseId(result.result.id));
 
   assertEquals(wrapSpy.mock.calls.length, 1);
@@ -427,8 +425,7 @@ test('generate seeds store.privatePayload from rewrite references so cross-turn 
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
 
-  // beginAttempt should have re-seeded privatePayload from the rewrite
-  // references — keyed by the wire id the stored payload.item carries.
+  // privatePayload is re-seeded from rewrite references, keyed by the wire id in payload.item.
   const seeded = store.getPrivatePayload(wireId);
   assert(seeded !== undefined, 'privatePayload must be seeded after rewrite');
   assertEquals((seeded as { marker: string }).marker, 'seeded');

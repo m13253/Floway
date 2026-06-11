@@ -103,6 +103,9 @@ test('SourceStreamState.rememberUsage keeps real usage and ignores zero figures'
 
   state.rememberUsage(null);
   assertEquals(state.usage, { input: 50, output: 10 });
+
+  state.rememberUsage({ input: 0, output: 0 });
+  assertEquals(state.usage, { input: 50, output: 10 });
 });
 
 // ── recordPerformance ──

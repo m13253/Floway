@@ -532,9 +532,7 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcher())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {
-    // Persisted as lastError by the cache layer; nothing to do here.
-  }
+  } catch {}
 };
 
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {

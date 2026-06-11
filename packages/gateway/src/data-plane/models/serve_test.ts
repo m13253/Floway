@@ -179,9 +179,9 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
 
 test('/models returns the same superset payload as /v1/models', async () => {
   const { apiKey, repo } = await setupAppTest();
-  // Register a custom upstream so we can verify image-kind projection via
-  // the Tier 2 id heuristic (gpt-image-* → 'image'). The Copilot fixture
-  // only emits chat and embedding models.
+  // Image-kind projection requires a non-Copilot id like gpt-image-* (matched
+  // by the Tier 2 id heuristic) since the Copilot fixture only emits chat and
+  // embedding models.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_images_proj',
     name: 'Image Provider',
@@ -556,8 +556,7 @@ test('/v1/models returns the last real error when every account model load fails
         headers: { 'x-api-key': apiKey.key },
       });
 
-      // Invalid /models payloads still parse if `data` is an array; an
-      // unexpected `object` value is non-fatal because the merging handler
+      // Unexpected `object` value is intentionally non-fatal — the handler
       // only iterates `data`.
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: unknown[] };

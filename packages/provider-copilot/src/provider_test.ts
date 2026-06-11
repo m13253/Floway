@@ -394,11 +394,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
   assertEquals('service_tier' in responsesBody, false);
   const wireInput = responsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
-  // withVisionHeaderSet detected the input_image and set the Copilot vision
-  // header on the upstream request.
   assertEquals(visionHeader, 'true');
-  // withInitiatorHeaderSet classified the last input item (a user message) as
-  // user-initiated.
   assertEquals(initiatorHeader, 'user');
 });
 
@@ -682,9 +678,6 @@ test('Copilot provider persists merged known-models view via saveState CAS keyed
     },
   );
 
-  // Two writes happen during a `/models` round-trip: first the token mint
-  // path persists copilotToken, then the known-models projection persists
-  // knownModels. Each CAS is keyed on the state at its own read time.
   assertEquals(saveStateCalls.length, 2);
   const tokenWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).copilotToken !== null);
   const modelsWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).knownModels !== null);
