@@ -27,4 +27,10 @@ export class KvImageCache implements ImageCacheStore {
     const ttlSeconds = Math.max(KV_MIN_TTL_SECONDS, Math.ceil(ttlMs / 1000));
     await this.kv.put(key, value, { expirationTtl: ttlSeconds });
   }
+
+  // KV evicts via the per-key `expirationTtl` set at write time, so the
+  // central scheduled-maintenance hook has nothing to do here.
+  sweepExpired(_now: number): Promise<void> {
+    return Promise.resolve();
+  }
 }
