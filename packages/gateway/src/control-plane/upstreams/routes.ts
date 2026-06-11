@@ -17,6 +17,7 @@ import { clearModelsStore, directFetcher, invalidateModelsStore, ProviderModelsU
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
+  type CodexQuotaSnapshot,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
   CODEX_AUTHORIZE_URL,
@@ -37,16 +38,24 @@ import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provid
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
 // Serialize for the HTTP response, attaching the live codex_quota snapshot
-// when the row is a Codex upstream. Keeps serialize.ts free of provider I/O
-// and a global repo handle, while ensuring every codex-bearing response shape
-// carries the quota panel data the dashboard expects.
+// when the row is a Codex upstream and the SWR models-cache freshness for
+// every row. Keeps serialize.ts free of provider I/O and a global repo handle,
+// while ensuring every response shape carries the panels the dashboard
+// expects.
 const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedUpstreamRecord> => {
-  const serialized = upstreamRecordToJson(record);
+  const cacheRowPromise = getRepo().modelsCache.get(record.id);
+  let codexQuotaPromise: Promise<CodexQuotaSnapshot | null> | null = null;
   if (record.provider === 'codex') {
     assertCodexUpstreamRecord(record);
-    const accountId = record.config.accounts[0].chatgptAccountId;
-    serialized.codex_quota = await getCodexQuota(record.id, accountId);
+    codexQuotaPromise = getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId);
   }
+  const cacheRow = await cacheRowPromise;
+  const serialized = upstreamRecordToJson(record);
+  serialized.modelsCache = {
+    fetchedAt: cacheRow?.fetchedAt ?? null,
+    lastError: cacheRow?.lastError ?? null,
+  };
+  if (codexQuotaPromise) serialized.codex_quota = await codexQuotaPromise;
   return serialized;
 };
 

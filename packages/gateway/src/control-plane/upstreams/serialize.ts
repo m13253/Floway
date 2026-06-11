@@ -1,6 +1,11 @@
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import type { CodexQuotaSnapshot } from '@floway-dev/provider-codex';
 
+export interface ModelsCacheStatus {
+  fetchedAt: number | null;
+  lastError: { message: string; at: number } | null;
+}
+
 export interface SerializedUpstreamRecord {
   id: string;
   provider: UpstreamProviderKind;
@@ -14,6 +19,10 @@ export interface SerializedUpstreamRecord {
   proxy_fallback_list: string[];
   config: unknown;
   state: unknown;
+  // SWR models-cache freshness joined from the models_cache table by the
+  // route handler. Both inner values are null on a row that has never been
+  // warmed.
+  modelsCache?: ModelsCacheStatus;
   // Present only for provider === 'codex'.
   codex_quota?: CodexQuotaSnapshot | null;
 }

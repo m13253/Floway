@@ -226,6 +226,51 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   });
 });
 
+test('GET /api/upstreams attaches models-cache freshness to every row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Three upstreams cover the three cache states: no row, warm row, warm row
+  // with a follow-up failure annotated via setLastError.
+  const baseRow = {
+    provider: 'custom' as const,
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    config: { baseUrl: 'https://a.example.com', bearerToken: 'x', endpoints: { chatCompletions: {} } },
+    state: null,
+  };
+  await repo.upstreams.save({ ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 });
+  await repo.upstreams.save({ ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 });
+  await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
+
+  await repo.modelsCache.put('up_warm', {
+    fetchedAt: 1_700_000_000_000,
+    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+  });
+  await repo.modelsCache.put('up_failed', {
+    fetchedAt: 1_700_000_000_000,
+    models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
+  });
+  await repo.modelsCache.setLastError('up_failed', { message: 'boom', at: 1_700_000_500_000 });
+
+  const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
+  assertEquals(list.status, 200);
+  const items = (await list.json()) as Array<Record<string, any>>;
+  const byId = Object.fromEntries(items.map(i => [i.id, i]));
+
+  assertEquals(byId.up_fresh.modelsCache, { fetchedAt: null, lastError: null });
+  assertEquals(byId.up_warm.modelsCache, { fetchedAt: 1_700_000_000_000, lastError: null });
+  assertEquals(byId.up_failed.modelsCache, {
+    fetchedAt: 1_700_000_000_000,
+    lastError: { message: 'boom', at: 1_700_000_500_000 },
+  });
+});
+
 test('GET /api/upstream-flags returns the flag catalog and requires admin auth', async () => {
   const { adminSession, apiKey } = await setupAppTest();
 
