@@ -1,5 +1,4 @@
-import { ensureCodexAccessToken } from './access-token-cache.ts';
-import { refreshCodexAccessToken } from './auth/oauth.ts';
+import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
 import { callCodexResponsesCompact } from './compaction.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
@@ -65,15 +64,9 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   const provider: ModelProvider = {
     getProvidedModels: async fetcher => {
-      const access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, async refreshToken => {
-        const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
-        await persistRefreshTokenRotation(tokens.refresh_token);
-        return {
-          token: tokens.access_token,
-          expiresAt: Date.now() + tokens.expires_in * 1000,
-          refreshedAt: new Date().toISOString(),
-        };
-      });
+      const access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
+        mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation),
+      );
       const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
       // Surface every model the upstream returns, including ones whose
       // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The

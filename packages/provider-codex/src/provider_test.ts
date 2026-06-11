@@ -123,8 +123,13 @@ describe('createCodexProvider', () => {
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
-    // Rotated refresh_token persisted via CAS write.
-    expect(saveStateSpy).toHaveBeenCalled();
+    // Mint persists twice via CAS: once for the rotated refresh_token from the
+    // OAuth response, once for the freshly minted access token in the same
+    // account slot. Both writes must land for the next caller to see a usable
+    // credential pair.
+    const persistedStates = saveStateSpy.mock.calls.map(c => c[1] as CodexUpstreamState);
+    expect(persistedStates.some(s => s.accounts[0].refresh_token === 'rt_v2')).toBe(true);
+    expect(persistedStates.some(s => s.accounts[0].accessToken?.token === 'at_minted')).toBe(true);
   });
 
   test('getProvidedModels propagates catalog fetch failures', async () => {

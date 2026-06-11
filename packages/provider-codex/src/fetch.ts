@@ -1,5 +1,5 @@
-import { ensureCodexAccessToken, invalidateCodexAccessToken } from './access-token-cache.ts';
-import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
+import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
   CODEX_ORIGINATOR,
@@ -82,24 +82,12 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
   return await performUpstreamCall(opts, accessToken, false);
 };
 
-// Mints a fresh access token via /oauth/token and routes the rotated
-// refresh_token through the caller's CAS hook. Awaiting the rotation
-// persistence (rather than fire-and-forget) is deliberate: under concurrent
-// rotations each call's new refresh_token must reach the hook before the
-// next attempt reads state, otherwise an unhandled rejection can swallow the
-// rotated token and the upstream eventually returns app_session_terminated.
-// A losing CAS inside the hook is fine — `expectedState` mismatched a
-// concurrent operator re-import or sibling rotation, and the already-
-// persisted newer state supersedes ours.
-const mintAccessToken = async (opts: CallCodexResponsesOptions, refreshToken: string) => {
-  const tokens = await refreshCodexAccessToken(refreshToken, opts.call.fetcher);
-  await opts.effects.persistRefreshTokenRotation(tokens.refresh_token);
-  return {
-    token: tokens.access_token,
-    expiresAt: Date.now() + tokens.expires_in * 1000,
-    refreshedAt: new Date().toISOString(),
-  };
-};
+// Mints a fresh access token for this call's upstream — thin wrapper that
+// pins the per-call fetcher and the caller's refresh-token CAS hook.
+// `mintCodexAccessToken` (in ./access-token-cache.ts) carries the OAuth
+// round-trip and the rotation-persistence semantics; see that helper's doc.
+const mintAccessToken = (opts: CallCodexResponsesOptions, refreshToken: string) =>
+  mintCodexAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
 
 const ensureAccessToken = async (opts: CallCodexResponsesOptions): Promise<string> => {
   const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));

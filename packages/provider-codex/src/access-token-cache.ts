@@ -1,5 +1,6 @@
+import { refreshCodexAccessToken } from './auth/oauth.ts';
 import { readCodexUpstreamState, type CodexAccessTokenEntry, type CodexUpstreamState } from './state.ts';
-import { getProviderRepo } from '@floway-dev/provider';
+import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 export type { CodexAccessTokenEntry };
 
@@ -79,7 +80,8 @@ export const invalidateCodexAccessToken = async (
 // `mint` owns the OAuth round-trip and any rotated-refresh_token persistence —
 // this helper deliberately doesn't fold refresh-token rotation in, because the
 // caller's CAS hook for refresh_token has to coordinate with terminal-state
-// transitions and lives upstream of this function.
+// transitions and lives upstream of this function. `mintCodexAccessToken`
+// below is the standard implementation of that callback.
 export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
@@ -96,4 +98,27 @@ export const ensureCodexAccessToken = async (
   const minted = await mint(account.refresh_token);
   await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
   return minted;
+};
+
+// Mints a fresh access token via /oauth/token and routes the rotated
+// refresh_token through the caller's CAS hook. Awaiting the rotation
+// persistence (rather than fire-and-forget) is deliberate: under concurrent
+// rotations each call's new refresh_token must reach the hook before the
+// next attempt reads state, otherwise an unhandled rejection can swallow the
+// rotated token and the upstream eventually returns app_session_terminated.
+// A losing CAS inside the hook is fine — `expectedState` mismatched a
+// concurrent operator re-import or sibling rotation, and the already-
+// persisted newer state supersedes ours.
+export const mintCodexAccessToken = async (
+  refreshToken: string,
+  fetcher: Fetcher,
+  persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
+): Promise<CodexAccessTokenEntry> => {
+  const tokens = await refreshCodexAccessToken(refreshToken, fetcher);
+  await persistRefreshTokenRotation(tokens.refresh_token);
+  return {
+    token: tokens.access_token,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
+    refreshedAt: new Date().toISOString(),
+  };
 };
