@@ -1,5 +1,3 @@
--- 0031_cache_storage_rework.sql
-
 -- New tables --------------------------------------------------------------
 
 CREATE TABLE models_cache (
@@ -46,9 +44,9 @@ WHERE provider = 'copilot'
 INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, updated_at)
 SELECT
   1,
-  COALESCE(json_extract(value, '$.provider'), 'disabled'),
-  COALESCE(json_extract(value, '$.tavily.apiKey'), ''),
-  COALESCE(json_extract(value, '$.microsoftGrounding.apiKey'), ''),
+  json_extract(value, '$.provider'),
+  json_extract(value, '$.tavily.apiKey'),
+  json_extract(value, '$.microsoftGrounding.apiKey'),
   strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 FROM config
 WHERE key = 'search_config';

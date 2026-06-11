@@ -121,8 +121,6 @@ export const getCodexQuota = async (
   return account.quotaSnapshot.data;
 };
 
-// A transient storage error here must not crash the request; the next call
-// re-reads state and rewrites if needed.
 export const putCodexQuota = async (
   upstreamId: string,
   accountId: string,
@@ -140,11 +138,7 @@ export const putCodexQuota = async (
     return;
   }
   const next = replaceAccountQuota(state, idx, { fetchedAt: Date.now(), data: snapshot });
-  try {
-    await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
-  } catch (err) {
-    console.warn(`putCodexQuota: failed to persist Codex quota for ${upstreamId}/${accountId}:`, err);
-  }
+  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
 
 export const isCodexRateLimited = (snapshot: CodexQuotaSnapshot | null, now: Date): boolean => {

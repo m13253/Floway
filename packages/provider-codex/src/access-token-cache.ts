@@ -37,8 +37,10 @@ export const getCodexAccessToken = async (
   return account.accessToken;
 };
 
-// Best-effort write: a losing CAS or transient storage error must not crash
-// the request. The next call re-reads state and refreshes if needed.
+// A losing CAS is not an error — saveState reports it via `updated: false`,
+// and the next call re-reads state and refreshes if needed. Genuine storage
+// failures propagate so the request path surfaces them rather than silently
+// running on a stale cached token.
 const persistAccessToken = async (
   upstreamId: string,
   accountId: string,
@@ -60,11 +62,7 @@ const persistAccessToken = async (
   // when a 401 retry races a concurrent refresh that already cleared the token.
   if (entry === null && state.accounts[idx].accessToken === null) return;
   const next = replaceAccountAccessToken(state, idx, entry);
-  try {
-    await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
-  } catch (err) {
-    console.warn(`${where}: failed to persist Codex access token for ${upstreamId}/${accountId}:`, err);
-  }
+  await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
 
 export const putCodexAccessToken = async (
@@ -78,11 +76,8 @@ export const invalidateCodexAccessToken = async (
   accountId: string,
 ): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
 
-// Returns the cached token when still fresh; otherwise calls `mint` with the
-// active refresh_token to produce a new entry, persists it, and returns it.
-// `mint` owns the OAuth round-trip and any rotated-refresh_token persistence —
-// this helper deliberately doesn't fold refresh-token rotation in, because the
-// caller's CAS hook for refresh_token has to coordinate with terminal-state
+// Refresh-token rotation is deliberately not folded in here: the caller's
+// CAS hook for refresh_token has to coordinate with terminal-state
 // transitions and lives upstream of this function. `mintCodexAccessToken`
 // below is the standard implementation of that callback.
 export const ensureCodexAccessToken = async (

@@ -1,12 +1,9 @@
 import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAuth } from './auth.ts';
 import type { UpstreamFetchOptions } from '@floway-dev/provider';
 
-// These paths are part of Copilot's contract and are not admin-configurable.
-
 export type CopilotFetchConfig = CopilotAuth;
 
-// Convert a CopilotTokenFetchError into a regular Response so callers treat
-// token-exchange failures like any other 4xx/5xx.
+// Token-exchange failures surface as regular Responses so callers handle them via the same 4xx/5xx path.
 const copilotFetchInternal = async (
   config: CopilotFetchConfig,
   path: string,

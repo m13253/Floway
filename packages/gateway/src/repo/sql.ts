@@ -1106,7 +1106,7 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
     const row = await this.db
       .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1')
       .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string }>();
-    if (!row) throw new Error('search_config singleton missing; migration 0031 must have run');
+    if (!row) throw new Error('search_config singleton row missing');
     return {
       provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },

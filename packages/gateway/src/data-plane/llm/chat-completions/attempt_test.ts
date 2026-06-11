@@ -143,8 +143,6 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // Drain — the translate trip wraps the Messages events back to Chat
-  // Completions shape; passing without throwing is the contract under test.
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
 });

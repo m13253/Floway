@@ -331,7 +331,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       assertEquals(sharedPricing?.input, 1);
       assertEquals(sharedPricing?.output, 2);
 
-      // Auto models still resolve pricing from the cached upstream map.
+      // Auto models without upstream cost data resolve to null pricing.
       const autoOnly = provider.getPricingForModelKey('auto-only');
       assertEquals(autoOnly, null);
     },
@@ -358,8 +358,7 @@ test('Custom provider forwards the source-derived anthropicBeta slice as the ant
       // upstreams register no filter interceptor, so the provider merges it.
       await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14'], noopUpstreamCallOptions);
       await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20'], noopUpstreamCallOptions);
-      // No beta slice → no header on the wire (the regression guard for the
-      // pre-86ef9aa drop).
+      // Empty/missing beta slice must not emit an anthropic-beta header.
       await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, [], noopUpstreamCallOptions);
       await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
     },

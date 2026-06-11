@@ -64,10 +64,10 @@ type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-// Runtime defensive parsers for upstream records read back from D1. The
-// request-time zod schemas guard incoming bodies; these parsers guard the DB
-// boundary so a manually-edited or migrated row that violates the runtime
-// invariants surfaces with an actionable message instead of crashing later.
+// Run the per-provider invariant asserts on a freshly-built or freshly-merged
+// record before it hits the repo. Request-time zod schemas only validate JSON
+// shape; these helpers enforce the URL / endpoint-mix / path-override rules
+// that the provider packages own.
 
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
@@ -105,14 +105,16 @@ const newId = (): string => shortId('up');
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
 
 // Synchronously populate the SWR models cache for a freshly-saved upstream
-// so the dashboard's next navigation lands on a populated row. Failures do
-// not block the import response — the cache layer's runFetch persists
-// `lastError` on the row, which the dashboard surfaces separately.
+// so the dashboard's next navigation lands on a populated row. Upstream
+// fetch failures do not block the import response — runFetch persists
+// `lastError` on the row, which the dashboard surfaces separately. Provider
+// instance and fetcher construction errors are not swallowed; those signal
+// genuine misconfiguration that the operator must see.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
+  const instance = await createProviderInstance(record);
+  const fetcher = (await createPerRequestFetcher())(record.id);
   try {
-    const instance = await createProviderInstance(record);
-    const fetcher = (await createPerRequestFetcher())(record.id);
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch (err) {
     console.warn(`Failed to warm models cache for ${record.id}:`, err);
@@ -191,10 +193,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     state: null,
   };
 
-  // Schema validated shape; this catches Azure-specific URL / endpoint-mix
-  // rules and Custom-specific path-override URL parsing that live in the
-  // per-provider assertCustomUpstreamRecord / assertAzureUpstreamRecord
-  // helpers.
+  // zod only checks JSON shape; per-provider asserts run the URL/endpoint-mix rules.
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 
@@ -295,7 +294,6 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   }
 
   try {
-    // A brand-new draft has no saved row yet, so the catalog GET dials direct.
     const result = await fetchCustomModels(assertedConfig, directFetcher);
     return c.json(result);
   } catch (e) {

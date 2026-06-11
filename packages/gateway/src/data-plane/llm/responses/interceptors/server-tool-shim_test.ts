@@ -4484,7 +4484,8 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     upstreamIds: null,
     wantsStream: true,
     runtimeLocation: 'test',
-    scheduleBackground: () => {},    backgroundScheduler: () => {},
+    scheduleBackground: () => {},
+    backgroundScheduler: () => {},
     requestStartedAt: 0,
     abortSignal: controller.signal,
   };

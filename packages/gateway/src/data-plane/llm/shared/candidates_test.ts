@@ -34,7 +34,6 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   proxyFallbackList: [],
 });
 
-// pickTarget helpers mirroring the preference chains each source uses.
 const pickMessages = (e: ModelEndpoints): LlmTargetApi | null =>
   e.messages ? 'messages' : null;
 
@@ -70,7 +69,6 @@ describe('enumerateProviderCandidates', () => {
   test('provider with binding but pickTarget returns null yields no candidate but sets sawModel', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    // Provider only has chatCompletions; pickMessages requires messages.
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
@@ -107,7 +105,6 @@ describe('enumerateProviderCandidates', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_first', 10, ['test-model'], { messages: {} }));
-    // up_second does not carry test-model.
     await repo.upstreams.save(azureUpstream('up_second', 20, ['other-model'], { messages: {} }));
     await repo.upstreams.save(azureUpstream('up_third', 30, ['test-model'], { messages: {} }));
 
@@ -165,10 +162,8 @@ describe('enumerateProviderCandidates', () => {
   test('pickTarget preference: multi-endpoint binding picks according to pickTarget logic', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    // Provider supports both messages and responses.
     await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
 
-    // pickMessagesOrResponses prefers messages over responses.
     const { candidates: msgCandidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
@@ -178,7 +173,6 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(msgCandidates.length, 1);
     assertEquals(msgCandidates[0].targetApi, 'messages');
 
-    // pickResponses only accepts responses.
     const { candidates: resCandidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
@@ -192,7 +186,6 @@ describe('enumerateProviderCandidates', () => {
   test('pickTarget returning null filters out an otherwise-matching provider', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
-    // Provider only has chatCompletions; pickAny picks it, but pickMessages rejects it.
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
     const { candidates: anyCandidates } = await enumerateProviderCandidates({

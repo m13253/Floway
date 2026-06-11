@@ -195,7 +195,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
     config: {
       baseUrl: 'https://embed.example.com',
       bearerToken: 'sk-embed',
-      endpoints: {  },
+      endpoints: {},
     },
   }));
 

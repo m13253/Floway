@@ -296,7 +296,7 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 });
 
-test('countTokens renders a Google RPC INVALID_ARGUMENT when no Messages-capable candidate exists', async () => {
+test('countTokens renders a Google RPC NOT_FOUND when no Messages-capable candidate exists', async () => {
   installRepo();
   queueCandidates([]);
 

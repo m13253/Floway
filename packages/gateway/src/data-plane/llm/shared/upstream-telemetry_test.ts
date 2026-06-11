@@ -77,7 +77,6 @@ test('records upstream_success error when the protocol terminal is a failure eve
   assertEquals(samples.length, 1);
   assertEquals(samples[0]?.requests, 0);
   assertEquals(samples[0]?.errors, 1);
-  // No latency is consulted on the failure path.
   assertEquals(samples[0]?.totalMsSum, 0);
 });
 
@@ -129,8 +128,6 @@ test('records nothing when the downstream consumer cancels via AbortSignal', asy
   const iterator = wrapped[Symbol.asyncIterator]();
   await iterator.next();
   downstream.abort();
-  // Drain remaining frames; the wrapper should NOT record because the abort
-  // signal short-circuits the EOF-without-terminal failure branch.
   await drain({
     [Symbol.asyncIterator]: () => iterator,
   });

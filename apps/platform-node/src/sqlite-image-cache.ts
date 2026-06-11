@@ -1,10 +1,6 @@
 import type { ImageCacheStore, SqlDatabase } from '@floway-dev/platform';
 
-// Node-side ImageCacheStore. Backed by the `image_cache` table from migration
-// 0031: a content-addressed (key, value, expires_at) row store. We layer over
-// the platform's SqlDatabase contract so the Node entry can hand us the same
-// handle the rest of the gateway uses, and so binding shape (Uint8Array as
-// BLOB) is the underlying node:sqlite driver's responsibility.
+// BLOB binding shape (Uint8Array) is the underlying node:sqlite driver's responsibility.
 export class SqliteImageCache implements ImageCacheStore {
   constructor(private readonly db: SqlDatabase) {}
 

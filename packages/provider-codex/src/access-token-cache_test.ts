@@ -93,7 +93,7 @@ describe('putCodexAccessToken', () => {
     const [id, nextState, opts] = saveStateSpy.mock.calls[0];
     expect(id).toBe(upstreamId);
     expect((nextState as CodexUpstreamState).accounts[0].accessToken).toEqual(entry);
-    expect((opts).expectedState).toEqual({ accounts: [{ ...baseAccount }] });
+    expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
   });
 
   test('swallows saveState failures (best-effort persistence)', async () => {
@@ -122,7 +122,7 @@ describe('invalidateCodexAccessToken', () => {
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
     await invalidateCodexAccessToken(upstreamId, accountId);
     expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    expect(((saveStateSpy.mock.calls[0][1]) as CodexUpstreamState).accounts[0].accessToken).toBeNull();
+    expect((saveStateSpy.mock.calls[0][1] as CodexUpstreamState).accounts[0].accessToken).toBeNull();
   });
 
   test('no-ops when the slot is already null', async () => {
@@ -148,7 +148,7 @@ describe('ensureCodexAccessToken', () => {
     expect(out).toEqual(minted);
     expect(mint).toHaveBeenCalledWith('rt_v1');
     expect(saveStateSpy).toHaveBeenCalledTimes(1);
-    expect(((saveStateSpy.mock.calls[0][1]) as CodexUpstreamState).accounts[0].accessToken).toEqual(minted);
+    expect((saveStateSpy.mock.calls[0][1] as CodexUpstreamState).accounts[0].accessToken).toEqual(minted);
   });
 
   test('mints when the cached token is within the refresh skew window', async () => {

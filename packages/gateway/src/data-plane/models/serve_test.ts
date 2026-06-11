@@ -130,12 +130,11 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.description, undefined);
       }
 
-      // /models serves the exact same payload (same handler).
       const anthropicResponse = await requestApp('/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(anthropicResponse.status, 200);
-      assertEquals(await anthropicResponse.json(), await (await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } })).json());
+      assertEquals(await anthropicResponse.json(), body);
 
       // Dashboard adds two UI-only fields on top of the public DTO.
       const controlResponse = await requestApp('/api/models', {
@@ -559,8 +558,7 @@ test('/v1/models returns the last real error when every account model load fails
 
       // Invalid /models payloads still parse if `data` is an array; an
       // unexpected `object` value is non-fatal because the merging handler
-      // only iterates `data`. The assertion here documents the lenient
-      // behavior consistent with isModelsResponse.
+      // only iterates `data`.
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: unknown[] };
       assertEquals(body.data, []);

@@ -419,7 +419,7 @@ const measureRight = () => {
   const kids = Array.from(root.children) as HTMLElement[];
   let h = 0;
   for (const k of kids) h += k.getBoundingClientRect().height;
-  const gap = parseFloat(getComputedStyle(root).rowGap || '0') || 0;
+  const gap = parseFloat(getComputedStyle(root).rowGap) || 0;
   if (kids.length > 1) h += gap * (kids.length - 1);
   rightContentH.value = h;
 };

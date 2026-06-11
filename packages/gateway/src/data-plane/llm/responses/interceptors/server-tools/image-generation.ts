@@ -103,14 +103,14 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   return buffer;
 };
 
-// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string into
-// raw bytes. Returns null for non-data URLs (e.g. http(s)): fetching remote
-// images for edit binding is not supported — only inline image bytes are bound.
+// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as
+// emitted in `image_generation_call.result`) into raw bytes. Returns null
+// for non-data URLs (e.g. http(s)): fetching remote images for edit binding
+// is not supported — only inline image bytes are bound.
 const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
   const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
   if (dataUrlMatch === null) {
     if (/^https?:\/\//i.test(imageUrl)) return null;
-    // Bare base64 (e.g. an image_generation_call.result).
     try {
       return { bytes: base64ToArrayBuffer(imageUrl), mimeType: fallbackMime };
     } catch {
@@ -428,9 +428,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
         code: typeof err.code === 'string' ? err.code : `upstream_${status}`,
       };
     }
-  } catch {
-    // Non-JSON body falls through to the generic HTTP-status message.
-  }
+  } catch {}
   return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
 };
 
