@@ -504,10 +504,30 @@ class MemoryCacheRepo implements CacheRepo {
 }
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
-  get(_id: string): Promise<CachedModelsRow | null> { throw new Error('not implemented'); }
-  put(_id: string, _row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> { throw new Error('not implemented'); }
-  setLastError(_id: string, _error: { message: string; at: number } | null): Promise<void> { throw new Error('not implemented'); }
-  delete(_id: string): Promise<void> { throw new Error('not implemented'); }
+  private rows = new Map<string, CachedModelsRow>();
+
+  get(upstreamId: string): Promise<CachedModelsRow | null> {
+    const row = this.rows.get(upstreamId);
+    return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
+  }
+
+  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+    this.rows.set(upstreamId, { fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
+    return Promise.resolve();
+  }
+
+  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
+    // No-op when no row exists: lastError annotates a previously-successful fetch.
+    const existing = this.rows.get(upstreamId);
+    if (!existing) return Promise.resolve();
+    this.rows.set(upstreamId, { ...existing, lastError: error });
+    return Promise.resolve();
+  }
+
+  delete(upstreamId: string): Promise<void> {
+    this.rows.delete(upstreamId);
+    return Promise.resolve();
+  }
 }
 
 class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {

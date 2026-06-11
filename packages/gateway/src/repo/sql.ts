@@ -856,11 +856,45 @@ class SqlCacheRepo implements CacheRepo {
 }
 
 class SqlModelsCacheRepo implements ModelsCacheRepo {
-  constructor(_db: SqlDatabase) {}
-  get(_id: string): Promise<CachedModelsRow | null> { throw new Error('not implemented'); }
-  put(_id: string, _row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> { throw new Error('not implemented'); }
-  setLastError(_id: string, _error: { message: string; at: number } | null): Promise<void> { throw new Error('not implemented'); }
-  delete(_id: string): Promise<void> { throw new Error('not implemented'); }
+  constructor(private db: SqlDatabase) {}
+
+  async get(upstreamId: string): Promise<CachedModelsRow | null> {
+    const row = await this.db
+      .prepare('SELECT fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
+      .bind(upstreamId)
+      .first<{ fetched_at: number; models_json: string; last_error_json: string | null }>();
+    if (!row) return null;
+    return {
+      fetchedAt: row.fetched_at,
+      models: JSON.parse(row.models_json) as UpstreamModel[],
+      lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
+    };
+  }
+
+  async put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)
+         ON CONFLICT (upstream_id) DO UPDATE SET
+           fetched_at = excluded.fetched_at,
+           models_json = excluded.models_json,
+           last_error_json = NULL`,
+      )
+      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models))
+      .run();
+  }
+
+  async setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
+    // No-op when no row exists: lastError annotates a previously-successful fetch.
+    await this.db
+      .prepare('UPDATE models_cache SET last_error_json = ? WHERE upstream_id = ?')
+      .bind(error === null ? null : JSON.stringify(error), upstreamId)
+      .run();
+  }
+
+  async delete(upstreamId: string): Promise<void> {
+    await this.db.prepare('DELETE FROM models_cache WHERE upstream_id = ?').bind(upstreamId).run();
+  }
 }
 
 class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
