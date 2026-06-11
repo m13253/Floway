@@ -1,21 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
-import { codexQuotaKey } from './quota.ts';
-import type { CodexAccessTokenEntry, CodexAccountCredential, CodexUpstreamState } from './state.ts';
-import { initProviderRepo, type CacheRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
-
-const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
-  const store = new Map<string, string>();
-  return {
-    _store: store,
-    get: async k => store.get(k) ?? null,
-    set: async (k, v) => { store.set(k, v); },
-    delete: async k => { store.delete(k); },
-    deletePrefix: async p => { for (const k of [...store.keys()]) if (k.startsWith(p)) store.delete(k); },
-  };
-};
+import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
+import { initProviderRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { memoryCacheRepo, noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeEffects = (): CodexCallEffects => ({
   persistRefreshTokenRotation: vi.fn(async () => {}),
@@ -58,11 +46,18 @@ const seedFreshAccessToken = (entry: CodexAccessTokenEntry = farFutureAccessToke
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: entry }] });
 };
 
+const seedAccountState = (overrides: Partial<CodexAccountCredential>): void => {
+  currentRecord = makeRecord({ accounts: [{ ...activeAccount, ...overrides }] });
+};
+
+const readQuotaEntry = (): CodexQuotaSnapshotEntry | null =>
+  (currentRecord.state as CodexUpstreamState).accounts[0].quotaSnapshot;
+
 beforeEach(() => {
   vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
-    cache: makeMemoryCache(),
+    cache: memoryCacheRepo(),
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, newState) => {
@@ -100,10 +95,9 @@ const errorJson = (status: number, body: unknown, extraHeaders: Record<string, s
 
 describe('callCodexResponses — gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
-    const cache = makeMemoryCache();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      upstreamId, account: { ...activeAccount, state: 'session_terminated' },
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -113,15 +107,16 @@ describe('callCodexResponses — gates', () => {
   });
 
   test('refuses while rate-limited window is open', async () => {
-    const cache = makeMemoryCache();
-    cache._store.set(codexQuotaKey('up_a'), JSON.stringify({
-      observed_at: '2026-06-05T00:00:00.000Z',
-      ratelimited_until: '2026-06-05T01:00:00.000Z',
-    }));
     vi.useFakeTimers().setSystemTime(new Date('2026-06-05T00:30:00.000Z'));
+    seedAccountState({
+      quotaSnapshot: {
+        fetchedAt: new Date('2026-06-05T00:00:00.000Z').getTime(),
+        data: { observed_at: '2026-06-05T00:00:00.000Z', ratelimited_until: '2026-06-05T01:00:00.000Z' },
+      },
+    });
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -132,15 +127,14 @@ describe('callCodexResponses — gates', () => {
 });
 
 describe('callCodexResponses — token freshness', () => {
-  test('refreshes before call when KV is empty', async () => {
-    const cache = makeMemoryCache();
+  test('refreshes before call when no cached access token', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const effects = makeEffects();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects, call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
@@ -150,25 +144,23 @@ describe('callCodexResponses — token freshness', () => {
     expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
   });
 
-  test('reuses fresh KV access token without refreshing', async () => {
-    const cache = makeMemoryCache();
+  test('reuses fresh state-cached access token without refreshing', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_kv');
   });
 
   test('persistTerminalState refresh_failed when /oauth/token returns app_session_terminated', async () => {
-    const cache = makeMemoryCache();
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(400, { error: { code: 'app_session_terminated', message: 'gone' } }));
     const effects = makeEffects();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects, call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('refresh_failed', expect.stringMatching(/gone/));
@@ -177,27 +169,28 @@ describe('callCodexResponses — token freshness', () => {
 
 describe('callCodexResponses — upstream classification', () => {
   test('happy path: 200 → ok:true, quota persisted', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
-    const stored = cache._store.get(codexQuotaKey('up_a'));
-    expect(stored).toContain('"primary_used_percent":42');
-    expect(stored).not.toContain('ratelimited_until');
+    // putCodexQuota fires-and-forgets via .catch(() => {}); give the task queue
+    // a turn so the saveState promise resolves before we assert.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const stored = readQuotaEntry();
+    expect(stored?.data.primary_used_percent).toBe(42);
+    expect(stored?.data.ratelimited_until).toBeUndefined();
   });
 
   test('upstream body has store:false and stream:true forced even if caller passes otherwise', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
+      upstreamId, account: activeAccount,
       model, body: { input: [], stream: false as unknown as true, store: true } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
-      headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.model).toBe('gpt-5.4');
@@ -206,13 +199,12 @@ describe('callCodexResponses — upstream classification', () => {
   });
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
     const effects = makeEffects();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects, call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
@@ -220,7 +212,6 @@ describe('callCodexResponses — upstream classification', () => {
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
@@ -228,8 +219,8 @@ describe('callCodexResponses — upstream classification', () => {
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'still expired' } }));
     const effects = makeEffects();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects, call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
@@ -237,30 +228,29 @@ describe('callCodexResponses — upstream classification', () => {
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
     }));
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
-    const stored = cache._store.get(codexQuotaKey('up_a'));
-    expect(stored).toContain('ratelimited_until');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const stored = readQuotaEntry();
+    expect(stored?.data.ratelimited_until).toBeTruthy();
   });
 
   test('5xx passes through without touching state', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(503, { error: 'unavailable' }));
     const effects = makeEffects();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects, call: noopUpstreamCallOptions,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(503);
@@ -302,11 +292,10 @@ const enforcingRecorder = () => {
 
 describe('callCodexResponses — recorder contract', () => {
   test('non-active gate satisfies an enforcing recorder once', async () => {
-    const cache = makeMemoryCache();
     const recorder = enforcingRecorder();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: recorder.options,
+      upstreamId, account: { ...activeAccount, state: 'session_terminated' },
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: recorder.options,
     });
     expect(result.ok).toBe(false);
     expect(recorder.invocations()).toBe(1);
@@ -315,16 +304,17 @@ describe('callCodexResponses — recorder contract', () => {
   });
 
   test('rate-limited gate satisfies an enforcing recorder once', async () => {
-    const cache = makeMemoryCache();
-    cache._store.set(codexQuotaKey('up_a'), JSON.stringify({
-      observed_at: '2026-06-05T00:00:00.000Z',
-      ratelimited_until: '2026-06-05T01:00:00.000Z',
-    }));
     vi.useFakeTimers().setSystemTime(new Date('2026-06-05T00:30:00.000Z'));
+    seedAccountState({
+      quotaSnapshot: {
+        fetchedAt: new Date('2026-06-05T00:00:00.000Z').getTime(),
+        data: { observed_at: '2026-06-05T00:00:00.000Z', ratelimited_until: '2026-06-05T01:00:00.000Z' },
+      },
+    });
     const recorder = enforcingRecorder();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: recorder.options,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: recorder.options,
     });
     expect(result.ok).toBe(false);
     expect(recorder.invocations()).toBe(1);
@@ -332,12 +322,11 @@ describe('callCodexResponses — recorder contract', () => {
   });
 
   test('refresh-failed gate satisfies an enforcing recorder once', async () => {
-    const cache = makeMemoryCache();
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(400, { error: { code: 'app_session_terminated', message: 'gone' } }));
     const recorder = enforcingRecorder();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: recorder.options,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: recorder.options,
     });
     expect(result.ok).toBe(false);
     expect(recorder.invocations()).toBe(1);
@@ -345,7 +334,6 @@ describe('callCodexResponses — recorder contract', () => {
   });
 
   test('401-then-success: recorder records both fetch attempts; durationMs reflects the second', async () => {
-    const cache = makeMemoryCache();
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
@@ -353,8 +341,8 @@ describe('callCodexResponses — recorder contract', () => {
       .mockResolvedValueOnce(sseResponse());
     const recorder = enforcingRecorder();
     const result = await callCodexResponses({
-      upstreamId: 'up_a', account: activeAccount,
-      model, body: { input: [], stream: true }, headers: {}, cache, effects: makeEffects(), call: recorder.options,
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(), call: recorder.options,
     });
     expect(result.ok).toBe(true);
     // Both upstream fetches go through `recordUpstreamLatency`; the OAuth

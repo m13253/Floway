@@ -7,7 +7,6 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import {
-  computeCodexQuotaTtlMs,
   getCodexQuota,
   isCodexRateLimited,
   parseCodexQuotaHeaders,
@@ -16,13 +15,12 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { streamingProviderCall, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // Hooks for repo-side state transitions, applied with optimistic concurrency.
 // Refresh-token rotations and terminal-state transitions go through the repo;
-// access-token persistence is handled inside ensureCodexAccessToken (also a
-// state_json write), and quota writes happen inline below against the
-// CacheRepo.
+// access-token and quota persistence are handled inside their own helpers
+// (also state_json writes via the same CAS hook).
 export interface CodexCallEffects {
   persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
@@ -37,7 +35,6 @@ export interface CallCodexResponsesOptions {
   body: Omit<ResponsesPayload, 'model'>;
   headers: Record<string, string>;
   signal?: AbortSignal;
-  cache: CacheRepo;
   effects: CodexCallEffects;
   // Per-call options; see UpstreamCallOptions for the fetcher /
   // recordUpstreamLatency contract. The recorder is threaded into the
@@ -64,7 +61,7 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
   }
 
   const now = new Date();
-  const quotaSnapshot = await getCodexQuota(opts.cache, opts.upstreamId);
+  const quotaSnapshot = await getCodexQuota(opts.upstreamId, opts.account.chatgptAccountId);
   if (isCodexRateLimited(quotaSnapshot, now)) {
     return await syntheticReturn(
       synthetic429(`Codex upstream rate-limited until ${quotaSnapshot!.ratelimited_until!}`, quotaSnapshot!.ratelimited_until!, now),
@@ -133,17 +130,18 @@ const performUpstreamCall = async (
     if (response.ok) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-      // Quota cache is best-effort — getCodexQuota already treats missing
-      // entries as null, so a KV write failure is recoverable noise rather
-      // than something to crash the request on.
-      putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow)).catch(() => {});
+      // Quota persistence is best-effort — getCodexQuota already treats a
+      // missing or stale snapshot as null, so a CAS loss or transient
+      // storage error is recoverable noise rather than something to crash
+      // the request on.
+      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
       return ensureSseContentType(response);
     }
 
     if (response.status === 429) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-      putCodexQuota(opts.cache, opts.upstreamId, snapshot, computeCodexQuotaTtlMs(snapshot, responseNow)).catch(() => {});
+      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
       return response;
     }
 

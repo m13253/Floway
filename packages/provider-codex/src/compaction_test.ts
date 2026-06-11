@@ -2,19 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { callCodexResponsesCompact } from './compaction.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexUpstreamState } from './state.ts';
-import { initProviderRepo, type CacheRepo, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
-
-const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
-  const store = new Map<string, string>();
-  return {
-    _store: store,
-    get: async k => store.get(k) ?? null,
-    set: async (k, v) => { store.set(k, v); },
-    delete: async k => { store.delete(k); },
-    deletePrefix: async p => { for (const k of [...store.keys()]) if (k.startsWith(p)) store.delete(k); },
-  };
-};
+import { initProviderRepo, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { memoryCacheRepo, noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const compactionSseResponse = (): Response => {
   const events = [
@@ -66,7 +55,7 @@ let currentRecord: UpstreamRecord;
 beforeEach(() => {
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: freshAccessToken }] });
   initProviderRepo(() => ({
-    cache: makeMemoryCache(),
+    cache: memoryCacheRepo(),
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, newState) => {
@@ -81,12 +70,11 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('callCodexResponsesCompact', () => {
   test('appends compaction_trigger, forces store:false & stream:true, returns rebuilt envelope', async () => {
-    const cache = makeMemoryCache();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(compactionSseResponse());
     const result = await callCodexResponsesCompact({
       upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hello' }] },
-      cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
+      headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -102,7 +90,6 @@ describe('callCodexResponsesCompact', () => {
   });
 
   test('errors if upstream returns zero compaction items (defensive)', async () => {
-    const cache = makeMemoryCache();
     const badResponse = new Response(
       new ReadableStream({
         start(c) {
@@ -117,17 +104,16 @@ describe('callCodexResponsesCompact', () => {
     await expect(callCodexResponsesCompact({
       upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hi' }] },
-      cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
+      headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     })).rejects.toThrow(/compaction/);
   });
 
   test('propagates upstream ok:false (non-2xx) unchanged', async () => {
-    const cache = makeMemoryCache();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream-error', { status: 500 }));
     const result = await callCodexResponsesCompact({
       upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hi' }] },
-      cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
+      headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(500);

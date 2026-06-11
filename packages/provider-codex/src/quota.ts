@@ -1,4 +1,5 @@
-import type { CacheRepo } from '@floway-dev/provider';
+import { readCodexUpstreamState, type CodexQuotaSnapshotEntry, type CodexUpstreamState } from './state.ts';
+import { getProviderRepo } from '@floway-dev/provider';
 
 export interface CodexQuotaSnapshot {
   observed_at: string;           // ISO 8601
@@ -19,8 +20,6 @@ export interface CodexQuotaSnapshot {
   // Present only when this snapshot was written as a result of a 429.
   ratelimited_until?: string;
 }
-
-export const codexQuotaKey = (upstreamId: string): string => `codex_quota:${upstreamId}`;
 
 const TTL_FLOOR_MS = 24 * 60 * 60 * 1000;
 
@@ -91,22 +90,61 @@ export const computeCodexQuotaTtlMs = (snapshot: CodexQuotaSnapshot, now: Date):
   return Math.max(TTL_FLOOR_MS, ...horizons);
 };
 
-// Malformed entries return null rather than throwing — a corrupt cache row
-// must never block a request; the next response will rewrite it.
-export const getCodexQuota = async (cache: CacheRepo, upstreamId: string): Promise<CodexQuotaSnapshot | null> => {
-  const raw = await cache.get(codexQuotaKey(upstreamId));
-  if (raw === null) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    return parsed as CodexQuotaSnapshot;
-  } catch {
-    return null;
-  }
+const findAccountIndex = (state: CodexUpstreamState, accountId: string): number =>
+  state.accounts.findIndex(a => a.chatgptAccountId === accountId);
+
+const replaceAccountQuota = (
+  state: CodexUpstreamState,
+  index: number,
+  entry: CodexQuotaSnapshotEntry,
+): CodexUpstreamState => ({
+  ...state,
+  accounts: state.accounts.map((account, i) => (i === index ? { ...account, quotaSnapshot: entry } : account)),
+});
+
+// Returns the most recent snapshot when still within its computed TTL.
+// Stale snapshots read as null — the next upstream response will overwrite
+// them. Storage no longer evicts on its own (state_json is unbounded), so
+// the freshness check moved from KV-native expiry to this inline gate.
+export const getCodexQuota = async (
+  upstreamId: string,
+  accountId: string,
+): Promise<CodexQuotaSnapshot | null> => {
+  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
+  if (!fresh) return null;
+  const state = readCodexUpstreamState(fresh.state);
+  const account = state.accounts.find(a => a.chatgptAccountId === accountId);
+  if (!account?.quotaSnapshot) return null;
+  const now = new Date();
+  const ttlMs = computeCodexQuotaTtlMs(account.quotaSnapshot.data, now);
+  if (now.getTime() - account.quotaSnapshot.fetchedAt > ttlMs) return null;
+  return account.quotaSnapshot.data;
 };
 
-export const putCodexQuota = async (cache: CacheRepo, upstreamId: string, snapshot: CodexQuotaSnapshot, ttlMs?: number): Promise<void> => {
-  await cache.set(codexQuotaKey(upstreamId), JSON.stringify(snapshot), ttlMs);
+// Best-effort write: a losing CAS or transient storage error must not crash
+// the request. The next call re-reads state and rewrites if needed.
+export const putCodexQuota = async (
+  upstreamId: string,
+  accountId: string,
+  snapshot: CodexQuotaSnapshot,
+): Promise<void> => {
+  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
+  if (!fresh) {
+    console.warn(`putCodexQuota: Codex upstream ${upstreamId} disappeared mid-request`);
+    return;
+  }
+  const state = readCodexUpstreamState(fresh.state);
+  const idx = findAccountIndex(state, accountId);
+  if (idx < 0) {
+    console.warn(`putCodexQuota: Codex account ${accountId} not found in upstream ${upstreamId}`);
+    return;
+  }
+  const next = replaceAccountQuota(state, idx, { fetchedAt: Date.now(), data: snapshot });
+  try {
+    await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  } catch (err) {
+    console.warn(`putCodexQuota: failed to persist Codex quota for ${upstreamId}/${accountId}:`, err);
+  }
 };
 
 export const isCodexRateLimited = (snapshot: CodexQuotaSnapshot | null, now: Date): boolean => {

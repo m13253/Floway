@@ -1,17 +1,64 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { codexQuotaKey, getCodexQuota, isCodexRateLimited, parseCodexQuotaHeaders, putCodexQuota } from './quota.ts';
-import type { CacheRepo } from '@floway-dev/provider';
+import {
+  computeCodexQuotaTtlMs,
+  getCodexQuota,
+  isCodexRateLimited,
+  parseCodexQuotaHeaders,
+  putCodexQuota,
+  type CodexQuotaSnapshot,
+} from './quota.ts';
+import type { CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
+import { initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { memoryCacheRepo } from '@floway-dev/test-utils';
 
-const makeMemoryCache = (): CacheRepo => {
-  const store = new Map<string, string>();
-  return {
-    get: async k => store.get(k) ?? null,
-    set: async (k, v) => { store.set(k, v); },
-    delete: async k => { store.delete(k); },
-    deletePrefix: async p => { for (const k of [...store.keys()]) if (k.startsWith(p)) store.delete(k); },
-  };
+const accountId = 'acc_1';
+const upstreamId = 'up_a';
+
+const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
+  id: upstreamId,
+  provider: 'codex',
+  name: 'Codex',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-06-01T00:00:00.000Z',
+  updatedAt: '2026-06-01T00:00:00.000Z',
+  config: { accounts: [{ email: 'a@b.com', chatgptAccountId: accountId, chatgptUserId: 'usr', planType: 'plus' }] },
+  state,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+});
+
+const baseAccount = {
+  chatgptAccountId: accountId,
+  refresh_token: 'rt_v1',
+  state: 'active' as const,
+  state_updated_at: '2026-06-01T00:00:00.000Z',
+  accessToken: null,
+  quotaSnapshot: null as CodexQuotaSnapshotEntry | null,
 };
+
+let current: UpstreamRecord | null;
+let cache: CacheRepo;
+let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
+let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
+
+beforeEach(() => {
+  current = makeRecord({ accounts: [{ ...baseAccount }] });
+  cache = memoryCacheRepo();
+  saveStateSpy = vi.fn(async (_id, newState, _opts) => {
+    if (current) current = { ...current, state: newState as CodexUpstreamState };
+    return { updated: true };
+  });
+  getByIdSpy = vi.fn(async () => current);
+  initProviderRepo(() => ({
+    cache,
+    upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
+  }));
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('parseCodexQuotaHeaders', () => {
   test('parses a 200 snapshot (no ratelimited_until)', () => {
@@ -61,21 +108,79 @@ describe('parseCodexQuotaHeaders', () => {
   });
 });
 
-describe('codex quota KV', () => {
-  test('key namespacing', () => {
-    expect(codexQuotaKey('up_x')).toBe('codex_quota:up_x');
+describe('getCodexQuota', () => {
+  test('returns null when the upstream row is missing', async () => {
+    current = null;
+    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
   });
 
-  test('put → get round-trips', async () => {
-    const cache = makeMemoryCache();
-    const snap = { observed_at: '2026-06-05T00:00:00.000Z', primary_used_percent: 10 };
-    await putCodexQuota(cache, 'up_x', snap);
-    expect(await getCodexQuota(cache, 'up_x')).toEqual(snap);
+  test('returns null when the account has no snapshot', async () => {
+    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
   });
 
-  test('get returns null for missing/malformed', async () => {
-    const cache = makeMemoryCache();
-    expect(await getCodexQuota(cache, 'absent')).toBeNull();
+  test('returns the snapshot data when fresh', async () => {
+    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', primary_used_percent: 10 };
+    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { fetchedAt: Date.now(), data: snap } }] });
+    expect(await getCodexQuota(upstreamId, accountId)).toEqual(snap);
+  });
+
+  test('returns null when the snapshot is past its TTL window', async () => {
+    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z' };
+    // No reset horizons → TTL floor is 24 h. Fetched two days ago is stale.
+    const fetchedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { fetchedAt, data: snap } }] });
+    expect(await getCodexQuota(upstreamId, accountId)).toBeNull();
+  });
+
+  test('returns null when the requested account is not in the pool', async () => {
+    expect(await getCodexQuota(upstreamId, 'acc_other')).toBeNull();
+  });
+});
+
+describe('putCodexQuota', () => {
+  test('persists the snapshot into the account slot via saveState', async () => {
+    const snap: CodexQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', primary_used_percent: 42 };
+    await putCodexQuota(upstreamId, accountId, snap);
+    expect(saveStateSpy).toHaveBeenCalledTimes(1);
+    const [id, nextState, opts] = saveStateSpy.mock.calls[0];
+    expect(id).toBe(upstreamId);
+    const written = (nextState as CodexUpstreamState).accounts[0].quotaSnapshot;
+    expect(written?.data).toEqual(snap);
+    expect(typeof written?.fetchedAt).toBe('number');
+    expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
+  });
+
+  test('swallows saveState failures (best-effort persistence)', async () => {
+    saveStateSpy.mockRejectedValueOnce(new Error('CAS lost'));
+    const snap: CodexQuotaSnapshot = { observed_at: 'now' };
+    await expect(putCodexQuota(upstreamId, accountId, snap)).resolves.toBeUndefined();
+  });
+
+  test('warns and exits when the upstream disappeared mid-flight', async () => {
+    current = null;
+    await putCodexQuota(upstreamId, accountId, { observed_at: 'now' });
+    expect(saveStateSpy).not.toHaveBeenCalled();
+  });
+
+  test('warns and exits when the requested account is not in the pool', async () => {
+    await putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' });
+    expect(saveStateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('computeCodexQuotaTtlMs', () => {
+  test('floors at 24h when no reset horizons are present', () => {
+    const now = new Date('2026-06-05T00:00:00.000Z');
+    expect(computeCodexQuotaTtlMs({ observed_at: now.toISOString() }, now)).toBe(24 * 60 * 60 * 1000);
+  });
+
+  test('extends past floor to the furthest reset horizon', () => {
+    const now = new Date('2026-06-05T00:00:00.000Z');
+    const snap: CodexQuotaSnapshot = {
+      observed_at: now.toISOString(),
+      primary_reset_after_at: '2026-06-08T00:00:00.000Z',
+    };
+    expect(computeCodexQuotaTtlMs(snap, now)).toBe(3 * 24 * 60 * 60 * 1000);
   });
 });
 

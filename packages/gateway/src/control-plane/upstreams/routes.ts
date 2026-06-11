@@ -11,7 +11,7 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { clearModelsStore, directFetcher, getProviderRepo, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
+import { clearModelsStore, directFetcher, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
@@ -34,14 +34,16 @@ import {
 import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
-// Serialize for the HTTP response, attaching the live KV codex_quota snapshot
+// Serialize for the HTTP response, attaching the live codex_quota snapshot
 // when the row is a Codex upstream. Keeps serialize.ts free of provider I/O
 // and a global repo handle, while ensuring every codex-bearing response shape
 // carries the quota panel data the dashboard expects.
 const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedUpstreamRecord> => {
   const serialized = upstreamRecordToJson(record);
   if (record.provider === 'codex') {
-    serialized.codex_quota = await getCodexQuota(getProviderRepo().cache, record.id);
+    assertCodexUpstreamRecord(record);
+    const accountId = record.config.accounts[0].chatgptAccountId;
+    serialized.codex_quota = await getCodexQuota(record.id, accountId);
   }
   return serialized;
 };

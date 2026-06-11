@@ -135,7 +135,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             body: wireBody,
             headers: ctx.headers,
             signal,
-            cache: getProviderRepo().cache,
             effects,
             call: opts,
           });
@@ -160,7 +159,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             body: wireBody,
             headers: ctx.headers,
             signal,
-            cache: getProviderRepo().cache,
             effects,
             call: opts,
           });
