@@ -36,9 +36,9 @@ const memoInFlight = (
   if (existing) return existing;
   const promise = fn();
   inFlight.set(key, promise);
-  void promise.finally(() => {
+  promise.finally(() => {
     if (inFlight.get(key) === promise) inFlight.delete(key);
-  });
+  }).catch(() => {});
   return promise;
 };
 

@@ -96,10 +96,10 @@ describe('putCodexAccessToken', () => {
     expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
   });
 
-  test('swallows saveState failures (best-effort persistence)', async () => {
+  test('propagates saveState failures so the request path surfaces them', async () => {
     saveStateSpy.mockRejectedValueOnce(new Error('CAS lost'));
     const entry: CodexAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
-    await expect(putCodexAccessToken(upstreamId, accountId, entry)).resolves.toBeUndefined();
+    await expect(putCodexAccessToken(upstreamId, accountId, entry)).rejects.toThrow('CAS lost');
   });
 
   test('warns and exits when the upstream disappeared mid-flight', async () => {

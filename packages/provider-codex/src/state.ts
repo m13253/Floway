@@ -37,6 +37,11 @@ export interface CodexAccountCredential {
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
+  // Pre-existing rows imported before these fields were introduced have
+  // neither key in state_json. The asserter accepts the absent-key case
+  // verbatim (see comment there) — declaring these required is a deliberate
+  // narrowing for ergonomics: every consumer falsy-checks before access, so
+  // a runtime `undefined` aliases the documented `null` case at use sites.
   accessToken: CodexAccessTokenEntry | null;
   quotaSnapshot: CodexQuotaSnapshotEntry | null;
 }
@@ -141,18 +146,22 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
     throw new TypeError(`${where}.state_updated_at must be a non-empty ISO string`);
   }
   // accessToken / quotaSnapshot were added after the initial schema; absent on
-  // pre-existing rows. Normalize the absent-key case to null in place so the
-  // narrowed CodexAccountCredential matches runtime exactly — callers can
-  // strict-null compare these fields without a foot-gun. Explicit `undefined`
-  // is rejected: it is never a valid persisted shape.
-  if (!('accessToken' in obj)) {
-    obj.accessToken = null;
-  } else if (obj.accessToken !== null) {
+  // pre-existing rows. Accept the absent-key case verbatim and only validate
+  // the shape when the key is present and non-null. Mutating the input here
+  // (e.g. defaulting to null in place) propagates back through the caller's
+  // `fresh.state` reference and poisons the CAS `expectedState`, so every
+  // legacy row's first cache write would lose. Explicit `undefined` is
+  // rejected: it is never a valid persisted shape.
+  if ('accessToken' in obj && obj.accessToken !== null) {
+    if (obj.accessToken === undefined) {
+      throw new TypeError(`${where}.accessToken must not be undefined`);
+    }
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
-  if (!('quotaSnapshot' in obj)) {
-    obj.quotaSnapshot = null;
-  } else if (obj.quotaSnapshot !== null) {
+  if ('quotaSnapshot' in obj && obj.quotaSnapshot !== null) {
+    if (obj.quotaSnapshot === undefined) {
+      throw new TypeError(`${where}.quotaSnapshot must not be undefined`);
+    }
     assertCodexQuotaSnapshotEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
 };
@@ -181,9 +190,10 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
 }
 
 // Thin wrapper for callers that want a typed reader rather than asserting and
-// keeping the same reference. assertCodexUpstreamState already normalizes
-// pre-existing rows (missing accessToken / quotaSnapshot become null in
-// place), so this is effectively `(raw) => { assert(raw); return raw; }`.
+// keeping the same reference. The asserter is pure (no input mutation), so
+// this is just `(raw) => { assert(raw); return raw; }` — the absent-key case
+// for accessToken / quotaSnapshot is preserved on the way out and callers
+// narrow it with `?? null` at use sites.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);
   return raw;

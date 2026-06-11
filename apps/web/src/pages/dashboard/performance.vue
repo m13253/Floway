@@ -7,7 +7,7 @@ import { computed, ref, watch, watchEffect } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
-import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, type DashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -37,12 +37,14 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   const auth = useAuthStore();
   const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQuery('today');
+  const buckets = dashboardBuckets('today');
   const overviewRes = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: 'request_total', timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
   }));
   return {
     view,
     overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], runtimeRows: [] },
+    buckets,
     error: overviewRes.error ? overviewRes.error.message : null,
   };
 });
@@ -59,6 +61,7 @@ const initialOverview = usePerformancePageData();
 
 const performanceRange = ref<DashboardRange>('today');
 const loadedPerformanceRange = ref<DashboardRange>('today');
+const loadedBuckets = ref<DashboardBuckets>(initialOverview.data.value.buckets);
 const performanceMetricScope = ref<Scope>('request_total');
 const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
@@ -77,6 +80,7 @@ const load = async () => {
   const requestedView = performanceView.value;
   performanceLoading.value = true;
   const { start, end, bucket } = dashboardRangeQuery(requestedRange);
+  const requestedBuckets = dashboardBuckets(requestedRange);
   const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
     query: { start, end, bucket, metric_scope: requestedScope, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView },
   }));
@@ -86,6 +90,7 @@ const load = async () => {
   performanceError.value = null;
   overview.value = data;
   loadedPerformanceRange.value = requestedRange;
+  loadedBuckets.value = requestedBuckets;
 };
 
 watch([performanceRange, performanceMetricScope, performanceView], load);
@@ -116,7 +121,7 @@ const formatDuration = (ms: number | null) => {
 };
 
 const chartConfig = computed<ChartConfiguration<'line'>>(() => {
-  const { keys: bucketKeys, labels } = dashboardBuckets(loadedPerformanceRange.value);
+  const { keys: bucketKeys, labels } = loadedBuckets.value;
 
   const datasets = performanceChartView.value === 'model'
     ? (() => {

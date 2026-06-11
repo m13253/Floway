@@ -122,6 +122,11 @@ const modelsStore = useModelsStore();
 
 const tokenRange = ref<Range>('today');
 const loadedTokenRange = ref<Range>('today');
+// Buckets are derived from the latest successful load's wall-clock time so the
+// chart axis advances with each refresh; without this trigger the `buckets`
+// computed would otherwise pin to page-open time and the bucket-key filter in
+// `aggregateTokenRecords` would silently drop records for newly-elapsed hours.
+const loadedAt = ref(Date.now());
 const tokenChartMetric = ref<Metric>('total');
 const redactKeys = ref(false);
 const view = ref<UsageView>(initialUsageData.data.value.view);
@@ -149,6 +154,7 @@ const load = async () => {
   const requestId = ++usageRequestId;
   const requestedRange = tokenRange.value;
   const requestedView = view.value;
+  const requestedAt = Date.now();
   tokenLoading.value = true;
   searchUsageLoading.value = true;
   const { start, end } = dashboardRangeQuery(requestedRange);
@@ -158,6 +164,7 @@ const load = async () => {
     if (usage) data.value = usage;
     if (search) searchData.value = search;
     loadedTokenRange.value = requestedRange;
+    loadedAt.value = requestedAt;
   } finally {
     if (requestId === usageRequestId) {
       tokenLoading.value = false;
@@ -214,7 +221,13 @@ const formatHitRate = (cached: number, created: number) => {
   return `${((cached / denom) * 100).toFixed(1)}%`;
 };
 
-const buckets = computed(() => dashboardBuckets(loadedTokenRange.value));
+const buckets = computed(() => {
+  // `loadedAt` participates as a reactive dependency so the bucket window
+  // re-derives from `dashboardBuckets`'s internal `new Date()` read on every
+  // successful refresh, not just when the range button changes.
+  void loadedAt.value;
+  return dashboardBuckets(loadedTokenRange.value);
+});
 
 const TOKEN_CHART_METRICS: Record<Metric, { label: string; kind: 'count' | 'cost' | 'tokens' | 'percent' }> = {
   requests: { label: 'Requests', kind: 'count' },
