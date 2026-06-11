@@ -784,6 +784,31 @@ test('Copilot provider accepts a losing CAS write and still returns the freshly 
   );
 });
 
+test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
+  // Persistence is best-effort: the fetched models are the user-facing
+  // payload, and a DB-level error on the CAS write must not propagate out of
+  // getProvidedModels. Mirrors the gateway SWR layer's persistence policy.
+  const harness = await setupCopilotTest();
+  harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = await createCopilotProvider(harness.copilotUpstream);
+      const result = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+});
+
 // readCopilotUpstreamState is exercised indirectly via every other test; this
 // pins the round-trip so a stricter reader would not silently drop a token.
 test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {

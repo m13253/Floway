@@ -266,13 +266,19 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       const response = await fetchCopilotModels(upstreamConfig, fetcher);
       const now = Date.now();
       const merged = mergeKnownModels(known, response, now);
-      // CAS write: a losing CAS is silently accepted — the winning state is
-      // valid; the fetched models are still returned to the caller.
-      await getProviderRepo().upstreams.saveState(
-        copilot.id,
-        { ...state, knownModels: merged } satisfies CopilotUpstreamState,
-        { expectedState: fresh.state },
-      );
+      // Best-effort persistence: a losing CAS is silently accepted (the winning
+      // state is valid; we still have fetched models). A persistence error is
+      // logged but does not invalidate the fetched response, which the caller
+      // is about to use. Mirrors the gateway SWR layer's persistence policy.
+      try {
+        await getProviderRepo().upstreams.saveState(
+          copilot.id,
+          { ...state, knownModels: merged } satisfies CopilotUpstreamState,
+          { expectedState: fresh.state },
+        );
+      } catch (err) {
+        console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
+      }
       return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
