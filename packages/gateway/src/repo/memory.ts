@@ -531,9 +531,24 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
 }
 
 class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {
-  put(_state: string, _verifier: string, _expiresAt: number): Promise<void> { throw new Error('not implemented'); }
-  consume(_state: string): Promise<{ verifier: string } | null> { throw new Error('not implemented'); }
-  sweepExpired(_now: number): Promise<void> { throw new Error('not implemented'); }
+  private rows = new Map<string, { verifier: string; expiresAt: number }>();
+
+  put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    this.rows.set(state, { verifier, expiresAt });
+    return Promise.resolve();
+  }
+
+  consume(state: string): Promise<{ verifier: string } | null> {
+    const row = this.rows.get(state);
+    if (!row || row.expiresAt <= Date.now()) return Promise.resolve(null);
+    this.rows.delete(state);
+    return Promise.resolve({ verifier: row.verifier });
+  }
+
+  sweepExpired(now: number): Promise<void> {
+    for (const [k, v] of this.rows) if (v.expiresAt <= now) this.rows.delete(k);
+    return Promise.resolve();
+  }
 }
 
 class MemorySearchConfigRepo implements SearchConfigRepo {

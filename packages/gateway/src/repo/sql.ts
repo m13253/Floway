@@ -898,10 +898,31 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 }
 
 class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
-  constructor(_db: SqlDatabase) {}
-  put(_state: string, _verifier: string, _expiresAt: number): Promise<void> { throw new Error('not implemented'); }
-  consume(_state: string): Promise<{ verifier: string } | null> { throw new Error('not implemented'); }
-  sweepExpired(_now: number): Promise<void> { throw new Error('not implemented'); }
+  constructor(private db: SqlDatabase) {}
+
+  async put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    await this.db
+      .prepare(
+        'INSERT INTO codex_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
+        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at'
+      )
+      .bind(state, verifier, expiresAt)
+      .run();
+  }
+
+  async consume(state: string): Promise<{ verifier: string } | null> {
+    // Single-use: DELETE ... RETURNING in one statement so a replayed callback
+    // cannot succeed twice.
+    const row = await this.db
+      .prepare('DELETE FROM codex_pkce_pending WHERE state = ? AND expires_at > ? RETURNING verifier')
+      .bind(state, Date.now())
+      .first<{ verifier: string }>();
+    return row ? { verifier: row.verifier } : null;
+  }
+
+  async sweepExpired(now: number): Promise<void> {
+    await this.db.prepare('DELETE FROM codex_pkce_pending WHERE expires_at <= ?').bind(now).run();
+  }
 }
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
