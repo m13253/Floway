@@ -145,14 +145,14 @@ describe('putCodexQuota', () => {
     expect(opts.expectedState).toEqual({ accounts: [{ ...baseAccount }] });
   });
 
-  test('warns and exits when the upstream disappeared mid-flight', async () => {
+  test('throws when the upstream disappeared mid-flight', async () => {
     current = null;
-    await putCodexQuota(upstreamId, accountId, { observed_at: 'now' });
+    await expect(putCodexQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared mid-request/);
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 
-  test('warns and exits when the requested account is not in the pool', async () => {
-    await putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' });
+  test('throws when the requested account is not in the pool', async () => {
+    await expect(putCodexQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 });
