@@ -1,6 +1,6 @@
+import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions, PerformanceMetricScope } from '../../../repo/types.ts';
-import { currentHour } from './hour.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { getEnv } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';

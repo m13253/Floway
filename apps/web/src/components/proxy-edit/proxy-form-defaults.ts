@@ -49,20 +49,20 @@ export const defaultsFor = (
   const port = ctx.port > 0
     ? ctx.port
     : (() => {
-      switch (kind) {
-      case 'http': return 8080;
-      case 'https':
-      case 'trojan':
-      case 'vless-tcp':
-      case 'vless-ws':
-      case 'reality':
-        return 443;
-      case 'socks5': return 1080;
-      case 'ss':
-      case 'ss2022':
-        return 8388;
-      }
-    })();
+        switch (kind) {
+        case 'http': return 8080;
+        case 'https':
+        case 'trojan':
+        case 'vless-tcp':
+        case 'vless-ws':
+        case 'reality':
+          return 443;
+        case 'socks5': return 1080;
+        case 'ss':
+        case 'ss2022':
+          return 8388;
+        }
+      })();
   const base = { host: ctx.host, port, name: ctx.name };
   switch (kind) {
   case 'http': {

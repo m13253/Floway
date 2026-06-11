@@ -626,4 +626,3 @@ const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, ro
 
 const isReplayableSnapshotRow = (row: StoredResponsesItem): boolean =>
   row.payload !== null || (row.upstreamId !== null && row.upstreamItemId !== null);
-
