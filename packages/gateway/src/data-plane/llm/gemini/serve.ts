@@ -34,6 +34,7 @@ export const geminiServe = {
       // Gemini has no native upstream target in the provider API; prefer
       // Chat Completions, then Messages, then Responses.
       pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
+      scheduler: ctx.backgroundScheduler,
     });
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
@@ -63,6 +64,7 @@ export const geminiServe = {
       // exposing the Messages endpoint qualify because we translate Gemini
       // → Messages and call Messages count_tokens upstream.
       pickTarget: endpoints => endpoints.messages ? 'messages' : null,
+      scheduler: ctx.backgroundScheduler,
     });
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');

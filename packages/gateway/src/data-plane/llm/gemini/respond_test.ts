@@ -24,6 +24,7 @@ const ctx = (): GatewayCtx => ({
   wantsStream: false,
   runtimeLocation: 'test',
   scheduleBackground: () => {},
+  backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
 

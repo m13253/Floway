@@ -290,8 +290,9 @@ export const resolveModelForProvider = async (
   instance: ModelProviderInstance,
   modelId: string,
   fetcher: Fetcher,
+  scheduler: BackgroundScheduler,
 ): Promise<ProviderModelResolution | undefined> => {
-  const providedModels = await instance.provider.getProvidedModels(fetcher);
+  const providedModels = await fetchUpstreamModelsCached(instance, { scheduler, fetcher });
   const disabled = new Set(instance.disabledPublicModelIds);
   const exact = providedModels.find(model => model.id === modelId && !disabled.has(model.id));
   if (exact) return { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) };

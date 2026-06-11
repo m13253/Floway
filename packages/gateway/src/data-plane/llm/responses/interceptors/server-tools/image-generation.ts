@@ -446,6 +446,7 @@ interface ShimState {
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
   scheduleBackground: GatewayCtx['scheduleBackground'];
+  backgroundScheduler: GatewayCtx['backgroundScheduler'];
   runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
@@ -535,11 +536,7 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    // Adapt `state.scheduleBackground`'s thunk shape to the BackgroundScheduler
-    // signature the registry expects (the cache layer's background revalidate
-    // path queues a Promise, not a thunk).
-    const scheduler = (promise: Promise<unknown>) => state.scheduleBackground(() => promise as Promise<void>);
-    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, scheduler);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, state.backgroundScheduler);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
@@ -961,6 +958,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     scheduleBackground: gatewayCtx.scheduleBackground,
+    backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,

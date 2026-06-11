@@ -1,5 +1,6 @@
 import { createPerRequestFetcher } from '../../../dial/per-request.ts';
 import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
 
@@ -10,12 +11,16 @@ export type { ProviderCandidate };
 // "model is missing entirely" failure from "model exists but does not
 // expose the endpoint this source needs".
 export const enumerateProviderCandidates = async ({
-  upstreamIds, model, pickTarget,
+  upstreamIds, model, pickTarget, scheduler,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
   model: string;
   pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
+  // Threaded into `resolveModelForProvider` so the per-upstream catalog
+  // lookup hits the SWR-cached `fetchUpstreamModelsCached` instead of
+  // round-tripping to the upstream on every LLM serve.
+  scheduler: BackgroundScheduler;
 }): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }> => {
   const fetcherForUpstream = await createPerRequestFetcher();
   const providers = await listModelProviders(upstreamIds);
@@ -24,7 +29,7 @@ export const enumerateProviderCandidates = async ({
 
   for (const provider of providers) {
     const fetcher = fetcherForUpstream(provider.upstream);
-    const resolved = await resolveModelForProvider(provider, model, fetcher);
+    const resolved = await resolveModelForProvider(provider, model, fetcher, scheduler);
     if (!resolved) continue;
     sawModel = true;
 

@@ -92,6 +92,7 @@ export const prepareResponsesServePlan = async (args: {
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
     pickTarget,
+    scheduler: ctx.backgroundScheduler,
   });
   const decision = await planResponsesRouting({ payload: prepared, candidates, store });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };

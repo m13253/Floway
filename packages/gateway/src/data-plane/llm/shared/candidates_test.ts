@@ -6,6 +6,13 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
+// Drains the SWR background revalidate so a rejection surfaces in the
+// runner instead of being swallowed; matches the in-test scheduler used
+// across the registry tests.
+const testScheduler = (promise: Promise<unknown>): void => {
+  promise.catch(err => console.error('[background]', err));
+};
+
 // Azure provider resolves its model catalog from config without HTTP calls,
 // making it the right choice for tests that need a predictable in-memory catalog.
 const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoints: ModelEndpoints): UpstreamRecord => ({
@@ -50,6 +57,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 1);
@@ -69,6 +77,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 0);
@@ -87,6 +96,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 0);
@@ -105,6 +115,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 2);
@@ -123,6 +134,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 2);
@@ -143,6 +155,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
 
     assertEquals(candidates.length, 1);
@@ -160,6 +173,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessagesOrResponses,
+      scheduler: testScheduler,
     });
     assertEquals(msgCandidates.length, 1);
     assertEquals(msgCandidates[0].targetApi, 'messages');
@@ -169,6 +183,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickResponses,
+      scheduler: testScheduler,
     });
     assertEquals(resCandidates.length, 1);
     assertEquals(resCandidates[0].targetApi, 'responses');
@@ -184,6 +199,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickAny,
+      scheduler: testScheduler,
     });
     assertEquals(anyCandidates.length, 1);
     assertEquals(anyCandidates[0].targetApi, 'chat-completions');
@@ -192,6 +208,7 @@ describe('enumerateProviderCandidates', () => {
       upstreamIds: null,
       model: 'test-model',
       pickTarget: pickMessages,
+      scheduler: testScheduler,
     });
     assertEquals(msgCandidates.length, 0);
     // pickTarget filtered out, but the model exists — sawModel stays true.

@@ -281,7 +281,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher);
+      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher, testScheduler);
 
       assertEquals(resolved?.model.id, 'target-model');
       assertEquals(resolved?.binding.upstream, 'up_first');
@@ -399,8 +399,8 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
   });
 
   const [provider] = await listModelProviders(null);
-  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher).then(r => r?.id), 'enabled-model');
-  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher).then(r => r?.id), undefined);
+  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher, testScheduler).then(r => r?.id), 'enabled-model');
+  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher, testScheduler).then(r => r?.id), undefined);
 });
 
 test('listModelProviders drops stale ids (deleted or disabled upstreams) from a whitelist', async () => {

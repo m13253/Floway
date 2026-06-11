@@ -29,6 +29,7 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     abortSignal: downstream.signal,
     downstreamAbortController: downstream,
     scheduleBackground: fn => { void Promise.resolve(fn()); },
+    backgroundScheduler: () => {},
     ...overrides,
   };
 };
