@@ -85,14 +85,15 @@ export const ensureCodexAccessToken = async (
   accountId: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
 ): Promise<CodexAccessTokenEntry> => {
-  const existing = await getCodexAccessToken(upstreamId, accountId);
-  if (existing) return existing;
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account) throw new Error(`Codex account ${accountId} not found in upstream ${upstreamId}`);
+  if (account.accessToken && account.accessToken.expiresAt > Date.now() + REFRESH_SKEW_MS) {
+    return account.accessToken;
+  }
   const minted = await mint(account.refresh_token);
-  await putCodexAccessToken(upstreamId, accountId, minted);
+  await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
   return minted;
 };

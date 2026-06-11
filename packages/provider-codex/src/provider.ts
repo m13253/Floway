@@ -83,10 +83,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
         const ledgerFresh = cached !== null && Date.now() - cached.fetchedAt < MODELS_LEDGER_FRESH_MS;
         const fallback = (): UpstreamModel[] => (ledgerFresh ? cached!.models.map(codexRawToUpstreamModel) : []);
         try {
-          // Defer the catalog fetch when no access token has been minted yet
-          // (cold-imported upstream). The first data-plane call will refresh
-          // the OAuth token; the next getProvidedModels then populates the
-          // ledger. Until then, return the last known ledger (or empty).
+          // Defer the catalog fetch when no fresh access token is available.
+          // The first data-plane call will refresh the OAuth token; the next
+          // getProvidedModels then populates the ledger. Until then, return
+          // the last known ledger (or empty).
           const access = await getCodexAccessToken(record.id, accountIdentity.chatgptAccountId);
           if (!access) return fallback();
 
