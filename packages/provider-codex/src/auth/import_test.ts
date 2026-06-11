@@ -34,9 +34,9 @@ describe('importCodexFromAuthJson', () => {
     expect(result.state.accounts[0].chatgptAccountId).toBe('acc');
     expect(result.state.accounts[0].refresh_token).toBe('rt1');
     expect(result.state.accounts[0].state).toBe('active');
-    expect(result.accessToken.access_token).toBe('at1');
-    // expires_at defaults from now + a conservative TTL if auth.json doesn't carry one.
-    expect(result.accessToken.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(result.state.accounts[0].accessToken?.token).toBe('at1');
+    // expiresAt defaults from now + a conservative window if auth.json doesn't carry one.
+    expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
   });
 
   test('rejects malformed payload', async () => {
@@ -77,6 +77,6 @@ describe('importCodexFromCallback', () => {
     const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER' });
     expect(result.config.accounts[0].email).toBe('a@b.com');
     expect(result.state.accounts[0].refresh_token).toBe('rt');
-    expect(result.accessToken.access_token).toBe('at');
+    expect(result.state.accounts[0].accessToken?.token).toBe('at');
   });
 });

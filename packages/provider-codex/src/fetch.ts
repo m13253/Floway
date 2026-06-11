@@ -1,9 +1,4 @@
-import {
-  type CodexAccessTokenCache,
-  getCodexAccessToken,
-  invalidateCodexAccessToken,
-  putCodexAccessToken,
-} from './access-token-cache.ts';
+import { ensureCodexAccessToken, invalidateCodexAccessToken } from './access-token-cache.ts';
 import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
@@ -24,8 +19,9 @@ import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // Hooks for repo-side state transitions, applied with optimistic concurrency.
-// Only refresh-token rotations and terminal-state transitions go through the
-// repo; quota and access-token cache writes happen inline below against the
+// Refresh-token rotations and terminal-state transitions go through the repo;
+// access-token persistence is handled inside ensureCodexAccessToken (also a
+// state_json write), and quota writes happen inline below against the
 // CacheRepo.
 export interface CodexCallEffects {
   persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
@@ -50,11 +46,6 @@ export interface CallCodexResponsesOptions {
   // not part of the user's upstream round-trip.
   call: UpstreamCallOptions;
 }
-
-// Refresh window: refresh proactively if the cached access_token expires within
-// the next 5 minutes, so the upstream call rides a fresh token rather than
-// risking a wasted 401-retry.
-const REFRESH_LEAD_SECONDS = 5 * 60;
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
   // Pre-fetch gates short-circuit before reaching the network. The gateway
@@ -82,7 +73,7 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
 
   let accessToken: string;
   try {
-    accessToken = await ensureAccessToken(opts, now);
+    accessToken = await ensureAccessToken(opts);
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -94,34 +85,28 @@ export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promi
   return await performUpstreamCall(opts, accessToken, false);
 };
 
-const ensureAccessToken = async (opts: CallCodexResponsesOptions, now: Date): Promise<string> => {
-  const cached = await getCodexAccessToken(opts.cache, opts.upstreamId);
-  const nowSec = Math.floor(now.getTime() / 1000);
-  if (cached && cached.expires_at > nowSec + REFRESH_LEAD_SECONDS) {
-    return cached.access_token;
-  }
-  return await refreshAndCache(opts);
+// Mints a fresh access token via /oauth/token and routes the rotated
+// refresh_token through the caller's CAS hook. Awaiting the rotation
+// persistence (rather than fire-and-forget) is deliberate: under concurrent
+// rotations each call's new refresh_token must reach the hook before the
+// next attempt reads state, otherwise an unhandled rejection can swallow the
+// rotated token and the upstream eventually returns app_session_terminated.
+// A losing CAS inside the hook is fine — `expectedState` mismatched a
+// concurrent operator re-import or sibling rotation, and the already-
+// persisted newer state supersedes ours.
+const mintAccessToken = async (opts: CallCodexResponsesOptions, refreshToken: string) => {
+  const tokens = await refreshCodexAccessToken(refreshToken, opts.call.fetcher);
+  await opts.effects.persistRefreshTokenRotation(tokens.refresh_token);
+  return {
+    token: tokens.access_token,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
+    refreshedAt: new Date().toISOString(),
+  };
 };
 
-const refreshAndCache = async (opts: CallCodexResponsesOptions): Promise<string> => {
-  const tokens = await refreshCodexAccessToken(opts.account.refresh_token, opts.call.fetcher);
-  const newCache: CodexAccessTokenCache = {
-    access_token: tokens.access_token,
-    expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
-    refreshed_at: new Date().toISOString(),
-  };
-  await putCodexAccessToken(opts.cache, opts.upstreamId, newCache, tokens.expires_in * 1000);
-  // Persist the refresh-token rotation through the caller's CAS hook. We
-  // await rather than fire-and-forget on purpose: under concurrent rotations
-  // (two parallel data-plane requests both refreshing), each call's rotated
-  // token must reach the persistence hook deterministically; otherwise an
-  // unhandled rejection can swallow the new refresh_token and the upstream
-  // eventually returns app_session_terminated hours later. Cost is one row
-  // UPDATE on the request path. A losing CAS is fine — that path's
-  // `expectedState` mismatched a concurrent operator re-import or sibling
-  // rotation, and the already-persisted newer state supersedes ours.
-  await opts.effects.persistRefreshTokenRotation(tokens.refresh_token);
-  return tokens.access_token;
+const ensureAccessToken = async (opts: CallCodexResponsesOptions): Promise<string> => {
+  const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
+  return entry.token;
 };
 
 const performUpstreamCall = async (
@@ -178,10 +163,10 @@ const performUpstreamCall = async (
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    await invalidateCodexAccessToken(opts.cache, opts.upstreamId);
+    await invalidateCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId);
     let newAccessToken: string;
     try {
-      newAccessToken = await refreshAndCache(opts);
+      newAccessToken = await ensureAccessToken(opts);
     } catch (err) {
       if (err instanceof CodexOAuthSessionTerminatedError) {
         await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);

@@ -1,9 +1,8 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { codexAccessTokenKey } from './access-token-cache.ts';
 import { callCodexResponsesCompact } from './compaction.ts';
-import type { CodexAccountCredential } from './state.ts';
-import type { CacheRepo, UpstreamModel } from '@floway-dev/provider';
+import type { CodexAccessTokenEntry, CodexAccountCredential, CodexUpstreamState } from './state.ts';
+import { initProviderRepo, type CacheRepo, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
@@ -39,16 +38,53 @@ const compactionSseResponse = (): Response => {
 const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null };
 const model: UpstreamModel = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() };
 
+const upstreamId = 'up';
+
+const freshAccessToken: CodexAccessTokenEntry = {
+  token: 'at',
+  expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+  refreshedAt: 'now',
+};
+
+const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
+  id: upstreamId,
+  provider: 'codex',
+  name: 'Codex',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }] },
+  state,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+});
+
+let currentRecord: UpstreamRecord;
+
+beforeEach(() => {
+  currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: freshAccessToken }] });
+  initProviderRepo(() => ({
+    cache: makeMemoryCache(),
+    upstreams: {
+      getById: async () => currentRecord,
+      saveState: async (_id, newState) => {
+        currentRecord = { ...currentRecord, state: newState as CodexUpstreamState };
+        return { updated: true };
+      },
+    },
+  }));
+});
+
 afterEach(() => vi.restoreAllMocks());
 
 describe('callCodexResponsesCompact', () => {
   test('appends compaction_trigger, forces store:false & stream:true, returns rebuilt envelope', async () => {
     const cache = makeMemoryCache();
-    const far = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up'), JSON.stringify({ access_token: 'at', expires_at: far, refreshed_at: 'now' }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(compactionSseResponse());
     const result = await callCodexResponsesCompact({
-      upstreamId: 'up', account: activeAccount, model,
+      upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hello' }] },
       cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     });
@@ -67,8 +103,6 @@ describe('callCodexResponsesCompact', () => {
 
   test('errors if upstream returns zero compaction items (defensive)', async () => {
     const cache = makeMemoryCache();
-    const far = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up'), JSON.stringify({ access_token: 'at', expires_at: far, refreshed_at: 'now' }));
     const badResponse = new Response(
       new ReadableStream({
         start(c) {
@@ -81,7 +115,7 @@ describe('callCodexResponsesCompact', () => {
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(badResponse);
     await expect(callCodexResponsesCompact({
-      upstreamId: 'up', account: activeAccount, model,
+      upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hi' }] },
       cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     })).rejects.toThrow(/compaction/);
@@ -89,11 +123,9 @@ describe('callCodexResponsesCompact', () => {
 
   test('propagates upstream ok:false (non-2xx) unchanged', async () => {
     const cache = makeMemoryCache();
-    const far = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up'), JSON.stringify({ access_token: 'at', expires_at: far, refreshed_at: 'now' }));
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream-error', { status: 500 }));
     const result = await callCodexResponsesCompact({
-      upstreamId: 'up', account: activeAccount, model,
+      upstreamId, account: activeAccount, model,
       body: { input: [{ type: 'message', role: 'user', content: 'hi' }] },
       cache, headers: {}, effects: { persistRefreshTokenRotation: async () => {}, persistTerminalState: async () => {} }, call: noopUpstreamCallOptions,
     });

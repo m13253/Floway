@@ -67,7 +67,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
     const { state, account } = await readActiveAccount();
-    const next = replaceActiveAccount(state, { ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString() });
+    // Clear any cached access token on the terminal flip — once the credential
+    // is dead the cached token is dead too, and leaving it would confuse the
+    // dashboard's status panel.
+    const next = replaceActiveAccount(state, { ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString(), accessToken: null });
     await getProviderRepo().upstreams.saveState(record.id, next, { expectedState: state });
   };
 
@@ -84,10 +87,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
           // (cold-imported upstream). The first data-plane call will refresh
           // the OAuth token; the next getProvidedModels then populates the
           // ledger. Until then, return the last known ledger (or empty).
-          const access = await getCodexAccessToken(getProviderRepo().cache, record.id);
+          const access = await getCodexAccessToken(record.id, accountIdentity.chatgptAccountId);
           if (!access) return fallback();
 
-          const raw = await fetchCodexCatalog({ accessToken: access.access_token, accountId: accountIdentity.chatgptAccountId, fetcher });
+          const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
           // Surface every model the upstream returns, including ones whose
           // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
           // operator's gateway is its own surface — they can dispatch to those

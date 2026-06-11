@@ -1,4 +1,3 @@
-import type { CodexAccessTokenCache } from '../access-token-cache.ts';
 import type { CodexUpstreamConfig } from '../config.ts';
 import type { CodexUpstreamState } from '../state.ts';
 import { parseCodexIdTokenClaims } from './jwt.ts';
@@ -7,7 +6,6 @@ import { exchangeCodexAuthorizationCode } from './oauth.ts';
 export interface CodexImportResult {
   config: CodexUpstreamConfig;
   state: CodexUpstreamState;
-  accessToken: CodexAccessTokenCache;
 }
 
 // Path A — operator pasted ~/.codex/auth.json verbatim. The CLI's on-disk
@@ -42,29 +40,25 @@ export const importCodexFromAuthJson = async (authJson: unknown): Promise<CodexI
     }],
   };
 
+  // auth.json has no expires_in; conservative 7-day window so the next request
+  // refreshes via /oauth/token within the 5-min freshness gate.
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
   const state: CodexUpstreamState = {
     accounts: [{
       chatgptAccountId: identity.chatgptAccountId,
       refresh_token: refreshToken,
       state: 'active',
       state_updated_at: now,
-      accessToken: null,
+      accessToken: {
+        token: accessToken,
+        expiresAt: Date.now() + sevenDaysMs,
+        refreshedAt: now,
+      },
       quotaSnapshot: null,
     }],
   };
 
-  // auth.json has no expires_in; conservative 7-day cache so the next request
-  // refreshes via /oauth/token within the 5-min freshness gate.
-  const sevenDaysSeconds = 7 * 24 * 60 * 60;
-  return {
-    config,
-    state,
-    accessToken: {
-      access_token: accessToken,
-      expires_at: Math.floor(Date.now() / 1000) + sevenDaysSeconds,
-      refreshed_at: new Date().toISOString(),
-    },
-  };
+  return { config, state };
 };
 
 // Accepts a full URL (`http://localhost:1455/auth/callback?...`) or a bare
@@ -113,14 +107,13 @@ export const importCodexFromCallback = async (opts: { code: string; codeVerifier
         refresh_token: tokens.refresh_token,
         state: 'active',
         state_updated_at: now,
-        accessToken: null,
+        accessToken: {
+          token: tokens.access_token,
+          expiresAt: Date.now() + tokens.expires_in * 1000,
+          refreshedAt: now,
+        },
         quotaSnapshot: null,
       }],
-    },
-    accessToken: {
-      access_token: tokens.access_token,
-      expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
-      refreshed_at: new Date().toISOString(),
     },
   };
 };

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { codexAccessTokenKey } from './access-token-cache.ts';
 import { createCodexProvider } from './provider.ts';
+import type { CodexAccessTokenEntry, CodexUpstreamState } from './state.ts';
 import { clearModelsStore, directFetcher, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
@@ -16,7 +16,11 @@ const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
   };
 };
 
-const record: UpstreamRecord = {
+const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
+
+const freshAccessToken: CodexAccessTokenEntry = { token: 'at', expiresAt: farFutureMs, refreshedAt: 'now' };
+
+const baseRecord: UpstreamRecord = {
   id: 'up_codex',
   provider: 'codex',
   name: 'Codex Plus',
@@ -25,11 +29,19 @@ const record: UpstreamRecord = {
   createdAt: '2026-06-05T00:00:00.000Z',
   updatedAt: '2026-06-05T00:00:00.000Z',
   config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }] },
-  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z' }] },
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null }] },
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
 };
+
+// Builds a record carrying a freshly-minted access token in its state slot;
+// callResponses/getProvidedModels both read the access token through state,
+// not a separate cache.
+const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({
+  ...baseRecord,
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: entry, quotaSnapshot: null }] },
+});
 
 let cache: CacheRepo & { _store: Map<string, string> };
 let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
@@ -38,7 +50,7 @@ let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord |
 beforeEach(() => {
   cache = makeMemoryCache();
   saveStateSpy = vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>(async () => ({ updated: true }));
-  getByIdSpy = vi.fn<(id: string) => Promise<UpstreamRecord | null>>(async () => record);
+  getByIdSpy = vi.fn<(id: string) => Promise<UpstreamRecord | null>>(async () => recordWithAccessToken());
   initProviderRepo(() => ({
     cache,
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
@@ -61,7 +73,7 @@ const sseResponse = (): Response => new Response(
 
 describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
-    const instance = await createCodexProvider(record);
+    const instance = await createCodexProvider(baseRecord);
     expect(instance.providerKind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
@@ -69,15 +81,13 @@ describe('createCodexProvider', () => {
   });
 
   test('getProvidedModels fetches /codex/models and filters hidden', async () => {
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_codex'), JSON.stringify({ access_token: 'at', expires_at: farFuture, refreshed_at: 'now' }));
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       models: [
         { slug: 'gpt-5.4', display_name: 'GPT-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000 },
         { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', context_window: 272000, max_context_window: 1000000 },
       ],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const instance = await createCodexProvider(record);
+    const instance = await createCodexProvider(baseRecord);
     const models = await instance.provider.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
@@ -86,10 +96,8 @@ describe('createCodexProvider', () => {
   });
 
   test('callResponses round-trips through fetch transport', async () => {
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_codex'), JSON.stringify({ access_token: 'at', expires_at: farFuture, refreshed_at: 'now' }));
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const instance = await createCodexProvider(record);
+    const instance = await createCodexProvider(baseRecord);
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
@@ -101,10 +109,8 @@ describe('createCodexProvider', () => {
   });
 
   test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_codex'), JSON.stringify({ access_token: 'at', expires_at: farFuture, refreshed_at: 'now' }));
-    getByIdSpy.mockResolvedValueOnce({ ...record, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z' }] } });
-    const instance = await createCodexProvider(record);
+    getByIdSpy.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
+    const instance = await createCodexProvider(baseRecord);
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [], stream: true },
@@ -122,7 +128,7 @@ describe('createCodexProvider', () => {
     'callImagesEdits',
     'callMessagesCountTokens',
   ] as const)('%s throws (data plane never dispatches these to Codex)', async method => {
-    const instance = await createCodexProvider(record);
+    const instance = await createCodexProvider(baseRecord);
     const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
     // @ts-expect-error: each method has a different param shape; we just want to assert throw.
     await expect(instance.provider[method](model, {}, undefined, {})).rejects.toThrow(/Codex/);

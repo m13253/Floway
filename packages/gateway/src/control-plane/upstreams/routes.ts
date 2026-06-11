@@ -15,7 +15,6 @@ import { clearModelsStore, directFetcher, getProviderRepo, invalidateModelsStore
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
-  type CodexAccessTokenCache,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
   CODEX_AUTHORIZE_URL,
@@ -30,7 +29,6 @@ import {
   getCodexQuota,
   importCodexFromAuthJson,
   importCodexFromCallback,
-  putCodexAccessToken,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
 import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
@@ -455,7 +453,7 @@ type CodexCredentialBody = z.infer<typeof codexImportBody> | z.infer<typeof code
 
 const ingestCodexCredential = async (
   body: CodexCredentialBody,
-): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState; accessToken: CodexAccessTokenCache } | { ok: false; error: string }> => {
+): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState } | { ok: false; error: string }> => {
   try {
     if (body.auth_json !== undefined) {
       const out = await importCodexFromAuthJson(body.auth_json);
@@ -514,10 +512,6 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     state: ingestion.state,
   };
   await getRepo().upstreams.save(upstream);
-  // Seed the KV access-token slot so the first data-plane call skips the
-  // immediate refresh round-trip; the cache row TTLs naturally with the
-  // OAuth lifetime.
-  await putCodexAccessToken(getProviderRepo().cache, upstream.id, ingestion.accessToken);
   await invalidateModelsStore(upstream.id);
   return c.json(await serializeForResponse(upstream), 201);
 };
@@ -541,7 +535,6 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
     state: ingestion.state,
   };
   await getRepo().upstreams.save(next);
-  await putCodexAccessToken(getProviderRepo().cache, id, ingestion.accessToken);
   await invalidateModelsStore(id);
   return c.json(await serializeForResponse(next));
 };
@@ -572,7 +565,17 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     // dial direct here and silently fail under restricted egress.
     const fetcher = (await createPerRequestFetcher())(id);
     const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
-    const nextAccount = { ...account, refresh_token: tokens.refresh_token, state_updated_at: new Date().toISOString() };
+    const now = new Date();
+    const nextAccount = {
+      ...account,
+      refresh_token: tokens.refresh_token,
+      state_updated_at: now.toISOString(),
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: now.getTime() + tokens.expires_in * 1000,
+        refreshedAt: now.toISOString(),
+      },
+    };
     const nextState: CodexUpstreamState = { accounts: [nextAccount] };
     // CAS keyed on the just-read state. A losing race here means a concurrent
     // data-plane refresh already rotated the row; their write is at least as
@@ -581,11 +584,6 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     if (!result.updated) {
       return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
     }
-    await putCodexAccessToken(getProviderRepo().cache, id, {
-      access_token: tokens.access_token,
-      expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
-      refreshed_at: new Date().toISOString(),
-    });
     const fresh = await getRepo().upstreams.getById(id);
     return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
   } catch (err) {
@@ -599,6 +597,10 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
         state: 'refresh_failed' as const,
         state_message: err.upstreamMessage,
         state_updated_at: new Date().toISOString(),
+        // Refresh failure invalidates whatever access token still sat in state;
+        // even if the data-plane somehow bypassed the active-state gate, the
+        // cached token wouldn't outlive the refresh failure for long.
+        accessToken: null,
       };
       const failedState: CodexUpstreamState = { accounts: [failedAccount] };
       // Best-effort: a losing CAS means a concurrent rotation already wrote

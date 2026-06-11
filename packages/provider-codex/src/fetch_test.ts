@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { codexAccessTokenKey } from './access-token-cache.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import { codexQuotaKey } from './quota.ts';
-import type { CodexAccountCredential } from './state.ts';
-import type { CacheRepo, Fetcher, UpstreamModel } from '@floway-dev/provider';
+import type { CodexAccessTokenEntry, CodexAccountCredential, CodexUpstreamState } from './state.ts';
+import { initProviderRepo, type CacheRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
@@ -22,6 +21,59 @@ const makeEffects = (): CodexCallEffects => ({
   persistRefreshTokenRotation: vi.fn(async () => {}),
   persistTerminalState: vi.fn(async () => {}),
 });
+
+const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null };
+const model: UpstreamModel = {
+  id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set(),
+};
+
+const upstreamId = 'up_a';
+
+const farFutureAccessToken: CodexAccessTokenEntry = {
+  token: 'at_kv',
+  expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+  refreshedAt: 'now',
+};
+
+const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
+  id: upstreamId,
+  provider: 'codex',
+  name: 'Codex',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }] },
+  state,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+});
+
+let currentRecord: UpstreamRecord;
+
+// Set the in-state access token slot for the active account; mirrors what the
+// data-plane refresh hook persists when a fresh token arrives.
+const seedFreshAccessToken = (entry: CodexAccessTokenEntry = farFutureAccessToken): void => {
+  currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: entry }] });
+};
+
+beforeEach(() => {
+  vi.useRealTimers();
+  currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
+  initProviderRepo(() => ({
+    cache: makeMemoryCache(),
+    upstreams: {
+      getById: async () => currentRecord,
+      saveState: async (_id, newState) => {
+        currentRecord = { ...currentRecord, state: newState as CodexUpstreamState };
+        return { updated: true };
+      },
+    },
+  }));
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 const sseResponse = (status = 200): Response => new Response(
   new ReadableStream({
@@ -45,14 +97,6 @@ const sseResponse = (status = 200): Response => new Response(
 
 const errorJson = (status: number, body: unknown, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
-
-const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null };
-const model: UpstreamModel = {
-  id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set(),
-};
-
-afterEach(() => vi.restoreAllMocks());
-beforeEach(() => vi.useRealTimers());
 
 describe('callCodexResponses — gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
@@ -103,13 +147,12 @@ describe('callCodexResponses — token freshness', () => {
     const responsesInit = fetchSpy.mock.calls[1][1] as RequestInit;
     expect(new Headers(responsesInit.headers).get('authorization')).toBe('Bearer at_new');
     expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
-    expect(cache._store.get(codexAccessTokenKey('up_a'))).toContain('at_new');
+    expect((currentRecord.state as CodexUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
   });
 
   test('reuses fresh KV access token without refreshing', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
@@ -135,8 +178,7 @@ describe('callCodexResponses — token freshness', () => {
 describe('callCodexResponses — upstream classification', () => {
   test('happy path: 200 → ok:true, quota persisted', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const result = await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
@@ -150,8 +192,7 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('upstream body has store:false and stream:true forced even if caller passes otherwise', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
       upstreamId: 'up_a', account: activeAccount,
@@ -166,8 +207,7 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
     const effects = makeEffects();
     const result = await callCodexResponses({
@@ -181,8 +221,7 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
@@ -199,8 +238,7 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
@@ -217,8 +255,7 @@ describe('callCodexResponses — upstream classification', () => {
 
   test('5xx passes through without touching state', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(503, { error: 'unavailable' }));
     const effects = makeEffects();
     const result = await callCodexResponses({
@@ -309,8 +346,7 @@ describe('callCodexResponses — recorder contract', () => {
 
   test('401-then-success: recorder records both fetch attempts; durationMs reflects the second', async () => {
     const cache = makeMemoryCache();
-    const farFuture = Math.floor(Date.now() / 1000) + 86400;
-    cache._store.set(codexAccessTokenKey('up_a'), JSON.stringify({ access_token: 'at_kv', expires_at: farFuture, refreshed_at: 'now' }));
+    seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
