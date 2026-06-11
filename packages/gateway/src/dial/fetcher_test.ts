@@ -400,4 +400,45 @@ describe('createFetcher', () => {
     expect(captured?.host).toBe('::1');
     expect(captured?.port).toBe(8443);
   });
+
+  it('records latency only for the successful dial when an earlier fallback rejects late', async () => {
+    // Real-world reproducer for the bug this fix addresses: a broken proxy
+    // that hangs for hundreds of ms before rejecting must not pollute the
+    // upstream-latency metric with the time spent walking the chain. The
+    // recorder's "last wrap wins" semantics let only the successful entry's
+    // measurement survive.
+    vi.useRealTimers();
+    const repo = new InMemoryRepo();
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: ['broken', 'good'],
+      proxyById: new Map([
+        ['broken', { config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null }],
+        ['good', { config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null }],
+      ]),
+      runProxied: async (config: ProxyConfig) => {
+        if (config.host === 'broken') {
+          await new Promise(resolve => setTimeout(resolve, 200));
+          throw new ProxyDialError('refused', 'tcp-connect');
+        }
+        await new Promise(resolve => setTimeout(resolve, 20));
+        return new Response('ok');
+      },
+      runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
+    });
+    let last: number | undefined;
+    const record = <T>(promise: Promise<T>): Promise<T> => {
+      const startedAt = performance.now();
+      return promise.finally(() => { last = performance.now() - startedAt; });
+    };
+    const res = await fetcher('https://api.openai.com', { method: 'GET' }, record);
+    expect(await res.text()).toBe('ok');
+    // The successful dial took ~20ms; if the metric had timed the whole
+    // chain it would read ~220ms. Allow generous slack for CI timer jitter
+    // while still excluding the broken-leg's 200ms.
+    expect(last).toBeDefined();
+    expect(last!).toBeLessThan(150);
+  });
 });

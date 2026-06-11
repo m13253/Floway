@@ -44,8 +44,10 @@ export interface CallCodexResponsesOptions {
   cache: CacheRepo;
   effects: CodexCallEffects;
   // Per-call options; see UpstreamCallOptions for the fetcher /
-  // recordUpstreamLatency contract. The fetcher covers both the /responses
-  // POST and the OAuth refresh hop that may run inside it.
+  // recordUpstreamLatency contract. The recorder is threaded into the
+  // /responses fetcher's per-attempt wrap; the OAuth refresh hop calls the
+  // fetcher unwrapped because it is the gateway's own auth maintenance,
+  // not part of the user's upstream round-trip.
   call: UpstreamCallOptions;
 }
 
@@ -137,12 +139,12 @@ const performUpstreamCall = async (
     'content-type': 'application/json',
   };
 
-  const upstreamFetch = opts.call.recordUpstreamLatency(opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
+  const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...opts.body, model: opts.model.id, store: false, stream: true }),
     signal: opts.signal,
-  })).then(async response => {
+  }, opts.call.recordUpstreamLatency).then(async response => {
     if (response.ok) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });

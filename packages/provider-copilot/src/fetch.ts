@@ -24,7 +24,11 @@ const copilotFetchInternal = async (
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   try {
-    return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, { headers: options.extraHeaders, fetcher: options.fetcher });
+    return await copilotAuthedFetch(path, init, config.githubToken, config.accountType, {
+      headers: options.extraHeaders,
+      fetcher: options.fetcher,
+      ...(options.recordUpstreamLatency ? { recordUpstreamLatency: options.recordUpstreamLatency } : {}),
+    });
   } catch (error) {
     if (!isCopilotTokenFetchError(error)) throw error;
     return new Response(error.body, {

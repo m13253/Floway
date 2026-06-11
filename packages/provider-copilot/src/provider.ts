@@ -175,15 +175,15 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     headers: Record<string, string> | undefined,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
-    const response = await opts.recordUpstreamLatency(transport(
+    const response = await transport(
       upstreamConfig,
       {
         method: 'POST',
         body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
-      { extraHeaders: headers, fetcher: opts.fetcher },
-    ));
+      { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+    );
     return { response, modelKey: rawModel.id };
   };
 
@@ -197,15 +197,15 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     opts: UpstreamCallOptions,
   ) =>
     streamingProviderCall(
-      opts.recordUpstreamLatency(transport(
+      transport(
         upstreamConfig,
         {
           method: 'POST',
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
-        { extraHeaders: headers, fetcher: opts.fetcher },
-      )),
+        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      ),
       parser,
       rawModel.id,
       signal,
@@ -328,11 +328,11 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
           const { model: _ignored, ...wireBody } = ctx.payload;
           const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
           const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-          const response = await opts.recordUpstreamLatency(copilotFetchResponses(
+          const response = await copilotFetchResponses(
             upstreamConfig,
             { method: 'POST', body: JSON.stringify(triggered), signal },
-            { extraHeaders: ctx.headers, fetcher: opts.fetcher },
-          ));
+            { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          );
           if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
           const generated = (await response.json()) as ResponsesResult;
           return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };

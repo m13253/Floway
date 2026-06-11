@@ -24,11 +24,11 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
   ) => {
     const upstreamModelId = providerData(model).upstreamModelId;
     return streamingProviderCall(
-      opts.recordUpstreamLatency(transport(
+      transport(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher },
-      )),
+        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      ),
       parser,
       upstreamModelId,
       signal,
@@ -37,7 +37,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: UpstreamModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions) => {
     const upstreamModelId = providerData(model).upstreamModelId;
-    const response = await opts.recordUpstreamLatency(transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher }));
+    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
     return { response, modelKey: upstreamModelId };
   };
 
@@ -66,11 +66,11 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     callResponses: (model, body, signal, headers, opts) => callStreaming(azureFetchResponses, model, body, signal, headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, headers, opts) => {
       const upstreamModelId = providerData(model).upstreamModelId;
-      const response = await opts.recordUpstreamLatency(azureFetchResponsesCompact(
+      const response = await azureFetchResponsesCompact(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher },
-      ));
+        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      );
       return response.ok
         ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
         : { ok: false, response, modelKey: upstreamModelId };
@@ -85,7 +85,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       // Content-Type itself.
       const upstreamModelId = providerData(model).upstreamModelId;
       body.append('model', upstreamModelId);
-      const response = await opts.recordUpstreamLatency(azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher: opts.fetcher }));
+      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
       return { response, modelKey: upstreamModelId };
     },
   };

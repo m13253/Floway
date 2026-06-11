@@ -38,7 +38,7 @@ const customFetchInternal = async (
     for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
   }
   const dispatch = options.fetcher;
-  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
+  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
 };
 
 // Typed transports — one per logical endpoint Custom serves.

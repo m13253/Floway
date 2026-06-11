@@ -4,8 +4,7 @@ import { codexAccessTokenKey } from './access-token-cache.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import { codexQuotaKey } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
-import type { CacheRepo, UpstreamModel } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import type { CacheRepo, Fetcher, UpstreamModel } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
@@ -236,18 +235,25 @@ describe('callCodexResponses — upstream classification', () => {
 // Mints an enforcing recorder mirroring `createUpstreamLatencyRecorder` from
 // the gateway side: counts wraps and refuses to surrender a duration when
 // `record` was never invoked. Gives provider-level tests a way to assert the
-// contract without depending on the gateway package.
+// contract without depending on the gateway package. The `fetcher` honours
+// the third-arg recorder so the data-plane POSTs (which thread the recorder
+// through the fetcher rather than wrapping outside) still count.
 const enforcingRecorder = () => {
   const wrappedPromises: unknown[] = [];
   let last: number | undefined;
+  const record = <T>(promise: Promise<T>): Promise<T> => {
+    wrappedPromises.push(promise);
+    const startedAt = performance.now();
+    return promise.finally(() => { last = performance.now() - startedAt; });
+  };
+  const fetcher: Fetcher = (url, init, recordUpstreamLatency) => {
+    const inner = fetch(url, init);
+    return recordUpstreamLatency ? recordUpstreamLatency(inner) : inner;
+  };
   return {
     options: {
-      fetcher: directFetcher,
-      recordUpstreamLatency: <T>(promise: Promise<T>): Promise<T> => {
-        wrappedPromises.push(promise);
-        const startedAt = performance.now();
-        return promise.finally(() => { last = performance.now() - startedAt; });
-      },
+      fetcher,
+      recordUpstreamLatency: record,
     },
     invocations: () => wrappedPromises.length,
     durationMs: (): number => {

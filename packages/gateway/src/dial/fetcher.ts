@@ -62,6 +62,13 @@ interface ProxiedRequest {
 // Body buffering is deferred until a non-`direct` proxy actually needs it;
 // the direct-only fast path passes `init` straight to runtime `fetch`,
 // which is how non-buffered shapes like FormData stay supported.
+//
+// Each per-attempt call is wrapped with `recordUpstreamLatency` when one is
+// supplied. The recorder's "last wrap wins" semantics keep only the
+// successful attempt's measurement; failed attempts whose promises reject
+// also wrap (and clobber `last`), but only a successful attempt returns —
+// and the next attempt's wrap immediately overwrites the prior duration on
+// settle. The all-fail tail throws without anyone reading the duration.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   const list = input.fallbackList.length > 0 ? input.fallbackList : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take
@@ -72,7 +79,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // FormData, Blob, etc. don't need to be buffered.
   const hasNonDirect = list.some(id => id !== DIRECT_PROXY_ID);
   const directBeforeProxy = hasNonDirect && list.includes(DIRECT_PROXY_ID) && list.indexOf(DIRECT_PROXY_ID) < list.length - 1;
-  return async (url, init) => {
+  return async (url, init, recordUpstreamLatency) => {
     // Reject streaming bodies upfront whenever any non-direct entry is in
     // play. The two-pass dial can replay a request and a stream is
     // single-shot; for a list like ['a','direct'] where 'a' is in active
@@ -108,13 +115,13 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
     for (const id of list) {
       if (skip.has(id)) continue;
       triedThisCall.add(id);
-      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
+      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors, recordUpstreamLatency);
       if (result) return result;
     }
 
     for (const id of list) {
       if (triedThisCall.has(id)) continue;
-      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
+      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors, recordUpstreamLatency);
       if (result) return result;
     }
 
@@ -158,12 +165,19 @@ const tryOne = async (
   url: string,
   init: RequestInit,
   errors: unknown[],
+  recordUpstreamLatency: (<T>(promise: Promise<T>) => Promise<T>) | undefined,
 ): Promise<Response | null> => {
+  // Each attempt's dial+fetch promise is wrapped here when a recorder was
+  // supplied, so the upstream-latency metric times only the dial that
+  // actually settles last — the recorder keeps the most recent wrap's
+  // duration, so a successful retry overwrites earlier failed-attempt
+  // timings.
+  const wrap = recordUpstreamLatency ?? (<T>(p: Promise<T>) => p);
   try {
     if (id === DIRECT_PROXY_ID) {
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
-      return await input.runDirect(url, init);
+      return await wrap(input.runDirect(url, init));
     }
     const config = input.proxyById.get(id);
     if (!config) {
@@ -186,12 +200,12 @@ const tryOne = async (
       signal: init.signal ?? undefined,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
-    const response = await input.runProxied(
+    const response = await wrap(input.runProxied(
       config.config,
       proxied.target,
       proxied.request,
       options,
-    );
+    ));
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
     // schedule from where it left off. Mirror the failure-path policy: a

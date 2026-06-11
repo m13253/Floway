@@ -135,7 +135,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     headers: Record<string, string> | undefined,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> =>
-    opts.recordUpstreamLatency(transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelIdOf(model) }), signal }, { extraHeaders: headers, fetcher: opts.fetcher }))
+    transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelIdOf(model) }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
       .then(response => ({
         response,
         modelKey: rawModelIdOf(model),
@@ -152,11 +152,11 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   ) => {
     const rawModelId = rawModelIdOf(model);
     return streamingProviderCall(
-      opts.recordUpstreamLatency(transport(
+      transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher },
-      )),
+        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      ),
       parser,
       rawModelId,
       signal,
@@ -196,11 +196,11 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callResponses: (model, body, signal, headers, opts) => callStreaming(customFetchResponses, model, body, signal, headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, headers, opts) => {
       const rawModelId = rawModelIdOf(model);
-      const response = await opts.recordUpstreamLatency(customFetchResponsesCompact(
+      const response = await customFetchResponsesCompact(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher },
-      ));
+        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      );
       return response.ok
         ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
         : { ok: false, response, modelKey: rawModelId };
@@ -213,7 +213,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       // Custom forwards the resolved upstream model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', rawModelIdOf(model));
-      const response = await opts.recordUpstreamLatency(customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher: opts.fetcher }));
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
       return { response, modelKey: rawModelIdOf(model) };
     },
   };
