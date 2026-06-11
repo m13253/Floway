@@ -166,13 +166,6 @@ export interface PerformanceRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface CacheRepo {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string, ttlMs?: number): Promise<void>;
-  delete(key: string): Promise<void>;
-  deletePrefix(prefix: string): Promise<void>;
-}
-
 export interface CachedModelsRow {
   fetchedAt: number;
   models: UpstreamModel[];
@@ -321,7 +314,6 @@ export interface Repo {
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
-  cache: CacheRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;

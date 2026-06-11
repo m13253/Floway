@@ -51,20 +51,14 @@ export type {
 } from './provider.ts';
 export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';
 
-export type { CacheRepo, ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
+export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo } from './repo.ts';
 
 export {
   ProviderModelsUnavailableError,
-  clearModelsStore,
   fetchUpstreamModels,
   httpResponseToResponse,
-  inProcessMemo,
-  invalidateModelsStore,
-  isProviderModelsHttpStatus,
-  readModelsStore,
-  writeModelsStore,
-} from './models-store.ts';
+} from './models-fetch.ts';
 
 export type { Flag, FlagOverrides, OptionalFlagId } from './flags.ts';
 export {

@@ -2,19 +2,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createCodexProvider } from './provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from './state.ts';
-import { directFetcher, initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
-
-const makeMemoryCache = (): CacheRepo & { _store: Map<string, string> } => {
-  const store = new Map<string, string>();
-  return {
-    _store: store,
-    get: async k => store.get(k) ?? null,
-    set: async (k, v) => { store.set(k, v); },
-    delete: async k => { store.delete(k); },
-    deletePrefix: async p => { for (const k of [...store.keys()]) if (k.startsWith(p)) store.delete(k); },
-  };
-};
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -43,16 +32,13 @@ const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken):
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: entry, quotaSnapshot: null }] },
 });
 
-let cache: CacheRepo & { _store: Map<string, string> };
 let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
 let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
 
 beforeEach(() => {
-  cache = makeMemoryCache();
   saveStateSpy = vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>(async () => ({ updated: true }));
   getByIdSpy = vi.fn<(id: string) => Promise<UpstreamRecord | null>>(async () => recordWithAccessToken());
   initProviderRepo(() => ({
-    cache,
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
   }));
 });

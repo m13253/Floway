@@ -3,10 +3,9 @@ import { test } from 'vitest';
 import { fetchCopilotModels } from './fetch-models.ts';
 import { clearCopilotTokenCache } from './index.ts';
 import { ProviderModelsUnavailableError, initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const installRepoAndConfig = async () => {
-  const cache = memoryCacheRepo();
   const id = 'up_copilot_fetch_models_test';
   const githubToken = `ghu_${crypto.randomUUID().replace(/-/g, '')}`;
   const stub: UpstreamRecord = {
@@ -24,7 +23,6 @@ const installRepoAndConfig = async () => {
     config: { githubToken, accountType: 'individual', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
-    cache,
     upstreams: {
       getById: async () => stub,
       saveState: async () => ({ updated: true }),

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { callCodexResponsesCompact } from './compaction.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexUpstreamState } from './state.ts';
 import { initProviderRepo, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
-import { memoryCacheRepo, noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const compactionSseResponse = (): Response => {
   const events = [
@@ -55,7 +55,6 @@ let currentRecord: UpstreamRecord;
 beforeEach(() => {
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, accessToken: freshAccessToken }] });
   initProviderRepo(() => ({
-    cache: memoryCacheRepo(),
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, newState) => {

@@ -21,7 +21,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
+import { parseFlagOverridesWire } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -632,7 +632,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
-    const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),
@@ -651,7 +650,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
-    await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
   // Users land before api keys so the FK from api_keys.user_id can resolve.
@@ -670,10 +668,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
-  for (const upstream of upstreams) {
-    await repo.upstreams.save(upstream);
-    await invalidateModelsStore(upstream.id);
-  }
+  for (const upstream of upstreams) await repo.upstreams.save(upstream);
   for (const record of performance) await repo.performance.set(record);
   await repo.searchConfig.save(searchConfig);
 

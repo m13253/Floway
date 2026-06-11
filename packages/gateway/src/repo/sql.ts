@@ -7,7 +7,6 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
-  CacheRepo,
   CodexPkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
@@ -832,27 +831,6 @@ const toSearchUsageRecord = (row: { provider: string; key_id: string; action: st
   };
 };
 
-class SqlCacheRepo implements CacheRepo {
-  constructor(private db: SqlDatabase) {}
-
-  async get(key: string): Promise<string | null> {
-    const row = await this.db.prepare('SELECT value FROM config WHERE key = ?').bind(key).first<{ value: string }>();
-    return row?.value ?? null;
-  }
-
-  async set(key: string, value: string): Promise<void> {
-    await this.db.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').bind(key, value).run();
-  }
-
-  async delete(key: string): Promise<void> {
-    await this.db.prepare('DELETE FROM config WHERE key = ?').bind(key).run();
-  }
-
-  async deletePrefix(prefix: string): Promise<void> {
-    await this.db.prepare('DELETE FROM config WHERE key >= ? AND key < ?').bind(prefix, `${prefix}\uffff`).run();
-  }
-}
-
 class SqlModelsCacheRepo implements ModelsCacheRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -902,7 +880,7 @@ class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
     await this.db
       .prepare(
         'INSERT INTO codex_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
-        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at'
+        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at',
       )
       .bind(state, verifier, expiresAt)
       .run();
@@ -1585,7 +1563,6 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
-  cache: CacheRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
@@ -1602,7 +1579,6 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.searchUsage = new SqlSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
-    this.cache = new SqlCacheRepo(db);
     this.modelsCache = new SqlModelsCacheRepo(db);
     this.codexPkcePending = new SqlCodexPkcePendingRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);

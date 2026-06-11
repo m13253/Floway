@@ -9,8 +9,7 @@ import {
   type CodexQuotaSnapshot,
 } from './quota.ts';
 import type { CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
-import { initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { memoryCacheRepo } from '@floway-dev/test-utils';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
@@ -40,20 +39,17 @@ const baseAccount = {
 };
 
 let current: UpstreamRecord | null;
-let cache: CacheRepo;
 let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
 let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  cache = memoryCacheRepo();
   saveStateSpy = vi.fn(async (_id, newState, _opts) => {
     if (current) current = { ...current, state: newState as CodexUpstreamState };
     return { updated: true };
   });
   getByIdSpy = vi.fn(async () => current);
   initProviderRepo(() => ({
-    cache,
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
   }));
 });

@@ -13,7 +13,7 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { clearModelsStore, directFetcher, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
+import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
@@ -199,7 +199,6 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
-  await invalidateModelsStore(record.id);
   await warmModelsCache(record, c);
   return c.json(await serializeForResponse(record), 201);
 };
@@ -245,7 +244,6 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   next = { ...next, config: config.value };
 
   await getRepo().upstreams.save(next);
-  await invalidateModelsStore(next.id);
   await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };
@@ -257,7 +255,6 @@ export const deleteUpstream = async (c: Context) => {
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
   // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams, so the cleanup is unconditional.
   await repo.proxyBackoffs.resetForUpstream(id);
-  await invalidateModelsStore(id);
   return c.json({ ok: true });
 };
 
@@ -412,8 +409,6 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
 
     await repo.save(record);
     await clearCopilotTokenCache();
-    clearModelsStore();
-    await invalidateModelsStore(record.id);
     await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {
@@ -516,7 +511,6 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     state: ingestion.state,
   };
   await getRepo().upstreams.save(upstream);
-  await invalidateModelsStore(upstream.id);
   await warmModelsCache(upstream, c);
   return c.json(await serializeForResponse(upstream), 201);
 };
@@ -540,7 +534,6 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
     state: ingestion.state,
   };
   await getRepo().upstreams.save(next);
-  await invalidateModelsStore(id);
   await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };

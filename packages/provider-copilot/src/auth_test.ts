@@ -4,12 +4,11 @@ import { copilotAuthedFetch } from './auth.ts';
 import { clearCopilotTokenCache } from './index.ts';
 import type { CopilotUpstreamState } from './state.ts';
 import { initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
 
 const installRepoAndClearCache = async () => {
-  const cache = memoryCacheRepo();
   let state: unknown = null;
   const stub: UpstreamRecord = {
     id: UPSTREAM_ID,
@@ -26,7 +25,6 @@ const installRepoAndClearCache = async () => {
     config: { githubToken: 'ghu_test', accountType: 'individual', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
-    cache,
     upstreams: {
       getById: async () => ({ ...stub, state }),
       saveState: async (_id, newState) => {

@@ -65,8 +65,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   const provider: ModelProvider = {
     getProvidedModels: async fetcher => {
       const access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-        mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation),
-      );
+        mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
       const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
       // Surface every model the upstream returns, including ones whose
       // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The

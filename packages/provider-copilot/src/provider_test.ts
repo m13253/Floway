@@ -8,7 +8,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, memoryCacheRepo, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -54,7 +54,6 @@ interface SetupOptions extends Partial<UpstreamRecord> {
 
 const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTestRepo> => {
   const { enforceCas = false, ...recordOverrides } = initial;
-  const cache = memoryCacheRepo();
   let upstream = buildCopilotUpstream(recordOverrides);
   const saveStateCalls: SaveStateCall[] = [];
   let saveResult: { updated: boolean } = { updated: true };
@@ -73,7 +72,6 @@ const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTest
     return saveResult;
   };
   initProviderRepo(() => ({
-    cache,
     upstreams: {
       getById: () => getByIdImpl(),
       saveState: (id, newState, options) => saveStateImpl(id, newState, options),

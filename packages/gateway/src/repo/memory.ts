@@ -13,7 +13,6 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
-  CacheRepo,
   CodexPkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
@@ -469,40 +468,6 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
-class MemoryCacheRepo implements CacheRepo {
-  private store = new Map<string, { value: string; expiresAt?: number }>();
-
-  get(key: string): Promise<string | null> {
-    const entry = this.store.get(key);
-    if (!entry) return Promise.resolve(null);
-
-    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
-      this.store.delete(key);
-      return Promise.resolve(null);
-    }
-
-    return Promise.resolve(entry.value);
-  }
-
-  set(key: string, value: string, ttlMs?: number): Promise<void> {
-    this.store.set(key, ttlMs ? { value, expiresAt: Date.now() + ttlMs } : { value });
-
-    return Promise.resolve();
-  }
-
-  delete(key: string): Promise<void> {
-    this.store.delete(key);
-    return Promise.resolve();
-  }
-
-  deletePrefix(prefix: string): Promise<void> {
-    for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
-    }
-    return Promise.resolve();
-  }
-}
-
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
   private rows = new Map<string, CachedModelsRow>();
 
@@ -939,7 +904,6 @@ export class InMemoryRepo implements Repo {
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
-  cache: CacheRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
@@ -956,7 +920,6 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo();
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
-    this.cache = new MemoryCacheRepo();
     this.modelsCache = new MemoryModelsCacheRepo();
     this.codexPkcePending = new MemoryCodexPkcePendingRepo();
     this.searchConfig = new MemorySearchConfigRepo();

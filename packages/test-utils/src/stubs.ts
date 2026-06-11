@@ -1,4 +1,4 @@
-import { directFetcher, type CacheRepo, type LlmTargetApi, type ModelProvider, type ModelProviderInstance, type ProviderCandidate, type ProviderModelRecord, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { directFetcher, type LlmTargetApi, type ModelProvider, type ModelProviderInstance, type ProviderCandidate, type ProviderModelRecord, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions for tests calling provider methods directly:
 // identity recordUpstreamLatency satisfies the contract without piping
@@ -7,25 +7,6 @@ import { directFetcher, type CacheRepo, type LlmTargetApi, type ModelProvider, t
 export const noopUpstreamCallOptions: UpstreamCallOptions = {
   fetcher: directFetcher,
   recordUpstreamLatency: <T>(promise: Promise<T>): Promise<T> => promise,
-};
-
-export const memoryCacheRepo = (): CacheRepo => {
-  const store = new Map<string, string>();
-  return {
-    get: key => Promise.resolve(store.get(key) ?? null),
-    set: (key, value) => {
-      store.set(key, value);
-      return Promise.resolve();
-    },
-    delete: key => {
-      store.delete(key);
-      return Promise.resolve();
-    },
-    deletePrefix: prefix => {
-      for (const key of [...store.keys()]) if (key.startsWith(prefix)) store.delete(key);
-      return Promise.resolve();
-    },
-  };
 };
 
 export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({

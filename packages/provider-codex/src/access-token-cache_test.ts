@@ -8,8 +8,7 @@ import {
   type CodexAccessTokenEntry,
 } from './access-token-cache.ts';
 import type { CodexUpstreamState } from './state.ts';
-import { initProviderRepo, type CacheRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { memoryCacheRepo } from '@floway-dev/test-utils';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
@@ -41,13 +40,11 @@ const baseAccount = {
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
 let current: UpstreamRecord | null;
-let cache: CacheRepo;
 let saveStateSpy: ReturnType<typeof vi.fn<(id: string, newState: unknown, opts: { expectedState: unknown }) => Promise<{ updated: boolean }>>>;
 let getByIdSpy: ReturnType<typeof vi.fn<(id: string) => Promise<UpstreamRecord | null>>>;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  cache = memoryCacheRepo();
   // Default saveState writes the new state through to `current` so subsequent
   // getById calls observe the update — mirrors the live D1-backed CAS.
   saveStateSpy = vi.fn(async (_id, newState, _opts) => {
@@ -56,7 +53,6 @@ beforeEach(() => {
   });
   getByIdSpy = vi.fn(async () => current);
   initProviderRepo(() => ({
-    cache,
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
   }));
 });

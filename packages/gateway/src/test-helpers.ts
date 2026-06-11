@@ -1,11 +1,11 @@
 import { app } from './app.ts';
+import { _clearInFlight } from './data-plane/providers/models-cache.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
 import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
-import { clearModelsStore } from '@floway-dev/provider';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -107,7 +107,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
 
   await clearCopilotTokenCache();
-  clearModelsStore();
+  _clearInFlight();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an
