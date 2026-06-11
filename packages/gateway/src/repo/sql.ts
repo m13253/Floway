@@ -36,14 +36,13 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
+import type { SearchConfig } from '../data-plane/tools/web-search/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-
-const SEARCH_CONFIG_KEY = 'search_config';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1126,30 +1125,34 @@ const toStoredResponsesSnapshot = (row: ResponsesSnapshotRow): StoredResponsesSn
 class SqlSearchConfigRepo implements SearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
-  async get(): Promise<unknown | null> {
-    const row = await this.db.prepare('SELECT value FROM config WHERE key = ?').bind(SEARCH_CONFIG_KEY).first<{ value: string }>();
-
-    if (!row?.value) {
-      return null;
-    }
-
-    // Surface stored-JSON corruption — silently returning null would mask a
-    // corrupt config row.
-    try {
-      return JSON.parse(row.value);
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`Malformed search_config JSON in repo storage: ${message}`, { cause });
-    }
+  async get(): Promise<SearchConfig | null> {
+    const row = await this.db
+      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string }>();
+    // Singleton seeded by migration 0031; defensive fallback for fresh DBs.
+    if (!row) return null;
+    return {
+      provider: row.provider as SearchConfig['provider'],
+      tavily: { apiKey: row.tavily_api_key },
+      microsoftGrounding: { apiKey: row.microsoft_grounding_api_key },
+    };
   }
 
   async save(config: unknown): Promise<void> {
+    // The only caller (`saveSearchConfig`) re-parses via `parseSearchConfigStrict`
+    // before reaching here, so the cast is safe at the contract boundary.
+    const { provider, tavily, microsoftGrounding } = config as SearchConfig;
     await this.db
       .prepare(
-        `INSERT INTO config (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, updated_at)
+         VALUES (1, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (id) DO UPDATE SET
+           provider = excluded.provider,
+           tavily_api_key = excluded.tavily_api_key,
+           microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
+           updated_at = excluded.updated_at`,
       )
-      .bind(SEARCH_CONFIG_KEY, serializeStoredConfig(config))
+      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey)
       .run();
   }
 }
