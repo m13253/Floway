@@ -12,7 +12,7 @@ const proxyUriValidationError = (err: unknown): string => {
   const raw = err instanceof Error ? err.message : String(err);
   // The URL-constructor branch of parseProxyUri prepends "malformed proxy
   // URI: ..." which would double up under our own "Invalid proxy URI: "
-  // wrap. Strip it so the dashboard sees one prefix.
+  // wrap. Strip the doubled prefix.
   return `Invalid proxy URI: ${raw.replace(/^malformed proxy URI: /, '')}`;
 };
 

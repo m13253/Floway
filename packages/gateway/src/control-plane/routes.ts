@@ -33,9 +33,6 @@ export const controlPlaneRoutes = new Hono()
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
-  // Defensive admin guard: any future /auth/* path not registered above
-  // returns 403 instead of leaking through as a control-plane endpoint.
-  .route('/auth', new Hono().use('*', adminOnlyMiddleware))
   .get('/api/keys', listKeys)
   .post('/api/keys', zValidator('json', createKeyBody), createKey)
   .post('/api/keys/:id/rotate', rotateKey)

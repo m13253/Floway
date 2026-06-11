@@ -5,4 +5,8 @@ export {
   isCopilotAccountType,
   type CopilotAccountType,
 } from './auth.ts';
-export { assertCopilotUpstreamRecord } from './config.ts';
+export {
+  assertCopilotUpstreamRecord,
+  type CopilotUpstreamConfig,
+  type CopilotUpstreamUser,
+} from './config.ts';

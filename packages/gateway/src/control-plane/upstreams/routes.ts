@@ -57,9 +57,6 @@ const validationError = (error: unknown): string => (error instanceof Error ? er
 // boundary so a manually-edited or migrated row that violates the runtime
 // invariants surfaces with an actionable message instead of crashing later.
 
-const copilotErrorBuilder = (field: string, expected: string) =>
-  new Error(`Malformed copilot upstream config: ${field} must be ${expected}`);
-
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
@@ -68,7 +65,13 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
       assertCodexUpstreamRecord(record);
       return { ok: true, value: record.config };
     }
-    return { ok: true, value: copilotConfigField(record.config, copilotErrorBuilder) };
+    return {
+      ok: true,
+      value: copilotConfigField(
+        record.config,
+        (field, expected) => new Error(`Malformed copilot upstream config: ${field} must be ${expected}`),
+      ),
+    };
   } catch (error) {
     return { ok: false, error: validationError(error) };
   }

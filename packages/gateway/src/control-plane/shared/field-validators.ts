@@ -1,24 +1,13 @@
-import { isCopilotAccountType, type CopilotAccountType } from '@floway-dev/provider-copilot';
+import { isCopilotAccountType, type CopilotUpstreamConfig, type CopilotUpstreamUser } from '@floway-dev/provider-copilot';
 
-export interface CopilotUpstreamUser {
-  login: string;
-  avatar_url: string;
-  name: string | null;
-  id: number;
-}
-
-export interface CopilotUpstreamConfig {
-  githubToken: string;
-  accountType: CopilotAccountType;
-  user: CopilotUpstreamUser;
-}
+export type { CopilotUpstreamConfig, CopilotUpstreamUser };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export type FieldErrorBuilder = (field: string, expected: string) => Error;
 
-export const stringField = (value: unknown, field: string, err: FieldErrorBuilder): string => {
+const stringField = (value: unknown, field: string, err: FieldErrorBuilder): string => {
   if (typeof value !== 'string') throw err(field, 'a string');
   return value;
 };
@@ -29,17 +18,17 @@ export const nonEmptyStringField = (value: unknown, field: string, err: FieldErr
   return str;
 };
 
-export const nullableStringField = (value: unknown, field: string, err: FieldErrorBuilder): string | null => {
+const nullableStringField = (value: unknown, field: string, err: FieldErrorBuilder): string | null => {
   if (value !== null && typeof value !== 'string') throw err(field, 'a string or null');
   return value;
 };
 
-export const integerField = (value: unknown, field: string, err: FieldErrorBuilder): number => {
+const integerField = (value: unknown, field: string, err: FieldErrorBuilder): number => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw err(field, 'an integer');
   return value;
 };
 
-export const copilotUserField = (value: unknown, err: FieldErrorBuilder): CopilotUpstreamUser => {
+const copilotUserField = (value: unknown, err: FieldErrorBuilder): CopilotUpstreamUser => {
   if (!isRecord(value)) throw err('user', 'an object');
   return {
     login: stringField(value.login, 'user.login', err),

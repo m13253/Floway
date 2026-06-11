@@ -13,9 +13,8 @@ CREATE TABLE proxies (
 );
 
 -- proxy_id always references a proxies.id. We omit the FK because the
--- API layer sweeps backoff rows unconditionally on proxy/upstream DELETE
--- (see resetForProxy / resetForUpstream) rather than relying on
--- ON DELETE CASCADE.
+-- application sweeps backoff rows unconditionally on proxy/upstream DELETE
+-- rather than relying on ON DELETE CASCADE.
 CREATE TABLE proxy_upstream_backoffs (
   proxy_id      TEXT NOT NULL,
   upstream_id   TEXT NOT NULL,

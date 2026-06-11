@@ -25,9 +25,8 @@ import { OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
 const knownFlagIds = new Set<string>(OPTIONAL_FLAGS.map(f => f.id));
 
 // Reuse the runtime parseFlagOverridesWire so unknown-id and type errors
-// produce the same messages the dashboard already surfaces. z.unknown() →
-// transform keeps the schema-validated output typed as Record<string, boolean>
-// for the RPC client.
+// carry the canonical messages. z.unknown() → transform keeps the
+// schema-validated output typed as Record<string, boolean> for the RPC client.
 const flagOverridesSchema = z.unknown().transform((value, ctx): Record<string, boolean> => {
   try {
     return parseFlagOverridesWire(value);
@@ -91,8 +90,8 @@ const upstreamModelSchema = z.object({
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
-  // Records written before authStyle existed default to bearer; the runtime
-  // parser uses the same default, so accept omitted authStyle here.
+  // authStyle is optional; the runtime parser defaults omitted values to
+  // bearer, so the schema accepts the same.
   authStyle: z.enum(['bearer', 'anthropic']).optional(),
   // Structured capability map — the runtime parser permits an empty map for
   // an upstream serving only kind-derived models.
@@ -132,8 +131,8 @@ const copilotConfigSchema = z.object({
 // JSON-parse + zod + pre-hash work is still worth bounding.
 const passwordSchema = z.string().min(1).max(1024);
 
-// Username is allowed to be empty here so the dashboard's "leave blank +
-// ADMIN_KEY" backdoor passes validation; the login handler dispatches on it.
+// Username is allowed empty so the ADMIN_KEY-only login path passes
+// validation; the login handler dispatches on the empty value.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
   password: passwordSchema,
@@ -146,8 +145,7 @@ export const USERNAME_PATTERN = /^[a-zA-Z0-9_.\-]{1,64}$/;
 const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64 chars of [A-Za-z0-9_.-]');
 
 // upstream_ids: null = inherit global order, non-empty unique string[] = whitelist.
-// Empty array is rejected because an entity restricted to zero upstreams cannot
-// serve any model and the UI has no affordance to express that intent.
+// Empty array is rejected because zero upstreams cannot serve any model.
 const upstreamIdsValueSchema = z.array(z.string().min(1))
   .min(1, 'Select at least one upstream, or turn off the override to allow all.')
   .refine(arr => new Set(arr).size === arr.length, { message: 'upstreamIds contains duplicates' })
@@ -203,17 +201,17 @@ const upstreamBaseFields = {
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 };
 
-// Create accepts a discriminated union on `provider` so frontends get
-// shape-specific autocomplete on `config`. Copilot upstreams normally
-// originate from the device-flow poll endpoint, but POST also accepts them
-// for the import flow. `enabled` and `sort_order` are optional — the handler
-// defaults them to `true` and `nextSortOrder()` respectively when omitted.
+// Create accepts a discriminated union on `provider` for per-provider config
+// validation. Copilot upstreams normally originate from the device-flow poll
+// endpoint, but POST also accepts them for the import flow. `enabled` and
+// `sort_order` are optional — the handler defaults them to `true` and
+// `nextSortOrder()` respectively when omitted.
 //
 // `codex` is listed here so the handler can return the canonical
 // "use POST /api/upstreams/codex-import" 400 instead of the cryptic zod
 // "invalid discriminator value" message. The `config` slot is `unknown()`
 // because the real Codex config is derived from the OAuth/`auth.json` flow,
-// not from anything the dashboard would post against this endpoint.
+// not from anything posted against this endpoint.
 export const createUpstreamBody = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
@@ -241,10 +239,10 @@ export const updateUpstreamBody = z.object({
   config: z.unknown().optional(),
 });
 
-// Draft /models browse: the editor sends an in-progress (possibly unsaved)
-// custom config to fetch the upstream's live model list before saving. `id`
-// is present in edit mode so the handler can substitute the stored secret
-// when the bearerToken field is left blank ("keep the stored secret").
+// Draft /models browse: accepts an in-progress custom config so callers can
+// fetch the upstream's live model list before saving. `id` is present in
+// edit mode so the handler can substitute the stored secret when bearerToken
+// is left blank ("keep the stored secret").
 export const fetchModelsBody = z.object({
   id: z.string().optional(),
   config: customConfigSchema,
