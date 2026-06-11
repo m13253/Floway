@@ -16,10 +16,12 @@ import {
   type CustomDraft,
   seedPathOverrides,
 } from './customConfig.ts';
+import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
-import { callApi, useApi } from '../../api/client.ts';
+import { authFetch, callApi, useApi } from '../../api/client.ts';
 import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -29,17 +31,14 @@ const props = defineProps<{
   initialProvider?: UpstreamProviderKind;
   nextSortOrder: number;
   flags: FlagDef[];
-  // Read-only model list pre-fetched by the route loader from
-  // /upstreams/:id/models for providers whose catalog is upstream-decided
-  // (copilot, codex). Empty array means "wrong provider, no record yet, or
-  // the fetch failed" — the matching error field carries the reason.
+  // Resolved model list pre-fetched by the route loader from
+  // /upstreams/:id/models for non-Azure providers (copilot, codex, and
+  // custom in edit mode). Empty array means "no record yet, Azure, or the
+  // fetch failed" — the matching error field carries the reason.
   initialUpstreamModels?: UpstreamModelConfig[];
   initialUpstreamModelsError?: string | null;
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;
-  initialCustomRawModels?: CustomRawModel[];
-  initialCustomRawModelsError?: string | null;
-  initialCustomFetchedAt?: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -48,6 +47,7 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const api = useApi();
+const upstreamsStore = useUpstreamsStore();
 
 type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
@@ -137,10 +137,14 @@ const azureApiKeySet = computed(() => {
   return cfg?.apiKeySet === true;
 });
 
-const fetchedRaw = ref<CustomRawModel[]>(props.initialCustomRawModels ?? []);
+// Create-mode draft preview state for the inline "Fetch" button on the
+// Custom panel: POST /upstreams/fetch-models renders the unsaved config's
+// /models response so the operator can pick rows before saving. Saved
+// upstreams flow through the unified GET path and `upstreamModels` instead.
+const fetchedRaw = ref<CustomRawModel[]>([]);
 const fetchLoading = ref(false);
-const fetchError = ref<string | null>(props.initialCustomRawModelsError ?? null);
-const fetchedAtMs = ref<number | null>(props.initialCustomFetchedAt ?? null);
+const fetchError = ref<string | null>(null);
+const fetchedAtMs = ref<number | null>(null);
 
 // A custom raw model carries no per-endpoint hint beyond its kind. Embedding
 // and image map to their fixed endpoints; chat models follow the
@@ -154,7 +158,7 @@ const endpointsForKind = (kind: CustomRawModel['kind']): ModelEndpoints => {
     : { chatCompletions: {} };
 };
 
-const customAutoModels = computed<UpstreamModelConfig[]>(() => fetchedRaw.value.map(m => {
+const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedRaw.value.map(m => {
   const label = m.display_name ?? m.name;
   return {
     upstreamModelId: m.id,
@@ -167,14 +171,14 @@ const customAutoModels = computed<UpstreamModelConfig[]>(() => fetchedRaw.value.
   };
 }));
 
-const fetchModels = async () => {
-  if (activeProvider.value !== 'custom') return;
+const fetchDraftModels = async () => {
+  if (activeProvider.value !== 'custom' || props.mode !== 'create') return;
   fetchLoading.value = true;
   fetchError.value = null;
   try {
     const { data, error } = await callApi<{ data: CustomRawModel[] }>(
       () => api.api.upstreams['fetch-models'].$post({
-        json: { id: props.record?.id, config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
+        json: { config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
       }),
     );
     // The toggle may have been turned off while this request was in flight;
@@ -205,6 +209,31 @@ const fetchStatus = computed<string | null>(() => {
   const label = mins < 1 ? 'just now' : `${mins}m ago`;
   return `${fetchedRaw.value.length} returned · ${label}`;
 });
+
+const refreshing = ref(false);
+const refreshCachedModels = async () => {
+  if (!props.record || props.record.provider === 'azure') return;
+  refreshing.value = true;
+  upstreamModelsError.value = null;
+  try {
+    // The route's query is unvalidated server-side, so the typed client
+    // does not surface a `query` arg; build the URL via `$url` and append
+    // the literal `refresh=true` toggle.
+    const url = api.api.upstreams[':id'].models.$url({ param: { id: props.record.id } });
+    url.searchParams.set('refresh', 'true');
+    const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(() => authFetch(url.toString()));
+    if (error) {
+      upstreamModelsError.value = error.message;
+      return;
+    }
+    upstreamModels.value = data.data;
+  } finally {
+    // Reload the upstream list so `modelsCache.fetchedAt` and `lastError`
+    // reflect the row the gateway just rewrote, regardless of outcome.
+    await upstreamsStore.load();
+    refreshing.value = false;
+  }
+};
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -312,10 +341,18 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
   },
 });
 
+// Auto rows are the live catalog the upstream itself decides. For copilot,
+// codex, and saved custom upstreams that comes from the SWR cache via
+// `upstreamModels`. Create-mode custom drafts fall back to the inline
+// POST /fetch-models preview translated through the draft's endpoints.
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
-  if (activeProvider.value === 'custom') return customDraft.value.modelsFetch.enabled ? customAutoModels.value : [];
-  if (activeProvider.value === 'copilot' || activeProvider.value === 'codex') return upstreamModels.value;
-  return [];
+  if (activeProvider.value === 'azure') return [];
+  if (activeProvider.value === 'custom') {
+    if (!customDraft.value.modelsFetch.enabled) return [];
+    if (props.mode === 'edit') return upstreamModels.value;
+    return customAutoModelsFromDraft.value;
+  }
+  return upstreamModels.value;
 });
 
 const upstreamIdLabelForActive = computed(() => activeProvider.value === 'azure' ? 'Deployment' : 'Upstream Model ID');
@@ -324,6 +361,12 @@ const upstreamIdLabelForActive = computed(() => activeProvider.value === 'azure'
 // page-level Save button is the wrong trigger, so it stays hidden until
 // the panel emits the new record.
 const showSaveButton = computed(() => props.mode === 'edit' || (activeProvider.value !== 'copilot' && activeProvider.value !== 'codex'));
+
+// The cache-status panel reads the row's `modelsCache` summary and offers a
+// force-refresh shortcut. Azure is the one provider whose catalog is pure
+// form data — there is nothing the gateway can fetch — so the panel is
+// suppressed for it.
+const showCacheStatus = computed(() => props.mode === 'edit' && props.record !== null && props.record.provider !== 'azure');
 
 // Public-id catalogue feeding the disabled-models combobox: every model
 // currently surfaced for this provider, deduped by public id. A model's
@@ -343,14 +386,8 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
       items.push({ value: id, label: id });
     }
   };
-  if (activeProvider.value === 'custom') {
-    collect(customDraft.value.models);
-    if (customDraft.value.modelsFetch.enabled) collect(customAutoModels.value);
-  } else if (activeProvider.value === 'azure') {
-    collect(azureDraft.value.models);
-  } else if (activeProvider.value === 'copilot' || activeProvider.value === 'codex') {
-    collect(upstreamModels.value);
-  }
+  collect(modelsManualForActive.value);
+  collect(autoForActive.value);
   return items;
 });
 
@@ -402,6 +439,14 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
     <p v-if="saveError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">{{ saveError }}</p>
     <p v-if="upstreamModelsError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">Failed to fetch upstream model list: {{ upstreamModelsError }}</p>
 
+    <ModelsCacheStatus
+      v-if="showCacheStatus"
+      class="mb-4"
+      :models-cache="record!.modelsCache"
+      :refreshing="refreshing"
+      @refresh="refreshCachedModels"
+    />
+
     <!-- Two-column workbench. Default behavior: aside max-h matches the
          right pane (or viewport, whichever is taller) so the rail and the
          editor reach the same bottom; flag editor flex-1 + OverlayScrollbars
@@ -433,7 +478,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :initial-copilot-quota="initialCopilotQuota"
         :initial-copilot-quota-error="initialCopilotQuotaError"
         @update:provider="setActiveProvider"
-        @fetch-models="fetchModels"
+        @fetch-models="fetchDraftModels"
         @copilot-completed="onCopilotCompleted"
         @codex-imported="onCodexImported"
         @codex-error="onCodexError"
