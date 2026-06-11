@@ -8,12 +8,13 @@ import { loadModels } from './load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 export const models = async (c: Context) => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream));
+    return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c)));
   } catch (e) {
     const message = e instanceof ProviderModelsUnavailableError
       ? MODEL_LISTING_FAILURE_MESSAGE

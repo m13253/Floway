@@ -121,7 +121,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    const { id: modelId, model: resolved } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream);
+    const { id: modelId, model: resolved } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream, scheduleBackground);
     if (!resolved) {
       return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
     }

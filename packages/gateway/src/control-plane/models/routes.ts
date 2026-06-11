@@ -5,6 +5,7 @@ import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts
 import { getModels } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
@@ -34,7 +35,7 @@ export const controlPlaneModels = async (c: Context) => {
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
     const fetcherForUpstream = await createPerRequestFetcher();
-    const models = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream);
+    const models = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c));
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {
       object: 'list',

@@ -535,7 +535,11 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream);
+    // Adapt `state.scheduleBackground`'s thunk shape to the BackgroundScheduler
+    // signature the registry expects (the cache layer's background revalidate
+    // path queues a Promise, not a thunk).
+    const scheduler = (promise: Promise<unknown>) => state.scheduleBackground(() => promise as Promise<void>);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, scheduler);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }

@@ -1,4 +1,5 @@
 import { getInternalModels } from '../providers/registry.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
@@ -23,8 +24,9 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
 export const loadModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
 ): Promise<PublicModelsResponse> => {
-  const data = (await getInternalModels(upstreamFilter, fetcherForUpstream)).map(toPublicModel);
+  const data = (await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler)).map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

@@ -3,8 +3,10 @@ import type { Context } from 'hono';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { geminiStatusForHttpStatus } from '../llm/gemini/errors.ts';
 import { getInternalModels } from '../providers/registry.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
@@ -62,8 +64,9 @@ const geminiModelLoadError = (error: unknown): Response => {
 const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
 ): Promise<GeminiModel[]> => {
-  const models = await getInternalModels(upstreamFilter, fetcherForUpstream);
+  const models = await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler);
   // Only chat models are representable in the Gemini /models shape.
   return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
@@ -71,7 +74,7 @@ const loadGeminiModels = async (
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream) });
+    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c)) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -84,7 +87,7 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
   const modelId = rawModelId.replace(/^models\//, '');
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {
