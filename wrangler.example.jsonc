@@ -59,12 +59,19 @@
   "images": {
     "binding": "IMAGES"
   },
-  // KV namespace caching the compressed WebP results. The Images binding bills
-  // every transformation and does not deduplicate, so this cache turns a
-  // repeated inline image (e.g. resent across conversation turns) into a single
-  // KV read. Run `pnpm wrangler kv namespace create <name>` and paste the
-  // returned id below.
+  // KV namespaces. `IMAGE_CACHE` backs the platform `ImageCacheStore`
+  // abstraction (cache for compressed WebP results — the Images binding bills
+  // every transformation and does not deduplicate, so this turns a repeated
+  // inline image into a single KV read). `KV` is the legacy general-purpose
+  // namespace that the image-processor still reads through directly; it will
+  // be removed once the image-processor switchover lands. Run
+  // `pnpm wrangler kv namespace create <name>` and paste the returned ids
+  // below.
   "kv_namespaces": [
+    {
+      "binding": "IMAGE_CACHE",
+      "id": "<YOUR_IMAGE_CACHE_KV_NAMESPACE_ID>"
+    },
     {
       "binding": "KV",
       "id": "<YOUR_KV_NAMESPACE_ID>"
