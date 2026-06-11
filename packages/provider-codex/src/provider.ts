@@ -1,4 +1,5 @@
 import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
+import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { callCodexResponsesCompact } from './compaction.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
@@ -61,8 +62,23 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   const provider: ModelProvider = {
     getProvidedModels: async fetcher => {
-      const access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-        mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+      // A model-list refresh is the first thing a brand-new Codex upstream
+      // does, and it is the only place outside the data plane that mints an
+      // access token. If the refresh_token has been revoked upstream, the
+      // mint throws CodexOAuthSessionTerminatedError; flip the row to
+      // `refresh_failed` so the dashboard stops claiming the credential is
+      // active, then rethrow so the caller's models-cache records the
+      // failure and surfaces it to the operator.
+      let access;
+      try {
+        access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
+          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+      } catch (err) {
+        if (err instanceof CodexOAuthSessionTerminatedError) {
+          await persistTerminalState('refresh_failed', err.upstreamMessage);
+        }
+        throw err;
+      }
       const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
       // Surface every model the upstream returns, including ones whose
       // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The

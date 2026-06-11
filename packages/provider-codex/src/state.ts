@@ -37,8 +37,12 @@ export interface CodexAccountCredential {
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
-  // The absent-key case is accepted for these two fields; call sites alias
-  // the absent value to `null` via `?? null`.
+  // Pre-existing rows from before these fields were added carry no key at all
+  // on the wire. The asserter accepts that absent-key case unchanged so we
+  // never mutate the input (which would poison CAS via the caller's
+  // `fresh.state` reference); `readCodexUpstreamState` is the boundary that
+  // normalizes absent → `null` on a shallow copy, so consumers can rely on
+  // the typed `null` slot here.
   accessToken: CodexAccessTokenEntry | null;
   quotaSnapshot: CodexQuotaSnapshotEntry | null;
 }
@@ -145,9 +149,10 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
   // accessToken / quotaSnapshot were added after the initial schema; absent on
   // pre-existing rows. Accept the absent-key case verbatim and only validate
   // the shape when the key is present and non-null. Mutating the input here
-  // (e.g. defaulting to null in place) propagates back through the caller's
-  // `fresh.state` reference and poisons the CAS `expectedState`, so every
-  // legacy row's first cache write would lose.
+  // (e.g. defaulting to null in place) would propagate through the caller's
+  // `fresh.state` reference and poison the CAS `expectedState` — the absent →
+  // `null` normalization to satisfy the typed contract happens in
+  // `readCodexUpstreamState` on a shallow copy instead.
   if (obj.accessToken !== undefined && obj.accessToken !== null) {
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
@@ -179,9 +184,21 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
   }
 }
 
-// Non-mutating: the asserter preserves the input reference, so callers can
-// CAS on the same object they read.
+// Boundary normalization: legacy rows may carry no `accessToken` /
+// `quotaSnapshot` key; the typed contract on `CodexAccountCredential`
+// promises `null` rather than `undefined`. Build a shallow copy of the
+// state with absent → `null` so consumers can rely on `=== null` checks
+// without seeing legacy rows escape unfilled. The original `raw` is left
+// untouched so callers (e.g. access-token-cache, quota) can still pass it
+// straight through as the CAS `expectedState`.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);
-  return raw;
+  return {
+    ...raw,
+    accounts: raw.accounts.map(account => ({
+      ...account,
+      accessToken: account.accessToken ?? null,
+      quotaSnapshot: account.quotaSnapshot ?? null,
+    })),
+  };
 };

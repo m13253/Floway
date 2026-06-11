@@ -44,12 +44,12 @@ import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provi
 // while ensuring every response shape carries the panels the dashboard
 // expects.
 const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedUpstreamRecord> => {
-  const cacheRowPromise = getRepo().modelsCache.get(record.id);
   let codexQuotaPromise: Promise<CodexQuotaSnapshot | null> | null = null;
   if (record.provider === 'codex') {
     assertCodexUpstreamRecord(record);
     codexQuotaPromise = getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId);
   }
+  const cacheRowPromise = getRepo().modelsCache.get(record.id);
   const cacheRow = await cacheRowPromise;
   const serialized = upstreamRecordToJson(record);
   serialized.modelsCache = {
