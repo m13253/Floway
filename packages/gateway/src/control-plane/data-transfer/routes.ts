@@ -7,13 +7,19 @@
 // UUIDs / PSKs. The endpoint is admin-only via x-api-key; operators are
 // responsible for handling the dumped file with the same care as a DB backup.
 
+import type { Context } from 'hono';
+
+import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
+import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -505,6 +511,25 @@ const isNonNegativeSafeInteger = (value: unknown): value is number => typeof val
 
 const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
 
+// Synchronously populate the SWR models cache for each saved upstream so the
+// dashboard's next navigation lands on a populated row. In merge mode the
+// upstreams.save above is an ON CONFLICT UPDATE that does not touch the
+// models_cache row through any FK cascade, so without this call a re-import
+// that changes an upstream's config would keep serving the prior cached
+// model list until SWR's soft window expired. Replace mode wiped the table
+// before the loop; warming there is a no-op population. Failures do not
+// block the import — the cache layer persists lastError for the dashboard.
+const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
+  const scheduler = backgroundSchedulerFromContext(c);
+  try {
+    const instance = await createProviderInstance(record);
+    const fetcher = (await createPerRequestFetcher())(record.id);
+    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+  } catch (err) {
+    console.warn(`Failed to warm models cache for ${record.id}:`, err);
+  }
+};
+
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
   const includePerformance = c.req.valid('query').include_performance === '1';
@@ -668,7 +693,10 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
-  for (const upstream of upstreams) await repo.upstreams.save(upstream);
+  for (const upstream of upstreams) {
+    await repo.upstreams.save(upstream);
+    await warmModelsCache(upstream, c);
+  }
   for (const record of performance) await repo.performance.set(record);
   await repo.searchConfig.save(searchConfig);
 

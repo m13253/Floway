@@ -141,12 +141,18 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
     throw new TypeError(`${where}.state_updated_at must be a non-empty ISO string`);
   }
   // accessToken / quotaSnapshot were added after the initial schema; absent on
-  // pre-existing rows. Accept undefined here and let readCodexUpstreamState
-  // normalize it to null so consumers see a consistent shape.
-  if (obj.accessToken !== undefined && obj.accessToken !== null) {
+  // pre-existing rows. Normalize the absent-key case to null in place so the
+  // narrowed CodexAccountCredential matches runtime exactly — callers can
+  // strict-null compare these fields without a foot-gun. Explicit `undefined`
+  // is rejected: it is never a valid persisted shape.
+  if (!('accessToken' in obj)) {
+    obj.accessToken = null;
+  } else if (obj.accessToken !== null) {
     assertCodexAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
-  if (obj.quotaSnapshot !== undefined && obj.quotaSnapshot !== null) {
+  if (!('quotaSnapshot' in obj)) {
+    obj.quotaSnapshot = null;
+  } else if (obj.quotaSnapshot !== null) {
     assertCodexQuotaSnapshotEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
 };
@@ -174,16 +180,11 @@ export function assertCodexUpstreamState(value: unknown): asserts value is Codex
   }
 }
 
-// Normalizes pre-existing rows that pre-date the accessToken / quotaSnapshot
-// fields: a missing key reads as null so callers don't need to differentiate
-// "key absent" from "explicitly null".
+// Thin wrapper for callers that want a typed reader rather than asserting and
+// keeping the same reference. assertCodexUpstreamState already normalizes
+// pre-existing rows (missing accessToken / quotaSnapshot become null in
+// place), so this is effectively `(raw) => { assert(raw); return raw; }`.
 export const readCodexUpstreamState = (raw: unknown): CodexUpstreamState => {
   assertCodexUpstreamState(raw);
-  return {
-    accounts: raw.accounts.map(account => ({
-      ...account,
-      accessToken: account.accessToken ?? null,
-      quotaSnapshot: account.quotaSnapshot ?? null,
-    })),
-  };
+  return raw;
 };

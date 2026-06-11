@@ -69,11 +69,32 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-export async function clearCopilotTokenCache(): Promise<void> {
-  // The persisted copy lives inside each upstream's state_json row; the next
-  // saveState write from `getCopilotToken` overwrites it. There is nothing to
-  // clear out-of-band, only the in-process memo to drop.
+export async function clearCopilotTokenCache(upstreamId?: string): Promise<void> {
+  // The in-process memo always drops. The persisted `state.copilotToken`
+  // outlives the in-process clear by ~25 minutes, so a caller that just
+  // rotated the upstream's GitHub PAT (or otherwise wants the next request
+  // to mint a fresh Copilot token) MUST pass the upstream id — without it,
+  // `getCopilotToken` would happily return the still-valid persisted entry
+  // that was minted from the previous PAT, authenticating subsequent
+  // requests as the prior identity until the natural expiry. Tests that
+  // only need to drop the in-process memo (to force a state_json read on
+  // the next call) leave `upstreamId` unset.
   inProcessTokenCache.clear();
+  if (upstreamId === undefined) return;
+  const repo = getRepo().upstreams;
+  const fresh = await repo.getById(upstreamId);
+  if (!fresh) return;
+  const state = readCopilotUpstreamState(fresh.state);
+  if (state.copilotToken === null) return;
+  try {
+    await repo.saveState(
+      upstreamId,
+      { ...state, copilotToken: null } satisfies CopilotUpstreamState,
+      { expectedState: fresh.state },
+    );
+  } catch (err) {
+    console.warn(`Failed to clear persisted Copilot token for ${upstreamId}:`, err);
+  }
 }
 
 async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefined, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
