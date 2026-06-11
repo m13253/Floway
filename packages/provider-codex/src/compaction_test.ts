@@ -36,7 +36,7 @@ const compactionSseResponse = (): Response => {
   );
 };
 
-const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt', state: 'active', state_updated_at: '2026-01-01T00:00:00Z' };
+const activeAccount: CodexAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: null, quotaSnapshot: null };
 const model: UpstreamModel = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() };
 
 afterEach(() => vi.restoreAllMocks());

@@ -48,6 +48,8 @@ export const importCodexFromAuthJson = async (authJson: unknown): Promise<CodexI
       refresh_token: refreshToken,
       state: 'active',
       state_updated_at: now,
+      accessToken: null,
+      quotaSnapshot: null,
     }],
   };
 
@@ -111,6 +113,8 @@ export const importCodexFromCallback = async (opts: { code: string; codeVerifier
         refresh_token: tokens.refresh_token,
         state: 'active',
         state_updated_at: now,
+        accessToken: null,
+        quotaSnapshot: null,
       }],
     },
     accessToken: {
