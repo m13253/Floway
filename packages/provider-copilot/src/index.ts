@@ -10,3 +10,10 @@ export {
   type CopilotUpstreamConfig,
   type CopilotUpstreamUser,
 } from './config.ts';
+export {
+  assertCopilotUpstreamState,
+  emptyCopilotUpstreamState,
+  readCopilotUpstreamState,
+  type CopilotTokenEntry,
+  type CopilotUpstreamState,
+} from './state.ts';

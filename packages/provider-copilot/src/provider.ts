@@ -7,7 +7,7 @@ import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } fro
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './interceptors/messages/types.ts';
 import { COPILOT_RESPONSES_BOUNDARY, COPILOT_RESPONSES_COMPACT_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
+import { emptyKnownModels, mergeKnownModels, projectKnownModels, type CopilotKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
@@ -262,17 +262,17 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
   const provider: ModelProvider = {
     getProvidedModels: fetcher =>
       inProcessMemo(copilot.id, L1_TTL_MS, async () => {
-        const ledger = (await readModelsStore<CopilotLedger>(copilot.id)) ?? emptyLedger();
+        const knownModels = (await readModelsStore<CopilotKnownModels>(copilot.id)) ?? emptyKnownModels();
         const now = Date.now();
-        const initial = projectLedger(ledger, now);
-        if (now - ledger.fetchedAt < SOFT_MS && initial.length > 0) {
+        const initial = projectKnownModels(knownModels, now);
+        if (now - knownModels.fetchedAt < SOFT_MS && initial.length > 0) {
           return finalizeCopilotModels(initial, upstreamFlags);
         }
         try {
           const response = await fetchCopilotModels(upstreamConfig, fetcher);
-          const merged = mergeLedger(ledger, response, now);
-          await writeModelsStore<CopilotLedger>(copilot.id, merged);
-          return finalizeCopilotModels(projectLedger(merged, now), upstreamFlags);
+          const merged = mergeKnownModels(knownModels, response, now);
+          await writeModelsStore<CopilotKnownModels>(copilot.id, merged);
+          return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
         } catch (err) {
           if (initial.length > 0) return finalizeCopilotModels(initial, upstreamFlags);
           throw err;

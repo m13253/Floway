@@ -1,0 +1,92 @@
+// Gateway-managed Copilot upstream state, persisted in upstreams.state_json.
+// Writes happen via UpstreamRepo.saveState with optimistic concurrency keyed
+// on the prior state JSON.
+
+import type { CopilotKnownModels } from './known-models.ts';
+
+// Short-lived Copilot session token minted by exchanging the operator-supplied
+// GitHub PAT against /copilot_internal/v2/token. The PAT itself lives in
+// CopilotUpstreamConfig; only the minted token (and its expiry) belong in
+// state.
+export interface CopilotTokenEntry {
+  token: string;
+  expiresAt: number;
+}
+
+export interface CopilotUpstreamState {
+  knownModels: CopilotKnownModels | null;
+  copilotToken: CopilotTokenEntry | null;
+}
+
+const ALLOWED_STATE_KEYS_MAP: Record<keyof CopilotUpstreamState, true> = {
+  knownModels: true,
+  copilotToken: true,
+};
+
+const ALLOWED_TOKEN_KEYS_MAP: Record<keyof CopilotTokenEntry, true> = {
+  token: true,
+  expiresAt: true,
+};
+
+const assertCopilotTokenEntry = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (!(key in ALLOWED_TOKEN_KEYS_MAP)) {
+      throw new TypeError(`${where} has unexpected key '${key}'`);
+    }
+  }
+  if (typeof obj.token !== 'string' || obj.token === '') {
+    throw new TypeError(`${where}.token must be a non-empty string`);
+  }
+  if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
+    throw new TypeError(`${where}.expiresAt must be a finite number`);
+  }
+};
+
+const assertCopilotKnownModels = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
+    throw new TypeError(`${where}.fetchedAt must be a finite number`);
+  }
+  if (typeof obj.models !== 'object' || obj.models === null || Array.isArray(obj.models)) {
+    throw new TypeError(`${where}.models must be a plain object`);
+  }
+};
+
+export function assertCopilotUpstreamState(value: unknown): asserts value is CopilotUpstreamState {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('CopilotUpstreamState must be a plain object');
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (!(key in ALLOWED_STATE_KEYS_MAP)) {
+      throw new TypeError(`CopilotUpstreamState has unexpected key '${key}'`);
+    }
+  }
+  if (obj.knownModels !== null && obj.knownModels !== undefined) {
+    assertCopilotKnownModels(obj.knownModels, 'CopilotUpstreamState.knownModels');
+  }
+  if (obj.copilotToken !== null && obj.copilotToken !== undefined) {
+    assertCopilotTokenEntry(obj.copilotToken, 'CopilotUpstreamState.copilotToken');
+  }
+}
+
+export const emptyCopilotUpstreamState = (): CopilotUpstreamState => ({
+  knownModels: null,
+  copilotToken: null,
+});
+
+export const readCopilotUpstreamState = (raw: unknown): CopilotUpstreamState => {
+  if (raw === null || raw === undefined) return emptyCopilotUpstreamState();
+  assertCopilotUpstreamState(raw);
+  return {
+    knownModels: raw.knownModels ?? null,
+    copilotToken: raw.copilotToken ?? null,
+  };
+};
