@@ -157,9 +157,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
 
 const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedProxy[] } | { type: 'invalid'; index: number; error: string } => {
   // Proxies are optional in the import contract: an absent or empty array
-  // means "the source deployment had no proxies". The cross-reference check
-  // later still fails the import if upstreams point at ids this array
-  // doesn't carry, so a dangling reference cannot slip through silently.
+  // means "the source deployment had no proxies".
   if (value === undefined) return { type: 'ok', records: [] };
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'proxies must be an array' };
 
@@ -523,16 +521,18 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 // model list until SWR's soft window expired. Replace mode wiped the table
 // before the loop; warming there is a no-op population. A failed upstream
 // fetch (network blip, bad credentials) does not block the import — the
-// cache layer persists lastError on that path for the dashboard to surface.
-// Failures earlier in the chain (provider construction, fetcher wiring) are
-// gateway bugs and propagate.
+// cache layer persists lastError on that path for the dashboard to surface,
+// and we log the swallowed error so non-transient failures (gateway bugs in
+// the cache layer or scheduler) still surface in observability.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
   const fetcher = (await createPerRequestFetcher())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {}
+  } catch (err) {
+    console.error(`Failed to warm models cache for upstream ${record.id}:`, err);
+  }
 };
 
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {

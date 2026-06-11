@@ -36,14 +36,14 @@ const setup = (): Harness => {
   return {
     repo,
     background,
-    ctx: (overrides = {}) => ({
-      apiKeyId: overrides.apiKeyId ?? 'key_a',
+    ctx: ({ apiKeyId = 'key_a', requestStartedAt = 0 } = {}) => ({
+      apiKeyId,
       upstreamIds: null,
       wantsStream: true,
       runtimeLocation: 'test',
       scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
       backgroundScheduler: promise => { background.push(promise); },
-      requestStartedAt: overrides.requestStartedAt ?? 0,
+      requestStartedAt,
     }),
   };
 };

@@ -4545,7 +4545,7 @@ interface DispatchRecord {
   intercepted: InterceptedFunctionCall;
 }
 
-// Records every shim call call without producing IRs or start frames.
+// Records every shim call without producing IRs or start frames.
 // Tests that care about dispatcher behavior pass a custom dispatcher.
 const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { intercepted: InterceptedFunctionCall }) => {
   records.push({ intercepted });
@@ -4775,7 +4775,7 @@ test('consumeTurn second turn swallows upstream response.created and in_progress
   assertEquals(eventTypesOf(result.downstreamFrames), []);
 });
 
-test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 events', async () => {
+test('consumeTurn intercepts the shim tool and does NOT forward its 4 events', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -4811,7 +4811,7 @@ test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 
   assertFalse(result.summary.sawClientToolCall);
 });
 
-test('consumeTurn intercepts two shim call calls within one turn', async () => {
+test('consumeTurn intercepts two shim calls within one turn', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5005,7 +5005,7 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
-test('consumeTurn one shim call call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
+test('consumeTurn one shim call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(

@@ -105,8 +105,8 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 
 // Synchronously populate the SWR models cache for a freshly-saved upstream
 // so the dashboard's next navigation lands on a populated row. Upstream
-// fetch failures do not block the import response — runFetch persists
-// `lastError` on the row, which the dashboard surfaces separately. Provider
+// fetch failures are persisted to the row's `lastError` by runFetch and
+// surfaced by the dashboard, so we discard the throw here. Provider
 // instance and fetcher construction errors are not swallowed; those signal
 // genuine misconfiguration that the operator must see.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
@@ -115,8 +115,8 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcher())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch (err) {
-    console.warn(`Failed to warm models cache for ${record.id}:`, err);
+  } catch {
+    // Intentionally discarded — see comment above.
   }
 };
 
@@ -253,7 +253,7 @@ export const deleteUpstream = async (c: Context) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams, so the cleanup is unconditional.
+  // No FK from proxy_upstream_backoffs to upstreams; clean up explicitly.
   await repo.proxyBackoffs.resetForUpstream(id);
   return c.json({ ok: true });
 };
