@@ -66,8 +66,8 @@
   // the returned id below.
   "kv_namespaces": [
     {
-      "binding": "IMAGE_CACHE",
-      "id": "<YOUR_IMAGE_CACHE_KV_NAMESPACE_ID>"
+      "binding": "KV",
+      "id": "<YOUR_KV_NAMESPACE_ID>"
     }
   ]
 }

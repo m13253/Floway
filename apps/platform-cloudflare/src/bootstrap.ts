@@ -17,16 +17,16 @@ export interface CloudflareEnv {
   DB: SqlDatabase;
   FILES: R2BucketLike;
   IMAGES: ImagesBinding;
-  IMAGE_CACHE: KvNamespace;
+  KV: KvNamespace;
   [key: string]: unknown;
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 holds spilled payloads, Images compresses inline
-// images, IMAGE_CACHE memoises compressed image results. A missing binding
-// means wrangler.jsonc drifted from the code, so we refuse to initialise
-// rather than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'IMAGE_CACHE'] as const;
+// images, KV memoises compressed image results. A missing binding means
+// wrangler.jsonc drifted from the code, so we refuse to initialise rather
+// than 503 on first use of the absent binding.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined || env[name] === null);
@@ -39,7 +39,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
 
   initEnv(name => String(env[name] ?? ''));
   initFileProvider(new R2FileProvider(env.FILES));
-  initImageCacheStore(new KvImageCache(env.IMAGE_CACHE));
+  initImageCacheStore(new KvImageCache(env.KV));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);

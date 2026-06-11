@@ -31,7 +31,7 @@ const REQUIRED: RequiredBinding[] = [
   { binding: 'DB', where: 'd1_databases[].binding', locate: c => c.d1_databases?.some(e => e.binding === 'DB') ?? false },
   { binding: 'FILES', where: 'r2_buckets[].binding', locate: c => c.r2_buckets?.some(e => e.binding === 'FILES') ?? false },
   { binding: 'IMAGES', where: 'images.binding', locate: c => c.images?.binding === 'IMAGES' },
-  { binding: 'IMAGE_CACHE', where: 'kv_namespaces[].binding', locate: c => c.kv_namespaces?.some(e => e.binding === 'IMAGE_CACHE') ?? false },
+  { binding: 'KV', where: 'kv_namespaces[].binding', locate: c => c.kv_namespaces?.some(e => e.binding === 'KV') ?? false },
 ];
 
 const text = await readFile(CONFIG_PATH, 'utf8');
