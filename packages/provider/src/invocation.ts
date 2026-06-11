@@ -8,13 +8,10 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 // The provider-binding decision for this attempt: which upstream's binding
-// to call and which target protocol to invoke on it. The binding carries
-// the upstream identity, the upstream model record, the per-binding flag
-// set; `provider` is the resolved upstream provider instance the binding
-// came from, retained alongside `binding` so dispatch can run without
-// re-resolving the registry. `fetcher` is the per-upstream Fetcher minted
-// at request time; see UpstreamCallOptions.fetcher for the call-leg
-// contract.
+// to call and which target protocol to invoke on it. `provider` is the
+// resolved upstream provider instance the binding came from, retained
+// alongside `binding` so dispatch can run without re-resolving the registry.
+// `fetcher` is the per-upstream Fetcher minted at request time.
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
   readonly binding: ProviderModelRecord;

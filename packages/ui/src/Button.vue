@@ -19,7 +19,6 @@ const props = withDefaults(defineProps<{
   type: 'button',
 });
 
-// Primary keeps the brand cyan gradient + dark text used by headers/CTAs.
 const variantClass: Record<Variant, string> = {
   primary: 'bg-gradient-to-br from-[#00b8d4] to-[#00e5ff] text-surface-900 font-semibold hover:brightness-110 hover:shadow-[0_4px_16px_rgba(0,229,255,0.25)]',
   secondary: 'bg-white/[0.04] hover:bg-white/[0.08] text-[#b0bec5] border border-white/[0.08] hover:border-white/[0.15]',

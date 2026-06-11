@@ -134,8 +134,6 @@ export const runProxiedRequest = async (
     } else {
       fetchPrefix = dialed.prefix;
     }
-    // Synthesize a Host header from the dial target if the caller didn't
-    // provide one.
     let hasHost = false;
     for (const k of Object.keys(request.headers)) {
       if (k.toLowerCase() === 'host') { hasHost = true; break; }

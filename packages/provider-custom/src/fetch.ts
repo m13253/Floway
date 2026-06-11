@@ -41,7 +41,6 @@ const customFetchInternal = async (
   return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
 };
 
-// Typed transports — one per logical endpoint Custom serves.
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, 'chat_completions'), init, options);
 export const customFetchResponses = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

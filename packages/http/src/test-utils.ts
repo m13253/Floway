@@ -11,7 +11,6 @@ export interface FakeDuplex {
   written(): Uint8Array;
   waitWritableClosed(): Promise<void>;
 
-  /** Push bytes into the readable. */
   respond(bytes: Uint8Array | string): void;
   /** Close the readable (server EOF). */
   endResponse(): void;
@@ -71,7 +70,6 @@ export const collectBody = async (resp: { body: ReadableStream<Uint8Array> } | R
   return new TextDecoder().decode(buf);
 };
 
-/** Drain a `ReadableStream<Uint8Array>` to a single `Uint8Array`. */
 export const collectBodyBytes = async (resp: { body: ReadableStream<Uint8Array> }): Promise<Uint8Array> => {
   const reader = resp.body.getReader();
   const chunks: Uint8Array[] = [];

@@ -2,8 +2,8 @@ import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protoc
 
 export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex';
 
-// A provider's data instance — one row in the upstreams table. Pure data; the
-// per-kind provider package validates `config` against its own schema.
+// One upstream's persisted record. `config` is a per-provider opaque payload;
+// `state` is gateway-managed runtime data.
 export interface UpstreamRecord {
   id: string;
   provider: UpstreamProviderKind;
@@ -13,9 +13,8 @@ export interface UpstreamRecord {
   createdAt: string;
   updatedAt: string;
   config: unknown;
-  // Gateway-managed runtime state, persisted in upstreams.state_json. Null
-  // for providers with no autonomous persistent state. Operator HTTP edits
-  // never write this column; only the gateway's autonomous flows do.
+  // Runtime state managed by the gateway autonomous flows; null when a
+  // provider has no autonomous state.
   state: unknown;
   flagOverrides: Record<string, boolean>;
   // Public model ids the operator switched off for this upstream. Orthogonal to
@@ -25,7 +24,7 @@ export interface UpstreamRecord {
   disabledPublicModelIds: string[];
   // Ordered list of proxy ids (or the literal 'direct') the upstream falls back
   // through when its primary dial path is exhausted. Empty means no proxy
-  // fallback configured. Persisted in the proxy_fallback_list_json column.
+  // fallback configured.
   proxyFallbackList: string[];
 }
 
@@ -47,10 +46,9 @@ export interface PerformanceTelemetryContext {
   runtimeLocation: string;
 }
 
-// The internal model shape: what providers produce and what the registry
-// stores. Provider-internal raw fields stay inside that provider's own
-// types and projections; nothing upstream-shaped leaks onto this neutral
-// type.
+// The neutral internal model shape produced by every provider.
+// Provider-internal raw fields stay inside that provider's own types and
+// projections; nothing upstream-shaped leaks onto this type.
 //
 // `kind` is the high-level endpoint-family discriminator; `endpoints` (on
 // UpstreamModel) is the precise per-protocol availability map. They are

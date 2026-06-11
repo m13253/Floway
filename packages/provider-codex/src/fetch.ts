@@ -23,9 +23,9 @@ import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protoco
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { streamingProviderCall, type CacheRepo, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
-// Hooks for D1 state transitions, applied with optimistic concurrency. Only
-// refresh-token rotations and terminal-state transitions go through D1;
-// quota and access-token cache writes happen inline below against the
+// Hooks for repo-side state transitions, applied with optimistic concurrency.
+// Only refresh-token rotations and terminal-state transitions go through the
+// repo; quota and access-token cache writes happen inline below against the
 // CacheRepo.
 export interface CodexCallEffects {
   persistRefreshTokenRotation(newRefreshToken: string): Promise<void>;
@@ -114,12 +114,12 @@ const refreshAndCache = async (opts: CallCodexResponsesOptions): Promise<string>
   // Persist the refresh-token rotation through the caller's CAS hook. We
   // await rather than fire-and-forget on purpose: under concurrent rotations
   // (two parallel data-plane requests both refreshing), each call's rotated
-  // token must reach D1 deterministically; otherwise an unhandled rejection
-  // can swallow the new refresh_token and the upstream eventually returns
-  // app_session_terminated hours later. Cost is one row UPDATE on the request
-  // path (~5ms on D1). A losing CAS is fine — that path's `expectedState`
-  // mismatched a concurrent operator re-import or sibling rotation, and the
-  // already-persisted newer state supersedes ours.
+  // token must reach the persistence hook deterministically; otherwise an
+  // unhandled rejection can swallow the new refresh_token and the upstream
+  // eventually returns app_session_terminated hours later. Cost is one row
+  // UPDATE on the request path. A losing CAS is fine — that path's
+  // `expectedState` mismatched a concurrent operator re-import or sibling
+  // rotation, and the already-persisted newer state supersedes ours.
   await opts.effects.persistRefreshTokenRotation(tokens.refresh_token);
   return tokens.access_token;
 };

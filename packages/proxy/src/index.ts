@@ -1,11 +1,6 @@
 // @floway-dev/proxy — proxy URI parsing, per-protocol byte-stream dialers,
 // and a `runProxiedRequest` orchestrator that composes dial → optional
-// userspace TLS → fetch-on-stream.
-//
-// `dial(config, target, options)` returns a duplex byte stream landing at
-// `target.host:target.port`; inner TLS and HTTP/1.1 framing live in
-// @floway-dev/http. Dialers stay runtime-agnostic by taking the raw TCP
-// `socketDial` primitive through DialOptions.
+// userspace TLS → fetch-on-stream over a caller-supplied `SocketDial`.
 
 export type { ProxyRequestTarget, SocketDial } from './types.ts';
 

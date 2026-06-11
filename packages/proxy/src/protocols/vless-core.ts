@@ -4,7 +4,6 @@
 
 import { concat, copy, encodeAtypAddress, hexDecode } from '../bytes.ts';
 import { ProxyDialError } from '../errors.ts';
-import { assertValidTargetPort } from '../types.ts';
 import type { DialResult, DialTarget } from '../types.ts';
 
 export const vlessFrameOverStream = async (
@@ -38,7 +37,6 @@ export const vlessFrameOverStream = async (
  * exact failure mode this builder discriminates against.
  */
 const buildVlessHeader = (uuid: string, target: DialTarget): Uint8Array => {
-  assertValidTargetPort(target.port, 'VLESS');
   const uuidBytes = parseUuid(uuid);
   const addr = encodeAtypAddress(target.host, { v4: 0x01, domain: 0x02, v6: 0x03 });
   const header = new Uint8Array(1 + 16 + 1 + 0 + 1 + 2 + addr.byteLength);

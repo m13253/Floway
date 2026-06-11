@@ -89,9 +89,6 @@ export interface UserspaceTlsOptions {
 
 export type TlsStream = DuplexStream;
 
-// Wrap a duplex byte transport with a TLS 1.3 client and emit an
-// application-data duplex stream.
-//
 // On error the returned promise rejects; on TLS clean-end the readable closes;
 // on any error after handshake the readable errors.
 export const userspaceTls = async (
@@ -181,16 +178,15 @@ export const userspaceTls = async (
 
   let pendingPrefix: Uint8Array | null = opts.prefix ?? null;
 
-  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing does not
-  // include `verifyHost`, the only field our pnpm patch adds at runtime
-  // that this call site uses. We also widen `onTlsEnd`'s error from the
-  // upstream `Error` to `unknown` because we forward it straight to
-  // `closePlain(unknown)` and the runtime can hand us non-Error rejects.
-  // Build the options against a locally extended adapter type so we still
-  // get field-level checking on what we pass, then run a single `as` at
-  // the call site to bridge to the upstream parameter shape. When the
-  // upstream typing absorbs the patch, this extension type and the cast
-  // become redundant.
+  // `@reclaimprotocol/tls`'s exported TLSClientOptions typing is missing
+  // two things this call site uses: `verifyHost` (added by our pnpm patch)
+  // and a relaxed `onTlsEnd` error type (we forward errors from the runtime
+  // which can be non-Error rejects, but the upstream typing assumes
+  // `Error`). Build the options against a locally extended adapter type so
+  // we still get field-level checking on what we pass, then run a single
+  // `as` at the call site to bridge to the upstream parameter shape. When
+  // the upstream typing absorbs the patch, this extension type and the
+  // cast become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string;
     onTlsEnd?: (error?: unknown) => void;

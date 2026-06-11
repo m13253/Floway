@@ -63,10 +63,11 @@ const dialShadowsocksInner = async (
   target: DialTarget,
 ): Promise<DialResult> => {
   const masterKey = evpBytesToKey(password, keyLen);
+  const aeadKind = method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm';
 
   const sendSalt = randomBytes(keyLen);
   const sendSubkey = hkdf(sha1, masterKey, sendSalt, utf8Bytes('ss-subkey'), keyLen);
-  const sendCipher = makeAead(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', sendSubkey);
+  const sendCipher = makeAead(aeadKind, sendSubkey);
   let sendNonce = 0n;
 
   // Receive subkey is derived after we read the server's salt.
@@ -95,7 +96,7 @@ const dialShadowsocksInner = async (
         if (!recvCipher) {
           const saltBuf = await readExactly(keyLen);
           const recvSubkey = hkdf(sha1, masterKey, saltBuf, utf8Bytes('ss-subkey'), keyLen);
-          recvCipher = makeAead(method === 'chacha20-ietf-poly1305' ? 'chacha' : 'gcm', recvSubkey);
+          recvCipher = makeAead(aeadKind, recvSubkey);
         }
         const lenSealed = await readExactly(2 + TAG_LEN);
         const lenPlain = recvCipher.decrypt(leNonce(recvNonce), lenSealed);
@@ -179,10 +180,7 @@ export const evpBytesToKey = (password: string, keyLen: number): Uint8Array<Arra
   return out;
 };
 
-/**
- * Build the SS-style request address: ATYP | addr | port[BE]. Exported
- * for tests.
- */
+/** Exported for tests. */
 export const buildSsAddress = (host: string, port: number): Uint8Array<ArrayBuffer> => {
   assertValidTargetPort(port, 'SS');
   const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 });

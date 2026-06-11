@@ -131,16 +131,7 @@ const dialSocks5Inner = async (
   return { readable: postHandshake, writable: socket.writable };
 };
 
-/**
- * Build a SOCKS5 CONNECT request frame for `host:port`. Literal IPv4 /
- * IPv6 targets serialize as ATYP=0x01 (4 raw octets) / 0x04 (16 raw
- * octets); a true hostname takes ATYP=0x03 (1-byte length + bytes).
- * Non-ASCII hostnames are rejected up-front — the dial layer's contract
- * (see `DialTarget.host`) is ASCII-only and callers must punycode IDN
- * labels before they reach here.
- *
- * Exported for tests.
- */
+/** Build a SOCKS5 CONNECT request frame (VER|CMD|RSV|ATYP+addr|port[BE]). Exported for tests. */
 export const buildSocks5ConnectRequest = (host: string, port: number): Uint8Array => {
   assertValidTargetPort(port, 'SOCKS5');
   const addr = encodeAtypAddress(host, { v4: 0x01, domain: 0x03, v6: 0x04 });

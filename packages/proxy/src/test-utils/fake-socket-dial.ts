@@ -29,7 +29,6 @@ export interface FakeSocketDial {
   awaitConnect(): Promise<FakeServer>;
   /** Throw when the dialer connects, simulating a TCP-level failure. */
   failNextConnect(err: unknown): void;
-  /** Number of `connect` calls observed. */
   connectCount(): number;
 }
 
@@ -65,12 +64,7 @@ export const makeFakeSocketDial = (): FakeSocketDial => {
   };
 };
 
-interface MakeFakeSocketResult {
-  socket: DialedSocket;
-  srv: FakeServer;
-}
-
-const makeFakeSocket = (): MakeFakeSocketResult => {
+const makeFakeSocket = (): { socket: DialedSocket; srv: FakeServer } => {
   let writeBuffer = new Uint8Array(0);
   let writableClosed = false;
   const readWaiters: Array<{ n: number; resolve: (v: Uint8Array) => void; reject: (e: unknown) => void }> = [];

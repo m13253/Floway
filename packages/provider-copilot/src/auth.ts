@@ -31,9 +31,9 @@ const GITHUB_API_VERSION = '2025-04-01';
 // upstream.
 export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
 
-// Stable per-isolate device id, like real VSCode generates once per install.
-// Initialized lazily on first use because Workers forbid crypto.randomUUID()
-// (and other async I/O / random / timers) in module-global scope.
+// Stable per-process device id, like real VSCode generates once per install.
+// Initialized lazily on first use because crypto APIs may be unavailable in
+// module-global scope on some runtimes.
 let editorDeviceId: string | null = null;
 const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID());
 
@@ -46,8 +46,9 @@ const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID())
 // a bad minute (caozhiyuan/copilot-api retries every refresh failure).
 const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
 
-// Two-level Copilot token cache: in-process (60s) + KV (cross-datacenter).
-// In-process avoids KV reads on every request. KV avoids HTTP fetches on cold starts.
+// Two-level Copilot token cache: in-process (60s) + repo cache
+// (cross-isolate/cross-process). In-process avoids repo-cache reads on
+// every request. The repo cache avoids HTTP fetches on cold starts.
 const COPILOT_TOKEN_KV_KEY_PREFIX = 'copilot_token_v2';
 const IN_PROCESS_TTL_MS = 60_000;
 const inProcessTokenCache = new Map<
@@ -77,7 +78,7 @@ export async function clearCopilotTokenCache(): Promise<void> {
   try {
     await getRepo().cache.deletePrefix(`${COPILOT_TOKEN_KV_KEY_PREFIX}:`);
   } catch {
-    // Ignore — KV may not be available during initialization
+    // Cache may not be available during initialization.
   }
 }
 
@@ -142,14 +143,12 @@ async function copilotTokenCacheKey(githubToken: string): Promise<string> {
 async function getCopilotToken(githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<string> {
   const cacheKey = await copilotTokenCacheKey(githubToken);
 
-  // Level 1: in-process cache (avoids KV read on hot path)
   const now = Date.now();
   const cached = inProcessTokenCache.get(cacheKey);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
     return cached.entry.token;
   }
 
-  // Level 2: KV cache (cross-datacenter, survives isolate restarts)
   try {
     const raw = await getRepo().cache.get(cacheKey);
     if (raw) {
@@ -160,14 +159,14 @@ async function getCopilotToken(githubToken: string, fetcher: Fetcher, signal: Ab
       }
     }
   } catch {
-    // KV read failure is non-fatal — fall through to fetch
+    // Cache read failure is non-fatal — fall through to fetch.
   }
 
-  // Level 3: fetch from GitHub API. Routed through the upstream's Fetcher
-  // so deployments behind a network egress restriction (e.g. GFW) keep
+  // Fetch from GitHub API. Routed through the upstream's Fetcher so
+  // deployments behind a network egress restriction (e.g. GFW) keep
   // refreshing tokens through the same proxy chain that carries the
   // data-plane traffic; without this, a working Copilot proxy would still
-  // see periodic auth-refresh failures every ~25 minutes per isolate.
+  // see periodic auth-refresh failures every ~25 minutes per process.
   return await withRetry(async () => {
     // Token exchange is a GET against api.github.com (not POST); matches
     // VSCode Copilot Chat and caozhiyuan/copilot-api. A POST returns 404.

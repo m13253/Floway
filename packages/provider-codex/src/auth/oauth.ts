@@ -104,9 +104,9 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   return await codexTokenRequest(body, new Set(['app_session_terminated']), directFetcher);
 };
 
-// Refresh the Codex access token. `fetcher` is required because the refresh
-// has an associated upstream and must flow through that upstream's
-// proxy-aware fallback chain rather than direct egress.
+// `fetcher` is required because the refresh has an associated upstream
+// and must flow through that upstream's proxy-aware fallback chain rather
+// than direct egress.
 export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',

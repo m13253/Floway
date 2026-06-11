@@ -213,9 +213,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
 
   // The boundary chain expects ExecuteResult shape so post-`run()` inspectors
   // (e.g. rewriteContextWindowError) can pattern-match on `result.type`. The
-  // gateway later rebuilds the real telemetry identity with pricing — the
   // placeholder here only has to satisfy the EventResult contract while the
-  // chain runs inside the provider boundary.
+  // chain runs inside the provider boundary; real telemetry identity is
+  // rebuilt downstream with pricing.
   const placeholderIdentity = (modelKey: string): TelemetryModelIdentity => ({
     model: modelKey,
     upstream: copilot.id,
@@ -233,11 +233,11 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     return await readUpstreamError(stream.response);
   };
 
-  // Lowering rebuilds a ProviderStreamResult so the gateway boundary continues
-  // to relay status/headers/body verbatim on errors and forward the typed
-  // event stream on success. `internal-error` is not a shape any Copilot
-  // boundary interceptor produces today; an explicit throw makes a future
-  // regression noisy instead of silently dropping the result.
+  // Lowering rebuilds a ProviderStreamResult so callers continue to relay
+  // status/headers/body verbatim on errors and forward the typed event stream
+  // on success. `internal-error` is not a shape any Copilot boundary
+  // interceptor produces today; an explicit throw makes a future regression
+  // noisy instead of silently dropping the result.
   const lowerToStream = <TEvent>(
     result: ExecuteResult<ProtocolFrame<TEvent>>,
     modelKey: string,

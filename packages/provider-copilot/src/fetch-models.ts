@@ -19,7 +19,7 @@ const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse
 // motivation is semantic alignment with VSCode's wire shape.
 //
 // Reference (caozhiyuan/copilot-api uses the same split):
-// https://github.com/caozhiyuan/copilot-api/blob/main/src/lib/api-config.ts
+// https://github.com/caozhiyuan/copilot-api/blob/dc3d4aaf249d534bc66d5f1cb221ac29489b9753/src/lib/api-config.ts
 const MODELS_HEADER_OVERRIDES: Record<string, string> = {
   'openai-intent': 'model-access',
   'x-interaction-type': 'model-access',

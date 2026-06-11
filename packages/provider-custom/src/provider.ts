@@ -83,7 +83,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   // flag overrides on top, resolved per-model below.
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('custom'), [record.flagOverrides]);
 
-  // Manual models always emit, and their upstream ids shadow any auto copy.
+  // Manual models always emit.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: UpstreamModel[] = config.models.map(model => {
     const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
@@ -106,9 +106,9 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   );
 
   // Last-known pricing keyed by raw model id from the auto-fetch path.
-  // Populated whenever a fresh /models response flows through finalize(); read
-  // synchronously by getPricingForModelKey after the manual map misses. Stays
-  // empty until the first list call lands.
+  // Populated whenever a fresh /models response flows through autoFromResponse;
+  // read synchronously by getPricingForModelKey after the manual map misses.
+  // Stays empty until the first list call lands.
   let pricingByRawId: ReadonlyMap<string, ModelPricing> = new Map();
   const rememberPricing = (response: CustomModelsResponse): void => {
     const next = new Map<string, ModelPricing>();
@@ -190,7 +190,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
         }
       });
     },
-    // Manual configuration wins over the cached upstream pricing for the same id.
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callChatCompletions: (model, body, signal, headers, opts) => callStreaming(customFetchChatCompletions, model, body, signal, headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, headers, opts) => callStreaming(customFetchResponses, model, body, signal, headers, parseResponsesStream, opts),

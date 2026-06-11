@@ -129,10 +129,8 @@ const runRealityHandshake = async (
   // re-running HKDF.
   let authKey: Uint8Array | null = null;
 
-  // The plaintext stream returned to the caller (VLESS framing) after the
-  // TLS handshake completes. plainController is wired by the
-  // ReadableStream's start() hook below, which fires synchronously the
-  // moment the constructor runs.
+  // plainController is wired by the ReadableStream's start() hook below,
+  // which fires synchronously the moment the constructor runs.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
   let detachAbortListener: (() => void) | null = null;
@@ -275,7 +273,6 @@ const runRealityHandshake = async (
     },
   }) as Parameters<typeof makeTLSClient>[0]);
 
-  // The duplex pair handed back to VLESS framing after the handshake.
   // tlsClient is initialized synchronously by makeTLSClient above, so by the
   // time the reader pump or startHandshake invokes any hook it is already in
   // scope.
@@ -301,10 +298,9 @@ const runRealityHandshake = async (
       await tlsClient.write(chunk);
     },
     async close() {
-      // Mirror the userspace TLS teardown shape: end the TLS layer AND
-      // close the underlying transport writer so the socket's write half
-      // is shut explicitly rather than waiting on the outer dial catch
-      // to close the whole socket on error.
+      // End the TLS layer and close the underlying transport writer here so
+      // the socket's write half is shut explicitly rather than waiting on
+      // the outer dial catch to close the whole socket on error.
       try { await tlsClient.end(); } catch { /* TLS already ended */ }
       try { await writer.close(); } catch { /* transport already closed */ }
     },

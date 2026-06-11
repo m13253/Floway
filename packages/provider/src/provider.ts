@@ -17,7 +17,6 @@ export interface ProviderModelRecord {
   supportsResponsesItemReference: boolean;
 }
 
-// `endpoints` carries the set of upstream endpoints this model is served by.
 export interface ResolvedModel extends InternalModel {
   endpoints: ModelEndpoints;
   providers: readonly ProviderModelRecord[];

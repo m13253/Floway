@@ -77,9 +77,10 @@ const dialShadowsocks2022Inner = async (
   keyLen: number,
   target: DialTarget,
 ): Promise<DialResult> => {
+  const aeadKind = method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm';
   const sendSalt = randomBytes(keyLen);
   const sendKey = blake3(concat(psk, sendSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
-  const sendCipher = makeAead(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', sendKey);
+  const sendCipher = makeAead(aeadKind, sendKey);
   let sendNonce = 0n;
   let recvCipher: Aead | null = null;
   let recvNonce = 0n;
@@ -119,7 +120,7 @@ const dialShadowsocks2022Inner = async (
         if (!recvCipher) {
           const recvSalt = await readN(keyLen);
           const recvKey = blake3(concat(psk, recvSalt), { dkLen: keyLen, context: SUBKEY_CONTEXT_BYTES });
-          recvCipher = makeAead(method === '2022-blake3-chacha20-poly1305' ? 'chacha' : 'gcm', recvKey);
+          recvCipher = makeAead(aeadKind, recvKey);
           // Read response fixed header AEAD: [type=0x01 | timestamp(u64be) | salt-echo(keyLen) | len(u16be)] + tag
           const respFixedSealed = await readN(1 + 8 + keyLen + 2 + TAG);
           const respFixedPlain = recvCipher.decrypt(leNonce(recvNonce++), respFixedSealed);

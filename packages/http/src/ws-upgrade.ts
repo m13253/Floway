@@ -87,11 +87,6 @@ interface FrameHeader {
 }
 
 /**
- * Negotiate a WebSocket upgrade on `transport` and return a duplex stream
- * of unmasked binary payloads. Each `writable` chunk goes out as one
- * masked binary frame; each binary message (possibly reassembled from
- * continuation frames) is enqueued on `readable`.
- *
  * Errors during the handshake throw {@link HttpProtocolError}. Errors
  * after the handshake surface on the returned readable / writable
  * (ReadableStream errored, WritableStream rejected write).
@@ -502,9 +497,6 @@ const frameDuplexOnTransport = (
     },
   });
 
-  // Reader pump. Reads bytes off the transport, parses frames, dispatches
-  // to handleFrame. Errors close the readable. Clean transport EOF closes
-  // the readable too.
   void (async () => {
     let buffer: Uint8Array = initialBytes;
     try {
