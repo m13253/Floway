@@ -64,6 +64,8 @@ export function assertCopilotUpstreamState(value: unknown): asserts value is Cop
     throw new TypeError('CopilotUpstreamState must be a plain object');
   }
   const obj = value as Record<string, unknown>;
+  // state_json round-trips through canonical serialization, so any surviving
+  // key is persisted. Reject unknown keys to keep the on-disk shape closed.
   for (const key of Object.keys(obj)) {
     if (!(key in ALLOWED_STATE_KEYS_MAP)) {
       throw new TypeError(`CopilotUpstreamState has unexpected key '${key}'`);

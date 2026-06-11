@@ -643,7 +643,7 @@ const copilotPreflight = (request: Request): Response | null => {
   return null;
 };
 
-test('Copilot provider keeps a model in the ledger for 24 h even when the next fetch omits it', async () => {
+test('Copilot provider keeps a model in known-models for 24 h even when the next fetch omits it', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
@@ -670,7 +670,7 @@ test('Copilot provider keeps a model in the ledger for 24 h even when the next f
         setNow(1_000_000 + 11 * 60_000); // past soft window so we re-fetch
         clearModelsStore();
         const second = await instance.provider.getProvidedModels(directFetcher);
-        assertEquals(second.map(m => m.id).sort(), ['a', 'b'], 'b should still appear from the ledger');
+        assertEquals(second.map(m => m.id).sort(), ['a', 'b'], 'b should still appear from known-models');
       });
     },
   );
@@ -710,7 +710,7 @@ test('Copilot provider drops a model after 24 h of continuous absence', async ()
   assertEquals(fetches, 2);
 });
 
-test('Copilot provider returns ledger projection when fetch fails but ledger is non-empty', async () => {
+test('Copilot provider returns known-models projection when fetch fails but known-models is non-empty', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 
@@ -740,7 +740,7 @@ test('Copilot provider returns ledger projection when fetch fails but ledger is 
   );
 });
 
-test('Copilot provider throws ProviderModelsUnavailableError when ledger is empty and fetch fails', async () => {
+test('Copilot provider throws ProviderModelsUnavailableError when known-models is empty and fetch fails', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   clearModelsStore();
 

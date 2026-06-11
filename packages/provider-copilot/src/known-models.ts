@@ -2,14 +2,14 @@ import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
 
 const KNOWN_MODEL_TTL_MS = 24 * 60 * 60 * 1000;
 
-export interface KnownModelEntry {
+export interface CopilotKnownModelEntry {
   snapshot: CopilotRawModel;
   lastSeenAt: number;
 }
 
 export interface CopilotKnownModels {
   fetchedAt: number;
-  models: Record<string, KnownModelEntry>;
+  models: Record<string, CopilotKnownModelEntry>;
 }
 
 export const emptyKnownModels = (): CopilotKnownModels => ({ fetchedAt: 0, models: {} });
@@ -24,7 +24,7 @@ export const mergeKnownModels = (
   response: CopilotModelsResponse,
   now: number,
 ): CopilotKnownModels => {
-  const models: Record<string, KnownModelEntry> = { ...prev.models };
+  const models: Record<string, CopilotKnownModelEntry> = { ...prev.models };
   for (const raw of response.data) {
     if (!raw.id) continue;
     models[raw.id] = { snapshot: raw, lastSeenAt: now };
