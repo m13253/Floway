@@ -1,4 +1,14 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+
+// Copilot OAuth poll handler warms the SWR models cache after rotating the PAT.
+// The warm calls Copilot's /models which the existing fetch mock here doesn't
+// stub, sending the request through copilotAuthedFetch's retry/backoff and
+// stalling the test by ~7s. Stub the cache layer to a no-op — warm semantics
+// have dedicated coverage in models-cache_test.ts.
+vi.mock('../../data-plane/providers/models-cache.ts', () => ({
+  fetchUpstreamModelsCached: () => Promise.resolve([]),
+  _clearInFlight: () => {},
+}));
 
 import { hashPassword } from '../../shared/passwords.ts';
 import { buildCopilotUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
