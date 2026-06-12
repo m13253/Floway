@@ -279,6 +279,8 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
   const sample = catalog.find(e => e.id === 'vendor-kimi');
   assertEquals(typeof sample?.label, 'string');
   assertEquals(Array.isArray(sample!.defaultFor), true);
+  // appliesTo is not part of the catalog shape; guard against silent re-introduction.
+  assertEquals('appliesTo' in sample!, false);
 
   const forbidden = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
   assertEquals(forbidden.status, 403);

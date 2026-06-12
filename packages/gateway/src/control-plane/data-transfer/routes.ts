@@ -682,6 +682,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     await Promise.all(deletes);
   }
 
+  // Users land before api keys so the FK from api_keys.user_id can resolve.
   // Proxies land before upstreams so any concurrent reader (e.g. a request
   // resolving an upstream's fallback list) sees the row referenced by an
   // upstream's proxy_fallback_list as soon as the upstream is visible.

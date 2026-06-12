@@ -133,8 +133,8 @@ export const bucketKeyForUtcHour = (range: DashboardRange, hour: string): string
 
 export const chartXAxisTick = (bucketKeys: readonly string[], labels: readonly string[], compact4h: boolean) =>
   (_value: unknown, index: number): string => {
-    const label = labels[index]!;
+    const label = labels[index] ?? '';
     if (!compact4h) return label;
-    const hour = Number(bucketKeys[index]!.slice(11, 13));
+    const hour = Number(String(bucketKeys[index] ?? '').slice(11, 13));
     return hour % 8 === 0 ? label : '';
   };
