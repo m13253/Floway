@@ -7,7 +7,7 @@ import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
 import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
   adminKey?: string;
@@ -106,7 +106,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   const adminKey = options.adminKey ?? 'admin-test-key';
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
 
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   _clearInFlight();
 
   // The default API key is owned by a non-admin user so tests can assert

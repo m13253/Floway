@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
@@ -202,7 +202,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
 test('/v1/embeddings routes to custom upstream when model is only declared there', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
@@ -274,7 +274,7 @@ test('/v1/embeddings routes to custom upstream when model is only declared there
 test('/v1/embeddings rejects model on custom upstream without /embeddings capability', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
@@ -327,7 +327,7 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
 test('/v1/embeddings preserves custom upstream /models HTTP errors', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
@@ -377,7 +377,7 @@ test('/v1/embeddings preserves custom upstream /models HTTP errors', async () =>
 
 test('/v1/embeddings preserves model-load errors hidden by another provider', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',

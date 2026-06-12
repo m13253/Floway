@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache } from './auth.ts';
+import { clearInProcessCopilotTokenCache } from './auth.ts';
 import { emptyKnownModels, mergeKnownModels } from './known-models.ts';
 import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
@@ -78,7 +78,7 @@ const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTest
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   return {
     copilotUpstream: upstream,
     saveStateCalls,

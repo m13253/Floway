@@ -69,18 +69,15 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-export async function clearCopilotTokenCache(upstreamId?: string): Promise<void> {
-  // The in-process memo always drops. The persisted `state.copilotToken`
-  // outlives the in-process clear by ~25 minutes, so a caller that just
-  // rotated the upstream's GitHub PAT (or otherwise wants the next request
-  // to mint a fresh Copilot token) MUST pass the upstream id — without it,
-  // `getCopilotToken` would happily return the still-valid persisted entry
-  // that was minted from the previous PAT, authenticating subsequent
-  // requests as the prior identity until the natural expiry. Tests that
-  // only need to drop the in-process memo (to force a state_json read on
-  // the next call) leave `upstreamId` unset.
+export async function clearCopilotTokenCache(upstreamId: string): Promise<void> {
+  // Drop both the in-process memo and the persisted `state.copilotToken`. The
+  // persisted entry outlives the in-process clear by ~25 minutes, so a caller
+  // that just rotated the upstream's GitHub PAT (or otherwise needs the next
+  // request to mint a fresh Copilot token) MUST also wipe the persisted entry —
+  // otherwise `getCopilotToken` would happily return the still-valid hydrated
+  // token that was minted from the previous PAT, authenticating subsequent
+  // requests as the prior identity until the natural expiry.
   inProcessTokenCache.clear();
-  if (upstreamId === undefined) return;
   const repo = getRepo().upstreams;
   const fresh = await repo.getById(upstreamId);
   if (!fresh) return;
@@ -95,6 +92,14 @@ export async function clearCopilotTokenCache(upstreamId?: string): Promise<void>
   } catch (err) {
     console.warn(`Failed to clear persisted Copilot token for ${upstreamId}:`, err);
   }
+}
+
+// Tests use this to drop only the process-local memo between cases — they
+// run against a fresh DB per test so the persisted state needs no separate
+// reset, and some tests deliberately want the next call to hydrate from
+// state_json instead of minting a fresh token.
+export function clearInProcessCopilotTokenCache(): void {
+  inProcessTokenCache.clear();
 }
 
 async function withRetry<T>(fn: () => Promise<T>, signal: AbortSignal | undefined, maxRetries = 3, baseDelayMs = 1000): Promise<T> {

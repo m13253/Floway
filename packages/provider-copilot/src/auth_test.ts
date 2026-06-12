@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { copilotAuthedFetch } from './auth.ts';
-import { clearCopilotTokenCache } from './index.ts';
+import { clearInProcessCopilotTokenCache } from './index.ts';
 import type { CopilotUpstreamState } from './state.ts';
 import { initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -33,7 +33,7 @@ const installRepoAndClearCache = async () => {
       },
     },
   }));
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   return {
     readPersistedState: (): CopilotUpstreamState | null => state as CopilotUpstreamState | null,
   };
@@ -140,7 +140,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       await copilotAuthedFetch(...args);
       // Drop the in-process memo so the second call has to consult state_json;
       // if state_json hydration works, the token endpoint won't be hit again.
-      await clearCopilotTokenCache();
+      clearInProcessCopilotTokenCache();
       await copilotAuthedFetch(...args);
     },
   );

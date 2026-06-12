@@ -698,10 +698,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
-  for (const upstream of upstreams) {
-    await repo.upstreams.save(upstream);
-    await warmModelsCache(upstream, c);
-  }
+  for (const upstream of upstreams) await repo.upstreams.save(upstream);
+  await Promise.all(upstreams.map(upstream => warmModelsCache(upstream, c)));
   for (const record of performance) await repo.performance.set(record);
   await repo.searchConfig.save(searchConfig);
 

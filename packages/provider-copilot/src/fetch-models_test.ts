@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { fetchCopilotModels } from './fetch-models.ts';
-import { clearCopilotTokenCache } from './index.ts';
+import { clearInProcessCopilotTokenCache } from './index.ts';
 import { ProviderModelsUnavailableError, initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -28,7 +28,7 @@ const installRepoAndConfig = async () => {
       saveState: async () => ({ updated: true }),
     },
   }));
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   return { id, githubToken, accountType: 'individual' as const };
 };
 

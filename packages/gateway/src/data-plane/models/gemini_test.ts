@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
 test('/v1beta/models lists Copilot LLM models in Gemini model shape', async () => {
@@ -134,7 +134,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
 test('/v1beta/models includes custom upstream LLM models', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_custom',
@@ -185,7 +185,7 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
 test('/v1beta/models excludes custom upstream embedding-only models', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_embed',
@@ -226,7 +226,7 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
 test('/v1beta/models hides upstream identity when a provider returns an invalid model list', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_secret_gemini_provider',
@@ -269,7 +269,7 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
 test('/v1beta/models hides upstream HTTP error bodies', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_http_secret_gemini_provider',
@@ -315,7 +315,7 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
 test('/v1beta/models hides thrown upstream request errors', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_throw_secret_gemini_provider',
@@ -358,7 +358,7 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
 test('/v1beta/models hides malformed upstream response bodies', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_malformed_secret_gemini_provider',

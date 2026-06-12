@@ -17,12 +17,12 @@
 import { test, vi } from 'vitest';
 
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const registerEmbeddingsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_passthrough',
     name: 'Passthrough Embedding Provider',

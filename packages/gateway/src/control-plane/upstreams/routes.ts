@@ -407,7 +407,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
         };
 
     await repo.save(record);
-    await clearCopilotTokenCache();
+    await clearCopilotTokenCache(record.id);
     await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {

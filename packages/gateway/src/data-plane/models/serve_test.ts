@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
 const SECOND_ACCOUNT = {
@@ -274,7 +274,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
 test('/v1/models hides upstream identity when a provider returns an invalid model list', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_secret_provider',
     name: 'Secret Provider',
@@ -309,7 +309,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
 test('public model list endpoints hide upstream HTTP error bodies and headers', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_http_secret_provider',
     name: 'HTTP Secret Provider',
@@ -356,7 +356,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
 test('public model list endpoints hide thrown upstream request errors', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_throw_secret_provider',
     name: 'Throw Secret Provider',
@@ -396,7 +396,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
 test('public model list endpoints hide malformed upstream response bodies', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_malformed_secret_provider',
     name: 'Malformed Secret Provider',
@@ -439,7 +439,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
 test('/v1/models surfaces the actionable "no upstream configured" hint when no provider is configured', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   const response = await requestApp('/v1/models', {
     headers: { 'x-api-key': apiKey.key },
