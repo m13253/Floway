@@ -1,5 +1,15 @@
 import { Hono } from 'hono';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+
+// The import handler warms the SWR models cache for every saved upstream by
+// calling each provider's getProvidedModels, which for Copilot / Custom would
+// make real upstream HTTP requests the test sandbox cannot serve and hang
+// until the vitest timeout. Stub the cache layer to a no-op so the import
+// path's own behavior (upserts, identity validation, etc.) is what the tests
+// exercise — the warm itself has dedicated coverage in models-cache_test.ts.
+vi.mock('../../data-plane/providers/models-cache.ts', () => ({
+  fetchUpstreamModelsCached: () => Promise.resolve([]),
+}));
 
 import { exportData, importData } from './routes.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';

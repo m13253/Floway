@@ -93,11 +93,11 @@ describe('assertCodexUpstreamState', () => {
 });
 
 describe('readCodexUpstreamState', () => {
-  test('preserves absent accessToken / quotaSnapshot verbatim', () => {
+  test('normalizes absent accessToken / quotaSnapshot to null', () => {
     const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
     const out = readCodexUpstreamState({ accounts: [fresh] });
-    expect(out.accounts[0].accessToken).toBeUndefined();
-    expect(out.accounts[0].quotaSnapshot).toBeUndefined();
+    expect(out.accounts[0].accessToken).toBeNull();
+    expect(out.accounts[0].quotaSnapshot).toBeNull();
   });
   test('preserves populated entries verbatim', () => {
     const populated = {

@@ -151,8 +151,7 @@ const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
         content: [{ type: 'text', text: 'Official React docs' }],
       },
     ],
-  }),
-);
+  }));
 
 const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') => ({
   providerName: 'tavily' as const,
@@ -584,7 +583,7 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Messa
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events result');
 
-  return collect(result.events);
+  return await collect(result.events);
 };
 
 test('withMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {

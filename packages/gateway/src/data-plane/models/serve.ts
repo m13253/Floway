@@ -15,8 +15,13 @@ export const models = async (c: Context) => {
     const fetcherForUpstream = await createPerRequestFetcher();
     return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c)));
   } catch (e) {
-    if (e instanceof ProviderModelsUnavailableError)
-      return Response.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, { status: 502 });
-    throw e;
+    // Upstream HTTP/parse failures squash to a generic message so we do not
+    // leak upstream identity. Other registry-thrown errors (e.g. the "no
+    // upstream configured" hint) carry actionable operator guidance and
+    // surface verbatim with the same 502.
+    const message = e instanceof ProviderModelsUnavailableError
+      ? MODEL_LISTING_FAILURE_MESSAGE
+      : (e instanceof Error ? e.message : String(e));
+    return Response.json({ error: { message, type: 'api_error' } }, { status: 502 });
   }
 };
