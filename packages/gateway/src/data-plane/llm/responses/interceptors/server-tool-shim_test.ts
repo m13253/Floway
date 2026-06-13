@@ -344,7 +344,7 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'test',
-  scheduleBackground: () => {},
+  backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
 
@@ -1360,12 +1360,12 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
 });
 
 for (const field of ['external_web_access', 'search_content_types', 'return_token_budget'] as const) {
-  test(`explicitly-set hosted ${field} is silently stripped (the shim's function tool the shim forwards never carries it)`, async () => {
-    // The shim replaces the hosted entry with its shim's function tool
-    // tool; any hosted-only field — including ones the shim has no
-    // opinion on — drops out with the entry. Mirrors native: silently
-    // stripped. Tests the request completes normally instead of being
-    // rejected as a 400.
+  test(`explicitly-set hosted ${field} is silently stripped (the function tool the shim forwards never carries it)`, async () => {
+    // The shim replaces the hosted entry with its function tool; any
+    // hosted-only field — including ones the shim has no opinion on —
+    // drops out with the entry. Mirrors native: silently stripped.
+    // Tests the request completes normally instead of being rejected
+    // as a 400.
     makeStubDeps();
     const shim = withResponsesWebSearchShim;
     const fieldValue: Record<typeof field, unknown> = {
@@ -1414,10 +1414,8 @@ test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards 
   const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
   assert(body.error.message.includes('must be an object'));
   assert(body.error.message.includes('array'));
-  // The offending field is `tools[].filters` itself (not a sub-field).
-  // A previous `param: 'tools'` lied about
-  // the location — tighten to exact equality so the regression is
-  // caught next time.
+  // `param` must be exactly `tools` (not a sub-field), since
+  // `tools[].filters` itself is the offending location.
   assertEquals(body.error.param, 'tools');
 });
 
@@ -1955,11 +1953,10 @@ test('usage accumulates across three iterations', async () => {
 });
 
 test('usage cached_tokens reported on one turn carries through (last-turn omission does not zero it out)', async () => {
-  // 算的时候当 0 算，给客户端的时候尽量透传 — internal sums treat
-  // missing fields as 0, but the wire output preserves any field that
-  // at least one turn observed. Turn 1 reports cached_tokens; turn 2
-  // omits it. Final usage must still surface cached_tokens (turn 1's
-  // value).
+  // Internal sums treat missing fields as 0; the wire output preserves
+  // any field at least one turn observed. Turn 1 reports cached_tokens;
+  // turn 2 omits it. Final usage must still surface cached_tokens
+  // (turn 1's value).
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
@@ -3224,7 +3221,7 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
   assertEquals(searchFc.name, SHIM_TOOL_NAME);
   assert(searchFc.arguments.includes('hello world'));
   // No payload → output is the not-preserved placeholder, not the
-  // wire snippet. The model is told to re-search if it needs the data.
+  // wire snippet. A re-search prompt is emitted when data is needed.
   const searchOut = input[2] as { output: string };
   assert(searchOut.output.includes('not preserved'));
   assertFalse(searchOut.output.includes('snippet body'));
@@ -3454,7 +3451,7 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .map(e => e.item)
     .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results?.[0]?.snippet ?? '';
+  const snippet = done[0].results![0].snippet;
   assert(snippet.includes('not configured'));
 });
 
@@ -3474,7 +3471,7 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
     .map(e => e.item)
     .filter((i): i is ResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results?.[0]?.snippet ?? '';
+  const snippet = done[0].results![0].snippet;
   assert(snippet.includes('tavily'));
 });
 
@@ -4486,7 +4483,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     upstreamIds: null,
     wantsStream: true,
     runtimeLocation: 'test',
-    scheduleBackground: () => {},
+    backgroundScheduler: () => {},
     requestStartedAt: 0,
     abortSignal: controller.signal,
   };
@@ -4502,7 +4499,6 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const drainPromise = collectFrames(result.events).catch(() => []);
 
   // Wait a microtask for the search() to be invoked and capture the signal.
-  // Drain the first frame to flush the eager start frames.
   while (observedSignal === undefined) {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
@@ -4547,7 +4543,7 @@ interface DispatchRecord {
   intercepted: InterceptedFunctionCall;
 }
 
-// Records every shim call call without producing IRs or start frames.
+// Records every shim call without producing IRs or start frames.
 // Tests that care about dispatcher behavior pass a custom dispatcher.
 const recordingDispatcher = (records: DispatchRecord[]) => ({ intercepted }: { intercepted: InterceptedFunctionCall }) => {
   records.push({ intercepted });
@@ -4777,7 +4773,7 @@ test('consumeTurn second turn swallows upstream response.created and in_progress
   assertEquals(eventTypesOf(result.downstreamFrames), []);
 });
 
-test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 events', async () => {
+test('consumeTurn intercepts the shim tool and does NOT forward its 4 events', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -4813,7 +4809,7 @@ test('consumeTurn intercepts the shim call shim tool and does NOT forward its 4 
   assertFalse(result.summary.sawClientToolCall);
 });
 
-test('consumeTurn intercepts two shim call calls within one turn', async () => {
+test('consumeTurn intercepts two shim calls within one turn', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -4863,8 +4859,8 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
   assertEquals(result.summary.dispatched.length, 0);
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assert((ts.response.error?.message ?? '').includes('without closing shim call items'));
-  assert((ts.response.error?.message ?? '').includes('response.completed'));
+  assert(ts.response.error!.message.includes('without closing shim call items'));
+  assert(ts.response.error!.message.includes('response.completed'));
 });
 
 test('consumeTurn dispatches at function_call.done with .done args canonical over deltas', async () => {
@@ -5007,7 +5003,7 @@ test('consumeTurn single iteration ending in message: forwards full message life
   ]);
 });
 
-test('consumeTurn one shim call call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
+test('consumeTurn one shim call then message in same turn: FORWARDS the message live (shim call is consumed)', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
     framesOf(
@@ -5594,7 +5590,7 @@ test('dispatcher start frames yield IN-LINE at function_call.done (shim call slo
 test('shim call output_index is reserved at output_item.added so interleaved items get later indices', async () => {
   // Reserving at `.added` (rather than `.done`) keeps a non-shim call
   // item arriving between added and done from stealing the shim's
-  // would-be downstream index. See spec § Output-index allocation.
+  // would-be downstream index.
   const state = createMergeState();
   const dispatcher = () => [] as ServerToolResultSlot[];
 
@@ -5688,7 +5684,7 @@ test('consumeTurn synthesizes terminalStatus.failed when upstream stream ends wi
   assertEquals(result.summary.terminalStatus.kind, 'failed');
   const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
   assertEquals(ts.response.status, 'failed');
-  assert((ts.response.error?.message ?? '').includes('without a terminal event'));
+  assert(ts.response.error!.message.includes('without a terminal event'));
 });
 
 test('createMergeState starts with empty sparse usage accumulator and a synthesized response id', () => {

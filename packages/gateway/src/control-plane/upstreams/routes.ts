@@ -2,20 +2,23 @@ import type { Context } from 'hono';
 import type { z } from 'zod';
 
 import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
+import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { clearModelsStore, directFetcher, getProviderRepo, invalidateModelsStore, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
+import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
-  type CodexAccessTokenCache,
+  type CodexQuotaSnapshot,
   type CodexUpstreamConfig,
   type CodexUpstreamState,
   CODEX_AUTHORIZE_URL,
@@ -30,33 +33,41 @@ import {
   getCodexQuota,
   importCodexFromAuthJson,
   importCodexFromCallback,
-  putCodexAccessToken,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
 import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 
-// Serialize for the HTTP response, attaching the live KV codex_quota snapshot
-// when the row is a Codex upstream. Keeps serialize.ts free of provider I/O
-// and a global repo handle, while ensuring every codex-bearing response shape
-// carries the quota panel data the dashboard expects.
+// Serialize for the HTTP response, attaching the live codex_quota snapshot
+// when the row is a Codex upstream and the SWR models-cache freshness for
+// every row. Keeps serialize.ts free of provider I/O and a global repo handle,
+// while ensuring every response shape carries the panels the dashboard
+// expects.
 const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedUpstreamRecord> => {
-  const serialized = upstreamRecordToJson(record);
+  let codexQuotaPromise: Promise<CodexQuotaSnapshot | null> | null = null;
   if (record.provider === 'codex') {
-    serialized.codex_quota = await getCodexQuota(getProviderRepo().cache, record.id);
+    assertCodexUpstreamRecord(record);
+    codexQuotaPromise = getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId);
   }
+  const cacheRowPromise = getRepo().modelsCache.get(record.id);
+  const cacheRow = await cacheRowPromise;
+  const serialized = upstreamRecordToJson(record);
+  serialized.modelsCache = {
+    fetchedAt: cacheRow?.fetchedAt ?? null,
+    lastError: cacheRow?.lastError ?? null,
+  };
+  if (codexQuotaPromise) serialized.codex_quota = await codexQuotaPromise;
   return serialized;
 };
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const validationError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-// Runtime defensive parsers for upstream records read back from D1. The
-// request-time zod schemas guard incoming bodies; these parsers guard the DB
-// boundary so a manually-edited or migrated row that violates the runtime
-// invariants surfaces with an actionable message instead of crashing later.
-
+// Run the per-provider invariant asserts on a freshly-built or freshly-merged
+// record before it hits the repo. Request-time zod schemas only validate JSON
+// shape; these helpers enforce the URL / endpoint-mix / path-override rules
+// that the provider packages own.
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
@@ -73,7 +84,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
       ),
     };
   } catch (error) {
-    return { ok: false, error: validationError(error) };
+    return { ok: false, error: errorMessage(error) };
   }
 };
 
@@ -91,6 +102,23 @@ const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, pat
 const newId = (): string => shortId('up');
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
+
+// Synchronously populate the SWR models cache for a freshly-saved upstream
+// so the dashboard's next navigation lands on a populated row. Upstream
+// fetch failures are persisted to the row's `lastError` by runFetch and
+// surfaced by the dashboard, so we discard the throw here. Provider
+// instance and fetcher construction errors are not swallowed; those signal
+// genuine misconfiguration that the operator must see.
+const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
+  const scheduler = backgroundSchedulerFromContext(c);
+  const instance = await createProviderInstance(record);
+  const fetcher = (await createPerRequestFetcher())(record.id);
+  try {
+    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+  } catch {
+    // Intentionally discarded — see comment above.
+  }
+};
 
 // 'direct' is always valid; any other entry must reference an existing
 // proxy row. List order matters at dial time (see createFetcher),
@@ -164,21 +192,18 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     state: null,
   };
 
-  // Schema validated shape; this catches Azure-specific URL / endpoint-mix
-  // rules and Custom-specific path-override URL parsing that live in the
-  // per-provider assertCustomUpstreamRecord / assertAzureUpstreamRecord
-  // helpers.
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
-  await invalidateModelsStore(record.id);
+  await warmModelsCache(record, c);
   return c.json(await serializeForResponse(record), 201);
 };
 
 export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
@@ -218,42 +243,36 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   next = { ...next, config: config.value };
 
   await getRepo().upstreams.save(next);
-  await invalidateModelsStore(next.id);
+  await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };
 
 export const deleteUpstream = async (c: Context) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // Sweep orphaned backoff rows. proxy_upstream_backoffs has no FK to upstreams, so the cleanup is unconditional.
+  // No FK from proxy_upstream_backoffs to upstreams; clean up explicitly.
   await repo.proxyBackoffs.resetForUpstream(id);
-  await invalidateModelsStore(id);
   return c.json({ ok: true });
 };
 
-// Browse the live `/models` list of a DRAFT (possibly unsaved) custom
-// upstream so the editor can pick models before saving. Edit mode leaves the
-// bearerToken field blank to mean "keep the stored secret"; when blank and an
-// `id` is given, the stored record's secret is substituted. A brand-new draft
-// must carry its own token — when none is available the assert rejects the
-// empty bearerToken as a 400, and a genuine upstream call would 401 anyway.
+// Browse the live `/models` list of a DRAFT (unsaved) custom upstream so
+// the editor can pick models before saving. Saved upstreams use
+// GET /api/upstreams/:id/models?refresh=true instead, which routes through
+// the SWR cache.
 export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   const { id, config } = c.req.valid('json');
-
-  let bearerToken = config.bearerToken ?? '';
-  if (bearerToken.trim() === '' && id !== undefined) {
-    const existing = await getRepo().upstreams.getById(id);
-    if (existing) {
-      const stored = assertCustomUpstreamRecord(existing);
-      bearerToken = stored.config.bearerToken;
-    }
+  if (id !== undefined) {
+    return c.json({
+      error: { message: 'use GET /api/upstreams/:id/models?refresh=true for saved upstreams', type: 'invalid_request_error' },
+    }, 400);
   }
 
   const now = new Date().toISOString();
   const record: UpstreamRecord = {
-    id: id ?? newId(),
+    id: newId(),
     provider: 'custom',
     name: 'Draft custom upstream',
     enabled: true,
@@ -263,7 +282,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
-    config: { ...config, bearerToken },
+    config,
     state: null,
   };
 
@@ -271,22 +290,17 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   try {
     assertedConfig = assertCustomUpstreamRecord(record).config;
   } catch (e) {
-    return c.json({ error: validationError(e) }, 400);
+    return c.json({ error: errorMessage(e) }, 400);
   }
 
   try {
-    // Edit mode (`id` present) routes the upstream's catalog GET through the
-    // per-request proxy fallback chain so the dashboard's Refresh button hits
-    // the same egress path as the data plane; a brand-new draft has no saved
-    // row yet, so it falls back to direct.
-    const fetcher = id === undefined ? directFetcher : (await createPerRequestFetcher())(id);
-    const result = await fetchCustomModels(assertedConfig, fetcher);
+    const result = await fetchCustomModels(assertedConfig, directFetcher);
     return c.json(result);
   } catch (e) {
     // Mirror the control-plane /models convention: squash genuine upstream
     // HTTP/parse failures to a generic 502 without leaking provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: 'Upstream model listing failed', type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     throw e;
   }
@@ -294,17 +308,21 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
 
 // List the resolved model catalog of a SAVED upstream (any provider). A
 // read-only view for the dashboard — Copilot's catalog in particular is fixed
-// by the upstream and the operator cannot edit it.
+// by the upstream and the operator cannot edit it. Routes through the SWR
+// models cache; `?refresh=true` forces a fresh upstream fetch.
 export const listUpstreamModels = async (c: Context) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
 
+  const refresh = c.req.query('refresh') === 'true';
+  const scheduler = backgroundSchedulerFromContext(c);
+  const fetcher = (await createPerRequestFetcher())(record.id);
+
   try {
-    const fetcherForUpstream = await createPerRequestFetcher();
     const instance = await createProviderInstance(record);
-    const models = await instance.provider.getProvidedModels(fetcherForUpstream(record.id));
+    const models = await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: refresh });
     const data = models.map(model => ({
       upstreamModelId: model.id,
       publicModelId: model.id,
@@ -317,7 +335,7 @@ export const listUpstreamModels = async (c: Context) => {
     return c.json({ data });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
-      return c.json({ error: { message: 'Upstream model listing failed', type: 'api_error' } }, 502);
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
     }
     throw e;
   }
@@ -329,7 +347,7 @@ export const copilotAuthStart = async (c: Context) => {
     if (!result.ok) return c.json({ error: result.error }, 502);
     return c.json(result.data);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return c.json({ error: msg }, 502);
   }
 };
@@ -389,43 +407,24 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
         };
 
     await repo.save(record);
-    await clearCopilotTokenCache();
-    clearModelsStore();
-    await invalidateModelsStore(record.id);
+    await clearCopilotTokenCache(record.id);
+    await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return c.json({ error: msg }, 502);
   }
 };
 
-const CODEX_PKCE_PENDING_PREFIX = 'codex_oauth_pending:';
 // 5 minutes mirrors auth.openai.com's authorization-code lifetime. A stale
-// pending state is harmless to leave (cache evicts it) but cannot be used
-// for token exchange anyway.
+// pending state cannot be used for token exchange and is swept by the
+// scheduled maintenance job.
 const CODEX_PKCE_TTL_MS = 5 * 60 * 1000;
-
-const parseCodexPkcePendingEntry = (raw: string): string => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`Codex PKCE pending entry is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('Codex PKCE pending entry is not a JSON object');
-  }
-  const obj = parsed as Record<string, unknown>;
-  if (typeof obj.verifier !== 'string' || obj.verifier === '') {
-    throw new Error('Codex PKCE pending entry is missing a non-empty `verifier`');
-  }
-  return obj.verifier;
-};
 
 export const codexPkceStart = async (c: CtxWithJson<typeof codexPkceStartBody>) => {
   const { verifier, challenge } = await generateCodexPkce();
   const state = crypto.randomUUID().replace(/-/g, '');
-  await getRepo().cache.set(`${CODEX_PKCE_PENDING_PREFIX}${state}`, JSON.stringify({ verifier }), CODEX_PKCE_TTL_MS);
+  await getRepo().codexPkcePending.put(state, verifier, Date.now() + CODEX_PKCE_TTL_MS);
 
   const url = new URL(CODEX_AUTHORIZE_URL);
   url.searchParams.set('response_type', 'code');
@@ -455,7 +454,7 @@ type CodexCredentialBody = z.infer<typeof codexImportBody> | z.infer<typeof code
 
 const ingestCodexCredential = async (
   body: CodexCredentialBody,
-): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState; accessToken: CodexAccessTokenCache } | { ok: false; error: string }> => {
+): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState } | { ok: false; error: string }> => {
   try {
     if (body.auth_json !== undefined) {
       const out = await importCodexFromAuthJson(body.auth_json);
@@ -473,19 +472,16 @@ const ingestCodexCredential = async (
     if (!code || !state) {
       return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
     }
-    const cacheKey = `${CODEX_PKCE_PENDING_PREFIX}${state}`;
-    const pendingRaw = await getRepo().cache.get(cacheKey);
-    if (!pendingRaw) {
+    // Atomic single-use DELETE+RETURNING — a replayed callback for the same
+    // state cannot succeed twice, and rows past their TTL are filtered out.
+    const pending = await getRepo().codexPkcePending.consume(state);
+    if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const verifier = parseCodexPkcePendingEntry(pendingRaw);
-    const out = await importCodexFromCallback({ code, codeVerifier: verifier });
-    // Consume the cached PKCE entry so the same state cannot be replayed;
-    // cache eviction handles the timeout case (it's idempotent).
-    await getRepo().cache.delete(cacheKey);
+    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
     return { ok: true, ...out };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 };
 
@@ -514,16 +510,13 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     state: ingestion.state,
   };
   await getRepo().upstreams.save(upstream);
-  // Seed the KV access-token slot so the first data-plane call skips the
-  // immediate refresh round-trip; the cache row TTLs naturally with the
-  // OAuth lifetime.
-  await putCodexAccessToken(getProviderRepo().cache, upstream.id, ingestion.accessToken);
-  await invalidateModelsStore(upstream.id);
+  await warmModelsCache(upstream, c);
   return c.json(await serializeForResponse(upstream), 201);
 };
 
 export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
@@ -541,13 +534,13 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
     state: ingestion.state,
   };
   await getRepo().upstreams.save(next);
-  await putCodexAccessToken(getProviderRepo().cache, id, ingestion.accessToken);
-  await invalidateModelsStore(id);
+  await warmModelsCache(next, c);
   return c.json(await serializeForResponse(next));
 };
 
 export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
-  const id = c.req.param('id') ?? '';
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
@@ -555,7 +548,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
   try {
     assertCodexUpstreamState(existing.state);
   } catch (err) {
-    return c.json({ error: `Codex upstream state is malformed: ${err instanceof Error ? err.message : String(err)}` }, 500);
+    return c.json({ error: `Codex upstream state is malformed: ${errorMessage(err)}` }, 500);
   }
   const state = existing.state;
   // The state schema enforces exactly one account; refresh-now mutates that
@@ -572,7 +565,17 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     // dial direct here and silently fail under restricted egress.
     const fetcher = (await createPerRequestFetcher())(id);
     const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
-    const nextAccount = { ...account, refresh_token: tokens.refresh_token, state_updated_at: new Date().toISOString() };
+    const now = new Date();
+    const nextAccount = {
+      ...account,
+      refresh_token: tokens.refresh_token,
+      state_updated_at: now.toISOString(),
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: now.getTime() + tokens.expires_in * 1000,
+        refreshedAt: now.toISOString(),
+      },
+    };
     const nextState: CodexUpstreamState = { accounts: [nextAccount] };
     // CAS keyed on the just-read state. A losing race here means a concurrent
     // data-plane refresh already rotated the row; their write is at least as
@@ -581,11 +584,6 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     if (!result.updated) {
       return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
     }
-    await putCodexAccessToken(getProviderRepo().cache, id, {
-      access_token: tokens.access_token,
-      expires_at: Math.floor(Date.now() / 1000) + tokens.expires_in,
-      refreshed_at: new Date().toISOString(),
-    });
     const fresh = await getRepo().upstreams.getById(id);
     return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
   } catch (err) {
@@ -599,6 +597,10 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
         state: 'refresh_failed' as const,
         state_message: err.upstreamMessage,
         state_updated_at: new Date().toISOString(),
+        // Refresh failure invalidates whatever access token still sat in state;
+        // even if the data-plane somehow bypassed the active-state gate, the
+        // cached token wouldn't outlive the refresh failure for long.
+        accessToken: null,
       };
       const failedState: CodexUpstreamState = { accounts: [failedAccount] };
       // Best-effort: a losing CAS means a concurrent rotation already wrote
@@ -610,6 +612,6 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
       // is invalid". Same pattern as control-plane/copilot-quota/routes.ts.
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
     }
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    return c.json({ error: errorMessage(err) }, 502);
   }
 };

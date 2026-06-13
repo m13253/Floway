@@ -7,25 +7,23 @@ import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } fro
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './interceptors/messages/types.ts';
 import { COPILOT_RESPONSES_BOUNDARY, COPILOT_RESPONSES_COMPACT_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
+import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
 import { hasContext1mBeta, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, inProcessMemo, readModelsStore, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, writeModelsStore, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
 }
-
-const SOFT_MS = 10 * 60 * 1000;
-const L1_TTL_MS = 120_000;
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields
 // shared by every provider. kind/endpoints/providerData/enabledFlags are added
@@ -162,7 +160,7 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
 
 export const createCopilotProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   const copilot = assertCopilotUpstreamRecord(record);
-  const upstreamConfig = { githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
+  const upstreamConfig = { id: copilot.id, githubToken: copilot.config.githubToken, accountType: copilot.config.accountType };
   // Computed once: only the upstream layer applies for this provider kind
   // (no per-model override layer).
   const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('copilot'), [copilot.flagOverrides]);
@@ -260,24 +258,36 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     });
 
   const provider: ModelProvider = {
-    getProvidedModels: fetcher =>
-      inProcessMemo(copilot.id, L1_TTL_MS, async () => {
-        const ledger = (await readModelsStore<CopilotLedger>(copilot.id)) ?? emptyLedger();
-        const now = Date.now();
-        const initial = projectLedger(ledger, now);
-        if (now - ledger.fetchedAt < SOFT_MS && initial.length > 0) {
-          return finalizeCopilotModels(initial, upstreamFlags);
-        }
+    getProvidedModels: async fetcher => {
+      const fresh = await getProviderRepo().upstreams.getById(copilot.id);
+      if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
+      const initialState = readCopilotUpstreamState(fresh.state);
+      const known = initialState.knownModels ?? emptyKnownModels();
+      const response = await fetchCopilotModels(upstreamConfig, fetcher);
+      const now = Date.now();
+      const merged = mergeKnownModels(known, response, now);
+      // Re-read after the upstream fetch — fetchCopilotModels may have minted a
+      // new Copilot token via the auth path, which persists copilotToken under
+      // its own CAS and advances state_json. Keying this save on the pre-fetch
+      // snapshot would lose deterministically on every token mint (~each
+      // expiry), so the known-models accumulator would never grow. Persistence
+      // is best-effort either way: a losing CAS or thrown error must not
+      // invalidate the response, which the caller is about to use.
+      const latest = await getProviderRepo().upstreams.getById(copilot.id);
+      if (latest) {
+        const latestState = readCopilotUpstreamState(latest.state);
         try {
-          const response = await fetchCopilotModels(upstreamConfig, fetcher);
-          const merged = mergeLedger(ledger, response, now);
-          await writeModelsStore<CopilotLedger>(copilot.id, merged);
-          return finalizeCopilotModels(projectLedger(merged, now), upstreamFlags);
+          await getProviderRepo().upstreams.saveState(
+            copilot.id,
+            { ...latestState, knownModels: merged } satisfies CopilotUpstreamState,
+            { expectedState: latest.state },
+          );
         } catch (err) {
-          if (initial.length > 0) return finalizeCopilotModels(initial, upstreamFlags);
-          throw err;
+          console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
         }
-      }),
+      }
+      return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
+    },
     getPricingForModelKey: pricingForCopilotModelKey,
     callChatCompletions: async (model, body, signal, headers, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });

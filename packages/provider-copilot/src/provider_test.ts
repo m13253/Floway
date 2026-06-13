@@ -1,12 +1,14 @@
 import { test } from 'vitest';
 
-import { clearCopilotTokenCache } from './auth.ts';
+import { clearInProcessCopilotTokenCache } from './auth.ts';
+import { emptyKnownModels, mergeKnownModels } from './known-models.ts';
 import { createCopilotProvider } from './provider.ts';
+import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, clearModelsStore, initProviderRepo, ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, memoryCacheRepo, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { directFetcher, initProviderRepo } from '@floway-dev/provider';
+import { assertEquals, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -31,19 +33,61 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
   };
 };
 
-const setupCopilotTest = async (): Promise<{ copilotUpstream: UpstreamRecord }> => {
-  const cache = memoryCacheRepo();
+interface SaveStateCall {
+  newState: unknown;
+  expectedState: unknown;
+}
+
+interface CopilotTestRepo {
+  copilotUpstream: UpstreamRecord;
+  saveStateCalls: SaveStateCall[];
+  setUpstreamState: (state: unknown) => void;
+  getCurrentState: () => unknown;
+  setSaveStateResult: (result: { updated: boolean }) => void;
+  overrideGetById: (impl: () => Promise<UpstreamRecord | null>) => void;
+  overrideSaveState: (impl: (id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>) => void;
+}
+
+interface SetupOptions extends Partial<UpstreamRecord> {
+  enforceCas?: boolean;
+}
+
+const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTestRepo> => {
+  const { enforceCas = false, ...recordOverrides } = initial;
+  let upstream = buildCopilotUpstream(recordOverrides);
+  const saveStateCalls: SaveStateCall[] = [];
+  let saveResult: { updated: boolean } = { updated: true };
+  let getByIdImpl: () => Promise<UpstreamRecord | null> = async () => upstream;
+  // Real CAS would compare row-version columns, but the mock persists state
+  // inline, so JSON-shape equality on expectedState vs the row's current state
+  // matches what D1's state_json round-trip would observe.
+  const stateMatches = (expected: unknown, current: unknown): boolean =>
+    JSON.stringify(expected) === JSON.stringify(current);
+  let saveStateImpl: (id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }> = async (_id, newState, options) => {
+    saveStateCalls.push({ newState, expectedState: options.expectedState });
+    if (enforceCas && !stateMatches(options.expectedState, upstream.state)) {
+      return { updated: false };
+    }
+    upstream = { ...upstream, state: newState };
+    return saveResult;
+  };
   initProviderRepo(() => ({
-    cache,
     upstreams: {
-      getById: async () => null,
-      saveState: async () => ({ updated: false }),
+      getById: () => getByIdImpl(),
+      saveState: (id, newState, options) => saveStateImpl(id, newState, options),
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());
-  await clearCopilotTokenCache();
-  clearModelsStore();
-  return { copilotUpstream: buildCopilotUpstream() };
+  clearInProcessCopilotTokenCache();
+  return {
+    copilotUpstream: upstream,
+    saveStateCalls,
+    setUpstreamState: state => { upstream = { ...upstream, state }; },
+    getCurrentState: () => upstream.state,
+    setSaveStateResult: result => { saveResult = result; },
+    overrideGetById: impl => { getByIdImpl = impl; },
+    overrideSaveState: impl => { saveStateImpl = impl; },
+  };
 };
 
 interface CopilotModelFixture {
@@ -345,28 +389,21 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
     },
   );
 
-  // withStoreForcedFalse reached the wire body.
   assertEquals(responsesBody?.store, false);
-  // withServiceTierStripped removed the field from the wire body.
-  assertEquals('service_tier' in (responsesBody ?? {}), false);
-  // The compaction trigger item was still appended to input.
+  if (!responsesBody) throw new Error('expected /responses to be hit');
+  assertEquals('service_tier' in responsesBody, false);
   const wireInput = responsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
-  // withVisionHeaderSet detected the input_image and set the Copilot vision
-  // header on the upstream request.
   assertEquals(visionHeader, 'true');
-  // withInitiatorHeaderSet classified the last input item (a user message) as
-  // user-initiated.
   assertEquals(initiatorHeader, 'user');
 });
 
 test('Copilot provider exposes its default flag set via UpstreamModel.enabledFlags', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const instance = await createCopilotProvider({
-    ...copilotUpstream,
+  const { copilotUpstream } = await setupCopilotTest({
     flagOverrides: { 'messages-web-search-shim': true },
     disabledPublicModelIds: [],
   });
+  const instance = await createCopilotProvider(copilotUpstream);
 
   assertEquals(instance.upstream, 'up_copilot');
   assertEquals(instance.name, copilotUpstream.name);
@@ -450,13 +487,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const path = url.pathname;
       bodies[path] = (await request.json()) as Record<string, unknown>;
 
-      if (path === '/chat/completions') {
-        return sseResponse();
-      }
-      if (path === '/responses') {
-        return sseResponse();
-      }
-      if (path === '/v1/messages') {
+      if (['/chat/completions', '/responses', '/v1/messages'].includes(path)) {
         return sseResponse();
       }
       if (path === '/v1/messages/count_tokens') {
@@ -491,12 +522,10 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
-  const visionHeaders: string[] = [];
+  const visionHeaders: (string | null)[] = [];
 
-  // The boundary chain runs inside `provider.callMessages` itself, so this
-  // exercises the integration contract end-to-end: the vision-detection
-  // interceptor reads the payload, sets the header in the boundary header
-  // bag, and the upstream sees it.
+  // The vision-detection interceptor runs inside `provider.callMessages`, so
+  // it must walk into nested `tool_result.content` to find the image.
   const driveMessages = async (model: Awaited<ReturnType<typeof instance.provider.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
     await provider.callMessages(model, body, undefined, undefined, undefined, noopUpstreamCallOptions);
   };
@@ -519,7 +548,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
         return jsonResponse(copilotModels([{ id: 'claude-msg', supported_endpoints: ['/v1/messages'] }]));
       }
       if (url.pathname === '/v1/messages') {
-        visionHeaders.push(request.headers.get('copilot-vision-request') ?? '');
+        visionHeaders.push(request.headers.get('copilot-vision-request'));
         await request.text();
         return sseResponse();
       }
@@ -529,9 +558,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
 
-      // Tool result carrying an image — the only image in the conversation
-      // lives nested inside `tool_result.content`, so the vision detector must
-      // recurse into tool_result.content to discover it.
       await driveMessages(model, {
         max_tokens: 10,
         messages: [
@@ -553,7 +579,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
         ],
       });
 
-      // No image anywhere — header must not be set.
       await driveMessages(model, {
         max_tokens: 10,
         messages: [
@@ -572,7 +597,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
     },
   );
 
-  assertEquals(visionHeaders, ['true', '']);
+  assertEquals(visionHeaders, ['true', null]);
 });
 
 test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire (translated path)', async () => {
@@ -623,17 +648,6 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
   assertEquals(observedInteractionType, ['conversation-agent']);
 });
 
-const withMutableNow = async <T>(initial: number, run: (setNow: (value: number) => void) => Promise<T>): Promise<T> => {
-  const originalNow = Date.now;
-  let now = initial;
-  Date.now = () => now;
-  try {
-    return await run(value => { now = value; });
-  } finally {
-    Date.now = originalNow;
-  }
-};
-
 const copilotPreflight = (request: Request): Response | null => {
   const url = new URL(request.url);
   if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
@@ -643,9 +657,81 @@ const copilotPreflight = (request: Request): Response | null => {
   return null;
 };
 
-test('Copilot provider keeps a model in the ledger for 24 h even when the next fetch omits it', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  clearModelsStore();
+test('Copilot provider persists merged known-models view via saveState CAS keyed on the read state', async () => {
+  const harness = await setupCopilotTest();
+  const { copilotUpstream, saveStateCalls } = harness;
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = await createCopilotProvider(copilotUpstream);
+      const result = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+
+  assertEquals(saveStateCalls.length, 2);
+  const tokenWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).copilotToken !== null);
+  const modelsWrite = saveStateCalls.find(c => (c.newState as CopilotUpstreamState).knownModels !== null);
+  if (!tokenWrite || !modelsWrite) throw new Error('expected one token write and one models write');
+  // Both writes ran against the same seeded row (state=null) on the first
+  // call; the token write happens first and lands a non-null state, so the
+  // models write's expectedState is whatever the token write produced.
+  assertEquals(tokenWrite.expectedState, null);
+  const tokenPersisted = tokenWrite.newState as CopilotUpstreamState;
+  assertEquals(tokenPersisted.knownModels, null);
+  assertEquals(typeof tokenPersisted.copilotToken?.token, 'string');
+  const modelsPersisted = modelsWrite.newState as CopilotUpstreamState;
+  if (!modelsPersisted.knownModels) throw new Error('expected knownModels persisted');
+  assertEquals(Object.keys(modelsPersisted.knownModels.models), ['m1']);
+});
+
+test('Copilot provider persists known-models even when the token-mint write advanced the row mid-call', async () => {
+  // CAS-enforcing harness: a saveState whose expectedState != the row's
+  // current state returns {updated:false} without mutating. The token-mint
+  // path inside fetchCopilotModels persists copilotToken under its own CAS
+  // before the known-models save runs, so the known-models save MUST key on
+  // the post-mint state, not the pre-fetch snapshot — otherwise its CAS
+  // deterministically loses on every token expiry and knownModels never
+  // grows.
+  const harness = await setupCopilotTest({ enforceCas: true });
+  const { copilotUpstream } = harness;
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = await createCopilotProvider(copilotUpstream);
+      await instance.provider.getProvidedModels(directFetcher);
+    },
+  );
+
+  // Inspect the persisted state directly — the token-mint write lands first
+  // and a correctly-keyed known-models write must observe it AND extend it.
+  const final = readCopilotUpstreamState(harness.getCurrentState());
+  if (!final.copilotToken) throw new Error('expected copilotToken to be persisted by the token-mint write');
+  if (!final.knownModels) throw new Error('expected knownModels to be persisted after the token-mint CAS advanced the row');
+  assertEquals(Object.keys(final.knownModels.models), ['m1']);
+});
+
+test('Copilot provider accumulates known-models across calls so a model dropped from the fetch still surfaces', async () => {
+  const harness = await setupCopilotTest();
+  const { copilotUpstream } = harness;
 
   let fetches = 0;
   await withMockedFetch(
@@ -656,95 +742,34 @@ test('Copilot provider keeps a model in the ledger for 24 h even when the next f
       if (url.pathname === '/models') {
         fetches++;
         const data = fetches === 1
-          ? [{ id: 'a', supported_endpoints: ['/v1/messages'] }, { id: 'b', supported_endpoints: ['/v1/messages'] }]
-          : [{ id: 'a', supported_endpoints: ['/v1/messages'] }];
+          ? [{ id: 'm1', supported_endpoints: ['/v1/messages'] }]
+          : [{ id: 'm2', supported_endpoints: ['/v1/messages'] }];
         return jsonResponse({ object: 'list', data });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
       const instance = await createCopilotProvider(copilotUpstream);
-      await withMutableNow(1_000_000, async setNow => {
-        const first = await instance.provider.getProvidedModels(directFetcher);
-        assertEquals(first.map(m => m.id).sort(), ['a', 'b']);
-        setNow(1_000_000 + 11 * 60_000); // past soft window so we re-fetch
-        clearModelsStore();
-        const second = await instance.provider.getProvidedModels(directFetcher);
-        assertEquals(second.map(m => m.id).sort(), ['a', 'b'], 'b should still appear from the ledger');
-      });
+      const first = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(first.map(m => m.id), ['m1']);
+      const second = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(second.map(m => m.id).sort(), ['m1', 'm2']);
     },
   );
   assertEquals(fetches, 2);
 });
 
-test('Copilot provider drops a model after 24 h of continuous absence', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  clearModelsStore();
-
-  let fetches = 0;
-  await withMockedFetch(
-    request => {
-      const pre = copilotPreflight(request);
-      if (pre) return pre;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') {
-        fetches++;
-        const data = fetches === 1
-          ? [{ id: 'a', supported_endpoints: ['/v1/messages'] }, { id: 'b', supported_endpoints: ['/v1/messages'] }]
-          : [{ id: 'a', supported_endpoints: ['/v1/messages'] }];
-        return jsonResponse({ object: 'list', data });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
-      await withMutableNow(1_000_000, async setNow => {
-        await instance.provider.getProvidedModels(directFetcher);
-        setNow(1_000_000 + 25 * 60 * 60_000); // 25h after first fetch
-        clearModelsStore();
-        const after = await instance.provider.getProvidedModels(directFetcher);
-        assertEquals(after.map(m => m.id), ['a']);
-      });
-    },
+test('Copilot provider throws when the upstream fetch fails — no in-provider fallback to stored projection', async () => {
+  const harness = await setupCopilotTest();
+  // Seed prior knownModels so a fallback would have something to return if one
+  // existed — proving the provider deliberately re-throws regardless.
+  const seeded = mergeKnownModels(
+    emptyKnownModels(),
+    { object: 'list', data: [{ id: 'm-prior', name: 'm-prior', version: '1', supported_endpoints: ['/v1/messages'], capabilities: { type: 'chat', limits: {} } }] },
+    Date.now(),
   );
-  assertEquals(fetches, 2);
-});
+  harness.setUpstreamState({ knownModels: seeded, copilotToken: null });
 
-test('Copilot provider returns ledger projection when fetch fails but ledger is non-empty', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  clearModelsStore();
-
-  let fetches = 0;
-  await withMockedFetch(
-    request => {
-      const pre = copilotPreflight(request);
-      if (pre) return pre;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') {
-        fetches++;
-        if (fetches === 1) return jsonResponse({ object: 'list', data: [{ id: 'a', supported_endpoints: ['/v1/messages'] }] });
-        return new Response('unavailable', { status: 503 });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
-      await withMutableNow(1_000_000, async setNow => {
-        await instance.provider.getProvidedModels(directFetcher);
-        setNow(1_000_000 + 11 * 60_000);
-        clearModelsStore();
-        const after = await instance.provider.getProvidedModels(directFetcher);
-        assertEquals(after.map(m => m.id), ['a']);
-      });
-    },
-  );
-});
-
-test('Copilot provider throws ProviderModelsUnavailableError when ledger is empty and fetch fails', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  clearModelsStore();
-
-  let thrown: unknown;
   await withMockedFetch(
     request => {
       const pre = copilotPreflight(request);
@@ -754,10 +779,82 @@ test('Copilot provider throws ProviderModelsUnavailableError when ledger is empt
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const instance = await createCopilotProvider(copilotUpstream);
-      try { await instance.provider.getProvidedModels(directFetcher); } catch (e) { thrown = e; }
+      const instance = await createCopilotProvider(harness.copilotUpstream);
+      await assertRejects(() => instance.provider.getProvidedModels(directFetcher));
     },
   );
-  if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
-  assertEquals(thrown.httpResponse?.status, 503);
+});
+
+test('Copilot provider throws "disappeared mid-request" when the upstream row vanishes between construction and call', async () => {
+  const harness = await setupCopilotTest();
+  const instance = await createCopilotProvider(harness.copilotUpstream);
+  harness.overrideGetById(async () => null);
+
+  await assertRejects(
+    () => instance.provider.getProvidedModels(directFetcher),
+    Error,
+    'Copilot upstream up_copilot disappeared mid-request',
+  );
+});
+
+test('Copilot provider accepts a losing CAS write and still returns the freshly fetched models', async () => {
+  const harness = await setupCopilotTest();
+  harness.setSaveStateResult({ updated: false });
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = await createCopilotProvider(harness.copilotUpstream);
+      const result = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+});
+
+test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
+  // Persistence is best-effort: the fetched models are the user-facing
+  // payload, and a DB-level error on the CAS write must not propagate out of
+  // getProvidedModels. Mirrors the gateway SWR layer's persistence policy.
+  const harness = await setupCopilotTest();
+  harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = await createCopilotProvider(harness.copilotUpstream);
+      const result = await instance.provider.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+});
+
+test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {
+  const seeded: CopilotUpstreamState = {
+    knownModels: mergeKnownModels(
+      emptyKnownModels(),
+      { object: 'list', data: [{ id: 'm1', name: 'm1', version: '1', supported_endpoints: [], capabilities: { type: 'chat', limits: {} } }] },
+      1_000_000,
+    ),
+    copilotToken: { token: 'tok', expiresAt: 2_000_000 },
+  };
+  const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
+  assertEquals(round.copilotToken?.token, 'tok');
+  if (!round.knownModels) throw new Error('expected knownModels in round-trip');
+  assertEquals(Object.keys(round.knownModels.models), ['m1']);
 });

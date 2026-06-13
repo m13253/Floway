@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from './index.ts';
-import { isProviderModelsHttpStatus, ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstreamRecord = () => ({
@@ -141,8 +141,6 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse 
   assertEquals(thrown.httpResponse?.status, 429);
   assertEquals(thrown.httpResponse?.body, 'rate limit');
   assertEquals(thrown.httpResponse?.headers.get('retry-after'), '5');
-  assertEquals(isProviderModelsHttpStatus(thrown, 429), true);
-  assertEquals(isProviderModelsHttpStatus(thrown, 500), false);
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on network error', async () => {
@@ -156,7 +154,6 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResp
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
   assertEquals(thrown.httpResponse, null);
-  assertEquals(isProviderModelsHttpStatus(thrown, 429), false);
 });
 
 test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {

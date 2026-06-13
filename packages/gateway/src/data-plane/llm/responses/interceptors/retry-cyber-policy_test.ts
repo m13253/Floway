@@ -42,7 +42,7 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'test',
-  scheduleBackground: () => {},
+  backgroundScheduler: () => {},
   requestStartedAt: 0,
   ...overrides,
 });
@@ -384,7 +384,6 @@ test('withCyberPolicyRetried does not start another streaming retry after downst
 const drainFrames = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<unknown> => {
   try {
     for await (const _frame of events) {
-      // drain only; assertions inspect the thrown error
     }
     return undefined;
   } catch (error) {

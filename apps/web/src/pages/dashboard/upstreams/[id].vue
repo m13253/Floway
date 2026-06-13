@@ -3,7 +3,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../../api/client.ts';
-import type { CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, UpstreamModelConfig } from '../../../api/types.ts';
+import type { CopilotQuotaSnapshot, UpstreamModelConfig } from '../../../api/types.ts';
 import UpstreamEditPage from '../../../components/upstream-edit/UpstreamEditPage.vue';
 import { useProxiesStore } from '../../../composables/useProxies.ts';
 import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
@@ -28,14 +28,11 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
   let upstreamModelsError: string | null = null;
   let copilotQuota: CopilotQuotaSnapshot | null = null;
   let copilotQuotaError: string | null = null;
-  let customRawModels: CustomRawModel[] = [];
-  let customRawModelsError: string | null = null;
-  let customFetchedAt: number | null = null;
 
-  // Copilot and Codex both expose an upstream-decided read-only catalog via
-  // /upstreams/:id/models. Copilot additionally surfaces a premium-quota
-  // snapshot we want pre-fetched alongside the catalog.
-  if (record?.provider === 'copilot' || record?.provider === 'codex') {
+  // Every provider except Azure resolves its catalog through the SWR cache
+  // backing GET /upstreams/:id/models. Azure's catalog is operator-edited
+  // form data — there is nothing to fetch — so it is skipped here.
+  if (record && record.provider !== 'azure') {
     const modelsPromise = callApi<{ data: UpstreamModelConfig[] }>(
       () => api.api.upstreams[':id'].models.$get({ param: { id: record.id } }),
     );
@@ -49,33 +46,6 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
       if (quotaRes.error) copilotQuotaError = quotaRes.error.message;
       else copilotQuota = quotaRes.data;
     }
-  } else if (record?.provider === 'custom') {
-    const cfg = record.config as CustomUpstreamConfig;
-    if (cfg.modelsFetch.enabled) {
-      const { data, error } = await callApi<{ data: CustomRawModel[] }>(
-        () => api.api.upstreams['fetch-models'].$post({
-          json: {
-            id: record.id,
-            // The backend reuses the stored secret when `id` is present, so
-            // the rest is just the saved config minus the bearerTokenSet
-            // metadata flag.
-            config: {
-              baseUrl: cfg.baseUrl,
-              authStyle: cfg.authStyle,
-              endpoints: cfg.endpoints,
-              modelsFetch: cfg.modelsFetch,
-              models: cfg.models,
-            },
-          },
-        }),
-      );
-      if (error) {
-        customRawModelsError = error.message;
-      } else {
-        customRawModels = data.data;
-        customFetchedAt = Date.now();
-      }
-    }
   }
 
   return {
@@ -86,9 +56,6 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
     upstreamModelsError,
     copilotQuota,
     copilotQuotaError,
-    customRawModels,
-    customRawModelsError,
-    customFetchedAt,
   };
 });
 </script>
@@ -119,9 +86,6 @@ if (data.data.value.record === null) {
     :initial-upstream-models-error="data.data.value.upstreamModelsError"
     :initial-copilot-quota="data.data.value.copilotQuota"
     :initial-copilot-quota-error="data.data.value.copilotQuotaError"
-    :initial-custom-raw-models="data.data.value.customRawModels"
-    :initial-custom-raw-models-error="data.data.value.customRawModelsError"
-    :initial-custom-fetched-at="data.data.value.customFetchedAt"
     @saved="store.load"
   />
 </template>

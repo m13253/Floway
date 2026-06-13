@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
@@ -10,7 +11,7 @@ export interface GatewayCtx {
   readonly abortSignal?: AbortSignal;
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
-  readonly scheduleBackground: (fn: () => Promise<void> | void) => void;
+  readonly backgroundScheduler: BackgroundScheduler;
   // Stamped at ctx construction so request-total latency telemetry can subtract
   // from `performance.now()` at response completion.
   readonly requestStartedAt: number;
@@ -19,11 +20,6 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
 }
-
-const buildScheduleBackground = (c: Context): GatewayCtx['scheduleBackground'] => {
-  const backgroundScheduler = backgroundSchedulerFromContext(c);
-  return (fn: () => Promise<void> | void) => backgroundScheduler(Promise.resolve(fn()));
-};
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
   const apiKeyId = c.get('apiKeyId') as string;
@@ -34,7 +30,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     upstreamIds,
     ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
     wantsStream,
-    scheduleBackground: buildScheduleBackground(c),
+    backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
   };
@@ -53,7 +49,7 @@ export const createGatewayCtxForWs = (
     abortSignal: downstreamAbortController.signal,
     wantsStream: true,
     downstreamAbortController,
-    scheduleBackground: buildScheduleBackground(c),
+    backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
   };

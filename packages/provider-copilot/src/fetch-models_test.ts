@@ -1,21 +1,35 @@
 import { test } from 'vitest';
 
 import { fetchCopilotModels } from './fetch-models.ts';
-import { clearCopilotTokenCache } from './index.ts';
-import { ProviderModelsUnavailableError, initProviderRepo, directFetcher } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, memoryCacheRepo, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from './index.ts';
+import { ProviderModelsUnavailableError, initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const installRepoAndConfig = async () => {
-  const cache = memoryCacheRepo();
+  const id = 'up_copilot_fetch_models_test';
+  const githubToken = `ghu_${crypto.randomUUID().replace(/-/g, '')}`;
+  const stub: UpstreamRecord = {
+    id,
+    provider: 'copilot',
+    name: 'fetch-models-test',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z',
+    updatedAt: '2026-03-15T00:00:00.000Z',
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    config: { githubToken, accountType: 'individual', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+  };
   initProviderRepo(() => ({
-    cache,
     upstreams: {
-      getById: async () => null,
-      saveState: async () => ({ updated: false }),
+      getById: async () => stub,
+      saveState: async () => ({ updated: true }),
     },
   }));
-  await clearCopilotTokenCache();
-  return { githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`, accountType: 'individual' as const };
+  clearInProcessCopilotTokenCache();
+  return { id, githubToken, accountType: 'individual' as const };
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {

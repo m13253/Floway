@@ -1,29 +1,16 @@
-import { getCodexAccessToken } from './access-token-cache.ts';
+import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
+import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { callCodexResponsesCompact } from './compaction.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import { codexResponsesChain } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { codexRawToUpstreamModel, fetchCodexCatalog, type CodexRawModel } from './models.ts';
+import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, inProcessMemo, readModelsStore, writeModelsStore, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
-
-// L1 (in-process) memo lifetime. Kept short so an operator-triggered model
-// list change propagates within minutes even before the L2 ledger ages out.
-const MODELS_MEMO_TTL_MS = 2 * 60 * 1000;
-// L2 (KV) ledger freshness threshold. The ledger entry has no KV TTL —
-// `writeModelsStore` writes without one — so it persists indefinitely. This
-// constant is the staleness window for the soft fallback when the live
-// /codex/models fetch fails.
-const MODELS_LEDGER_FRESH_MS = 24 * 60 * 60 * 1000;
-
-interface CodexModelsLedger {
-  fetchedAt: number;
-  models: CodexRawModel[];
-}
+import { getProviderRepo, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
@@ -67,48 +54,42 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   const persistTerminalState = async (newState: 'session_terminated' | 'refresh_failed', message: string): Promise<void> => {
     const { state, account } = await readActiveAccount();
-    const next = replaceActiveAccount(state, { ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString() });
+    // Clear any cached access token on the terminal flip — once the credential
+    // is dead the cached token is dead too, and leaving it would confuse the
+    // dashboard's status panel.
+    const next = replaceActiveAccount(state, { ...account, state: newState, state_message: message, state_updated_at: new Date().toISOString(), accessToken: null });
     await getProviderRepo().upstreams.saveState(record.id, next, { expectedState: state });
   };
 
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const provider: ModelProvider = {
-    getProvidedModels: fetcher =>
-      inProcessMemo(record.id, MODELS_MEMO_TTL_MS, async () => {
-        const cached = await readModelsStore<CodexModelsLedger>(record.id);
-        const ledgerFresh = cached !== null && Date.now() - cached.fetchedAt < MODELS_LEDGER_FRESH_MS;
-        const fallback = (): UpstreamModel[] => (ledgerFresh ? cached!.models.map(codexRawToUpstreamModel) : []);
-        try {
-          // Defer the catalog fetch when no access token has been minted yet
-          // (cold-imported upstream). The first data-plane call will refresh
-          // the OAuth token; the next getProvidedModels then populates the
-          // ledger. Until then, return the last known ledger (or empty).
-          const access = await getCodexAccessToken(getProviderRepo().cache, record.id);
-          if (!access) return fallback();
-
-          const raw = await fetchCodexCatalog({ accessToken: access.access_token, accountId: accountIdentity.chatgptAccountId, fetcher });
-          // Surface every model the upstream returns, including ones whose
-          // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
-          // operator's gateway is its own surface — they can dispatch to those
-          // models even though the ChatGPT UI hides them — and the dashboard
-          // toggles them per-upstream when needed.
-          await writeModelsStore<CodexModelsLedger>(record.id, { fetchedAt: Date.now(), models: raw });
-          return raw.map(codexRawToUpstreamModel);
-        } catch (err) {
-          // AbortError is a deliberate caller-driven cancellation — propagate
-          // so the data-plane request unwinds cleanly instead of falling back
-          // to a stale ledger and pretending the call succeeded.
-          if (err instanceof Error && err.name === 'AbortError') throw err;
-          // Falling back to a stale-but-fresh-enough ledger is the right
-          // resilience story; falling back to an EMPTY catalog because we
-          // never had a ledger silently turns this upstream into "no
-          // models available" — the operator sees an apparently-healthy
-          // upstream serving zero models. Surface the failure instead.
-          if (!ledgerFresh) throw err;
-          return fallback();
+    getProvidedModels: async fetcher => {
+      // A model-list refresh is the first thing a brand-new Codex upstream
+      // does, and it is the only place outside the data plane that mints an
+      // access token. If the refresh_token has been revoked upstream, the
+      // mint throws CodexOAuthSessionTerminatedError; flip the row to
+      // `refresh_failed` so the dashboard stops claiming the credential is
+      // active, then rethrow so the caller's models-cache records the
+      // failure and surfaces it to the operator.
+      let access;
+      try {
+        access = await ensureCodexAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
+          mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation));
+      } catch (err) {
+        if (err instanceof CodexOAuthSessionTerminatedError) {
+          await persistTerminalState('refresh_failed', err.upstreamMessage);
         }
-      }),
+        throw err;
+      }
+      const raw = await fetchCodexCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
+      // Surface every model the upstream returns, including ones whose
+      // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
+      // operator's gateway is its own surface — they can dispatch to those
+      // models even though the ChatGPT UI hides them — and the dashboard
+      // toggles them per-upstream when needed.
+      return raw.map(codexRawToUpstreamModel);
+    },
 
     // Codex itself is a flat-fee subscription, but the dashboard reports
     // notional cost per request as if the operator were paying OpenAI's
@@ -132,7 +113,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             body: wireBody,
             headers: ctx.headers,
             signal,
-            cache: getProviderRepo().cache,
             effects,
             call: opts,
           });
@@ -157,7 +137,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             body: wireBody,
             headers: ctx.headers,
             signal,
-            cache: getProviderRepo().cache,
             effects,
             call: opts,
           });

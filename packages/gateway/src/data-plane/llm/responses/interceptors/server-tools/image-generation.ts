@@ -88,8 +88,7 @@ export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is Respon
   tool.type === 'image_generation';
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob
-// without TS narrowing complaints about SharedArrayBuffer.
+// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
 interface ImageSource {
   bytes: ArrayBuffer;
   mimeType: string;
@@ -103,14 +102,14 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   return buffer;
 };
 
-// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string into
-// raw bytes. Returns null for non-data URLs (e.g. http(s)): fetching remote
-// images for edit binding is not supported — only inline image bytes are bound.
+// Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as
+// emitted in `image_generation_call.result`) into raw bytes. Returns null
+// for non-data URLs (e.g. http(s)): fetching remote images for edit binding
+// is not supported — only inline image bytes are bound.
 const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
   const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
   if (dataUrlMatch === null) {
     if (/^https?:\/\//i.test(imageUrl)) return null;
-    // Bare base64 (e.g. an image_generation_call.result).
     try {
       return { bytes: base64ToArrayBuffer(imageUrl), mimeType: fallbackMime };
     } catch {
@@ -428,8 +427,8 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
         code: typeof err.code === 'string' ? err.code : `upstream_${status}`,
       };
     }
-  } catch {
-    // Non-JSON body falls through to the generic HTTP-status message.
+  } catch (e) {
+    if (!(e instanceof SyntaxError)) throw e;
   }
   return { message: `Image backend returned HTTP ${status}`, code: `upstream_${status}` };
 };
@@ -445,7 +444,7 @@ interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
-  scheduleBackground: GatewayCtx['scheduleBackground'];
+  backgroundScheduler: GatewayCtx['backgroundScheduler'];
   runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
@@ -463,7 +462,7 @@ const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelK
   }, usage).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });
-  state.scheduleBackground(() => promise);
+  state.backgroundScheduler(promise);
 };
 
 export const buildGenerationsBody = (prompt: string, config: ImageGenerationConfig, stream: boolean): Record<string, unknown> => ({
@@ -505,8 +504,8 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     // generated image. Sending the raw mime (rather than relabeling as png)
     // keeps a stray unsupported byte stream failing loud at the backend.
     const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
-    // `image[]` repeated parts: gpt-image accepts multiple, picking the
-    // edit target by prompt semantics. Attach order is not significant.
+    // `image[]` repeated parts: gpt-image accepts multiple, resolving "the
+    // Nth image" against attach order (see `collectImageSources`).
     form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
   }
   if (config.mask !== undefined) {
@@ -535,7 +534,7 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, state.backgroundScheduler);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
@@ -619,9 +618,9 @@ const issueImageCall = async (
     };
     if (response.ok) {
       const durationMs = recorder.durationMs();
-      state.scheduleBackground(() => recordPerformanceLatency(context, 'upstream_success', durationMs));
+      state.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', durationMs));
     } else {
-      state.scheduleBackground(() => recordPerformanceError(context, 'upstream_success'));
+      state.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
     }
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
@@ -956,7 +955,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     config,
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
-    scheduleBackground: gatewayCtx.scheduleBackground,
+    backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,

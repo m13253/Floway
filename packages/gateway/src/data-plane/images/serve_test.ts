@@ -1,8 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearModelsStore } from '@floway-dev/provider';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('/v1/images/generations rejects malformed JSON body with 400', async () => {
@@ -76,8 +75,7 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
 test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   // Chat-only custom upstream. Its /models response advertises gpt-4o
   // (which the id heuristic leaves as the chat fallback), so the model exists
@@ -116,10 +114,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  // setupAppTest seeds only a Copilot upstream by default; register a custom
-  // upstream whose /models response declares the requested image model.
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_images',
     name: 'Custom Image Provider',
@@ -127,7 +122,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
     config: {
       baseUrl: 'https://images.example.com',
       bearerToken: 'sk-images',
-      endpoints: {  },
+      endpoints: {},
     },
   }));
 
@@ -171,11 +166,8 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
 });
 
 test('/v1/images/edits forwards a multipart request through an Azure model and records usage', async () => {
-  // setupAppTest seeds a Copilot upstream by default; we also register an
-  // Azure upstream that exposes gpt-image-2 via /v1/images/edits.
   const { apiKey, repo } = await setupAppTest();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save({
     id: 'az-image',
     provider: 'azure',

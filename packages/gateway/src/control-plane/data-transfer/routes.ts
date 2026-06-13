@@ -7,13 +7,19 @@
 // UUIDs / PSKs. The endpoint is admin-only via x-api-key; operators are
 // responsible for handling the dumped file with the same care as a DB backup.
 
+import type { Context } from 'hono';
+
+import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
+import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -21,7 +27,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { invalidateModelsStore, parseFlagOverridesWire } from '@floway-dev/provider';
+import { parseFlagOverridesWire } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -63,6 +69,10 @@ const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
 const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PREFIXES.some(prefix => value.startsWith(prefix));
+
+const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
@@ -147,9 +157,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
 
 const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedProxy[] } | { type: 'invalid'; index: number; error: string } => {
   // Proxies are optional in the import contract: an absent or empty array
-  // means "the source deployment had no proxies". The cross-reference check
-  // later still fails the import if upstreams point at ids this array
-  // doesn't carry, so a dangling reference cannot slip through silently.
+  // means "the source deployment had no proxies".
   if (value === undefined) return { type: 'ok', records: [] };
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'proxies must be an array' };
 
@@ -326,16 +334,18 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): UsageRecord['cost'] => {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) return null;
+const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid' } => {
+  if (value === undefined || value === null) return { type: 'ok', cost: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
   const obj = value as Record<string, unknown>;
   const cost: ModelPricing = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
-    if (typeof rate === 'number') cost[dimension] = rate;
+    if (rate === undefined) continue;
+    if (typeof rate !== 'number' || !Number.isFinite(rate)) return { type: 'invalid' };
+    cost[dimension] = rate;
   }
-  return Object.keys(cost).length > 0 ? cost : null;
+  return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
 };
 
 const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
@@ -378,6 +388,8 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     }
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
+    const costResult = parseImportedCost(record.cost);
+    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid cost dimension rates' };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -386,7 +398,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       hour: record.hour,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      cost: parseImportedCost(record.cost),
+      cost: costResult.cost,
     });
   }
 
@@ -501,9 +513,27 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
   return { type: 'ok', records };
 };
 
-const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-
-const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
+// Synchronously populate the SWR models cache for each saved upstream so the
+// dashboard's next navigation lands on a populated row. In merge mode the
+// upstreams.save above is an ON CONFLICT UPDATE that does not touch the
+// models_cache row through any FK cascade, so without this call a re-import
+// that changes an upstream's config would keep serving the prior cached
+// model list until SWR's soft window expired. Replace mode wiped the table
+// before the loop; warming there is a no-op population. A failed upstream
+// fetch (network blip, bad credentials) does not block the import — the
+// cache layer persists lastError on that path for the dashboard to surface,
+// and we log the swallowed error so non-transient failures (gateway bugs in
+// the cache layer or scheduler) still surface in observability.
+const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
+  const scheduler = backgroundSchedulerFromContext(c);
+  const instance = await createProviderInstance(record);
+  const fetcher = (await createPerRequestFetcher())(record.id);
+  try {
+    await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
+  } catch (err) {
+    console.error(`Failed to warm models cache for upstream ${record.id}:`, err);
+  }
+};
 
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
@@ -632,7 +662,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
-    const existingUpstreams = await repo.upstreams.list();
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),
@@ -651,7 +680,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
-    await Promise.all([...existingUpstreams, ...upstreams].map(upstream => invalidateModelsStore(upstream.id)));
   }
 
   // Users land before api keys so the FK from api_keys.user_id can resolve.
@@ -670,10 +698,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
-  for (const upstream of upstreams) {
-    await repo.upstreams.save(upstream);
-    await invalidateModelsStore(upstream.id);
-  }
+  for (const upstream of upstreams) await repo.upstreams.save(upstream);
+  await Promise.all(upstreams.map(upstream => warmModelsCache(upstream, c)));
   for (const record of performance) await repo.performance.set(record);
   await repo.searchConfig.save(searchConfig);
 

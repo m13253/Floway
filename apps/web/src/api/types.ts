@@ -141,6 +141,14 @@ export interface UpstreamRecord {
   // Codex is the only provider that ships gateway-managed state on the row
   // today; the other providers serialize this as null.
   state: CodexUpstreamState | null;
+  // SWR models-cache freshness joined from the models_cache table. Both inner
+  // values are null on a row that has never been warmed; lastError is set
+  // when the most recent warm failed but a prior fetch still populates
+  // fetchedAt.
+  modelsCache: {
+    fetchedAt: number | null;
+    lastError: { message: string; at: number } | null;
+  };
   // Present only for provider === 'codex'; serialized inline so the dashboard
   // renders the quota panel without a follow-up fetch.
   codex_quota?: CodexQuotaSnapshot | null;

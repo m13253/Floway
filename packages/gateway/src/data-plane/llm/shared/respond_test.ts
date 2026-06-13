@@ -36,13 +36,13 @@ const setup = (): Harness => {
   return {
     repo,
     background,
-    ctx: (overrides = {}) => ({
-      apiKeyId: overrides.apiKeyId ?? 'key_a',
+    ctx: ({ apiKeyId = 'key_a', requestStartedAt = 0 } = {}) => ({
+      apiKeyId,
       upstreamIds: null,
       wantsStream: true,
       runtimeLocation: 'test',
-      scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
-      requestStartedAt: overrides.requestStartedAt ?? 0,
+      backgroundScheduler: promise => { background.push(promise); },
+      requestStartedAt,
     }),
   };
 };
@@ -101,6 +101,9 @@ test('SourceStreamState.rememberUsage keeps real usage and ignores zero figures'
   assertEquals(state.usage, { input: 50, output: 10 });
 
   state.rememberUsage(null);
+  assertEquals(state.usage, { input: 50, output: 10 });
+
+  state.rememberUsage({ input: 0, output: 0 });
   assertEquals(state.usage, { input: 50, output: 10 });
 });
 

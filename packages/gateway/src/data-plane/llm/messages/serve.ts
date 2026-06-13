@@ -33,6 +33,7 @@ export const messagesServe = {
           : endpoints.responses ? 'responses'
             : endpoints.chatCompletions ? 'chat-completions'
               : null,
+      scheduler: ctx.backgroundScheduler,
     });
     const decision = await planMessagesRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
@@ -59,6 +60,7 @@ export const messagesServe = {
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       pickTarget: endpoints => endpoints.messages ? 'messages' : null,
+      scheduler: ctx.backgroundScheduler,
     });
     const decision = await planMessagesRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');

@@ -57,11 +57,6 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
 };
 
-// `GatewayCtx.scheduleBackground` takes a thunk returning Promise<void> | void;
-// the telemetry helper hands us a promise — adapt by returning it from the
-// thunk (the `Promise<unknown>` cast keeps TypeScript happy without inserting
-// an await).
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
-  const scheduler = (promise: Promise<unknown>) => ctx.scheduleBackground(() => promise as Promise<void>);
-  recordRequestPerformance(scheduler, context, failed, performance.now() - ctx.requestStartedAt);
+  recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };

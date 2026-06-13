@@ -1,4 +1,5 @@
-import { cloudflareKvImageCache, createCloudflareImageProcessor, type ImagesBinding, type KvNamespace } from './image-processor.ts';
+import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
+import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
@@ -6,6 +7,7 @@ import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   initEnv,
   initFileProvider,
+  initImageCacheStore,
   initImageProcessor,
   initSocketDial,
   type SqlDatabase,
@@ -21,7 +23,7 @@ export interface CloudflareEnv {
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 holds spilled payloads, Images compresses inline
-// images, KV memoises compressed results. A missing binding means
+// images, KV memoises compressed image results. A missing binding means
 // wrangler.jsonc drifted from the code, so we refuse to initialise rather
 // than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV'] as const;
@@ -35,9 +37,16 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
     );
   }
 
-  initEnv(name => String(env[name] ?? ''));
+  initEnv(name => {
+    const value = env[name];
+    if (value === undefined || value === null) {
+      throw new Error(`Missing required env var: ${name}`);
+    }
+    return String(value);
+  });
   initFileProvider(new R2FileProvider(env.FILES));
-  initImageProcessor(createCloudflareImageProcessor(env.IMAGES, cloudflareKvImageCache(env.KV)));
+  initImageCacheStore(new KvImageCache(env.KV));
+  initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
   return { db: env.DB };

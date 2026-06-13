@@ -1,8 +1,7 @@
 import { test } from 'vitest';
 
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { clearModelsStore } from '@floway-dev/provider';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
 const SECOND_ACCOUNT = {
@@ -131,12 +130,11 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.description, undefined);
       }
 
-      // /models serves the exact same payload (same handler).
       const anthropicResponse = await requestApp('/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(anthropicResponse.status, 200);
-      assertEquals(await anthropicResponse.json(), await (await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } })).json());
+      assertEquals(await anthropicResponse.json(), body);
 
       // Dashboard adds two UI-only fields on top of the public DTO.
       const controlResponse = await requestApp('/api/models', {
@@ -181,9 +179,9 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
 
 test('/models returns the same superset payload as /v1/models', async () => {
   const { apiKey, repo } = await setupAppTest();
-  // Register a custom upstream so we can verify image-kind projection via
-  // the Tier 2 id heuristic (gpt-image-* → 'image'). The Copilot fixture
-  // only emits chat and embedding models.
+  // Image-kind projection requires a non-Copilot id like gpt-image-* (matched
+  // by the Tier 2 id heuristic) since the Copilot fixture only emits chat and
+  // embedding models.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_images_proj',
     name: 'Image Provider',
@@ -276,8 +274,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
 test('/v1/models hides upstream identity when a provider returns an invalid model list', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_secret_provider',
     name: 'Secret Provider',
@@ -312,8 +309,7 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
 test('public model list endpoints hide upstream HTTP error bodies and headers', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_http_secret_provider',
     name: 'HTTP Secret Provider',
@@ -360,8 +356,7 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
 test('public model list endpoints hide thrown upstream request errors', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_throw_secret_provider',
     name: 'Throw Secret Provider',
@@ -401,8 +396,7 @@ test('public model list endpoints hide thrown upstream request errors', async ()
 test('public model list endpoints hide malformed upstream response bodies', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_malformed_secret_provider',
     name: 'Malformed Secret Provider',
@@ -445,8 +439,7 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
 test('/v1/models surfaces the actionable "no upstream configured" hint when no provider is configured', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearModelsStore();
-  await clearCopilotTokenCache();
+  clearInProcessCopilotTokenCache();
 
   const response = await requestApp('/v1/models', {
     headers: { 'x-api-key': apiKey.key },
@@ -563,10 +556,8 @@ test('/v1/models returns the last real error when every account model load fails
         headers: { 'x-api-key': apiKey.key },
       });
 
-      // Invalid /models payloads still parse if `data` is an array; an
-      // unexpected `object` value is non-fatal because the merging handler
-      // only iterates `data`. The assertion here documents the lenient
-      // behavior consistent with isModelsResponse.
+      // Unexpected `object` value is intentionally non-fatal — the handler
+      // only iterates `data`.
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: unknown[] };
       assertEquals(body.data, []);

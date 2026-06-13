@@ -12,7 +12,9 @@ import type {
   ApiKey,
   ApiKeyRepo,
   BackoffRow,
-  CacheRepo,
+  CachedModelsRow,
+  CodexPkcePendingRepo,
+  ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -42,7 +44,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: 1,
@@ -466,36 +468,50 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 }
 
-class MemoryCacheRepo implements CacheRepo {
-  private store = new Map<string, { value: string; expiresAt?: number }>();
+class MemoryModelsCacheRepo implements ModelsCacheRepo {
+  private rows = new Map<string, CachedModelsRow>();
 
-  get(key: string): Promise<string | null> {
-    const entry = this.store.get(key);
-    if (!entry) return Promise.resolve(null);
-
-    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
-      this.store.delete(key);
-      return Promise.resolve(null);
-    }
-
-    return Promise.resolve(entry.value);
+  get(upstreamId: string): Promise<CachedModelsRow | null> {
+    const row = this.rows.get(upstreamId);
+    return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
   }
 
-  set(key: string, value: string, ttlMs?: number): Promise<void> {
-    this.store.set(key, ttlMs ? { value, expiresAt: Date.now() + ttlMs } : { value });
-
+  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+    this.rows.set(upstreamId, { fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
     return Promise.resolve();
   }
 
-  delete(key: string): Promise<void> {
-    this.store.delete(key);
+  setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
+    // No-op when no row exists: lastError annotates a previously-successful fetch.
+    const existing = this.rows.get(upstreamId);
+    if (!existing) return Promise.resolve();
+    this.rows.set(upstreamId, { ...existing, lastError: error });
     return Promise.resolve();
   }
 
-  deletePrefix(prefix: string): Promise<void> {
-    for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
-    }
+  delete(upstreamId: string): Promise<void> {
+    this.rows.delete(upstreamId);
+    return Promise.resolve();
+  }
+}
+
+class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {
+  private rows = new Map<string, { verifier: string; expiresAt: number }>();
+
+  put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    this.rows.set(state, { verifier, expiresAt });
+    return Promise.resolve();
+  }
+
+  consume(state: string): Promise<{ verifier: string } | null> {
+    const row = this.rows.get(state);
+    if (!row || row.expiresAt <= Date.now()) return Promise.resolve(null);
+    this.rows.delete(state);
+    return Promise.resolve({ verifier: row.verifier });
+  }
+
+  sweepExpired(now: number): Promise<void> {
+    for (const [k, v] of this.rows) if (v.expiresAt <= now) this.rows.delete(k);
     return Promise.resolve();
   }
 }
@@ -614,7 +630,10 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const item of items) {
       if (item.payload === null) continue;
       const existing = this.store.get(responsesItemStoreKey(item.apiKeyId, item.id));
-      if (existing?.payload !== null) continue;
+      // Row may be absent if a concurrent TTL prune removed it between load and persist;
+      // SQL's `UPDATE ... WHERE id = ?` is a no-op in the same case, so we mirror that.
+      if (existing === undefined) continue;
+      if (existing.payload !== null) continue;
       existing.payload = structuredClone(item.payload);
       existing.contentHash = item.contentHash;
       existing.encryptedContentHash = item.encryptedContentHash;
@@ -651,9 +670,9 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   deleteOlderThan(refreshedBefore: number): Promise<number> {
     let changes = 0;
-    for (const [id, row] of this.store) {
+    for (const [key, row] of this.store) {
       if (row.refreshedAt < refreshedBefore) {
-        this.store.delete(id);
+        this.store.delete(key);
         changes += 1;
       }
     }
@@ -888,7 +907,8 @@ export class InMemoryRepo implements Repo {
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
-  cache: CacheRepo;
+  modelsCache: ModelsCacheRepo;
+  codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -903,7 +923,8 @@ export class InMemoryRepo implements Repo {
     this.usage = new MemoryUsageRepo();
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
-    this.cache = new MemoryCacheRepo();
+    this.modelsCache = new MemoryModelsCacheRepo();
+    this.codexPkcePending = new MemoryCodexPkcePendingRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

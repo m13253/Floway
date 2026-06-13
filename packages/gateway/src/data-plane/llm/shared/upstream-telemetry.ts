@@ -41,7 +41,7 @@ export const withUpstreamTelemetry = <T>(
       if (recorded) return;
       recorded = true;
       const promise = kind === 'success' ? recordPerformanceLatency(context, 'upstream_success', durationMs) : recordPerformanceError(context, 'upstream_success');
-      ctx.scheduleBackground(() => promise);
+      ctx.backgroundScheduler(promise);
     };
 
     // Track whether the upstream iterator itself reached an end state (EOF or
@@ -84,7 +84,7 @@ export const withUpstreamTelemetry = <T>(
 // A non-ok upstream HTTP response never produces a frame stream, so it records
 // its `upstream_success` failure directly.
 export const recordUpstreamHttpFailure = (ctx: GatewayCtx, context: PerformanceTelemetryContext): void => {
-  ctx.scheduleBackground(() => recordPerformanceError(context, 'upstream_success'));
+  ctx.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
 };
 
 function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: LlmTargetApi): TerminalKind | null {

@@ -7,6 +7,21 @@ import { SqlRepo } from '../../../repo/sql.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
 
+interface SearchConfigRow {
+  provider: string;
+  tavily_api_key: string;
+  microsoft_grounding_api_key: string;
+}
+
+const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1';
+const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, updated_at)
+         VALUES (1, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (id) DO UPDATE SET
+           provider = excluded.provider,
+           tavily_api_key = excluded.tavily_api_key,
+           microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
+           updated_at = excluded.updated_at`;
+
 class FakeSqlPreparedStatement {
   private binds: unknown[] = [];
 
@@ -18,9 +33,8 @@ class FakeSqlPreparedStatement {
   }
 
   first<T = Record<string, unknown>>(): Promise<T | null> {
-    if (this.query === 'SELECT value FROM config WHERE key = ?') {
-      const value = this.db.config.get(String(this.binds[0]));
-      return Promise.resolve(value == null ? null : ({ value } as T));
+    if (this.query === SELECT_SQL) {
+      return Promise.resolve(this.db.searchConfig === null ? null : ({ ...this.db.searchConfig } as T));
     }
 
     throw new Error(`Unsupported first() query in test: ${this.query}`);
@@ -31,12 +45,12 @@ class FakeSqlPreparedStatement {
   }
 
   run(): Promise<{ results: never[]; success: true; meta: Record<string, unknown> }> {
-    if (
-      this.query ===
-      `INSERT INTO config (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`
-    ) {
-      this.db.config.set(String(this.binds[0]), String(this.binds[1]));
+    if (this.query === UPSERT_SQL) {
+      this.db.searchConfig = {
+        provider: String(this.binds[0]),
+        tavily_api_key: String(this.binds[1]),
+        microsoft_grounding_api_key: String(this.binds[2]),
+      };
       return Promise.resolve({ results: [], success: true, meta: {} });
     }
 
@@ -47,7 +61,7 @@ class FakeSqlPreparedStatement {
 class FakeSqlDatabase implements SqlDatabase {
   exec(): Promise<unknown> { return Promise.resolve(undefined); }
 
-  readonly config = new Map<string, string>();
+  searchConfig: SearchConfigRow | null = null;
 
   prepare(query: string): FakeSqlPreparedStatement {
     return new FakeSqlPreparedStatement(this, query);
@@ -127,15 +141,7 @@ test('parseSearchConfigStrict throws on missing required fields', () => {
   );
 });
 
-test('loadSearchConfig surfaces malformed stored JSON instead of silently defaulting', async () => {
-  const db = new FakeSqlDatabase();
-  db.config.set('search_config', 'not-json');
-  initRepo(new SqlRepo(db));
-
-  await assertRejects(() => loadSearchConfig(), Error, 'Malformed search_config JSON');
-});
-
-test('saveSearchConfig stores normalized JSON', async () => {
+test('saveSearchConfig writes the typed columns and round-trips through the same db', async () => {
   const db = new FakeSqlDatabase();
   initRepo(new SqlRepo(db));
 
@@ -150,11 +156,14 @@ test('saveSearchConfig stores normalized JSON', async () => {
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
   });
-  // Stored form is canonical (keys sorted at every depth), so the persisted
-  // string is comparable byte-for-byte regardless of input key order.
-  assertEquals(db.config.get('search_config'), JSON.stringify({
-    microsoftGrounding: { apiKey: 'ms-test' },
+  assertEquals(db.searchConfig, {
+    provider: 'disabled',
+    tavily_api_key: 'tvly-test',
+    microsoft_grounding_api_key: 'ms-test',
+  });
+  assertEquals(await loadSearchConfig(), {
     provider: 'disabled',
     tavily: { apiKey: 'tvly-test' },
-  }));
+    microsoftGrounding: { apiKey: 'ms-test' },
+  });
 });

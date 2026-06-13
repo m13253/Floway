@@ -1,4 +1,14 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+
+// Copilot OAuth poll handler warms the SWR models cache after rotating the PAT.
+// The warm calls Copilot's /models which the existing fetch mock here doesn't
+// stub, sending the request through copilotAuthedFetch's retry/backoff and
+// stalling the test by ~7s. Stub the cache layer to a no-op — warm semantics
+// have dedicated coverage in models-cache_test.ts.
+vi.mock('../../data-plane/providers/models-cache.ts', () => ({
+  fetchUpstreamModelsCached: () => Promise.resolve([]),
+  clearInFlightForTesting: () => {},
+}));
 
 import { hashPassword } from '../../shared/passwords.ts';
 import { buildCopilotUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
@@ -175,8 +185,8 @@ test('/auth/me reports viaApiKey:true and the API key metadata when authed via x
 });
 
 test('old /auth GitHub management routes are removed', async () => {
-  const { adminKey: _adminKey } = await setupAppTest();
-  const session = await (await import('../../repo/index.ts')).getRepo().sessions.create(1);
+  const { repo } = await setupAppTest();
+  const session = await repo.sessions.create(1);
 
   const start = await requestApp('/auth/github', { method: 'GET', headers: { 'x-floway-session': session.id } });
   const order = await requestApp('/auth/github/order', {
@@ -356,7 +366,6 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_existing_copilot', name: 'Pinned Copilot', sortOrder: 9 });
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(existing);
-  await repo.cache.set('models_store:up_existing_copilot', 'stale');
 
   await withMockedFetch(
     request => {
@@ -388,5 +397,4 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
   assertEquals(rows[0].sortOrder, 9);
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_refreshed');
   assertEquals((rows[0].config as Record<string, any>).accountType, 'business');
-  assertEquals(await repo.cache.get('models_store:up_existing_copilot'), null);
 });

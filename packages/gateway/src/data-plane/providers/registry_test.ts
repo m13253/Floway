@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher } from '@floway-dev/provider';
@@ -7,6 +8,12 @@ import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
+
+// Drains the background revalidate promise so its rejection surfaces in the
+// test runner instead of being swallowed.
+const testScheduler = (promise: Promise<unknown>): void => {
+  promise.catch(err => console.error('[background]', err));
+};
 
 test('compareModelIds pushes ids containing "/" to the tail', () => {
   assertEquals(sortedIds(['accounts/msft/x', 'gpt-4o', 'accounts/msft/y', 'claude-opus-4-7']), [
@@ -171,7 +178,7 @@ test('getInternalModels returns the catalog projection without execution binding
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const catalog = await getInternalModels(null, () => directFetcher);
+      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
       const model = catalog.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
@@ -180,7 +187,7 @@ test('getInternalModels returns the catalog projection without execution binding
       assertEquals(Object.hasOwn(model!, 'providers'), false);
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
 
-      const resolved = await resolveModelForRequest('shared-model', null, () => directFetcher);
+      const resolved = await resolveModelForRequest('shared-model', null, () => directFetcher, testScheduler);
       assertEquals(resolved.model?.endpoints, { messages: {}, chatCompletions: {} });
       assertEquals(
         resolved.model?.providers.map(({ upstream }) => upstream),
@@ -230,7 +237,7 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForRequest('claude-opus-4-7-20300101', null, () => directFetcher);
+      const resolved = await resolveModelForRequest('claude-opus-4-7-20300101', null, () => directFetcher, testScheduler);
 
       assertEquals(resolved.id, 'claude-opus-4-7');
       assertEquals(resolved.model?.endpoints, { messages: {} });
@@ -274,7 +281,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher);
+      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher, testScheduler);
 
       assertEquals(resolved?.model.id, 'target-model');
       assertEquals(resolved?.binding.upstream, 'up_first');
@@ -302,7 +309,6 @@ test('listModelProviders honors a per-key whitelist with custom order', async ()
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 20 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_c', name: 'C', sortOrder: 30 }));
 
-  // Subset, reverse order, with the planner's fallback head explicitly chosen.
   const providers = await listModelProviders(['up_c', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_c', 'up_a']);
 });
@@ -350,19 +356,19 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     disabledPublicModelIds: [],
   }));
 
-  const catalog = await getInternalModels(null, () => directFetcher);
+  const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
-  assertEquals((await resolveModelForRequest('gpt-solo', null, () => directFetcher)).model, undefined);
-  assertEquals((await resolveModelForRequest('gpt-override', null, () => directFetcher)).model, undefined);
+  assertEquals((await resolveModelForRequest('gpt-solo', null, () => directFetcher, testScheduler)).model, undefined);
+  assertEquals((await resolveModelForRequest('gpt-override', null, () => directFetcher, testScheduler)).model, undefined);
 
   // The shared id survives because up_b allows it; only up_b binds it.
-  const shared = await resolveModelForRequest('gpt-shared', null, () => directFetcher);
+  const shared = await resolveModelForRequest('gpt-shared', null, () => directFetcher, testScheduler);
   assertEquals(shared.model?.providers.map(({ upstream }) => upstream), ['up_b']);
 
   // The untouched model still routes from up_a.
-  const keep = await resolveModelForRequest('gpt-keep', null, () => directFetcher);
+  const keep = await resolveModelForRequest('gpt-keep', null, () => directFetcher, testScheduler);
   assertEquals(keep.model?.providers.map(({ upstream }) => upstream), ['up_a']);
 });
 
@@ -392,8 +398,8 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
   });
 
   const [provider] = await listModelProviders(null);
-  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher).then(r => r?.id), 'enabled-model');
-  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher).then(r => r?.id), undefined);
+  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher, testScheduler).then(r => r?.id), 'enabled-model');
+  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher, testScheduler).then(r => r?.id), undefined);
 });
 
 test('listModelProviders drops stale ids (deleted or disabled upstreams) from a whitelist', async () => {
@@ -405,4 +411,103 @@ test('listModelProviders drops stale ids (deleted or disabled upstreams) from a 
   // up_ghost was never saved; up_b is disabled. Both vanish silently.
   const providers = await listModelProviders(['up_ghost', 'up_b', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_a']);
+});
+
+// Per-upstream catalog fetches fan out in parallel: total wall-clock time
+// tracks the slowest upstream, not the sum. The bound is loose because CI
+// timer noise eats into a tight `< sum` comparison; what matters is the
+// ratio.
+test('getInternalModels fans out per-upstream catalog fetches in parallel', async () => {
+  clearInFlightForTesting();
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const FETCH_DELAY_MS = 60;
+  const upstreams = [
+    { id: 'up_p1', host: 'p1.example.com', model: 'p1-model' },
+    { id: 'up_p2', host: 'p2.example.com', model: 'p2-model' },
+    { id: 'up_p3', host: 'p3.example.com', model: 'p3-model' },
+  ];
+  for (const [index, u] of upstreams.entries()) {
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: u.id,
+      name: u.id,
+      sortOrder: index,
+      config: { baseUrl: `https://${u.host}`, bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    }));
+  }
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      const match = upstreams.find(u => url.hostname === u.host);
+      if (match && url.pathname === '/v1/models') {
+        await new Promise(resolve => setTimeout(resolve, FETCH_DELAY_MS));
+        return jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const start = Date.now();
+      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+      const elapsed = Date.now() - start;
+
+      assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
+      // A serial walk would take >= 3 * FETCH_DELAY_MS; parallel is bounded by
+      // ~FETCH_DELAY_MS plus per-test overhead. Half the serial budget is the
+      // loosest threshold that still excludes any serial regression.
+      const serialBudget = upstreams.length * FETCH_DELAY_MS;
+      if (elapsed >= serialBudget / 2) {
+        throw new Error(`expected parallel walk (~${FETCH_DELAY_MS}ms) but took ${elapsed}ms (serial would be ${serialBudget}ms)`);
+      }
+    },
+  );
+});
+
+// A single upstream's catalog fetch failure is surfaced as `lastError` and
+// recorded against `sawSuccess === true`; the public catalog still includes
+// every successful upstream's models.
+test('getInternalModels: a rejected provider does not block other providers', async () => {
+  clearInFlightForTesting();
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_ok_1',
+    name: 'OK 1',
+    sortOrder: 1,
+    config: { baseUrl: 'https://ok1.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_broken',
+    name: 'Broken',
+    sortOrder: 2,
+    config: { baseUrl: 'https://broken.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_ok_2',
+    name: 'OK 2',
+    sortOrder: 3,
+    config: { baseUrl: 'https://ok2.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'ok1.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'ok-1-model', supported_endpoints: ['/chat/completions'] }] });
+      }
+      if (url.hostname === 'ok2.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'ok-2-model', supported_endpoints: ['/chat/completions'] }] });
+      }
+      if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ error: 'upstream went down' }, 502);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+      assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
+    },
+  );
 });

@@ -55,7 +55,7 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'test',
-  scheduleBackground: () => {},
+  backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
 
@@ -131,21 +131,26 @@ const activeMessagesWebSearchShimState = (overrides: Partial<Extract<MessagesWeb
   ...overrides,
 });
 
-const fakeProviderOk: WebSearchProvider = {
-  search: () =>
-    Promise.resolve({
-      type: 'ok',
-      results: [
-        {
-          source: 'https://react.dev',
-          title: 'React',
-          pageAge: '2026-04-01',
-          content: [{ type: 'text', text: 'Official React docs' }],
-        },
-      ],
-    }),
-  fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-};
+const unusedFetchPage: WebSearchProvider['fetchPage'] = () =>
+  Promise.reject(new Error('fetchPage should not be called from messages shim test'));
+
+const searchOnlyProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({
+  search,
+  fetchPage: unusedFetchPage,
+});
+
+const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
+  Promise.resolve({
+    type: 'ok',
+    results: [
+      {
+        source: 'https://react.dev',
+        title: 'React',
+        pageAge: '2026-04-01',
+        content: [{ type: 'text', text: 'Official React docs' }],
+      },
+    ],
+  }));
 
 const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') => ({
   providerName: 'tavily' as const,
@@ -154,10 +159,8 @@ const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') 
 });
 
 const fakeProviderError =
-  (errorCode: Extract<WebSearchProviderResult, { type: 'error' }>['errorCode']): WebSearchProvider => ({
-    search: () => Promise.resolve({ type: 'error', errorCode }),
-    fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-  });
+  (errorCode: Extract<WebSearchProviderResult, { type: 'error' }>['errorCode']): WebSearchProvider =>
+    searchOnlyProvider(() => Promise.resolve({ type: 'error', errorCode }));
 
 const toAsyncIterable = async function* <T>(values: Iterable<T>): AsyncGenerator<T> {
   for (const value of values) {
@@ -175,10 +178,6 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   return collected;
 };
 
-// Local helper that projects a MessagesResult into the canonical Messages SSE
-// event sequence used by the replay-only wiring tests below. Only handles text
-// blocks (with optional citations) because that is the shape these fixtures
-// exercise; extend if a future test needs other block kinds.
 const messagesResponseToUpstreamFrames = (response: MessagesResult): ProtocolFrame<MessagesStreamEvent>[] => {
   const frames: ProtocolFrame<MessagesStreamEvent>[] = [
     eventFrame({
@@ -535,10 +534,59 @@ test('prepareMessagesWebSearchShimRequest creates a separate user tool_result me
   });
 });
 
-test('withMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+const initDisabledSearchRepo = async (): Promise<void> => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+};
+
+const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<MessagesStreamEvent>[]> => {
+  await initDisabledSearchRepo();
+
+  const { tools: _tools, ...payload } = makeNativeReplayPayload();
+
+  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
+    Promise.resolve({
+      type: 'events',
+      events: toAsyncIterable(
+        messagesResponseToUpstreamFrames({
+          id: messageId,
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-test',
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 1 },
+          content: [
+            {
+              type: 'text',
+              text: 'Use the docs.',
+              citations: [
+                {
+                  type: 'search_result_location',
+                  url: 'https://react.dev',
+                  title: 'React',
+                  search_result_index: 0,
+                  start_block_index: 0,
+                  end_block_index: 0,
+                  cited_text: 'Official React documentation',
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+      modelIdentity: testTelemetryModelIdentity,
+    }));
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('expected events result');
+
+  return await collect(result.events);
+};
+
+test('withMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+  await initDisabledSearchRepo();
 
   const result = await withMessagesWebSearchShim(
     invocation({
@@ -554,99 +602,17 @@ test('withMessagesWebSearchShim returns internal-error when request requires dis
 });
 
 test('withMessagesWebSearchShim allows replay-only history when the search provider is disabled', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  const collected = await runReplayOnlyShim('msg_replay_only');
 
-  const { tools: _tools, ...payload } = makeNativeReplayPayload();
-
-  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
-        messagesResponseToUpstreamFrames({
-          id: 'msg_replay_only',
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
-          content: [
-            {
-              type: 'text',
-              text: 'Use the docs.',
-              citations: [
-                {
-                  type: 'search_result_location',
-                  url: 'https://react.dev',
-                  title: 'React',
-                  search_result_index: 0,
-                  start_block_index: 0,
-                  end_block_index: 0,
-                  cited_text: 'Official React documentation',
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
-    }));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  const events = (await collect(result.events)).flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
+  const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
   const citationsDelta = events.find((event): event is Extract<MessagesStreamEvent, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
 });
 
 test('withMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
+  const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
-  const { tools: _tools, ...payload } = makeNativeReplayPayload();
-
-  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
-        messagesResponseToUpstreamFrames({
-          id: 'msg_replay_only_stream',
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 1 },
-          content: [
-            {
-              type: 'text',
-              text: 'Use the docs.',
-              citations: [
-                {
-                  type: 'search_result_location',
-                  url: 'https://react.dev',
-                  title: 'React',
-                  search_result_index: 0,
-                  start_block_index: 0,
-                  end_block_index: 0,
-                  cited_text: 'Official React documentation',
-                },
-              ],
-            },
-          ],
-        }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
-    }));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  const frames = (await collect(result.events)).map(messagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
+  const frames = collected.map(messagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
   const citationFrame = frames.find(frame => {
     if (frame.type !== 'sse' || frame.event !== 'content_block_delta') {
       return false;
@@ -678,10 +644,6 @@ test('withMessagesWebSearchShim emits native-like citation deltas for replay-onl
     end_block_index: 0,
   });
 });
-
-// Hand-built upstream event sequences below stand in for what a real Messages
-// upstream sends: each scenario exercises the streaming generator against the
-// minimal set of events needed for the rule it covers.
 
 const upstreamMessageStart = (id = 'msg_upstream'): MessagesStreamEvent => ({
   type: 'message_start',
@@ -847,13 +809,10 @@ test('rewriteMessagesWebSearchEventsToNative renumbers indices across two interc
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
@@ -883,14 +842,11 @@ test('rewriteMessagesWebSearchEventsToNative surfaces unavailable when provider 
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ priorSearchUseCount: 0 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        if (providerCalls === 2) return Promise.reject(new Error('boom'));
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      if (providerCalls === 2) return Promise.reject(new Error('boom'));
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   const resultBlocks = events.filter(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Array<Extract<MessagesStreamEvent, { type: 'content_block_start' }>>;
@@ -927,13 +883,10 @@ test('rewriteMessagesWebSearchEventsToNative emits max_uses_exceeded once limit 
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ maxUses: 1 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 1);
@@ -954,13 +907,10 @@ test('rewriteMessagesWebSearchEventsToNative honours priorSearchUseCount when co
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState({ priorSearchUseCount: 1, maxUses: 2 }),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 1);
@@ -975,13 +925,10 @@ test('rewriteMessagesWebSearchEventsToNative routes blank query to invalid_tool_
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);
@@ -998,13 +945,10 @@ test('rewriteMessagesWebSearchEventsToNative routes oversized query to query_too
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);
@@ -1021,13 +965,10 @@ test('rewriteMessagesWebSearchEventsToNative routes malformed input json to inva
       ...upstreamMessageEnd('tool_use'),
     ],
     activeMessagesWebSearchShimState(),
-    activeProvider({
-      search: () => {
-        providerCalls += 1;
-        return Promise.resolve({ type: 'ok', results: [] });
-      },
-      fetchPage: () => Promise.reject(new Error('fetchPage should not be called from messages shim test')),
-    }),
+    activeProvider(searchOnlyProvider(() => {
+      providerCalls += 1;
+      return Promise.resolve({ type: 'ok', results: [] });
+    })),
   );
 
   assertEquals(providerCalls, 0);

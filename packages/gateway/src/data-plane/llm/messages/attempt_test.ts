@@ -20,7 +20,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'test',
-  scheduleBackground: () => {},
+  backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
 
@@ -153,8 +153,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // Drain — the translate trip wraps the Responses events back to Messages
-  // shape; the assertion here is that the chain composes without throwing.
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
 });
@@ -200,11 +198,11 @@ test('countTokens refuses a non-messages candidate', async () => {
 
 test('generate attaches the performance context and records upstream_success', async () => {
   const repo = installRepo();
-  const background: Promise<void>[] = [];
+  const background: Promise<unknown>[] = [];
   const ctx: GatewayCtx = {
     ...makeGatewayCtx(),
     runtimeLocation: 'SJC',
-    scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
+    backgroundScheduler: promise => { background.push(promise); },
   };
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test',
@@ -229,8 +227,6 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(result.performance.stream, true);
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
-  // Draining the wrapped stream to its terminal frame records the
-  // upstream_success scope from inside withUpstreamTelemetry.
   await collectEvents(result.events);
   await Promise.all(background);
   const upstreamSamples = await repo.performance.query({ metricScope: 'upstream_success', start: '0000', end: '9999' });

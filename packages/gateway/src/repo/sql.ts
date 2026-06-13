@@ -6,7 +6,9 @@ import type {
   ApiKey,
   ApiKeyRepo,
   BackoffRow,
-  CacheRepo,
+  CachedModelsRow,
+  CodexPkcePendingRepo,
+  ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
   PerformanceLatencySample,
@@ -38,9 +40,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-
-const SEARCH_CONFIG_KEY = 'search_config';
+import type { UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -487,7 +487,7 @@ const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream ?? null, modelKey: row.model_key, hour: row.hour, requests: 0, tokens: {}, cost: null };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, requests: 0, tokens: {}, cost: null };
       byBucket.set(key, record);
     }
     return record;
@@ -794,7 +794,7 @@ const performanceDimensionsFromRow = (row: PerformanceDimensionRow): Performance
   metricScope: row.metric_scope as PerformanceMetricScope,
   keyId: row.key_id,
   model: row.model,
-  upstream: row.upstream ?? null,
+  upstream: row.upstream,
   modelKey: row.model_key,
   stream: row.stream === 1,
   runtimeLocation: row.runtime_location,
@@ -831,24 +831,82 @@ const toSearchUsageRecord = (row: { provider: string; key_id: string; action: st
   };
 };
 
-class SqlCacheRepo implements CacheRepo {
+// `UpstreamModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
+// and JSON.parse cannot rebuild on its own. Replace Set with an array on
+// write, and rebuild Set under the same key on read so consumers downstream
+// of the cache see the same shape providers produced.
+const modelsReplacer = (_key: string, value: unknown): unknown =>
+  value instanceof Set ? [...value] : value;
+const modelsReviver = (key: string, value: unknown): unknown =>
+  key === 'enabledFlags' && Array.isArray(value) ? new Set(value) : value;
+
+class SqlModelsCacheRepo implements ModelsCacheRepo {
   constructor(private db: SqlDatabase) {}
 
-  async get(key: string): Promise<string | null> {
-    const row = await this.db.prepare('SELECT value FROM config WHERE key = ?').bind(key).first<{ value: string }>();
-    return row?.value ?? null;
+  async get(upstreamId: string): Promise<CachedModelsRow | null> {
+    const row = await this.db
+      .prepare('SELECT fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
+      .bind(upstreamId)
+      .first<{ fetched_at: number; models_json: string; last_error_json: string | null }>();
+    if (!row) return null;
+    return {
+      fetchedAt: row.fetched_at,
+      models: JSON.parse(row.models_json, modelsReviver) as UpstreamModel[],
+      lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
+    };
   }
 
-  async set(key: string, value: string): Promise<void> {
-    await this.db.prepare('INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').bind(key, value).run();
+  async put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)
+         ON CONFLICT (upstream_id) DO UPDATE SET
+           fetched_at = excluded.fetched_at,
+           models_json = excluded.models_json,
+           last_error_json = NULL`,
+      )
+      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
+      .run();
   }
 
-  async delete(key: string): Promise<void> {
-    await this.db.prepare('DELETE FROM config WHERE key = ?').bind(key).run();
+  async setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void> {
+    // lastError annotates a previously-successful fetch, so we do not insert a stub row here.
+    await this.db
+      .prepare('UPDATE models_cache SET last_error_json = ? WHERE upstream_id = ?')
+      .bind(error === null ? null : JSON.stringify(error), upstreamId)
+      .run();
   }
 
-  async deletePrefix(prefix: string): Promise<void> {
-    await this.db.prepare('DELETE FROM config WHERE key >= ? AND key < ?').bind(prefix, `${prefix}\uffff`).run();
+  async delete(upstreamId: string): Promise<void> {
+    await this.db.prepare('DELETE FROM models_cache WHERE upstream_id = ?').bind(upstreamId).run();
+  }
+}
+
+class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    await this.db
+      .prepare(
+        'INSERT INTO codex_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
+        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at',
+      )
+      .bind(state, verifier, expiresAt)
+      .run();
+  }
+
+  async consume(state: string): Promise<{ verifier: string } | null> {
+    // Single-use: DELETE ... RETURNING in one statement so a replayed callback
+    // cannot succeed twice.
+    const row = await this.db
+      .prepare('DELETE FROM codex_pkce_pending WHERE state = ? AND expires_at > ? RETURNING verifier')
+      .bind(state, Date.now())
+      .first<{ verifier: string }>();
+    return row ? { verifier: row.verifier } : null;
+  }
+
+  async sweepExpired(now: number): Promise<void> {
+    await this.db.prepare('DELETE FROM codex_pkce_pending WHERE expires_at <= ?').bind(now).run();
   }
 }
 
@@ -1054,29 +1112,34 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
   constructor(private db: SqlDatabase) {}
 
   async get(): Promise<unknown | null> {
-    const row = await this.db.prepare('SELECT value FROM config WHERE key = ?').bind(SEARCH_CONFIG_KEY).first<{ value: string }>();
-
-    if (!row?.value) {
-      return null;
-    }
-
-    // Surface stored-JSON corruption — silently returning null would mask a
-    // corrupt config row.
-    try {
-      return JSON.parse(row.value);
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`Malformed search_config JSON in repo storage: ${message}`, { cause });
-    }
+    const row = await this.db
+      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string }>();
+    if (!row) throw new Error('search_config singleton row missing');
+    return {
+      provider: row.provider,
+      tavily: { apiKey: row.tavily_api_key },
+      microsoftGrounding: { apiKey: row.microsoft_grounding_api_key },
+    };
   }
 
   async save(config: unknown): Promise<void> {
+    const { provider, tavily, microsoftGrounding } = config as {
+      provider: string;
+      tavily: { apiKey: string };
+      microsoftGrounding: { apiKey: string };
+    };
     await this.db
       .prepare(
-        `INSERT INTO config (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, updated_at)
+         VALUES (1, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+         ON CONFLICT (id) DO UPDATE SET
+           provider = excluded.provider,
+           tavily_api_key = excluded.tavily_api_key,
+           microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
+           updated_at = excluded.updated_at`,
       )
-      .bind(SEARCH_CONFIG_KEY, serializeStoredConfig(config))
+      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey)
       .run();
   }
 }
@@ -1508,7 +1571,8 @@ export class SqlRepo implements Repo {
   usage: UsageRepo;
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
-  cache: CacheRepo;
+  modelsCache: ModelsCacheRepo;
+  codexPkcePending: CodexPkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1523,7 +1587,8 @@ export class SqlRepo implements Repo {
     this.usage = new SqlUsageRepo(db);
     this.searchUsage = new SqlSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
-    this.cache = new SqlCacheRepo(db);
+    this.modelsCache = new SqlModelsCacheRepo(db);
+    this.codexPkcePending = new SqlCodexPkcePendingRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

@@ -32,6 +32,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getInternalModels } from '../providers/registry.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
 // Five minutes is short enough to pick up an upstream catalog change within
@@ -52,10 +53,11 @@ const computeCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
   const [catalog, internalModels] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    getInternalModels(upstreamIds, fetcherForUpstream),
+    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
   ]);
   const slugContextWindow = new Map<string, number>();
   for (const m of internalModels) {
@@ -93,11 +95,12 @@ export const codexModels = async (c: Context): Promise<Response> => {
   }
 
   const fetcherForUpstream = await createPerRequestFetcher();
-  const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream), {
+  const scheduler = backgroundSchedulerFromContext(c);
+  const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {
     headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },
   });
   if (cache !== null && cacheKey !== null) {
-    backgroundSchedulerFromContext(c)(cache.put(cacheKey, response.clone()));
+    scheduler(cache.put(cacheKey, response.clone()));
   }
   return response;
 };

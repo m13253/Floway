@@ -72,11 +72,9 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<vo
   }));
 };
 
-// Defensive JSON parse: a successful 200 with a non-JSON or unexpected body
-// (rare for these endpoints, but possible if an upstream-side proxy starts
-// returning binary or a wrapped envelope) must not 502 the client; we
-// simply skip usage extraction in that case, but log the parse failure so
-// operators can correlate when usage rows go missing.
+// A 2xx body that fails to parse must not 502 a client whose upstream call
+// already succeeded; we skip usage extraction and log so missing rows stay
+// traceable.
 const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Promise<unknown> => {
   try {
     return await resp.clone().json();
@@ -116,12 +114,12 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
   const requestStartedAt = performance.now();
   const apiKeyId = c.get('apiKeyId') as string;
   const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
-  const scheduleBackground = backgroundSchedulerFromContext(c);
+  const backgroundScheduler = backgroundSchedulerFromContext(c);
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher();
-    const { id: modelId, model: resolved } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream);
+    const { id: modelId, model: resolved } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundScheduler);
     if (!resolved) {
       return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
     }
@@ -143,18 +141,18 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       lastPerformance = performanceContext;
 
       if (!response.ok) {
-        recordUpstreamPerformance(scheduleBackground, performanceContext, true, upstreamDurationMs);
-        recordRequestPerformance(scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
+        recordUpstreamPerformance(backgroundScheduler, performanceContext, true, upstreamDurationMs);
+        recordRequestPerformance(backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
         return forwardUpstreamResponse(response);
       }
 
-      recordUpstreamPerformance(scheduleBackground, performanceContext, false, upstreamDurationMs);
+      recordUpstreamPerformance(backgroundScheduler, performanceContext, false, upstreamDurationMs);
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
       if (usage) {
         scheduleUsageRecord(
-          scheduleBackground,
+          backgroundScheduler,
           recordTokenUsage(
             apiKeyId,
             {
@@ -167,7 +165,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
           ),
         );
       }
-      recordRequestPerformance(scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
+      recordRequestPerformance(backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
       return forwardUpstreamResponse(response);
     }
 
@@ -177,7 +175,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) return forwarded;
     }
-    recordRequestPerformance(scheduleBackground, lastPerformance, true, performance.now() - requestStartedAt);
+    recordRequestPerformance(backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
     return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
   }
 };

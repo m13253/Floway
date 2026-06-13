@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
+import { assertCodexUpstreamState, readCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 
 const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
-const good: CodexUpstreamState = { accounts: [goodAccount] };
+const good: CodexUpstreamState = { accounts: [{ ...goodAccount, accessToken: null, quotaSnapshot: null }] };
 
 describe('assertCodexUpstreamState', () => {
   test('accepts active state', () => {
@@ -52,5 +52,63 @@ describe('assertCodexUpstreamState', () => {
   });
   test('rejects multiple accounts (v1 invariant: exactly one)', () => {
     expect(() => assertCodexUpstreamState({ accounts: [goodAccount, { ...goodAccount, chatgptAccountId: 'acc_y' }] })).toThrow(/exactly one/);
+  });
+
+  test('accepts accessToken absent / null / populated', () => {
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' } }],
+    })).not.toThrow();
+  });
+  test('rejects malformed accessToken', () => {
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: '', expiresAt: 1, refreshedAt: 'x' } }],
+    })).toThrow(/token/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 'soon', refreshedAt: 'x' } }],
+    })).toThrow(/expiresAt/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', extra: 1 } }],
+    })).toThrow(/extra/);
+  });
+
+  test('accepts quotaSnapshot absent / null / populated', () => {
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, quotaSnapshot: null }] })).not.toThrow();
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: { observed_at: '2026-06-05T00:00:00Z' } } }],
+    })).not.toThrow();
+  });
+  test('rejects malformed quotaSnapshot', () => {
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 'soon', data: {} } }],
+    })).toThrow(/fetchedAt/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: 'oops' } }],
+    })).toThrow(/data/);
+    expect(() => assertCodexUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: {}, extra: 1 } }],
+    })).toThrow(/extra/);
+  });
+});
+
+describe('readCodexUpstreamState', () => {
+  test('normalizes absent accessToken / quotaSnapshot to null', () => {
+    const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
+    const out = readCodexUpstreamState({ accounts: [fresh] });
+    expect(out.accounts[0].accessToken).toBeNull();
+    expect(out.accounts[0].quotaSnapshot).toBeNull();
+  });
+  test('preserves populated entries verbatim', () => {
+    const populated = {
+      accounts: [{
+        ...goodAccount,
+        accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' },
+        quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: { observed_at: '2026-06-05T00:00:00Z' } },
+      }],
+    };
+    const out = readCodexUpstreamState(populated);
+    expect(out.accounts[0].accessToken).toEqual(populated.accounts[0].accessToken);
+    expect(out.accounts[0].quotaSnapshot).toEqual(populated.accounts[0].quotaSnapshot);
   });
 });

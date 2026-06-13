@@ -1,5 +1,6 @@
 import { getRepo } from './repo/index.ts';
 import { RESPONSES_ITEM_PAYLOAD_TTL_MS, startOfUtcHour, sweepExpiredResponsesItemPayloadFiles } from './repo/responses-payload.ts';
+import { getImageCacheStore } from '@floway-dev/platform';
 
 // Read only by this scheduled cleanup (deleteOlderThan). Lookups never filter
 // by it — a row stays referenceable until cleanup removes it.
@@ -11,4 +12,6 @@ export const runScheduledMaintenance = async (): Promise<void> => {
   await sweepExpiredResponsesItemPayloadFiles(now);
   await getRepo().responsesSnapshots.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS);
   await getRepo().responsesItems.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS);
+  await getRepo().codexPkcePending.sweepExpired(Date.now());
+  await getImageCacheStore().sweepExpired(Date.now());
 };

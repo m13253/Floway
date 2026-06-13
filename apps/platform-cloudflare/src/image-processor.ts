@@ -1,5 +1,5 @@
-import type { ImageCache, ImageDimensions, ImageProcessor } from '@floway-dev/platform';
-import { sha256Hex } from '@floway-dev/platform';
+import type { ImageDimensions, ImageProcessor } from '@floway-dev/platform';
+import { getImageCacheStore, sha256Hex } from '@floway-dev/platform';
 
 // Fixed WebP quality for every recompressed inline image. 82 sits above the
 // cwebp / photographic default of 75 so screenshots and text-heavy UI images —
@@ -15,12 +15,10 @@ const WEBP_QUALITY = 82;
 
 const CACHE_KEY_PREFIX = 'imgwebp';
 
-// Compressed results are content-addressed (keyed by source hash + transform),
-// so they never go stale; the TTL exists only to bound storage. The cache pays
-// off across a single conversation's lifetime — the same inline image resent
-// each turn — so 30 days comfortably covers long sessions while letting
-// one-off images age out.
-const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
+// Hot images keep getting their TTL refreshed on every read, so a busy
+// conversation's recurring inline image stays cached as long as it is
+// actively referenced. Cold entries age out after one day.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Minimal shapes of the Cloudflare bindings we depend on, hand-typed so the
 // runtime contract does not pull in the full @cloudflare/workers-types
@@ -52,22 +50,6 @@ interface ImageTransformationResult {
   image(): ReadableStream;
 }
 
-// Raw Cloudflare KV binding shape (its `put` takes an options object). We
-// adapt it to the platform's `ImageCache` contract via `cloudflareKvImageCache`
-// below.
-export interface KvNamespace {
-  get(key: string, type: 'arrayBuffer'): Promise<ArrayBuffer | null>;
-  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: { expirationTtl?: number }): Promise<void>;
-}
-
-export const cloudflareKvImageCache = (kv: KvNamespace): ImageCache => ({
-  get: async key => {
-    const buf = await kv.get(key, 'arrayBuffer');
-    return buf ? new Uint8Array(buf) : null;
-  },
-  put: (key, value, ttlSeconds) => kv.put(key, value, { expirationTtl: ttlSeconds }),
-});
-
 const streamFrom = (bytes: Uint8Array): ReadableStream =>
   new ReadableStream({
     start(controller) {
@@ -77,10 +59,7 @@ const streamFrom = (bytes: Uint8Array): ReadableStream =>
   });
 
 class CloudflareImageProcessor implements ImageProcessor {
-  constructor(
-    private readonly images: ImagesBinding,
-    private readonly cache: ImageCache,
-  ) {}
+  constructor(private readonly images: ImagesBinding) {}
 
   async compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array> {
     // Key on the original bytes plus the exact transform we will request, so
@@ -90,7 +69,8 @@ class CloudflareImageProcessor implements ImageProcessor {
     const targetKey = target ? `${target.width}x${target.height}` : 'orig';
     const key = `${CACHE_KEY_PREFIX}:${await sha256Hex(input)}:${targetKey}:webp:q${WEBP_QUALITY}`;
 
-    const cached = await this.cache.get(key);
+    const store = getImageCacheStore();
+    const cached = await store.get(key, CACHE_TTL_MS);
     if (cached) return cached;
 
     let transformer = this.images.input(streamFrom(input));
@@ -98,9 +78,9 @@ class CloudflareImageProcessor implements ImageProcessor {
     const result = await transformer.output({ format: 'image/webp', quality: WEBP_QUALITY });
     const output = new Uint8Array(await new Response(result.image()).arrayBuffer());
 
-    await this.cache.put(key, output, CACHE_TTL_SECONDS);
+    await store.put(key, output, CACHE_TTL_MS);
     return output;
   }
 }
 
-export const createCloudflareImageProcessor = (images: ImagesBinding, cache: ImageCache): ImageProcessor => new CloudflareImageProcessor(images, cache);
+export const createCloudflareImageProcessor = (images: ImagesBinding): ImageProcessor => new CloudflareImageProcessor(images);

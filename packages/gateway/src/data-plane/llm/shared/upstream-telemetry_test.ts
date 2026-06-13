@@ -28,14 +28,13 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     runtimeLocation: 'test',
     abortSignal: downstream.signal,
     downstreamAbortController: downstream,
-    scheduleBackground: fn => { void Promise.resolve(fn()); },
+    backgroundScheduler: promise => { void promise; },
     ...overrides,
   };
 };
 
 const drain = async <T>(events: AsyncIterable<ProtocolFrame<T>>): Promise<void> => {
   for await (const _ of events) {
-    // Iterate to completion or rejection.
   }
 };
 
@@ -77,13 +76,11 @@ test('records upstream_success error when the protocol terminal is a failure eve
   assertEquals(samples.length, 1);
   assertEquals(samples[0]?.requests, 0);
   assertEquals(samples[0]?.errors, 1);
-  // No latency is consulted on the failure path.
   assertEquals(samples[0]?.totalMsSum, 0);
 });
 
 test('records upstream_success error on EOF without a terminal frame', async () => {
   const ctx = baseCtx();
-  // Deliver one non-terminal frame, then EOF — neither message_stop nor error.
   const noTerminal = async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
     yield eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } });
     yield doneFrame();
@@ -127,12 +124,9 @@ test('records nothing when the downstream consumer cancels via AbortSignal', asy
   };
 
   const wrapped = withUpstreamTelemetry(slow(), ctx, CONTEXT, 'messages', 250);
-  // Pull one frame, then mark the abort and let the iterator end naturally.
   const iterator = wrapped[Symbol.asyncIterator]();
   await iterator.next();
   downstream.abort();
-  // Drain remaining frames; the wrapper should NOT record because the abort
-  // signal short-circuits the EOF-without-terminal failure branch.
   await drain({
     [Symbol.asyncIterator]: () => iterator,
   });
