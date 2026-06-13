@@ -226,11 +226,11 @@ const refreshCachedModels = async () => {
   upstreamModelsError.value = null;
   try {
     // The route's query is unvalidated server-side, so the typed client
-    // does not surface a `query` arg; build the URL via `$url` and append
-    // the literal `refresh=true` toggle.
-    const url = api.api.upstreams[':id'].models.$url({ param: { id: props.record.id } });
-    url.searchParams.set('refresh', 'true');
-    const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(() => authFetch(url.toString()));
+    // does not surface a `query` arg. Resolve the path with `$path` (the
+    // sibling `$url` returns a `URL` that the relative `/` base of `hc('/')`
+    // cannot construct), then append the toggle.
+    const path = api.api.upstreams[':id'].models.$path({ param: { id: props.record.id } });
+    const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(() => authFetch(`${path}?refresh=true`));
     if (error) {
       upstreamModelsError.value = error.message;
       return;
