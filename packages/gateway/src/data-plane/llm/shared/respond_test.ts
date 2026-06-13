@@ -41,7 +41,6 @@ const setup = (): Harness => {
       upstreamIds: null,
       wantsStream: true,
       runtimeLocation: 'test',
-      scheduleBackground: fn => { background.push(Promise.resolve(fn())); },
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
     }),

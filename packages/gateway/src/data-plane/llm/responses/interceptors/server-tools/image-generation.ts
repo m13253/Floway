@@ -444,7 +444,6 @@ interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
-  scheduleBackground: GatewayCtx['scheduleBackground'];
   backgroundScheduler: GatewayCtx['backgroundScheduler'];
   runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
@@ -463,7 +462,7 @@ const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelK
   }, usage).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });
-  state.scheduleBackground(() => promise);
+  state.backgroundScheduler(promise);
 };
 
 export const buildGenerationsBody = (prompt: string, config: ImageGenerationConfig, stream: boolean): Record<string, unknown> => ({
@@ -619,9 +618,9 @@ const issueImageCall = async (
     };
     if (response.ok) {
       const durationMs = recorder.durationMs();
-      state.scheduleBackground(() => recordPerformanceLatency(context, 'upstream_success', durationMs));
+      state.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', durationMs));
     } else {
-      state.scheduleBackground(() => recordPerformanceError(context, 'upstream_success'));
+      state.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
     }
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
@@ -956,7 +955,6 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     config,
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
-    scheduleBackground: gatewayCtx.scheduleBackground,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,

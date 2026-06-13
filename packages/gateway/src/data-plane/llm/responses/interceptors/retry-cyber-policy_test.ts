@@ -42,7 +42,6 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'test',
-  scheduleBackground: () => {},
   backgroundScheduler: () => {},
   requestStartedAt: 0,
   ...overrides,

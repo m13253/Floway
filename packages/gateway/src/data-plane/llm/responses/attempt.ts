@@ -246,7 +246,7 @@ const callResponsesCompactAsExecuteResult = async (
     recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamError(providerResult.response)), performance: context };
   }
-  ctx.scheduleBackground(() => recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
+  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

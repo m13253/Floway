@@ -104,7 +104,7 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.abortSignal, undefined);
   });
 
-  test('scheduleBackground is present and callable without throwing', async () => {
+  test('backgroundScheduler is present and callable without throwing', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
@@ -113,10 +113,10 @@ describe('createGatewayCtxFromHono', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertExists(ctx.scheduleBackground);
+    assertExists(ctx.backgroundScheduler);
     let nothingThrown = true;
     try {
-      ctx.scheduleBackground(() => Promise.resolve());
+      ctx.backgroundScheduler(Promise.resolve());
     } catch {
       nothingThrown = false;
     }
@@ -247,7 +247,7 @@ describe('createGatewayCtxForWs', () => {
     assertEquals(ctx.downstreamAbortController, controller);
   });
 
-  test('scheduleBackground is present and callable without throwing', async () => {
+  test('backgroundScheduler is present and callable without throwing', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
@@ -257,10 +257,10 @@ describe('createGatewayCtxForWs', () => {
     });
     await app.request('/test');
     assertExists(ctx);
-    assertExists(ctx.scheduleBackground);
+    assertExists(ctx.backgroundScheduler);
     let nothingThrown = true;
     try {
-      ctx.scheduleBackground(() => Promise.resolve());
+      ctx.backgroundScheduler(Promise.resolve());
     } catch {
       nothingThrown = false;
     }
