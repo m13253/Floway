@@ -831,6 +831,15 @@ const toSearchUsageRecord = (row: { provider: string; key_id: string; action: st
   };
 };
 
+// `UpstreamModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
+// and JSON.parse cannot rebuild on its own. Replace Set with an array on
+// write, and rebuild Set under the same key on read so consumers downstream
+// of the cache see the same shape providers produced.
+const modelsReplacer = (_key: string, value: unknown): unknown =>
+  value instanceof Set ? [...value] : value;
+const modelsReviver = (key: string, value: unknown): unknown =>
+  key === 'enabledFlags' && Array.isArray(value) ? new Set(value) : value;
+
 class SqlModelsCacheRepo implements ModelsCacheRepo {
   constructor(private db: SqlDatabase) {}
 
@@ -842,7 +851,7 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
     if (!row) return null;
     return {
       fetchedAt: row.fetched_at,
-      models: JSON.parse(row.models_json) as UpstreamModel[],
+      models: JSON.parse(row.models_json, modelsReviver) as UpstreamModel[],
       lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
     };
   }
@@ -856,7 +865,7 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
            models_json = excluded.models_json,
            last_error_json = NULL`,
       )
-      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models))
+      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
       .run();
   }
 
