@@ -9,7 +9,7 @@ import type { ImageDimensions, ImageProcessor } from '@floway-dev/platform';
 const WEBP_QUALITY = 82;
 
 const CACHE_KEY_PREFIX = 'imgwebp';
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export const createSharpImageProcessor = (): ImageProcessor => ({
   async compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array> {
