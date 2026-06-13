@@ -28,10 +28,9 @@ const errorOpen = ref(false);
 </script>
 
 <template>
-  <section class="glass-card flex flex-wrap items-center gap-3 px-4 py-3">
+  <div class="flex flex-wrap items-center gap-3">
     <div class="flex min-w-0 flex-1 flex-col gap-1">
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-        <span class="font-medium text-gray-400">Models cache</span>
         <span class="text-gray-300">last fetched <span class="text-white">{{ fetchedLabel }}</span></span>
         <span
           v-if="modelsCache.lastError"
@@ -45,5 +44,5 @@ const errorOpen = ref(false);
       >{{ modelsCache.lastError.message }}</p>
     </div>
     <Button variant="secondary" size="sm" :loading="refreshing" @click="$emit('refresh')">Refresh now</Button>
-  </section>
+  </div>
 </template>

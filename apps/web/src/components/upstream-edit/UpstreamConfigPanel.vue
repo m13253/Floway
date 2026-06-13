@@ -7,6 +7,7 @@ import CopilotConfigPanel from './CopilotConfigPanel.vue';
 import type { AzureDraft, CustomDraft } from './customConfig.ts';
 import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
+import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { CopilotQuotaSnapshot, FlagDef, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
@@ -33,10 +34,16 @@ defineProps<{
   availableModelItems: { value: string; label: string }[];
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;
+  // Live cache snapshot for the saved upstream. Null in create mode and for
+  // Azure (which has no fetch step) — `ModelsCacheStatus` is rendered only
+  // when this is provided.
+  modelsCache: UpstreamRecord['modelsCache'] | null;
+  refreshing: boolean;
 }>();
 
 defineEmits<{
   'fetch-models': [];
+  'refresh-cache': [];
   'copilot-completed': [upstream: UpstreamRecord | undefined];
   'codex-imported': [upstream: UpstreamRecord];
   'codex-error': [message: string];
@@ -158,6 +165,15 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :record="record"
           @imported="u => $emit('codex-imported', u)"
           @error="m => $emit('codex-error', m)"
+        />
+      </section>
+
+      <section v-if="modelsCache" class="shrink-0">
+        <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
+        <ModelsCacheStatus
+          :models-cache="modelsCache"
+          :refreshing="refreshing"
+          @refresh="$emit('refresh-cache')"
         />
       </section>
 

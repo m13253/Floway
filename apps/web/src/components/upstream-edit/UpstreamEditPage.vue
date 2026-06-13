@@ -16,7 +16,6 @@ import {
   type CustomDraft,
   seedPathOverrides,
 } from './customConfig.ts';
-import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
@@ -453,14 +452,6 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
     <p v-if="saveError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">{{ saveError }}</p>
     <p v-if="upstreamModelsError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">Failed to fetch upstream model list: {{ upstreamModelsError }}</p>
 
-    <ModelsCacheStatus
-      v-if="showCacheStatus"
-      class="mb-4"
-      :models-cache="liveRecord!.modelsCache"
-      :refreshing="refreshing"
-      @refresh="refreshCachedModels"
-    />
-
     <!-- Two-column workbench. Default behavior: aside max-h matches the
          right pane (or viewport, whichever is taller) so the rail and the
          editor reach the same bottom; flag editor flex-1 + OverlayScrollbars
@@ -491,8 +482,11 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :available-model-items="availableModelItems"
         :initial-copilot-quota="initialCopilotQuota"
         :initial-copilot-quota-error="initialCopilotQuotaError"
+        :models-cache="showCacheStatus ? liveRecord!.modelsCache : null"
+        :refreshing="refreshing"
         @update:provider="setActiveProvider"
         @fetch-models="fetchDraftModels"
+        @refresh-cache="refreshCachedModels"
         @copilot-completed="onCopilotCompleted"
         @codex-imported="onCodexImported"
         @codex-error="onCodexError"
