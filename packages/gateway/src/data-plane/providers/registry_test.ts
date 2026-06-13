@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { _clearInFlight } from './models-cache.ts';
+import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher } from '@floway-dev/provider';
@@ -418,7 +418,7 @@ test('listModelProviders drops stale ids (deleted or disabled upstreams) from a 
 // timer noise eats into a tight `< sum` comparison; what matters is the
 // ratio.
 test('getInternalModels fans out per-upstream catalog fetches in parallel', async () => {
-  _clearInFlight();
+  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -468,7 +468,7 @@ test('getInternalModels fans out per-upstream catalog fetches in parallel', asyn
 // recorded against `sawSuccess === true`; the public catalog still includes
 // every successful upstream's models.
 test('getInternalModels: a rejected provider does not block other providers', async () => {
-  _clearInFlight();
+  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 

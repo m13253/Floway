@@ -95,6 +95,6 @@ export const fetchUpstreamModelsCached = async (
 
 // Test-only: drop the L1 map so a test's setup is independent of any
 // promise the previous test left mid-settle.
-export const _clearInFlight = (): void => {
+export const clearInFlightForTesting = (): void => {
   inFlight.clear();
 };

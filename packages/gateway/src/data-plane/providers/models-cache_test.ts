@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { _clearInFlight, fetchUpstreamModelsCached } from './models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModelsCached } from './models-cache.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type ModelProviderInstance, type UpstreamModel } from '@floway-dev/provider';
@@ -27,7 +27,7 @@ const setupRepo = (): InMemoryRepo => {
 };
 
 beforeEach(() => {
-  _clearInFlight();
+  clearInFlightForTesting();
 });
 
 describe('fetchUpstreamModelsCached', () => {
