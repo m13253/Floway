@@ -15,12 +15,10 @@ const WEBP_QUALITY = 82;
 
 const CACHE_KEY_PREFIX = 'imgwebp';
 
-// Compressed results are content-addressed (keyed by source hash + transform),
-// so they never go stale; the TTL exists only to bound storage. The cache pays
-// off across a single conversation's lifetime — the same inline image resent
-// each turn — so 30 days comfortably covers long sessions while letting
-// one-off images age out.
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Hot images keep getting their TTL refreshed on every read, so a busy
+// conversation's recurring inline image stays cached as long as it is
+// actively referenced. Cold entries age out after one day.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Minimal shapes of the Cloudflare bindings we depend on, hand-typed so the
 // runtime contract does not pull in the full @cloudflare/workers-types
@@ -72,7 +70,7 @@ class CloudflareImageProcessor implements ImageProcessor {
     const key = `${CACHE_KEY_PREFIX}:${await sha256Hex(input)}:${targetKey}:webp:q${WEBP_QUALITY}`;
 
     const store = getImageCacheStore();
-    const cached = await store.get(key);
+    const cached = await store.get(key, CACHE_TTL_MS);
     if (cached) return cached;
 
     let transformer = this.images.input(streamFrom(input));

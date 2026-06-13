@@ -1,5 +1,10 @@
 export interface ImageCacheStore {
-  get(key: string): Promise<Uint8Array | null>;
+  // Sliding-TTL read: a hit refreshes the entry's expiry to `now + refreshTtlMs`
+  // before returning the bytes, so frequently-read images stay cached. The
+  // refresh is awaited inline so semantics are deterministic on Cloudflare
+  // Workers, which would otherwise drop a fire-and-forget write without an
+  // explicit `waitUntil`.
+  get(key: string, refreshTtlMs: number): Promise<Uint8Array | null>;
   put(key: string, value: Uint8Array, ttlMs: number): Promise<void>;
   // Drop entries whose `expires_at <= now`. Runtimes whose underlying store
   // already evicts on TTL (e.g. Cloudflare KV via `expirationTtl`) implement

@@ -49,12 +49,16 @@ const recordingImages = (result: Uint8Array): { binding: ImagesBinding; transfor
   return { binding, transforms, outputs };
 };
 
-const installMemoryStore = (): { store: Map<string, Uint8Array>; ttls: number[] } => {
+const installMemoryStore = (): { store: Map<string, Uint8Array>; ttls: number[]; refreshes: number[] } => {
   const store = new Map<string, Uint8Array>();
   const ttls: number[] = [];
+  const refreshes: number[] = [];
   const cacheStore: ImageCacheStore = {
-    get(key) {
-      return Promise.resolve(store.get(key) ?? null);
+    get(key, refreshTtlMs) {
+      const value = store.get(key);
+      if (!value) return Promise.resolve(null);
+      refreshes.push(refreshTtlMs);
+      return Promise.resolve(value);
     },
     put(key, value, ttlMs) {
       ttls.push(ttlMs);
@@ -66,7 +70,7 @@ const installMemoryStore = (): { store: Map<string, Uint8Array>; ttls: number[] 
     },
   };
   initImageCacheStore(cacheStore);
-  return { store, ttls };
+  return { store, ttls, refreshes };
 };
 
 const fixedTarget: ImageDimensions = { width: 50, height: 40 };
@@ -83,7 +87,18 @@ test('compresses to WebP at the fixed quality, resizing to the resolved target, 
   assertEquals([...output], [9, 9, 9]);
   assertEquals(store.size, 1);
   assert([...store.keys()][0].includes(':50x40:webp:q82'));
-  assertEquals(ttls, [30 * 24 * 60 * 60 * 1000]);
+  assertEquals(ttls, [24 * 60 * 60 * 1000]);
+});
+
+test('cache hit refreshes the entry TTL', async () => {
+  const { binding } = recordingImages(new Uint8Array([5, 5, 5]));
+  const { refreshes } = installMemoryStore();
+  const processor = createCloudflareImageProcessor(binding);
+
+  await processor.compressToWebp(PNG_1x1, fixedTarget);
+  await processor.compressToWebp(PNG_1x1, fixedTarget);
+
+  assertEquals(refreshes, [24 * 60 * 60 * 1000]);
 });
 
 test('serves a cache hit without calling the Images binding again', async () => {

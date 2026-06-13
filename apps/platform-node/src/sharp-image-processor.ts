@@ -9,13 +9,13 @@ import type { ImageDimensions, ImageProcessor } from '@floway-dev/platform';
 const WEBP_QUALITY = 82;
 
 const CACHE_KEY_PREFIX = 'imgwebp';
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const createSharpImageProcessor = (): ImageProcessor => ({
   async compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array> {
     const cacheKey = `${CACHE_KEY_PREFIX}:${await sha256Hex(input)}:${target ? `${target.width}x${target.height}` : 'orig'}:webp:q${WEBP_QUALITY}`;
     const store = getImageCacheStore();
-    const hit = await store.get(cacheKey);
+    const hit = await store.get(cacheKey, CACHE_TTL_MS);
     if (hit) return hit;
 
     let pipeline = sharp(input);
