@@ -92,7 +92,7 @@ export const useUsagePageData = defineBasicLoader(async () => {
   const api = useApi();
   const auth = useAuthStore();
   const view: UsageView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
-  const { start, end } = dashboardRangeQuery('today');
+  const { start, end } = dashboardRangeQuery('today', Date.now());
   const [{ usage, search }] = await Promise.all([
     fetchUsageForView(api, view, start, end),
     useModelsStore().load(),
@@ -122,10 +122,8 @@ const modelsStore = useModelsStore();
 
 const tokenRange = ref<Range>('today');
 const loadedTokenRange = ref<Range>('today');
-// Buckets are derived from the latest successful load's wall-clock time so the
-// chart axis advances with each refresh; without this trigger the `buckets`
-// computed would otherwise pin to page-open time and the bucket-key filter in
-// `aggregateTokenRecords` would silently drop records for newly-elapsed hours.
+// Buckets and the request window are derived from the same `loadedAt` so the
+// chart axis stays in lockstep with whichever data snapshot is currently shown.
 const loadedAt = ref(Date.now());
 const tokenChartMetric = ref<Metric>('total');
 const redactKeys = ref(false);
@@ -157,7 +155,7 @@ const load = async () => {
   const requestedAt = Date.now();
   tokenLoading.value = true;
   searchUsageLoading.value = true;
-  const { start, end } = dashboardRangeQuery(requestedRange);
+  const { start, end } = dashboardRangeQuery(requestedRange, requestedAt);
   try {
     const { usage, search } = await fetchUsageForView(api, requestedView, start, end);
     if (requestId !== usageRequestId || tokenRange.value !== requestedRange || view.value !== requestedView) return;
@@ -221,13 +219,7 @@ const formatHitRate = (cached: number, created: number) => {
   return `${((cached / denom) * 100).toFixed(1)}%`;
 };
 
-const buckets = computed(() => {
-  // `loadedAt` participates as a reactive dependency so the bucket window
-  // re-derives from `dashboardBuckets`'s internal `new Date()` read on every
-  // successful refresh, not just when the range button changes.
-  void loadedAt.value;
-  return dashboardBuckets(loadedTokenRange.value);
-});
+const buckets = computed(() => dashboardBuckets(loadedTokenRange.value, loadedAt.value));
 
 const TOKEN_CHART_METRICS: Record<Metric, { label: string; kind: 'count' | 'cost' | 'tokens' | 'percent' }> = {
   requests: { label: 'Requests', kind: 'count' },
@@ -504,7 +496,9 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
 const byKeyConfig = computed(() => buildStackedConfig('keyId'));
 const byModelConfig = computed(() => buildStackedConfig('model'));
 
-const searchUsageActiveProvider = computed(() => searchData.value?.activeProvider ?? 'disabled');
+const searchUsageActiveProvider = computed(() => {
+  return searchData.value?.activeProvider ?? 'disabled';
+});
 
 const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
   const records = searchData.value?.records ?? [];
