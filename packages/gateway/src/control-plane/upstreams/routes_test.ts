@@ -787,10 +787,10 @@ test('POST /api/upstreams/:id/codex-refresh-now flips the row to refresh_failed 
     ),
     async () => {
       const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
-      // 502, not 401 — the dashboard's auth client treats any 401 as a
-      // logout signal, and a dead codex credential must not log the
-      // operator out of the dashboard.
-      assertEquals(resp.status, 502);
+      // 400, not 502: the upstream answered — it's the stored credential
+      // that's dead. Not 401 either, since the dashboard's auth client
+      // treats any 401 as a logout signal.
+      assertEquals(resp.status, 400);
       const body = await resp.json() as { error: string };
       assertEquals(body.error.includes('Re-import'), true);
     },
@@ -830,7 +830,7 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
     },
     async () => {
       const resp = await requestApp(`/api/upstreams/${created.id}/codex-refresh-now`, authed(adminSession, {}));
-      assertEquals(resp.status, 502);
+      assertEquals(resp.status, 400);
     },
   );
 
@@ -1174,9 +1174,10 @@ test('POST /api/upstreams/:id/claude-code-refresh-now flips the row to refresh_f
     ),
     async () => {
       const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
-      // 502, not 401 — same reasoning as codex: a dead credential must not
-      // log the operator out of the dashboard.
-      assertEquals(resp.status, 502);
+      // 400, not 502: same reasoning as codex — the upstream answered,
+      // it's the stored credential that's dead. Not 401 either, to avoid
+      // logging the operator out of the dashboard.
+      assertEquals(resp.status, 400);
       const body = await resp.json() as { error: string };
       assertEquals(body.error.includes('Re-import'), true);
     },

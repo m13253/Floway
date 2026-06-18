@@ -636,11 +636,13 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
       // Best-effort: a losing CAS means a concurrent rotation already wrote
       // newer state, which by definition supersedes ours.
       await getRepo().upstreams.saveState(id, failedState, { expectedState: state });
-      // 502, not 401 — the dashboard's auth client logs the operator out on
-      // any 401 (apps/web/src/api/client.ts), and a "your codex credential
-      // is dead" condition must not be confused with "your dashboard auth
-      // is invalid". Same pattern as control-plane/copilot-quota/routes.ts.
-      return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
+      // 400, not 502: the upstream IS answering — it's telling us the stored
+      // refresh token is dead. That's a client-side credential problem, not
+      // an upstream outage. 401 is wrong too: the dashboard's auth client
+      // logs the operator out on any 401 (apps/web/src/api/client.ts), and
+      // a "your codex credential is dead" condition must not be confused
+      // with "your dashboard auth is invalid".
+      return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
@@ -816,10 +818,12 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
       // Best-effort: a losing CAS means a concurrent rotation already wrote
       // newer state, which by definition supersedes ours.
       await getRepo().upstreams.saveState(id, failedState, { expectedState: existing.state });
-      // 502, not 401 — same rationale as codexRefreshNow: the dashboard's
-      // auth client logs the operator out on any 401, and a dead credential
+      // 400, not 502: the upstream IS answering — it's telling us the stored
+      // refresh token is dead. That's a client-side credential problem, not
+      // an upstream outage. 401 is wrong too: the dashboard's auth client
+      // logs the operator out on any 401, and a dead account credential
       // must not be confused with an expired dashboard session.
-      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
+      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }

@@ -71,6 +71,12 @@ const copyAuthorizeUrl = async () => {
           Paste the contents of <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">~/.claude/.credentials.json</code>
           after signing in with the Claude Code CLI. The gateway keeps only the OAuth refresh token + identity fields.
         </p>
+        <div class="flex items-start gap-2 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
+          <i class="i-lucide-triangle-alert mt-0.5 size-4 shrink-0" />
+          <span>
+            The pasted JSON contains your live OAuth refresh token. Anyone with this file can sign in to your Claude account. Do not share or screenshot.
+          </span>
+        </div>
         <Textarea
           v-model="credentialsJsonText"
           :rows="10"
