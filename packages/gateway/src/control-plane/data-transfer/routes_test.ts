@@ -509,7 +509,7 @@ test('codex import rejects when state is missing', async () => {
     searchConfig: DEFAULT_SEARCH_CONFIG,
   });
   assertEquals(result.status, 400);
-  assertEquals(result.body.error.includes('codex upstream import is missing state'), true);
+  assertEquals(result.body.error.includes('codex upstream is missing state'), true);
 });
 
 test('codex import rejects unknown keys in state', async () => {

@@ -103,7 +103,7 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
 const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
   if (provider !== 'codex' && provider !== 'claude-code') return null;
   if (value === null || value === undefined) {
-    throw new Error(`${provider} upstream import is missing state — re-export with current code`);
+    throw new Error(`${provider} upstream is missing state — re-export with current code`);
   }
   if (provider === 'codex') assertCodexUpstreamState(value);
   else assertClaudeCodeUpstreamState(value);
@@ -401,7 +401,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     records.push({
       keyId: record.keyId,
       model: record.model,
-      upstream: record.upstream as string | null,
+      upstream: record.upstream,
       modelKey: record.modelKey,
       hour: record.hour,
       requests: record.requests,
@@ -507,7 +507,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       metricScope: item.metricScope,
       keyId: item.keyId,
       model: item.model,
-      upstream: item.upstream as string | null,
+      upstream: item.upstream,
       modelKey: item.modelKey,
       stream: item.stream,
       runtimeLocation: item.runtimeLocation,
@@ -527,19 +527,19 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 // models_cache row through any FK cascade, so without this call a re-import
 // that changes an upstream's config would keep serving the prior cached
 // model list until SWR's soft window expired. Replace mode wiped the table
-// before the loop; warming there is a no-op population. A failed upstream
-// fetch (network blip, bad credentials) does not block the import — the
-// cache layer persists lastError on that path for the dashboard to surface,
-// and we log the swallowed error so non-transient failures (gateway bugs in
-// the cache layer or scheduler) still surface in observability.
+// before the loop; warming there is a no-op population. Per-upstream warm
+// failures (network blip, dead credential among many) must not abort the
+// import — the cache layer persists `lastError` on the row for the dashboard
+// to surface. Provider-instance and fetcher construction errors signal
+// genuine misconfiguration and are not swallowed.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
   const fetcher = (await createPerRequestFetcher())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch (err) {
-    console.error(`Failed to warm models cache for upstream ${record.id}:`, err);
+  } catch {
+    // Intentionally discarded — see comment above.
   }
 };
 
