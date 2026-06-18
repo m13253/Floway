@@ -8,7 +8,7 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 // re-typing every drill is overhead the test layer doesn't earn. Using a
 // named alias instead of inlined `Record<string, any>` keeps the intent
 // ("we're poking at a parsed JSON blob") visible at the call site.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type JsonObject = Record<string, any>;
 
 const customConfig = {

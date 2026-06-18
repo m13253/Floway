@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertClaudeCodeUpstreamState, readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
 import type { ClaudeCodeQuotaSnapshot } from './quota.ts';
+import { assertClaudeCodeUpstreamState, readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
 
 const fullQuotaSnapshot: ClaudeCodeQuotaSnapshot = {
   status: 'allowed',
