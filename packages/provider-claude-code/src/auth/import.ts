@@ -79,18 +79,18 @@ export const extractClaudeCodeCallbackParams = (input: string): { code: string; 
 // Identity is derived by calling /api/oauth/profile with the freshly minted
 // access token; we never trust the OAuth response's embedded `account` /
 // `organization` fields because they may be stale or scoped narrowly compared
-// to the dedicated profile endpoint.
+// to the dedicated profile endpoint. Both calls run through the direct
+// fetcher: the OAuth flow is bootstrap-only (the upstream isn't created yet,
+// so no proxy is configured), and matches codex's same-shape callback.
 export const importClaudeCodeFromCallback = async (opts: {
   code: string;
   pkceVerifier: string;
-  fetcher?: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
-  const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
   });
-  const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
+  const identity = await fetchClaudeCodeIdentity(tokens.access_token, directFetcher);
   return buildClaudeCodeImportResult({
     identity,
     accessToken: tokens.access_token,
