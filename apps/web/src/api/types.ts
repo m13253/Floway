@@ -2,25 +2,12 @@
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
 
-export type ModelKind = 'chat' | 'embedding' | 'image';
-
-// A present key means the model is served by that endpoint. Each slot is
-// intentionally an empty object — TypeScript's `{}` accepts any non-nullish
-// value, so use `Record<string, never>` to enforce truly-empty bag at the
-// type boundary while leaving room for future per-endpoint config fields.
-export interface ModelEndpoints {
-  chatCompletions?: Record<string, never>;
-  responses?: Record<string, never>;
-  messages?: Record<string, never>;
-  embeddings?: Record<string, never>;
-  imagesGenerations?: Record<string, never>;
-  imagesEdits?: Record<string, never>;
-}
-
-export type ModelEndpointKey = keyof ModelEndpoints;
-
-// USD per million tokens, keyed by billing dimension.
-export type ModelPricing = Partial<Record<'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image', number>>;
+export type {
+  ModelEndpointKey,
+  ModelEndpoints,
+  ModelKind,
+  ModelPricing,
+} from '@floway-dev/protocols/common';
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;
