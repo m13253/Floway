@@ -1,0 +1,22 @@
+// PKCE S256 per RFC 7636. 32-byte verifier matches Anthropic's claude CLI.
+// SHA-256 of the base64url-encoded verifier is itself base64url-encoded to
+// produce the challenge — same shape codex-cli uses.
+
+export interface ClaudeCodePkce {
+  verifier: string;
+  challenge: string;
+}
+
+export const generateClaudeCodePkce = async (): Promise<ClaudeCodePkce> => {
+  const rawVerifier = new Uint8Array(32);
+  crypto.getRandomValues(rawVerifier);
+  const verifier = base64UrlEncode(rawVerifier);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = base64UrlEncode(new Uint8Array(digest));
+  return { verifier, challenge };
+};
+
+const base64UrlEncode = (bytes: Uint8Array): string => {
+  const raw = btoa(String.fromCharCode(...bytes));
+  return raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
