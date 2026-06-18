@@ -12,11 +12,25 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import {
+  type ClaudeCodeAccountCredential,
+  type ClaudeCodeUpstreamConfig,
+  type ClaudeCodeUpstreamState,
+  ClaudeCodeOAuthSessionTerminatedError,
+  assertClaudeCodeUpstreamRecord,
+  buildClaudeCodeAuthorizeUrl,
+  extractClaudeCodeCallbackParams,
+  generateClaudeCodePkce,
+  importClaudeCodeFromCallback,
+  importClaudeCodeFromCredentialsJson,
+  readClaudeCodeUpstreamState,
+  refreshClaudeCodeAccessToken,
+} from '@floway-dev/provider-claude-code';
 import {
   type CodexQuotaSnapshot,
   type CodexUpstreamConfig,
@@ -74,6 +88,10 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
     if (record.provider === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
     if (record.provider === 'codex') {
       assertCodexUpstreamRecord(record);
+      return { ok: true, value: record.config };
+    }
+    if (record.provider === 'claude-code') {
+      assertClaudeCodeUpstreamRecord(record);
       return { ok: true, value: record.config };
     }
     return {
@@ -170,6 +188,12 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   if (body.provider === 'codex') {
     return c.json({ error: 'Use POST /api/upstreams/codex-import for codex provider' }, 400);
   }
+  // Same rationale for claude-code: the row carries an OAuth refresh token and
+  // an identity derived from /api/oauth/profile, neither of which is
+  // synthesizable from a plain POST.
+  if (body.provider === 'claude-code') {
+    return c.json({ error: 'Use POST /api/upstreams/claude-code-import for claude-code provider' }, 400);
+  }
 
   const proxyFallbackList = normalizeProxyFallbackList(body.proxy_fallback_list ?? []);
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
@@ -218,6 +242,12 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   // overrides, disabled model ids) but never the credential payload.
   if (existing.provider === 'codex' && body.config !== undefined) {
     return c.json({ error: 'Use POST /api/upstreams/:id/codex-reimport to update codex credentials' }, 400);
+  }
+  // Same gate for claude-code: identity comes from /api/oauth/profile at
+  // import time and the credential state belongs to refresh-now / re-import,
+  // not a generic field patch.
+  if (existing.provider === 'claude-code' && body.config !== undefined) {
+    return c.json({ error: 'Use POST /api/upstreams/:id/claude-code-reimport to update claude-code credentials' }, 400);
   }
 
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
@@ -611,6 +641,185 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
       // is dead" condition must not be confused with "your dashboard auth
       // is invalid". Same pattern as control-plane/copilot-quota/routes.ts.
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+};
+
+// 5 minutes mirrors claude.ai's authorization-code lifetime. Sweep job in
+// scheduled.ts purges rows past their TTL; the import handler also rejects
+// expired rows defensively via the `expires_at > ?` filter in `consume`.
+const CLAUDE_CODE_PKCE_TTL_MS = 5 * 60 * 1000;
+
+export const claudeCodePkceStart = async (c: CtxWithJson<typeof claudeCodePkceStartBody>) => {
+  const { verifier, challenge } = await generateClaudeCodePkce();
+  const state = crypto.randomUUID().replace(/-/g, '');
+  await getRepo().claudeCodePkcePending.put(state, verifier, Date.now() + CLAUDE_CODE_PKCE_TTL_MS);
+
+  const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge });
+
+  return c.json({
+    state,
+    authorize_url,
+    expires_in_seconds: Math.floor(CLAUDE_CODE_PKCE_TTL_MS / 1000),
+  });
+};
+
+type ClaudeCodeCredentialBody = z.infer<typeof claudeCodeImportBody> | z.infer<typeof claudeCodeReimportBody>;
+
+// Dispatches between the credentials.json paste and the OAuth callback paths.
+// The PKCE verifier stored at start-time is single-use; we consume it inside
+// this helper so a replayed callback for the same state cannot succeed twice.
+const ingestClaudeCodeCredential = async (
+  body: ClaudeCodeCredentialBody,
+): Promise<{ ok: true; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState } | { ok: false; error: string }> => {
+  try {
+    if (body.credentials_json !== undefined) {
+      const out = await importClaudeCodeFromCredentialsJson(body.credentials_json);
+      return { ok: true, ...out };
+    }
+    const cb = body.callback;
+    if (!cb) return { ok: false, error: 'callback is required when credentials_json is absent' };
+    let code = cb.code;
+    let state = cb.state;
+    if (cb.callback_url !== undefined) {
+      const parsed = extractClaudeCodeCallbackParams(cb.callback_url);
+      code = parsed.code;
+      state = parsed.state;
+    }
+    if (!code || !state) {
+      return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
+    }
+    const pending = await getRepo().claudeCodePkcePending.consume(state);
+    if (!pending) {
+      return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
+    }
+    const out = await importClaudeCodeFromCallback({ code, pkceVerifier: pending.verifier });
+    return { ok: true, ...out };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+};
+
+export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBody>) => {
+  const body = c.req.valid('json');
+  const ingestion = await ingestClaudeCodeCredential(body);
+  if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
+
+  const existing = await getRepo().upstreams.list();
+  const now = new Date().toISOString();
+  const defaultName = `Claude Code (${ingestion.config.accounts[0].email})`;
+  const upstream: UpstreamRecord = {
+    id: newId(),
+    provider: 'claude-code',
+    name: body.name ?? defaultName,
+    enabled: true,
+    sortOrder: body.sort_order ?? nextSortOrder(existing),
+    createdAt: now,
+    updatedAt: now,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    config: ingestion.config,
+    state: ingestion.state,
+  };
+  await getRepo().upstreams.save(upstream);
+  await warmModelsCache(upstream, c);
+  return c.json(await serializeForResponse(upstream), 201);
+};
+
+export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimportBody>) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
+  const existing = await getRepo().upstreams.getById(id);
+  if (existing?.provider !== 'claude-code') {
+    return c.json({ error: 'Claude Code upstream not found' }, 404);
+  }
+
+  const body = c.req.valid('json');
+  const ingestion = await ingestClaudeCodeCredential(body);
+  if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
+
+  const next: UpstreamRecord = {
+    ...existing,
+    updatedAt: new Date().toISOString(),
+    name: body.name ?? existing.name,
+    config: ingestion.config,
+    state: ingestion.state,
+  };
+  await getRepo().upstreams.save(next);
+  await warmModelsCache(next, c);
+  return c.json(await serializeForResponse(next));
+};
+
+export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
+  const existing = await getRepo().upstreams.getById(id);
+  if (existing?.provider !== 'claude-code') {
+    return c.json({ error: 'Claude Code upstream not found' }, 404);
+  }
+
+  let state: ClaudeCodeUpstreamState;
+  try {
+    state = readClaudeCodeUpstreamState(existing.state);
+  } catch (err) {
+    return c.json({ error: `Claude Code upstream state is malformed: ${errorMessage(err)}` }, 500);
+  }
+  // Single-account invariant is enforced by the asserter; refresh-now mutates
+  // that single entry.
+  const account = state.accounts[0];
+  if (account.state !== 'active') {
+    return c.json({ error: `Claude Code upstream is ${account.state}; re-import to recover` }, 400);
+  }
+
+  try {
+    // Per-upstream proxy-aware fetcher so an operator-pressed refresh respects
+    // the same fallback chain as the data-plane hot path. Without this a row
+    // behind a corporate proxy would dial direct here and silently fail.
+    const fetcher = (await createPerRequestFetcher())(id);
+    const tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
+    const now = new Date();
+    const nextAccount: ClaudeCodeAccountCredential = {
+      ...account,
+      refreshToken: tokens.refresh_token,
+      // Keep `state` untouched on a successful refresh — 'active' is already
+      // the value we want and bumping stateUpdatedAt on every refresh would
+      // muddy the dashboard's "credential health changed" signal. Match the
+      // access-token cache's behavior in the data-plane hot path.
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: now.getTime() + tokens.expires_in * 1000,
+        refreshedAt: now.toISOString(),
+      },
+    };
+    const nextState: ClaudeCodeUpstreamState = { accounts: [nextAccount] };
+    // CAS keyed on the just-read state. Losing here means a concurrent
+    // data-plane refresh already rotated the row; their write is at least as
+    // fresh as ours, so we surface 409 rather than retry.
+    const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: existing.state });
+    if (!result.updated) {
+      return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
+    }
+    const fresh = await getRepo().upstreams.getById(id);
+    return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
+  } catch (err) {
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      const failedAccount: ClaudeCodeAccountCredential = {
+        ...account,
+        state: 'refresh_failed',
+        stateMessage: err.upstreamMessage,
+        stateUpdatedAt: new Date().toISOString(),
+        accessToken: null,
+      };
+      const failedState: ClaudeCodeUpstreamState = { accounts: [failedAccount] };
+      // Best-effort: a losing CAS means a concurrent rotation already wrote
+      // newer state, which by definition supersedes ours.
+      await getRepo().upstreams.saveState(id, failedState, { expectedState: existing.state });
+      // 502, not 401 — same rationale as codexRefreshNow: the dashboard's
+      // auth client logs the operator out on any 401, and a dead credential
+      // must not be confused with an expired dashboard session.
+      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 502);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }

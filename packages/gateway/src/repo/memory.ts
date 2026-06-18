@@ -13,6 +13,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ClaudeCodePkcePendingRepo,
   CodexPkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
@@ -516,6 +517,27 @@ class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {
   }
 }
 
+class MemoryClaudeCodePkcePendingRepo implements ClaudeCodePkcePendingRepo {
+  private rows = new Map<string, { verifier: string; expiresAt: number }>();
+
+  put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    this.rows.set(state, { verifier, expiresAt });
+    return Promise.resolve();
+  }
+
+  consume(state: string): Promise<{ verifier: string } | null> {
+    const row = this.rows.get(state);
+    if (!row || row.expiresAt <= Date.now()) return Promise.resolve(null);
+    this.rows.delete(state);
+    return Promise.resolve({ verifier: row.verifier });
+  }
+
+  sweepExpired(now: number): Promise<void> {
+    for (const [k, v] of this.rows) if (v.expiresAt <= now) this.rows.delete(k);
+    return Promise.resolve();
+  }
+}
+
 class MemorySearchConfigRepo implements SearchConfigRepo {
   private config: unknown | null = null;
 
@@ -909,6 +931,7 @@ export class InMemoryRepo implements Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
+  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -925,6 +948,7 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo();
     this.modelsCache = new MemoryModelsCacheRepo();
     this.codexPkcePending = new MemoryCodexPkcePendingRepo();
+    this.claudeCodePkcePending = new MemoryClaudeCodePkcePendingRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);

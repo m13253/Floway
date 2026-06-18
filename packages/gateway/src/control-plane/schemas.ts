@@ -207,16 +207,17 @@ const upstreamBaseFields = {
 // `sort_order` are optional — the handler defaults them to `true` and
 // `nextSortOrder()` respectively when omitted.
 //
-// `codex` is listed here so the handler can return the canonical
-// "use POST /api/upstreams/codex-import" 400 instead of the cryptic zod
-// "invalid discriminator value" message. The `config` slot is `unknown()`
-// because the real Codex config is derived from the OAuth/`auth.json` flow,
-// not from anything posted against this endpoint.
+// `codex` and `claude-code` are listed here so the handler can return the
+// canonical "use POST /api/upstreams/<provider>-import" 400 instead of the
+// cryptic zod "invalid discriminator value" message. The `config` slot is
+// `unknown()` because the real config is derived from the OAuth flow, not
+// from anything posted against this endpoint.
 export const createUpstreamBody = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
   z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
   z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ provider: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
 ]);
 
 // Update is provider-agnostic: provider is read from the existing record, and
@@ -229,7 +230,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot', 'codex']).optional(),
+  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -301,6 +302,48 @@ export const codexReimportBody = z.object({
 }).refine(requireExactlyOneCredential, codexCredentialRefineMessage);
 
 export const codexRefreshNowBody = z.object({});
+
+// --- claude-code import / PKCE / refresh ---
+//
+// Same shape rationale as the codex routes above: the generic create / update
+// upstream endpoints reject `provider: 'claude-code'` and dedicated PKCE +
+// re-import endpoints own the OAuth handoff so credential parsing lives in
+// one place.
+
+export const claudeCodePkceStartBody = z.object({});
+
+// Path A — operator pastes `~/.claude/.credentials.json` verbatim. Path B —
+// operator supplies the OAuth callback identified by the prior PKCE-start
+// `state`. The two paths are mutually exclusive; the refine below catches
+// the both-or-neither case before the handler runs.
+const claudeCodeCredentialFields = {
+  credentials_json: z.string().min(1).optional(),
+  callback: z.object({
+    code: z.string().min(1).optional(),
+    state: z.string().min(1).optional(),
+    // Either `{code, state}` or `callback_url` (which we parse) — the handler
+    // picks `callback_url` first when present.
+    callback_url: z.string().min(1).optional(),
+  }).optional(),
+};
+
+const requireExactlyOneClaudeCodeCredential = (b: { credentials_json?: unknown; callback?: unknown }): boolean =>
+  (b.credentials_json !== undefined) !== (b.callback !== undefined);
+
+const claudeCodeCredentialRefineMessage = { message: 'Provide exactly one of credentials_json or callback' };
+
+export const claudeCodeImportBody = z.object({
+  name: z.string().min(1).optional(),
+  sort_order: z.number().int().optional(),
+  ...claudeCodeCredentialFields,
+}).refine(requireExactlyOneClaudeCodeCredential, claudeCodeCredentialRefineMessage);
+
+export const claudeCodeReimportBody = z.object({
+  name: z.string().min(1).optional(),
+  ...claudeCodeCredentialFields,
+}).refine(requireExactlyOneClaudeCodeCredential, claudeCodeCredentialRefineMessage);
+
+export const claudeCodeRefreshNowBody = z.object({});
 
 // --- proxies ---
 //

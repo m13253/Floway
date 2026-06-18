@@ -185,6 +185,16 @@ export interface CodexPkcePendingRepo {
   sweepExpired(now: number): Promise<void>;
 }
 
+// Shape mirrors CodexPkcePendingRepo because the two flows have identical
+// requirements (single-use state → verifier handoff with a TTL); a shared
+// alias would couple them and force both to migrate together if either
+// ever needs an extra column.
+export interface ClaudeCodePkcePendingRepo {
+  put(state: string, verifier: string, expiresAt: number): Promise<void>;
+  consume(state: string): Promise<{ verifier: string } | null>;
+  sweepExpired(now: number): Promise<void>;
+}
+
 export interface SearchConfigRepo {
   get(): Promise<unknown>;
   save(config: unknown): Promise<void>;
@@ -316,6 +326,7 @@ export interface Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
+  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

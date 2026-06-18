@@ -842,6 +842,352 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
   assertEquals(afterState.accounts[0].state, 'active');
 });
 
+// --- Claude Code routes ---
+//
+// Test setup mirrors the codex routes: we drive the OAuth + profile fetches
+// through withMockedFetch so the import handler runs end-to-end without
+// hitting the real upstream.
+
+const claudeCodeProfileBody = {
+  account: { uuid: 'acc-uuid-1', email: 'alice@example.com' },
+  organization: { uuid: 'org-uuid-1', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_20x' },
+};
+
+const claudeCodeTokenBody = (overrides: Record<string, unknown> = {}) => ({
+  access_token: 'at_test',
+  token_type: 'Bearer',
+  expires_in: 3600,
+  refresh_token: 'rt_test',
+  scope: 'user:inference',
+  ...overrides,
+});
+
+const claudeCodeCredentialsJson = (overrides: { accessToken?: string; refreshToken?: string; expiresAt?: number } = {}) => JSON.stringify({
+  claudeAiOauth: {
+    accessToken: overrides.accessToken ?? 'cli_at',
+    refreshToken: overrides.refreshToken ?? 'cli_rt',
+    expiresAt: overrides.expiresAt ?? Date.now() + 3_600_000,
+    subscriptionType: 'max_20x',
+  },
+});
+
+// Pick the canonical body shape for an OAuth-token vs a profile-endpoint
+// request so the test mock can respond differently to each.
+const claudeCodeMockedFetcher = (token: ReturnType<typeof claudeCodeTokenBody>, profile: unknown) => async (request: Request) => {
+  if (request.url === 'https://platform.claude.com/v1/oauth/token') {
+    return jsonResponse(token);
+  }
+  if (request.url === 'https://api.anthropic.com/api/oauth/profile') {
+    return jsonResponse(profile);
+  }
+  throw new Error(`Unhandled fetch ${request.url}`);
+};
+
+test('POST /api/upstreams/claude-code-pkce-start returns an authorize URL and stashes the verifier', async () => {
+  const { repo, adminSession } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
+  assertEquals(typeof body.state, 'string');
+  assertEquals(body.authorize_url.startsWith('https://claude.ai/oauth/authorize?'), true);
+  assertEquals(body.expires_in_seconds, 300);
+
+  const stashed = await repo.claudeCodePkcePending.consume(body.state);
+  assertEquals(stashed !== null, true);
+  assertEquals(typeof stashed!.verifier, 'string');
+});
+
+test('POST /api/upstreams/claude-code-import (callback) consumes the PKCE state and returns the verifier exchange result', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const startResp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  await withMockedFetch(
+    claudeCodeMockedFetcher(claudeCodeTokenBody(), claudeCodeProfileBody),
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> } };
+      assertEquals(created.provider, 'claude-code');
+      assertEquals(created.state.accounts[0].refreshTokenSet, true);
+      assertEquals(typeof created.state.accounts[0].accessToken?.expiresAt, 'number');
+    },
+  );
+
+  // Single-use: consume() removed the row, so a follow-up consume returns null.
+  const replay = await repo.claudeCodePkcePending.consume(state);
+  assertEquals(replay, null);
+});
+
+test('POST /api/upstreams/claude-code-import rejects a replayed PKCE callback', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const startResp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  await withMockedFetch(
+    claudeCodeMockedFetcher(claudeCodeTokenBody(), claudeCodeProfileBody),
+    async () => {
+      const first = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(first.status, 201);
+
+      const replay = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(replay.status, 400);
+      const body = (await replay.json()) as { error: string };
+      assertEquals(body.error.includes('PKCE state not found or expired'), true);
+    },
+  );
+});
+
+test('POST /api/upstreams/claude-code-import (credentials_json) creates a row with the cached access token', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as Record<string, any>;
+      assertEquals(created.provider, 'claude-code');
+      assertEquals(created.config.accounts[0].email, 'alice@example.com');
+      assertEquals(created.config.accounts[0].accountUuid, 'acc-uuid-1');
+      // CLI subscriptionType verbatim wins over what the profile endpoint
+      // would derive.
+      assertEquals(created.config.accounts[0].subscriptionType, 'max_20x');
+      assertEquals(created.state.accounts[0].state, 'active');
+      assertEquals(created.state.accounts[0].refreshTokenSet, true);
+    },
+  );
+});
+
+test('POST /api/upstreams/claude-code-import without an explicit name auto-derives one from the imported email', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as { name: string };
+      assertEquals(created.name, 'Claude Code (alice@example.com)');
+    },
+  );
+});
+
+test('POST /api/upstreams/claude-code-import rejects when both credentials_json and callback are absent', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams/claude-code-import', authed(adminSession, { name: 'Claude Code' }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as unknown;
+  assertEquals(JSON.stringify(body).includes('Provide exactly one of credentials_json or callback'), true);
+});
+
+test('POST /api/upstreams/claude-code-import rejects a malformed callback URL', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const resp = await requestApp(
+    '/api/upstreams/claude-code-import',
+    authed(adminSession, { name: 'Claude Code', callback: { callback_url: 'https://platform.claude.com/oauth/code/callback' } }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  // The handler unwraps the URL and reports "missing `code`" before touching
+  // the token endpoint.
+  assertEquals(body.error.includes('missing'), true);
+});
+
+test('PATCH /api/upstreams rejects config edits on a claude-code row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ config: { accounts: [] } }),
+  });
+  assertEquals(patch.status, 400);
+  const body = (await patch.json()) as { error: string };
+  assertEquals(body.error.includes('claude-code-reimport'), true);
+});
+
+test('PATCH /api/upstreams accepts metadata edits on a claude-code row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ name: 'My Claude Max', enabled: false }),
+  });
+  assertEquals(patch.status, 200);
+  const body = (await patch.json()) as { name: string; enabled: boolean };
+  assertEquals(body.name, 'My Claude Max');
+  assertEquals(body.enabled, false);
+});
+
+test('POST /api/upstreams rejects a direct claude-code create with a redirect message', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams', authed(adminSession, {
+    provider: 'claude-code',
+    name: 'Claude Code',
+    config: {},
+  }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('claude-code-import'), true);
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now rejects non-claude-code rows with 404', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json()) as { id: string };
+  const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+  assertEquals(resp.status, 404);
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now rejects upstreams in a terminal state with 400', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Plant a row in `refresh_failed` by importing then hand-mutating the row.
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
+  await repo.upstreams.save({
+    ...stored!,
+    state: {
+      accounts: storedState.accounts.map(a => ({
+        ...a,
+        state: 'refresh_failed',
+        stateMessage: 'token revoked',
+        accessToken: null,
+      })),
+    },
+  });
+
+  const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('refresh_failed'), true);
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now rotates the refresh token on success', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    () => jsonResponse(claudeCodeTokenBody({ access_token: 'at_rotated', refresh_token: 'rt_rotated' })),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+      assertEquals(resp.status, 200);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ refreshToken: string }> };
+  assertEquals(storedState.accounts[0].refreshToken, 'rt_rotated');
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    () => new Response(
+      JSON.stringify({ error: { code: 'invalid_grant', message: 'Refresh token revoked' } }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    ),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+      // 502, not 401 — same reasoning as codex: a dead credential must not
+      // log the operator out of the dashboard.
+      assertEquals(resp.status, 502);
+      const body = await resp.json() as { error: string };
+      assertEquals(body.error.includes('Re-import'), true);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ state: string; stateMessage?: string }> };
+  assertEquals(storedState.accounts[0].state, 'refresh_failed');
+  assertEquals(typeof storedState.accounts[0].stateMessage, 'string');
+});
+
 // --- proxy_fallback_list ---
 //
 // The list has set semantics — duplicates are dropped silently before

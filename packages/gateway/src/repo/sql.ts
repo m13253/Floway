@@ -7,6 +7,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ClaudeCodePkcePendingRepo,
   CodexPkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
@@ -910,6 +911,32 @@ class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
   }
 }
 
+class SqlClaudeCodePkcePendingRepo implements ClaudeCodePkcePendingRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async put(state: string, verifier: string, expiresAt: number): Promise<void> {
+    await this.db
+      .prepare(
+        'INSERT INTO claude_code_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
+        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at',
+      )
+      .bind(state, verifier, expiresAt)
+      .run();
+  }
+
+  async consume(state: string): Promise<{ verifier: string } | null> {
+    const row = await this.db
+      .prepare('DELETE FROM claude_code_pkce_pending WHERE state = ? AND expires_at > ? RETURNING verifier')
+      .bind(state, Date.now())
+      .first<{ verifier: string }>();
+    return row ? { verifier: row.verifier } : null;
+  }
+
+  async sweepExpired(now: number): Promise<void> {
+    await this.db.prepare('DELETE FROM claude_code_pkce_pending WHERE expires_at <= ?').bind(now).run();
+  }
+}
+
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
 const RESPONSES_ITEM_ID_SCOPE_SQL = "COALESCE(api_key_id, '') = COALESCE(?, '')";
 
@@ -1573,6 +1600,7 @@ export class SqlRepo implements Repo {
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
   codexPkcePending: CodexPkcePendingRepo;
+  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1589,6 +1617,7 @@ export class SqlRepo implements Repo {
     this.performance = new SqlPerformanceRepo(db);
     this.modelsCache = new SqlModelsCacheRepo(db);
     this.codexPkcePending = new SqlCodexPkcePendingRepo(db);
+    this.claudeCodePkcePending = new SqlClaudeCodePkcePendingRepo(db);
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
