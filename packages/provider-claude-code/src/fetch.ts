@@ -145,7 +145,7 @@ export const callClaudeCodeMessages = async (
   }
 
   const now = new Date();
-  const quotaData = account.quotaSnapshot?.data ?? null;
+  const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
   if (isRateLimitedNow(quotaData, now)) {
     const resetIso = quotaData.reset ?? quotaData.overage?.reset ?? null;
     return await syntheticReturn(synthetic429(
