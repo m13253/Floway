@@ -13,9 +13,14 @@ export type { ClaudeCodeAccessTokenEntry };
 
 // Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when this
 // call exchanged the refresh token (a real /v1/oauth/token round-trip) and
-// false when the cached entry was returned. The 401-retry path uses this to
-// decide whether a 401 means the cached token is stale (invalidate + retry)
-// or that the credential itself is dead (give up and surface the 401).
+// false when the cached entry was returned. It means "minted by this call
+// site," not "minted recently": if a sibling request rotated the
+// refresh-token between our repo read and the cache decision, the cache hit
+// branch still reports false even though the cached token is genuinely
+// fresh. The 401-retry path uses this to decide whether a 401 means the
+// cached token is stale (invalidate + retry) or that the credential itself
+// is dead (give up and surface the 401); the false-positive case (a sibling
+// just minted) costs at most one harmless invalidate + re-mint.
 export interface EnsuredAccessToken {
   entry: ClaudeCodeAccessTokenEntry;
   freshlyMinted: boolean;
