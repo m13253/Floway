@@ -65,7 +65,10 @@ const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Re
 // `anthropic-ratelimit-unified-status: rejected` or an overage-rejected snapshot
 // means the upstream would 429 anything we send right now; short-circuit at
 // the gate so we don't burn an OAuth refresh on a request that has no chance.
-const isRateLimitedNow = (snapshot: ClaudeCodeQuotaSnapshot | null, now: Date): boolean => {
+const isRateLimitedNow = (
+  snapshot: ClaudeCodeQuotaSnapshot | null,
+  now: Date,
+): snapshot is ClaudeCodeQuotaSnapshot => {
   if (!snapshot) return false;
   if (snapshot.status === 'rejected') {
     if (!snapshot.reset) return true;
@@ -138,9 +141,9 @@ export const callClaudeCodeMessages = async (
   }
 
   const now = new Date();
-  const quotaData = (account.quotaSnapshot?.data ?? null) as ClaudeCodeQuotaSnapshot | null;
+  const quotaData = account.quotaSnapshot?.data ?? null;
   if (isRateLimitedNow(quotaData, now)) {
-    const resetIso = quotaData!.reset ?? quotaData!.overage?.reset ?? null;
+    const resetIso = quotaData.reset ?? quotaData.overage?.reset ?? null;
     return await syntheticReturn(synthetic429(
       resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
       resetIso,

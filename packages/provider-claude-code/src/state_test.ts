@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'vitest';
 
 import { assertClaudeCodeUpstreamState, readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
+import type { ClaudeCodeQuotaSnapshot } from './quota.ts';
+
+const fullQuotaSnapshot: ClaudeCodeQuotaSnapshot = {
+  status: 'allowed',
+  reset: null,
+  fallbackAvailable: null,
+  fallbackPercentage: null,
+  representativeClaim: null,
+  overage: null,
+  fiveHour: null,
+  sevenDay: null,
+  raw: {},
+};
 
 const goodAccount = {
   accountUuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -101,40 +114,40 @@ describe('assertClaudeCodeUpstreamState', () => {
     })).toThrow(/extra/);
   });
 
-  test('accepts quotaSnapshot absent / null / populated', () => {
+  test('accepts quotaSnapshot null / populated', () => {
     expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, quotaSnapshot: null }] })).not.toThrow();
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{
         ...goodAccount,
-        quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: { status: 'allowed' } },
+        quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: fullQuotaSnapshot },
       }],
     })).not.toThrow();
   });
-  test('rejects malformed quotaSnapshot', () => {
+  test('rejects malformed quotaSnapshot wrapper', () => {
     expect(() => assertClaudeCodeUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 'soon', data: {} } }],
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 'soon', data: fullQuotaSnapshot } }],
     })).toThrow(/fetchedAt/);
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: 'oops' } }],
     })).toThrow(/data/);
     expect(() => assertClaudeCodeUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: {}, extra: 1 } }],
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: fullQuotaSnapshot, extra: 1 } }],
     })).toThrow(/extra/);
+  });
+  test('rejects quotaSnapshot.data missing required fields', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: { status: 'allowed' } } }],
+    })).toThrow(/data\.reset/);
   });
 });
 
 describe('readClaudeCodeUpstreamState', () => {
-  test('normalizes absent accessToken / quotaSnapshot to null', () => {
-    const out = readClaudeCodeUpstreamState({ accounts: [{ ...goodAccount }] });
-    expect(out.accounts[0].accessToken).toBeNull();
-    expect(out.accounts[0].quotaSnapshot).toBeNull();
-  });
   test('preserves populated entries verbatim', () => {
     const populated = {
       accounts: [{
         ...goodAccount,
         accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-19T00:00:00Z' },
-        quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: { status: 'allowed' } },
+        quotaSnapshot: { fetchedAt: 1_700_000_000_000, data: fullQuotaSnapshot },
       }],
     };
     const out = readClaudeCodeUpstreamState(populated);

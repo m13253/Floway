@@ -149,3 +149,50 @@ export const parseClaudeCodeQuotaHeaders = (headers: Headers): ClaudeCodeQuotaSn
     raw: collectRaw(headers),
   };
 };
+
+const isStringOrNull = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string';
+
+const isNumberOrNull = (value: unknown): value is number | null =>
+  value === null || (typeof value === 'number' && Number.isFinite(value));
+
+const isBooleanOrNull = (value: unknown): value is boolean | null =>
+  value === null || typeof value === 'boolean';
+
+const assertWindow = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  if (!isStringOrNull(obj.status)) throw new TypeError(`${where}.status must be a string or null`);
+  if (!isStringOrNull(obj.reset)) throw new TypeError(`${where}.reset must be a string or null`);
+  if (!isNumberOrNull(obj.utilization)) throw new TypeError(`${where}.utilization must be a number or null`);
+};
+
+export function assertClaudeCodeQuotaSnapshot(value: unknown, where: string): asserts value is ClaudeCodeQuotaSnapshot {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  if (!isStringOrNull(obj.status)) throw new TypeError(`${where}.status must be a string or null`);
+  if (!isStringOrNull(obj.reset)) throw new TypeError(`${where}.reset must be a string or null`);
+  if (!isBooleanOrNull(obj.fallbackAvailable)) throw new TypeError(`${where}.fallbackAvailable must be boolean or null`);
+  if (!isNumberOrNull(obj.fallbackPercentage)) throw new TypeError(`${where}.fallbackPercentage must be number or null`);
+  if (!isStringOrNull(obj.representativeClaim)) throw new TypeError(`${where}.representativeClaim must be a string or null`);
+  if (obj.overage !== null) {
+    assertWindow(obj.overage, `${where}.overage`);
+    if (!isStringOrNull((obj.overage as Record<string, unknown>).disabledReason)) {
+      throw new TypeError(`${where}.overage.disabledReason must be a string or null`);
+    }
+  }
+  if (obj.fiveHour !== null) assertWindow(obj.fiveHour, `${where}.fiveHour`);
+  if (obj.sevenDay !== null) {
+    assertWindow(obj.sevenDay, `${where}.sevenDay`);
+    if (!isBooleanOrNull((obj.sevenDay as Record<string, unknown>).surpassedThreshold)) {
+      throw new TypeError(`${where}.sevenDay.surpassedThreshold must be boolean or null`);
+    }
+  }
+  if (typeof obj.raw !== 'object' || obj.raw === null || Array.isArray(obj.raw)) {
+    throw new TypeError(`${where}.raw must be a plain object`);
+  }
+}

@@ -4,9 +4,11 @@
 //
 // The shape carries the long-lived refresh token (rotated on every refresh
 // call) plus a cached short-lived access token and the most recent
-// `anthropic-ratelimit-unified-*` snapshot. Deeper validation of the snapshot
-// `data` payload lives in quota.ts; here we only confirm the wrapper shape so
-// nothing structurally junk slips past.
+// `anthropic-ratelimit-unified-*` snapshot. The asserter calls into quota.ts
+// for the snapshot's inner shape so consumers see the typed `data` field
+// without re-casting at every call site.
+
+import { assertClaudeCodeQuotaSnapshot, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 
 export type ClaudeCodeCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
@@ -22,11 +24,11 @@ export interface ClaudeCodeAccessTokenEntry {
 }
 
 // Most recent quota observation derived from /v1/messages response headers.
-// `fetchedAt` is unix ms; `data` is the parsed snapshot, whose internal shape
-// is owned and re-checked at every consumer boundary by quota.ts.
+// `fetchedAt` is unix ms; `data` is the parsed snapshot whose shape is owned
+// by quota.ts and validated by the asserter on read.
 export interface ClaudeCodeQuotaSnapshotEntry {
   fetchedAt: number;
-  data: unknown;
+  data: ClaudeCodeQuotaSnapshot;
 }
 
 // One account's autonomous credential state, joined back to its identity in
@@ -119,9 +121,7 @@ const assertClaudeCodeQuotaSnapshotEntry = (value: unknown, where: string): void
   if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
-  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
-    throw new TypeError(`${where}.data must be a plain object`);
-  }
+  assertClaudeCodeQuotaSnapshot(obj.data, `${where}.data`);
 };
 
 const assertClaudeCodeAccountCredential = (value: unknown, where: string): void => {

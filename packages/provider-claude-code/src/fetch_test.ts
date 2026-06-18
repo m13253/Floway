@@ -147,7 +147,17 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
       accessToken: freshAccessTokenEntry,
       quotaSnapshot: {
         fetchedAt: Date.now(),
-        data: { status: 'rejected', reset: resetIso, raw: {} },
+        data: {
+          status: 'rejected',
+          reset: resetIso,
+          fallbackAvailable: null,
+          fallbackPercentage: null,
+          representativeClaim: null,
+          overage: null,
+          fiveHour: null,
+          sevenDay: null,
+          raw: {},
+        },
       },
     });
     const result = await callClaudeCodeMessages({
