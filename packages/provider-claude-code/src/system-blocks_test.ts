@@ -50,8 +50,8 @@ describe('computeCcVersionFingerprint', () => {
   // Padding is 0x30 ('0') for indices past the end of the first user text.
   test('matches the known vector for a long first-user text', () => {
     const body = minimalBody('hello world this is a test prompt');
-    // bytes[4]='o' (0x6F), bytes[7]='r' (0x72), bytes[20]='t' (0x74)
-    // Actually 'hello world this is a test prompt' — index 4='o', 7='r', 20='a'
+    // 'hello world this is a test prompt' — bytes[4]='o' (0x6F),
+    // bytes[7]='o' (0x6F, second 'o' in "world"), bytes[20]='a' (0x61).
     expect(computeCcVersionFingerprint('2.1.181', body)).toBe('1f4');
   });
 

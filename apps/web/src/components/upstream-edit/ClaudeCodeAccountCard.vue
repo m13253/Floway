@@ -76,8 +76,8 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
 });
 
 const accountIdShort = computed(() => {
-  const id = account.value?.accountUuid ?? '';
-  if (id.length <= 18) return id;
+  const id = account.value?.accountUuid;
+  if (!id) return '';
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 });
 
@@ -113,7 +113,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         <i class="i-lucide-bot size-6" />
       </div>
       <div class="min-w-0 flex-1 space-y-1">
-        <p class="truncate text-sm font-medium text-white">{{ account?.email ?? 'Claude Code account' }}</p>
+        <p class="truncate text-sm font-medium text-white">{{ account?.email }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           <Badge v-if="account" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
           <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>

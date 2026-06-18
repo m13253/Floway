@@ -97,7 +97,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   const state = readClaudeCodeUpstreamState(fresh.state);
   const next = replaceStateAccount(state, account => ({
     ...account,
-    quotaSnapshot: { fetchedAt: Date.now(), data: snapshot as unknown as Record<string, unknown> },
+    quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
   }));
   await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
@@ -184,13 +184,25 @@ const performUpstreamCall = async (
   accessToken: ResolvedToken,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-  const headers = opts.shaped
-    ? { ...opts.headers, authorization: `Bearer ${accessToken.token}` }
-    : { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.token}` };
+  let headers: Record<string, string>;
+  if (opts.shaped) {
+    // Spread first, then drop any inbound auth header in either casing before
+    // setting ours. `clientRequestHeaders` is documented lowercase-only
+    // (`UpstreamCallOptions` JSDoc), so the uppercase delete is defensive
+    // insurance, not a real expectation.
+    const passthrough: Record<string, string> = { ...opts.headers };
+    delete passthrough.authorization;
+    delete passthrough.Authorization;
+    headers = { ...passthrough, authorization: `Bearer ${accessToken.token}` };
+  } else {
+    headers = { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.token}` };
+  }
 
-  // Force stream:true regardless of caller intent. The streaming envelope
-  // is what the gateway boundary expects; non-streaming Messages is routed
-  // elsewhere.
+  // Force stream:true regardless of caller intent. The streaming envelope is
+  // what the gateway boundary expects; non-streaming Messages is routed
+  // elsewhere. Safe in the shaped passthrough path too: shaped detection
+  // requires CC client headers + system blocks + a valid metadata.user_id,
+  // and the real Claude Code client always sets `stream: true`.
   const wireBody: MessagesPayload = { ...opts.body, model: opts.model.id, stream: true };
 
   const upstreamFetch = opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {

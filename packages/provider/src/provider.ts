@@ -85,6 +85,12 @@ export type ProviderCompactionResult =
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
+  /**
+   * Inbound request headers, preserved as a plain record. Keys MUST be
+   * lowercase: this record is built from a `Headers` instance via
+   * `headersToRecord` (`gateway-ctx.ts`), which uses `Headers.forEach` and
+   * yields lowercase keys per the WHATWG Fetch spec.
+   */
   clientRequestHeaders?: Record<string, string>;
   clientRequestPathname?: string;
 }
