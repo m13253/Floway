@@ -354,6 +354,9 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
