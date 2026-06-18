@@ -33,6 +33,18 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 const hasSecret = (value: unknown): boolean => typeof value === 'string' && value.length > 0;
 
+const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Record<string, unknown>[] => {
+  if (!Array.isArray(accounts)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accounts: expected array`);
+  }
+  return accounts.map((account, index) => {
+    if (!isRecord(account)) {
+      throw new Error(`Upstream ${upstream.id} (${upstream.provider}) account[${index}] is malformed: expected object`);
+    }
+    return account;
+  });
+};
+
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
   if (!isRecord(upstream.config)) {
     throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
@@ -65,28 +77,22 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
   case 'codex':
     // refresh_token lives in state and is redacted by redactedState.
     return {
-      accounts: Array.isArray(config.accounts) ? config.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.email !== undefined ? { email: clone(a.email) } : {}),
-          ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-          ...(a.chatgptUserId !== undefined ? { chatgptUserId: clone(a.chatgptUserId) } : {}),
-          ...(a.planType !== undefined ? { planType: clone(a.planType) } : {}),
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
+        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
+        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
+        ...(a.chatgptUserId !== undefined ? { chatgptUserId: clone(a.chatgptUserId) } : {}),
+        ...(a.planType !== undefined ? { planType: clone(a.planType) } : {}),
+      })),
     };
   case 'claude-code':
     // refreshToken lives in state and is redacted by redactedState.
     return {
-      accounts: Array.isArray(config.accounts) ? config.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.email !== undefined ? { email: clone(a.email) } : {}),
-          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
-          ...(a.organizationUuid !== undefined ? { organizationUuid: clone(a.organizationUuid) } : {}),
-          ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
+        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
+        ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+        ...(a.organizationUuid !== undefined ? { organizationUuid: clone(a.organizationUuid) } : {}),
+        ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
+      })),
     };
   default: {
     const exhaustive: never = upstream.provider;
@@ -105,38 +111,32 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   switch (upstream.provider) {
   case 'codex':
     return {
-      accounts: Array.isArray(state.accounts) ? state.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-          ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
-          state_updated_at: clone(a.state_updated_at),
-          refresh_token_set: hasSecret(a.refresh_token),
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
+        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
+        ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+        ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
+        state_updated_at: clone(a.state_updated_at),
+        refresh_token_set: hasSecret(a.refresh_token),
+      })),
     };
   case 'claude-code':
     return {
-      accounts: Array.isArray(state.accounts) ? state.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
-          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-          ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
-          stateUpdatedAt: clone(a.stateUpdatedAt),
-          refreshTokenSet: hasSecret(a.refreshToken),
-          // accessToken.expiresAt + quotaSnapshot are non-secret summaries the
-          // dashboard surfaces directly. accessToken.token is dropped.
-          accessToken: isRecord(a.accessToken)
-            ? {
-                expiresAt: clone(a.accessToken.expiresAt),
-                refreshedAt: clone(a.accessToken.refreshedAt),
-              }
-            : null,
-          quotaSnapshot: isRecord(a.quotaSnapshot) ? clone(a.quotaSnapshot) : null,
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
+        ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+        ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+        ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
+        stateUpdatedAt: clone(a.stateUpdatedAt),
+        refreshTokenSet: hasSecret(a.refreshToken),
+        // accessToken.expiresAt + quotaSnapshot are non-secret summaries the
+        // dashboard surfaces directly. accessToken.token is dropped.
+        accessToken: isRecord(a.accessToken)
+          ? {
+              expiresAt: clone(a.accessToken.expiresAt),
+              refreshedAt: clone(a.accessToken.refreshedAt),
+            }
+          : null,
+        quotaSnapshot: isRecord(a.quotaSnapshot) ? clone(a.quotaSnapshot) : null,
+      })),
     };
   case 'copilot':
   case 'custom':
