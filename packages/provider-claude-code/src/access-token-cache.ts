@@ -38,18 +38,13 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   fetcher: Fetcher;
 }
 
-// Reads, refreshes, and persists. CAS semantics:
-//
-// - Refresh-token rotation MUST land. The upstream rotates on every refresh
-//   call, so a CAS loss here means a sibling rotation already won and our
-//   in-flight refresh response holds a token the world has already replaced;
-//   carrying on would burn the next refresh as `invalid_grant`. We propagate
-//   the error and let the next request re-read state.
-// - Cached access-token persistence is best-effort. If a sibling already
-//   wrote a fresher entry, the loser's value is fine to drop — both calls
-//   minted from a still-rotated refresh chain and the winner's token is
-//   newer. We surface persistence storage failures, but a `updated: false`
-//   from the repo (an honest CAS miss) is silent.
+// Reads, refreshes, and persists. The rotated refresh token and the new
+// cached access token are committed together in a single CAS write. CAS
+// loss on that write is fatal: the upstream rotates on every refresh call,
+// so a sibling rotation already burned the refresh token we hold, and
+// reusing our response would be rejected as `invalid_grant`. We throw so
+// the next request re-reads state and refreshes from the live tail of the
+// rotation chain.
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
 ): Promise<ClaudeCodeAccessTokenEntry> => {
@@ -126,12 +121,7 @@ const persistTerminalState = async (
     stateUpdatedAt: new Date().toISOString(),
     accessToken: null,
   }));
-  // Best-effort: if a sibling already flipped or re-imported, the operator
-  // gets the more recent state. We swallow CAS loss but propagate storage
-  // failures.
-  await repo.saveState(upstreamId, flipped, { expectedState }).catch(error => {
-    console.warn(`persistTerminalState: failed to record terminal state on ${upstreamId}: ${(error as Error).message}`);
-  });
+  await repo.saveState(upstreamId, flipped, { expectedState });
 };
 
 // Used in 401-retry: clear the cached access token without touching the
