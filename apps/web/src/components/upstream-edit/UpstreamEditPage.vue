@@ -50,7 +50,19 @@ const upstreamsStore = useUpstreamsStore();
 type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
 
-const activeProvider = ref<UpstreamProviderKind>(props.record?.provider ?? props.initialProvider ?? 'custom');
+// Edit mode always carries a `record` (parent's v-if guards the null case);
+// create mode always carries `initialProvider` (the loader resolves it from
+// the query string, falling back to 'custom' there). One of the two is
+// always defined for this component to mount.
+const initialActiveProvider = ((): UpstreamProviderKind => {
+  if (props.mode === 'edit') {
+    if (!props.record) throw new Error('UpstreamEditPage: edit mode requires a non-null record');
+    return props.record.provider;
+  }
+  if (!props.initialProvider) throw new Error('UpstreamEditPage: create mode requires an initialProvider');
+  return props.initialProvider;
+})();
+const activeProvider = ref<UpstreamProviderKind>(initialActiveProvider);
 const name = ref('');
 const enabled = ref(true);
 const sortOrder = ref<number>(props.nextSortOrder);
