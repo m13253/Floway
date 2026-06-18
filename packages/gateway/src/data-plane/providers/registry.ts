@@ -226,7 +226,7 @@ export const getModels = async (
 
   const { models, sawSuccess, lastError } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
 
-  if (sawSuccess) return [...models].sort((a, b) => compareModelIds(a.id, b.id));
+  if (sawSuccess) return models.sort((a, b) => compareModelIds(a.id, b.id));
   if (lastError) throw lastError;
   return [];
 };

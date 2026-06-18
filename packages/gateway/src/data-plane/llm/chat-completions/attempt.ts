@@ -34,7 +34,7 @@ export const chatCompletionsAttempt = {
     const invocation: ChatCompletionsInvocation = {
       payload: rewritten.payload,
       candidate,
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: { ...inheritedInvocationHeaders },
     };
     return await runInterceptors(invocation, ctx, chatCompletionsInterceptors, async () => {
       if (candidate.targetApi === 'chat-completions') {
