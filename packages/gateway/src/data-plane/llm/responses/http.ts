@@ -49,7 +49,7 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
   const result = internalErrorResult(502, toInternalDebugError(error, 'responses'));
   const { response } = await respondResponses(c, result, false, ctx);
   return response;
@@ -60,7 +60,7 @@ export const responsesHttp = {
     try {
       const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), true);
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append' });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
@@ -74,7 +74,7 @@ export const responsesHttp = {
   compact: async (c: Context): Promise<Response> => {
     try {
       const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), false);
-      const ctx = createGatewayCtxFromHono(c, false);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store });
       if (result.type === 'result') return Response.json(result.result);

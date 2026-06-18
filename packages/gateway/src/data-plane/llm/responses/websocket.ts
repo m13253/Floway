@@ -5,7 +5,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import { createGatewayCtxForWs, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import type { StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -104,7 +104,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxForWs(c, downstreamAbortController);
+    const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 
