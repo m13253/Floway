@@ -186,7 +186,6 @@ const toggleCurrentColoAt = (index: number) => {
       <template #default="{ item: entry, index }: { item: ProxyFallbackEntry; index: number }">
         <li class="flex items-center gap-2 px-1 py-2 text-sm">
           <button
-            v-if="coloAware"
             type="button"
             class="drag-handle inline-flex h-7 w-7 shrink-0 cursor-grab items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-gray-300 active:cursor-grabbing"
             aria-label="Drag to reorder"
