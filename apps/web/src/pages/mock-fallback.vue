@@ -9,9 +9,9 @@
 <script setup lang="ts">
 import { onBeforeMount, ref } from 'vue';
 
+import type { BackoffRow, ProxyFallbackEntry, ProxyRecord } from '../api/types.ts';
 import ProxyFallbackListPanel from '../components/upstream-edit/ProxyFallbackListPanel.vue';
 import { __setMockProxiesStoreForDev } from '../composables/useProxies.ts';
-import type { BackoffRow, ProxyFallbackEntry, ProxyRecord } from '../api/types.ts';
 
 definePage({ meta: { public: true } });
 

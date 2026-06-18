@@ -20,8 +20,8 @@ import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
 import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
-import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{

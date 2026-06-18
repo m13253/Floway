@@ -1453,10 +1453,11 @@ class SqlProxyRepo implements ProxyRepo {
 
   async findUpstreamsReferencing(proxyId: string): Promise<string[]> {
     // json_each unrolls the upstreams.proxy_fallback_list_json array into
-    // virtual rows so the predicate matches by element. Both D1 and node:sqlite
-    // ship the json1 extension.
+    // virtual rows so the predicate matches by element. Each element is a
+    // JSON object `{"id": "...", "colos"?: [...]}`; the json_extract reads
+    // the `id` field. Both D1 and node:sqlite ship the json1 extension.
     const { results } = await this.db
-      .prepare('SELECT DISTINCT u.id FROM upstreams u, json_each(u.proxy_fallback_list_json) j WHERE j.value = ?')
+      .prepare("SELECT DISTINCT u.id FROM upstreams u, json_each(u.proxy_fallback_list_json) j WHERE json_extract(j.value, '$.id') = ?")
       .bind(proxyId)
       .all<{ id: string }>();
     return results.map(row => row.id);

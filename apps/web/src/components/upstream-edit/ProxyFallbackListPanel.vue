@@ -6,11 +6,10 @@ import {
 } from 'reka-ui';
 import { computed } from 'vue';
 
-import { Sortable, TagCombobox, Tooltip } from '@floway-dev/ui';
-
 import type { ProxyFallbackEntry, ProxyRecord } from '../../api/types.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { formatCountdown } from '../../utils/format-countdown.ts';
+import { Sortable, TagCombobox, Tooltip } from '@floway-dev/ui';
 
 const DIRECT = 'direct';
 
