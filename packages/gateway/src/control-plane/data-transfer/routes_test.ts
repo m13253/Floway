@@ -641,7 +641,7 @@ test('import rejects legacy provider-prefixed upstream identities before mutatin
   assertEquals(legacyUsageUpstream.status, 400);
   assertEquals(legacyUsageUpstream.body.error, 'invalid usage at index 0: upstream must use a raw upstream id, not a legacy provider-prefixed identity');
   assertEquals(legacyPerformanceUpstream.status, 400);
-  assertEquals(legacyPerformanceUpstream.body.error, 'invalid performance record at index 0');
+  assertEquals(legacyPerformanceUpstream.body.error, 'invalid performance record at index 0: record fields are missing or malformed');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });

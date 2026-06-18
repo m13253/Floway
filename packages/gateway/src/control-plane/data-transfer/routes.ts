@@ -459,13 +459,13 @@ const parsePerformanceIncluded = (data: Record<string, unknown>): { type: 'ok'; 
   return { type: 'ok', included: data.performanceIncluded };
 };
 
-const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: PerformanceTelemetryRecord[] } | { type: 'invalid'; index: number } => {
-  if (!Array.isArray(value)) return { type: 'invalid', index: -1 };
+const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: PerformanceTelemetryRecord[] } | { type: 'invalid'; index: number; error: string } => {
+  if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'performance must be an array when included' };
 
   const records: PerformanceTelemetryRecord[] = [];
   for (let i = 0; i < value.length; i++) {
     const record = value[i];
-    if (!record || typeof record !== 'object') return { type: 'invalid', index: i };
+    if (!record || typeof record !== 'object') return { type: 'invalid', index: i, error: 'record is not an object' };
 
     const item = record as Record<string, unknown>;
     if (
@@ -488,15 +488,15 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       !isNonNegativeSafeInteger(item.totalMsSum) ||
       !Array.isArray(item.buckets)
     ) {
-      return { type: 'invalid', index: i };
+      return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
     const buckets = [];
     for (const bucket of item.buckets) {
-      if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i };
+      if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i, error: 'bucket is not an object' };
       const bucketItem = bucket as Record<string, unknown>;
       if (!isNonNegativeSafeInteger(bucketItem.lowerMs) || !isNonNegativeSafeInteger(bucketItem.upperMs) || !isNonNegativeSafeInteger(bucketItem.count) || bucketItem.upperMs <= bucketItem.lowerMs) {
-        return { type: 'invalid', index: i };
+        return { type: 'invalid', index: i, error: 'bucket lowerMs/upperMs/count fields are missing or malformed' };
       }
       buckets.push({ lowerMs: bucketItem.lowerMs, upperMs: bucketItem.upperMs, count: bucketItem.count });
     }
@@ -649,7 +649,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performanceIncluded = performanceIncludedResult.included;
   const performanceResult = performanceIncluded ? parsePerformanceRecords(data.performance) : { type: 'ok' as const, records: [] };
   if (performanceResult.type === 'invalid') {
-    return c.json({ error: performanceResult.index >= 0 ? `invalid performance record at index ${performanceResult.index}` : 'invalid performance: performance must be an array when included' }, 400);
+    return c.json({ error: performanceResult.index >= 0 ? `invalid performance record at index ${performanceResult.index}: ${performanceResult.error}` : `invalid performance: ${performanceResult.error}` }, 400);
   }
   const performance = performanceResult.records;
 
