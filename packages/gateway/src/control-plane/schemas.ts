@@ -278,10 +278,17 @@ const codexCredentialFields = {
   }).optional(),
 };
 
-const requireExactlyOneCredential = (b: { auth_json?: unknown; callback?: unknown }): boolean =>
-  (b.auth_json !== undefined) !== (b.callback !== undefined);
+// Factory for the "exactly one credential field" refine used by both codex
+// and claude-code import/re-import bodies. Returns the predicate together
+// with the matching zod refine message so both shapes stay in lock-step.
+const requireExactlyOneCredential = (
+  fieldName: 'auth_json' | 'credentials_json',
+): { predicate: (b: Record<string, unknown>) => boolean; message: { message: string } } => ({
+  predicate: b => (b[fieldName] !== undefined) !== (b.callback !== undefined),
+  message: { message: `Provide exactly one of ${fieldName} or callback` },
+});
 
-const codexCredentialRefineMessage = { message: 'Provide exactly one of auth_json or callback' };
+const codexCredentialRefine = requireExactlyOneCredential('auth_json');
 
 // Both `codexImportBody.name` and `codexReimportBody.name` are optional. On
 // import, the server synthesizes a default name from the id_token-derived
@@ -293,13 +300,13 @@ export const codexImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...codexCredentialFields,
-}).refine(requireExactlyOneCredential, codexCredentialRefineMessage);
+}).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
 // `sort_order` is omitted because re-import must not re-rank the row.
 export const codexReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...codexCredentialFields,
-}).refine(requireExactlyOneCredential, codexCredentialRefineMessage);
+}).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
 export const codexRefreshNowBody = z.object({});
 
@@ -327,21 +334,18 @@ const claudeCodeCredentialFields = {
   }).optional(),
 };
 
-const requireExactlyOneClaudeCodeCredential = (b: { credentials_json?: unknown; callback?: unknown }): boolean =>
-  (b.credentials_json !== undefined) !== (b.callback !== undefined);
-
-const claudeCodeCredentialRefineMessage = { message: 'Provide exactly one of credentials_json or callback' };
+const claudeCodeCredentialRefine = requireExactlyOneCredential('credentials_json');
 
 export const claudeCodeImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...claudeCodeCredentialFields,
-}).refine(requireExactlyOneClaudeCodeCredential, claudeCodeCredentialRefineMessage);
+}).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...claudeCodeCredentialFields,
-}).refine(requireExactlyOneClaudeCodeCredential, claudeCodeCredentialRefineMessage);
+}).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeRefreshNowBody = z.object({});
 
