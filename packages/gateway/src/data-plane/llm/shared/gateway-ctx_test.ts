@@ -1,21 +1,15 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono, createGatewayCtxForWs } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono, createGatewayCtxForWs, type GatewayCtxAuthVars } from './gateway-ctx.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
-
-interface AuthVars {
-  apiKeyId: string;
-  apiKeyUpstreamIds: readonly string[] | null;
-  userUpstreamIds: readonly string[] | null;
-}
 
 // Mirrors the production guarantee: by the time a data-plane handler runs,
 // auth middleware has stamped all three vars on the context. Tests that want
 // to model an unrestricted key on an uncapped user can rely on the defaults;
 // tests that want to model a capped key or user override at the handler.
-const makeApp = (): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
+const makeApp = (): Hono<{ Variables: GatewayCtxAuthVars }> => {
+  const app = new Hono<{ Variables: GatewayCtxAuthVars }>();
   app.use('*', async (c, next) => {
     c.set('apiKeyId', 'test-key');
     c.set('apiKeyUpstreamIds', null);
@@ -181,7 +175,7 @@ describe('createGatewayCtxForWs', () => {
       c.set('apiKeyId', 'ws-key');
       c.set('apiKeyUpstreamIds', ['ws-up-1']);
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -195,7 +189,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -209,7 +203,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -223,7 +217,7 @@ describe('createGatewayCtxForWs', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -238,7 +232,7 @@ describe('createGatewayCtxForWs', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -252,7 +246,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -273,7 +267,7 @@ describe('createGatewayCtxForWs', () => {
     const before = performance.now();
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');

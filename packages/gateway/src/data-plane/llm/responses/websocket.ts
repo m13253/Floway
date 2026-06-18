@@ -104,7 +104,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxForWs(c, socket, downstreamAbortController);
+    const ctx = createGatewayCtxForWs(c, downstreamAbortController);
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 
