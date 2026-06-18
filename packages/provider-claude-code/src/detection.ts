@@ -142,14 +142,11 @@ export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): 
   const ua = input.headers.get('user-agent');
   if (!ua || !UA_PATTERN.test(ua)) return false;
 
-  // Anything outside the Messages family passes on UA alone — real CC issues
-  // /v1/oauth/profile, /v1/models, /v1/organizations, etc., none of which
-  // carry a system prompt.
-  if (input.pathname !== '/v1/messages' && input.pathname !== '/v1/messages/count_tokens') {
-    return true;
-  }
-  // count_tokens probes never carry a system block.
-  if (input.pathname === '/v1/messages/count_tokens') return true;
+  // Anything outside `/v1/messages` passes on UA alone — real CC issues
+  // /v1/oauth/profile, /v1/models, /v1/organizations, count_tokens etc., none
+  // of which carry the system-prompt + metadata.user_id surface the strict
+  // gate below inspects.
+  if (input.pathname !== '/v1/messages') return true;
   // Real CC's periodic Haiku connectivity probe sends max_tokens=1 with no
   // system; surface it as CC-shaped without further checks.
   if (input.isMaxTokensOneHaikuProbe) return true;

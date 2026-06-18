@@ -31,14 +31,17 @@ test('appends IDENTITY_BLOCK after an existing system[0] block', async () => {
   assertEquals(ctx.payload.system, [billing, IDENTITY_BLOCK]);
 });
 
-test('starts a fresh system array when none is present', async () => {
+test('appends IDENTITY_BLOCK onto the array injectBillingBlock established', async () => {
+  // Single-block fixture stands in for what inject-billing-block leaves behind.
+  const existing = { type: 'text' as const, text: 'placeholder' };
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: 16,
     messages: [{ role: 'user', content: 'hi' }],
+    system: [existing],
   });
 
   await injectIdentityBlock(ctx, {}, okEvents);
 
-  assertEquals(ctx.payload.system, [IDENTITY_BLOCK]);
+  assertEquals(ctx.payload.system, [existing, IDENTITY_BLOCK]);
 });

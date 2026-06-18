@@ -81,8 +81,6 @@ const isRateLimitedNow = (
   return false;
 };
 
-const findStateAccount = (state: ClaudeCodeUpstreamState): ClaudeCodeAccountCredential => state.accounts[0]!;
-
 const replaceStateAccount = (
   state: ClaudeCodeUpstreamState,
   patch: (account: ClaudeCodeAccountCredential) => ClaudeCodeAccountCredential,
@@ -132,7 +130,7 @@ export const callClaudeCodeMessages = async (
   const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = findStateAccount(state);
+  const account = state.accounts[0]!;
 
   if (account.state !== 'active') {
     return await syntheticReturn(synthetic503(
@@ -182,13 +180,12 @@ const performUpstreamCall = async (
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
-    // Spread first, then drop any inbound auth header in either casing before
-    // setting ours. `clientRequestHeaders` is documented lowercase-only
-    // (`UpstreamCallOptions` JSDoc), so the uppercase delete is defensive
-    // insurance, not a real expectation.
+    // Drop any inbound authorization before setting ours.
+    // `clientRequestHeaders` is typed lowercase-only (`UpstreamCallOptions`
+    // JSDoc + `headersToRecord` guarantee), so a single lowercase delete is
+    // sufficient.
     const passthrough: Record<string, string> = { ...opts.headers };
     delete passthrough.authorization;
-    delete passthrough.Authorization;
     headers = { ...passthrough, authorization: `Bearer ${accessToken.token}` };
   } else {
     headers = { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.token}` };

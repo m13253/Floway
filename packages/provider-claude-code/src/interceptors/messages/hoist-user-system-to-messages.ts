@@ -52,8 +52,9 @@ export const hoistUserSystemToMessages = async <TResult>(
 const captureSystemText = (system: string | MessagesTextBlock[] | undefined): string => {
   if (system === undefined) return '';
   if (typeof system === 'string') return system;
+  // MessagesTextBlock requires `type: 'text'` and `text: string`; the type
+  // contract is sufficient guarantee, no runtime predicate needed.
   return system
-    .filter(block => block.type === 'text' && typeof block.text === 'string')
     .map(block => block.text)
     .filter(text => text.length > 0)
     .join('\n\n');

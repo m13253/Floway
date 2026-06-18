@@ -37,7 +37,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     callMessages: async (model, body, signal, headers, _anthropicBeta, opts) => {
       const ctx: ClaudeCodeMessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...(headers ?? {}) },
+        headers: { ...headers },
         model,
         upstreamId: record.id,
       };

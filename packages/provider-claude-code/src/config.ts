@@ -82,9 +82,7 @@ function assertClaudeCodeUpstreamConfig(value: unknown): asserts value is Claude
   if (obj.accounts.length !== 1) {
     throw new TypeError(`ClaudeCodeUpstreamConfig.accounts must hold exactly one account (got ${obj.accounts.length})`);
   }
-  for (let i = 0; i < obj.accounts.length; i++) {
-    assertClaudeCodeAccountIdentity(obj.accounts[i], `ClaudeCodeUpstreamConfig.accounts[${i}]`);
-  }
+  assertClaudeCodeAccountIdentity(obj.accounts[0], 'ClaudeCodeUpstreamConfig.accounts[0]');
 }
 
 export function assertClaudeCodeUpstreamRecord(record: UpstreamRecord): asserts record is ClaudeCodeUpstreamRecord {
