@@ -43,7 +43,7 @@ const haikuModel: UpstreamModel = {
 const freshAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
   token: 'at_cached',
   expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-  refreshedAt: new Date(Date.now() - 60 * 1000).toISOString(), // cached, not freshly minted
+  refreshedAt: new Date(Date.now() - 60 * 1000).toISOString(),
 };
 
 const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
@@ -74,9 +74,9 @@ const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
   (currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.quotaSnapshot;
 
-// The best-effort persist runs through .catch(...); yield to the queue so
-// the saveState write completes before assertions.
-const flushMicrotasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+// Yield to the queue so the .catch chain from fireAndForgetPersist completes
+// before assertions inspect the persisted state.
+const flushAsyncQueue = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -267,7 +267,7 @@ describe('callClaudeCodeMessages — 401 retry', () => {
   });
 
   test('freshly-minted token 401 → no invalidate, surface verbatim', async () => {
-    seedAccount(); // no cached token; first call will mint
+    seedAccount();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
@@ -291,7 +291,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
       upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
-    await flushMicrotasks();
+    await flushAsyncQueue();
     const stored = readQuotaEntry();
     expect(stored).not.toBeNull();
     const data = stored!.data as { status?: string; sevenDay?: { utilization?: number } };
@@ -311,16 +311,13 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
-    await flushMicrotasks();
+    await flushAsyncQueue();
     const stored = readQuotaEntry();
     const data = stored!.data as { status?: string };
     expect(data.status).toBe('rejected');
   });
 });
 
-// Recorder contract: every code path must wrap exactly one fetch promise
-// through opts.call.recordUpstreamLatency or the gateway throws on contract
-// violation.
 const enforcingRecorder = () => {
   const wrappedPromises: unknown[] = [];
   const record = <T>(promise: Promise<T>): Promise<T> => {

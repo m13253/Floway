@@ -58,9 +58,8 @@ let repo: UpstreamsRepoSlim;
 
 beforeEach(() => {
   current = makeRecord({ accounts: [{ ...baseAccount }] });
-  // Write-through stub: a successful CAS mutates the in-memory record so a
-  // follow-up getById observes the latest persisted state. Mirrors the
-  // live D1-backed repo's read-after-write behavior.
+  // Mirror the live D1-backed repo's read-after-write behavior so the cache
+  // tests can rely on getById observing the just-persisted state.
   saveStateSpy = vi.fn(async (_id, newState, _opts) => {
     if (current) current = { ...current, state: newState as ClaudeCodeUpstreamState };
     return { updated: true };

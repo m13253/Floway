@@ -1,8 +1,7 @@
-// Static catalog of Claude Code dated models. Anthropic exposes only the
-// three dated ids below to subscription clients; there is no `/v1/models`
-// equivalent CC clients consult, so we ship the list inline rather than
-// fetching it. The catalog stays small on purpose — the operator's
-// upstream-model toggles operate on the public ids in this list.
+// Anthropic exposes only the three dated ids below to subscription clients;
+// there is no `/v1/models` equivalent CC clients consult, so we ship the list
+// inline rather than fetching it. The catalog stays small on purpose — the
+// operator's upstream-model toggles operate on the public ids in this list.
 //
 // Context window: Anthropic publishes 200k tokens for all current models
 // (https://docs.claude.com/en/docs/about-claude/models/overview); we ship

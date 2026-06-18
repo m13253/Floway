@@ -15,9 +15,6 @@
 //                                       what /v1/models advertises.
 //   6. synthesize-metadata-user-id      fills metadata.user_id with the new
 //                                       JSON-form CC identity if absent.
-//
-// Each interceptor is generic over the terminal result type to keep the
-// chain reusable across any callMessages-shaped flow.
 
 import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';
 import { injectBillingBlock } from './inject-billing-block.ts';

@@ -147,9 +147,7 @@ describe('parseClaudeCodeQuotaHeaders — coercion edge cases', () => {
   });
 
   test('fallback header is the literal token `available` — anything else is `false`', () => {
-    // Steady-state Anthropic response.
     expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'available' })).fallbackAvailable).toBe(true);
-    // Any other value (incl. an explicit "unavailable") flips to false.
     expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'unavailable' })).fallbackAvailable).toBe(false);
     expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'true' })).fallbackAvailable).toBe(false);
     // Absence stays null so the dashboard can distinguish "no signal" from

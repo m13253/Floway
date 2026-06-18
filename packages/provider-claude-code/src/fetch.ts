@@ -103,15 +103,21 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
 };
 
-const fireAndForgetPersist = (upstreamId: string, headers: Headers): void => {
-  const snapshot = parseClaudeCodeQuotaHeaders(headers);
-  // Skip when the response carries no rate-limit signal at all — there is
-  // nothing meaningful to persist and writing an empty object would erase
-  // the prior snapshot.
-  if (Object.keys(snapshot.raw).length === 0) return;
+// Best-effort by design — persist failures are non-critical because the next
+// 2xx response refreshes the snapshot. The hot path must not block on the
+// write completing or surface its failures to the caller.
+const persistQuotaSnapshotBestEffort = (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): void => {
   persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
     console.warn(`Claude Code: failed to persist quota snapshot for upstream ${upstreamId}: ${String(error)}`);
   });
+};
+
+const fireAndForgetPersist = (upstreamId: string, headers: Headers): void => {
+  const snapshot = parseClaudeCodeQuotaHeaders(headers);
+  // Skip when the response carries no rate-limit signal at all — writing an
+  // empty object would erase the prior snapshot for no upside.
+  if (Object.keys(snapshot.raw).length === 0) return;
+  persistQuotaSnapshotBestEffort(upstreamId, snapshot);
 };
 
 export const callClaudeCodeMessages = async (

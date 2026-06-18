@@ -76,11 +76,10 @@ export const extractClaudeCodeCallbackParams = (input: string): { code: string; 
   return { code, state };
 };
 
-// OAuth callback ingestion. The PKCE verifier was stored at PKCE-start time
-// and is supplied here. Identity is derived by calling /api/oauth/profile
-// with the freshly minted access token; we never trust the OAuth response's
-// embedded `account` / `organization` fields because they may be stale or
-// scoped narrowly compared to the dedicated profile endpoint.
+// Identity is derived by calling /api/oauth/profile with the freshly minted
+// access token; we never trust the OAuth response's embedded `account` /
+// `organization` fields because they may be stale or scoped narrowly compared
+// to the dedicated profile endpoint.
 export const importClaudeCodeFromCallback = async (opts: {
   code: string;
   pkceVerifier: string;
@@ -138,7 +137,9 @@ export const importClaudeCodeFromCredentialsJson = async (
   // all match this; if a future build emits seconds, the cache's freshness
   // gate would clip every read to "stale" and force an immediate refresh —
   // that's a recoverable misclassification, but worth catching as a sanity
-  // check by rejecting obviously-too-small values.
+  // check by rejecting obviously-too-small values. `1_000_000_000_000` is
+  // 2001-09-09T01:46:40Z in milliseconds; any real OAuth expiry will be
+  // larger, while a seconds-encoded expiry from the present-day will be ~10^9.
   if (expiresAtRaw < 1_000_000_000_000) {
     throw new TypeError('credentials.json.claudeAiOauth.expiresAt looks like seconds, expected milliseconds');
   }

@@ -132,8 +132,6 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       undefined,
       {},
       undefined,
-      // No client-request headers — detection sees no CC fingerprint and
-      // the chain runs.
       noopUpstreamCallOptions,
     );
 
@@ -191,7 +189,6 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       undefined,
       {},
       undefined,
-      // CC headers present, but no pathname — detection must downgrade.
       { ...noopUpstreamCallOptions, clientRequestHeaders: { 'user-agent': 'claude-cli/2.1.181' } },
     );
 

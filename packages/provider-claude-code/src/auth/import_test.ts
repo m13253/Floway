@@ -105,8 +105,8 @@ describe('importClaudeCodeFromCallback', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(tokenResponse));
     const fetcher: Fetcher = vi.fn(async () => jsonResponse(profileResponse));
     await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', fetcher });
-    // Token-exchange goes via directFetcher (the global fetch) regardless;
-    // only the profile call routes through the per-upstream fetcher.
+    // Token-exchange routes through the global fetch (directFetcher); only
+    // the profile call honours the per-upstream fetcher.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect((fetcher as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe('https://api.anthropic.com/api/oauth/profile');

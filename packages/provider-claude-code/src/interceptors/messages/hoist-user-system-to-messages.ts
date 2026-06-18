@@ -1,6 +1,11 @@
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import type { MessagesMessage, MessagesTextBlock } from '@floway-dev/protocols/messages';
 
+// Synthetic assistant turn that closes the hoisted user/assistant pair so the
+// upstream's role-alternation guard stays satisfied. The text is visible to
+// the upstream and may echo back in completion text, so keep it minimal.
+const SYNTHETIC_ACK = 'I will follow the above instructions.';
+
 // On the re-mimicry path the upstream's `system` slot is reserved for the
 // three CC-mimicry blocks (billing / identity / default template). Any
 // caller-supplied system content must therefore move OUT of `system` before
@@ -30,17 +35,15 @@ export const hoistUserSystemToMessages = async <TResult>(
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const captured = captureSystemText(ctx.payload.system);
-  // Drop the caller's system regardless — inject-billing-block et al rebuild
-  // `system` from scratch as a three-block array and any leftover would be
-  // overwritten anyway. Removing the field keeps the boundary mutation
-  // self-contained.
+  // inject-billing-block et al rebuild `system` from scratch as a three-block
+  // array; removing the field here keeps the boundary mutation self-contained.
   const nextPayload = { ...ctx.payload };
   delete nextPayload.system;
 
   if (captured !== '') {
     const synthetic: MessagesMessage[] = [
       { role: 'user', content: `<system>\n${captured}\n</system>` },
-      { role: 'assistant', content: 'I will follow the above instructions.' },
+      { role: 'assistant', content: SYNTHETIC_ACK },
     ];
     nextPayload.messages = [...synthetic, ...nextPayload.messages];
   }
@@ -52,8 +55,6 @@ export const hoistUserSystemToMessages = async <TResult>(
 const captureSystemText = (system: string | MessagesTextBlock[] | undefined): string => {
   if (system === undefined) return '';
   if (typeof system === 'string') return system;
-  // MessagesTextBlock requires `type: 'text'` and `text: string`; the type
-  // contract is sufficient guarantee, no runtime predicate needed.
   return system
     .map(block => block.text)
     .filter(text => text.length > 0)

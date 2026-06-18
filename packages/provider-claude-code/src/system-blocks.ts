@@ -75,11 +75,11 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
 // engineered from real CC packet captures. Changing the value produces a
 // fingerprint that diverges from the CLI and would trip Anthropic's
 // detector the moment it re-activates.
-const FINGERPRINT_SALT = '59cf53e54c78';
+const FINGERPRINT_SALT_ASCII = '59cf53e54c78';
 
 // Byte indices into the first user-role text used by real CC. Same source
-// as `FINGERPRINT_SALT`; treated as a constant tuple so the loop body and
-// the test fixtures all index the same positions.
+// as `FINGERPRINT_SALT_ASCII`; treated as a constant tuple so the loop body
+// and the test fixtures all index the same positions.
 const FINGERPRINT_INDICES = [4, 7, 20] as const;
 
 const extractFirstUserText = (body: MessagesPayload): string => {
@@ -106,7 +106,7 @@ export const computeCcVersionFingerprint = (version: string, body: MessagesPaylo
     const idx = FINGERPRINT_INDICES[i]!;
     chars[i] = idx < utf8.length ? utf8[idx]! : 0x30;
   }
-  const salt = new TextEncoder().encode(FINGERPRINT_SALT);
+  const salt = new TextEncoder().encode(FINGERPRINT_SALT_ASCII);
   const ver = new TextEncoder().encode(version);
   const input = new Uint8Array(salt.length + chars.length + ver.length);
   input.set(salt, 0);

@@ -9,8 +9,6 @@
 // one is sufficient to downgrade a Sonnet/Opus call to extra-usage billing.
 // 2026-06-19 probes showed the detector effectively paused, but Anthropic
 // can re-arm it at any time, so we ship the full surface defensively.
-// Background: https://gist.github.com/mrcattusdev (detection-target behavior
-// may change without notice).
 //
 // Casing on the wire matches what is written below: lowercase `anthropic-*`,
 // `x-app`, `authorization`; mixed-case `User-Agent`, `Accept`, `Content-Type`,
@@ -26,7 +24,9 @@ const STAINLESS_PACKAGE_VERSION = '0.94.0';
 // Stable subset of `X-Stainless-*` headers shared across both model groups.
 // `X-Stainless-OS` keeps its uppercase 'Linux' value intentionally — the
 // real CLI emits it that way and a normalised 'linux' would be a wire-level
-// drift from canonical CC.
+// drift from canonical CC. OS / Arch / Runtime values verified against the
+// macOS arm64 CC binary 2026-06-19; cross-platform CC builds (Windows /
+// x86_64) would emit different values, so re-capture on any platform bump.
 const STAINLESS_BASE = {
   'X-Stainless-Lang': 'js',
   'X-Stainless-Package-Version': STAINLESS_PACKAGE_VERSION,
@@ -80,7 +80,6 @@ export const CLAUDE_CODE_HEADERS_HAIKU: Record<string, string> = {
   'anthropic-beta': ANTHROPIC_BETA_HAIKU,
 };
 
-// Returns the right pinned header set for the resolved upstream model id.
 // Haiku detection mirrors what real CC does: a substring match on 'haiku'
 // in the dated model id (e.g. claude-haiku-4-5-20251001).
 export const pickClaudeCodeHeaders = (modelId: string): Record<string, string> =>

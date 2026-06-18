@@ -19,13 +19,7 @@ import {
 export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertClaudeCodeUpstreamRecord(record);
   assertClaudeCodeUpstreamState(record.state);
-  // The account identity is read live on every request by callClaudeCodeMessages
-  // (re-reading state through the provider repo); the factory just confirms the
-  // record validates and hands control to the per-call helpers. Future N-account
-  // fan-out will pick an account at the call site.
 
-  // Computed once per provider instance: only the upstream layer applies
-  // (no per-model override layer).
   const enabledFlags = resolveEffectiveFlags(defaultsForProvider('claude-code'), [record.flagOverrides]);
   const models = buildClaudeCodeModels(enabledFlags);
 
@@ -86,10 +80,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       );
     },
 
-    // The Claude Code subscription endpoint exposes /v1/messages only.
-    // getProvidedModels advertises that single endpoint, so no other entry
-    // point should ever route here — the stubs document intent and fail
-    // loud if dispatch ever changes.
     callMessagesCountTokens: () => Promise.reject(new Error('Claude Code provider does not implement callMessagesCountTokens')),
     callChatCompletions: () => Promise.reject(new Error('Claude Code provider does not implement callChatCompletions')),
     callResponses: () => Promise.reject(new Error('Claude Code provider does not implement callResponses')),

@@ -56,8 +56,8 @@ type ClaudeCodeAccountCredentialHealth =
   | { state: 'active'; stateMessage?: undefined }
   | { state: 'session_terminated' | 'refresh_failed'; stateMessage: string };
 
-// Account-pool state. v1 always carries exactly one entry; the asserter
-// enforces that, mirroring the same invariant on ClaudeCodeUpstreamConfig.
+// Account-pool state. The asserter enforces exactly one account, mirroring
+// the same invariant on ClaudeCodeUpstreamConfig.
 export interface ClaudeCodeUpstreamState {
   accounts: ClaudeCodeAccountCredential[];
 }

@@ -29,10 +29,8 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
-// v1 carries exactly one account; the asserter rejects anything else. This
-// helper exists so the access-token-cache stays pool-agnostic — when the
-// schema later grows to N accounts, the call site picks the account first
-// and these helpers operate on the chosen index.
+// Index-scoped patch helper that keeps the rest of the file ignorant of how
+// many accounts the state holds; the asserter currently pins it to one.
 const replaceAccountAt = (
   state: ClaudeCodeUpstreamState,
   index: number,
@@ -62,8 +60,6 @@ export const ensureClaudeCodeAccessToken = async (
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
-  // v1 is single-account. Future N-account fan-out picks an index here; for
-  // now the invariant is enforced by the asserter.
   const accountIndex = 0;
   const account = state.accounts[accountIndex];
   if (account.state !== 'active') {

@@ -1,6 +1,4 @@
 // PKCE S256 per RFC 7636. 32-byte verifier matches Anthropic's claude CLI.
-// SHA-256 of the base64url-encoded verifier is itself base64url-encoded to
-// produce the challenge — same shape codex-cli uses.
 
 export interface ClaudeCodePkce {
   verifier: string;

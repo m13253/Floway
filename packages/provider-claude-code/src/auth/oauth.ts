@@ -139,8 +139,8 @@ export const refreshClaudeCodeAccessToken = async (
   );
 };
 
-// URL-builder for the operator-facing authorize step. The literal `code=true`
-// query param matches what the real Claude Code CLI emits during sign-in.
+// The literal `code=true` query param matches what the real Claude Code CLI
+// emits during sign-in.
 export const buildClaudeCodeAuthorizeUrl = (args: {
   state: string;
   codeChallenge: string;

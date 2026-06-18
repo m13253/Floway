@@ -66,7 +66,10 @@ export const parseMetadataUserID = (raw: string): ParsedUserId | null => {
     }
     if (typeof parsed.device_id !== 'string' || !parsed.device_id) return null;
     if (typeof parsed.session_id !== 'string' || !parsed.session_id) return null;
-    // account_uuid may legitimately be the empty string for personal accounts.
+    // sub2api intentionally accepts legacy-format CC sessions where the
+    // account part is empty (personal accounts that never had an
+    // organization UUID), so empty string is a legitimate value here, not
+    // a missing-field signal. Coerce non-string to '' for the same reason.
     const accountUuid = typeof parsed.account_uuid === 'string' ? parsed.account_uuid : '';
     return {
       deviceId: parsed.device_id,
