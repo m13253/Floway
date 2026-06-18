@@ -153,10 +153,10 @@ const rewriteOrRenderFailure = async (
     // / `model-unsupported` / `routing-unavailable` lives in the serve
     // layer and treats the `endpoint` distinction (`generate` vs
     // `compact`); from inside an attempt, only `item-not-found` is
-    // reachable from rewrite — anything else is a bug.
-    if (failure.kind !== 'item-not-found') {
-      throw new Error(`responsesAttempt cannot render failure kind '${failure.kind}' — rewrite only produces 'item-not-found'.`);
-    }
+    // reachable from rewrite — anything else is a bug. Re-throw the
+    // original error so the upstream stack/cause survives, matching
+    // `messages/attempt.ts:148`.
+    if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {
         type: 'upstream-error',
