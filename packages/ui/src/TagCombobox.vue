@@ -33,11 +33,6 @@ const props = withDefaults(defineProps<{
   placeholder?: string;
   emptyText?: string;
   disabled?: boolean;
-  // Values to render with a prominent cyan "current" highlight in both the
-  // selected chip area and the dropdown suggestion list. Caller-defined
-  // semantics — we just paint matching entries; we don't read or mutate
-  // them. Typical use: marking the runtime's "current" colo so the operator
-  // sees at a glance whether it's in the whitelist they're editing.
   highlight?: readonly string[];
 }>(), { emptyText: 'Type an id and press Enter to add' });
 

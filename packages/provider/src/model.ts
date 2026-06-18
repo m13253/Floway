@@ -6,9 +6,9 @@ export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex';
 // the proxies catalog or the literal 'direct' sentinel. `colos` is an
 // optional whitelist of Cloudflare colos / Node `RUNTIME_LOCATION` tags;
 // when set, the dial layer only attempts this entry from a request that
-// landed in one of the listed colos. Missing means "all colos"; an explicit
-// empty array is never persisted — the wire schema rejects it and the repo
-// normalizer strips it before storage, so all three layers tell one story.
+// landed in one of the listed colos. Missing means "all colos". An empty
+// array is never persisted — the wire schema rejects it and the repo
+// normalizer strips it.
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
@@ -34,8 +34,6 @@ export interface UpstreamRecord {
   // id is hidden from the catalog and unroutable, but its row metadata stays
   // editable. Entries may reference ids no longer present in the live model list.
   disabledPublicModelIds: string[];
-  // Ordered list of proxy fallback entries the upstream walks when its primary
-  // dial path is exhausted. Empty means no proxy fallback configured.
   proxyFallbackList: ProxyFallbackEntry[];
 }
 

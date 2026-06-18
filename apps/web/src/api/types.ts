@@ -4,10 +4,6 @@ export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex';
 
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
-// One entry in an upstream's proxy_fallback_list. `id` is a proxy id from
-// the proxies catalog or the literal 'direct' sentinel; `colos` is an
-// optional whitelist of Cloudflare colos / Node RUNTIME_LOCATION tags that
-// restricts when the entry is attempted at dial time.
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];

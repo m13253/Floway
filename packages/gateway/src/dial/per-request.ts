@@ -5,22 +5,11 @@ import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
 
-// Build a per-request mapper that hands each upstream id its own
-// proxy-aware Fetcher. The proxies catalog and the request's set of
-// fallback lists are loaded eagerly once per data-plane call so each
-// per-upstream fetcher can be constructed synchronously by id. Upstreams
-// whose `proxyFallbackList` is empty receive a fetcher that walks the
-// implicit ['direct'] list — i.e. plain runtime `fetch`.
-//
-// `currentColo` (resolved once per request by the caller, typically from
-// `GatewayCtx`) is threaded into every fetcher so per-entry `colos`
-// whitelists can be honoured at dial time.
-//
-// Parse failures on individual proxy rows are isolated to the upstreams
-// that actually reference them: a single malformed URL must not take down
-// every other upstream in the same request. Per-upstream fetchers built
-// against a bad row throw at call time rather than at build time, mirroring
-// how the dial layer surfaces other dial-time failures.
+// Parse failures on individual proxy rows are isolated to the upstreams that
+// actually reference them: a single malformed URL must not take down every
+// other upstream in the same request. Per-upstream fetchers built against a
+// bad row throw at call time rather than at build time, mirroring how the
+// dial layer surfaces other dial-time failures.
 export const createPerRequestFetcher = async (currentColo: string | null): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
   const upstreams = await repo.upstreams.list();
@@ -83,10 +72,6 @@ export const createPerRequestFetcher = async (currentColo: string | null): Promi
   };
 };
 
-// Control-plane (warm-models, model browse, copilot quota) and background
-// flows (codex token refresh, data import) don't carry a data-plane request,
-// so there's no colo to derive. Routing through this helper records the
-// intent at the call site so the bare `null` isn't read as "forgot to
-// thread the colo" by a future reader.
+// Admin / background variant — no data-plane request, no colo to derive.
 export const createPerRequestFetcherForAdmin = (): Promise<(upstreamId: string) => Fetcher> =>
   createPerRequestFetcher(null);

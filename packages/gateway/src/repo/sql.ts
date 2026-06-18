@@ -40,7 +40,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamProviderKind, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1334,14 +1334,13 @@ const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] 
       if (!Array.isArray(entry.colos)) {
         throw new Error(`Upstream ${id} proxy_fallback_list entry .colos must be an array when set, got ${typeof entry.colos}`);
       }
-      const list: string[] = [];
+      colos = [];
       for (const c of entry.colos) {
         if (typeof c !== 'string') {
           throw new Error(`Upstream ${id} proxy_fallback_list entry .colos members must be strings, got ${typeof c}`);
         }
-        list.push(c);
+        colos.push(c);
       }
-      colos = list;
     }
     entries.push(colos === undefined ? { id: entry.id } : { id: entry.id, colos });
   }
@@ -1418,10 +1417,6 @@ class SqlProxyRepo implements ProxyRepo {
     // referencing ids — folding the same predicate into the DELETE closes
     // the TOCTOU window where an admin PATCHes an upstream to add the
     // reference between the read and the DELETE.
-    //
-    // Each entry in proxy_fallback_list_json is a `{"id":"...","colos"?:[...]}`
-    // object after migration 0033; we pull the id out of each element with
-    // json_extract so the predicate matches the value, not the wrapping object.
     const result = await this.db
       .prepare(
         `DELETE FROM proxies
@@ -1457,9 +1452,8 @@ class SqlProxyRepo implements ProxyRepo {
 
   async findUpstreamsReferencing(proxyId: string): Promise<string[]> {
     // json_each unrolls the upstreams.proxy_fallback_list_json array into
-    // virtual rows so the predicate matches by element. Each element is a
-    // JSON object `{"id": "...", "colos"?: [...]}`; the json_extract reads
-    // the `id` field. Both D1 and node:sqlite ship the json1 extension.
+    // virtual rows so the predicate matches by element. Both D1 and
+    // node:sqlite ship the json1 extension.
     const { results } = await this.db
       .prepare("SELECT DISTINCT u.id FROM upstreams u, json_each(u.proxy_fallback_list_json) j WHERE json_extract(j.value, '$.id') = ?")
       .bind(proxyId)

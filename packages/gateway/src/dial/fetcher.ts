@@ -21,10 +21,8 @@ interface CreateFetcherInput {
   fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
   // Current Cloudflare colo (or Node RUNTIME_LOCATION) the data-plane request
-  // landed in. When non-null, entries whose `colos` whitelist excludes this
-  // value are skipped — that's how per-colo proxy chains stay scoped to the
-  // colo they're meant for. Null disables the filter entirely (deployments
-  // without a colo concept honour every entry as written).
+  // landed in; null on deployments without a colo concept. See
+  // `entryMatchesColo` for the filter rule.
   currentColo: string | null;
   // Injected so the fetcher stays runtime-agnostic — the composition root
   // chooses the concrete dial/fetch implementations.
@@ -76,10 +74,9 @@ interface ProxiedRequest {
 // and the next attempt's wrap immediately overwrites the prior duration on
 // settle. The all-fail tail throws without anyone reading the duration.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
-  // Apply the colo filter before any other shape-fixing: an entry that the
-  // current colo excludes shouldn't influence buffering decisions, shouldn't
-  // contribute to the implicit-['direct'] fallback, and shouldn't be retried
-  // in pass 2 either — it's simply not a candidate for this request.
+  // Colo filter precedes the implicit-['direct'] collapse so a fully-excluded
+  // list behaves like an empty list and gets the direct fallback, rather than
+  // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.currentColo));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take

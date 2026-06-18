@@ -48,10 +48,6 @@ const emit = defineEmits<{
 const router = useRouter();
 const api = useApi();
 const upstreamsStore = useUpstreamsStore();
-// Runtime info is loaded once at dashboard mount (App.vue); we just read the
-// cached value here. The proxy fallback panel uses kind to decide whether to
-// surface its colo-aware affordances. Defaulting `coloAware` to false keeps
-// the editor friendly during the brief window before the first load completes.
 const { info: runtimeInfo } = useRuntimeInfo();
 const coloAware = computed<boolean>(() => runtimeInfo.value?.kind === 'cloudflare');
 const currentColo = computed<string | null>(() => runtimeInfo.value?.colo ?? null);

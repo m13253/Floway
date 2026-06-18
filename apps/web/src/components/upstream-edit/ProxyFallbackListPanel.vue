@@ -65,10 +65,6 @@ const labelFor = (entry: ProxyFallbackEntry): string => {
 const isOrphan = (entry: ProxyFallbackEntry): boolean =>
   entry.id !== DIRECT && !proxiesById.value.has(entry.id);
 
-const currentColoHighlight = computed<string[]>(() =>
-  props.currentColo ? [props.currentColo] : []);
-
-// Live tick so the backoff countdown ticks visibly without the parent reloading.
 const now = useNow({ interval: 1000 });
 
 interface ActiveBackoff {
@@ -242,7 +238,7 @@ const toggleCurrentColoAt = (index: number) => {
                   <TagCombobox
                     :model-value="entry.colos ?? []"
                     :items="COLO_OPTIONS"
-                    :highlight="currentColoHighlight"
+                    :highlight="currentColo ? [currentColo] : []"
                     placeholder="HKG, NRT, AMS…"
                     empty-text="Type a 3-letter colo code and press Enter to add"
                     @update:model-value="(v: string[]) => setColosAt(index, v)"

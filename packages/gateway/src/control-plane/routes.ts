@@ -34,9 +34,6 @@ export const controlPlaneRoutes = new Hono()
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
-  // Read-only meta about the gateway runtime. Dashboard fetches once at
-  // load to decide whether to surface colo-aware UI (only meaningful when
-  // anycast / multi-region is in play).
   .get('/api/runtime-info', c => c.json(getRuntimeInfo(c.req.raw)))
   .get('/api/keys', listKeys)
   .post('/api/keys', zValidator('json', createKeyBody), createKey)

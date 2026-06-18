@@ -123,10 +123,7 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
 // 'direct' is always a valid entry id; any other id must reference an
 // existing proxy row. List order matters at dial time (see createFetcher),
 // and persistence layers dedupe via normalizeProxyFallbackList before
-// storing. The per-entry `colos` whitelist is validated only structurally
-// here — anything beyond "non-empty string" is the operator's responsibility,
-// since colo tags are free-form on Node (RUNTIME_LOCATION) and may include
-// future CF colos we haven't yet enumerated.
+// storing.
 const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
   const ids = entries.map(e => e.id).filter(id => id !== DIRECT_PROXY_ID);
   if (ids.length === 0) return { ok: true };

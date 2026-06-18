@@ -39,9 +39,6 @@ defineProps<{
   // when this is provided.
   modelsCache: UpstreamRecord['modelsCache'] | null;
   refreshing: boolean;
-  // True when the gateway runtime understands colos meaningfully (CF anycast
-  // multi-region). Forwarded to ProxyFallbackListPanel so the per-entry colo
-  // editor only shows where it can act on real data.
   coloAware: boolean;
   currentColo: string | null;
 }>();
