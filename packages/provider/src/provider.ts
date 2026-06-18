@@ -74,9 +74,19 @@ export type ProviderCompactionResult =
 // once; the gateway throws on a violation so missing wraps fail loud. On
 // retries (e.g. invalidate-token-and-redo), only the most recent invocation's
 // measurement is kept.
+//
+// `clientRequestHeaders` and `clientRequestPathname` describe the inbound
+// HTTP request the gateway is serving — not the outbound wire headers we
+// build for the upstream. Both are present only for data-plane calls that
+// originated from a real Hono request; translated paths and synthesized
+// calls leave them undefined. Today only the claude-code provider reads
+// them, to decide whether an inbound /v1/messages request is already shaped
+// like a real Claude Code session and can pass through unmodified.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
+  clientRequestHeaders?: Record<string, string>;
+  clientRequestPathname?: string;
 }
 
 export interface ModelProvider {
