@@ -85,7 +85,7 @@ const claudeCodeTokenRequest = async (
     // are present so the operator sees "Refresh token revoked" rather than
     // "invalid_grant".
     if (message === null && typeof root?.error_description === 'string') message = root.error_description;
-    if (message === null && typeof root?.detail === 'string') message = root.detail as string;
+    if (message === null && typeof root?.detail === 'string') message = root.detail;
     message ??= code;
     message ??= rawText.slice(0, 256);
     if (code && terminalCodes.has(code)) {

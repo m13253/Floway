@@ -54,7 +54,7 @@ export const extractClaudeCodeCallbackParams = (input: string): { code: string; 
     try {
       url = new URL(trimmed);
     } catch (cause) {
-      throw new Error('Callback URL is malformed', { cause: cause as Error });
+      throw new Error('Callback URL is malformed', { cause });
     }
     params = url.searchParams;
   } else {
@@ -114,7 +114,7 @@ export const importClaudeCodeFromCredentialsJson = async (
   try {
     parsed = JSON.parse(rawJson);
   } catch (cause) {
-    throw new Error('credentials.json is not valid JSON', { cause: cause as Error });
+    throw new Error('credentials.json is not valid JSON', { cause });
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new TypeError('credentials.json must be a JSON object');

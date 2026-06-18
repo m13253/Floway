@@ -63,6 +63,12 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
 
 let currentRecord: UpstreamRecord;
 
+// `UpstreamRecord.state` is typed `unknown` at the provider boundary; tests
+// only ever seed it as ClaudeCodeUpstreamState, so this helper centralises
+// the cast instead of repeating it at every assertion site.
+const currentState = (): ClaudeCodeUpstreamState =>
+  currentRecord.state as ClaudeCodeUpstreamState;
+
 const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void => {
   // Tests pass overrides that may flip state to a terminal value with the
   // matching stateMessage; the spread merges into a valid discriminated-union
@@ -72,7 +78,7 @@ const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void
 };
 
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
-  (currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.quotaSnapshot;
+  currentState().accounts[0]!.quotaSnapshot;
 
 // Yield to the queue so the .catch chain from fireAndForgetPersist completes
 // before assertions inspect the persisted state.
@@ -249,8 +255,8 @@ describe('callClaudeCodeMessages — 401 retry', () => {
       upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
-    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.accessToken?.token).toBe('at_new');
-    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.refreshToken).toBe('rt_v2');
+    expect(currentState().accounts[0]!.accessToken?.token).toBe('at_new');
+    expect(currentState().accounts[0]!.refreshToken).toBe('rt_v2');
   });
 
   test('second 401 after retry → surface verbatim 401, no further retries', async () => {
