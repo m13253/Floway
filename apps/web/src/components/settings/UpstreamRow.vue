@@ -36,10 +36,7 @@ const modelSummary = computed(() => `${props.modelCount} model${props.modelCount
 const subtitle = computed(() => {
   const u = props.upstream;
   switch (u.provider) {
-  case 'azure': {
-    const models = u.config.models.length;
-    return [u.config.endpoint || 'Azure AI endpoint', `${models} model${models === 1 ? '' : 's'}`].join(' · ');
-  }
+  case 'azure': return u.config.endpoint;
   case 'custom': return u.config.baseUrl;
   case 'copilot': {
     const user = u.config.user;
@@ -47,11 +44,11 @@ const subtitle = computed(() => {
   }
   case 'codex': {
     const account = u.config.accounts[0];
-    return account ? [account.email, account.planType].filter(Boolean).join(' · ') : 'ChatGPT Codex account';
+    return account ? `${account.email} · ${account.planType}` : 'ChatGPT Codex account';
   }
   case 'claude-code': {
     const account = u.config.accounts[0];
-    return account ? [account.email, account.subscriptionType].filter(Boolean).join(' · ') : 'Claude Code account';
+    return account ? `${account.email} · ${account.subscriptionType}` : 'Claude Code account';
   }
   }
   return assertNever(u);
