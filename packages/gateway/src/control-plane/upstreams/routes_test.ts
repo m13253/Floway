@@ -877,16 +877,6 @@ const claudeCodeCredentialsJson = (overrides: { accessToken?: string; refreshTok
   },
 });
 
-const claudeCodeMockedFetcher = (token: ReturnType<typeof claudeCodeTokenBody>, profile: unknown) => async (request: Request) => {
-  if (request.url === 'https://platform.claude.com/v1/oauth/token') {
-    return jsonResponse(token);
-  }
-  if (request.url === 'https://api.anthropic.com/api/oauth/profile') {
-    return jsonResponse(profile);
-  }
-  throw new Error(`Unhandled fetch ${request.url}`);
-};
-
 test('POST /api/upstreams/claude-code-pkce-start returns an authorize URL and stashes the verifier', async () => {
   const { repo, adminSession } = await setupAppTest();
 
@@ -910,7 +900,11 @@ test('POST /api/upstreams/claude-code-import (callback) consumes the PKCE state 
   const { state } = (await startResp.json()) as { state: string };
 
   await withMockedFetch(
-    claudeCodeMockedFetcher(claudeCodeTokenBody(), claudeCodeProfileBody),
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeTokenBody());
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return jsonResponse(claudeCodeProfileBody);
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-import',
@@ -936,7 +930,11 @@ test('POST /api/upstreams/claude-code-import rejects a replayed PKCE callback', 
   const { state } = (await startResp.json()) as { state: string };
 
   await withMockedFetch(
-    claudeCodeMockedFetcher(claudeCodeTokenBody(), claudeCodeProfileBody),
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeTokenBody());
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return jsonResponse(claudeCodeProfileBody);
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
     async () => {
       const first = await requestApp(
         '/api/upstreams/claude-code-import',
