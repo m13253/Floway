@@ -4,6 +4,9 @@ import { parseClaudeCodeQuotaHeaders } from './quota.ts';
 
 // Captured from a real Anthropic /v1/messages?beta=true response on the
 // Sonnet 4.5 plan tier, 2026-06-19. Used as the primary parser fixture.
+// `anthropic-ratelimit-unified-fallback: available` is the steady-state
+// signal — Anthropic sends it on every successful response to mean "a
+// degraded-mode fallback service is reachable if primary capacity flips".
 const fullProbeHeaders = new Headers({
   'anthropic-ratelimit-unified-status': 'allowed',
   'anthropic-ratelimit-unified-5h-status': 'allowed',
@@ -13,6 +16,7 @@ const fullProbeHeaders = new Headers({
   'anthropic-ratelimit-unified-7d-reset': '1782039600',
   'anthropic-ratelimit-unified-7d-utilization': '0.0',
   'anthropic-ratelimit-unified-representative-claim': 'five_hour',
+  'anthropic-ratelimit-unified-fallback': 'available',
   'anthropic-ratelimit-unified-fallback-percentage': '0.5',
   'anthropic-ratelimit-unified-reset': '1781805000',
   'anthropic-ratelimit-unified-overage-disabled-reason': 'out_of_credits',
@@ -36,7 +40,7 @@ describe('parseClaudeCodeQuotaHeaders — newer 5h/7d shape', () => {
     expect(snap.status).toBe('allowed');
     expect(snap.representativeClaim).toBe('five_hour');
     expect(snap.fallbackPercentage).toBe(0.5);
-    expect(snap.fallback).toBeNull();
+    expect(snap.fallbackAvailable).toBe(true);
     expect(snap.reset).toBe(new Date(1781805000 * 1000).toISOString());
   });
 
@@ -71,8 +75,9 @@ describe('parseClaudeCodeQuotaHeaders — newer 5h/7d shape', () => {
       'anthropic-ratelimit-unified-status': 'allowed',
       'anthropic-ratelimit-unified-5h-reset': '1781805000',
       'anthropic-ratelimit-unified-overage-status': 'rejected',
+      'anthropic-ratelimit-unified-fallback': 'available',
     });
-    expect(Object.keys(snap.raw)).toHaveLength(12);
+    expect(Object.keys(snap.raw)).toHaveLength(13);
   });
 });
 
@@ -117,7 +122,7 @@ describe('parseClaudeCodeQuotaHeaders — empty input', () => {
   test('all known fields read as null and raw is empty', () => {
     expect(snap.status).toBeNull();
     expect(snap.reset).toBeNull();
-    expect(snap.fallback).toBeNull();
+    expect(snap.fallbackAvailable).toBeNull();
     expect(snap.fallbackPercentage).toBeNull();
     expect(snap.representativeClaim).toBeNull();
     expect(snap.fiveHour).toBeNull();
@@ -141,9 +146,15 @@ describe('parseClaudeCodeQuotaHeaders — coercion edge cases', () => {
     expect(parseClaudeCodeQuotaHeaders(h).sevenDay?.surpassedThreshold).toBe(true);
   });
 
-  test('fallback header parses true/false', () => {
-    expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'true' })).fallback).toBe(true);
-    expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'false' })).fallback).toBe(false);
+  test('fallback header is the literal token `available` — anything else is `false`', () => {
+    // Steady-state Anthropic response.
+    expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'available' })).fallbackAvailable).toBe(true);
+    // Any other value (incl. an explicit "unavailable") flips to false.
+    expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'unavailable' })).fallbackAvailable).toBe(false);
+    expect(parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-fallback': 'true' })).fallbackAvailable).toBe(false);
+    // Absence stays null so the dashboard can distinguish "no signal" from
+    // "fallback signal with a non-`available` value".
+    expect(parseClaudeCodeQuotaHeaders(new Headers({})).fallbackAvailable).toBeNull();
   });
 
   test('overage utilization parses as number', () => {

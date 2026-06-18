@@ -14,6 +14,7 @@
 //   anthropic-ratelimit-unified-7d-reset: 1782039600
 //   anthropic-ratelimit-unified-7d-utilization: 0.0
 //   anthropic-ratelimit-unified-representative-claim: five_hour
+//   anthropic-ratelimit-unified-fallback: available
 //   anthropic-ratelimit-unified-fallback-percentage: 0.5
 //   anthropic-ratelimit-unified-reset: 1781805000
 //   anthropic-ratelimit-unified-overage-disabled-reason: out_of_credits
@@ -47,7 +48,14 @@ export interface ClaudeCodeQuotaOverage {
 export interface ClaudeCodeQuotaSnapshot {
   status: string | null;
   reset: string | null;
-  fallback: boolean | null;
+  // `anthropic-ratelimit-unified-fallback` is a presence/availability signal,
+  // not a boolean: in the steady state it carries the literal `available`,
+  // meaning Anthropic has a degraded-mode fallback ready if primary capacity
+  // collapses. Anything else (or absence) means "no fallback signal". Parsed
+  // against the literal `'available'` per Claude Code v2.1.10 cli.js HoB
+  // (`extractUnifiedRateLimitInfo` in the reverse-engineered source —
+  // https://github.com/apstenku123/claude-code-reverse).
+  fallbackAvailable: boolean | null;
   fallbackPercentage: number | null;
   representativeClaim: string | null;
   overage: ClaudeCodeQuotaOverage | null;
@@ -127,14 +135,17 @@ const buildOverage = (headers: Headers): ClaudeCodeQuotaOverage | null => {
   };
 };
 
-export const parseClaudeCodeQuotaHeaders = (headers: Headers): ClaudeCodeQuotaSnapshot => ({
-  status: headers.get(`${HEADER_PREFIX}unified-status`),
-  reset: parseUnixSecondsToIso(headers.get(`${HEADER_PREFIX}unified-reset`)),
-  fallback: parseBoolean(headers.get(`${HEADER_PREFIX}unified-fallback`)),
-  fallbackPercentage: parseNumber(headers.get(`${HEADER_PREFIX}unified-fallback-percentage`)),
-  representativeClaim: headers.get(`${HEADER_PREFIX}unified-representative-claim`),
-  overage: buildOverage(headers),
-  fiveHour: buildFiveHourWindow(headers),
-  sevenDay: buildSevenDayWindow(headers),
-  raw: collectRaw(headers),
-});
+export const parseClaudeCodeQuotaHeaders = (headers: Headers): ClaudeCodeQuotaSnapshot => {
+  const fallbackHeader = headers.get(`${HEADER_PREFIX}unified-fallback`);
+  return {
+    status: headers.get(`${HEADER_PREFIX}unified-status`),
+    reset: parseUnixSecondsToIso(headers.get(`${HEADER_PREFIX}unified-reset`)),
+    fallbackAvailable: fallbackHeader === null ? null : fallbackHeader === 'available',
+    fallbackPercentage: parseNumber(headers.get(`${HEADER_PREFIX}unified-fallback-percentage`)),
+    representativeClaim: headers.get(`${HEADER_PREFIX}unified-representative-claim`),
+    overage: buildOverage(headers),
+    fiveHour: buildFiveHourWindow(headers),
+    sevenDay: buildSevenDayWindow(headers),
+    raw: collectRaw(headers),
+  };
+};

@@ -145,7 +145,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         <Badge v-if="quota.representativeClaim" tone="zinc" size="sm">representative: {{ quota.representativeClaim }}</Badge>
         <Badge v-if="quota.overage?.status" tone="zinc" size="sm">overage: {{ quota.overage.status }}</Badge>
         <Badge v-if="quota.overage?.disabledReason" tone="rose" size="sm">disabled: {{ quota.overage.disabledReason }}</Badge>
-        <Badge v-if="quota.fallback === true" tone="amber" size="sm">fallback active</Badge>
+        <Badge v-if="quota.fallbackAvailable === false" tone="amber" size="sm">fallback unavailable</Badge>
       </div>
 
       <details v-if="rawEntries.length" class="text-[11px] text-gray-500" :open="rawOpen" @toggle="(e: Event) => rawOpen = (e.target as HTMLDetailsElement).open">

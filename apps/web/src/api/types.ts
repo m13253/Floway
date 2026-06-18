@@ -162,7 +162,7 @@ export interface ClaudeCodeQuotaOverage extends ClaudeCodeQuotaWindow {
 export interface ClaudeCodeQuotaSnapshotData {
   status: string | null;
   reset: string | null;
-  fallback: boolean | null;
+  fallbackAvailable: boolean | null;
   fallbackPercentage: number | null;
   representativeClaim: string | null;
   overage: ClaudeCodeQuotaOverage | null;
