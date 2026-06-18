@@ -100,25 +100,28 @@ export const fetchClaudeCodeIdentity = async (
 };
 
 // Maps the (organization_type, rate_limit_tier) pair to the same string the
-// CLI persists in credentials.json. `claude_max` collapses to `max_5x` /
-// `max_20x` based on the rate-limit tier; everything else is a 1:1 mapping.
-// We pass through unknown organization types verbatim (without the
-// `claude_` prefix) so a future Anthropic addition still produces a
-// human-readable subscriptionType rather than a synthetic 'unknown'.
+// CLI persists in credentials.json. `claude_max` requires the rate-limit tier
+// to disambiguate 5x vs 20x; the other recognized tiers are 1:1. An absent
+// organization block, an unknown organization_type, or a claude_max without a
+// recognized rate_limit_tier is thrown rather than silently coerced — future
+// Anthropic shape changes (new tiers, new types) should fail loud at ingest
+// time so the operator notices, instead of silently mislabeling accounts.
 const deriveSubscriptionType = (
   organizationType: string | null,
   rateLimitTier: string | null,
 ): string => {
-  if (organizationType === null) return 'pro';
+  if (organizationType === null) {
+    throw new Error('Claude Code /api/oauth/profile response is missing `organization.organization_type`');
+  }
   if (organizationType === 'claude_max') {
     if (rateLimitTier === 'default_claude_max_20x') return 'max_20x';
     if (rateLimitTier === 'default_claude_max_5x') return 'max_5x';
-    return 'max';
+    throw new Error(`Claude Code /api/oauth/profile carries organization_type='claude_max' with unknown rate_limit_tier='${String(rateLimitTier)}'`);
   }
   if (organizationType === 'claude_pro') return 'pro';
   if (organizationType === 'claude_enterprise') return 'enterprise';
   if (organizationType === 'claude_team') return 'team';
-  return organizationType.startsWith('claude_') ? organizationType.slice('claude_'.length) : organizationType;
+  throw new Error(`Claude Code /api/oauth/profile carries unknown organization_type='${organizationType}'`);
 };
 
 const readErrorMessage = (parsed: unknown): string | null => {

@@ -52,8 +52,11 @@ const claudeCodeTokenRequest = async (
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
-  } catch {
-    parsed = { _nonJsonBody: rawText };
+  } catch (cause) {
+    throw new Error(
+      `Claude Code OAuth /token returned ${response.status} with non-JSON body: ${rawText.slice(0, 256)}`,
+      { cause },
+    );
   }
 
   const root = (typeof parsed === 'object' && parsed !== null) ? (parsed as Record<string, unknown>) : null;
