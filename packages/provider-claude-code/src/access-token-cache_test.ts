@@ -77,7 +77,7 @@ describe('ensureClaudeCodeAccessToken', () => {
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out).toEqual(entry);
+    expect(out).toEqual({ entry, freshlyMinted: false });
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
@@ -88,8 +88,9 @@ describe('ensureClaudeCodeAccessToken', () => {
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
     const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out.token).toBe('at_new');
-    expect(out.expiresAt).toBeGreaterThan(Date.now());
+    expect(out.freshlyMinted).toBe(true);
+    expect(out.entry.token).toBe('at_new');
+    expect(out.entry.expiresAt).toBeGreaterThan(Date.now());
 
     expect(saveStateSpy).toHaveBeenCalledTimes(1);
     const [, nextState] = saveStateSpy.mock.calls[0];
@@ -106,7 +107,8 @@ describe('ensureClaudeCodeAccessToken', () => {
       access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out.token).toBe('at_new');
+    expect(out.entry.token).toBe('at_new');
+    expect(out.freshlyMinted).toBe(true);
   });
 
   test('throws ClaudeCodeOAuthSessionTerminatedError when refresh returns invalid_grant, and flips state to refresh_failed', async () => {

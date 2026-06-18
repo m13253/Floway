@@ -153,19 +153,12 @@ export const callClaudeCodeMessages = async (
 
   let accessToken: ResolvedToken;
   try {
-    const entry = await ensureClaudeCodeAccessToken({
+    const ensured = await ensureClaudeCodeAccessToken({
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
       fetcher: opts.call.fetcher,
     });
-    // refreshedAt within the last 10 seconds is the signal that the cache
-    // helper minted this entry on our behalf (vs handing back a cached one);
-    // the 401-retry only invalidates when we DIDN'T just mint, since a
-    // freshly-minted token that 401s means the credential is dead.
-    accessToken = {
-      token: entry.token,
-      freshlyMinted: Date.now() - new Date(entry.refreshedAt).getTime() < 10_000,
-    };
+    accessToken = { token: ensured.entry.token, freshlyMinted: ensured.freshlyMinted };
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       // ensureClaudeCodeAccessToken already persisted the terminal state.
@@ -238,12 +231,12 @@ const performUpstreamCall = async (
     });
     let nextToken: ResolvedToken;
     try {
-      const entry = await ensureClaudeCodeAccessToken({
+      const ensured = await ensureClaudeCodeAccessToken({
         upstreamId: opts.upstreamId,
         repo: getProviderRepo().upstreams,
         fetcher: opts.call.fetcher,
       });
-      nextToken = { token: entry.token, freshlyMinted: true };
+      nextToken = { token: ensured.entry.token, freshlyMinted: ensured.freshlyMinted };
     } catch (err) {
       if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
         return {
