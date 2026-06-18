@@ -86,12 +86,13 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
   /**
-   * Inbound request headers, preserved as a plain record. Keys MUST be
-   * lowercase: this record is built from a `Headers` instance via
-   * `headersToRecord` (`gateway-ctx.ts`), which uses `Headers.forEach` and
-   * yields lowercase keys per the WHATWG Fetch spec.
+   * Inbound request headers, forwarded as the original `Headers` instance
+   * the runtime gave us. Header lookups stay native; no per-request
+   * Record snapshot is built on the gateway hot path. Synthetic call
+   * sites may pass a plain record, which a consumer wraps with
+   * `new Headers(...)` the same way it would wrap a `Headers` value.
    */
-  clientRequestHeaders?: Record<string, string>;
+  clientRequestHeaders?: Headers | Record<string, string>;
   clientRequestPathname?: string;
 }
 

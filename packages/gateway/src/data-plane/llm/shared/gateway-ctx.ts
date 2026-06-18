@@ -22,19 +22,11 @@ export interface GatewayCtx {
   // The inbound client HTTP request the gateway is serving. Captured once at
   // ctx construction and forwarded to provider `call*` methods as the
   // `clientRequestHeaders` / `clientRequestPathname` UpstreamCallOptions
-  // fields. Synthetic test contexts and non-Hono entry points (the WebSocket
-  // path for Gemini) leave these undefined.
-  readonly clientRequestHeaders?: Record<string, string>;
+  // fields. Synthetic test contexts and non-Hono entry points leave these
+  // undefined.
+  readonly clientRequestHeaders?: Headers;
   readonly clientRequestPathname?: string;
 }
-
-const headersToRecord = (headers: Headers): Record<string, string> => {
-  const out: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    out[key] = value;
-  });
-  return out;
-};
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
   const apiKeyId = c.get('apiKeyId') as string;
@@ -49,7 +41,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    clientRequestHeaders: headersToRecord(c.req.raw.headers),
+    clientRequestHeaders: c.req.raw.headers,
     clientRequestPathname: url.pathname,
   };
 };
@@ -71,7 +63,7 @@ export const createGatewayCtxForWs = (
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    clientRequestHeaders: headersToRecord(c.req.raw.headers),
+    clientRequestHeaders: c.req.raw.headers,
     clientRequestPathname: url.pathname,
   };
 };
