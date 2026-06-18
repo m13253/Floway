@@ -23,6 +23,12 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   custom: createCustomProvider,
   azure: createAzureProvider,
   codex: createCodexProvider,
+  // Placeholder: the claude-code data-plane factory lands in a follow-up
+  // commit. The kind is enumerated here so adding 'claude-code' to
+  // UpstreamProviderKind compiles, and so a row reaching the data plane
+  // before the real factory ships fails loudly instead of silently routing
+  // to another provider.
+  'claude-code': () => { throw new Error('claude-code provider factory not yet wired'); },
 };
 
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>

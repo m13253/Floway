@@ -1,0 +1,62 @@
+import { describe, expect, test } from 'vitest';
+
+import { assertClaudeCodeUpstreamRecord } from './config.ts';
+import type { UpstreamRecord } from '@floway-dev/provider';
+
+const goodAccount = {
+  email: 'a@b.com',
+  accountUuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  organizationUuid: null,
+  subscriptionType: 'max_20x',
+};
+const good = { accounts: [goodAccount] };
+
+const wrap = (config: unknown): UpstreamRecord => ({
+  id: 'up', provider: 'claude-code', name: 'n', enabled: true, sortOrder: 0,
+  createdAt: '', updatedAt: '', config: config as UpstreamRecord['config'], state: null,
+  flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [],
+});
+
+describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
+  test('accepts a complete config', () => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap(good))).not.toThrow();
+  });
+  test('accepts a config with a populated organizationUuid', () => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap({
+      accounts: [{ ...goodAccount, organizationUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }],
+    }))).not.toThrow();
+  });
+  test.each([
+    ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
+    ['email type', { accounts: [{ ...goodAccount, email: 123 }] }],
+    ['accountUuid missing', { accounts: [{ ...goodAccount, accountUuid: undefined }] }],
+    ['accountUuid empty', { accounts: [{ ...goodAccount, accountUuid: '' }] }],
+    ['organizationUuid empty string', { accounts: [{ ...goodAccount, organizationUuid: '' }] }],
+    ['organizationUuid wrong type', { accounts: [{ ...goodAccount, organizationUuid: 123 }] }],
+    ['subscriptionType missing', { accounts: [{ ...goodAccount, subscriptionType: undefined }] }],
+    ['subscriptionType empty', { accounts: [{ ...goodAccount, subscriptionType: '' }] }],
+    ['extra unknown field on account', { accounts: [{ ...goodAccount, extra: 1 }] }],
+    ['extra unknown field at top level', { ...good, extra: 1 }],
+    ['accounts not an array', { accounts: goodAccount }],
+    ['empty accounts array', { accounts: [] }],
+    ['multiple accounts (v1 invariant)', { accounts: [goodAccount, { ...goodAccount, accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }] }],
+  ])('rejects %s', (_label, value) => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap(value))).toThrow();
+  });
+  test('rejects null / non-object configs', () => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap(null))).toThrow();
+    expect(() => assertClaudeCodeUpstreamRecord(wrap('a'))).toThrow();
+    expect(() => assertClaudeCodeUpstreamRecord(wrap([]))).toThrow();
+  });
+});
+
+describe('assertClaudeCodeUpstreamRecord (record-level checks)', () => {
+  test('rejects non-claude-code record', () => {
+    const record: UpstreamRecord = {
+      id: 'up', provider: 'copilot', name: 'n', enabled: true, sortOrder: 0,
+      createdAt: '', updatedAt: '', config: {}, state: null,
+      flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [],
+    };
+    expect(() => assertClaudeCodeUpstreamRecord(record)).toThrow();
+  });
+});

@@ -1,6 +1,6 @@
 import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
-export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex';
+export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex' | 'claude-code';
 
 // One upstream's persisted record. `config` is a per-provider opaque payload;
 // `state` is gateway-managed runtime data.

@@ -72,6 +72,19 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
         };
       }) : [],
     };
+  case 'claude-code':
+    // refreshToken lives in state and is redacted by redactedState.
+    return {
+      accounts: Array.isArray(config.accounts) ? config.accounts.map(account => {
+        const a = isRecord(account) ? account : {};
+        return {
+          ...(a.email !== undefined ? { email: clone(a.email) } : {}),
+          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+          ...(a.organizationUuid !== undefined ? { organizationUuid: clone(a.organizationUuid) } : {}),
+          ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
+        };
+      }) : [],
+    };
   default: {
     const exhaustive: never = upstream.provider;
     throw new Error(`Unknown upstream provider for redaction: ${String(exhaustive)}`);
@@ -94,6 +107,28 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
           ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
           state_updated_at: clone(a.state_updated_at),
           refresh_token_set: hasSecret(a.refresh_token),
+        };
+      }) : [],
+    };
+  case 'claude-code':
+    return {
+      accounts: Array.isArray(state.accounts) ? state.accounts.map(account => {
+        const a = isRecord(account) ? account : {};
+        return {
+          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+          ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
+          stateUpdatedAt: clone(a.stateUpdatedAt),
+          refreshTokenSet: hasSecret(a.refreshToken),
+          // accessToken.expiresAt + quotaSnapshot are non-secret summaries the
+          // dashboard surfaces directly. accessToken.token is dropped.
+          accessToken: isRecord(a.accessToken)
+            ? {
+                expiresAt: clone(a.accessToken.expiresAt),
+                refreshedAt: clone(a.accessToken.refreshedAt),
+              }
+            : null,
+          quotaSnapshot: a.quotaSnapshot === null || a.quotaSnapshot === undefined ? null : clone(a.quotaSnapshot),
         };
       }) : [],
     };
