@@ -22,11 +22,10 @@ export const CLAUDE_CLI_VERSION = '2.1.181';
 const STAINLESS_PACKAGE_VERSION = '0.94.0';
 
 // Stable subset of `X-Stainless-*` headers shared across both model groups.
-// `X-Stainless-OS` keeps its uppercase 'Linux' value intentionally — the
-// real CLI emits it that way and a normalised 'linux' would be a wire-level
-// drift from canonical CC. OS / Arch / Runtime values verified against the
-// macOS arm64 CC binary 2026-06-19; cross-platform CC builds (Windows /
-// x86_64) would emit different values, so re-capture on any platform bump.
+// `X-Stainless-OS` keeps its uppercase 'Linux' value verbatim — the real CLI
+// emits it that way. OS / Arch / Runtime values verified against the macOS
+// arm64 CC binary 2026-06-19; cross-platform CC builds (Windows / x86_64)
+// would emit different values, so re-capture on any platform bump.
 const STAINLESS_BASE = {
   'X-Stainless-Lang': 'js',
   'X-Stainless-Package-Version': STAINLESS_PACKAGE_VERSION,

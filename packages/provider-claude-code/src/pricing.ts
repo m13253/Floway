@@ -23,7 +23,6 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5-20251001': { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 },
 };
 
-// Unknown keys (forward-compat with a future Anthropic dated id) read as
-// null and the dashboard treats them as cost 0.
+// Returns null for unknown keys (forward-compat with future dated ids).
 export const pricingForClaudeCodeModelKey = (modelKey: string): ModelPricing | null =>
   CLAUDE_CODE_MODEL_PRICING[modelKey] ?? null;

@@ -34,8 +34,6 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
 
-// Index-scoped patch helper that keeps the rest of the file ignorant of how
-// many accounts the state holds; the asserter currently pins it to one.
 const replaceAccountAt = (
   state: ClaudeCodeUpstreamState,
   index: number,
@@ -68,8 +66,6 @@ export const ensureClaudeCodeAccessToken = async (
   const accountIndex = 0;
   const account = state.accounts[accountIndex];
   if (account.state !== 'active') {
-    // stateMessage is required on the wire for non-active states (enforced by
-    // the asserter), so it is always present here.
     throw new ClaudeCodeOAuthSessionTerminatedError(account.stateMessage);
   }
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
@@ -94,15 +90,14 @@ export const ensureClaudeCodeAccessToken = async (
   };
 
   // Refresh-token rotation: CAS-write the new refresh token alongside the
-  // fresh access-token cache in a single state transition.
+  // fresh access-token cache in a single state transition. `state` /
+  // `stateUpdatedAt` stay untouched on a successful refresh — 'active' is
+  // already what we want, and bumping the timestamp on every refresh would
+  // muddy the dashboard's "credential health changed" signal.
   const rotated = replaceAccountAt(state, accountIndex, account => ({
     ...account,
     refreshToken: refreshed.refresh_token,
     accessToken: newAccessTokenEntry,
-    // Keep `state`/`stateUpdatedAt` untouched on a successful refresh —
-    // 'active' is already the value we want and bumping the timestamp on
-    // every refresh would muddy the dashboard's "credential health changed"
-    // signal.
   }));
   const result = await args.repo.saveState(args.upstreamId, rotated, { expectedState: fresh.state });
   if (!result.updated) {

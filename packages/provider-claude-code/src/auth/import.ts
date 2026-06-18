@@ -43,8 +43,7 @@ const buildClaudeCodeImportResult = (params: {
 
 // Accepts a full callback URL (`https://platform.claude.com/oauth/code/callback?...`),
 // a bare query (`?code=…&state=…` or `code=…&state=…`), or a host-relative
-// URL whose query carries both `code` and `state`. Throws when either is
-// missing.
+// URL whose query carries both `code` and `state`.
 export const extractClaudeCodeCallbackParams = (input: string): { code: string; state: string } => {
   const trimmed = input.trim();
   if (trimmed === '') throw new Error('Callback input is empty');

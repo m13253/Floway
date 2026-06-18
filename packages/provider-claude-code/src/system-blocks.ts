@@ -14,7 +14,8 @@ import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols';
 // `cch=00000` is a literal, not a client-computed hash. Anthropic's CC build
 // for the firstParty / OAuth path emits `${" cch=00000;"}` verbatim from
 // cli.js (de-minified search for "cch=00000"); sub2api's optional
-// xxhash-based signer (commit e51c9e50b5376cb486a0b7123e5f1ec026d5c526)
+// xxhash-based signer
+// (https://github.com/Wei-Shaw/sub2api/commit/e51c9e50b5376cb486a0b7123e5f1ec026d5c526)
 // defaults its `enable_cch_signing` toggle to OFF, and predecessor
 // claude-relay-service has never shipped signing at all. Per-request hash
 // mutation also poisons Anthropic's prompt cache (claude-code issues #40652,
@@ -72,9 +73,7 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
 // https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_billing_block.go#L13)
 // which itself ports it from the Parrot project's
 // `src/transform/cc_mimicry.py` FINGERPRINT_SALT, originally reverse-
-// engineered from real CC packet captures. Changing the value produces a
-// fingerprint that diverges from the CLI and would trip Anthropic's
-// detector the moment it re-activates.
+// engineered from real CC packet captures.
 const FINGERPRINT_SALT_ASCII = '59cf53e54c78';
 
 // Byte indices into the first user-role text used by real CC. Same source

@@ -96,13 +96,11 @@ const sha256Hex = async (input: string): Promise<string> => {
   return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
 };
 
-// Same UUIDv4 stamping trick injectSessionId uses on the Codex side: take the
-// sha256 hex digest, hardcode the version nibble to '4' via the literal in
-// the template string, and overwrite the variant nibble (8/9/a/b) so the
-// output validates as a real UUIDv4 for observability tools that check the
-// shape.
+// Same UUIDv4 stamping trick injectSessionId uses on the Codex side: stamp
+// the sha256 hex with the version-4 nibble inline and overwrite the variant
+// nibble so the output validates as a real UUIDv4.
 const sha256Uuidv4 = async (input: string): Promise<string> => {
   const hex = await sha256Hex(input);
-  const variantNibble = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
+  const variantNibble = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variantNibble}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };

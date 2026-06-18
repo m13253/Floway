@@ -20,11 +20,9 @@ const SYNTHETIC_ACK = 'I will follow the above instructions.';
 // valid: every following user message still sees an assistant turn behind it,
 // so the upstream's role-alternation guard doesn't fire.
 //
-// Citations / cache_control on text blocks are dropped — the wrapped turn is
-// best-effort recovery of the operator's intent; preserving cache scopes
-// across this remix would only confuse the upstream's cache machinery,
-// which is what the three CC blocks (with `cache_control` on system[2])
-// already manage.
+// Non-text fields on blocks (citations, cache_control) are intentionally
+// dropped — the wrapped turn is best-effort recovery of the operator's
+// intent.
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/claude_code_handler.go

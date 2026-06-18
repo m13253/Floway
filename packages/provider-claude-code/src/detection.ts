@@ -18,21 +18,20 @@ import type { MessagesPayload } from '@floway-dev/protocols';
 //     positives non-CC traffic, which Anthropic's detector — when active —
 //     downgrades to extra-usage billing.
 //
-// The detector's status changes without notice; the April-2026 finding
-// summarised by https://gist.github.com/mrcattusdev keys on system-prompt
-// content and was effectively paused on 2026-06-19, but Anthropic can
-// re-arm it any time.
+// The detector's status changes without notice; the April-2026 finding keyed
+// on system-prompt content and was effectively paused on 2026-06-19, but
+// Anthropic can re-arm it any time.
 
 const UA_PATTERN = /^claude-cli\/\d+\.\d+\.\d+/i;
 const LEGACY_USER_ID_PATTERN = /^user_([a-fA-F0-9]{64})_account_([a-fA-F0-9-]*)_session_([a-fA-F0-9-]{36})$/;
 
 const DICE_THRESHOLD = 0.5;
 
-// Seven canonical identity prefixes real CC sends as the first text block.
-// Includes compact / summarisation flows; dropping the last two false-
-// negatives genuine CC compact traffic. v2.1.181 swapped "interactive CLI
-// tool" for "interactive agent" — both are kept so older and newer CC
-// clients both pass detection. Strings are kept verbatim.
+// Canonical identity prefixes real CC sends as the first text block, kept
+// verbatim; includes compact / summarisation flows so genuine CC compact
+// traffic still passes detection. v2.1.181 swapped "interactive CLI tool"
+// for "interactive agent" — both are kept so older and newer CC clients
+// both pass.
 const IDENTITY_TEMPLATES = [
   "You are Claude Code, Anthropic's official CLI for Claude.",
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
@@ -69,7 +68,7 @@ export const parseMetadataUserID = (raw: string): ParsedUserId | null => {
     // sub2api intentionally accepts legacy-format CC sessions where the
     // account part is empty (personal accounts that never had an
     // organization UUID), so empty string is a legitimate value here, not
-    // a missing-field signal. Coerce non-string to '' for the same reason.
+    // a missing-field signal.
     const accountUuid = typeof parsed.account_uuid === 'string' ? parsed.account_uuid : '';
     return {
       deviceId: parsed.device_id,
