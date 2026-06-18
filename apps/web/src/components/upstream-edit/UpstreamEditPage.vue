@@ -406,10 +406,11 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   const collect = (list: UpstreamModelConfig[]) => {
     for (const m of list) {
       // `||` (not `??`) is intentional: a whitespace-only override should
-      // not shadow the upstream id.
+      // not shadow the upstream id. upstreamModelId is required by the
+      // contract, so the fallback always yields a usable id.
       // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
       const id = m.publicModelId?.trim() || m.upstreamModelId;
-      if (!id || seen.has(id)) continue;
+      if (seen.has(id)) continue;
       seen.add(id);
       items.push({ value: id, label: id });
     }
