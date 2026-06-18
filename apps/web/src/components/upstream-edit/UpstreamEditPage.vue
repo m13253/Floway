@@ -49,8 +49,8 @@ const router = useRouter();
 const api = useApi();
 const upstreamsStore = useUpstreamsStore();
 const { info: runtimeInfo } = useRuntimeInfo();
-const coloAware = computed<boolean>(() => runtimeInfo.value?.kind === 'cloudflare');
-const currentColo = computed<string | null>(() => runtimeInfo.value?.colo ?? null);
+const coloAware = computed(() => runtimeInfo.value?.kind === 'cloudflare');
+const currentColo = computed(() => runtimeInfo.value?.colo ?? null);
 
 type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
@@ -87,7 +87,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
   sortOrder.value = r.sort_order;
   flagOverrides.value = { ...r.flag_overrides };
   disabledPublicModelIds.value = [...r.disabled_public_model_ids];
-  proxyFallbackList.value = r.proxy_fallback_list.map(e => e.colos === undefined ? { id: e.id } : { id: e.id, colos: [...e.colos] });
+  proxyFallbackList.value = r.proxy_fallback_list.map(e => ({ id: e.id, ...(e.colos ? { colos: [...e.colos] } : {}) }));
 
   if (r.provider === 'custom') {
     const cfg = r.config as CustomUpstreamConfig;
