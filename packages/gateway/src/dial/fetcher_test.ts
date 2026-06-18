@@ -28,7 +28,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a', 'b', 'direct'],
+      fallbackList: [{ id: 'a' }, { id: 'b' }, { id: 'direct' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async (config: ProxyConfig) => {
         calls.push(config.host);
@@ -50,7 +51,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('boom', 'tcp-connect'); },
       runDirect: async () => new Response('ok'),
@@ -71,7 +73,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
       runDirect: async () => new Response('ok'),
@@ -90,7 +93,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a', 'b'],
+      fallbackList: [{ id: 'a' }, { id: 'b' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async (config: ProxyConfig) => {
         order.push(config.host);
@@ -112,7 +116,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('still bad', 'tcp-connect'); },
       runDirect: async () => new Response('ok'),
@@ -135,7 +140,8 @@ describe('createFetcher', () => {
       // 'p_unknown' is in the list but not in proxyById — simulating a
       // mid-request DELETE between catalog load and dial. The chain must
       // advance to 'direct' rather than killing the whole call.
-      fallbackList: ['p_unknown', 'direct'],
+      fallbackList: [{ id: 'p_unknown' }, { id: 'direct' }],
+      currentColo: null,
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
       runDirect: async () => { directCalls++; return new Response('direct'); },
@@ -154,7 +160,8 @@ describe('createFetcher', () => {
       // No 'direct' fallback — the only entry is the unknown id, so the
       // call fails and the typed ProxyDialError surfaces directly (single-
       // entry chains skip the AggregateError wrapper).
-      fallbackList: ['p_unknown'],
+      fallbackList: [{ id: 'p_unknown' }],
+      currentColo: null,
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
       runDirect: async () => { throw new Error('unreachable'); },
@@ -179,7 +186,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a', 'b'],
+      fallbackList: [{ id: 'a' }, { id: 'b' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async (config: ProxyConfig) => {
         calls.push(config.host);
@@ -200,7 +208,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new Error('upstream 500'); },
       runDirect: async () => new Response('ok'),
@@ -217,6 +226,7 @@ describe('createFetcher', () => {
       repo,
       upstreamId: 'u',
       fallbackList: [],
+      currentColo: null,
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
       runDirect: async () => { directCalled = true; return new Response('direct'); },
@@ -233,7 +243,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['direct', 'a'],
+      fallbackList: [{ id: 'direct' }, { id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (config: ProxyConfig) => {
         calls.push(`proxy:${config.host}`);
@@ -258,7 +269,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_c, _t, _r, options) => {
         observedSignal = options.signal;
@@ -278,7 +290,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
       runDirect: async () => new Response('direct'),
@@ -298,7 +311,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
       runDirect: async () => new Response('direct'),
@@ -319,7 +333,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
       runDirect: async () => new Response('direct'),
@@ -340,7 +355,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('cert mismatch', 'inner-tls'); },
       runDirect: async () => new Response('ok'),
@@ -365,7 +381,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
       runDirect: async () => new Response('direct'),
@@ -385,7 +402,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['a'],
+      fallbackList: [{ id: 'a' }],
+      currentColo: null,
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_c, target) => {
         captured = target;
@@ -412,7 +430,8 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: ['broken', 'good'],
+      fallbackList: [{ id: 'broken' }, { id: 'good' }],
+      currentColo: null,
       proxyById: new Map([
         ['broken', { config: { kind: 'socks5', host: 'broken', port: 1, name: 'broken' }, dialTimeoutMs: null }],
         ['good', { config: { kind: 'socks5', host: 'good', port: 1, name: 'good' }, dialTimeoutMs: null }],

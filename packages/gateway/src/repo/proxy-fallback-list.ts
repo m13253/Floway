@@ -1,22 +1,46 @@
-// Sentinel for "no proxy — connect directly"; the only legal non-id entry in
-// proxy_fallback_list.
+import type { ProxyFallbackEntry } from '@floway-dev/provider';
+
+// Sentinel for "no proxy — connect directly"; the only legal non-id `entry.id`
+// value in a proxy_fallback_list entry.
 export const DIRECT_PROXY_ID = 'direct';
 
-// Entries are bare proxy ids or the literal 'direct' marker; entries are not
-// validated against the proxies table.
-//
-// We treat the list as a SET in semantics, even though it's stored as an
-// ordered array — a duplicate proxy entry has no meaning beyond "try once",
-// so silently dropping repeats keeps the wire shape and the dial-time shape
-// in agreement.
-export const normalizeProxyFallbackList = (ids: readonly string[]): string[] => {
+// Treat the list as a SET by `id` semantics: a duplicate entry has no meaning
+// beyond "try once", so silently drop repeats. The first occurrence's `colos`
+// whitelist wins on conflict. Colo codes are uppercased so the dial-time
+// match against `request.cf.colo` (which CF returns as uppercase) and the
+// dashboard's free-form input stay aligned.
+export const normalizeProxyFallbackList = (entries: readonly ProxyFallbackEntry[]): ProxyFallbackEntry[] => {
   const seen = new Set<string>();
-  const result: string[] = [];
-  for (const raw of ids) {
-    const id = raw.trim();
+  const result: ProxyFallbackEntry[] = [];
+  for (const raw of entries) {
+    const id = raw.id.trim();
     if (id === '' || seen.has(id)) continue;
     seen.add(id);
-    result.push(id);
+    const colos = normalizeColos(raw.colos);
+    result.push(colos === undefined ? { id } : { id, colos });
   }
   return result;
+};
+
+const normalizeColos = (colos: readonly string[] | undefined): string[] | undefined => {
+  if (colos === undefined) return undefined;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of colos) {
+    const c = raw.trim().toUpperCase();
+    if (c === '' || seen.has(c)) continue;
+    seen.add(c);
+    out.push(c);
+  }
+  return out.length === 0 ? undefined : out;
+};
+
+// True when the entry is active under the data-plane request's current colo.
+// An entry with no whitelist is always active. A null `currentColo` (Node
+// without RUNTIME_LOCATION) suppresses the filter entirely — there's no
+// meaningful colo to compare against, so honour every entry as written.
+export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string | null): boolean => {
+  if (currentColo === null) return true;
+  if (entry.colos === undefined || entry.colos.length === 0) return true;
+  return entry.colos.includes(currentColo);
 };

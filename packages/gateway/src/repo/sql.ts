@@ -40,7 +40,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamProviderKind, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1310,7 +1310,7 @@ const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
   return normalizeDisabledPublicModelIds(parsed as string[]);
 };
 
-const parseProxyFallbackList = (id: string, json: string): string[] => {
+const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -1320,12 +1320,32 @@ const parseProxyFallbackList = (id: string, json: string): string[] => {
   if (!Array.isArray(parsed)) {
     throw new Error(`Upstream ${id} proxy_fallback_list_json must be a JSON array, got ${parsed === null ? 'null' : typeof parsed}`);
   }
-  for (const entry of parsed) {
-    if (typeof entry !== 'string') {
-      throw new Error(`Upstream ${id} proxy_fallback_list_json entries must be strings, got ${typeof entry}`);
+  const entries: ProxyFallbackEntry[] = [];
+  for (const raw of parsed) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new Error(`Upstream ${id} proxy_fallback_list_json entries must be objects, got ${raw === null ? 'null' : Array.isArray(raw) ? 'array' : typeof raw}`);
     }
+    const entry = raw as { id?: unknown; colos?: unknown };
+    if (typeof entry.id !== 'string') {
+      throw new Error(`Upstream ${id} proxy_fallback_list entry .id must be a string, got ${typeof entry.id}`);
+    }
+    let colos: string[] | undefined;
+    if (entry.colos !== undefined) {
+      if (!Array.isArray(entry.colos)) {
+        throw new Error(`Upstream ${id} proxy_fallback_list entry .colos must be an array when set, got ${typeof entry.colos}`);
+      }
+      const list: string[] = [];
+      for (const c of entry.colos) {
+        if (typeof c !== 'string') {
+          throw new Error(`Upstream ${id} proxy_fallback_list entry .colos members must be strings, got ${typeof c}`);
+        }
+        list.push(c);
+      }
+      colos = list;
+    }
+    entries.push(colos === undefined ? { id: entry.id } : { id: entry.id, colos });
   }
-  return normalizeProxyFallbackList(parsed as string[]);
+  return normalizeProxyFallbackList(entries);
 };
 
 class SqlProxyRepo implements ProxyRepo {

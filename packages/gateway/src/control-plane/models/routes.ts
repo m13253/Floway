@@ -34,7 +34,7 @@ export const controlPlaneModels = async (c: Context) => {
     // like the data-plane /models endpoint. On a session request there is no
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
-    const fetcherForUpstream = await createPerRequestFetcher();
+    const fetcherForUpstream = await createPerRequestFetcher(null);
     const models = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c));
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {

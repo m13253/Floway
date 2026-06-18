@@ -1,8 +1,8 @@
-import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
+import { DIRECT_PROXY_ID, entryMatchesColo } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpRequest } from '@floway-dev/http';
 import { normalizeDialHost } from '@floway-dev/platform';
-import type { Fetcher } from '@floway-dev/provider';
+import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunProxiedRequestOptions, type SocketDial } from '@floway-dev/proxy';
 
@@ -18,8 +18,14 @@ export interface ProxyEntry {
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
   upstreamId: string;
-  fallbackList: string[];
+  fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
+  // Current Cloudflare colo (or Node RUNTIME_LOCATION) the data-plane request
+  // landed in. When non-null, entries whose `colos` whitelist excludes this
+  // value are skipped — that's how per-colo proxy chains stay scoped to the
+  // colo they're meant for. Null disables the filter entirely (deployments
+  // without a colo concept honour every entry as written).
+  currentColo: string | null;
   // Injected so the fetcher stays runtime-agnostic — the composition root
   // chooses the concrete dial/fetch implementations.
   runProxied: (
@@ -70,7 +76,12 @@ interface ProxiedRequest {
 // and the next attempt's wrap immediately overwrites the prior duration on
 // settle. The all-fail tail throws without anyone reading the duration.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
-  const list = input.fallbackList.length > 0 ? input.fallbackList : [DIRECT_PROXY_ID];
+  // Apply the colo filter before any other shape-fixing: an entry that the
+  // current colo excludes shouldn't influence buffering decisions, shouldn't
+  // contribute to the implicit-['direct'] fallback, and shouldn't be retried
+  // in pass 2 either — it's simply not a candidate for this request.
+  const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.currentColo));
+  const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take
   // ownership of `init.body` and consume its underlying stream/Blob.
   // Buffer the body up-front so a runtime that re-streams a Blob can't

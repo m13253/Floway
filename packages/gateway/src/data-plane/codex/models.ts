@@ -94,7 +94,7 @@ export const codexModels = async (c: Context): Promise<Response> => {
     if (hit !== undefined) return hit;
   }
 
-  const fetcherForUpstream = await createPerRequestFetcher();
+  const fetcherForUpstream = await createPerRequestFetcher(null);
   const scheduler = backgroundSchedulerFromContext(c);
   const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {
     headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },

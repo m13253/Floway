@@ -41,7 +41,7 @@ export const copilotQuota = async (c: Context) => {
 
     const { config } = assertCopilotUpstreamRecord(upstream);
 
-    const fetcherForUpstream = await createPerRequestFetcher();
+    const fetcherForUpstream = await createPerRequestFetcher(null);
     const fetcher = fetcherForUpstream(upstream.id);
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(config.githubToken) });
 

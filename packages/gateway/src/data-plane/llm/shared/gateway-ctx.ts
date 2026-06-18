@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
@@ -19,6 +20,12 @@ export interface GatewayCtx {
   // dimension. Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
+  // Strict variant of `runtimeLocation`: null when the deployment has no colo
+  // concept at all (Node without RUNTIME_LOCATION, or a CF request landing
+  // without `cf.colo` populated). Threaded into the dial layer's colo-aware
+  // fallback filter, which needs the null/non-null distinction to decide
+  // whether to apply the filter at all.
+  readonly currentColo: string | null;
 }
 
 export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): GatewayCtx => {
@@ -33,6 +40,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
+    currentColo: getCurrentColo(c.req.raw),
   };
 };
 
@@ -52,5 +60,6 @@ export const createGatewayCtxForWs = (
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
+    currentColo: getCurrentColo(c.req.raw),
   };
 };

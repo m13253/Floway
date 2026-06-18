@@ -719,7 +719,7 @@ test('export includes proxies with full credential URIs and round-trips through 
   const { app, repo } = setup();
   await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 });
   await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
-  const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: ['p_socks', 'p_http', 'direct'] };
+  const upstreamWithFallback: UpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'p_http' }, { id: 'direct' }] };
   await repo.upstreams.save(upstreamWithFallback);
 
   const exported = await doExport(app);

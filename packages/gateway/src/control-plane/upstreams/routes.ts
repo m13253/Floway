@@ -15,7 +15,7 @@ import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDe
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
   type CodexQuotaSnapshot,
@@ -112,7 +112,7 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher())(record.id);
+  const fetcher = (await createPerRequestFetcher(null))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {
@@ -120,12 +120,15 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   }
 };
 
-// 'direct' is always valid; any other entry must reference an existing
-// proxy row. List order matters at dial time (see createFetcher),
+// 'direct' is always a valid entry id; any other id must reference an
+// existing proxy row. List order matters at dial time (see createFetcher),
 // and persistence layers dedupe via normalizeProxyFallbackList before
-// storing.
-const validateProxyFallbackList = async (list: readonly string[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = list.filter(id => id !== DIRECT_PROXY_ID);
+// storing. The per-entry `colos` whitelist is validated only structurally
+// here — anything beyond "non-empty string" is the operator's responsibility,
+// since colo tags are free-form on Node (RUNTIME_LOCATION) and may include
+// future CF colos we haven't yet enumerated.
+const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const ids = entries.map(e => e.id).filter(id => id !== DIRECT_PROXY_ID);
   if (ids.length === 0) return { ok: true };
   const proxies = await getRepo().proxies.list();
   const known = new Set(proxies.map(p => p.id));
@@ -318,7 +321,7 @@ export const listUpstreamModels = async (c: Context) => {
 
   const refresh = c.req.query('refresh') === 'true';
   const scheduler = backgroundSchedulerFromContext(c);
-  const fetcher = (await createPerRequestFetcher())(record.id);
+  const fetcher = (await createPerRequestFetcher(null))(record.id);
 
   try {
     const instance = await createProviderInstance(record);
@@ -563,7 +566,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     // Refresh button respects the same fallback chain as the data-plane hot
     // path. Without this, a Codex upstream behind a corporate proxy would
     // dial direct here and silently fail under restricted egress.
-    const fetcher = (await createPerRequestFetcher())(id);
+    const fetcher = (await createPerRequestFetcher(null))(id);
     const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
     const now = new Date();
     const nextAccount = {
