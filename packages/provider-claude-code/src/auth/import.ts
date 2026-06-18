@@ -42,8 +42,9 @@ const buildClaudeCodeImportResult = (params: {
 };
 
 // Accepts a full callback URL (`https://platform.claude.com/oauth/code/callback?...`),
-// a bare query (`?code=…&state=…` or `code=…&state=…`), or any other URL whose
-// `searchParams` carry both `code` and `state`. Throws when either is missing.
+// a bare query (`?code=…&state=…` or `code=…&state=…`), or a host-relative
+// URL whose query carries both `code` and `state`. Throws when either is
+// missing.
 export const extractClaudeCodeCallbackParams = (input: string): { code: string; state: string } => {
   const trimmed = input.trim();
   if (trimmed === '') throw new Error('Callback input is empty');
@@ -58,7 +59,13 @@ export const extractClaudeCodeCallbackParams = (input: string): { code: string; 
     }
     params = url.searchParams;
   } else {
-    const query = trimmed.startsWith('?') ? trimmed.slice(1) : trimmed;
+    // Slice at the first `?` so a host-relative paste
+    // (`platform.claude.com/oauth/code/callback?code=…&state=…`) parses the
+    // post-`?` segment as a query instead of feeding the whole string to
+    // URLSearchParams (which would treat it as a single malformed key and
+    // surface a confusing "missing code" error).
+    const queryStart = trimmed.indexOf('?');
+    const query = queryStart >= 0 ? trimmed.slice(queryStart + 1) : trimmed;
     params = new URLSearchParams(query);
   }
 

@@ -7,9 +7,11 @@ const goodAccount = {
   refreshToken: 'sk-ant-ort01-rt',
   state: 'active' as const,
   stateUpdatedAt: '2026-06-19T00:00:00Z',
+  accessToken: null,
+  quotaSnapshot: null,
 };
 const good: ClaudeCodeUpstreamState = {
-  accounts: [{ ...goodAccount, accessToken: null, quotaSnapshot: null }],
+  accounts: [{ ...goodAccount }],
 };
 
 describe('assertClaudeCodeUpstreamState', () => {
@@ -74,8 +76,7 @@ describe('assertClaudeCodeUpstreamState', () => {
     })).toThrow(/exactly one/);
   });
 
-  test('accepts accessToken absent / null / populated', () => {
-    expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
+  test('accepts accessToken null / populated', () => {
     expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{
@@ -83,6 +84,10 @@ describe('assertClaudeCodeUpstreamState', () => {
         accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-19T00:00:00Z' },
       }],
     })).not.toThrow();
+  });
+  test('rejects absent accessToken (must be explicit null on the wire)', () => {
+    const { accessToken: _drop, ...withoutAccess } = goodAccount;
+    expect(() => assertClaudeCodeUpstreamState({ accounts: [withoutAccess] })).toThrow(/accessToken/);
   });
   test('rejects malformed accessToken', () => {
     expect(() => assertClaudeCodeUpstreamState({

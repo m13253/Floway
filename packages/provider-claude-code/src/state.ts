@@ -156,10 +156,10 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
   if (typeof obj.stateUpdatedAt !== 'string' || obj.stateUpdatedAt === '') {
     throw new TypeError(`${where}.stateUpdatedAt must be a non-empty ISO string`);
   }
-  if (obj.accessToken !== null && obj.accessToken !== undefined) {
+  if (obj.accessToken !== null) {
     assertClaudeCodeAccessTokenEntry(obj.accessToken, `${where}.accessToken`);
   }
-  if (obj.quotaSnapshot !== null && obj.quotaSnapshot !== undefined) {
+  if (obj.quotaSnapshot !== null) {
     assertClaudeCodeQuotaSnapshotEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
 };
@@ -185,21 +185,10 @@ export function assertClaudeCodeUpstreamState(value: unknown): asserts value is 
   }
 }
 
-// Boundary normalization: a freshly-imported row may carry no `accessToken` /
-// `quotaSnapshot` key (the import path only writes the refresh token); the
-// typed contract on `ClaudeCodeAccountCredential` promises `null` rather than
-// `undefined`. Build a shallow copy of the state with absent → `null` so
-// consumers can rely on `=== null` checks. The original `raw` is left
-// untouched so callers (e.g. access-token-cache, quota) can still pass it
-// straight through as the CAS `expectedState`.
+// Asserts the wire shape and returns the typed view. The asserter rejects
+// absent `accessToken` / `quotaSnapshot` keys (they must be explicit `null`
+// when not populated), so no further normalization is needed here.
 export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamState => {
   assertClaudeCodeUpstreamState(raw);
-  return {
-    ...raw,
-    accounts: raw.accounts.map(account => ({
-      ...account,
-      accessToken: account.accessToken ?? null,
-      quotaSnapshot: account.quotaSnapshot ?? null,
-    })),
-  };
+  return raw;
 };

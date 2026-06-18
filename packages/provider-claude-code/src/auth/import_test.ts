@@ -50,6 +50,11 @@ describe('extractClaudeCodeCallbackParams', () => {
     expect(extractClaudeCodeCallbackParams('code=CODE&state=STATE')).toEqual({ code: 'CODE', state: 'STATE' });
   });
 
+  test('parses a host-relative URL by slicing at the first ?', () => {
+    expect(extractClaudeCodeCallbackParams('platform.claude.com/oauth/code/callback?code=CODE&state=STATE'))
+      .toEqual({ code: 'CODE', state: 'STATE' });
+  });
+
   test('throws on missing code', () => {
     expect(() => extractClaudeCodeCallbackParams('https://platform.claude.com/oauth/code/callback?state=S'))
       .toThrow(/code/);
