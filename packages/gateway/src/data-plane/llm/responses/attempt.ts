@@ -182,7 +182,8 @@ const dispatchResponses = async (
   candidate: ProviderCandidate,
   invocationHeaders: Record<string, string>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  if (candidate.targetApi === 'responses') {
+  switch (candidate.targetApi) {
+  case 'responses': {
     const { model: _model, ...body } = payload;
     const recorder = createUpstreamLatencyRecorder();
     const providerResult = await candidate.binding.provider.callResponses(
@@ -194,7 +195,7 @@ const dispatchResponses = async (
     );
     return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
   }
-  if (candidate.targetApi === 'messages') {
+  case 'messages':
     return await traverseTranslation(
       payload,
       p => translateResponsesViaMessages(p, {
@@ -205,8 +206,7 @@ const dispatchResponses = async (
         payload: translated, ctx, store, candidate, inheritedInvocationHeaders: invocationHeaders,
       }),
     );
-  }
-  if (candidate.targetApi === 'chat-completions') {
+  case 'chat-completions':
     return await traverseTranslation(
       payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
@@ -215,7 +215,6 @@ const dispatchResponses = async (
       }),
     );
   }
-  throw new Error(`responsesAttempt: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
 };
 
 // `/responses/compact` is non-streaming: the provider returns the compaction

@@ -50,7 +50,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     return { ...(await readUpstreamError(providerResult.response)), performance: context };
   }
   return eventResult(
-    withUpstreamTelemetry(providerResult.events as AsyncIterable<ProtocolFrame<TEvent>>, ctx, context, candidate.targetApi, durationMs),
+    withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, durationMs),
     telemetryModelIdentity(candidate, providerResult.modelKey),
     context,
   );
