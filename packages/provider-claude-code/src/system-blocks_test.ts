@@ -61,9 +61,6 @@ describe('DEFAULT_TEMPLATE_BLOCK', () => {
 });
 
 describe('computeCcVersionFingerprint', () => {
-  // Vectors computed independently against the documented algorithm:
-  //   sha256("59cf53e54c78" + bytes[4,7,20] + version), first 3 hex chars.
-  // Padding is 0x30 ('0') for indices past the end of the first user text.
   test('matches the known vector for a long first-user text', () => {
     const body = minimalBody('hello world this is a test prompt');
     // 'hello world this is a test prompt' — bytes[4]='o' (0x6F),

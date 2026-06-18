@@ -31,8 +31,7 @@ test('appends IDENTITY_BLOCK after an existing system[0] block', async () => {
   assertEquals(ctx.payload.system, [billing, IDENTITY_BLOCK]);
 });
 
-test('appends IDENTITY_BLOCK onto the array injectBillingBlock established', async () => {
-  // Single-block fixture stands in for what inject-billing-block leaves behind.
+test('appends IDENTITY_BLOCK onto a one-block system array regardless of block content', async () => {
   const existing = { type: 'text' as const, text: 'placeholder' };
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',

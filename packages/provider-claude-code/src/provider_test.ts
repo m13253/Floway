@@ -179,7 +179,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.metadata.user_id).toBe(userId);
   });
 
-  test('CC UA but missing clientRequestPathname still runs the chain (defensive)', async () => {
+  test('CC UA but missing clientRequestPathname still runs the chain', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 

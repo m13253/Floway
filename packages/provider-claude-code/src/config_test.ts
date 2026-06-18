@@ -39,7 +39,7 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
     ['extra unknown field at top level', { ...good, extra: 1 }],
     ['accounts not an array', { accounts: goodAccount }],
     ['empty accounts array', { accounts: [] }],
-    ['multiple accounts (v1 invariant)', { accounts: [goodAccount, { ...goodAccount, accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }] }],
+    ['multiple accounts', { accounts: [goodAccount, { ...goodAccount, accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }] }],
   ])('rejects %s', (_label, value) => {
     expect(() => assertClaudeCodeUpstreamRecord(wrap(value))).toThrow();
   });
