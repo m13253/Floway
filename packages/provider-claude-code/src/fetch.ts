@@ -1,4 +1,4 @@
-import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken } from './access-token-cache.ts';
+import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token-cache.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
@@ -126,12 +126,35 @@ export const callClaudeCodeMessages = async (
   // recordUpstreamLatency contract: every code path that returns must wrap
   // exactly one fetch (real or synthetic). Synthetic gates ride a resolved
   // promise so the gateway's recorder sees the contract met without
-  // measuring anything meaningful.
+  // measuring anything meaningful. Both the pre-flight gates and the 401-retry
+  // terminal-state branch use this helper so the two paths read identically;
+  // the recorder's "at least once + last wrap kept" contract is satisfied
+  // even when the streaming call already wrapped its own fetch upstream of
+  // the retry.
   const syntheticReturn = async (response: Response): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: false,
     modelKey: opts.model.id,
     response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
   });
+
+  // Either ensures a usable access token or returns a 503 wrap for terminal
+  // refresh failures; other errors propagate. Used at both the cold-start
+  // call site and the 401-retry branch so the catch shape lives in one place.
+  const ensureOrSession503 = async (): Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>> => {
+    try {
+      return await ensureClaudeCodeAccessToken({
+        upstreamId: opts.upstreamId,
+        repo: getProviderRepo().upstreams,
+        fetcher: opts.call.fetcher,
+      });
+    } catch (err) {
+      if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+        // ensureClaudeCodeAccessToken already persisted the terminal state.
+        return await syntheticReturn(synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
+      }
+      throw err;
+    }
+  };
 
   const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
@@ -155,34 +178,18 @@ export const callClaudeCodeMessages = async (
     ));
   }
 
-  let accessToken: ResolvedToken;
-  try {
-    const ensured = await ensureClaudeCodeAccessToken({
-      upstreamId: opts.upstreamId,
-      repo: getProviderRepo().upstreams,
-      fetcher: opts.call.fetcher,
-    });
-    accessToken = { token: ensured.entry.token, freshlyMinted: ensured.freshlyMinted };
-  } catch (err) {
-    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
-      // ensureClaudeCodeAccessToken already persisted the terminal state.
-      return await syntheticReturn(synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
-    }
-    throw err;
-  }
+  const ensured = await ensureOrSession503();
+  if ('modelKey' in ensured) return ensured;
 
-  return await performUpstreamCall(opts, accessToken, false);
+  return await performUpstreamCall(opts, ensured, false, syntheticReturn, ensureOrSession503);
 };
-
-interface ResolvedToken {
-  token: string;
-  freshlyMinted: boolean;
-}
 
 const performUpstreamCall = async (
   opts: CallClaudeCodeMessagesOptions,
-  accessToken: ResolvedToken,
+  accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
+  syntheticReturn: (response: Response) => Promise<ProviderStreamResult<MessagesStreamEvent>>,
+  ensureOrSession503: () => Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>>,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
@@ -192,9 +199,9 @@ const performUpstreamCall = async (
     // sufficient.
     const passthrough: Record<string, string> = { ...opts.headers };
     delete passthrough.authorization;
-    headers = { ...passthrough, authorization: `Bearer ${accessToken.token}` };
+    headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.token}` };
+    headers = { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is
@@ -232,25 +239,9 @@ const performUpstreamCall = async (
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
     });
-    let nextToken: ResolvedToken;
-    try {
-      const ensured = await ensureClaudeCodeAccessToken({
-        upstreamId: opts.upstreamId,
-        repo: getProviderRepo().upstreams,
-        fetcher: opts.call.fetcher,
-      });
-      nextToken = { token: ensured.entry.token, freshlyMinted: ensured.freshlyMinted };
-    } catch (err) {
-      if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
-        return {
-          ok: false,
-          modelKey: opts.model.id,
-          response: synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`),
-        };
-      }
-      throw err;
-    }
-    return await performUpstreamCall(opts, nextToken, true);
+    const ensured = await ensureOrSession503();
+    if ('modelKey' in ensured) return ensured;
+    return await performUpstreamCall(opts, ensured, true, syntheticReturn, ensureOrSession503);
   }
 
   return result;
