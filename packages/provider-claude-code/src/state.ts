@@ -62,41 +62,29 @@ export interface ClaudeCodeUpstreamState {
   accounts: ClaudeCodeAccountCredential[];
 }
 
-const ALLOWED_CREDENTIAL_KEYS_MAP: Record<keyof ClaudeCodeAccountCredential, true> = {
-  accountUuid: true,
-  refreshToken: true,
-  state: true,
-  stateMessage: true,
-  stateUpdatedAt: true,
-  accessToken: true,
-  quotaSnapshot: true,
+// Strict shape gate shared by every asserter in this file: rejects unknown
+// keys so a stale field on disk surfaces loudly instead of silently shipping
+// to the dashboard.
+const assertOnlyKeys = (obj: Record<string, unknown>, allowed: readonly string[], where: string): void => {
+  const allowedSet = new Set(allowed);
+  for (const key of Object.keys(obj)) {
+    if (!allowedSet.has(key)) {
+      throw new TypeError(`${where} has unexpected key '${key}'`);
+    }
+  }
 };
 
-const ALLOWED_STATE_KEYS_MAP: Record<keyof ClaudeCodeUpstreamState, true> = {
-  accounts: true,
-};
-
-const ALLOWED_ACCESS_TOKEN_KEYS_MAP: Record<keyof ClaudeCodeAccessTokenEntry, true> = {
-  token: true,
-  expiresAt: true,
-  refreshedAt: true,
-};
-
-const ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP: Record<keyof ClaudeCodeQuotaSnapshotEntry, true> = {
-  fetchedAt: true,
-  data: true,
-};
+const ACCESS_TOKEN_KEYS = ['token', 'expiresAt', 'refreshedAt'] as const;
+const QUOTA_SNAPSHOT_KEYS = ['fetchedAt', 'data'] as const;
+const CREDENTIAL_KEYS = ['accountUuid', 'refreshToken', 'state', 'stateMessage', 'stateUpdatedAt', 'accessToken', 'quotaSnapshot'] as const;
+const STATE_KEYS = ['accounts'] as const;
 
 const assertClaudeCodeAccessTokenEntry = (value: unknown, where: string): void => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_ACCESS_TOKEN_KEYS_MAP)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  assertOnlyKeys(obj, ACCESS_TOKEN_KEYS, where);
   if (typeof obj.token !== 'string' || obj.token === '') {
     throw new TypeError(`${where}.token must be a non-empty string`);
   }
@@ -113,11 +101,7 @@ const assertClaudeCodeQuotaSnapshotEntry = (value: unknown, where: string): void
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_QUOTA_SNAPSHOT_KEYS_MAP)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  assertOnlyKeys(obj, QUOTA_SNAPSHOT_KEYS, where);
   if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
@@ -129,11 +113,7 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_CREDENTIAL_KEYS_MAP)) {
-      throw new TypeError(`${where} has unexpected key '${key}'`);
-    }
-  }
+  assertOnlyKeys(obj, CREDENTIAL_KEYS, where);
   if (typeof obj.accountUuid !== 'string' || obj.accountUuid === '') {
     throw new TypeError(`${where}.accountUuid must be a non-empty string`);
   }
@@ -169,11 +149,7 @@ export function assertClaudeCodeUpstreamState(value: unknown): asserts value is 
     throw new TypeError('ClaudeCodeUpstreamState must be a plain object');
   }
   const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_STATE_KEYS_MAP)) {
-      throw new TypeError(`ClaudeCodeUpstreamState has unexpected key '${key}'`);
-    }
-  }
+  assertOnlyKeys(obj, STATE_KEYS, 'ClaudeCodeUpstreamState');
   if (!Array.isArray(obj.accounts)) {
     throw new TypeError('ClaudeCodeUpstreamState.accounts must be an array');
   }
