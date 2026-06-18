@@ -2,6 +2,8 @@
 // Presentation-only paste area for the Claude Code OAuth + credentials.json
 // import flow. The parent owns the PKCE state and submission.
 
+import { ref } from 'vue';
+
 import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
@@ -20,9 +22,22 @@ const importTabs = [
   { value: 'credentials_json', label: 'Paste credentials.json' },
 ] as const;
 
+// 'copied' shows a tick for 2s on success; 'failed' surfaces the underlying
+// clipboard error inline so the operator can fall back to selecting the
+// visible link manually.
+const copyStatus = ref<{ kind: 'idle' } | { kind: 'copied' } | { kind: 'failed'; message: string }>({ kind: 'idle' });
+let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
+
 const copyAuthorizeUrl = async () => {
   if (!props.pkce) return;
-  try { await navigator.clipboard.writeText(props.pkce.authorize_url); } catch { /* clipboard is best-effort; the visible link still works */ }
+  if (copyResetTimer !== undefined) clearTimeout(copyResetTimer);
+  try {
+    await navigator.clipboard.writeText(props.pkce.authorize_url);
+    copyStatus.value = { kind: 'copied' };
+    copyResetTimer = setTimeout(() => { copyStatus.value = { kind: 'idle' }; }, 2000);
+  } catch (e) {
+    copyStatus.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
+  }
 };
 </script>
 
@@ -50,6 +65,8 @@ const copyAuthorizeUrl = async () => {
             <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
               <i class="i-lucide-clipboard size-3.5" /> Copy URL
             </Button>
+            <span v-if="copyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
+            <span v-else-if="copyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ copyStatus.message }}</span>
             <span>Expires in {{ Math.round(pkce.expires_in_seconds / 60) }} min</span>
           </div>
         </div>
