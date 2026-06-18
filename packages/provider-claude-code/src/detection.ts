@@ -28,9 +28,11 @@ const LEGACY_USER_ID_PATTERN = /^user_([a-fA-F0-9]{64})_account_([a-fA-F0-9-]*)_
 
 const DICE_THRESHOLD = 0.5;
 
-// Six canonical identity prefixes real CC sends as the first text block.
+// Seven canonical identity prefixes real CC sends as the first text block.
 // Includes compact / summarisation flows; dropping the last two false-
-// negatives genuine CC compact traffic. Strings are kept verbatim.
+// negatives genuine CC compact traffic. v2.1.181 swapped "interactive CLI
+// tool" for "interactive agent" — both are kept so older and newer CC
+// clients both pass detection. Strings are kept verbatim.
 const IDENTITY_TEMPLATES = [
   "You are Claude Code, Anthropic's official CLI for Claude.",
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
@@ -38,6 +40,7 @@ const IDENTITY_TEMPLATES = [
   'You are a file search specialist for Claude Code, Anthropic\'s official CLI for Claude.',
   'You are a helpful AI assistant tasked with summarizing conversations.',
   'You are an interactive CLI tool that helps users',
+  'You are an interactive agent that helps users',
 ] as const;
 
 export interface ParsedUserId {

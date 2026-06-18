@@ -29,14 +29,16 @@ describe('DEFAULT_TEMPLATE_BLOCK', () => {
     expect(DEFAULT_TEMPLATE_BLOCK.cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  test('opens with the interactive-CLI introduction line', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text.startsWith('You are an interactive CLI tool that helps users')).toBe(true);
+  test('opens with the v2.1.181 interactive-agent introduction line', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text.startsWith('You are an interactive agent that helps users')).toBe(true);
   });
 
-  test('contains the canonical tone-and-style and tool-usage sections', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tone and style');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tool usage policy');
+  test('contains the canonical v2.1.181 section headers', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# System');
     expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Doing tasks');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Executing actions with care');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Using your tools');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tone and style');
   });
 
   test('is substantial — at least 5000 chars', () => {

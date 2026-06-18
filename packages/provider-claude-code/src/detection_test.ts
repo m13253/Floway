@@ -187,6 +187,7 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
     ["You are a file search specialist for Claude Code, Anthropic's official CLI for Claude."],
     ['You are a helpful AI assistant tasked with summarizing conversations.'],
     ['You are an interactive CLI tool that helps users with software engineering tasks.'],
+    ['You are an interactive agent that helps users with software engineering tasks.'],
   ])('matches identity template: %s', text => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
