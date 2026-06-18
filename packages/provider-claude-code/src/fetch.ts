@@ -133,7 +133,7 @@ export const callClaudeCodeMessages = async (
 
   if (account.state !== 'active') {
     return await syntheticReturn(synthetic503(
-      `Claude Code account is ${account.state}${account.stateMessage ? `: ${account.stateMessage}` : ''}`,
+      `Claude Code account is ${account.state}: ${account.stateMessage}`,
     ));
   }
 

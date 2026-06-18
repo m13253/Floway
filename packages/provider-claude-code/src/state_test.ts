@@ -25,8 +25,21 @@ describe('assertClaudeCodeUpstreamState', () => {
       }],
     })).not.toThrow();
     expect(() => assertClaudeCodeUpstreamState({
-      accounts: [{ ...goodAccount, state: 'refresh_failed' }],
+      accounts: [{ ...goodAccount, state: 'refresh_failed', stateMessage: 'Refresh failed' }],
     })).not.toThrow();
+  });
+  test('rejects terminal state without stateMessage', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, state: 'refresh_failed' }],
+    })).toThrow(/stateMessage/);
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, state: 'session_terminated', stateMessage: '' }],
+    })).toThrow(/stateMessage/);
+  });
+  test('rejects stateMessage on active state', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, stateMessage: 'shouldnt be here' }],
+    })).toThrow(/stateMessage/);
   });
   test('rejects missing stateUpdatedAt', () => {
     const { stateUpdatedAt: _drop, ...withoutTimestamp } = goodAccount;

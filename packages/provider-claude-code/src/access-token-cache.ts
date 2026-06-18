@@ -57,9 +57,9 @@ export const ensureClaudeCodeAccessToken = async (
   const accountIndex = 0;
   const account = state.accounts[accountIndex];
   if (account.state !== 'active') {
-    throw new ClaudeCodeOAuthSessionTerminatedError(
-      account.stateMessage ?? `account is in state '${account.state}'`,
-    );
+    // stateMessage is required on the wire for non-active states (enforced by
+    // the asserter), so it is always present here.
+    throw new ClaudeCodeOAuthSessionTerminatedError(account.stateMessage);
   }
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return account.accessToken;
@@ -131,10 +131,7 @@ export const invalidateClaudeCodeAccessToken = async (args: {
   repo: UpstreamsRepoSlim;
 }): Promise<void> => {
   const fresh = await args.repo.getById(args.upstreamId);
-  if (!fresh) {
-    console.warn(`invalidateClaudeCodeAccessToken: upstream ${args.upstreamId} disappeared mid-request`);
-    return;
-  }
+  if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
   const accountIndex = 0;
   if (state.accounts[accountIndex].accessToken === null) return;

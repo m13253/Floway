@@ -64,7 +64,11 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
 let currentRecord: UpstreamRecord;
 
 const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void => {
-  currentRecord = makeRecord({ accounts: [{ ...activeAccount, ...overrides }] });
+  // Tests pass overrides that may flip state to a terminal value with the
+  // matching stateMessage; the spread merges into a valid discriminated-union
+  // shape, but TS can't narrow that through Partial<...> so cast to bridge.
+  const account = { ...activeAccount, ...overrides } as ClaudeCodeAccountCredential;
+  currentRecord = makeRecord({ accounts: [account] });
 };
 
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>

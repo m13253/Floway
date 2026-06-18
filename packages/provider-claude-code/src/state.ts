@@ -31,13 +31,13 @@ export interface ClaudeCodeQuotaSnapshotEntry {
 
 // One account's autonomous credential state, joined back to its identity in
 // ClaudeCodeUpstreamConfig.accounts via `accountUuid`.
-export interface ClaudeCodeAccountCredential {
+export type ClaudeCodeAccountCredential = ClaudeCodeAccountCredentialBase & ClaudeCodeAccountCredentialHealth;
+
+interface ClaudeCodeAccountCredentialBase {
   accountUuid: string;
   // Anthropic rotates the refresh token on every /v1/oauth/token call. Stored
   // in D1 (not KV) so KV eviction never forces operator re-import.
   refreshToken: string;
-  state: ClaudeCodeCredentialHealth;
-  stateMessage?: string;
   // ISO 8601, written on every state transition (initial import, rotation,
   // terminal-state flip). The mutation paths always set it together with
   // `state`, so it's required on the wire.
@@ -45,6 +45,14 @@ export interface ClaudeCodeAccountCredential {
   accessToken: ClaudeCodeAccessTokenEntry | null;
   quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
 }
+
+// `active` carries no message; terminal states carry the upstream's terminal
+// message so the dashboard can render it and ensureClaudeCodeAccessToken can
+// surface it through ClaudeCodeOAuthSessionTerminatedError without inventing
+// a fallback string.
+type ClaudeCodeAccountCredentialHealth =
+  | { state: 'active'; stateMessage?: undefined }
+  | { state: 'session_terminated' | 'refresh_failed'; stateMessage: string };
 
 // Account-pool state. v1 always carries exactly one entry; the asserter
 // enforces that, mirroring the same invariant on ClaudeCodeUpstreamConfig.
@@ -135,8 +143,15 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
   if (obj.state !== 'active' && obj.state !== 'session_terminated' && obj.state !== 'refresh_failed') {
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
   }
-  if (obj.stateMessage !== undefined && typeof obj.stateMessage !== 'string') {
-    throw new TypeError(`${where}.stateMessage must be a string when present`);
+  // Terminal states carry the upstream's terminal message; 'active' must not.
+  // This split keeps the access-token cache from inventing a fallback string
+  // when it surfaces ClaudeCodeOAuthSessionTerminatedError.
+  if (obj.state === 'active') {
+    if (obj.stateMessage !== undefined) {
+      throw new TypeError(`${where}.stateMessage must be absent on active state`);
+    }
+  } else if (typeof obj.stateMessage !== 'string' || obj.stateMessage === '') {
+    throw new TypeError(`${where}.stateMessage must be a non-empty string on terminal state`);
   }
   if (typeof obj.stateUpdatedAt !== 'string' || obj.stateUpdatedAt === '') {
     throw new TypeError(`${where}.stateUpdatedAt must be a non-empty ISO string`);

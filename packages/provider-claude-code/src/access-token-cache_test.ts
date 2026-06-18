@@ -173,9 +173,9 @@ describe('invalidateClaudeCodeAccessToken', () => {
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 
-  test('no-ops when the upstream disappeared', async () => {
+  test('throws when the upstream disappeared', async () => {
     current = null;
-    await invalidateClaudeCodeAccessToken({ upstreamId, repo });
+    await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo })).rejects.toThrow(/disappeared/);
     expect(saveStateSpy).not.toHaveBeenCalled();
   });
 });
