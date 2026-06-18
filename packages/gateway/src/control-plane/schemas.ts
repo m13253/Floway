@@ -32,7 +32,7 @@ const flagOverridesSchema = z.unknown().transform((value, ctx): Record<string, b
     return parseFlagOverridesWire(value);
   } catch (e) {
     ctx.issues.push({ code: 'custom', message: e instanceof Error ? e.message : String(e), input: value });
-    return z.NEVER as never;
+    return z.NEVER;
   }
 });
 
@@ -357,9 +357,7 @@ export const claudeCodeRefreshNowBody = z.object({});
 
 // Per-proxy dial-stage timeout. Capped at 600s (10min): an operator
 // override beyond that would let a single dead proxy stall the fallback
-// chain past any reasonable client deadline. nullable so the operator can
-// clear it back to the gateway-wide default; absent vs. null is meaningful
-// in PATCH.
+// chain past any reasonable client deadline.
 const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
 
 export const createProxyBody = z.object({
@@ -371,6 +369,8 @@ export const createProxyBody = z.object({
 export const updateProxyBody = z.object({
   name: z.string().min(1).max(200).optional(),
   url: z.string().min(1).optional(),
+  // nullable so the operator can clear back to the gateway-wide default;
+  // absent vs. null is meaningful in PATCH.
   dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
 });
 
