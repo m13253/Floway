@@ -14,6 +14,7 @@ import { tokenUsage } from './token-usage/routes.ts';
 import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
+import { getRuntimeInfo } from '../runtime/runtime-info.ts';
 
 const adminOnlyMiddleware = async (c: Context, next: Next) => {
   if (!c.get('isAdmin')) {
@@ -33,6 +34,10 @@ export const controlPlaneRoutes = new Hono()
   .post('/auth/login', zValidator('json', authLoginBody), authLogin)
   .post('/auth/logout', authLogout)
   .get('/auth/me', authMe)
+  // Read-only meta about the gateway runtime. Dashboard fetches once at
+  // load to decide whether to surface colo-aware UI (only meaningful when
+  // anycast / multi-region is in play).
+  .get('/api/runtime-info', c => c.json(getRuntimeInfo(c.req.raw)))
   .get('/api/keys', listKeys)
   .post('/api/keys', zValidator('json', createKeyBody), createKey)
   .post('/api/keys/:id/rotate', rotateKey)
