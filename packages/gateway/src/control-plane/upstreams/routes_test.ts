@@ -3,6 +3,14 @@ import { test } from 'vitest';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
+// Test-only alias for opaquely-typed JSON response bodies. Most assertions
+// drill into deeply-dynamic shapes (config.bearerToken, state.accounts[0]…);
+// re-typing every drill is overhead the test layer doesn't earn. Using a
+// named alias instead of inlined `Record<string, any>` keeps the intent
+// ("we're poking at a parsed JSON blob") visible at the call site.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type JsonObject = Record<string, any>;
+
 const customConfig = {
   baseUrl: 'https://custom.example.com',
   bearerToken: 'sk-test',
@@ -56,7 +64,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ flag_overrides: { 'vendor-kimi': true } })));
 
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as Record<string, any>;
+  const created = (await resp.json()) as JsonObject;
   assertEquals(created.provider, 'custom');
   assertEquals(created.config.bearerToken, undefined);
   assertEquals(created.config.bearerTokenSet, true);
@@ -67,7 +75,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals((stored?.config as Record<string, unknown>).bearerToken, 'sk-test');
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
-  const items = (await list.json()) as Array<Record<string, any>>;
+  const items = (await list.json()) as JsonObject[];
   assertEquals(items[0].config.bearerToken, undefined);
 });
 
@@ -82,7 +90,7 @@ test('POST /api/upstreams validates Azure models and redacts API keys', async ()
 
   const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', name: 'Azure', config: azureConfig })));
   assertEquals(createdResp.status, 201);
-  const created = (await createdResp.json()) as Record<string, any>;
+  const created = (await createdResp.json()) as JsonObject;
   assertEquals(created.provider, 'azure');
   assertEquals(created.config.apiKey, undefined);
   assertEquals(created.config.apiKeySet, true);
@@ -103,7 +111,7 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
     async () => {
       const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
       assertEquals(resp.status, 201);
-      const body = (await resp.json()) as Record<string, any>;
+      const body = (await resp.json()) as JsonObject;
       return body;
     },
   );
@@ -259,7 +267,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
 
   const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
   assertEquals(list.status, 200);
-  const items = (await list.json()) as Array<Record<string, any>>;
+  const items = (await list.json()) as JsonObject[];
   const byId = Object.fromEntries(items.map(i => [i.id, i]));
 
   assertEquals(byId.up_fresh.modelsCache, { fetchedAt: null, lastError: null });
@@ -453,7 +461,6 @@ test('GET /api/upstreams/:id/models?refresh=true forces a fresh upstream fetch',
     },
   );
 
-  // The forced refresh persisted the new row.
   const stored = await repo.modelsCache.get('up_refresh');
   assertEquals(stored?.models.map(m => m.id), ['fresh-model']);
 });
@@ -673,7 +680,7 @@ test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with
 
   const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()));
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as Record<string, any>;
+  const created = (await resp.json()) as JsonObject;
   assertEquals(created.provider, 'codex');
   assertEquals(created.config.accounts[0].email, 'alice@example.com');
   assertEquals(created.config.accounts[0].chatgptAccountId, 'acc_test');
@@ -690,8 +697,7 @@ test('POST /api/upstreams/codex-import without an explicit name auto-derives one
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const { name: _ignored, ...bodyWithoutName } = codexAuthJsonImport();
-  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, bodyWithoutName));
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, { auth_json: codexAuthJsonImport().auth_json }));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as { name: string };
   assertEquals(created.name, 'ChatGPT Codex (alice@example.com)');
@@ -816,10 +822,10 @@ test('POST /api/upstreams/:id/codex-refresh-now still answers when the failure-s
   const storedState = stored!.state as { accounts: Array<Record<string, unknown>> };
 
   await withMockedFetch(
-    () => {
+    async () => {
       // Simulate the concurrent writer mid-OAuth by mutating the row before
       // the route reaches its CAS write. The OAuth call itself fails terminally.
-      void repo.upstreams.save({
+      await repo.upstreams.save({
         ...stored!,
         state: { accounts: storedState.accounts.map(a => ({ ...a, refresh_token: 'rt_concurrent_winner' })) },
       });
@@ -871,8 +877,6 @@ const claudeCodeCredentialsJson = (overrides: { accessToken?: string; refreshTok
   },
 });
 
-// Pick the canonical body shape for an OAuth-token vs a profile-endpoint
-// request so the test mock can respond differently to each.
 const claudeCodeMockedFetcher = (token: ReturnType<typeof claudeCodeTokenBody>, profile: unknown) => async (request: Request) => {
   if (request.url === 'https://platform.claude.com/v1/oauth/token') {
     return jsonResponse(token);
@@ -963,7 +967,7 @@ test('POST /api/upstreams/claude-code-import (credentials_json) creates a row wi
         authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
       );
       assertEquals(resp.status, 201);
-      const created = (await resp.json()) as Record<string, any>;
+      const created = (await resp.json()) as JsonObject;
       assertEquals(created.provider, 'claude-code');
       assertEquals(created.config.accounts[0].email, 'alice@example.com');
       assertEquals(created.config.accounts[0].accountUuid, 'acc-uuid-1');
@@ -1205,7 +1209,7 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
     authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct'] })),
   );
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as Record<string, any>;
+  const created = (await resp.json()) as JsonObject;
   assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
 
   const stored = await repo.upstreams.getById(created.id);
@@ -1222,14 +1226,14 @@ test('POST /api/upstreams normalises proxy_fallback_list duplicates so the respo
     authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct', 'p_fallback', 'direct'] })),
   );
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as Record<string, any>;
+  const created = (await resp.json()) as JsonObject;
   // Without the API-layer normalize, the response would echo the duplicates
   // while the saved row only kept one of each — operators would see a
   // different list on POST vs the next GET.
   assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
 
   const get = await requestApp('/api/upstreams', authed(adminSession));
-  const list = (await get.json()) as Array<Record<string, any>>;
+  const list = (await get.json()) as JsonObject[];
   const fresh = list.find(u => u.id === created.id);
   assertEquals(fresh!.proxy_fallback_list, ['p_fallback', 'direct']);
 });
@@ -1249,7 +1253,7 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
     body: JSON.stringify({ proxy_fallback_list: ['p_fallback', 'direct'] }),
   });
   assertEquals(patch.status, 200);
-  const updated = (await patch.json()) as Record<string, any>;
+  const updated = (await patch.json()) as JsonObject;
   assertEquals(updated.proxy_fallback_list, ['p_fallback', 'direct']);
 });
 

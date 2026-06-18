@@ -1,4 +1,3 @@
-// Data transfer routes — export/import operator-managed database data as JSON.
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
@@ -658,9 +657,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
-  // Merge mode keeps the existing proxies table alongside the imported rows,
-  // so an upstream may reference either set. Replace mode wipes the table
-  // before saving and only the imported ids will exist post-import.
+  // In merge mode an imported upstream's proxy_fallback_list may reference an
+  // existing local proxy alongside an imported one; replace mode wipes the
+  // table first, so only the imported ids count.
   const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(p => p.id) : [];
   const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies, existingProxyIdsForRefs);
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);

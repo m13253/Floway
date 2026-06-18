@@ -133,9 +133,7 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcher())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {
-    // Intentionally discarded — see comment above.
-  }
+  } catch { /* discarded — see above */ }
 };
 
 // 'direct' is always valid; any other entry must reference an existing
