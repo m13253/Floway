@@ -40,16 +40,9 @@ const credential = computed<ClaudeCodeAccountCredentialSummary | null>(() => cre
 
 const quota = computed(() => credential.value?.quotaSnapshot?.data ?? null);
 
-const INVALID_TIMESTAMP_LABEL = '(invalid timestamp)';
-
 const formatTimestamp = (iso: string | null | undefined): string => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    console.warn('[ClaudeCodeAccountCard] failed to parse timestamp', iso);
-    return INVALID_TIMESTAMP_LABEL;
-  }
-  return d.toLocaleString();
+  return new Date(iso).toLocaleString();
 };
 
 const clampPercent = (n: number | null | undefined): number => {
