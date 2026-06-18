@@ -64,9 +64,6 @@ describe('fetchCodexCatalog', () => {
 });
 
 describe('codexRawToUpstreamModel', () => {
-  // The mapper just threads `enabledFlags` through onto the produced model;
-  // these unit tests exercise the rest of the shape with the empty set, and
-  // a dedicated test asserts the threading.
   const noFlags: ReadonlySet<string> = new Set();
 
   test('shapes raw → UpstreamModel with responses-only endpoint and per-request context window', () => {

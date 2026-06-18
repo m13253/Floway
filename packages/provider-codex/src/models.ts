@@ -8,8 +8,6 @@ import {
 import { pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type UpstreamModel } from '@floway-dev/provider';
 
-// Narrowed shape from /codex/models. Upstream returns
-// `{ models: [{ slug, display_name, visibility, context_window, max_context_window, ... }] }`.
 export interface CodexRawModel {
   id: string;
   display_name: string;
