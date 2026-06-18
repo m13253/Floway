@@ -34,7 +34,10 @@ const clone = <T>(value: T): T => structuredClone(value);
 const hasSecret = (value: unknown): boolean => typeof value === 'string' && value.length > 0;
 
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
-  const config = isRecord(upstream.config) ? upstream.config : {};
+  if (!isRecord(upstream.config)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
+  }
+  const config = upstream.config;
 
   switch (upstream.provider) {
   case 'custom':
@@ -94,7 +97,10 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
 
 const redactedState = (upstream: UpstreamRecord): unknown => {
   if (upstream.state === null || upstream.state === undefined) return null;
-  const state = isRecord(upstream.state) ? upstream.state : {};
+  if (!isRecord(upstream.state)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed state: expected object`);
+  }
+  const state = upstream.state;
 
   switch (upstream.provider) {
   case 'codex':
@@ -128,7 +134,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
                 refreshedAt: clone(a.accessToken.refreshedAt),
               }
             : null,
-          quotaSnapshot: a.quotaSnapshot === null || a.quotaSnapshot === undefined ? null : clone(a.quotaSnapshot),
+          quotaSnapshot: isRecord(a.quotaSnapshot) ? clone(a.quotaSnapshot) : null,
         };
       }) : [],
     };
