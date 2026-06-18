@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { CLAUDE_CODE_MODELS } from './models.ts';
+import { buildClaudeCodeModels } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from './state.ts';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
-const upstreamModel = CLAUDE_CODE_MODELS[0]!;
+const upstreamModel = buildClaudeCodeModels(new Set<string>())[0]!;
 
 const activeAccount: ClaudeCodeAccountCredential = {
   accountUuid: 'acc-1',
@@ -65,11 +65,38 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
+const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
+  ...noopUpstreamCallOptions,
+  clientRequestHeaders: {
+    'user-agent': 'claude-cli/2.1.181 (external, cli)',
+    'x-app': 'cli',
+    'anthropic-beta': 'oauth-2025-04-20',
+    'anthropic-version': '2023-06-01',
+  },
+  clientRequestPathname: '/v1/messages',
+  ...overrides,
+});
+
 describe('createClaudeCodeProvider — factory surface', () => {
-  test('getProvidedModels returns the static three-model catalog', async () => {
+  test('getProvidedModels returns the three-model catalog', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);
-    expect(models).toEqual(CLAUDE_CODE_MODELS);
+    expect(models.map(m => m.id)).toEqual([
+      'claude-sonnet-4-5-20250929',
+      'claude-opus-4-5-20251101',
+      'claude-haiku-4-5-20251001',
+    ]);
+  });
+
+  test('getProvidedModels stamps the effective flag set onto every model', async () => {
+    // strip-billing-attribution defaults OFF for claude-code, and there are
+    // no upstream overrides on the record — the effective set must be empty,
+    // not the copilot/azure/custom default.
+    const instance = await createClaudeCodeProvider(currentRecord);
+    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);
+    for (const m of models) {
+      expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
+    }
   });
 
   test('getPricingForModelKey wires through the pricing table', async () => {
@@ -103,10 +130,10 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       upstreamModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      // No CC headers — gateway-passed bag is empty, so detection sees
-      // unshaped traffic and the chain runs.
       {},
       undefined,
+      // No client-request headers — detection sees no CC fingerprint and
+      // the chain runs.
       noopUpstreamCallOptions,
     );
 
@@ -125,14 +152,10 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.metadata.user_id.startsWith('{')).toBe(true);
   });
 
-  test('shaped request preserves caller-supplied system + headers (chain skipped)', async () => {
+  test('shaped request (CC fingerprint on clientRequestHeaders) preserves caller-supplied system + headers (chain skipped)', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    // Construct a request that passes isClaudeCodeShapedRequest:
-    //   - UA, x-app, anthropic-beta, anthropic-version present
-    //   - system contains the identity template literal
-    //   - metadata.user_id is the new JSON form
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
     await instance.provider.callMessages(
       upstreamModel,
@@ -143,14 +166,9 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
         metadata: { user_id: userId },
       },
       undefined,
-      {
-        'user-agent': 'claude-cli/2.1.181 (external, cli)',
-        'x-app': 'cli',
-        'anthropic-beta': 'oauth-2025-04-20',
-        'anthropic-version': '2023-06-01',
-      },
+      {},
       undefined,
-      noopUpstreamCallOptions,
+      cliClientCallOpts(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -161,5 +179,25 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.system[0].text).toMatch(/^You are Claude Code/);
     // metadata.user_id stays verbatim.
     expect(body.metadata.user_id).toBe(userId);
+  });
+
+  test('CC UA but missing clientRequestPathname still runs the chain (defensive)', async () => {
+    const instance = await createClaudeCodeProvider(currentRecord);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+
+    await instance.provider.callMessages(
+      upstreamModel,
+      { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+      undefined,
+      {},
+      undefined,
+      // CC headers present, but no pathname — detection must downgrade.
+      { ...noopUpstreamCallOptions, clientRequestHeaders: { 'user-agent': 'claude-cli/2.1.181' } },
+    );
+
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    // Re-mimicry ran: system was rebuilt into the 3-block shape.
+    expect(body.system).toHaveLength(3);
   });
 });

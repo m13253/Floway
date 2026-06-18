@@ -2,16 +2,18 @@ import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
-import { CLAUDE_CODE_MODELS } from './models.ts';
+import { buildClaudeCodeModels } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type {
-  ModelProvider,
-  ModelProviderInstance,
-  ProviderStreamResult,
-  UpstreamRecord,
+import {
+  defaultsForProvider,
+  resolveEffectiveFlags,
+  type ModelProvider,
+  type ModelProviderInstance,
+  type ProviderStreamResult,
+  type UpstreamRecord,
 } from '@floway-dev/provider';
 
 export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
@@ -22,8 +24,13 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
   // record validates and hands control to the per-call helpers. Future N-account
   // fan-out will pick an account at the call site.
 
+  // Computed once per provider instance: only the upstream layer applies
+  // (no per-model override layer).
+  const enabledFlags = resolveEffectiveFlags(defaultsForProvider('claude-code'), [record.flagOverrides]);
+  const models = buildClaudeCodeModels(enabledFlags);
+
   const provider: ModelProvider = {
-    getProvidedModels: async () => CLAUDE_CODE_MODELS,
+    getProvidedModels: async () => models,
 
     getPricingForModelKey: pricingForClaudeCodeModelKey,
 
@@ -35,18 +42,26 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
         upstreamId: record.id,
       };
 
-      // Detection runs on the inbound, unmodified payload + headers. The
-      // re-mimicry chain would clobber operator-supplied `system` content
+      // Detection runs on the inbound, unmodified payload + client headers.
+      // The re-mimicry chain would clobber operator-supplied `system` content
       // and overwrite the wire shape — exactly what a CC-shaped passthrough
       // needs to preserve. So the chain only runs on the unshaped path; the
       // shaped path skips straight to the terminal call, which forwards the
       // caller's headers and body byte-for-byte (Authorization swap only).
-      const looksShaped = isClaudeCodeShapedRequest({
-        headers: new Headers(ctx.headers),
-        pathname: '/v1/messages',
-        body: ctx.payload,
-        isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
-      });
+      //
+      // `clientRequestHeaders` / `clientRequestPathname` carry the inbound
+      // HTTP request's identity (UA, anthropic-version, x-app, pathname).
+      // When the gateway is invoked outside a real Hono request (synthetic
+      // tests, translation chains that never originated as /v1/messages),
+      // both fields are undefined and detection downgrades to "not shaped".
+      const looksShaped = opts.clientRequestHeaders !== undefined
+        && opts.clientRequestPathname !== undefined
+        && isClaudeCodeShapedRequest({
+          headers: new Headers(opts.clientRequestHeaders),
+          pathname: opts.clientRequestPathname,
+          body: ctx.payload,
+          isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
+        });
 
       const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
         const { model: _ignored, ...wireBody } = ctx.payload;

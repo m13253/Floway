@@ -30,6 +30,7 @@ import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/com
 import { parseFlagOverridesWire } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
@@ -63,7 +64,7 @@ interface ExportPayload {
 const EXPORT_VERSION = 6;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
-const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot', 'codex']);
+const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot', 'codex', 'claude-code']);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -85,20 +86,27 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
     assertCodexUpstreamRecord(record);
     return record.config;
   }
+  if (record.provider === 'claude-code') {
+    assertClaudeCodeUpstreamRecord(record);
+    return record.config;
+  }
   return copilotConfigField(record.config, importErrorBuilder);
 };
 
-// State is persisted only for providers that own autonomous runtime state. Codex
-// rotates a refresh_token and tracks credential health; Custom/Azure/Copilot
-// have no such state and serialize to null. Round-trip codex state through
-// the same shape assertion the runtime uses so a corrupt or hand-edited
-// import can't smuggle unknown fields onto the column.
+// State is persisted only for providers that own autonomous runtime state.
+// Codex rotates a refresh_token and tracks credential health; Claude Code
+// holds per-account refresh tokens, OAuth-minted access tokens, and quota
+// snapshots; Custom/Azure/Copilot have no such state and serialize to null.
+// Round-trip the stateful providers through the same shape assertion the
+// runtime uses so a corrupt or hand-edited import can't smuggle unknown
+// fields onto the column.
 const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
-  if (provider !== 'codex') return null;
+  if (provider !== 'codex' && provider !== 'claude-code') return null;
   if (value === null || value === undefined) {
-    throw new Error('codex upstream import is missing state — re-export with current code');
+    throw new Error(`${provider} upstream import is missing state — re-export with current code`);
   }
-  assertCodexUpstreamState(value);
+  if (provider === 'codex') assertCodexUpstreamState(value);
+  else assertClaudeCodeUpstreamState(value);
   return value;
 };
 
@@ -123,7 +131,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
       }
       if (typeof item.provider !== 'string' || !UPSTREAM_PROVIDERS.has(item.provider as UpstreamProviderKind)) {
-        throw new Error('provider must be one of custom, azure, copilot, codex');
+        throw new Error('provider must be one of custom, azure, copilot, codex, claude-code');
       }
       if (typeof item.enabled !== 'boolean') throw new Error('enabled must be a boolean');
       if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');

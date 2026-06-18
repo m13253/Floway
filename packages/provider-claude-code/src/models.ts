@@ -12,30 +12,31 @@
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { UpstreamModel } from '@floway-dev/provider';
 
-const SHARED_FIELDS = {
-  owned_by: 'anthropic',
-  kind: 'chat' as const,
-  endpoints: { messages: {} },
-  enabledFlags: new Set<string>(),
-};
+interface ModelTemplate {
+  id: string;
+  display_name: string;
+  contextWindow: number;
+}
 
-const datedModel = (
-  id: string,
-  display_name: string,
-  contextWindow: number,
-): UpstreamModel => {
-  const cost = pricingForClaudeCodeModelKey(id);
+const TEMPLATES: readonly ModelTemplate[] = [
+  { id: 'claude-sonnet-4-5-20250929', display_name: 'Claude Sonnet 4.5', contextWindow: 1_000_000 },
+  { id: 'claude-opus-4-5-20251101', display_name: 'Claude Opus 4.5', contextWindow: 200_000 },
+  { id: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', contextWindow: 200_000 },
+];
+
+const buildModel = (template: ModelTemplate, enabledFlags: ReadonlySet<string>): UpstreamModel => {
+  const cost = pricingForClaudeCodeModelKey(template.id);
   return {
-    id,
-    display_name,
-    ...SHARED_FIELDS,
-    limits: { max_context_window_tokens: contextWindow },
+    id: template.id,
+    display_name: template.display_name,
+    owned_by: 'anthropic',
+    kind: 'chat',
+    endpoints: { messages: {} },
+    enabledFlags,
+    limits: { max_context_window_tokens: template.contextWindow },
     ...(cost ? { cost } : {}),
   };
 };
 
-export const CLAUDE_CODE_MODELS: readonly UpstreamModel[] = [
-  datedModel('claude-sonnet-4-5-20250929', 'Claude Sonnet 4.5', 1_000_000),
-  datedModel('claude-opus-4-5-20251101', 'Claude Opus 4.5', 200_000),
-  datedModel('claude-haiku-4-5-20251001', 'Claude Haiku 4.5', 200_000),
-];
+export const buildClaudeCodeModels = (enabledFlags: ReadonlySet<string>): UpstreamModel[] =>
+  TEMPLATES.map(template => buildModel(template, enabledFlags));

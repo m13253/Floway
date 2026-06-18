@@ -235,6 +235,9 @@ importers:
       '@floway-dev/provider-azure':
         specifier: workspace:*
         version: link:../provider-azure
+      '@floway-dev/provider-claude-code':
+        specifier: workspace:*
+        version: link:../provider-claude-code
       '@floway-dev/provider-codex':
         specifier: workspace:*
         version: link:../provider-codex

@@ -4,6 +4,7 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
+import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { createCustomProvider } from '@floway-dev/provider-custom';
@@ -23,12 +24,7 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   custom: createCustomProvider,
   azure: createAzureProvider,
   codex: createCodexProvider,
-  // Placeholder: the claude-code data-plane factory lands in a follow-up
-  // commit. The kind is enumerated here so adding 'claude-code' to
-  // UpstreamProviderKind compiles, and so a row reaching the data plane
-  // before the real factory ships fails loudly instead of silently routing
-  // to another provider.
-  'claude-code': () => { throw new Error('claude-code provider factory not yet wired'); },
+  'claude-code': createClaudeCodeProvider,
 };
 
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
