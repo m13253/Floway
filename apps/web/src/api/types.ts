@@ -1,6 +1,6 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex';
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
 
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
@@ -120,6 +120,76 @@ export interface CodexQuotaSnapshot {
   ratelimited_until?: string;
 }
 
+// Claude Code identity + state shapes. Mirror the redacted projections in
+// packages/gateway/src/control-plane/upstreams/serialize.ts: refreshToken
+// lives in state and surfaces only as the boolean `refreshTokenSet`, and
+// accessToken.token is dropped while expiresAt / refreshedAt remain so the
+// dashboard can display a relative-time badge.
+export interface ClaudeCodeAccountIdentity {
+  email: string;
+  accountUuid: string;
+  organizationUuid: string | null;
+  subscriptionType: string;
+}
+
+export interface ClaudeCodeUpstreamConfig {
+  accounts: ClaudeCodeAccountIdentity[];
+}
+
+export interface ClaudeCodeAccessTokenSummary {
+  expiresAt: number;
+  refreshedAt: string;
+}
+
+// Anthropic's `anthropic-ratelimit-unified-*` snapshot. The wire shape is
+// frozen at the gateway boundary in @floway-dev/provider-claude-code's
+// quota.ts; mirror it so the dashboard renders the structured slices and
+// can show the raw header map under a debug disclosure.
+export interface ClaudeCodeQuotaWindow {
+  status: string | null;
+  reset: string | null;
+  utilization: number | null;
+}
+
+export interface ClaudeCodeQuotaSevenDay extends ClaudeCodeQuotaWindow {
+  surpassedThreshold: boolean | null;
+}
+
+export interface ClaudeCodeQuotaOverage extends ClaudeCodeQuotaWindow {
+  disabledReason: string | null;
+}
+
+export interface ClaudeCodeQuotaSnapshotData {
+  status: string | null;
+  reset: string | null;
+  fallback: boolean | null;
+  fallbackPercentage: number | null;
+  representativeClaim: string | null;
+  overage: ClaudeCodeQuotaOverage | null;
+  fiveHour: ClaudeCodeQuotaWindow | null;
+  sevenDay: ClaudeCodeQuotaSevenDay | null;
+  raw: Record<string, string>;
+}
+
+export interface ClaudeCodeQuotaSnapshotEntry {
+  fetchedAt: number;
+  data: ClaudeCodeQuotaSnapshotData;
+}
+
+export interface ClaudeCodeAccountCredentialSummary {
+  accountUuid: string;
+  state: 'active' | 'session_terminated' | 'refresh_failed';
+  stateMessage?: string;
+  stateUpdatedAt: string;
+  refreshTokenSet: boolean;
+  accessToken: ClaudeCodeAccessTokenSummary | null;
+  quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
+}
+
+export interface ClaudeCodeUpstreamState {
+  accounts: ClaudeCodeAccountCredentialSummary[];
+}
+
 export interface UpstreamRecord {
   id: string;
   provider: UpstreamProviderKind;
@@ -133,14 +203,14 @@ export interface UpstreamRecord {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig;
+  config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig | ClaudeCodeUpstreamConfig;
   // Ordered fallback dial-list. Each entry is either a proxy id from the
   // proxies table or the literal string `direct` (no proxy). Empty list means
   // "always direct".
   proxy_fallback_list: string[];
-  // Codex is the only provider that ships gateway-managed state on the row
-  // today; the other providers serialize this as null.
-  state: CodexUpstreamState | null;
+  // Codex and Claude Code ship gateway-managed state on the row today; the
+  // other providers serialize this as null.
+  state: CodexUpstreamState | ClaudeCodeUpstreamState | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates

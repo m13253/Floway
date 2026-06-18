@@ -65,5 +65,19 @@ const active = defineModel<UpstreamProviderKind>({ required: true });
         </svg>
       </template>
     </ProviderCard>
+    <ProviderCard
+      tone="rose"
+      title="Claude Code"
+      subtitle="Claude Pro / Max / Team subscription"
+      :selected="active === 'claude-code'"
+      @select="active = 'claude-code'"
+    >
+      <template #icon>
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 18l6-6-6-6" />
+          <path d="M4 21V3" />
+        </svg>
+      </template>
+    </ProviderCard>
   </div>
 </template>

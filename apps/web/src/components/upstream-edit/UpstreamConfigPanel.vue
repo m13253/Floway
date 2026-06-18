@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
 
 import AzureConfigPanel from './AzureConfigPanel.vue';
+import ClaudeCodeConfigPanel from './ClaudeCodeConfigPanel.vue';
 import CodexConfigPanel from './CodexConfigPanel.vue';
 import CopilotConfigPanel from './CopilotConfigPanel.vue';
 import type { AzureDraft, CustomDraft } from './customConfig.ts';
@@ -47,6 +48,8 @@ defineEmits<{
   'copilot-completed': [upstream: UpstreamRecord | undefined];
   'codex-imported': [upstream: UpstreamRecord];
   'codex-error': [message: string];
+  'claude-code-imported': [upstream: UpstreamRecord];
+  'claude-code-error': [message: string];
 }>();
 
 const providerBadgeClass = (kind: UpstreamProviderKind) => {
@@ -54,6 +57,7 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'azure': return 'border-accent-emerald/30 bg-accent-emerald/10 text-accent-emerald';
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
+  case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
   case 'custom':
   default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
@@ -125,7 +129,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <ProviderPicker v-model="activeProvider" />
       </section>
 
-      <section v-if="!(mode === 'create' && (activeProvider === 'copilot' || activeProvider === 'codex'))" class="shrink-0">
+      <section v-if="!(mode === 'create' && (activeProvider === 'copilot' || activeProvider === 'codex' || activeProvider === 'claude-code'))" class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
@@ -165,6 +169,15 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :record="record"
           @imported="u => $emit('codex-imported', u)"
           @error="m => $emit('codex-error', m)"
+        />
+      </section>
+
+      <section v-else-if="activeProvider === 'claude-code'" class="shrink-0">
+        <ClaudeCodeConfigPanel
+          :mode="mode"
+          :record="record"
+          @imported="u => $emit('claude-code-imported', u)"
+          @error="m => $emit('claude-code-error', m)"
         />
       </section>
 

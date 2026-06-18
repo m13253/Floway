@@ -28,7 +28,7 @@ const store = useUpstreamsStore();
 
 const initialProvider: UpstreamProviderKind = (() => {
   const q = route.query.provider;
-  if (q === 'azure' || q === 'copilot' || q === 'codex' || q === 'custom') return q;
+  if (q === 'azure' || q === 'copilot' || q === 'codex' || q === 'custom' || q === 'claude-code') return q;
   return 'custom';
 })();
 

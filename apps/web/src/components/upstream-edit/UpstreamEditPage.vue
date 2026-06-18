@@ -74,7 +74,11 @@ const liveRecord = ref<UpstreamRecord | null>(props.record);
 watch(() => props.record, r => { liveRecord.value = r; });
 
 const defaultName = (p: UpstreamProviderKind) =>
-  p === 'azure' ? 'Azure AI' : p === 'copilot' ? 'GitHub Copilot' : p === 'codex' ? 'ChatGPT Codex' : 'Custom upstream';
+  p === 'azure' ? 'Azure AI'
+    : p === 'copilot' ? 'GitHub Copilot'
+      : p === 'codex' ? 'ChatGPT Codex'
+        : p === 'claude-code' ? 'Claude Code'
+          : 'Custom upstream';
 
 const seedFromRecord = (r: UpstreamRecord) => {
   activeProvider.value = r.provider;
@@ -339,9 +343,19 @@ const onCodexError = (message: string) => {
   saveError.value = message;
 };
 
+const onClaudeCodeImported = async (newRecord: UpstreamRecord) => {
+  emit('saved', newRecord);
+  await router.replace(`/dashboard/upstreams/${newRecord.id}`);
+};
+
+const onClaudeCodeError = (message: string) => {
+  saveError.value = message;
+};
+
 // Copilot's and codex's catalogs are read-only — `ModelsPanel` runs in
 // `read-only` mode for both, so the v-model setter is never invoked. The
 // getter just hands back an empty list to keep the type contract honest.
+// Claude Code follows the same pattern.
 const modelsManualForActive = computed<UpstreamModelConfig[]>({
   get: () => {
     if (activeProvider.value === 'custom') return customDraft.value.models;
@@ -370,10 +384,10 @@ const autoForActive = computed<UpstreamModelConfig[]>(() => {
 
 const upstreamIdLabelForActive = computed(() => activeProvider.value === 'azure' ? 'Deployment' : 'Upstream Model ID');
 // Copilot's create flow lands the row from the device-flow panel; codex's
-// create flow lands the row from the codex-import panel. In both cases the
-// page-level Save button is the wrong trigger, so it stays hidden until
-// the panel emits the new record.
-const showSaveButton = computed(() => props.mode === 'edit' || (activeProvider.value !== 'copilot' && activeProvider.value !== 'codex'));
+// and claude-code's create flows land the row from their import panels.
+// In all three cases the page-level Save button is the wrong trigger, so
+// it stays hidden until the panel emits the new record.
+const showSaveButton = computed(() => props.mode === 'edit' || (activeProvider.value !== 'copilot' && activeProvider.value !== 'codex' && activeProvider.value !== 'claude-code'));
 
 // The cache-status panel reads the row's `modelsCache` summary and offers a
 // force-refresh shortcut. Azure is the one provider whose catalog is pure
@@ -490,6 +504,8 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         @copilot-completed="onCopilotCompleted"
         @codex-imported="onCodexImported"
         @codex-error="onCodexError"
+        @claude-code-imported="onClaudeCodeImported"
+        @claude-code-error="onClaudeCodeError"
       />
       <ModelsPanel
         ref="modelsPanelRef"
@@ -500,7 +516,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :upstream-flag-overrides="flagOverrides"
         :flag-provider-kind="activeProvider"
         :upstream-id-label="upstreamIdLabelForActive"
-        :read-only="activeProvider === 'copilot' || activeProvider === 'codex'"
+        :read-only="activeProvider === 'copilot' || activeProvider === 'codex' || activeProvider === 'claude-code'"
         :all-manual="activeProvider === 'azure'"
       />
     </div>
