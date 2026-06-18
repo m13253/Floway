@@ -8,7 +8,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
@@ -115,12 +115,15 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
+  providerKind?: ProviderCandidate['provider']['providerKind'];
+  enabledFlags?: ReadonlySet<string>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'messages';
+  const providerKind = overrides.providerKind ?? 'custom';
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
@@ -130,7 +133,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      providerKind,
       name: upstream,
       disabledPublicModelIds: [],
       provider,
@@ -139,10 +142,10 @@ const makeCandidate = (overrides: {
     binding: {
       upstream,
       upstreamName: upstream,
-      providerKind: 'custom',
+      providerKind,
       provider,
       upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
+      enabledFlags: overrides.enabledFlags ?? upstreamModel.enabledFlags,
       supportsResponsesItemReference: true,
     },
     targetApi,
@@ -296,4 +299,129 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+});
+
+// strip-billing-attribution defaults OFF for claude-code, so a Messages
+// request whose system prompt carries the `x-anthropic-billing-header:` block
+// must reach the claude-code provider's callMessages with that block intact —
+// otherwise plan-tier billing breaks. The flag's `defaultFor` list is the
+// single source of truth for this behavior; this test pins the
+// gateway-routing side of that guarantee.
+test('claude-code binding preserves x-anthropic-billing-header system block through the interceptor chain', async () => {
+  installRepo();
+
+  // Pre-confirm the flag catalog is wired the way we expect; if a future
+  // edit adds 'claude-code' to defaultFor by mistake, this test must fail at
+  // setup rather than silently passing on a stripped body.
+  const claudeCodeDefaults = defaultsForProvider('claude-code');
+  assertEquals(claudeCodeDefaults.has('strip-billing-attribution'), false);
+
+  const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\ncc_entrypoint=cli';
+
+  const capturedBodies: MessagesPayload[] = [];
+  const callMessages = vi.fn(async (
+    _model: unknown,
+    body: unknown,
+  ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    capturedBodies.push(body as MessagesPayload);
+    return {
+      ok: true,
+      events: makeProtocolFrames(makeMessagesResultEvents()),
+      modelKey: 'claude-sonnet-4-5-20250929',
+    };
+  });
+
+  queueCandidates([
+    makeCandidate({
+      upstream: 'up_cc',
+      providerKind: 'claude-code',
+      enabledFlags: claudeCodeDefaults,
+      callMessages,
+    }),
+  ]);
+
+  const result = await messagesServe.generate({
+    payload: makePayload({
+      system: [
+        { type: 'text', text: billingBlock },
+        { type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(callMessages.mock.calls.length, 1);
+  const observed = capturedBodies[0]!;
+  assert(Array.isArray(observed.system));
+  if (!Array.isArray(observed.system)) throw new Error('unreachable');
+  assertEquals(observed.system.length, 2);
+  assertEquals(observed.system[0].text, billingBlock);
+  assertEquals(observed.system[1].text, "You are Claude Code, Anthropic's official CLI for Claude.");
+});
+
+// The same request routed to a copilot binding (which carries the
+// strip-billing-attribution default-on flag) must have the billing block
+// stripped before the upstream call — the mirror image of the claude-code
+// assertion above.
+test('copilot binding strips x-anthropic-billing-header system block via the default-on flag', async () => {
+  installRepo();
+
+  const copilotDefaults = defaultsForProvider('copilot');
+  assertEquals(copilotDefaults.has('strip-billing-attribution'), true);
+
+  // The strip logic targets the `x-anthropic-billing-header: …` line and
+  // the per-turn `cch=` hash specifically — those are the parts the
+  // upstream's prompt-cache layer would see flip on every turn.
+  const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
+
+  const capturedBodies: MessagesPayload[] = [];
+  const callMessages = vi.fn(async (
+    _model: unknown,
+    body: unknown,
+  ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    capturedBodies.push(body as MessagesPayload);
+    return {
+      ok: true,
+      events: makeProtocolFrames(makeMessagesResultEvents()),
+      modelKey: 'claude-sonnet-4-5',
+    };
+  });
+
+  queueCandidates([
+    makeCandidate({
+      upstream: 'up_co',
+      providerKind: 'copilot',
+      enabledFlags: copilotDefaults,
+      callMessages,
+    }),
+  ]);
+
+  const result = await messagesServe.generate({
+    payload: makePayload({
+      system: [
+        { type: 'text', text: billingBlock },
+        { type: 'text', text: 'You are a helpful assistant.' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(callMessages.mock.calls.length, 1);
+  const observed = capturedBodies[0]!;
+  assert(Array.isArray(observed.system));
+  if (!Array.isArray(observed.system)) throw new Error('unreachable');
+  // The billing-only block has been filtered out — `cch=` and the
+  // billing-header line are gone, leaving only the assistant directive.
+  assertEquals(observed.system.length, 1);
+  assertEquals(observed.system[0].text, 'You are a helpful assistant.');
 });

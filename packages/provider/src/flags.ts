@@ -71,6 +71,21 @@ export const OPTIONAL_FLAGS = [
     description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
     defaultFor: [],
   },
+  // Anthropic CLI sessions inject an `x-anthropic-billing-header: …` line
+  // (often with a per-turn `cch=…` hash) into the system prompt. The Claude
+  // Code subscription endpoint reads this block to attribute requests to the
+  // user's plan tier, so it must reach Anthropic intact when the upstream is
+  // `claude-code`. Every other upstream (copilot, azure, custom) treats the
+  // block as ordinary prompt text — the per-turn hash flips on each call,
+  // which kills prompt-cache hits even when the real prompt did not change.
+  // Stripping the block on those providers restores cache reuse without
+  // changing model behavior.
+  {
+    id: 'strip-billing-attribution',
+    label: 'Strip Claude Code billing attribution from system prompt',
+    description: "Remove `x-anthropic-billing-header:` lines and `cch=` hashes from the request's system prompt before forwarding upstream. Default on for copilot/azure/custom — their prompt-cache layers see the per-turn hash as part of the prompt and miss the cache. Default off for claude-code, where the same block is the input Anthropic uses to bill the request against the user's plan.",
+    defaultFor: ['copilot', 'azure', 'custom'],
+  },
 ] as const satisfies readonly Flag[];
 
 export type OptionalFlagId = (typeof OPTIONAL_FLAGS)[number]['id'];
