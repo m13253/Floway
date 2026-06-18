@@ -6,11 +6,12 @@
 -- divergent proxy reachability or upstream-side geo restrictions.
 --
 -- The WHERE guard makes the rewrite idempotent: if every element of a row's
--- list is already an object (or the row is empty), we leave it alone. That
--- way a partial run that wrote some rows then crashed before the
--- migrations-table insert can be safely retried, and a node:sqlite
--- deployment re-baselining from a snapshot already in the new shape stays
--- safe.
+-- list is already an object (or the row is empty), we leave it alone. The
+-- predicate uses `json_each`'s own `type` column rather than
+-- `json_type(value)` — `json_each.value` is the unwrapped scalar (a raw
+-- string like `proxy_abc…`, not the JSON-encoded `"proxy_abc…"`), so
+-- `json_type` would try to parse the raw string as JSON and fail with
+-- "malformed JSON" on every string entry.
 
 UPDATE upstreams
 SET proxy_fallback_list_json = COALESCE(
@@ -20,5 +21,5 @@ SET proxy_fallback_list_json = COALESCE(
 )
 WHERE EXISTS (
   SELECT 1 FROM json_each(proxy_fallback_list_json)
-  WHERE json_type(value) = 'text'
+  WHERE type = 'text'
 );
