@@ -68,7 +68,9 @@ const firstUserMessageText = (messages: unknown): string => {
     const m = msg as { role?: unknown; content?: unknown };
     if (m.role !== 'user') continue;
     if (typeof m.content === 'string') return m.content;
-    if (!Array.isArray(m.content)) return '';
+    if (!Array.isArray(m.content)) {
+      throw new TypeError(`Claude Code synthesize-metadata-user-id: first user-message content must be a string or array, got ${typeof m.content}`);
+    }
     return m.content
       .map(part => {
         if (typeof part !== 'object' || part === null) return '';
@@ -87,10 +89,11 @@ const sha256Hex = async (input: string): Promise<string> => {
   return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
 };
 
-// Same UUIDv4 stamping trick injectSessionId uses on the Codex side: take
-// the sha256 hex digest and overwrite the version (4) and variant (8/9/a/b)
-// nibbles so the output validates as a real UUIDv4 for observability tools
-// that check the shape.
+// Same UUIDv4 stamping trick injectSessionId uses on the Codex side: take the
+// sha256 hex digest, hardcode the version nibble to '4' via the literal in
+// the template string, and overwrite the variant nibble (8/9/a/b) so the
+// output validates as a real UUIDv4 for observability tools that check the
+// shape.
 const sha256Uuidv4 = async (input: string): Promise<string> => {
   const hex = await sha256Hex(input);
   const variantNibble = ((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
