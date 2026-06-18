@@ -26,11 +26,8 @@ export const messagesInterceptors: readonly MessagesInterceptor[] = [
   withReasoningDisabledOnForcedToolChoice,
 ];
 
-// count_tokens shares the Messages payload-shape interceptors but runs against
-// the count_tokens upstream call, which returns a raw `Response` rather than
-// an event stream. The shipped Messages interceptors all inspect post-`run()`
-// event streams, so neither composes with count_tokens; the list stays empty
-// today. Kept as a separate readonly array so `messagesAttempt.countTokens`
-// has a clear extension point and so provider-supplied count-tokens
-// interceptors can be spread in later.
+// The shipped Messages interceptors all inspect post-`run()` event streams,
+// which the non-streaming count_tokens path cannot supply — so the list
+// stays empty today. Kept as a separate readonly array so the count-tokens
+// attempt has a clear extension point.
 export const messagesCountTokensInterceptors: readonly MessagesCountTokensInterceptor[] = [];

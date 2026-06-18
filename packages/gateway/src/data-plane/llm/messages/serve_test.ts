@@ -161,6 +161,22 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
   return out;
 };
 
+// `assertEquals(result.type, X)` does not narrow the union in the TS type
+// checker; the manual `if (result.type !== X) throw` follow-up was pure
+// type-narrowing scaffold. This helper asserts the variant and returns the
+// narrowed value so call sites stay on a single line.
+const assertResultType = <U extends { type: string }, T extends U['type']>(
+  result: U,
+  type: T,
+): Extract<U, { type: T }> => {
+  assertEquals(result.type, type);
+  return result as Extract<U, { type: T }>;
+};
+
+function assertIsArray<T>(value: unknown): asserts value is readonly T[] {
+  assert(Array.isArray(value));
+}
+
 test('generate routes a native Messages candidate end to end', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
@@ -176,9 +192,7 @@ test('generate routes a native Messages candidate end to end', async () => {
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  const events = await collectEvents(result.events);
+  const events = await collectEvents(assertResultType(result, 'events').events);
   assert(events.length >= 1);
   assertEquals(callMessages.mock.calls.length, 1);
 });
@@ -198,9 +212,7 @@ test('generate translates through the Responses target when only that endpoint i
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  await collectEvents(assertResultType(result, 'events').events);
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
@@ -234,7 +246,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   assertEquals(secondCall.mock.calls.length, 0);
 });
 
-test('generate is a routing no-op when the payload carries no reasoning carriers (degenerate path)', async () => {
+test('generate stops at the first candidate when the payload has no reasoning carriers to route on', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true,
@@ -252,9 +264,7 @@ test('generate is a routing no-op when the payload carries no reasoning carriers
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  await collectEvents(assertResultType(result, 'events').events);
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
@@ -268,10 +278,9 @@ test('generate renders model-missing when no candidates are available', async ()
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const failure = assertResultType(result, 'upstream-error');
+  assertEquals(failure.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(failure.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
@@ -293,37 +302,34 @@ test('countTokens proxies the upstream measurement response as a plain result', 
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'plain');
-  if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const plain = assertResultType(result, 'plain');
+  assertEquals(plain.status, 200);
+  const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 });
 
-// strip-billing-attribution defaults OFF for claude-code, so a Messages
-// request whose system prompt carries the `x-anthropic-billing-header:` block
-// must reach the claude-code provider's callMessages with that block intact —
-// otherwise plan-tier billing breaks. The flag's `defaultFor` list is the
-// single source of truth for this behavior; this test pins the
-// gateway-routing side of that guarantee.
+// strip-billing-attribution defaults OFF for claude-code, so a request whose
+// system prompt carries the `x-anthropic-billing-header:` block must reach
+// the claude-code provider's callMessages with the block intact — otherwise
+// Anthropic loses the plan-tier attribution it bills against.
 test('claude-code binding preserves x-anthropic-billing-header system block through the interceptor chain', async () => {
   installRepo();
 
-  // Pre-confirm the flag catalog is wired the way we expect; if a future
-  // edit adds 'claude-code' to defaultFor by mistake, this test must fail at
-  // setup rather than silently passing on a stripped body.
+  // Pre-confirm the flag catalog is wired the expected way; an edit that
+  // adds 'claude-code' to defaultFor by mistake should fail at setup, not
+  // silently pass on a stripped body.
   const claudeCodeDefaults = defaultsForProvider('claude-code');
   assertEquals(claudeCodeDefaults.has('strip-billing-attribution'), false);
 
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\ncc_entrypoint=cli';
 
-  const capturedBodies: MessagesPayload[] = [];
+  const capturedBodies: Omit<MessagesPayload, 'model'>[] = [];
   const callMessages = vi.fn(async (
     _model: unknown,
     body: unknown,
   ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-    capturedBodies.push(body as MessagesPayload);
+    capturedBodies.push(body as Omit<MessagesPayload, 'model'>);
     return {
       ok: true,
       events: makeProtocolFrames(makeMessagesResultEvents()),
@@ -351,14 +357,11 @@ test('claude-code binding preserves x-anthropic-billing-header system block thro
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  await collectEvents(assertResultType(result, 'events').events);
 
   assertEquals(callMessages.mock.calls.length, 1);
   const observed = capturedBodies[0]!;
-  assert(Array.isArray(observed.system));
-  if (!Array.isArray(observed.system)) throw new Error('unreachable');
+  assertIsArray<{ text: string }>(observed.system);
   assertEquals(observed.system.length, 2);
   assertEquals(observed.system[0].text, billingBlock);
   assertEquals(observed.system[1].text, "You are Claude Code, Anthropic's official CLI for Claude.");
@@ -374,17 +377,14 @@ test('copilot binding strips x-anthropic-billing-header system block via the def
   const copilotDefaults = defaultsForProvider('copilot');
   assertEquals(copilotDefaults.has('strip-billing-attribution'), true);
 
-  // The strip logic targets the `x-anthropic-billing-header: …` line and
-  // the per-turn `cch=` hash specifically — those are the parts the
-  // upstream's prompt-cache layer would see flip on every turn.
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
 
-  const capturedBodies: MessagesPayload[] = [];
+  const capturedBodies: Omit<MessagesPayload, 'model'>[] = [];
   const callMessages = vi.fn(async (
     _model: unknown,
     body: unknown,
   ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-    capturedBodies.push(body as MessagesPayload);
+    capturedBodies.push(body as Omit<MessagesPayload, 'model'>);
     return {
       ok: true,
       events: makeProtocolFrames(makeMessagesResultEvents()),
@@ -412,16 +412,11 @@ test('copilot binding strips x-anthropic-billing-header system block via the def
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
+  await collectEvents(assertResultType(result, 'events').events);
 
   assertEquals(callMessages.mock.calls.length, 1);
   const observed = capturedBodies[0]!;
-  assert(Array.isArray(observed.system));
-  if (!Array.isArray(observed.system)) throw new Error('unreachable');
-  // The billing-only block has been filtered out — `cch=` and the
-  // billing-header line are gone, leaving only the assistant directive.
+  assertIsArray<{ text: string }>(observed.system);
   assertEquals(observed.system.length, 1);
   assertEquals(observed.system[0].text, 'You are a helpful assistant.');
 });
