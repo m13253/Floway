@@ -105,7 +105,7 @@ const DEFAULTS_CACHE = new Map<UpstreamProviderKind, ReadonlySet<string>>();
 export const defaultsForProvider = (kind: UpstreamProviderKind): ReadonlySet<string> => {
   let cached = DEFAULTS_CACHE.get(kind);
   if (!cached) {
-    cached = new Set(OPTIONAL_FLAGS.filter(f => (f.defaultFor as readonly string[]).includes(kind)).map(f => f.id));
+    cached = new Set(OPTIONAL_FLAGS.filter(f => f.defaultFor.some(k => k === kind)).map(f => f.id));
     DEFAULTS_CACHE.set(kind, cached);
   }
   return cached;

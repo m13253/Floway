@@ -79,9 +79,10 @@ export type ProviderCompactionResult =
 // HTTP request the gateway is serving — not the outbound wire headers we
 // build for the upstream. Both are present only for data-plane calls that
 // originated from a real Hono request; translated paths and synthesized
-// calls leave them undefined. Today only the claude-code provider reads
-// them, to decide whether an inbound /v1/messages request is already shaped
-// like a real Claude Code session and can pass through unmodified.
+// calls leave them undefined. A provider that needs to inspect the
+// incoming request shape — for instance, to decide whether a payload
+// already matches its native client's wire shape and can pass through
+// unmodified — reads from these fields.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
