@@ -33,6 +33,15 @@ export class ClaudeCodeOAuthSessionTerminatedError extends Error {
   }
 }
 
+// Both the PKCE exchange and the refresh-token mint treat these codes as
+// terminal: `app_session_terminated` is the explicit revoke signal,
+// `invalid_grant` is what real Claude Code's OAuth returns on a stale code
+// or burned refresh token (recoverable only by restarting the PKCE flow).
+const CLAUDE_CODE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
+  'app_session_terminated',
+  'invalid_grant',
+]);
+
 const claudeCodeTokenRequest = async (
   body: Record<string, string>,
   terminalCodes: ReadonlySet<string>,
@@ -98,10 +107,7 @@ const claudeCodeTokenRequest = async (
 };
 
 // PKCE exchange has no upstream context yet — the upstream is minted from
-// this response. Both terminal codes are mapped here: real Claude Code's
-// OAuth client returns `invalid_grant` on a stale code, and that is
-// recoverable only by restarting the PKCE flow, which the dashboard does
-// by surfacing the session-terminated badge and prompting re-import.
+// this response, so direct egress is the only option.
 export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   code: string;
   codeVerifier: string;
@@ -113,11 +119,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   };
-  return await claudeCodeTokenRequest(
-    body,
-    new Set(['app_session_terminated', 'invalid_grant']),
-    directFetcher,
-  );
+  return await claudeCodeTokenRequest(body, CLAUDE_CODE_TERMINAL_OAUTH_CODES, directFetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream
@@ -132,11 +134,7 @@ export const refreshClaudeCodeAccessToken = async (
     refresh_token: refreshToken,
     client_id: CLAUDE_CODE_CLIENT_ID,
   };
-  return await claudeCodeTokenRequest(
-    body,
-    new Set(['app_session_terminated', 'invalid_grant']),
-    fetcher,
-  );
+  return await claudeCodeTokenRequest(body, CLAUDE_CODE_TERMINAL_OAUTH_CODES, fetcher);
 };
 
 // The literal `code=true` query param matches what the real Claude Code CLI
