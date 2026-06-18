@@ -13,7 +13,7 @@ import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cac
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -543,8 +543,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-  const fetcher = (await createPerRequestFetcher(null))(record.id);
+  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch (err) {

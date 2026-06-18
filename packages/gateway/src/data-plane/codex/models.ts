@@ -28,7 +28,7 @@ import type { Context } from 'hono';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
 import { parseCodexVersion, resolveCodexCatalog, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getInternalModels } from '../providers/registry.ts';
@@ -94,8 +94,7 @@ export const codexModels = async (c: Context): Promise<Response> => {
     if (hit !== undefined) return hit;
   }
 
-  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-  const fetcherForUpstream = await createPerRequestFetcher(null);
+  const fetcherForUpstream = await createPerRequestFetcherForAdmin();
   const scheduler = backgroundSchedulerFromContext(c);
   const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {
     headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },

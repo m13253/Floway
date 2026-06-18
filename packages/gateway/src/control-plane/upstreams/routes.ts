@@ -5,7 +5,7 @@ import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
@@ -112,8 +112,7 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-  const fetcher = (await createPerRequestFetcher(null))(record.id);
+  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {
@@ -322,8 +321,7 @@ export const listUpstreamModels = async (c: Context) => {
 
   const refresh = c.req.query('refresh') === 'true';
   const scheduler = backgroundSchedulerFromContext(c);
-  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-  const fetcher = (await createPerRequestFetcher(null))(record.id);
+  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
 
   try {
     const instance = await createProviderInstance(record);
@@ -568,8 +566,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     // Refresh button respects the same fallback chain as the data-plane hot
     // path. Without this, a Codex upstream behind a corporate proxy would
     // dial direct here and silently fail under restricted egress.
-    // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-    const fetcher = (await createPerRequestFetcher(null))(id);
+    const fetcher = (await createPerRequestFetcherForAdmin())(id);
     const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
     const now = new Date();
     const nextAccount = {

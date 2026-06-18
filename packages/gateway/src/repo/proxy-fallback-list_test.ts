@@ -6,12 +6,10 @@ describe('entryMatchesColo', () => {
   it('honours every entry when the deployment has no colo concept (null currentColo)', () => {
     expect(entryMatchesColo({ id: 'a' }, null)).toBe(true);
     expect(entryMatchesColo({ id: 'a', colos: ['HKG'] }, null)).toBe(true);
-    expect(entryMatchesColo({ id: 'a', colos: [] }, null)).toBe(true);
   });
 
-  it('treats missing or empty colos as "active in all colos"', () => {
+  it('treats missing colos as "active in all colos"', () => {
     expect(entryMatchesColo({ id: 'a' }, 'HKG')).toBe(true);
-    expect(entryMatchesColo({ id: 'a', colos: [] }, 'HKG')).toBe(true);
   });
 
   it('matches by exact case (CF returns uppercase, normalize already upper-cased the whitelist)', () => {

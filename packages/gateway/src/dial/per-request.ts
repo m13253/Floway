@@ -82,3 +82,11 @@ export const createPerRequestFetcher = async (currentColo: string | null): Promi
     });
   };
 };
+
+// Control-plane (warm-models, model browse, copilot quota) and background
+// flows (codex token refresh, data import) don't carry a data-plane request,
+// so there's no colo to derive. Routing through this helper records the
+// intent at the call site so the bare `null` isn't read as "forgot to
+// thread the colo" by a future reader.
+export const createPerRequestFetcherForAdmin = (): Promise<(upstreamId: string) => Fetcher> =>
+  createPerRequestFetcher(null);

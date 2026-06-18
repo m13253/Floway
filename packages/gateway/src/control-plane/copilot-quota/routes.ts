@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { assertCopilotUpstreamRecord, githubHeaders } from '@floway-dev/provider-copilot';
 
@@ -41,8 +41,7 @@ export const copilotQuota = async (c: Context) => {
 
     const { config } = assertCopilotUpstreamRecord(upstream);
 
-    // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
-    const fetcherForUpstream = await createPerRequestFetcher(null);
+    const fetcherForUpstream = await createPerRequestFetcherForAdmin();
     const fetcher = fetcherForUpstream(upstream.id);
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(config.githubToken) });
 

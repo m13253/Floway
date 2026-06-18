@@ -38,8 +38,12 @@ const normalizeColos = (colos: readonly string[] | undefined): string[] | undefi
 // True when the entry is active under the data-plane request's current colo.
 // A null `currentColo` (Node without RUNTIME_LOCATION) means the deployment
 // has no colo concept, so every entry is honoured as written.
+//
+// `colos` is either absent (all colos) or non-empty — the wire schema rejects
+// an empty array and `normalizeProxyFallbackList` strips one before storage,
+// so we don't defend the "empty means all colos" interpretation here.
 export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string | null): boolean => {
   if (currentColo === null) return true;
-  if (entry.colos === undefined || entry.colos.length === 0) return true;
+  if (entry.colos === undefined) return true;
   return entry.colos.includes(currentColo);
 };
