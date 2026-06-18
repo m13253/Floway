@@ -268,7 +268,7 @@ export const codexPkceStartBody = z.object({});
 // two paths are mutually exclusive; the refine below catches the both-or-
 // neither case before the handler runs.
 const codexCredentialFields = {
-  auth_json: z.unknown().optional(),
+  auth_json: z.string().min(1).optional(),
   callback: z.object({
     code: z.string().min(1).optional(),
     state: z.string().min(1).optional(),

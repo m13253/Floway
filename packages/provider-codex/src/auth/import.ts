@@ -44,13 +44,19 @@ const buildCodexImportResult = (params: {
 // under `.tokens`. We re-derive identity from id_token rather than trusting the
 // file's account_id / email / plan, so this path produces the same shape as
 // importCodexFromCallback (which only has the OAuth response to work from).
-export const importCodexFromAuthJson = async (authJson: unknown): Promise<CodexImportResult> => {
+export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImportResult> => {
   const pickNonEmptyString = (record: Record<string, unknown>, key: string, prefix: string): string => {
     const value = record[key];
     if (typeof value !== 'string' || value === '') throw new TypeError(`${prefix}.${key} must be a non-empty string`);
     return value;
   };
 
+  let authJson: unknown;
+  try {
+    authJson = JSON.parse(rawJson);
+  } catch (cause) {
+    throw new Error('auth.json is not valid JSON', { cause: cause as Error });
+  }
   if (typeof authJson !== 'object' || authJson === null) throw new TypeError('auth.json must be a JSON object');
   const obj = authJson as Record<string, unknown>;
   const tokens = obj.tokens;

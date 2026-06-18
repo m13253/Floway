@@ -581,14 +581,14 @@ const fakeIdToken = (claims: Record<string, unknown>): string => {
 
 const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
   name: 'ChatGPT Codex',
-  auth_json: {
+  auth_json: JSON.stringify({
     tokens: {
       access_token: 'at_test',
       refresh_token: 'rt_test',
       id_token: fakeIdToken({}),
     },
     ...overrides,
-  },
+  }),
 });
 
 test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes the verifier', async () => {

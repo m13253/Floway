@@ -49,13 +49,12 @@ watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (visible && tab === 'callback') void fetchPkceStart();
 }, { immediate: true });
 
-const buildBody = (): { ok: true; value: { auth_json?: unknown; callback?: { callback_url: string } } } | { ok: false; error: string } => {
+const buildBody = (): { ok: true; value: { auth_json?: string; callback?: { callback_url: string } } } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'auth_json') {
     const text = draft.value.authJsonText.trim();
     if (!text) return { ok: false, error: 'Paste the contents of ~/.codex/auth.json' };
-    let parsed: unknown;
-    try { parsed = JSON.parse(text); } catch (e) { return { ok: false, error: `auth.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
-    return { ok: true, value: { auth_json: parsed } };
+    try { JSON.parse(text); } catch (e) { return { ok: false, error: `auth.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
+    return { ok: true, value: { auth_json: text } };
   }
   const url = draft.value.callbackUrlText.trim();
   if (!url) return { ok: false, error: 'Paste the URL the browser was redirected to' };
