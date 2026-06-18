@@ -575,11 +575,11 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
   }
-  try {
-    assertCodexUpstreamState(existing.state);
-  } catch (err) {
-    return c.json({ error: `Codex upstream state is malformed: ${errorMessage(err)}` }, 500);
-  }
+  // A throw from assertCodexUpstreamState means the row's state column was
+  // hand-edited or written by a buggier branch — the framework-level 500
+  // handler stack-traces internally without surfacing the parse error to the
+  // dashboard.
+  assertCodexUpstreamState(existing.state);
   const state = existing.state;
   // The state schema enforces exactly one account; refresh-now mutates that
   // single entry.
@@ -669,9 +669,6 @@ export const claudeCodePkceStart = async (c: CtxWithJson<typeof claudeCodePkceSt
 
 type ClaudeCodeCredentialBody = z.infer<typeof claudeCodeImportBody> | z.infer<typeof claudeCodeReimportBody>;
 
-// Dispatches between the credentials.json paste and the OAuth callback paths.
-// The PKCE verifier stored at start-time is single-use; we consume it inside
-// this helper so a replayed callback for the same state cannot succeed twice.
 const ingestClaudeCodeCredential = async (
   body: ClaudeCodeCredentialBody,
 ): Promise<{ ok: true; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState } | { ok: false; error: string }> => {
@@ -692,6 +689,8 @@ const ingestClaudeCodeCredential = async (
     if (!code || !state) {
       return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
     }
+    // Atomic single-use DELETE+RETURNING — a replayed callback for the same
+    // state cannot succeed twice, and rows past their TTL are filtered out.
     const pending = await getRepo().claudeCodePkcePending.consume(state);
     if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
@@ -767,8 +766,8 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   // handler stack-traces internally without surfacing the parse error to the
   // dashboard.
   const state = readClaudeCodeUpstreamState(existing.state);
-  // Single-account invariant is enforced by the asserter; refresh-now mutates
-  // that single entry.
+  // The state schema enforces exactly one account; refresh-now mutates that
+  // single entry.
   const account = state.accounts[0];
   if (account.state !== 'active') {
     return c.json({ error: `Claude Code upstream is ${account.state}; re-import to recover` }, 400);
@@ -795,33 +794,41 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
       },
     };
     const nextState: ClaudeCodeUpstreamState = { accounts: [nextAccount] };
-    // CAS keyed on the just-read state. Losing here means a concurrent
+    // CAS keyed on the just-read state. A losing race here means a concurrent
     // data-plane refresh already rotated the row; their write is at least as
     // fresh as ours, so we surface 409 rather than retry.
-    const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: existing.state });
+    const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: state });
     if (!result.updated) {
       return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
     }
     const fresh = await getRepo().upstreams.getById(id);
     return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
   } catch (err) {
+    // OAuth session terminated (refresh_token replayed, revoked, or
+    // app_session_terminated): mirror the data-plane behavior — flip the row
+    // to `refresh_failed` so the dashboard surfaces the red badge and the
+    // operator sees a Re-import affordance instead of a stale Refresh button.
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       const failedAccount: ClaudeCodeAccountCredential = {
         ...account,
         state: 'refresh_failed',
         stateMessage: err.upstreamMessage,
         stateUpdatedAt: new Date().toISOString(),
+        // Refresh failure invalidates whatever access token still sat in state;
+        // even if the data-plane somehow bypassed the active-state gate, the
+        // cached token wouldn't outlive the refresh failure for long.
         accessToken: null,
       };
       const failedState: ClaudeCodeUpstreamState = { accounts: [failedAccount] };
       // Best-effort: a losing CAS means a concurrent rotation already wrote
       // newer state, which by definition supersedes ours.
-      await getRepo().upstreams.saveState(id, failedState, { expectedState: existing.state });
+      await getRepo().upstreams.saveState(id, failedState, { expectedState: state });
       // 400, not 502: the upstream IS answering — it's telling us the stored
       // refresh token is dead. That's a client-side credential problem, not
       // an upstream outage. 401 is wrong too: the dashboard's auth client
-      // logs the operator out on any 401, and a dead account credential
-      // must not be confused with an expired dashboard session.
+      // logs the operator out on any 401 (apps/web/src/api/client.ts), and
+      // a "your claude-code credential is dead" condition must not be confused
+      // with "your dashboard auth is invalid".
       return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
