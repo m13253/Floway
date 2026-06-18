@@ -1,0 +1,358 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+
+import { callClaudeCodeMessages, detectHaikuProbe } from './fetch.ts';
+import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
+import type {
+  ClaudeCodeAccessTokenEntry,
+  ClaudeCodeAccountCredential,
+  ClaudeCodeQuotaSnapshotEntry,
+  ClaudeCodeUpstreamState,
+} from './state.ts';
+import { initProviderRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+
+const upstreamId = 'up_cc';
+
+const activeAccount: ClaudeCodeAccountCredential = {
+  accountUuid: 'acc-1',
+  refreshToken: 'rt_v1',
+  state: 'active',
+  stateUpdatedAt: '2026-01-01T00:00:00Z',
+  accessToken: null,
+  quotaSnapshot: null,
+};
+
+const sonnetModel: UpstreamModel = {
+  id: 'claude-sonnet-4-5-20250929',
+  display_name: 'Sonnet',
+  kind: 'chat',
+  limits: {},
+  endpoints: { messages: {} },
+  enabledFlags: new Set(),
+};
+
+const haikuModel: UpstreamModel = {
+  id: 'claude-haiku-4-5-20251001',
+  display_name: 'Haiku',
+  kind: 'chat',
+  limits: {},
+  endpoints: { messages: {} },
+  enabledFlags: new Set(),
+};
+
+const freshAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
+  token: 'at_cached',
+  expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+  refreshedAt: new Date(Date.now() - 60 * 1000).toISOString(), // cached, not freshly minted
+};
+
+const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
+  id: upstreamId,
+  provider: 'claude-code',
+  name: 'CC',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  config: { accounts: [{ email: 'a@b.com', accountUuid: 'acc-1', organizationUuid: null, subscriptionType: 'max_5x' }] },
+  state,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+});
+
+let currentRecord: UpstreamRecord;
+
+const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void => {
+  currentRecord = makeRecord({ accounts: [{ ...activeAccount, ...overrides }] });
+};
+
+const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
+  (currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.quotaSnapshot;
+
+// The best-effort persist runs through .catch(...); yield to the queue so
+// the saveState write completes before assertions.
+const flushMicrotasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+beforeEach(() => {
+  vi.useRealTimers();
+  seedAccount();
+  initProviderRepo(() => ({
+    upstreams: {
+      getById: async () => currentRecord,
+      saveState: async (_id, newState) => {
+        currentRecord = { ...currentRecord, state: newState as ClaudeCodeUpstreamState };
+        return { updated: true };
+      },
+    },
+  }));
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+const sseResponse = (status = 200, extraHeaders: Record<string, string> = {}): Response => new Response(
+  new ReadableStream({
+    start(c) {
+      c.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start","message":{"id":"x","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250929","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}\n\n'));
+      c.close();
+    },
+  }),
+  {
+    status,
+    headers: {
+      'content-type': 'text/event-stream',
+      'anthropic-ratelimit-unified-status': 'allowed',
+      'anthropic-ratelimit-unified-5h-status': 'allowed',
+      'anthropic-ratelimit-unified-5h-reset': '1781805000',
+      'anthropic-ratelimit-unified-5h-utilization': '0.0',
+      ...extraHeaders,
+    },
+  },
+);
+
+const errorJson = (status: number, body: unknown, extraHeaders: Record<string, string> = {}): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
+
+const minimalBody = { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hi' }] };
+
+describe('detectHaikuProbe', () => {
+  test('true only when model contains "haiku" and max_tokens is exactly 1', () => {
+    expect(detectHaikuProbe({ model: 'claude-haiku-4-5-20251001', max_tokens: 1 })).toBe(true);
+    expect(detectHaikuProbe({ model: 'claude-haiku-4-5-20251001', max_tokens: 2 })).toBe(false);
+    expect(detectHaikuProbe({ model: 'claude-sonnet-4-5-20250929', max_tokens: 1 })).toBe(false);
+    expect(detectHaikuProbe({ max_tokens: 1 })).toBe(false);
+  });
+});
+
+describe('callClaudeCodeMessages — pre-fetch gates', () => {
+  test('non-active account → synthetic 503', async () => {
+    seedAccount({ state: 'session_terminated', stateMessage: 'revoked' });
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(503);
+      expect(await result.response.text()).toMatch(/session_terminated/);
+    }
+  });
+
+  test('rejected quota status → synthetic 429 with retry-after', async () => {
+    const resetIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    seedAccount({
+      accessToken: freshAccessTokenEntry,
+      quotaSnapshot: {
+        fetchedAt: Date.now(),
+        data: { status: 'rejected', reset: resetIso, raw: {} },
+      },
+    });
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(429);
+      expect(result.response.headers.get('retry-after')).toBeTruthy();
+    }
+  });
+});
+
+describe('callClaudeCodeMessages — header surface', () => {
+  test('shaped:true preserves caller headers and only swaps Authorization', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      headers: { 'user-agent': 'claude-cli/2.1.181 (external, cli)', 'x-app': 'cli', authorization: 'Bearer client-side-token' },
+      shaped: true, call: noopUpstreamCallOptions,
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const wireHeaders = new Headers(init.headers);
+    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
+    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
+    expect(wireHeaders.get('x-app')).toBe('cli');
+  });
+
+  test('shaped:false on sonnet replaces headers with pinned sonnet/opus set', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      headers: { 'x-leaky-debug': 'should-be-dropped' },
+      shaped: false, call: noopUpstreamCallOptions,
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const wireHeaders = new Headers(init.headers);
+    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
+    expect(wireHeaders.get('user-agent')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['User-Agent']);
+    expect(wireHeaders.get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta']);
+    expect(wireHeaders.get('x-leaky-debug')).toBeNull();
+  });
+
+  test('shaped:false on haiku uses the leaner haiku header set', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: haikuModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_HAIKU['anthropic-beta']);
+  });
+});
+
+describe('callClaudeCodeMessages — wire body', () => {
+  test('forces stream:true regardless of caller intent', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel,
+      body: { ...minimalBody, stream: false },
+      headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.stream).toBe(true);
+    expect(body.model).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  test('targets /v1/messages?beta=true', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages?beta=true');
+  });
+});
+
+describe('callClaudeCodeMessages — 401 retry', () => {
+  test('cached-token 401 → invalidate, mint fresh, retry once, succeed', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(sseResponse());
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(true);
+    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.accessToken?.token).toBe('at_new');
+    expect((currentRecord.state as ClaudeCodeUpstreamState).accounts[0]!.refreshToken).toBe('rt_v2');
+  });
+
+  test('second 401 after retry → surface verbatim 401, no further retries', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(401);
+  });
+
+  test('freshly-minted token 401 → no invalidate, surface verbatim', async () => {
+    seedAccount(); // no cached token; first call will mint
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(401);
+  });
+});
+
+describe('callClaudeCodeMessages — quota persistence', () => {
+  test('2xx → parses and persists quota snapshot from response headers', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse(200, {
+      'anthropic-ratelimit-unified-7d-status': 'allowed',
+      'anthropic-ratelimit-unified-7d-reset': '1782039600',
+      'anthropic-ratelimit-unified-7d-utilization': '0.5',
+    }));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(true);
+    await flushMicrotasks();
+    const stored = readQuotaEntry();
+    expect(stored).not.toBeNull();
+    const data = stored!.data as { status?: string; sevenDay?: { utilization?: number } };
+    expect(data.status).toBe('allowed');
+    expect(data.sevenDay?.utilization).toBe(0.5);
+  });
+
+  test('429 also persists quota snapshot (rate-limit window captured)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'rate_limit_error', message: 'slow down' } }, {
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-reset': '1781805000',
+      'retry-after': '60',
+    }));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(429);
+    await flushMicrotasks();
+    const stored = readQuotaEntry();
+    const data = stored!.data as { status?: string };
+    expect(data.status).toBe('rejected');
+  });
+});
+
+// Recorder contract: every code path must wrap exactly one fetch promise
+// through opts.call.recordUpstreamLatency or the gateway throws on contract
+// violation.
+const enforcingRecorder = () => {
+  const wrappedPromises: unknown[] = [];
+  const record = <T>(promise: Promise<T>): Promise<T> => {
+    wrappedPromises.push(promise);
+    return promise;
+  };
+  const fetcher: Fetcher = (url, init, recorder) => {
+    const inner = fetch(url, init);
+    return recorder ? recorder(inner) : inner;
+  };
+  return { options: { fetcher, recordUpstreamLatency: record }, invocations: () => wrappedPromises.length };
+};
+
+describe('callClaudeCodeMessages — recorder contract', () => {
+  test('non-active gate wraps exactly one synthetic response', async () => {
+    seedAccount({ state: 'refresh_failed', stateMessage: 'gone' });
+    const recorder = enforcingRecorder();
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+    });
+    expect(result.ok).toBe(false);
+    expect(recorder.invocations()).toBe(1);
+  });
+
+  test('happy path wraps exactly one upstream fetch', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const recorder = enforcingRecorder();
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+    });
+    expect(result.ok).toBe(true);
+    expect(recorder.invocations()).toBe(1);
+  });
+
+  test('401-then-success wraps both upstream attempts (OAuth refresh is provider-internal)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(sseResponse());
+    const recorder = enforcingRecorder();
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+    });
+    expect(result.ok).toBe(true);
+    expect(recorder.invocations()).toBe(2);
+  });
+});
