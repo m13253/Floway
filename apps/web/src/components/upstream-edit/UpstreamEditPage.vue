@@ -369,11 +369,12 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
 });
 
 // Auto rows are the live catalog the upstream itself decides. For copilot,
-// codex, and saved custom upstreams that comes from the SWR cache via
-// `upstreamModels`. Create-mode custom drafts fall back to the inline
-// POST /fetch-models preview translated through the draft's endpoints.
+// codex, claude-code, and saved custom upstreams that comes from the SWR
+// cache via `upstreamModels`. Create-mode custom drafts fall back to the
+// inline POST /fetch-models preview translated through the draft's
+// endpoints. Azure has no auto rows (the loader does not fetch for it),
+// so `upstreamModels` is empty and the same fall-through is correct.
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
-  if (activeProvider.value === 'azure') return [];
   if (activeProvider.value === 'custom') {
     if (!customDraft.value.modelsFetch.enabled) return [];
     if (props.mode === 'edit') return upstreamModels.value;
@@ -432,7 +433,7 @@ const measureRight = () => {
   const kids = Array.from(root.children) as HTMLElement[];
   let h = 0;
   for (const k of kids) h += k.getBoundingClientRect().height;
-  const gap = parseFloat(getComputedStyle(root).rowGap) || 0;
+  const gap = parseFloat(getComputedStyle(root).rowGap);
   if (kids.length > 1) h += gap * (kids.length - 1);
   rightContentH.value = h;
 };

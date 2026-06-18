@@ -12,6 +12,7 @@ import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { CopilotQuotaSnapshot, FlagDef, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { assertNever } from '../../utils/assert-never.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
 const activeProvider = defineModel<UpstreamProviderKind>('provider', { required: true });
@@ -58,9 +59,9 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom':
-  default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
+  return assertNever(kind);
 };
 
 // Intrinsic floor for the aside: smallest height at which every
@@ -80,9 +81,9 @@ const measureFloor = () => {
   const header = headerRef.value;
   if (!content) return;
   const cs = getComputedStyle(content);
-  const padTop = parseFloat(cs.paddingTop) || 0;
-  const padBottom = parseFloat(cs.paddingBottom) || 0;
-  const gap = parseFloat(cs.rowGap) || 0;
+  const padTop = parseFloat(cs.paddingTop);
+  const padBottom = parseFloat(cs.paddingBottom);
+  const gap = parseFloat(cs.rowGap);
   const children = Array.from(content.children) as HTMLElement[];
   let h = padTop + padBottom;
   if (children.length > 1) h += gap * (children.length - 1);

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import type { UpstreamProviderKind } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
+import { assertNever } from '../../utils/assert-never.ts';
 import { Badge, Sortable, Switch } from '@floway-dev/ui';
 
 export interface UpstreamPickerValue {
@@ -59,12 +60,17 @@ const badgeCount = computed(() => value.value.override ? rows.value.filter(r => 
 
 interface ProviderMeta { tone: 'amber' | 'emerald' | 'cyan' | 'rose' | 'zinc'; label: string }
 const providerMeta = (provider: UpstreamProviderKind | null): ProviderMeta => {
-  if (provider === 'custom') return { tone: 'amber', label: 'Custom' };
-  if (provider === 'azure') return { tone: 'emerald', label: 'Azure' };
-  if (provider === 'copilot') return { tone: 'cyan', label: 'Copilot' };
-  if (provider === 'codex') return { tone: 'cyan', label: 'Codex' };
-  if (provider === 'claude-code') return { tone: 'rose', label: 'Claude Code' };
-  return { tone: 'zinc', label: 'Unknown' };
+  // The row's provider goes null when an upstream id in the saved value list
+  // no longer matches anything in `available` (e.g. a deleted upstream).
+  if (provider === null) return { tone: 'zinc', label: 'Unknown' };
+  switch (provider) {
+  case 'custom': return { tone: 'amber', label: 'Custom' };
+  case 'azure': return { tone: 'emerald', label: 'Azure' };
+  case 'copilot': return { tone: 'cyan', label: 'Copilot' };
+  case 'codex': return { tone: 'cyan', label: 'Codex' };
+  case 'claude-code': return { tone: 'rose', label: 'Claude Code' };
+  }
+  return assertNever(provider);
 };
 </script>
 

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import type { AzureUpstreamConfig, ClaudeCodeUpstreamConfig, CodexUpstreamConfig, CopilotUpstreamConfig, CustomUpstreamConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { assertNever } from '../../utils/assert-never.ts';
 
 const props = defineProps<{
   upstream: UpstreamRecord;
@@ -27,9 +28,9 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom':
-  default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
+  return assertNever(kind);
 };
 
 const modelSummary = computed(() => `${props.modelCount} model${props.modelCount === 1 ? '' : 's'}`);
@@ -39,26 +40,27 @@ const subtitle = computed(() => {
   switch (props.upstream.provider) {
   case 'azure': {
     const azure = cfg as AzureUpstreamConfig;
-    const models = azure.models?.length ?? 0;
+    const models = azure.models.length;
     return [azure.endpoint || 'Azure AI endpoint', `${models} model${models === 1 ? '' : 's'}`].join(' · ');
   }
-  case 'custom': return (cfg as CustomUpstreamConfig).baseUrl ?? '';
+  case 'custom': return (cfg as CustomUpstreamConfig).baseUrl;
   case 'copilot': {
     const copilot = cfg as CopilotUpstreamConfig;
     const user = copilot.user;
-    return user?.login ? `@${user.login} · ${copilot.accountType || 'copilot'}` : 'GitHub Copilot account';
+    return user.login ? `@${user.login} · ${copilot.accountType}` : 'GitHub Copilot account';
   }
   case 'codex': {
     const codex = cfg as CodexUpstreamConfig;
-    const account = codex.accounts?.[0];
+    const account = codex.accounts[0];
     return account ? [account.email, account.planType].filter(Boolean).join(' · ') : 'ChatGPT Codex account';
   }
   case 'claude-code': {
     const cc = cfg as ClaudeCodeUpstreamConfig;
-    const account = cc.accounts?.[0];
+    const account = cc.accounts[0];
     return account ? [account.email, account.subscriptionType].filter(Boolean).join(' · ') : 'Claude Code account';
   }
   }
+  return assertNever(props.upstream.provider);
 });
 </script>
 

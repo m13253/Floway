@@ -10,12 +10,11 @@ import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 export const useNewUpstreamData = defineBasicLoader(async () => {
   const store = useUpstreamsStore();
   await Promise.all([store.load(), useProxiesStore().load()]);
-  const list = store.upstreams.value ?? [];
+  const list = store.upstreams.value;
+  const flags = store.flagCatalog.value;
+  if (!list || !flags) throw new Error(store.error.value ?? 'Upstreams store failed to populate after load()');
   const nextSortOrder = list.reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1;
-  return {
-    flags: store.flagCatalog.value ?? [],
-    nextSortOrder,
-  };
+  return { flags, nextSortOrder };
 });
 </script>
 

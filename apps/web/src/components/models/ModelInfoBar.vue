@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ControlPlaneModel, UpstreamProviderKind } from '../../api/types.ts';
+import { assertNever } from '../../utils/assert-never.ts';
 
 defineProps<{
   model: ControlPlaneModel;
@@ -13,9 +14,9 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom':
-  default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
+  return assertNever(kind);
 };
 const providerLabel = (kind: UpstreamProviderKind) => ({ custom: 'Custom', azure: 'Azure', copilot: 'Copilot', codex: 'Codex', 'claude-code': 'Claude Code' }[kind]);
 
@@ -39,7 +40,7 @@ const formatTokenLimit = (n: number) => {
         </div>
         <div class="flex flex-wrap gap-1.5 mt-2">
           <span
-            v-for="binding in model.upstreams ?? []"
+            v-for="binding in model.upstreams"
             :key="binding.id"
             class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
             :class="providerBadgeClass(binding.kind)"
