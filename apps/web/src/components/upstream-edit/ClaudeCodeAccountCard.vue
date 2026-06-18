@@ -114,7 +114,6 @@ const accountIdShort = computed(() => {
 const windows = computed(() => {
   const q = quota.value;
   if (!q) return [];
-  // Display utilizations as percent (Anthropic returns 0..1 fractions).
   const toPercent = (n: number | null | undefined): number | null => typeof n === 'number' ? n * 100 : null;
   return [
     { label: '5-hour window', percent: toPercent(q.fiveHour?.utilization), resetAt: q.fiveHour?.reset, status: q.fiveHour?.status },

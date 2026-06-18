@@ -6,8 +6,6 @@ import { assertNever } from '../../utils/assert-never.ts';
 
 const props = defineProps<{
   upstream: UpstreamRecord;
-  // Count of public models bound to this upstream, resolved by the parent over
-  // the control-plane /api/models response.
   modelCount: number;
   moveUpDisabled: boolean;
   moveDownDisabled: boolean;

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// Presentation-only paste area for the Claude Code OAuth + credentials.json
-// import flow. The parent owns the PKCE state and submission.
-
 import { ref } from 'vue';
 
 import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';

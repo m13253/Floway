@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// Top-level upstream editor page. Owns the entire draft state (provider,
-// name, enabled, flag overrides, disabled model ids, plus the
-// provider-specific custom/azure drafts) and the live /models fetch for
-// custom upstreams.
+// Owns the entire draft state (provider, name, enabled, flag overrides,
+// disabled model ids, plus the provider-specific custom/azure drafts) and
+// the live /models fetch for custom upstreams.
 
 import type { InferRequestType } from 'hono/client';
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';

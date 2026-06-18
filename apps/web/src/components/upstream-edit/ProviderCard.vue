@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Tone-accented radio card.
-
 import { computed } from 'vue';
 
 type Tone = 'amber' | 'emerald' | 'cyan' | 'violet' | 'rose';
