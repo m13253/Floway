@@ -6,7 +6,9 @@ export type UpstreamProviderKind = 'copilot' | 'custom' | 'azure' | 'codex';
 // the proxies catalog or the literal 'direct' sentinel. `colos` is an
 // optional whitelist of Cloudflare colos / Node `RUNTIME_LOCATION` tags;
 // when set, the dial layer only attempts this entry from a request that
-// landed in one of the listed colos. Empty/missing means "all colos".
+// landed in one of the listed colos. Missing means "all colos"; an explicit
+// empty array is never persisted — the wire schema rejects it and the repo
+// normalizer strips it before storage, so all three layers tell one story.
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
