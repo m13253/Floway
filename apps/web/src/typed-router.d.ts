@@ -122,13 +122,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    '/mock-fallback': RouteRecordInfo<
-      '/mock-fallback',
-      '/mock-fallback',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
   }
 
   /**
@@ -226,12 +219,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/login.vue': {
       routes:
         | '/login'
-      views:
-        | never
-    }
-    'src/pages/mock-fallback.vue': {
-      routes:
-        | '/mock-fallback'
       views:
         | never
     }

@@ -3,12 +3,11 @@ import { shallowRef } from 'vue';
 import { callApi, useApi } from '../api/client.ts';
 
 // One-shot fetch on dashboard load, cached for the session. Runtime kind is
-// fixed per deployment and colo only changes across very rare anycast
-// re-routes — refreshing per page navigation has no value.
+// fixed per deployment and colo only changes across rare anycast re-routes —
+// re-fetching per page navigation has no value.
 //
-// Used only by the proxy fallback list editor (which surfaces colo-scoped
-// entries on Cloudflare deployments). No other view should reach into this
-// store; if colo branching spreads, this scope assumption needs revisiting.
+// Consumed only by the proxy fallback list editor. If colo branching spreads
+// to other views, that scope assumption needs revisiting.
 
 export interface RuntimeInfo {
   kind: 'cloudflare' | 'node';
@@ -19,36 +18,30 @@ export interface RuntimeInfo {
 }
 
 const info = shallowRef<RuntimeInfo | null>(null);
-const loading = shallowRef(false);
-const error = shallowRef<string | null>(null);
-let inflight: Promise<void> | null = null;
+let inflight: Promise<RuntimeInfo> | null = null;
 
 export const useRuntimeInfo = () => {
   const api = useApi();
 
-  const load = async (): Promise<void> => {
-    if (info.value !== null) return;
-    if (inflight !== null) {
-      await inflight;
-      return;
-    }
-    loading.value = true;
-    error.value = null;
+  // Throws on fetch failure so the caller (a vue-router data loader) surfaces
+  // it instead of silently degrading the editor UI to its Node-shaped form.
+  // `inflight` dedups concurrent loads from racing in the same page nav.
+  // We clear it in `finally` so a failed first attempt doesn't block retry.
+  const load = async (): Promise<RuntimeInfo> => {
+    if (info.value !== null) return info.value;
+    if (inflight !== null) return await inflight;
     inflight = (async () => {
-      const res = await callApi<RuntimeInfo>(() => api.api['runtime-info'].$get());
-      if (res.error) {
-        error.value = res.error.message;
-        return;
+      try {
+        const res = await callApi<RuntimeInfo>(() => api.api['runtime-info'].$get());
+        if (res.error) throw new Error(`/api/runtime-info: ${res.error.message}`);
+        info.value = res.data;
+        return res.data;
+      } finally {
+        inflight = null;
       }
-      info.value = res.data;
     })();
-    try {
-      await inflight;
-    } finally {
-      loading.value = false;
-      inflight = null;
-    }
+    return await inflight;
   };
 
-  return { info, loading, error, load };
+  return { info, load };
 };

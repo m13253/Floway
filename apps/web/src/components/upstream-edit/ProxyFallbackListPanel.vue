@@ -281,7 +281,7 @@ const toggleCurrentColoAt = (index: number) => {
             >
               <span
                 class="inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-amber transition-colors hover:bg-white/[0.04]"
-                aria-label="Backoff active"
+                :aria-label="formatBackoffTooltip(activeBackoffByEntry.get(entry.id)!)"
               >
                 <i class="i-lucide-triangle-alert size-3.5" />
               </span>

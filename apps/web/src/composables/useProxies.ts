@@ -41,11 +41,3 @@ export const useProxiesStore = () => {
 
   return { proxies, backoffsByProxyId, loading, error, load };
 };
-
-// Dev-only override consumed by `/mock-fallback` so the mock page can render
-// the real ProxyFallbackListPanel against synthetic proxies + backoff rows
-// without round-tripping the API. Production code never calls this.
-export const __setMockProxiesStoreForDev = (next: { proxies: ProxyRecord[]; backoffs: BackoffRow[] }): void => {
-  proxies.value = next.proxies;
-  backoffs.value = next.backoffs;
-};

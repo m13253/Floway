@@ -41,6 +41,7 @@ export const copilotQuota = async (c: Context) => {
 
     const { config } = assertCopilotUpstreamRecord(upstream);
 
+    // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
     const fetcherForUpstream = await createPerRequestFetcher(null);
     const fetcher = fetcherForUpstream(upstream.id);
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(config.githubToken) });

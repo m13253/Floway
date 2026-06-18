@@ -237,6 +237,108 @@ describe('createFetcher', () => {
     expect(await res.text()).toBe('direct');
   });
 
+  it('skips entries whose colos whitelist excludes the current colo', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [
+        { id: 'a', colos: ['NRT'] },          // wrong colo — skip
+        { id: 'b', colos: ['HKG', 'NRT'] },   // matches — attempt
+        { id: 'direct' },                     // no whitelist — attempt
+      ],
+      currentColo: 'HKG',
+      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
+      runProxied: async (config: ProxyConfig) => {
+        calls.push(config.host);
+        return new Response('ok');
+      },
+      runDirect: async () => {
+        calls.push('direct');
+        return new Response('direct');
+      },
+      socketDial: () => stubSocketDial,
+    });
+    const res = await fetcher('https://api.openai.com', { method: 'GET' });
+    expect(await res.text()).toBe('ok');
+    // 'a' was filtered out by colo — 'b' is first reachable entry.
+    expect(calls).toEqual(['b']);
+  });
+
+  it('does NOT retry colo-filtered entries in the second pass', async () => {
+    const repo = new InMemoryRepo();
+    // 'b' is in active backoff — first pass skips it. 'a' is colo-filtered.
+    // We expect the call to fail with no dials made (both entries unavailable
+    // for opposite reasons), and crucially 'a' must NOT be re-attempted in
+    // pass 2 — pass 2 is only for backoff-skipped entries.
+    await repo.proxyBackoffs.recordDialFailure('b', 'u', 'x');
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [
+        { id: 'a', colos: ['NRT'] },   // colo-filtered out for HKG
+        { id: 'b' },                   // in backoff, retried in pass 2
+      ],
+      currentColo: 'HKG',
+      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
+      runProxied: async (config: ProxyConfig) => {
+        calls.push(config.host);
+        throw new ProxyDialError('boom', 'tcp-connect');
+      },
+      runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
+    });
+    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    // Only 'b' is dialed — 'a' is filtered before the loop. 'a' would have
+    // been the host 'a' on the calls list otherwise.
+    expect(calls).toEqual(['b']);
+  });
+
+  it('collapses to implicit ["direct"] when every entry is colo-filtered out', async () => {
+    const repo = new InMemoryRepo();
+    let directCalled = false;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [
+        { id: 'a', colos: ['NRT'] },
+        { id: 'b', colos: ['LAX'] },
+      ],
+      currentColo: 'HKG',
+      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
+      runProxied: async () => new Response('proxy'),
+      runDirect: async () => { directCalled = true; return new Response('direct'); },
+      socketDial: () => stubSocketDial,
+    });
+    const res = await fetcher('https://api.openai.com', { method: 'GET' });
+    expect(directCalled).toBe(true);
+    expect(await res.text()).toBe('direct');
+  });
+
+  it('honours every entry when currentColo is null (Node deployment without RUNTIME_LOCATION)', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [
+        { id: 'a', colos: ['NRT'] },   // would be filtered if currentColo were set
+      ],
+      currentColo: null,
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (config: ProxyConfig) => {
+        calls.push(config.host);
+        return new Response('ok');
+      },
+      runDirect: async () => new Response('direct'),
+      socketDial: () => stubSocketDial,
+    });
+    await fetcher('https://api.openai.com', { method: 'GET' });
+    expect(calls).toEqual(['a']);
+  });
+
   it('rethrows AbortError without continuing the chain', async () => {
     const repo = new InMemoryRepo();
     const calls: string[] = [];

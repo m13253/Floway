@@ -36,9 +36,8 @@ const normalizeColos = (colos: readonly string[] | undefined): string[] | undefi
 };
 
 // True when the entry is active under the data-plane request's current colo.
-// An entry with no whitelist is always active. A null `currentColo` (Node
-// without RUNTIME_LOCATION) suppresses the filter entirely — there's no
-// meaningful colo to compare against, so honour every entry as written.
+// A null `currentColo` (Node without RUNTIME_LOCATION) means the deployment
+// has no colo concept, so every entry is honoured as written.
 export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string | null): boolean => {
   if (currentColo === null) return true;
   if (entry.colos === undefined || entry.colos.length === 0) return true;

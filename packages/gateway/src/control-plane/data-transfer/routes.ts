@@ -543,6 +543,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
+  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
   const fetcher = (await createPerRequestFetcher(null))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });

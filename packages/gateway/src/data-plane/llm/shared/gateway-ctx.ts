@@ -20,11 +20,10 @@ export interface GatewayCtx {
   // dimension. Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
-  // Strict variant of `runtimeLocation`: null when the deployment has no colo
-  // concept at all (Node without RUNTIME_LOCATION, or a CF request landing
-  // without `cf.colo` populated). Threaded into the dial layer's colo-aware
-  // fallback filter, which needs the null/non-null distinction to decide
-  // whether to apply the filter at all.
+  // Counterpart to runtimeLocation kept separate because the dial-layer colo
+  // filter has to distinguish "no colo concept at all" (null) from "unknown
+  // colo" (string). Resolved once here via getCurrentColo so the per-call
+  // boundary doesn't have to re-derive it.
   readonly currentColo: string | null;
 }
 

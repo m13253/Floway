@@ -112,6 +112,7 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
+  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
   const fetcher = (await createPerRequestFetcher(null))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
@@ -321,6 +322,7 @@ export const listUpstreamModels = async (c: Context) => {
 
   const refresh = c.req.query('refresh') === 'true';
   const scheduler = backgroundSchedulerFromContext(c);
+  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
   const fetcher = (await createPerRequestFetcher(null))(record.id);
 
   try {
@@ -566,6 +568,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     // Refresh button respects the same fallback chain as the data-plane hot
     // path. Without this, a Codex upstream behind a corporate proxy would
     // dial direct here and silently fail under restricted egress.
+    // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
     const fetcher = (await createPerRequestFetcher(null))(id);
     const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
     const now = new Date();

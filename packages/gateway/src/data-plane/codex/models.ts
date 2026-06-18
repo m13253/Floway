@@ -94,6 +94,7 @@ export const codexModels = async (c: Context): Promise<Response> => {
     if (hit !== undefined) return hit;
   }
 
+  // No data-plane request to derive a colo from (admin/control-plane action or background refresh) — pass null so every fallback entry is attempted.
   const fetcherForUpstream = await createPerRequestFetcher(null);
   const scheduler = backgroundSchedulerFromContext(c);
   const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {

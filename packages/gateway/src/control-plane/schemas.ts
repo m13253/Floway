@@ -189,12 +189,14 @@ export const updateKeyBody = z.object({
 // Per-upstream proxy fallback list. Each entry is an object with a required
 // `id` (a proxy id known to the proxies repo, or the literal `'direct'`
 // sentinel meaning "dial without a proxy") and an optional `colos` whitelist
-// (Cloudflare colos / Node RUNTIME_LOCATION tags; empty/omitted means
-// active in all colos). The handler validates the ids against the proxies
-// repo; the schema only enforces the wire shape.
+// (Cloudflare colos / Node RUNTIME_LOCATION tags). When `colos` is present
+// it must be non-empty — the stored shape and the wire shape stay symmetric:
+// "all colos" is encoded by omitting the field entirely, never by an empty
+// array. The handler validates the ids against the proxies repo; the schema
+// only enforces the wire shape.
 const proxyFallbackEntrySchema = z.object({
   id: z.string().min(1),
-  colos: z.array(z.string()).optional(),
+  colos: z.array(z.string().min(1)).min(1).optional(),
 });
 const proxyFallbackListSchema = z.array(proxyFallbackEntrySchema);
 

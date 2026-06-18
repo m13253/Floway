@@ -1418,13 +1418,17 @@ class SqlProxyRepo implements ProxyRepo {
     // referencing ids — folding the same predicate into the DELETE closes
     // the TOCTOU window where an admin PATCHes an upstream to add the
     // reference between the read and the DELETE.
+    //
+    // Each entry in proxy_fallback_list_json is a `{"id":"...","colos"?:[...]}`
+    // object after migration 0033; we pull the id out of each element with
+    // json_extract so the predicate matches the value, not the wrapping object.
     const result = await this.db
       .prepare(
         `DELETE FROM proxies
          WHERE id = ?
            AND NOT EXISTS (
              SELECT 1 FROM upstreams u, json_each(u.proxy_fallback_list_json) j
-             WHERE j.value = proxies.id
+             WHERE json_extract(j.value, '$.id') = proxies.id
            )`,
       )
       .bind(id)
