@@ -40,13 +40,29 @@ export const listModelProviders = async (
 ): Promise<ModelProviderInstance[]> => {
   const upstreams = await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
+  const knownIds = new Set<string>();
   for (const upstream of upstreams) {
+    knownIds.add(upstream.id);
     if (upstream.enabled) enabledById.set(upstream.id, upstream);
   }
 
-  const selection: UpstreamRecord[] = upstreamFilter
-    ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is UpstreamRecord => u !== undefined)
-    : [...enabledById.values()];
+  let selection: UpstreamRecord[];
+  if (upstreamFilter) {
+    // Unknown ids are a caller-side configuration error (the filter is the
+    // intersection of per-user + per-api-key caps; both reference upstreams
+    // by id); surface them so the operator notices instead of silently
+    // serving a smaller subset. Disabled-but-known ids stay silent: a user
+    // cap may legitimately mention an upstream the operator just disabled.
+    const unknown = upstreamFilter.filter(id => !knownIds.has(id));
+    if (unknown.length > 0) {
+      throw new Error(`Unknown upstream id(s) in filter: ${unknown.join(', ')}`);
+    }
+    selection = upstreamFilter
+      .map(id => enabledById.get(id))
+      .filter((u): u is UpstreamRecord => u !== undefined);
+  } else {
+    selection = [...enabledById.values()];
+  }
 
   const providers: ModelProviderInstance[] = [];
   for (const upstream of selection) {
