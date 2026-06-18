@@ -2,10 +2,12 @@
 
 import CopilotDeviceFlow from './CopilotDeviceFlow.vue';
 import CopilotInfo from './CopilotInfo.vue';
-import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
+
+type CopilotUpstreamRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
 
 defineProps<{
-  record: UpstreamRecord | null;
+  record: CopilotUpstreamRecord | null;
   initialQuota?: CopilotQuotaSnapshot | null;
   initialQuotaError?: string | null;
 }>();
@@ -17,7 +19,7 @@ defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
   <CopilotInfo
     v-if="record"
     :upstream-id="record.id"
-    :config="record.config as CopilotUpstreamConfig"
+    :config="record.config"
     :initial-quota="initialQuota"
     :initial-quota-error="initialQuotaError"
   />

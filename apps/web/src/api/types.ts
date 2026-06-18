@@ -1,13 +1,15 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
-
-export type {
+import type {
   ModelEndpointKey,
   ModelEndpoints,
   ModelKind,
   ModelPricing,
 } from '@floway-dev/protocols/common';
+
+export type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;
@@ -180,9 +182,8 @@ export interface ClaudeCodeUpstreamState {
   accounts: ClaudeCodeAccountCredentialSummary[];
 }
 
-export interface UpstreamRecord {
+interface UpstreamRecordBase {
   id: string;
-  provider: UpstreamProviderKind;
   name: string;
   enabled: boolean;
   sort_order: number;
@@ -193,14 +194,10 @@ export interface UpstreamRecord {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig | ClaudeCodeUpstreamConfig;
   // Ordered fallback dial-list. Each entry is either a proxy id from the
   // proxies table or the literal string `direct` (no proxy). Empty list means
   // "always direct".
   proxy_fallback_list: string[];
-  // Codex and Claude Code ship gateway-managed state on the row today; the
-  // other providers serialize this as null.
-  state: CodexUpstreamState | ClaudeCodeUpstreamState | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
@@ -209,10 +206,18 @@ export interface UpstreamRecord {
     fetchedAt: number | null;
     lastError: { message: string; at: number } | null;
   };
-  // Present only for provider === 'codex'; serialized inline so the dashboard
-  // renders the quota panel without a follow-up fetch.
-  codex_quota?: CodexQuotaSnapshot | null;
 }
+
+// Provider-keyed discriminated union: each variant pins `provider` and the
+// matching `config` / `state` shape, so `switch (record.provider)` narrows
+// both fields without an `as` cast. Codex's `codex_quota` field rides on the
+// codex variant only.
+export type UpstreamRecord =
+  | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
+  | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null });
 
 export interface FlagDef {
   id: string;

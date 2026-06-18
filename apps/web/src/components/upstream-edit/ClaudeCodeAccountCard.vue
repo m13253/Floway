@@ -6,18 +6,20 @@
 
 import { computed } from 'vue';
 
-import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, ClaudeCodeUpstreamConfig, ClaudeCodeUpstreamState, UpstreamRecord } from '../../api/types.ts';
+import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, UpstreamRecord } from '../../api/types.ts';
 import { Badge, Card } from '@floway-dev/ui';
 
+// The Claude Code account card only ever renders for a claude-code-provider upstream.
+type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
+
 const props = defineProps<{
-  record: UpstreamRecord;
+  record: ClaudeCodeUpstreamRecord;
 }>();
 
 const HEAVY_USAGE_THRESHOLD_PCT = 80;
 
 const account = computed<ClaudeCodeAccountIdentity | null>(() => {
-  const cfg = props.record.config as ClaudeCodeUpstreamConfig;
-  return cfg.accounts[0] ?? null;
+  return props.record.config.accounts[0] ?? null;
 });
 
 type CredentialLookup =
@@ -27,7 +29,7 @@ type CredentialLookup =
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
 
 const credentialLookup = computed<CredentialLookup>(() => {
-  const raw = props.record.state as ClaudeCodeUpstreamState | null;
+  const raw = props.record.state;
   if (!raw || !Array.isArray(raw.accounts) || raw.accounts.length === 0) return { kind: 'missing-state' };
   const configured = account.value;
   if (!configured) return { kind: 'no-config-account' };

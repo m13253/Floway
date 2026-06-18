@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
 
 import AzureConfigPanel from './AzureConfigPanel.vue';
 import ClaudeCodeConfigPanel from './ClaudeCodeConfigPanel.vue';
@@ -24,7 +24,7 @@ const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const proxyFallbackList = defineModel<string[]>('proxyFallbackList', { required: true });
 
-defineProps<{
+const props = defineProps<{
   mode: 'create' | 'edit';
   record: UpstreamRecord | null;
   flags: FlagDef[];
@@ -52,6 +52,12 @@ defineEmits<{
   'claude-code-imported': [upstream: UpstreamRecord];
   'claude-code-error': [message: string];
 }>();
+
+// Per-provider narrowed views of the record so each child panel receives the
+// matching discriminated variant without inline casts.
+const codexRecord = computed(() => props.record?.provider === 'codex' ? props.record : null);
+const claudeCodeRecord = computed(() => props.record?.provider === 'claude-code' ? props.record : null);
+const copilotRecord = computed(() => props.record?.provider === 'copilot' ? props.record : null);
 
 const providerBadgeClass = (kind: UpstreamProviderKind) => {
   switch (kind) {
@@ -157,7 +163,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
       <section v-else-if="activeProvider === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
-          :record="record"
+          :record="copilotRecord"
           :initial-quota="initialCopilotQuota"
           :initial-quota-error="initialCopilotQuotaError"
           @completed="u => $emit('copilot-completed', u)"
@@ -167,7 +173,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section v-else-if="activeProvider === 'codex'" class="shrink-0">
         <CodexConfigPanel
           :mode="mode"
-          :record="record"
+          :record="codexRecord"
           @imported="u => $emit('codex-imported', u)"
           @error="m => $emit('codex-error', m)"
         />
@@ -176,7 +182,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section v-else-if="activeProvider === 'claude-code'" class="shrink-0">
         <ClaudeCodeConfigPanel
           :mode="mode"
-          :record="record"
+          :record="claudeCodeRecord"
           @imported="u => $emit('claude-code-imported', u)"
           @error="m => $emit('claude-code-error', m)"
         />

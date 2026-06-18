@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import type { AzureUpstreamConfig, ClaudeCodeUpstreamConfig, CodexUpstreamConfig, CopilotUpstreamConfig, CustomUpstreamConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { assertNever } from '../../utils/assert-never.ts';
 
 const props = defineProps<{
@@ -34,31 +34,27 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
 const modelSummary = computed(() => `${props.modelCount} model${props.modelCount === 1 ? '' : 's'}`);
 
 const subtitle = computed(() => {
-  const cfg = props.upstream.config;
-  switch (props.upstream.provider) {
+  const u = props.upstream;
+  switch (u.provider) {
   case 'azure': {
-    const azure = cfg as AzureUpstreamConfig;
-    const models = azure.models.length;
-    return [azure.endpoint || 'Azure AI endpoint', `${models} model${models === 1 ? '' : 's'}`].join(' · ');
+    const models = u.config.models.length;
+    return [u.config.endpoint || 'Azure AI endpoint', `${models} model${models === 1 ? '' : 's'}`].join(' · ');
   }
-  case 'custom': return (cfg as CustomUpstreamConfig).baseUrl;
+  case 'custom': return u.config.baseUrl;
   case 'copilot': {
-    const copilot = cfg as CopilotUpstreamConfig;
-    const user = copilot.user;
-    return user.login ? `@${user.login} · ${copilot.accountType}` : 'GitHub Copilot account';
+    const user = u.config.user;
+    return user.login ? `@${user.login} · ${u.config.accountType}` : 'GitHub Copilot account';
   }
   case 'codex': {
-    const codex = cfg as CodexUpstreamConfig;
-    const account = codex.accounts[0];
+    const account = u.config.accounts[0];
     return account ? [account.email, account.planType].filter(Boolean).join(' · ') : 'ChatGPT Codex account';
   }
   case 'claude-code': {
-    const cc = cfg as ClaudeCodeUpstreamConfig;
-    const account = cc.accounts[0];
+    const account = u.config.accounts[0];
     return account ? [account.email, account.subscriptionType].filter(Boolean).join(' · ') : 'Claude Code account';
   }
   }
-  return assertNever(props.upstream.provider);
+  return assertNever(u);
 });
 </script>
 

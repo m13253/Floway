@@ -4,20 +4,22 @@
 
 import { computed } from 'vue';
 
-import type { CodexAccountCredentialState, CodexAccountIdentity, CodexUpstreamConfig, CodexUpstreamState, UpstreamRecord } from '../../api/types.ts';
+import type { CodexAccountCredentialState, CodexAccountIdentity, UpstreamRecord } from '../../api/types.ts';
 import { Badge, Card } from '@floway-dev/ui';
 
+// The Codex account card only ever renders for a codex-provider upstream.
+type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
+
 const props = defineProps<{
-  record: UpstreamRecord;
+  record: CodexUpstreamRecord;
 }>();
 
 const account = computed<CodexAccountIdentity | null>(() => {
-  const cfg = props.record.config as CodexUpstreamConfig;
-  return cfg.accounts[0] ?? null;
+  return props.record.config.accounts[0] ?? null;
 });
 
 const credential = computed<CodexAccountCredentialState | null>(() => {
-  const raw = props.record.state as CodexUpstreamState | null;
+  const raw = props.record.state;
   if (!raw || !Array.isArray(raw.accounts)) return null;
   if (!account.value) return raw.accounts[0] ?? null;
   return raw.accounts.find(a => a.chatgptAccountId === account.value!.chatgptAccountId) ?? raw.accounts[0] ?? null;

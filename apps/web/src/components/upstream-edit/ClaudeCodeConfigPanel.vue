@@ -8,9 +8,11 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { UpstreamRecord } from '../../api/types.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
+type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
+
 const props = defineProps<{
   mode: 'create' | 'edit';
-  record: UpstreamRecord | null;
+  record: ClaudeCodeUpstreamRecord | null;
 }>();
 
 const emit = defineEmits<{
