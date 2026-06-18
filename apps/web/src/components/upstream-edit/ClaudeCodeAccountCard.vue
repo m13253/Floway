@@ -23,18 +23,14 @@ const account = computed<ClaudeCodeAccountIdentity | null>(() => {
 type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
   | { kind: 'missing-state' }
+  | { kind: 'no-config-account' }
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
 
 const credentialLookup = computed<CredentialLookup>(() => {
   const raw = props.record.state as ClaudeCodeUpstreamState | null;
   if (!raw || !Array.isArray(raw.accounts) || raw.accounts.length === 0) return { kind: 'missing-state' };
   const configured = account.value;
-  if (!configured) {
-    // No account in config — the state's first entry is the only thing we can
-    // show. This happens during the brief window between an OAuth callback
-    // landing the state row and the config-side identity write.
-    return { kind: 'present', credential: raw.accounts[0]! };
-  }
+  if (!configured) return { kind: 'no-config-account' };
   const match = raw.accounts.find(a => a.accountUuid === configured.accountUuid);
   if (match) return { kind: 'present', credential: match };
   return { kind: 'uuid-mismatch', expectedAccountUuid: configured.accountUuid };
@@ -84,6 +80,9 @@ const formatRelative = (epochMs: number | null | undefined): string => {
 const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; detail?: string }>(() => {
   if (credentialLookup.value.kind === 'uuid-mismatch') {
     return { tone: 'rose', label: 'Configured account missing from state — re-import to recover' };
+  }
+  if (credentialLookup.value.kind === 'no-config-account') {
+    return { tone: 'rose', label: 'Account identity missing from config — re-import to recover' };
   }
   const c = credential.value;
   if (c?.state === 'session_terminated') {
@@ -159,6 +158,14 @@ const rawEntries = computed<Array<[string, string]>>(() => {
       Configured account
       <code class="font-mono">{{ credentialLookup.expectedAccountUuid }}</code>
       is not present in the gateway's stored state. Re-import the credential to re-link the account.
+    </p>
+
+    <p
+      v-if="credentialLookup.kind === 'no-config-account'"
+      class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
+    >
+      The upstream's stored state has account credentials but the config has no
+      identity record. Re-import the credential to populate the identity.
     </p>
 
     <template v-if="quota">
