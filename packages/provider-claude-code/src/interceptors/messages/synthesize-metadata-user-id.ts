@@ -64,7 +64,9 @@ const sessionIdForPayload = async (upstreamId: string, payload: { messages?: unk
 const firstUserMessageText = (messages: unknown): string => {
   if (!Array.isArray(messages)) return '';
   for (const msg of messages) {
-    if (typeof msg !== 'object' || msg === null) continue;
+    if (typeof msg !== 'object' || msg === null) {
+      throw new TypeError(`Claude Code synthesize-metadata-user-id: message must be an object, got ${msg === null ? 'null' : typeof msg}`);
+    }
     const m = msg as { role?: unknown; content?: unknown };
     if (m.role !== 'user') continue;
     if (typeof m.content === 'string') return m.content;
@@ -73,10 +75,15 @@ const firstUserMessageText = (messages: unknown): string => {
     }
     return m.content
       .map(part => {
-        if (typeof part !== 'object' || part === null) return '';
+        if (typeof part !== 'object' || part === null) {
+          throw new TypeError(`Claude Code synthesize-metadata-user-id: content part must be an object, got ${part === null ? 'null' : typeof part}`);
+        }
         const p = part as { type?: unknown; text?: unknown };
-        if (p.type === 'text' && typeof p.text === 'string') return p.text;
-        return '';
+        if (p.type !== 'text') return '';
+        if (typeof p.text !== 'string') {
+          throw new TypeError(`Claude Code synthesize-metadata-user-id: text content part must carry a string .text, got ${typeof p.text}`);
+        }
+        return p.text;
       })
       .filter(Boolean)
       .join('\n');
