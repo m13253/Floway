@@ -69,13 +69,16 @@ const submit = async () => {
   if (!body.ok) { emit('error', body.error); return; }
 
   submitting.value = true;
-  const result = props.mode === 'create'
-    ? await callApi<UpstreamRecord>(
-        () => api.api.upstreams['claude-code-import'].$post({ json: body.value }),
-      )
-    : await callApi<UpstreamRecord>(
-        () => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id: props.record!.id }, json: body.value }),
-      );
+  let result;
+  if (props.mode === 'create') {
+    result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: body.value }));
+  } else {
+    // The re-import button is rendered only when `record` is bound; the
+    // template guard upstream guarantees non-null here.
+    if (!props.record) throw new Error('Re-import requires a saved record');
+    const id = props.record.id;
+    result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id }, json: body.value }));
+  }
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
   emit('imported', result.data);
@@ -85,9 +88,11 @@ const submit = async () => {
 };
 
 const refreshTokenNow = async () => {
+  if (!props.record) throw new Error('refreshTokenNow requires a saved record');
+  const id = props.record.id;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
-    () => api.api.upstreams[':id']['claude-code-refresh-now'].$post({ param: { id: props.record!.id }, json: {} }),
+    () => api.api.upstreams[':id']['claude-code-refresh-now'].$post({ param: { id }, json: {} }),
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }

@@ -682,7 +682,15 @@ const ingestClaudeCodeCredential = async (
     let code = cb.code;
     let state = cb.state;
     if (cb.callback_url !== undefined) {
-      const parsed = extractClaudeCodeCallbackParams(cb.callback_url);
+      // Wrap the URL parse so a malformed callback_url surfaces as an explicit
+      // 400 here rather than falling through the outer try/catch as an opaque
+      // bubble-up.
+      let parsed;
+      try {
+        parsed = extractClaudeCodeCallbackParams(cb.callback_url);
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) };
+      }
       code = parsed.code;
       state = parsed.state;
     }

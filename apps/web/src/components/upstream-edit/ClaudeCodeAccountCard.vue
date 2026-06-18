@@ -4,7 +4,7 @@
 // from state.accounts[].quotaSnapshot.data, mirroring what the gateway
 // parsed from the most recent /v1/messages response headers.
 
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, ClaudeCodeUpstreamConfig, ClaudeCodeUpstreamState, UpstreamRecord } from '../../api/types.ts';
 import { Badge, Card } from '@floway-dev/ui';
@@ -12,6 +12,8 @@ import { Badge, Card } from '@floway-dev/ui';
 const props = defineProps<{
   record: UpstreamRecord;
 }>();
+
+const HEAVY_USAGE_THRESHOLD_PCT = 80;
 
 const account = computed<ClaudeCodeAccountIdentity | null>(() => {
   const cfg = props.record.config as ClaudeCodeUpstreamConfig;
@@ -54,9 +56,14 @@ const formatTimestamp = (iso: string | null | undefined): string => {
   return d.toLocaleString();
 };
 
+const clampPercent = (n: number | null | undefined): number => {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+};
+
 const formatPercent = (n: number | null | undefined): string => {
   if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  return `${Math.max(0, Math.min(100, Math.round(n)))}%`;
+  return `${clampPercent(n)}%`;
 };
 
 const formatRelative = (epochMs: number | null | undefined): string => {
@@ -92,7 +99,7 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
   const utilizations = [quota.value?.fiveHour?.utilization, quota.value?.sevenDay?.utilization]
     .filter((v): v is number => typeof v === 'number');
   const heaviest = utilizations.length ? Math.max(...utilizations) * 100 : null;
-  if (heaviest !== null && heaviest >= 80) {
+  if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PCT) {
     return { tone: 'amber', label: `Heavy usage (${Math.round(heaviest)}%)` };
   }
   return { tone: 'emerald', label: 'Active' };
@@ -121,7 +128,6 @@ const accessTokenExpiry = computed(() => {
   return { expiresAt: t.expiresAt, relative: formatRelative(t.expiresAt) };
 });
 
-const rawOpen = ref(false);
 const rawEntries = computed<Array<[string, string]>>(() => {
   const raw = quota.value?.raw;
   if (!raw || typeof raw !== 'object') return [];
@@ -166,7 +172,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
           <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
             <div
               class="h-full bg-accent-rose transition-[width]"
-              :style="{ width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%` }"
+              :style="{ width: `${clampPercent(w.percent)}%` }"
             />
           </div>
           <p v-if="w.resetAt" class="text-[11px] text-gray-500">Resets at {{ formatTimestamp(w.resetAt) }}</p>
@@ -180,7 +186,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         <Badge v-if="quota.fallbackAvailable === false" tone="amber" size="sm">fallback unavailable</Badge>
       </div>
 
-      <details v-if="rawEntries.length" class="text-[11px] text-gray-500" :open="rawOpen" @toggle="(e: Event) => rawOpen = (e.target as HTMLDetailsElement).open">
+      <details v-if="rawEntries.length" class="text-[11px] text-gray-500">
         <summary class="cursor-pointer select-none text-gray-400 hover:text-gray-200">Raw quota headers ({{ rawEntries.length }})</summary>
         <dl class="mt-2 space-y-1 font-mono">
           <div v-for="[k, v] in rawEntries" :key="k" class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
