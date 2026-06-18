@@ -179,17 +179,10 @@ export interface ModelsCacheRepo {
   delete(upstreamId: string): Promise<void>;
 }
 
-export interface CodexPkcePendingRepo {
-  put(state: string, verifier: string, expiresAt: number): Promise<void>;
-  consume(state: string): Promise<{ verifier: string } | null>;
-  sweepExpired(now: number): Promise<void>;
-}
-
-// Shape mirrors CodexPkcePendingRepo because the two flows have identical
-// requirements (single-use state → verifier handoff with a TTL); a shared
-// alias would couple them and force both to migrate together if either
-// ever needs an extra column.
-export interface ClaudeCodePkcePendingRepo {
+// Single-use PKCE state → verifier handoff with a TTL. Used by both the
+// codex and claude-code OAuth flows; each flow owns its own table, but the
+// repo shape is identical.
+export interface PkcePendingRepo {
   put(state: string, verifier: string, expiresAt: number): Promise<void>;
   consume(state: string): Promise<{ verifier: string } | null>;
   sweepExpired(now: number): Promise<void>;
@@ -325,8 +318,8 @@ export interface Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  codexPkcePending: CodexPkcePendingRepo;
-  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
+  codexPkcePending: PkcePendingRepo;
+  claudeCodePkcePending: PkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

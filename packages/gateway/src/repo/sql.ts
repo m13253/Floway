@@ -7,8 +7,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
-  ClaudeCodePkcePendingRepo,
-  CodexPkcePendingRepo,
+  PkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -883,13 +882,17 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
-  constructor(private db: SqlDatabase) {}
+// Codex and claude-code OAuth flows each own their own pkce_pending table
+// (different schemas might diverge later — billing-tier metadata, additional
+// state — but today the columns are identical). The repo is parameterised
+// on the table name so the impl is written once.
+class SqlPkcePendingRepo implements PkcePendingRepo {
+  constructor(private db: SqlDatabase, private table: string) {}
 
   async put(state: string, verifier: string, expiresAt: number): Promise<void> {
     await this.db
       .prepare(
-        'INSERT INTO codex_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
+        `INSERT INTO ${this.table} (state, verifier, expires_at) VALUES (?, ?, ?) `
         + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at',
       )
       .bind(state, verifier, expiresAt)
@@ -897,43 +900,17 @@ class SqlCodexPkcePendingRepo implements CodexPkcePendingRepo {
   }
 
   async consume(state: string): Promise<{ verifier: string } | null> {
-    // Single-use: DELETE ... RETURNING in one statement so a replayed callback
-    // cannot succeed twice.
+    // Single-use: DELETE ... RETURNING in one statement so a replayed
+    // callback cannot succeed twice.
     const row = await this.db
-      .prepare('DELETE FROM codex_pkce_pending WHERE state = ? AND expires_at > ? RETURNING verifier')
+      .prepare(`DELETE FROM ${this.table} WHERE state = ? AND expires_at > ? RETURNING verifier`)
       .bind(state, Date.now())
       .first<{ verifier: string }>();
     return row ? { verifier: row.verifier } : null;
   }
 
   async sweepExpired(now: number): Promise<void> {
-    await this.db.prepare('DELETE FROM codex_pkce_pending WHERE expires_at <= ?').bind(now).run();
-  }
-}
-
-class SqlClaudeCodePkcePendingRepo implements ClaudeCodePkcePendingRepo {
-  constructor(private db: SqlDatabase) {}
-
-  async put(state: string, verifier: string, expiresAt: number): Promise<void> {
-    await this.db
-      .prepare(
-        'INSERT INTO claude_code_pkce_pending (state, verifier, expires_at) VALUES (?, ?, ?) '
-        + 'ON CONFLICT (state) DO UPDATE SET verifier = excluded.verifier, expires_at = excluded.expires_at',
-      )
-      .bind(state, verifier, expiresAt)
-      .run();
-  }
-
-  async consume(state: string): Promise<{ verifier: string } | null> {
-    const row = await this.db
-      .prepare('DELETE FROM claude_code_pkce_pending WHERE state = ? AND expires_at > ? RETURNING verifier')
-      .bind(state, Date.now())
-      .first<{ verifier: string }>();
-    return row ? { verifier: row.verifier } : null;
-  }
-
-  async sweepExpired(now: number): Promise<void> {
-    await this.db.prepare('DELETE FROM claude_code_pkce_pending WHERE expires_at <= ?').bind(now).run();
+    await this.db.prepare(`DELETE FROM ${this.table} WHERE expires_at <= ?`).bind(now).run();
   }
 }
 
@@ -1599,8 +1576,8 @@ export class SqlRepo implements Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  codexPkcePending: CodexPkcePendingRepo;
-  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
+  codexPkcePending: PkcePendingRepo;
+  claudeCodePkcePending: PkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -1616,8 +1593,8 @@ export class SqlRepo implements Repo {
     this.searchUsage = new SqlSearchUsageRepo(db);
     this.performance = new SqlPerformanceRepo(db);
     this.modelsCache = new SqlModelsCacheRepo(db);
-    this.codexPkcePending = new SqlCodexPkcePendingRepo(db);
-    this.claudeCodePkcePending = new SqlClaudeCodePkcePendingRepo(db);
+    this.codexPkcePending = new SqlPkcePendingRepo(db, 'codex_pkce_pending');
+    this.claudeCodePkcePending = new SqlPkcePendingRepo(db, 'claude_code_pkce_pending');
     this.searchConfig = new SqlSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);

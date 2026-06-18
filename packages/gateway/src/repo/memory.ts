@@ -13,8 +13,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
-  ClaudeCodePkcePendingRepo,
-  CodexPkcePendingRepo,
+  PkcePendingRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -496,28 +495,7 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-class MemoryCodexPkcePendingRepo implements CodexPkcePendingRepo {
-  private rows = new Map<string, { verifier: string; expiresAt: number }>();
-
-  put(state: string, verifier: string, expiresAt: number): Promise<void> {
-    this.rows.set(state, { verifier, expiresAt });
-    return Promise.resolve();
-  }
-
-  consume(state: string): Promise<{ verifier: string } | null> {
-    const row = this.rows.get(state);
-    if (!row || row.expiresAt <= Date.now()) return Promise.resolve(null);
-    this.rows.delete(state);
-    return Promise.resolve({ verifier: row.verifier });
-  }
-
-  sweepExpired(now: number): Promise<void> {
-    for (const [k, v] of this.rows) if (v.expiresAt <= now) this.rows.delete(k);
-    return Promise.resolve();
-  }
-}
-
-class MemoryClaudeCodePkcePendingRepo implements ClaudeCodePkcePendingRepo {
+class MemoryPkcePendingRepo implements PkcePendingRepo {
   private rows = new Map<string, { verifier: string; expiresAt: number }>();
 
   put(state: string, verifier: string, expiresAt: number): Promise<void> {
@@ -930,8 +908,8 @@ export class InMemoryRepo implements Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  codexPkcePending: CodexPkcePendingRepo;
-  claudeCodePkcePending: ClaudeCodePkcePendingRepo;
+  codexPkcePending: PkcePendingRepo;
+  claudeCodePkcePending: PkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
@@ -947,8 +925,8 @@ export class InMemoryRepo implements Repo {
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.modelsCache = new MemoryModelsCacheRepo();
-    this.codexPkcePending = new MemoryCodexPkcePendingRepo();
-    this.claudeCodePkcePending = new MemoryClaudeCodePkcePendingRepo();
+    this.codexPkcePending = new MemoryPkcePendingRepo();
+    this.claudeCodePkcePending = new MemoryPkcePendingRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);
