@@ -762,12 +762,11 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
     return c.json({ error: 'Claude Code upstream not found' }, 404);
   }
 
-  let state: ClaudeCodeUpstreamState;
-  try {
-    state = readClaudeCodeUpstreamState(existing.state);
-  } catch (err) {
-    return c.json({ error: `Claude Code upstream state is malformed: ${errorMessage(err)}` }, 500);
-  }
+  // A throw from readClaudeCodeUpstreamState means the row's state column was
+  // hand-edited or written by a buggier branch — the framework-level 500
+  // handler stack-traces internally without surfacing the parse error to the
+  // dashboard.
+  const state = readClaudeCodeUpstreamState(existing.state);
   // Single-account invariant is enforced by the asserter; refresh-now mutates
   // that single entry.
   const account = state.accounts[0];
