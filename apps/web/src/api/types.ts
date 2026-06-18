@@ -4,14 +4,17 @@ export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'c
 
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
-// A present key means the model is served by that endpoint.
+// A present key means the model is served by that endpoint. Each slot is
+// intentionally an empty object — TypeScript's `{}` accepts any non-nullish
+// value, so use `Record<string, never>` to enforce truly-empty bag at the
+// type boundary while leaving room for future per-endpoint config fields.
 export interface ModelEndpoints {
-  chatCompletions?: {};
-  responses?: {};
-  messages?: {};
-  embeddings?: {};
-  imagesGenerations?: {};
-  imagesEdits?: {};
+  chatCompletions?: Record<string, never>;
+  responses?: Record<string, never>;
+  messages?: Record<string, never>;
+  embeddings?: Record<string, never>;
+  imagesGenerations?: Record<string, never>;
+  imagesEdits?: Record<string, never>;
 }
 
 export type ModelEndpointKey = keyof ModelEndpoints;
