@@ -18,19 +18,39 @@ const account = computed<ClaudeCodeAccountIdentity | null>(() => {
   return cfg.accounts[0] ?? null;
 });
 
-const credential = computed<ClaudeCodeAccountCredentialSummary | null>(() => {
+type CredentialLookup =
+  | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
+  | { kind: 'missing-state' }
+  | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
+
+const credentialLookup = computed<CredentialLookup>(() => {
   const raw = props.record.state as ClaudeCodeUpstreamState | null;
-  if (!raw || !Array.isArray(raw.accounts)) return null;
-  if (!account.value) return raw.accounts[0] ?? null;
-  return raw.accounts.find(a => a.accountUuid === account.value!.accountUuid) ?? raw.accounts[0] ?? null;
+  if (!raw || !Array.isArray(raw.accounts) || raw.accounts.length === 0) return { kind: 'missing-state' };
+  const configured = account.value;
+  if (!configured) {
+    // No account in config — the state's first entry is the only thing we can
+    // show. This happens during the brief window between an OAuth callback
+    // landing the state row and the config-side identity write.
+    return { kind: 'present', credential: raw.accounts[0]! };
+  }
+  const match = raw.accounts.find(a => a.accountUuid === configured.accountUuid);
+  if (match) return { kind: 'present', credential: match };
+  return { kind: 'uuid-mismatch', expectedAccountUuid: configured.accountUuid };
 });
 
+const credential = computed<ClaudeCodeAccountCredentialSummary | null>(() => credentialLookup.value.kind === 'present' ? credentialLookup.value.credential : null);
+
 const quota = computed(() => credential.value?.quotaSnapshot?.data ?? null);
+
+const INVALID_TIMESTAMP_LABEL = '(invalid timestamp)';
 
 const formatTimestamp = (iso: string | null | undefined): string => {
   if (!iso) return '—';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
+  if (Number.isNaN(d.getTime())) {
+    console.warn('[ClaudeCodeAccountCard] failed to parse timestamp', iso);
+    return INVALID_TIMESTAMP_LABEL;
+  }
   return d.toLocaleString();
 };
 
@@ -55,6 +75,9 @@ const formatRelative = (epochMs: number | null | undefined): string => {
 };
 
 const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; detail?: string }>(() => {
+  if (credentialLookup.value.kind === 'uuid-mismatch') {
+    return { tone: 'rose', label: 'Configured account missing from state — re-import to recover' };
+  }
   const c = credential.value;
   if (c?.state === 'session_terminated') {
     return { tone: 'rose', label: 'Session terminated — re-import to recover', detail: c.stateMessage };
@@ -123,6 +146,15 @@ const rawEntries = computed<Array<[string, string]>>(() => {
     </div>
 
     <p v-if="badge.detail" class="text-xs text-gray-500">{{ badge.detail }}</p>
+
+    <p
+      v-if="credentialLookup.kind === 'uuid-mismatch'"
+      class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
+    >
+      Configured account
+      <code class="font-mono">{{ credentialLookup.expectedAccountUuid }}</code>
+      is not present in the gateway's stored state. Re-import the credential to re-link the account.
+    </p>
 
     <template v-if="quota">
       <div class="space-y-3">
