@@ -38,7 +38,7 @@ CREATE INDEX idx_upstreams_provider_enabled_sort
 -- PKCE verifier + CSRF state for an in-flight Claude OAuth handoff. Same
 -- shape as codex_pkce_pending; written at /api/upstreams/claude-code-pkce-start
 -- and consumed by /api/upstreams/claude-code-import. `expires_at` is unix
--- seconds; the import path enforces the 5-minute TTL.
+-- milliseconds; the import path enforces the 5-minute TTL.
 CREATE TABLE claude_code_pkce_pending (
   state      TEXT PRIMARY KEY,
   verifier   TEXT NOT NULL,
