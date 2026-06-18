@@ -29,20 +29,34 @@ describe('DEFAULT_TEMPLATE_BLOCK', () => {
     expect(DEFAULT_TEMPLATE_BLOCK.cache_control).toEqual({ type: 'ephemeral' });
   });
 
-  test('opens with the v2.1.181 interactive-agent introduction line', () => {
+  test('opens with the interactive-agent introduction line', () => {
     expect(DEFAULT_TEMPLATE_BLOCK.text.startsWith('You are an interactive agent that helps users')).toBe(true);
   });
 
-  test('contains the canonical v2.1.181 section headers', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# System');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Doing tasks');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Executing actions with care');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Using your tools');
-    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tone and style');
+  test('carries the two IMPORTANT: safety lines', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('IMPORTANT: Assist with authorized security testing');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('IMPORTANT: You must NEVER generate or guess URLs');
   });
 
-  test('is substantial — at least 5000 chars', () => {
-    expect(DEFAULT_TEMPLATE_BLOCK.text.length).toBeGreaterThan(5000);
+  test('carries the # Tone and style section', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('# Tone and style');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('Only use emojis if the user explicitly requests it');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('file_path:line_number');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).toContain('Do not use a colon before tool calls');
+  });
+
+  test('drops the CC-agent-action sections that would steer non-CC downstreams', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# System');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Doing tasks');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Executing actions with care');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('# Using your tools');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('TodoWrite');
+    expect(DEFAULT_TEMPLATE_BLOCK.text).not.toContain('TaskCreate');
+  });
+
+  test('stays in the trimmed-subset size range', () => {
+    expect(DEFAULT_TEMPLATE_BLOCK.text.length).toBeGreaterThan(1000);
+    expect(DEFAULT_TEMPLATE_BLOCK.text.length).toBeLessThan(3000);
   });
 });
 
