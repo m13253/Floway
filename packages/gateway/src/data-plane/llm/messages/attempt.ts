@@ -46,7 +46,7 @@ export const messagesAttempt = {
       payload: rewritten.payload,
       candidate,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: { ...inheritedInvocationHeaders },
     };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
@@ -99,7 +99,7 @@ export const messagesAttempt = {
       payload: rewritten.payload,
       candidate,
       ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: { ...inheritedInvocationHeaders },
     };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {

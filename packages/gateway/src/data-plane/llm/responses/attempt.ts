@@ -70,7 +70,7 @@ export const responsesAttempt = {
       payload: normalized,
       candidate,
       store,
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: { ...inheritedInvocationHeaders },
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
       await dispatchResponses(invocation.payload, ctx, store, candidate, invocation.headers));
