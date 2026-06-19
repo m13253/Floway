@@ -3,6 +3,7 @@ import type { CodexUpstreamState } from '../state.ts';
 import type { CodexIdTokenIdentity } from './jwt.ts';
 import { parseCodexIdTokenClaims } from './jwt.ts';
 import { exchangeCodexAuthorizationCode } from './oauth.ts';
+import type { Fetcher } from '@floway-dev/provider';
 
 export interface CodexImportResult {
   config: CodexUpstreamConfig;
@@ -104,9 +105,12 @@ export const extractCodexCallbackParams = (input: string): { code: string; state
 
 // Exchange the authorization code for tokens, then derive identity from the
 // returned id_token. The PKCE verifier was stored at PKCE-start time and is
-// supplied here.
-export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string }): Promise<CodexImportResult> => {
-  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier });
+// supplied here. The optional `fetcher` lets the control-plane import route
+// thread an operator-supplied proxy fallback chain through the token
+// exchange — the only network call on this path, since identity is parsed
+// locally from the id_token.
+export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher?: Fetcher }): Promise<CodexImportResult> => {
+  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, fetcher: opts.fetcher });
   const identity = parseCodexIdTokenClaims(tokens.id_token);
   return buildCodexImportResult({
     identity,
