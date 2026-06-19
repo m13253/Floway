@@ -188,8 +188,9 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
 
   // Set up the body capture pipeline. We tee the response body so the client
   // continues to receive bytes while the capture half drains in the
-  // background; finalize-and-persist runs through `waitUntil` so the response
-  // is not held open on the parser or the storage write.
+  // background; finalize-and-persist runs through the runtime's background
+  // scheduler so the response is not held open on the parser or the storage
+  // write.
   let capturedBodyPromise: Promise<CapturedBody>;
   if (!hasResponse) {
     capturedBodyPromise = Promise.resolve({ body: { type: 'none' }, bodyBase64: false, responseBytes: 0, streamingError: null });
