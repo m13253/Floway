@@ -10,7 +10,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
@@ -145,13 +145,18 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     },
 
     // Codex upstream only exposes /responses; getProvidedModels advertises
-    // that single endpoint and no other entry point is reachable.
-    callMessages: () => Promise.reject(new Error('Codex provider does not implement callMessages')),
-    callChatCompletions: () => Promise.reject(new Error('Codex provider does not implement callChatCompletions')),
-    callMessagesCountTokens: () => Promise.reject(new Error('Codex provider does not implement callMessagesCountTokens')),
-    callEmbeddings: () => Promise.reject(new Error('Codex provider does not implement callEmbeddings')),
-    callImagesGenerations: () => Promise.reject(new Error('Codex provider does not implement callImagesGenerations')),
-    callImagesEdits: () => Promise.reject(new Error('Codex provider does not implement callImagesEdits')),
+    // that single endpoint and no other entry point is reachable. The data
+    // plane never routes these surfaces here in practice, but a stray
+    // dispatch must surface as a 405 carrying a proper JSON error rather
+    // than letting a raw stack trace bubble up the boundary. The synthetic
+    // response still flows through the per-call latency recorder so the
+    // gateway's wrap-once contract holds even for these stubs.
+    callMessages: (_model, _body, _signal, _headers, _beta, opts) => unsupportedStreamResult(opts),
+    callMessagesCountTokens: (_model, _body, _signal, _headers, _beta, opts) => unsupportedCallResult(opts),
+    callChatCompletions: (_model, _body, _signal, _headers, opts) => unsupportedStreamResult(opts),
+    callEmbeddings: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
+    callImagesGenerations: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
+    callImagesEdits: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
   };
 
   return {
@@ -163,3 +168,27 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     supportsResponsesItemReference: false,
   };
 };
+
+// Codex advertises only /responses; a request that somehow reaches one of
+// the other surfaces is a routing bug, not user input. Return a synthetic
+// 405 (carrying the same JSON error envelope shape the rest of the
+// gateway uses) so the boundary can relay it verbatim instead of leaking
+// a raw stack trace. The response still flows through `recordUpstreamLatency`
+// to honour the wrap-once contract — every code path that produces a
+// boundary-facing response must invoke the recorder exactly once, even when
+// the response is synthesized without ever hitting the network.
+const synthetic405 = (): Response => new Response(
+  JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by codex provider' } }),
+  { status: 405, headers: { 'content-type': 'application/json' } },
+);
+
+const unsupportedStreamResult = async <TEvent>(opts: UpstreamCallOptions): Promise<ProviderStreamResult<TEvent>> => ({
+  ok: false,
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
+
+const unsupportedCallResult = async (opts: UpstreamCallOptions): Promise<ProviderCallResult> => ({
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
