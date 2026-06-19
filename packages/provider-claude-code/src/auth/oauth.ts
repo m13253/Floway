@@ -111,11 +111,15 @@ const claudeCodeTokenRequest = async (
   return root as unknown as ClaudeOAuthTokenResponse;
 };
 
-// PKCE exchange has no upstream context yet — the upstream is minted from
-// this response, so direct egress is the only option.
+// PKCE exchange runs before the upstream record exists, so direct egress is
+// the historical default. The fetcher is exposed as an optional parameter so
+// the control-plane import route can route the exchange through an
+// operator-supplied proxy fallback chain — the same chain that will be
+// persisted on the new upstream.
 export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   code: string;
   codeVerifier: string;
+  fetcher?: Fetcher;
 }): Promise<ClaudeOAuthTokenResponse> => {
   const body = {
     grant_type: 'authorization_code',
@@ -124,7 +128,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   };
-  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, directFetcher);
+  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher ?? directFetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream

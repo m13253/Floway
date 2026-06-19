@@ -5,6 +5,7 @@ import {
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
 } from './import.ts';
+import type { Fetcher } from '@floway-dev/provider';
 
 const profileResponse = {
   account: {
@@ -267,5 +268,30 @@ describe('importClaudeCodeFromCredentialsJson', () => {
       claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs },
     });
     await expect(importClaudeCodeFromCredentialsJson(raw)).rejects.toThrow(/401/);
+  });
+
+  test('routes the identity fetch through the supplied fetcher', async () => {
+    const fetcher = vi.fn<Fetcher>(async () => jsonResponse(profileResponse));
+    // globalThis.fetch is left unmocked — a leak through to it would throw a
+    // real network error in the test runner, so a green run confirms the
+    // override is the only egress.
+    const raw = JSON.stringify({
+      claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs },
+    });
+    await importClaudeCodeFromCredentialsJson(raw, fetcher);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.anthropic.com/api/oauth/profile');
+  });
+});
+
+describe('importClaudeCodeFromCallback fetcher override', () => {
+  test('routes both the token exchange and the identity fetch through the supplied fetcher', async () => {
+    const fetcher = vi.fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(tokenResponse))
+      .mockResolvedValueOnce(jsonResponse(profileResponse));
+    await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', fetcher });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
+    expect(fetcher.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
   });
 });

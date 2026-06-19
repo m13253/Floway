@@ -2,7 +2,7 @@ import type { ClaudeCodeUpstreamConfig } from '../config.ts';
 import type { ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../state.ts';
 import { fetchClaudeCodeIdentity, type ClaudeCodeIdentity } from './identity.ts';
 import { exchangeClaudeCodeAuthorizationCode } from './oauth.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 export interface ClaudeCodeImportResult {
   config: ClaudeCodeUpstreamConfig;
@@ -75,21 +75,23 @@ export const extractClaudeCodeCallbackParams = (input: string): { code: string; 
   return { code, state };
 };
 
-// Identity is derived by calling /api/oauth/profile with the freshly minted
-// access token; we never trust the OAuth response's embedded `account` /
-// `organization` fields because they may be stale or scoped narrowly compared
-// to the dedicated profile endpoint. Both calls run through the direct
-// fetcher: the OAuth flow is bootstrap-only (the upstream isn't created yet,
-// so no proxy is configured), and matches codex's same-shape callback.
+// Both calls (OAuth token exchange + /api/oauth/profile) run through the
+// caller-supplied `fetcher` (default: direct). The import flow runs before
+// the upstream record exists, so the fetcher cannot be resolved from a
+// persisted proxy_fallback_list — the control-plane import route builds it
+// from the operator's in-flight form override and threads it in here.
 export const importClaudeCodeFromCallback = async (opts: {
   code: string;
   pkceVerifier: string;
+  fetcher?: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
+  const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
+    fetcher,
   });
-  const identity = await fetchClaudeCodeIdentity(tokens.access_token, directFetcher);
+  const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
   return buildClaudeCodeImportResult({
     identity,
     accessToken: tokens.access_token,
@@ -106,8 +108,12 @@ export const importClaudeCodeFromCallback = async (opts: {
 // persists. The JSON's `accessToken` is reused for the cached entry so the
 // first request in does not need a refresh round-trip — the file is
 // effectively a fresh-enough snapshot of the live credential.
+//
+// `fetcher` is forwarded to the identity call so the control-plane import
+// route can route through an operator-supplied proxy chain. Default direct.
 export const importClaudeCodeFromCredentialsJson = async (
   rawJson: string,
+  fetcher: Fetcher = directFetcher,
 ): Promise<ClaudeCodeImportResult> => {
   let parsed: unknown;
   try {
@@ -150,7 +156,7 @@ export const importClaudeCodeFromCredentialsJson = async (
     ? w.subscriptionType
     : null;
 
-  const identity = await fetchClaudeCodeIdentity(accessToken);
+  const identity = await fetchClaudeCodeIdentity(accessToken, fetcher);
   const finalIdentity: ClaudeCodeIdentity = persistedSubscriptionType !== null
     ? { ...identity, subscriptionType: persistedSubscriptionType }
     : identity;
