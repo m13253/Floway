@@ -52,12 +52,19 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://www.alibabacloud.com/help/en/model-studio/models
   ['qwen3.5:397b', { input: 0.6, output: 3.6 }],
 
-  // DeepSeek — DeepSeek operates its own inference, so the first-party rate
-  // is the floor for V3.2 and V4; V3.1 falls back to OpenRouter's dedicated
-  // frozen-snapshot SKU since DeepSeek's `deepseek-chat` alias has since
-  // rotated past it. https://api-docs.deepseek.com/quick_start/pricing
-  ['deepseek-v3.1:671b', { input: 0.21, input_cache_read: 0.13, output: 0.79 }],
-  ['deepseek-v3.2', { input: 0.23, output: 0.34 }],
+  // DeepSeek — DeepSeek operates its own inference cluster, so the first-
+  // party rate is the canonical anchor. V3.1 and V3.2 are no longer reachable
+  // on api.deepseek.com (the `deepseek-chat` alias has since rotated to V4),
+  // so their first-party prices come from Wayback snapshots of
+  // https://api-docs.deepseek.com/quick_start/pricing taken while each
+  // version was current; OpenRouter / DeepInfra mirror prices for V3.1/V3.2
+  // sit BELOW these rates because those hosts run the open weights themselves
+  // — they're not DeepSeek's API. For notional billing the floway dashboard
+  // should reflect the operator's "what would I pay on the model's own API"
+  // anchor, which is DeepSeek first-party.
+  // https://api-docs.deepseek.com/quick_start/pricing
+  ['deepseek-v3.1:671b', { input: 0.56, input_cache_read: 0.07, output: 1.68 }],
+  ['deepseek-v3.2', { input: 0.28, input_cache_read: 0.028, output: 0.42 }],
   ['deepseek-v4-pro', { input: 0.435, input_cache_read: 0.003625, output: 0.87 }],
   ['deepseek-v4-flash', { input: 0.14, input_cache_read: 0.0028, output: 0.28 }],
 
