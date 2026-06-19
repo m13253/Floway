@@ -2,7 +2,7 @@
 
 import CopilotDeviceFlow from './CopilotDeviceFlow.vue';
 import CopilotInfo from './CopilotInfo.vue';
-import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 
 type CopilotUpstreamRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
 
@@ -13,7 +13,7 @@ defineProps<{
   // Operator's current edit-form proxy_fallback_list. Forwarded into the
   // device-flow poll so the GitHub-side calls (poll, user lookup,
   // account-type detection) honor the in-progress chain.
-  proxyFallbackList: string[];
+  proxyFallbackList: ProxyFallbackEntry[];
 }>();
 
 defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();

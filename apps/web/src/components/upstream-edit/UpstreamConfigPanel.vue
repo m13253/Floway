@@ -11,7 +11,7 @@ import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { CopilotQuotaSnapshot, FlagDef, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, FlagDef, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { assertNever } from '../../utils/assert-never.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
@@ -22,7 +22,7 @@ const flagOverrides = defineModel<Record<string, boolean>>('flagOverrides', { re
 const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
-const proxyFallbackList = defineModel<string[]>('proxyFallbackList', { required: true });
+const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
 const props = defineProps<{
   mode: 'create' | 'edit';
@@ -41,6 +41,8 @@ const props = defineProps<{
   // when this is provided.
   modelsCache: UpstreamRecord['modelsCache'] | null;
   refreshing: boolean;
+  coloAware: boolean;
+  currentColo: string | null;
 }>();
 
 defineEmits<{
@@ -243,6 +245,8 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <ProxyFallbackListPanel
         v-model="proxyFallbackList"
         :upstream-id="record?.id ?? null"
+        :colo-aware="coloAware"
+        :current-colo="currentColo"
         class="shrink-0"
       />
 

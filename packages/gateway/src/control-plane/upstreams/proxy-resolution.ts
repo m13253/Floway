@@ -3,7 +3,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
 import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
 
 // One-shot fetcher resolution for control-plane operations that fire BEFORE
@@ -27,7 +27,7 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 // `createPerRequestFetcher`'s isolation policy: a single bad row must not
 // take down the call.
 export const resolveControlPlaneFetcher = async (opts: {
-  override?: readonly string[];
+  override?: readonly ProxyFallbackEntry[];
   upstreamId?: string;
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) {
@@ -39,9 +39,9 @@ export const resolveControlPlaneFetcher = async (opts: {
   return directFetcher;
 };
 
-const buildOverrideFetcher = async (rawList: readonly string[], upstreamId: string): Promise<Fetcher> => {
+const buildOverrideFetcher = async (rawList: readonly ProxyFallbackEntry[], upstreamId: string): Promise<Fetcher> => {
   const list = normalizeProxyFallbackList(rawList);
-  const referenced = new Set(list.filter(id => id !== DIRECT_PROXY_ID));
+  const referenced = new Set(list.filter(entry => entry.id !== DIRECT_PROXY_ID).map(entry => entry.id));
   if (referenced.size === 0) {
     return directFetcher;
   }
@@ -62,20 +62,21 @@ const buildOverrideFetcher = async (rawList: readonly string[], upstreamId: stri
     }
   }
 
-  const unknown = list.find(id => id !== DIRECT_PROXY_ID && !proxyById.has(id) && !parseErrors.has(id));
+  const unknown = list.find(entry => entry.id !== DIRECT_PROXY_ID && !proxyById.has(entry.id) && !parseErrors.has(entry.id));
   if (unknown !== undefined) {
-    throw new Error(`unknown proxy id in fallback list: ${unknown}`);
+    throw new Error(`unknown proxy id in fallback list: ${unknown.id}`);
   }
-  const bad = list.find(id => parseErrors.has(id));
+  const bad = list.find(entry => parseErrors.has(entry.id));
   if (bad !== undefined) {
-    const err = parseErrors.get(bad)!;
-    throw new Error(`malformed proxy ${bad}: ${err.message}`);
+    const err = parseErrors.get(bad.id)!;
+    throw new Error(`malformed proxy ${bad.id}: ${err.message}`);
   }
 
   return createFetcher({
     repo,
     upstreamId,
     fallbackList: list,
+    currentColo: null,
     proxyById,
     runProxied: runProxiedRequest,
     runDirect: directFetcher,
@@ -84,6 +85,6 @@ const buildOverrideFetcher = async (rawList: readonly string[], upstreamId: stri
 };
 
 const buildPersistedFetcher = async (upstreamId: string): Promise<Fetcher> => {
-  const fetcherFor = await createPerRequestFetcher();
+  const fetcherFor = await createPerRequestFetcher(null);
   return fetcherFor(upstreamId);
 };

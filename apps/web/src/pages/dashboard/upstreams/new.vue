@@ -5,11 +5,12 @@ import { useRoute } from 'vue-router';
 import type { UpstreamProviderKind } from '../../../api/types.ts';
 import UpstreamEditPage from '../../../components/upstream-edit/UpstreamEditPage.vue';
 import { useProxiesStore } from '../../../composables/useProxies.ts';
+import { useRuntimeInfo } from '../../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../../composables/useUpstreams.ts';
 
 export const useNewUpstreamData = defineBasicLoader(async () => {
   const store = useUpstreamsStore();
-  await Promise.all([store.load(), useProxiesStore().load()]);
+  await Promise.all([store.load(), useProxiesStore().load(), useRuntimeInfo().load()]);
   const list = store.upstreams.value;
   const flags = store.flagCatalog.value;
   if (!list || !flags) throw new Error(store.error.value ?? 'Upstreams store failed to populate after load()');

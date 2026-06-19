@@ -1197,14 +1197,14 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct'] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['p_fallback', 'direct']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'p_fallback' }, { id: 'direct' }]);
 });
 
 test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
@@ -1214,19 +1214,19 @@ test('POST /api/upstreams normalises proxy_fallback_list duplicates so the respo
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: ['p_fallback', 'direct', 'p_fallback', 'direct'] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }, { id: 'p_fallback' }, { id: 'direct' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
   // Without the API-layer normalize, the response would echo the duplicates
   // while the saved row only kept one of each — operators would see a
   // different list on POST vs the next GET.
-  assertEquals(created.proxy_fallback_list, ['p_fallback', 'direct']);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
 
   const get = await requestApp('/api/upstreams', authed(adminSession));
   const list = (await get.json()) as JsonObject[];
   const fresh = list.find(u => u.id === created.id);
-  assertEquals(fresh!.proxy_fallback_list, ['p_fallback', 'direct']);
+  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
 });
 
 test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
@@ -1235,17 +1235,17 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
   await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
-  const created = (await create.json()) as { id: string; proxy_fallback_list: string[] };
+  const created = (await create.json()) as { id: string; proxy_fallback_list: { id: string; colos?: string[] }[] };
   assertEquals(created.proxy_fallback_list, []);
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ proxy_fallback_list: ['p_fallback', 'direct'] }),
+    body: JSON.stringify({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] }),
   });
   assertEquals(patch.status, 200);
   const updated = (await patch.json()) as JsonObject;
-  assertEquals(updated.proxy_fallback_list, ['p_fallback', 'direct']);
+  assertEquals(updated.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
 });
 
 test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown proxy id', async () => {
@@ -1258,7 +1258,7 @@ test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown pr
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ proxy_fallback_list: ['nope'] }),
+    body: JSON.stringify({ proxy_fallback_list: [{ id: 'nope' }] }),
   });
   assertEquals(patch.status, 400);
   const body = (await patch.json()) as { error: string };
@@ -1270,7 +1270,7 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: ['p_a'] })));
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_a' }] })));
   const created = (await create.json()) as { id: string };
 
   await repo.proxyBackoffs.recordDialFailure('p_a', created.id, 'tcp refused');
@@ -1310,11 +1310,11 @@ test('POST /api/upstreams/:id/claude-code-refresh-now honors the proxy_fallback_
 
   // Persist a non-direct fallback list so a successful default-path refresh
   // would route through `p_real`. The override below should win.
-  await repo.upstreams.save({ ...(await repo.upstreams.getById(created.id))!, proxyFallbackList: ['p_real'] });
+  await repo.upstreams.save({ ...(await repo.upstreams.getById(created.id))!, proxyFallbackList: [{ id: 'p_real' }] });
 
   const resp = await requestApp(
     `/api/upstreams/${created.id}/claude-code-refresh-now`,
-    authed(adminSession, { proxy_fallback_list: ['p_unknown'] }),
+    authed(adminSession, { proxy_fallback_list: [{ id: 'p_unknown' }] }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
@@ -1329,7 +1329,7 @@ test('POST /api/upstreams/:id/codex-refresh-now honors the proxy_fallback_list o
 
   const resp = await requestApp(
     `/api/upstreams/${created.id}/codex-refresh-now`,
-    authed(adminSession, { proxy_fallback_list: ['p_unknown'] }),
+    authed(adminSession, { proxy_fallback_list: [{ id: 'p_unknown' }] }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
@@ -1382,7 +1382,7 @@ test('POST /api/upstreams/claude-code-import rejects an override referencing an 
     '/api/upstreams/claude-code-import',
     authed(adminSession, {
       credentials_json: claudeCodeCredentialsJson(),
-      proxy_fallback_list: ['p_unknown'],
+      proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );
   assertEquals(resp.status, 400);
@@ -1410,17 +1410,17 @@ test('POST /api/upstreams/claude-code-import persists the override on the new ro
           // 'direct' first → the override fetcher short-circuits to direct
           // and the mocked fetch above handles the identity call. 'p_real'
           // tails so persistence shows a non-trivial list.
-          proxy_fallback_list: ['direct', 'p_real'],
+          proxy_fallback_list: [{ id: 'direct' }, { id: 'p_real' }],
         }),
       );
       assertEquals(r.status, 201);
-      return (await r.json()) as { id: string; proxy_fallback_list: string[] };
+      return (await r.json()) as { id: string; proxy_fallback_list: { id: string }[] };
     },
   );
 
-  assertEquals(created.proxy_fallback_list, ['direct', 'p_real']);
+  assertEquals(created.proxy_fallback_list, [{ id: 'direct' }, { id: 'p_real' }]);
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_real']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_real' }]);
 });
 
 test('POST /api/upstreams/claude-code-import without an override persists an empty list', async () => {
@@ -1434,7 +1434,7 @@ test('POST /api/upstreams/claude-code-import without an override persists an emp
         '/api/upstreams/claude-code-import',
         authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
       );
-      return (await r.json()) as { id: string; proxy_fallback_list: string[] };
+      return (await r.json()) as { id: string; proxy_fallback_list: { id: string }[] };
     },
   );
 
@@ -1454,7 +1454,7 @@ test('POST /api/upstreams/:id/claude-code-reimport overwrites the persisted prox
         '/api/upstreams/claude-code-import',
         authed(adminSession, {
           credentials_json: claudeCodeCredentialsJson(),
-          proxy_fallback_list: ['direct', 'p_initial'],
+          proxy_fallback_list: [{ id: 'direct' }, { id: 'p_initial' }],
         }),
       );
       return (await r.json()) as { id: string };
@@ -1468,17 +1468,17 @@ test('POST /api/upstreams/:id/claude-code-reimport overwrites the persisted prox
         `/api/upstreams/${created.id}/claude-code-reimport`,
         authed(adminSession, {
           credentials_json: claudeCodeCredentialsJson(),
-          proxy_fallback_list: ['direct', 'p_new'],
+          proxy_fallback_list: [{ id: 'direct' }, { id: 'p_new' }],
         }),
       );
       assertEquals(r.status, 200);
-      return (await r.json()) as { proxy_fallback_list: string[] };
+      return (await r.json()) as { proxy_fallback_list: { id: string }[] };
     },
   );
 
-  assertEquals(reimported.proxy_fallback_list, ['direct', 'p_new']);
+  assertEquals(reimported.proxy_fallback_list, [{ id: 'direct' }, { id: 'p_new' }]);
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_new']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_new' }]);
 });
 
 test('POST /api/upstreams/:id/claude-code-reimport without an override leaves the persisted proxy_fallback_list untouched', async () => {
@@ -1493,7 +1493,7 @@ test('POST /api/upstreams/:id/claude-code-reimport without an override leaves th
         '/api/upstreams/claude-code-import',
         authed(adminSession, {
           credentials_json: claudeCodeCredentialsJson(),
-          proxy_fallback_list: ['direct', 'p_initial'],
+          proxy_fallback_list: [{ id: 'direct' }, { id: 'p_initial' }],
         }),
       );
       return (await r.json()) as { id: string };
@@ -1512,7 +1512,7 @@ test('POST /api/upstreams/:id/claude-code-reimport without an override leaves th
   );
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_initial']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_initial' }]);
 });
 
 test('POST /api/upstreams/codex-import rejects an override referencing an unknown proxy id', async () => {
@@ -1521,7 +1521,7 @@ test('POST /api/upstreams/codex-import rejects an override referencing an unknow
 
   const resp = await requestApp(
     '/api/upstreams/codex-import',
-    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['p_unknown'] }),
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: [{ id: 'p_unknown' }] }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
@@ -1535,14 +1535,14 @@ test('POST /api/upstreams/codex-import persists the override on the new row', as
 
   const resp = await requestApp(
     '/api/upstreams/codex-import',
-    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_real'] }),
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: [{ id: 'direct' }, { id: 'p_real' }] }),
   );
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as { id: string; proxy_fallback_list: string[] };
-  assertEquals(created.proxy_fallback_list, ['direct', 'p_real']);
+  const created = (await resp.json()) as { id: string; proxy_fallback_list: { id: string }[] };
+  assertEquals(created.proxy_fallback_list, [{ id: 'direct' }, { id: 'p_real' }]);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_real']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_real' }]);
 });
 
 test('POST /api/upstreams/codex-import without an override persists an empty list', async () => {
@@ -1551,7 +1551,7 @@ test('POST /api/upstreams/codex-import without an override persists an empty lis
 
   const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()));
   assertEquals(resp.status, 201);
-  const created = (await resp.json()) as { id: string; proxy_fallback_list: string[] };
+  const created = (await resp.json()) as { id: string; proxy_fallback_list: { id: string }[] };
   assertEquals(created.proxy_fallback_list, []);
 });
 
@@ -1563,20 +1563,20 @@ test('POST /api/upstreams/:id/codex-reimport overwrites the persisted proxy_fall
 
   const create = await requestApp(
     '/api/upstreams/codex-import',
-    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_initial'] }),
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: [{ id: 'direct' }, { id: 'p_initial' }] }),
   );
   const created = (await create.json()) as { id: string };
 
   const reimport = await requestApp(
     `/api/upstreams/${created.id}/codex-reimport`,
-    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_new'] }),
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: [{ id: 'direct' }, { id: 'p_new' }] }),
   );
   assertEquals(reimport.status, 200);
-  const reimported = (await reimport.json()) as { proxy_fallback_list: string[] };
-  assertEquals(reimported.proxy_fallback_list, ['direct', 'p_new']);
+  const reimported = (await reimport.json()) as { proxy_fallback_list: { id: string }[] };
+  assertEquals(reimported.proxy_fallback_list, [{ id: 'direct' }, { id: 'p_new' }]);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_new']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_new' }]);
 });
 
 test('POST /api/upstreams/:id/codex-reimport without an override leaves the persisted proxy_fallback_list untouched', async () => {
@@ -1586,7 +1586,7 @@ test('POST /api/upstreams/:id/codex-reimport without an override leaves the pers
 
   const create = await requestApp(
     '/api/upstreams/codex-import',
-    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_initial'] }),
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: [{ id: 'direct' }, { id: 'p_initial' }] }),
   );
   const created = (await create.json()) as { id: string };
 
@@ -1597,5 +1597,5 @@ test('POST /api/upstreams/:id/codex-reimport without an override leaves the pers
   assertEquals(reimport.status, 200);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, ['direct', 'p_initial']);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_initial' }]);
 });

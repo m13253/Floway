@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
@@ -26,6 +27,7 @@ export interface GatewayCtx {
   // undefined.
   readonly clientRequestHeaders?: Headers;
   readonly clientRequestPathname?: string;
+  readonly currentColo: string | null;
 }
 
 // Names the auth-middleware-stamped Hono variables this builder reads. Hono
@@ -64,5 +66,6 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     clientRequestHeaders: c.req.raw.headers,
     clientRequestPathname: url.pathname,
+    currentColo: getCurrentColo(c.req.raw),
   };
 };

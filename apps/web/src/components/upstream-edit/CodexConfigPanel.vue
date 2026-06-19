@@ -5,7 +5,7 @@ import type { CodexImportTab, CodexPkceStartResult } from './codex-import-types.
 import CodexAccountCard from './CodexAccountCard.vue';
 import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
-import type { UpstreamRecord } from '../../api/types.ts';
+import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
@@ -18,7 +18,7 @@ const props = defineProps<{
   // the operator is editing AND the chain is persisted on the new row)
   // and into refresh-now (so a refresh fired before saving uses the
   // in-progress chain rather than the persisted one).
-  proxyFallbackList: string[];
+  proxyFallbackList: ProxyFallbackEntry[];
 }>();
 
 const emit = defineEmits<{

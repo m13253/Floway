@@ -277,6 +277,7 @@ const makeRespondCtx = (): GatewayCtx => ({
   runtimeLocation: 'test',
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  currentColo: null,
 });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [

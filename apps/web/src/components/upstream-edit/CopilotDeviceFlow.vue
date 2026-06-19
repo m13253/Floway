@@ -2,14 +2,14 @@
 import { onUnmounted, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { DeviceFlowPoll, DeviceFlowStart, UpstreamRecord } from '../../api/types.ts';
+import type { DeviceFlowPoll, DeviceFlowStart, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { Button, Code, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
   // Operator's current edit-form proxy_fallback_list. Forwarded into the
   // poll body so the GitHub-side egress respects the chain the operator is
   // configuring rather than direct.
-  proxyFallbackList: string[];
+  proxyFallbackList: ProxyFallbackEntry[];
 }>();
 
 const emit = defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();

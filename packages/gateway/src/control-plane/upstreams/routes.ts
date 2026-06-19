@@ -6,7 +6,7 @@ import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
@@ -15,7 +15,7 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog, type Fetcher, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog, type Fetcher, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
   type ClaudeCodeAccountCredential,
@@ -142,18 +142,18 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher())(record.id);
+  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch { /* discarded — see above */ }
 };
 
-// 'direct' is always valid; any other entry must reference an existing
-// proxy row. List order matters at dial time (see createFetcher),
+// 'direct' is always a valid entry id; any other id must reference an
+// existing proxy row. List order matters at dial time (see createFetcher),
 // and persistence layers dedupe via normalizeProxyFallbackList before
 // storing.
-const validateProxyFallbackList = async (list: readonly string[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = list.filter(id => id !== DIRECT_PROXY_ID);
+const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
+  const ids = entries.map(e => e.id).filter(id => id !== DIRECT_PROXY_ID);
   if (ids.length === 0) return { ok: true };
   const proxies = await getRepo().proxies.list();
   const known = new Set(proxies.map(p => p.id));
@@ -358,7 +358,7 @@ export const listUpstreamModels = async (c: Context) => {
 
   const refresh = c.req.query('refresh') === 'true';
   const scheduler = backgroundSchedulerFromContext(c);
-  const fetcher = (await createPerRequestFetcher())(record.id);
+  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
 
   try {
     const instance = await createProviderInstance(record);
