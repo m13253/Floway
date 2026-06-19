@@ -1,14 +1,16 @@
+import { ensureClaudeCodeAccessToken } from './access-token-cache.ts';
 import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
-import { buildClaudeCodeModels, claudeCodeResolveRequestedModelId } from './models.ts';
+import { buildClaudeCodeCatalog, claudeCodeResolveRequestedModelId, fetchClaudeCodeModelsList } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
   defaultsForProvider,
+  getProviderRepo,
   resolveEffectiveFlags,
   type ModelProvider,
   type ModelProviderInstance,
@@ -24,10 +26,23 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
   assertClaudeCodeUpstreamState(record.state);
 
   const enabledFlags = resolveEffectiveFlags(defaultsForProvider('claude-code'), [record.flagOverrides]);
-  const models = buildClaudeCodeModels(enabledFlags);
 
   const provider: ModelProvider = {
-    getProvidedModels: async () => models,
+    // Catalog refresh mints an access token and hits /v1/models on every
+    // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
+    // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`
+    // when the refresh_token has died; we rethrow so the catalog cache
+    // records the failure and surfaces it on the dashboard exactly as
+    // codex does.
+    getProvidedModels: async fetcher => {
+      const access = await ensureClaudeCodeAccessToken({
+        upstreamId: record.id,
+        repo: getProviderRepo().upstreams,
+        fetcher,
+      });
+      const apiModels = await fetchClaudeCodeModelsList(access.entry.token, fetcher);
+      return buildClaudeCodeCatalog(apiModels, enabledFlags);
+    },
 
     getPricingForModelKey: pricingForClaudeCodeModelKey,
 

@@ -54,14 +54,28 @@ const BASE_HEADERS = {
 } as const;
 
 // `anthropic-beta` flag set carried by Sonnet/Opus Claude Code requests at
-// v2.1.181. Order matches sub2api's curated set
-// (`backend/internal/service/constants.go` `FullClaudeCodeMimicryBetas`),
-// which itself was derived from captured real-CC traffic. The audit
-// previously included `fine-grained-tool-streaming-2025-05-14` here;
-// sub2api dropped it as one of several tokens that, when present on the
-// OAuth-mimicry path, contributed to detector keying on "extra token =
-// likely not real CC". Order matters: leading with `claude-code-20250219`
-// matches the wire fixtures.
+// v2.1.181, byte-for-byte aligned with a fresh capture of the live CLI on
+// 2026-06-19. Sub2api's curated set
+// (`backend/internal/service/constants.go` `FullClaudeCodeMimicryBetas`)
+// snapshotted v2.1.161 and predates `mid-conversation-system-2026-04-07`;
+// we ship the post-2.1.161 release window verbatim instead. Order matters:
+// leading with `claude-code-20250219` matches the wire fixtures.
+//
+// `mid-conversation-system-2026-04-07` is a capability flag — it tells
+// the upstream the client can place `{role: "system", content: ...}`
+// blocks anywhere in the conversation. It does nothing on its own;
+// only a payload that actually uses a mid-conversation system block
+// could trip a 400 on a model that doesn't support it, so blanket-
+// sending it to every Sonnet/Opus call is safe and matches the CLI.
+//
+// Two tokens from v2.1.181's beta set are intentionally NOT shipped:
+//   * `redact-thinking-2026-02-12` — instructs the upstream to strip
+//     thinking content from the response, which fights the gateway's
+//     pass-through goal. Sub2api omits with the same rationale at
+//     `claude/constants.go:78`.
+//   * `summarize-connector-text-2026-03-13` — only fires under MCP
+//     connector use, which our gateway does not manage. Sending it
+//     without a connector wired up just adds detector keying surface.
 const ANTHROPIC_BETA_SONNET_OPUS = [
   'claude-code-20250219',
   'oauth-2025-04-20',
@@ -70,6 +84,7 @@ const ANTHROPIC_BETA_SONNET_OPUS = [
   'effort-2025-11-24',
   'context-management-2025-06-27',
   'extended-cache-ttl-2025-04-11',
+  'mid-conversation-system-2026-04-07',
 ].join(',');
 
 // Haiku ships a leaner beta set — Anthropic's detector for Haiku is looser

@@ -1,81 +1,108 @@
-// Anthropic exposes only the three model lines below to subscription clients;
-// there is no `/v1/models` equivalent CC clients consult, so we ship the list
-// inline rather than fetching it. The catalog stays small on purpose — the
-// operator's upstream-model toggles operate on the public alias ids below.
+// The Claude Code OAuth bearer accepts the standard Anthropic /v1/models
+// endpoint. We refresh the catalog from there on every dispatcher poll so
+// the gateway surfaces exactly the models Anthropic exposes to the
+// subscription's tier — sonnet / opus 4.5, opus 4.6+, fable-5, etc. —
+// without a per-release code bump.
 //
-// `id` is Anthropic's public alias (`claude-sonnet-4-5`); the dated revision
-// the CC subscription currently maps the alias to lives under `providerData
-// .upstreamModelId`. The gateway dispatch sees the alias as the catalog id and
-// rewrites a dated-id request back to the alias via
-// `resolveRequestedModelId`; the upstream fetch in `fetch.ts` reads
-// `providerData.upstreamModelId` so Anthropic always sees a dated id and
-// per-revision rate-limit / pricing routing stays accurate.
-//
-// Context window: Anthropic publishes 200k tokens for all current models
-// (https://docs.claude.com/en/docs/about-claude/models/overview); we ship
-// 1_000_000 for Sonnet to match the `context-1m` beta. Operators who run
-// without that beta still get the 200k window enforced upstream-side.
+// Two id shapes coexist on the wire today. Pre-4.6 models (4.5 / 4.1)
+// return with a `-YYYYMMDD` date suffix; their public alias is the
+// de-dated form (`claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`).
+// 4.6+ and `claude-fable-5` return with the alias already (no date),
+// so the alias derivation is the identity. The catalog id we publish is
+// always the alias; the original /v1/models id rides on
+// `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
+// pricing table key by the per-revision id.
 
+import { pickClaudeCodeHeaders } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
-import type { UpstreamModel } from '@floway-dev/provider';
+import type { Fetcher, UpstreamModel } from '@floway-dev/provider';
 
-interface ModelTemplate {
-  alias: string;
-  upstreamModelId: string;
+const ANTHROPIC_MODELS_ENDPOINT = 'https://api.anthropic.com/v1/models?limit=100';
+
+// `/v1/models` returns more fields than we consume; the parser keeps the
+// ones the catalog needs and ignores the rest so a benign upstream
+// addition does not fail the refresh. Unknown shapes still throw because
+// dropping a required field is the kind of contract change we want to
+// notice loudly.
+export interface ClaudeCodeApiModel {
+  id: string;
   display_name: string;
-  contextWindow: number;
+  max_input_tokens: number;
 }
 
-const TEMPLATES: readonly ModelTemplate[] = [
-  { alias: 'claude-sonnet-4-5', upstreamModelId: 'claude-sonnet-4-5-20250929', display_name: 'Claude Sonnet 4.5', contextWindow: 1_000_000 },
-  { alias: 'claude-opus-4-5', upstreamModelId: 'claude-opus-4-5-20251101', display_name: 'Claude Opus 4.5', contextWindow: 200_000 },
-  { alias: 'claude-haiku-4-5', upstreamModelId: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', contextWindow: 200_000 },
-];
+export const fetchClaudeCodeModelsList = async (
+  accessToken: string,
+  fetcher: Fetcher,
+): Promise<ClaudeCodeApiModel[]> => {
+  // The mimicry surface is GET-only here; `pickClaudeCodeHeaders` picks the
+  // Sonnet/Opus profile for any non-haiku id, which is the right shape for
+  // a non-model-specific catalog call.
+  const headers: Record<string, string> = {
+    ...pickClaudeCodeHeaders('claude-sonnet-placeholder'),
+    authorization: `Bearer ${accessToken}`,
+  };
+  const response = await fetcher(ANTHROPIC_MODELS_ENDPOINT, { method: 'GET', headers });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Claude Code /v1/models fetch failed: ${response.status} ${body.slice(0, 200)}`);
+  }
+  const parsed = await response.json() as { data?: unknown };
+  if (!Array.isArray(parsed.data)) throw new Error('Claude Code /v1/models response missing data array');
+  return parsed.data.map(assertApiModel);
+};
 
-const buildModel = (template: ModelTemplate, enabledFlags: ReadonlySet<string>): UpstreamModel => {
-  const cost = pricingForClaudeCodeModelKey(template.upstreamModelId);
-  const providerData: ClaudeCodeProviderData = { upstreamModelId: template.upstreamModelId };
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
+  if (!isPlainRecord(value)) throw new TypeError('Claude Code /v1/models entry is not an object');
+  const { id, display_name, max_input_tokens } = value;
+  if (typeof id !== 'string') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
+  if (typeof display_name !== 'string') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
+  if (typeof max_input_tokens !== 'number') throw new TypeError(`Claude Code /v1/models entry ${id} missing max_input_tokens`);
+  return { id, display_name, max_input_tokens };
+};
+
+// Pre-4.6 models return as `claude-<family>-<digits>-<digits>-YYYYMMDD`;
+// the public alias is the de-dated form. Newer ids (`claude-opus-4-7`,
+// `claude-fable-5`) have no date suffix and pass through unchanged. The
+// pattern is intentionally generic over the family slug — anchoring to
+// `claude-(haiku|opus|sonnet)` would silently drop a future family the
+// upstream exposes before we hard-code its name.
+const DATE_SUFFIX_RE = /-\d{8}$/;
+
+export const aliasFromApiId = (apiId: string): string => apiId.replace(DATE_SUFFIX_RE, '');
+
+export const buildClaudeCodeCatalog = (
+  apiModels: readonly ClaudeCodeApiModel[],
+  enabledFlags: ReadonlySet<string>,
+): UpstreamModel[] => apiModels.map(api => {
+  const alias = aliasFromApiId(api.id);
+  const cost = pricingForClaudeCodeModelKey(api.id);
+  const providerData: ClaudeCodeProviderData = { upstreamModelId: api.id };
   return {
-    id: template.alias,
-    display_name: template.display_name,
+    id: alias,
+    display_name: api.display_name,
     owned_by: 'anthropic',
     kind: 'chat',
     endpoints: { messages: {} },
     enabledFlags,
-    limits: { max_context_window_tokens: template.contextWindow },
+    limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,
     ...(cost ? { cost } : {}),
   };
-};
+});
 
-export const buildClaudeCodeModels = (enabledFlags: ReadonlySet<string>): UpstreamModel[] =>
-  TEMPLATES.map(template => buildModel(template, enabledFlags));
-
-// Dated-id → alias map derived from the catalog at module load. The dispatch
-// hook needs both directions (request-side: dated → alias; wire-side:
-// alias → dated) and the latter lives on the model's providerData. Keeping
-// the request-side map here avoids re-parsing every dated id at lookup time.
-const ALIAS_BY_UPSTREAM_ID: ReadonlyMap<string, string> = new Map(
-  TEMPLATES.map(template => [template.upstreamModelId, template.alias]),
-);
-
-const ALIASES: ReadonlySet<string> = new Set(TEMPLATES.map(template => template.alias));
-
-// Pattern: claude-(haiku|opus|sonnet)-<digit>-<digit>-<YYYYMMDD>. Restricted to
-// the families we ship so a future model line does not silently resolve to a
-// missing alias before its catalog entry lands.
-const DATED_MODEL_RE = /^claude-(?:haiku|opus|sonnet)-\d+-\d+-\d{8}$/;
-
-// Hook for `ModelProviderInstance.resolveRequestedModelId`: when a client
-// addresses one of our models by its dated id (`claude-sonnet-4-5-20250929`),
-// resolve it to the catalog alias (`claude-sonnet-4-5`). The upstream id the
-// dated request would have hit is the same one this alias resolves to via
-// `providerData.upstreamModelId`, so the wire call stays unchanged.
+// Hook for `ModelProviderInstance.resolveRequestedModelId`: a client that
+// addresses a model by its dated upstream id resolves to the catalog alias
+// the dispatcher actually carries. The catalog publishes only aliases, so
+// any id that already lacks a date suffix needs no remap; any non-Claude
+// id is rejected defensively so a stray `gpt-4` request never gets a
+// silent rewrite. We don't validate against the live catalog here — the
+// dispatcher's own model-id lookup is what fails a request that names a
+// model the upstream doesn't expose.
 export const claudeCodeResolveRequestedModelId = (modelId: string): string | undefined => {
-  // Already an alias, or unknown id family — nothing to resolve.
-  if (ALIASES.has(modelId)) return undefined;
-  if (!DATED_MODEL_RE.test(modelId)) return undefined;
-  const alias = ALIAS_BY_UPSTREAM_ID.get(modelId);
-  return alias;
+  if (!modelId.startsWith('claude-')) return undefined;
+  const alias = aliasFromApiId(modelId);
+  return alias === modelId ? undefined : alias;
 };

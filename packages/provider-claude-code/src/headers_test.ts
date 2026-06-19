@@ -33,11 +33,11 @@ describe('CLAUDE_CODE_HEADERS_SONNET_OPUS', () => {
     });
   });
 
-  test('anthropic-beta carries the 7-token curated Sonnet/Opus set', () => {
+  test('anthropic-beta carries the 8-token curated Sonnet/Opus set', () => {
     const beta = CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta'];
     expect(beta).toBeDefined();
     const tokens = beta!.split(',');
-    expect(tokens).toHaveLength(7);
+    expect(tokens).toHaveLength(8);
     expect(tokens).toEqual([
       'claude-code-20250219',
       'oauth-2025-04-20',
@@ -46,6 +46,7 @@ describe('CLAUDE_CODE_HEADERS_SONNET_OPUS', () => {
       'effort-2025-11-24',
       'context-management-2025-06-27',
       'extended-cache-ttl-2025-04-11',
+      'mid-conversation-system-2026-04-07',
     ]);
   });
 });
