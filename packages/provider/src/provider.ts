@@ -45,8 +45,14 @@ export interface ProviderCallResult {
 // boundary can relay status + body unchanged. Non-2xx-but-not-SSE responses
 // throw from the provider as a contract violation (provider always forces
 // stream=true on streaming endpoints).
+//
+// `responseHeaders` carries the upstream HTTP response headers so the
+// gateway boundary can forward billing/rate-limit hints to the downstream
+// client (e.g. `anthropic-ratelimit-*`). Optional because boundary chains
+// that rebuild a stream from inner work (Copilot's lower-to-stream path)
+// don't always have a raw upstream Response to read from.
 export type ProviderStreamResult<TEvent> =
-  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string }
+  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; responseHeaders?: Headers }
   | { ok: false; response: Response; modelKey: string };
 
 // `/responses/compact` is non-streaming — the upstream returns a single
@@ -83,6 +89,13 @@ export type ProviderCompactionResult =
 // incoming request shape — for instance, to decide whether a payload
 // already matches its native client's wire shape and can pass through
 // unmodified — reads from these fields.
+//
+// `waitUntil` registers a fire-and-forget promise that must outlive the
+// response. In Cloudflare Workers it maps to `ExecutionContext.waitUntil`
+// so workerd does not terminate the isolate the moment the response is
+// returned; in Node and tests it is a no-op because the process keeps
+// running anyway. Providers use it for post-response persistence (quota
+// snapshots, token refreshes) the caller has already stopped waiting on.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
@@ -95,6 +108,7 @@ export interface UpstreamCallOptions {
    */
   clientRequestHeaders?: Headers | Record<string, string>;
   clientRequestPathname?: string;
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export interface ModelProvider {

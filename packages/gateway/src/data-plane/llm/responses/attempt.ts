@@ -97,6 +97,7 @@ export const responsesAttempt = {
       chainResult.modelIdentity,
       chainResult.performance,
       chainResult.finalMetadata,
+      chainResult.responseHeaders,
     );
   },
 

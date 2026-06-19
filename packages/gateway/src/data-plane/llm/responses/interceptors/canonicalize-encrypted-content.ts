@@ -53,5 +53,5 @@ export const withReasoningEncryptedContentCanonicalized: ResponsesInterceptor = 
   const result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> = await run();
   if (result.type !== 'events') return result;
 
-  return eventResult(canonicalizeEncryptedContent(result.events), result.modelIdentity, result.performance, result.finalMetadata);
+  return eventResult(canonicalizeEncryptedContent(result.events), result.modelIdentity, result.performance, result.finalMetadata, result.responseHeaders);
 };

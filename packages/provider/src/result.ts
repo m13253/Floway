@@ -7,6 +7,12 @@ export interface EventResult<T> {
   modelIdentity: TelemetryModelIdentity;
   performance?: PerformanceTelemetryContext;
   finalMetadata?: Promise<EventResultMetadata>;
+  // Upstream HTTP response headers, propagated from the provider's
+  // `ProviderStreamResult` so the source-side `respond` layer can forward
+  // billing/rate-limit hints (e.g. `anthropic-ratelimit-*`) to the
+  // downstream client. Absent on lifted/synthesized streams that have no
+  // raw upstream Response.
+  responseHeaders?: Headers;
 }
 
 export interface EventResultMetadata {
@@ -48,10 +54,12 @@ export const eventResult = <T>(
   modelIdentity: TelemetryModelIdentity,
   performance?: PerformanceTelemetryContext,
   finalMetadata?: Promise<EventResultMetadata>,
+  responseHeaders?: Headers,
 ): EventResult<T> => {
   const result: EventResult<T> = { type: 'events', events, modelIdentity };
   if (performance !== undefined) result.performance = performance;
   if (finalMetadata !== undefined) result.finalMetadata = finalMetadata;
+  if (responseHeaders !== undefined) result.responseHeaders = responseHeaders;
   return result;
 };
 
