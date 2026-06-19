@@ -41,8 +41,9 @@ export interface DumpRequest {
   // the API key is already in our database; the dump exposes no secret the
   // operator does not already control.
   headers: Array<[string, string]>;
-  body: string;             // utf-8 text; base64 with ';base64' suffix on the
-                            // recorded content-type when non-textual.
+  // utf-8 text; base64 with ';base64' suffix on the recorded content-type
+  // when non-textual.
+  body: string;
 }
 
 export interface DumpResponse {
