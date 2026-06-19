@@ -82,8 +82,9 @@ test('pricingForOllamaModelKey matches regex-keyed families', () => {
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {
-  // Ollama-exclusive distillation — deliberately omitted from the table.
-  assertEquals(pricingForOllamaModelKey('rnj-1:8b'), null);
+  // Mistral Labs free tier — deliberately omitted; no commercial per-token
+  // rate published.
+  assertEquals(pricingForOllamaModelKey('devstral-small-2:24b'), null);
   // Version that does not map to any upstream release.
   assertEquals(pricingForOllamaModelKey('qwen3.5'), null);
   // Gemma — Vertex sells per-token only for gemma-4-26b-a4b-it (not on
