@@ -41,6 +41,7 @@ const editTarget = ref<ApiKey | undefined>();
 const editOpen = ref(false);
 const selectedKeyId = ref<string>('');
 const copied = ref<string | null>(null);
+const copyFailed = ref<string | null>(null);
 
 const loadAll = async () => {
   error.value = null;
@@ -100,7 +101,11 @@ const copyToClipboard = async (text: string, tag: string) => {
     await navigator.clipboard.writeText(text);
     copied.value = tag;
     window.setTimeout(() => { if (copied.value === tag) copied.value = null; }, 1500);
-  } catch { /* */ }
+  } catch (err) {
+    console.error('[clipboard]', err);
+    copyFailed.value = tag;
+    window.setTimeout(() => { if (copyFailed.value === tag) copyFailed.value = null; }, 2000);
+  }
 };
 
 const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));
@@ -143,6 +148,7 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
         :upstreams="upstreamOptions"
         :selected-id="selectedKeyId"
         :copied="copied"
+        :copy-failed="copyFailed"
         @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
