@@ -181,6 +181,11 @@ export interface ClaudeCodeQuotaSnapshotEntry {
 
 export interface ClaudeCodeAccountCredentialSummary {
   accountUuid: string;
+  // `oauth` is the full Claude Code sign-in (rotating refresh token).
+  // `setup-token` is the inference-only long-lived bearer (no refresh).
+  // Old serializations may omit this field; dashboards should default to
+  // `'oauth'` when interpreting legacy responses.
+  tokenKind?: 'oauth' | 'setup-token';
   state: 'active' | 'session_terminated' | 'refresh_failed';
   stateMessage?: string;
   stateUpdatedAt: string;

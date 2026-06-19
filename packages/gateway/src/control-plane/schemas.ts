@@ -395,6 +395,35 @@ export const claudeCodeRefreshNowBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
+// --- claude-code Setup-Token import / re-import ---
+//
+// The Setup-Token PKCE flow uses the same authorize host / client_id /
+// redirect_uri / token endpoint as the regular OAuth flow but narrows the
+// scope to `user:inference` — see provider-claude-code constants. The
+// resulting credential has no refresh_token, so the import body has no
+// credentials_json path (Anthropic's CLI never persists a setup token).
+const claudeCodeSetupTokenCallbackFields = {
+  callback: z.object({
+    code: z.string().min(1).optional(),
+    state: z.string().min(1).optional(),
+    callback_url: z.string().min(1).optional(),
+  }),
+};
+
+export const claudeCodeSetupTokenImportBody = z.object({
+  name: z.string().min(1).optional(),
+  sort_order: z.number().int().optional(),
+  ...claudeCodeSetupTokenCallbackFields,
+  // Same proxy-bootstrap rationale as claudeCodeImportBody.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
+export const claudeCodeSetupTokenReimportBody = z.object({
+  name: z.string().min(1).optional(),
+  ...claudeCodeSetupTokenCallbackFields,
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
 // --- proxies ---
 //
 // Proxy URLs accept the URI schemes parsed by `parseProxyUri` in

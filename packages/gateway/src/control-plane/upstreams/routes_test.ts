@@ -1599,3 +1599,175 @@ test('POST /api/upstreams/:id/codex-reimport without an override leaves the pers
   const stored = await repo.upstreams.getById(created.id);
   assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_initial' }]);
 });
+
+// --- claude-code Setup-Token routes ---
+
+const claudeCodeSetupTokenBody = (overrides: Record<string, unknown> = {}) => ({
+  access_token: 'st_long_lived',
+  token_type: 'Bearer',
+  expires_in: 31536000,
+  scope: 'user:inference',
+  ...overrides,
+});
+
+const claudeCodePermissionError403 = () => jsonResponse(
+  { error: { type: 'permission_error', message: 'token lacks user:profile scope' } },
+  403,
+);
+
+test('POST /api/upstreams/claude-code-setup-token-pkce-start narrows the authorize URL scope to user:inference', async () => {
+  const { repo, adminSession } = await setupAppTest();
+
+  const resp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
+  assertEquals(typeof body.state, 'string');
+  assertEquals(body.expires_in_seconds, 300);
+  const url = new URL(body.authorize_url);
+  assertEquals(url.origin + url.pathname, 'https://claude.ai/oauth/authorize');
+  assertEquals(url.searchParams.get('scope'), 'user:inference');
+
+  // The pending row is interchangeable between flows — only the URL scope is
+  // flow-specific.
+  const stashed = await repo.claudeCodePkcePending.consume(body.state);
+  assertEquals(stashed !== null, true);
+});
+
+test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a setup-token credential and persists tokenKind', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const startResp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') {
+        // Verify the exchange body asks for the long-lived bearer.
+        const body = JSON.parse(await request.text()) as Record<string, unknown>;
+        assertEquals(body.expires_in, 31536000);
+        return jsonResponse(claudeCodeSetupTokenBody());
+      }
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') {
+        // Setup-token bearer lacks user:profile; the import path falls back
+        // to a degraded identity rather than refusing the import.
+        return claudeCodePermissionError403();
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-setup-token-import',
+        authed(adminSession, { callback: { code: 'AUTH_CODE', state } }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as {
+        id: string; provider: string;
+        config: { accounts: Array<{ email: string | null; accountUuid: string }> };
+        state: { accounts: Array<{ tokenKind: string; refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> };
+      };
+      assertEquals(created.provider, 'claude-code');
+      assertEquals(created.state.accounts[0].tokenKind, 'setup-token');
+      // No refresh token on the wire view — the serializer surfaces presence
+      // as `refreshTokenSet`. For setup-token it's always false.
+      assertEquals(created.state.accounts[0].refreshTokenSet, false);
+      // Degraded identity: deterministic UUID + null email.
+      assertEquals(created.config.accounts[0].email, null);
+      // Long-lived expiry — at least 360 days out.
+      const expiresAt = created.state.accounts[0].accessToken?.expiresAt ?? 0;
+      assertEquals(expiresAt > Date.now() + 360 * 24 * 60 * 60 * 1000, true);
+    },
+  );
+
+  // Single-use semantics: the same state cannot be replayed.
+  const replay = await repo.claudeCodePkcePending.consume(state);
+  assertEquals(replay, null);
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now rejects setup-token credentials', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const startResp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  let upstreamId = '';
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeSetupTokenBody());
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return claudeCodePermissionError403();
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-setup-token-import',
+        authed(adminSession, { callback: { code: 'AUTH_CODE', state } }),
+      );
+      if (resp.status !== 201) {
+        const body = await resp.text();
+        throw new Error(`Setup-token import failed: ${resp.status} ${body}`);
+      }
+      const created = (await resp.json()) as { id: string };
+      upstreamId = created.id;
+    },
+  );
+
+  const refresh = await requestApp(
+    `/api/upstreams/${upstreamId}/claude-code-refresh-now`,
+    authed(adminSession, {}),
+  );
+  assertEquals(refresh.status, 400);
+  const body = (await refresh.json()) as { error: string };
+  assertEquals(body.error.includes('Setup-token'), true);
+});
+
+test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credentials in place', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Start: import setup-token.
+  const start1 = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  const { state: state1 } = (await start1.json()) as { state: string };
+
+  let upstreamId = '';
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeSetupTokenBody({ access_token: 'st_v1' }));
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return claudeCodePermissionError403();
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/claude-code-setup-token-import',
+        authed(adminSession, { callback: { code: 'AUTH_CODE_1', state: state1 } }),
+      );
+      assertEquals(resp.status, 201);
+      const created = (await resp.json()) as { id: string };
+      upstreamId = created.id;
+    },
+  );
+
+  // Re-import with a fresh setup token.
+  const start2 = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  const { state: state2 } = (await start2.json()) as { state: string };
+
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeSetupTokenBody({ access_token: 'st_v2' }));
+      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return claudeCodePermissionError403();
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        `/api/upstreams/${upstreamId}/claude-code-setup-token-reimport`,
+        authed(adminSession, { callback: { code: 'AUTH_CODE_2', state: state2 } }),
+      );
+      assertEquals(resp.status, 200);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(upstreamId);
+  const storedState = stored?.state as { accounts: Array<{ tokenKind: string; accessToken: { token: string } | null }> };
+  assertEquals(storedState.accounts[0].tokenKind, 'setup-token');
+  assertEquals(storedState.accounts[0].accessToken?.token, 'st_v2');
+});

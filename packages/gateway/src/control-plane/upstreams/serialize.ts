@@ -139,6 +139,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
     return {
       accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
         ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+        ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
         ...(a.state !== undefined ? { state: clone(a.state) } : {}),
         ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
         stateUpdatedAt: clone(a.stateUpdatedAt),
