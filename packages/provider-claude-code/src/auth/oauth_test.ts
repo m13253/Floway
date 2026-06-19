@@ -50,12 +50,16 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     });
   });
 
-  test('throws session-terminated on invalid_grant', async () => {
+  test('invalid_grant on exchange is NOT terminal (recoverable stale-paste; PKCE restart)', async () => {
+    // Per RFC 6749, `invalid_grant` on the authorization_code grant means the
+    // code is expired / wrong / replayed. There is no session yet to
+    // "terminate" — the operator just restarts PKCE. Mirrors codex's split.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       errorResponse(400, { error: 'invalid_grant', error_description: 'Authorization code expired' }),
     );
-    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER' }))
-      .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+    const promise = exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER' });
+    await expect(promise).rejects.not.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+    await expect(promise).rejects.toThrow(/400/);
   });
 
   test('throws session-terminated on app_session_terminated', async () => {

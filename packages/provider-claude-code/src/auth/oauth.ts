@@ -33,11 +33,16 @@ export class ClaudeCodeOAuthSessionTerminatedError extends Error {
   }
 }
 
-// Both the PKCE exchange and the refresh-token mint treat these codes as
-// terminal: `app_session_terminated` is the explicit revoke signal,
-// `invalid_grant` is what real Claude Code's OAuth returns on a stale code
-// or burned refresh token (recoverable only by restarting the PKCE flow).
-const CLAUDE_CODE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
+// Terminal-code sets are split by grant type, mirroring codex
+// (provider-codex/src/auth/oauth.ts:100-104, :117-123). `invalid_grant` on a
+// refresh means the refresh_token is revoked/replayed (recoverable only by
+// re-import) and so is terminal. `invalid_grant` on the PKCE exchange means
+// the operator pasted a stale or wrong callback URL — recoverable by
+// restarting the PKCE flow, not by re-importing — so it is not terminal here.
+const EXCHANGE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
+  'app_session_terminated',
+]);
+const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
   'app_session_terminated',
   'invalid_grant',
 ]);
@@ -119,7 +124,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   };
-  return await claudeCodeTokenRequest(body, CLAUDE_CODE_TERMINAL_OAUTH_CODES, directFetcher);
+  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, directFetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream
@@ -134,7 +139,7 @@ export const refreshClaudeCodeAccessToken = async (
     refresh_token: refreshToken,
     client_id: CLAUDE_CODE_CLIENT_ID,
   };
-  return await claudeCodeTokenRequest(body, CLAUDE_CODE_TERMINAL_OAUTH_CODES, fetcher);
+  return await claudeCodeTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
 };
 
 // The literal `code=true` query param matches what the real Claude Code CLI
