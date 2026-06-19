@@ -175,6 +175,107 @@ const persistQuotaFromHeadersFireAndForget = (
   waitUntil?.(persist);
 };
 
+// Credential-class terminal sentinels on the data-plane response body. Both
+// signal a permanently disabled org that no retry, refresh, or re-import
+// can recover — the operator must contact Anthropic. Matching the
+// lowercased `error.message` substring mirrors sub2api
+// `ratelimit_service.go:208-214` (400 path) and CRS
+// `claudeRelayService.js:140-153` (`_isOrganizationDisabledError`, both
+// 400 and 403). We match on "organization has been disabled" rather than
+// CRS's slightly longer "this organization has been disabled" so a body
+// that omits the leading "this" still matches (sub2api uses the shorter
+// form too).
+const ORG_DISABLED_400_SENTINEL = 'organization has been disabled';
+const ORG_BANNED_403_SENTINEL = 'oauth authentication is currently not allowed';
+
+interface AnthropicErrorBody {
+  error?: { type?: unknown; message?: unknown };
+}
+
+// Returns the operator-facing terminal message when the response matches
+// one of the credential-class sentinels, or `null` otherwise. The body
+// parse is intentionally defensive: a 400/403 that isn't JSON (or whose
+// JSON shape doesn't match `{error:{type,message}}`) is the common case
+// for unrelated errors (`max_tokens` validation, beta-feature gating,
+// etc.) and must NOT trigger a terminal flip.
+const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
+  if (status !== 400 && status !== 403) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const error = (parsed as AnthropicErrorBody).error;
+  if (typeof error !== 'object' || error === null) return null;
+  const type = error.type;
+  const message = error.message;
+  if (typeof type !== 'string' || typeof message !== 'string') return null;
+  const lowered = message.toLowerCase();
+  if (status === 400 && type === 'invalid_request_error' && lowered.includes(ORG_DISABLED_400_SENTINEL)) {
+    return `Organization disabled by Anthropic — re-import will not recover; contact support: ${message}`;
+  }
+  if (status === 403 && type === 'permission_error' && lowered.includes(ORG_BANNED_403_SENTINEL)) {
+    return `Organization banned from OAuth by Anthropic — re-import will not recover; contact support: ${message}`;
+  }
+  return null;
+};
+
+const persistTerminalAccountState = async (upstreamId: string, terminalMessage: string): Promise<void> => {
+  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
+  if (!fresh) return;
+  const state = readClaudeCodeUpstreamState(fresh.state);
+  // Already terminal — a sibling write (e.g. an OAuth refresh death) won;
+  // skip overwriting the prior message so the dashboard keeps the first
+  // signal.
+  if (state.accounts[0].state !== 'active') return;
+  const flipped = replaceStateAccount(state, account => ({
+    ...account,
+    state: 'refresh_failed',
+    stateMessage: terminalMessage,
+    stateUpdatedAt: new Date().toISOString(),
+    accessToken: null,
+  }));
+  await getProviderRepo().upstreams.saveState(upstreamId, flipped, { expectedState: fresh.state });
+};
+
+// Fire-and-forget: clones the response so the original body still streams
+// to the caller intact (we surface upstream verbatim — the terminal flip
+// is purely additional dashboard signal). CAS loss to a concurrent
+// rotation is fine: either the sibling already flipped to terminal (no
+// regression) or the sibling rotated state and the next request
+// re-detects the sentinel.
+//
+// Same lifecycle dance as `persistQuotaFromHeadersFireAndForget`: under
+// Workers the runtime cancels orphan promises the moment the response is
+// sent, so we register the persist with `waitUntil` when the gateway
+// supplied it.
+const maybePersistTerminalFromBodyFireAndForget = (
+  upstreamId: string,
+  response: Response,
+  waitUntil: ((promise: Promise<unknown>) => void) | undefined,
+): void => {
+  if (response.status !== 400 && response.status !== 403) return;
+  // Clone before reading: streamingProviderCall returns the original
+  // response to the caller verbatim and we must not consume its body here.
+  const cloned = response.clone();
+  const task = (async () => {
+    let bodyText: string;
+    try {
+      bodyText = await cloned.text();
+    } catch {
+      return;
+    }
+    const terminalMessage = detectTerminalSentinel(response.status, bodyText);
+    if (terminalMessage === null) return;
+    await persistTerminalAccountState(upstreamId, terminalMessage);
+  })().catch(error => {
+    console.warn(`Claude Code: failed to persist terminal sentinel for upstream ${upstreamId}: ${String(error)}`);
+  });
+  waitUntil?.(task);
+};
+
 export const callClaudeCodeMessages = async (
   opts: CallClaudeCodeMessagesOptions,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
@@ -297,20 +398,24 @@ const performUpstreamCall = async (
     body: JSON.stringify(wireBody),
     signal: opts.signal,
   }, opts.call.recordUpstreamLatency).then(response => {
+    // `opts.call.waitUntil` is added by the gateway on Workers so the
+    // runtime keeps the worker alive past the response (without it, the
+    // persist promise gets cancelled the moment we return the response).
+    // The cast is a transitional shim until UpstreamCallOptions carries
+    // the field natively; the `?.` keeps the call safe under hosts that
+    // don't supply it (Node target / tests).
+    const waitUntil = (opts.call as UpstreamCallOptions & { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil;
     // Every Anthropic response (2xx or 429) ships an
     // `anthropic-ratelimit-unified-*` snapshot; capture both so the rate-
     // limited gate above stays accurate as the window evolves. Other
     // statuses (4xx/5xx outside 429) carry no quota signal so we skip them.
     if (response.ok || response.status === 429) {
-      // `opts.call.waitUntil` is added by the gateway on Workers so the
-      // runtime keeps the worker alive past the response (without it, the
-      // persist promise gets cancelled the moment we return the response).
-      // The cast is a transitional shim until UpstreamCallOptions carries
-      // the field natively; the `?.` keeps the call safe under hosts that
-      // don't supply it (Node target / tests).
-      const waitUntil = (opts.call as UpstreamCallOptions & { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil;
       persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, waitUntil);
     }
+    // 400 / 403 may carry the credential-class terminal sentinels — the
+    // detector is body-shape-defensive and only flips on a real match, so
+    // unrelated 400s (`max_tokens` validation, etc.) pass straight through.
+    maybePersistTerminalFromBodyFireAndForget(opts.upstreamId, response, waitUntil);
     return response;
   });
 

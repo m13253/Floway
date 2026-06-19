@@ -456,3 +456,106 @@ describe('callClaudeCodeMessages — recorder contract', () => {
     expect(recorder.invocations()).toBe(2);
   });
 });
+
+// Body-sentinel terminal flips mirror sub2api / CRS detection of a
+// permanently disabled or banned org. The gateway still surfaces the
+// upstream response verbatim (passthrough discipline); the flip is an
+// additional dashboard signal so the operator sees "Org disabled" instead
+// of an endless stream of identical 400s/403s the next request would
+// produce.
+describe('callClaudeCodeMessages — terminal sentinel detection', () => {
+  test('400 invalid_request_error with "organization has been disabled" → surface verbatim AND flip to refresh_failed', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = { error: { type: 'invalid_request_error', message: 'organization has been disabled' } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(400);
+      // Verbatim body still reaches the caller — the response body must be
+      // readable after the provider call returned (we cloned for detection).
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    const account = currentState().accounts[0]!;
+    expect(account.state).toBe('refresh_failed');
+    expect(account.stateMessage).toMatch(/Organization disabled by Anthropic/);
+    expect(account.stateMessage).toMatch(/organization has been disabled/);
+    expect(account.accessToken).toBeNull();
+  });
+
+  test('403 permission_error with banned-org sentinel → surface verbatim AND flip to refresh_failed', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = {
+      error: {
+        type: 'permission_error',
+        message: 'OAuth authentication is currently not allowed for this organization',
+      },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(403);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    const account = currentState().accounts[0]!;
+    expect(account.state).toBe('refresh_failed');
+    expect(account.stateMessage).toMatch(/Organization banned from OAuth by Anthropic/);
+    expect(account.accessToken).toBeNull();
+  });
+
+  test('400 invalid_request_error with unrelated message → surface verbatim, NO terminal flip', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = { error: { type: 'invalid_request_error', message: 'max_tokens: must be at most 8192' } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(400);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
+
+  test('403 permission_error with unrelated message → surface verbatim, NO terminal flip', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = { error: { type: 'permission_error', message: 'unrelated' } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(403);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
+
+  test('400 with non-JSON body → surface verbatim, NO terminal flip (defensive parse)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('not json at all', { status: 400, headers: { 'content-type': 'text/plain' } }),
+    );
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(400);
+      expect(await result.response.text()).toBe('not json at all');
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
+});
