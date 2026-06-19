@@ -58,7 +58,7 @@ const sweep = (): void => {
     try { await runScheduledMaintenance(); } catch (err) { console.error('[scheduled]', err); }
     try {
       await purgeDumpsForAllKeys(dumpStore, await getRepo().apiKeys.list());
-    } catch (err) { console.error('[dump-purge]', err); }
+    } catch (err) { console.error('[dump-purge] list', err); }
   })();
 };
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
