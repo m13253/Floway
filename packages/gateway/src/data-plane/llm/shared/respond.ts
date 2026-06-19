@@ -1,3 +1,5 @@
+import type { Context } from 'hono';
+
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
 import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
@@ -59,4 +61,52 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
+};
+
+// Upstream-emitted hints we propagate verbatim to the downstream client.
+//
+// The prefix list covers Anthropic's plan-billing surface: the
+// `anthropic-ratelimit-unified-*` family carries quotas, resets, and warning
+// thresholds, and the official `claude-code` CLI's `/status` indicator reads
+// them. Dropping the headers makes the gateway look like an account with no
+// rate-limit state. The allowlist is by prefix so new dimensions the upstream
+// introduces (e.g. a future `anthropic-ratelimit-tier-*`) are forwarded
+// automatically.
+//
+// The exact-name list covers operator-trace identifiers — `request-id` /
+// `x-request-id` (Anthropic / OpenAI vendor traces) and `cf-ray` (Cloudflare's
+// edge trace). Support tickets and live debugging rely on these reaching the
+// downstream client unmodified.
+const FORWARDED_HEADER_PREFIXES = ['anthropic-ratelimit-'] as const;
+const FORWARDED_HEADER_NAMES = new Set(['request-id', 'x-request-id', 'cf-ray']);
+
+export const isForwardableUpstreamHeader = (name: string): boolean => {
+  const lowered = name.toLowerCase();
+  if (FORWARDED_HEADER_NAMES.has(lowered)) return true;
+  return FORWARDED_HEADER_PREFIXES.some(prefix => lowered.startsWith(prefix));
+};
+
+// Stages allowlisted upstream headers onto the Hono context so the next
+// `c.newResponse` (or `streamSSE`'s internal `c.newResponse`) emits them on
+// the response. Hono's `c.header()` is the only knob that survives a later
+// `c.json` or `streamSSE` call without being overwritten. Safe to call with
+// `undefined` so callers can pass `result.headers` directly.
+export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined): void => {
+  if (!headers) return;
+  for (const [name, value] of headers) {
+    if (isForwardableUpstreamHeader(name)) c.header(name, value);
+  }
+};
+
+// Returns a `HeadersInit` extending `base` with every allowlisted entry from
+// `upstream`. Used by non-streaming JSON responses where the response is
+// built directly (`Response.json(...)`) instead of through Hono's `c`.
+export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): HeadersInit => {
+  const merged = new Headers(base);
+  if (upstream) {
+    for (const [name, value] of upstream) {
+      if (isForwardableUpstreamHeader(name)) merged.set(name, value);
+    }
+  }
+  return merged;
 };

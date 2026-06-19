@@ -6,7 +6,7 @@ import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEv
 import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
@@ -45,13 +45,14 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
       recordPerformance(ctx, metadata.performance, state.failed);
-      return { success: true, response: Response.json(response) };
+      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
 
+  forwardUpstreamHeaders(c, result.headers);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {

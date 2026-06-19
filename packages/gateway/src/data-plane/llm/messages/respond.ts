@@ -5,7 +5,7 @@ import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResul
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
@@ -47,13 +47,14 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
       recordPerformance(ctx, metadata.performance, state.failed);
-      return { success: true, response: Response.json(response) };
+      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
 
+  forwardUpstreamHeaders(c, result.headers);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {

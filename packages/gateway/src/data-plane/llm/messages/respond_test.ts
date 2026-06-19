@@ -1,9 +1,14 @@
+import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import { createMessagesStreamUsageState, tokenUsageFromMessagesFrame } from './respond.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
+import { initRepo } from '../../../repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { assertEquals } from '@floway-dev/test-utils';
+import { eventResult, type ExecuteResult } from '@floway-dev/provider';
+import { assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamEvent);
 
@@ -204,4 +209,91 @@ test('Messages stream usage falls back to the rolled-up cache_creation when the 
     input_cache_write: 9,
     output: 1,
   });
+});
+
+// --- header forwarding ---
+
+const forwardedHeadersFixture = (): Headers => new Headers({
+  'anthropic-ratelimit-unified-status': 'allowed_warning',
+  'anthropic-ratelimit-unified-fallback-percentage': '50',
+  'request-id': 'req_anthropic_abc',
+  'cf-ray': 'cf_ray_xyz',
+  'x-internal-cache-id': 'cache-abc',
+  'content-type': 'text/event-stream',
+});
+
+const makeRespondCtx = (): GatewayCtx => ({
+  apiKeyId: 'key_respond_test',
+  upstreamIds: null,
+  wantsStream: false,
+  runtimeLocation: 'test',
+  backgroundScheduler: () => {},
+  requestStartedAt: 0,
+  currentColo: null,
+});
+
+const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [
+  {
+    type: 'message_start',
+    message: {
+      id: 'msg_1', type: 'message', role: 'assistant', content: [], model: 'claude-test',
+      stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: 3, output_tokens: 0 },
+    },
+  },
+  { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+  { type: 'content_block_stop', index: 0 },
+  { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } },
+  { type: 'message_stop' },
+];
+
+const messagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+  for (const event of messagesEventsForRespond()) yield eventFrame(event);
+  yield doneFrame();
+};
+
+const callRespond = async (wantsStream: boolean): Promise<Response> => {
+  initRepo(new InMemoryRepo());
+  const app = new Hono();
+  let captured: Response | undefined;
+  app.get('/', async c => {
+    const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
+      messagesProtocolFrames(),
+      testTelemetryModelIdentity,
+      undefined,
+      undefined,
+      forwardedHeadersFixture(),
+    );
+    const { response } = await respondMessages(c, result, wantsStream, makeRespondCtx());
+    captured = response;
+    return response;
+  });
+  await app.request('/');
+  if (!captured) throw new Error('respondMessages did not produce a Response');
+  return captured;
+};
+
+test('respondMessages forwards allowlisted upstream headers on the non-streaming JSON response', async () => {
+  const response = await callRespond(false);
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed_warning');
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
+  assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
+  assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
+  // The allowlist is by prefix or exact name — unrelated upstream headers
+  // must not be proxied to the client.
+  assertEquals(response.headers.get('x-internal-cache-id'), null);
+});
+
+test('respondMessages forwards allowlisted upstream headers on the streaming SSE response', async () => {
+  const response = await callRespond(true);
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed_warning');
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
+  assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
+  assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
+  assertEquals(response.headers.get('x-internal-cache-id'), null);
+  // Drain the body so the lazy generator releases its resources and the
+  // background `finally` block in `streamSSE` doesn't keep the test runner
+  // alive.
+  await response.text();
 });
