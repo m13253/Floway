@@ -9,11 +9,10 @@
 // https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
 //
 // Source of truth verified 2026-06-19 against
-// https://docs.claude.com/en/docs/about-claude/pricing. The cache ratio
-// holds for every entry on that page: `input_cache_read = input * 0.1`,
-// `input_cache_write = input * 1.25` (5-minute cache write — the 1-hour
-// rate is `input * 2` and is not what `ModelPricing.input_cache_write`
-// represents).
+// https://docs.claude.com/en/docs/about-claude/pricing. The cache ratios
+// hold for every entry on that page: `input_cache_read = input * 0.1`,
+// `input_cache_write = input * 1.25` (5-minute), `input_cache_write_1h =
+// input * 2`.
 //
 // Keying: pre-4.6 models (4.5 / 4.1) return from /v1/models with a date
 // suffix, so the upstream-key (the dispatcher's `modelKey`) is the dated
@@ -23,20 +22,38 @@
 // Opus 4.5 was re-priced down to the same tier as 4.6+ on 2026-06-19
 // (previously $15 / $1.50 / $18.75 / $75); ship the current rate so the
 // notional-cost surface reflects today's bill.
+//
+// Fast mode: Anthropic offers a premium-priced inference tier on Opus 4.6,
+// 4.7, and 4.8 only. The wire surfaces it as `usage.speed: 'fast'`, which
+// the gateway folds into `TokenUsage.tier` and looks up under
+// `ModelPricing.tiers.fast`. Per the docs, "prompt caching multipliers
+// apply on top of fast mode pricing", so each fast-tier override carries
+// its own cache rates derived from the override input rate (× 0.1 for read,
+// × 1.25 for 5m write, × 2 for 1h write).
 
 import type { ModelPricing } from '@floway-dev/protocols/common';
 
-const OPUS_TIER: ModelPricing = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 };
-const SONNET_TIER: ModelPricing = { input: 3, input_cache_read: 0.3, input_cache_write: 3.75, output: 15 };
-const HAIKU_TIER: ModelPricing = { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 };
-const FABLE_TIER: ModelPricing = { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 };
-const OPUS_LEGACY_TIER: ModelPricing = { input: 15, input_cache_read: 1.5, input_cache_write: 18.75, output: 75 };
+const OPUS_TIER: ModelPricing = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, input_cache_write_1h: 10, output: 25 };
+const SONNET_TIER: ModelPricing = { input: 3, input_cache_read: 0.3, input_cache_write: 3.75, input_cache_write_1h: 6, output: 15 };
+const HAIKU_TIER: ModelPricing = { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, input_cache_write_1h: 2, output: 5 };
+const FABLE_TIER: ModelPricing = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
+const OPUS_LEGACY_TIER: ModelPricing = { input: 15, input_cache_read: 1.5, input_cache_write: 18.75, input_cache_write_1h: 30, output: 75 };
+
+// Fast-mode pricing. Opus 4.6 and 4.7 share the same 6× input / 6× output
+// premium; Opus 4.8 ships fast mode at 2× base. Cache rates derive from
+// each variant's input rate per the documented multipliers.
+const OPUS_46_47_FAST: Partial<ModelPricing> = { input: 30, input_cache_read: 3, input_cache_write: 37.5, input_cache_write_1h: 60, output: 150 };
+const OPUS_48_FAST: Partial<ModelPricing> = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
+
+const OPUS_46_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_46_47_FAST } };
+const OPUS_47_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_46_47_FAST } };
+const OPUS_48_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_48_FAST } };
 
 const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   // 4.6+ generation (alias is the upstream id).
-  'claude-opus-4-8': OPUS_TIER,
-  'claude-opus-4-7': OPUS_TIER,
-  'claude-opus-4-6': OPUS_TIER,
+  'claude-opus-4-8': OPUS_48_TIER,
+  'claude-opus-4-7': OPUS_47_TIER,
+  'claude-opus-4-6': OPUS_46_TIER,
   'claude-sonnet-4-6': SONNET_TIER,
   'claude-fable-5': FABLE_TIER,
   // 4.5 generation (dated upstream id).
