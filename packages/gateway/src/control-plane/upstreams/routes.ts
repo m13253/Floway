@@ -15,8 +15,7 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog, type Fetcher, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
   type ClaudeCodeAccountCredential,
@@ -505,9 +504,12 @@ type CodexCredentialBody = z.infer<typeof codexImportBody> | z.infer<typeof code
 
 const ingestCodexCredential = async (
   body: CodexCredentialBody,
+  fetcher: Fetcher,
 ): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState } | { ok: false; error: string }> => {
   try {
     if (body.auth_json !== undefined) {
+      // auth_json ingest parses the JWT locally; no network call uses the
+      // fetcher, so it is intentionally not threaded here.
       const out = await importCodexFromAuthJson(body.auth_json);
       return { ok: true, ...out };
     }
@@ -529,7 +531,7 @@ const ingestCodexCredential = async (
     if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
+    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -538,7 +540,13 @@ const ingestCodexCredential = async (
 
 export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   const body = c.req.valid('json');
-  const ingestion = await ingestCodexCredential(body);
+  let fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCodexCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const existing = await getRepo().upstreams.list();
@@ -556,7 +564,9 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     updatedAt: now,
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    // Persist the in-flight override so subsequent data-plane calls route
+    // through the same chain without an extra edit step.
+    proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -574,13 +584,26 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   }
 
   const body = c.req.valid('json');
-  const ingestion = await ingestCodexCredential(body);
+  let fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCodexCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const next: UpstreamRecord = {
     ...existing,
     updatedAt: new Date().toISOString(),
     name: body.name ?? existing.name,
+    // Re-import accepts an in-flight proxy override; when present, overwrite
+    // the persisted list so subsequent data-plane calls match the chain the
+    // operator just used for re-import. Absent override leaves the
+    // persisted list untouched.
+    proxyFallbackList: body.proxy_fallback_list !== undefined
+      ? normalizeProxyFallbackList(body.proxy_fallback_list)
+      : existing.proxyFallbackList,
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -703,10 +726,11 @@ type ClaudeCodeCredentialBody = z.infer<typeof claudeCodeImportBody> | z.infer<t
 
 const ingestClaudeCodeCredential = async (
   body: ClaudeCodeCredentialBody,
+  fetcher: Fetcher,
 ): Promise<{ ok: true; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState } | { ok: false; error: string }> => {
   try {
     if (body.credentials_json !== undefined) {
-      const out = await importClaudeCodeFromCredentialsJson(body.credentials_json);
+      const out = await importClaudeCodeFromCredentialsJson(body.credentials_json, fetcher);
       return { ok: true, ...out };
     }
     const cb = body.callback;
@@ -727,7 +751,7 @@ const ingestClaudeCodeCredential = async (
     if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const out = await importClaudeCodeFromCallback({ code, pkceVerifier: pending.verifier });
+    const out = await importClaudeCodeFromCallback({ code, pkceVerifier: pending.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -736,7 +760,13 @@ const ingestClaudeCodeCredential = async (
 
 export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBody>) => {
   const body = c.req.valid('json');
-  const ingestion = await ingestClaudeCodeCredential(body);
+  let fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestClaudeCodeCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const existing = await getRepo().upstreams.list();
@@ -752,7 +782,9 @@ export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBod
     updatedAt: now,
     flagOverrides: {},
     disabledPublicModelIds: [],
-    proxyFallbackList: [],
+    // Persist the in-flight override so subsequent data-plane calls route
+    // through the same chain without an extra edit step.
+    proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -770,13 +802,26 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   }
 
   const body = c.req.valid('json');
-  const ingestion = await ingestClaudeCodeCredential(body);
+  let fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestClaudeCodeCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const next: UpstreamRecord = {
     ...existing,
     updatedAt: new Date().toISOString(),
     name: body.name ?? existing.name,
+    // Re-import accepts an in-flight proxy override; when present, overwrite
+    // the persisted list so subsequent data-plane calls match the chain the
+    // operator just used for re-import. Absent override leaves the
+    // persisted list untouched.
+    proxyFallbackList: body.proxy_fallback_list !== undefined
+      ? normalizeProxyFallbackList(body.proxy_fallback_list)
+      : existing.proxyFallbackList,
     config: ingestion.config,
     state: ingestion.state,
   };

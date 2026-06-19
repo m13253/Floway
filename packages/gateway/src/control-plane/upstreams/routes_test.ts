@@ -1358,3 +1358,239 @@ test('POST /api/upstreams/:id/claude-code-refresh-now without an override falls 
     },
   );
 });
+
+// --- import / reimport proxy_fallback_list override ---
+//
+// Import and re-import fire before (or alongside) a save, so the operator's
+// in-flight proxy edit must accompany the request. Two behaviors:
+//   1. The bootstrap call (OAuth token exchange + identity fetch) routes
+//      through the override.
+//   2. The override is persisted on the new (import) / existing (re-import)
+//      row so subsequent data-plane calls use the same chain without a
+//      follow-up edit.
+
+test('POST /api/upstreams/claude-code-import rejects an override referencing an unknown proxy id', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const resp = await requestApp(
+    '/api/upstreams/claude-code-import',
+    authed(adminSession, {
+      credentials_json: claudeCodeCredentialsJson(),
+      proxy_fallback_list: ['p_unknown'],
+    }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/claude-code-import persists the override on the new row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  // Real proxy id so the override validates; 'direct' alone short-circuits
+  // override resolution to directFetcher, so we use a real proxy + 'direct'
+  // to exercise persistence without the bootstrap actually dialing through
+  // a non-existent socks5 endpoint. The credentials_json path only fetches
+  // /api/oauth/profile, which we let the mock serve directly.
+  await repo.proxies.insert({ id: 'p_real', name: 'Real', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, {
+          credentials_json: claudeCodeCredentialsJson(),
+          // 'direct' first → the override fetcher short-circuits to direct
+          // and the mocked fetch above handles the identity call. 'p_real'
+          // tails so persistence shows a non-trivial list.
+          proxy_fallback_list: ['direct', 'p_real'],
+        }),
+      );
+      assertEquals(r.status, 201);
+      return (await r.json()) as { id: string; proxy_fallback_list: string[] };
+    },
+  );
+
+  assertEquals(created.proxy_fallback_list, ['direct', 'p_real']);
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_real']);
+});
+
+test('POST /api/upstreams/claude-code-import without an override persists an empty list', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string; proxy_fallback_list: string[] };
+    },
+  );
+
+  assertEquals(created.proxy_fallback_list, []);
+});
+
+test('POST /api/upstreams/:id/claude-code-reimport overwrites the persisted proxy_fallback_list when an override is supplied', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_initial', name: 'Initial', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_new', name: 'New', url: 'socks5://198.51.100.11:1080', dialTimeoutSeconds: null });
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, {
+          credentials_json: claudeCodeCredentialsJson(),
+          proxy_fallback_list: ['direct', 'p_initial'],
+        }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  const reimported = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        `/api/upstreams/${created.id}/claude-code-reimport`,
+        authed(adminSession, {
+          credentials_json: claudeCodeCredentialsJson(),
+          proxy_fallback_list: ['direct', 'p_new'],
+        }),
+      );
+      assertEquals(r.status, 200);
+      return (await r.json()) as { proxy_fallback_list: string[] };
+    },
+  );
+
+  assertEquals(reimported.proxy_fallback_list, ['direct', 'p_new']);
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_new']);
+});
+
+test('POST /api/upstreams/:id/claude-code-reimport without an override leaves the persisted proxy_fallback_list untouched', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_initial', name: 'Initial', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, {
+          credentials_json: claudeCodeCredentialsJson(),
+          proxy_fallback_list: ['direct', 'p_initial'],
+        }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        `/api/upstreams/${created.id}/claude-code-reimport`,
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      assertEquals(r.status, 200);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_initial']);
+});
+
+test('POST /api/upstreams/codex-import rejects an override referencing an unknown proxy id', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const resp = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['p_unknown'] }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/codex-import persists the override on the new row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_real', name: 'Real', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const resp = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_real'] }),
+  );
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as { id: string; proxy_fallback_list: string[] };
+  assertEquals(created.proxy_fallback_list, ['direct', 'p_real']);
+
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_real']);
+});
+
+test('POST /api/upstreams/codex-import without an override persists an empty list', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()));
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as { id: string; proxy_fallback_list: string[] };
+  assertEquals(created.proxy_fallback_list, []);
+});
+
+test('POST /api/upstreams/:id/codex-reimport overwrites the persisted proxy_fallback_list when an override is supplied', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_initial', name: 'Initial', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+  await repo.proxies.insert({ id: 'p_new', name: 'New', url: 'socks5://198.51.100.11:1080', dialTimeoutSeconds: null });
+
+  const create = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_initial'] }),
+  );
+  const created = (await create.json()) as { id: string };
+
+  const reimport = await requestApp(
+    `/api/upstreams/${created.id}/codex-reimport`,
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_new'] }),
+  );
+  assertEquals(reimport.status, 200);
+  const reimported = (await reimport.json()) as { proxy_fallback_list: string[] };
+  assertEquals(reimported.proxy_fallback_list, ['direct', 'p_new']);
+
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_new']);
+});
+
+test('POST /api/upstreams/:id/codex-reimport without an override leaves the persisted proxy_fallback_list untouched', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_initial', name: 'Initial', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const create = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, { ...codexAuthJsonImport(), proxy_fallback_list: ['direct', 'p_initial'] }),
+  );
+  const created = (await create.json()) as { id: string };
+
+  const reimport = await requestApp(
+    `/api/upstreams/${created.id}/codex-reimport`,
+    authed(adminSession, codexAuthJsonImport()),
+  );
+  assertEquals(reimport.status, 200);
+
+  const stored = await repo.upstreams.getById(created.id);
+  assertEquals(stored?.proxyFallbackList, ['direct', 'p_initial']);
+});

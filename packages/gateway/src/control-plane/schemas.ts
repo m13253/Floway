@@ -304,12 +304,23 @@ export const codexImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...codexCredentialFields,
+  // Pre-save proxy override: a brand-new upstream has no persisted chain, so
+  // the OAuth bootstrap goes direct by default. When the operator has
+  // already picked a fallback list in the in-flight form, send it here so
+  // the bootstrap routes through that chain AND so the same chain is
+  // persisted on the new row for subsequent data-plane calls.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
 // `sort_order` is omitted because re-import must not re-rank the row.
 export const codexReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...codexCredentialFields,
+  // Edit-time override: same rationale as codexImportBody — the operator may
+  // be changing the proxy chain in the same edit that re-imports the
+  // credential. When present, route the bootstrap through the override and
+  // overwrite the persisted list with it.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
 export const codexRefreshNowBody = z.object({
@@ -351,11 +362,22 @@ export const claudeCodeImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...claudeCodeCredentialFields,
+  // Pre-save proxy override: a brand-new upstream has no persisted chain, so
+  // the OAuth bootstrap goes direct by default. When the operator has
+  // already picked a fallback list in the in-flight form, send it here so
+  // the bootstrap routes through that chain AND so the same chain is
+  // persisted on the new row for subsequent data-plane calls.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...claudeCodeCredentialFields,
+  // Edit-time override: same rationale as claudeCodeImportBody — the operator
+  // may be changing the proxy chain in the same edit that re-imports the
+  // credential. When present, route the bootstrap through the override and
+  // overwrite the persisted list with it.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeRefreshNowBody = z.object({
