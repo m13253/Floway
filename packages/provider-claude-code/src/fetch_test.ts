@@ -324,6 +324,31 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     const data = stored!.data as { status?: string };
     expect(data.status).toBe('rejected');
   });
+
+  test('2xx → registers persist promise via opts.call.waitUntil exactly once', async () => {
+    // On Cloudflare Workers the runtime cancels orphan promises the moment
+    // the response is sent. The gateway threads `waitUntil` through
+    // UpstreamCallOptions so the persist can extend the worker's lifetime;
+    // assert we hand the persist promise to it exactly once and that the
+    // promise actually mutates state when awaited.
+    //
+    // The cast bridges until UpstreamCallOptions carries `waitUntil`
+    // natively (lands in a parallel gateway-side change).
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
+    const call = { ...noopUpstreamCallOptions, waitUntil } as typeof noopUpstreamCallOptions;
+    const result = await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call,
+    });
+    expect(result.ok).toBe(true);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+    const handed = waitUntil.mock.calls[0]![0];
+    expect(handed).toBeInstanceOf(Promise);
+    await expect(handed).resolves.toBeUndefined();
+    const stored = readQuotaEntry();
+    expect(stored).not.toBeNull();
+  });
 });
 
 const enforcingRecorder = () => {

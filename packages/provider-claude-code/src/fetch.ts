@@ -107,12 +107,25 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
 // or surface its failures to the caller. Skip writing when the response
 // carries no rate-limit signal at all — that would erase the prior snapshot
 // for no upside.
-const persistQuotaFromHeadersFireAndForget = (upstreamId: string, headers: Headers): void => {
+//
+// On Cloudflare Workers the runtime cancels orphan promises the moment the
+// response is sent to the client, so a bare fire-and-forget would lose the
+// write on the hot path. The `waitUntil` callback (when supplied by the
+// gateway) extends the worker's lifetime past the response so the persist
+// completes. When `waitUntil` is undefined (Node target / tests / pre-A3
+// gateway), the promise still runs to completion under Node's event loop
+// — and tests can observe it by awaiting a microtask flush.
+const persistQuotaFromHeadersFireAndForget = (
+  upstreamId: string,
+  headers: Headers,
+  waitUntil: ((promise: Promise<unknown>) => void) | undefined,
+): void => {
   const snapshot = parseClaudeCodeQuotaHeaders(headers);
   if (Object.keys(snapshot.raw).length === 0) return;
-  persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
+  const persist = persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
     console.warn(`Claude Code: failed to persist quota snapshot for upstream ${upstreamId}: ${String(error)}`);
   });
+  waitUntil?.(persist);
 };
 
 export const callClaudeCodeMessages = async (
@@ -229,7 +242,14 @@ const performUpstreamCall = async (
     // limited gate above stays accurate as the window evolves. Other
     // statuses (4xx/5xx outside 429) carry no quota signal so we skip them.
     if (response.ok || response.status === 429) {
-      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers);
+      // `opts.call.waitUntil` is added by the gateway on Workers so the
+      // runtime keeps the worker alive past the response (without it, the
+      // persist promise gets cancelled the moment we return the response).
+      // The cast is a transitional shim until UpstreamCallOptions carries
+      // the field natively; the `?.` keeps the call safe under hosts that
+      // don't supply it (Node target / tests).
+      const waitUntil = (opts.call as UpstreamCallOptions & { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil;
+      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, waitUntil);
     }
     return response;
   });
