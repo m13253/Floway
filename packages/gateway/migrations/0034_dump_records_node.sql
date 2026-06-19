@@ -1,6 +1,4 @@
 -- Used by the Node deployment as a shared sqlite-backed metadata index.
--- The Cloudflare deployment never queries this table; KeyDumpDO keeps
--- per-DO storage instead.
 CREATE TABLE dump_records (
   key_id TEXT NOT NULL,
   id TEXT NOT NULL,

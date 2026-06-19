@@ -49,9 +49,10 @@ test('signal.abort ends the iterator', async () => {
   const controller = new AbortController();
 
   let ended = false;
+  let received = 0;
   const subscriber = (async () => {
     for await (const _m of broker.subscribe('key1', controller.signal)) {
-      // No-op — should never run because we abort before publishing anything.
+      received += 1;
     }
     ended = true;
   })();
@@ -60,6 +61,7 @@ test('signal.abort ends the iterator', async () => {
   controller.abort();
   await subscriber;
   assertEquals(ended, true);
+  assertEquals(received, 0);
 });
 
 test('two concurrent subscribers both receive every published message', async () => {

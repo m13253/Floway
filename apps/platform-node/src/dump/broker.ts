@@ -1,8 +1,8 @@
 import type { DumpBroker } from '@floway-dev/platform';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Resolver for the next-message wait. publish() calls resolve() to wake the
-// iterator; abort() also calls it to end the loop.
+// publish() resolves the waker to wake the iterator; abort() also resolves
+// it to end the loop.
 type Waker = () => void;
 
 class KeyChannel {
