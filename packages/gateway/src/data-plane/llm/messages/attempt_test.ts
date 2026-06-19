@@ -115,7 +115,7 @@ const installRepo = (): InMemoryRepo => {
 test('generate native messages target calls provider.callMessages with no rewrite', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await messagesAttempt.generate({
     payload: makePayload(),
@@ -144,6 +144,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
+    headers: new Headers(),
   }));
   const result = await messagesAttempt.generate({
     payload: makePayload(),
@@ -206,7 +207,7 @@ test('generate attaches the performance context and records upstream_success', a
     backgroundScheduler: promise => { background.push(promise); },
   };
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
   }));
 
   const result = await messagesAttempt.generate({
@@ -234,4 +235,27 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(upstreamSamples.length, 1);
   assertEquals(upstreamSamples[0]?.upstream, 'up_perf');
   assertEquals(upstreamSamples[0]?.requests, 1);
+});
+
+test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
+  installRepo();
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'request-id': 'req_messages_xyz',
+  });
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    candidate: makeCandidate({ callMessages }),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.headers?.get('request-id'), 'req_messages_xyz');
+  await collectEvents(result.events);
 });

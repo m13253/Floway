@@ -227,7 +227,13 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     streamPromise: Promise<ProviderStreamResult<TEvent>>,
   ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
     const stream = await streamPromise;
-    if (stream.ok) return eventResult(stream.events as AsyncIterable<ProtocolFrame<TEvent>>, placeholderIdentity(stream.modelKey));
+    if (stream.ok) {
+      return eventResult(
+        stream.events as AsyncIterable<ProtocolFrame<TEvent>>,
+        placeholderIdentity(stream.modelKey),
+        { headers: stream.headers },
+      );
+    }
     return await readUpstreamError(stream.response);
   };
 
@@ -241,7 +247,12 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     modelKey: string,
   ): ProviderStreamResult<TEvent> => {
     if (result.type === 'events') {
-      return { ok: true, events: result.events as AsyncIterable<ProtocolFrame<TEvent>>, modelKey };
+      return {
+        ok: true,
+        events: result.events as AsyncIterable<ProtocolFrame<TEvent>>,
+        modelKey,
+        ...(result.headers ? { headers: result.headers } : {}),
+      };
     }
     if (result.type === 'upstream-error') {
       return { ok: false, response: upstreamErrorToResponse(result), modelKey };

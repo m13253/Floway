@@ -123,7 +123,7 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
 test('generate translates through Chat Completions when targetApi is chat-completions', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await geminiAttempt.generate({
     payload: makePayload(),
@@ -141,7 +141,7 @@ test('generate translates through Chat Completions when targetApi is chat-comple
 test('generate translates through Messages when targetApi is messages', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await geminiAttempt.generate({
     payload: makePayload(),
@@ -159,7 +159,7 @@ test('generate translates through Messages when targetApi is messages', async ()
 test('generate translates through Responses when targetApi is responses', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k',
+    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
   const result = await geminiAttempt.generate({
     payload: makePayload(),
@@ -259,4 +259,26 @@ test('countTokens refuses a non-messages candidate', async () => {
   }
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
   assertEquals(thrown.message.includes("targetApi='messages'"), true);
+});
+
+test('generate propagates upstream response headers through the chat-completions translation', async () => {
+  installRepo();
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'x-request-id': 'req_gemini_xyz',
+  });
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
+  const result = await geminiAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    candidate: makeCandidate({ targetApi: 'chat-completions', callChatCompletions }),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.headers?.get('x-request-id'), 'req_gemini_xyz');
+  await collectEvents(result.events);
 });

@@ -127,6 +127,7 @@ test('POST /v1/responses streams a successful SSE body', async () => {
     ok: true,
     events: makeProviderEvents([completedEvent()]),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callResponses })]);
 
@@ -153,6 +154,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
     ok: true,
     events: makeProviderEvents([completedEvent('resp_nonstream')]),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callResponses })]);
 
@@ -268,6 +270,7 @@ test('POST /v1/responses rewrites the codex-auto-review alias before routing', a
       ok: true,
       events: makeProviderEvents([completedEvent()]),
       modelKey: 'test-model-key',
+      headers: new Headers(),
     };
   });
   queueCandidates([makeCandidate({ callResponses })]);

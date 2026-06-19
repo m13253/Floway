@@ -165,6 +165,7 @@ test('generate routes a native Messages candidate end to end', async () => {
     ok: true,
     events: makeProtocolFrames(makeMessagesResultEvents()),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_a', callMessages })]);
 
@@ -187,6 +188,7 @@ test('generate translates through the Responses target when only that endpoint i
     ok: true,
     events: makeProtocolFrames([makeResponsesResultEvent()]),
     modelKey: 'responses-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
 
@@ -211,7 +213,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     ok: false, response: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesResultEvents('msg_second')), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames(makeMessagesResultEvents('msg_second')), modelKey: 'second-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callMessages: firstCall }),
@@ -238,6 +240,7 @@ test('generate is a routing no-op when the payload carries no reasoning carriers
     ok: true,
     events: makeProtocolFrames(makeMessagesResultEvents()),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callMessages }),

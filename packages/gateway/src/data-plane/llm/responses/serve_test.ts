@@ -142,6 +142,7 @@ test('generate routes a native Responses candidate end to end', async () => {
     ok: true,
     events: makeProtocolFrames([completed]),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
   queueCandidates([candidate]);
@@ -201,7 +202,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     response: makeResponsesResult('resp_second'),
   };
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
   }));
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
@@ -422,6 +423,7 @@ test('generate falls through translate-out to messages target', async () => {
       { type: 'message_stop' },
     ]),
     modelKey: 'messages-key',
+    headers: new Headers(),
   }));
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callMessages });
@@ -475,6 +477,7 @@ test('generate falls through translate-out to chat-completions target', async ()
       },
     ]),
     modelKey: 'chat-completions-key',
+    headers: new Headers(),
   }));
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callChatCompletions });
@@ -518,6 +521,7 @@ test('generate reuses an existing input row when a later turn echoes the same us
         response: makeResponsesResult(`resp_turn_${turn}`),
       }]),
       modelKey: 'test-model-key',
+      headers: new Headers(),
     };
   });
   const store = createResponsesHttpStore(API_KEY_ID, true);

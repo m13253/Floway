@@ -106,7 +106,7 @@ const makeCandidate = (overrides: {
 test('POST /v1/chat/completions streams a successful SSE body', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -127,7 +127,7 @@ test('POST /v1/chat/completions streams a successful SSE body', async () => {
 test('POST /v1/chat/completions returns a single JSON body when stream is omitted', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -147,7 +147,7 @@ test('POST /v1/chat/completions returns a single JSON body when stream is omitte
 test('POST /v1/chat/completions omits the usage-only chunk unless stream_options.include_usage is set', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -166,7 +166,7 @@ test('POST /v1/chat/completions omits the usage-only chunk unless stream_options
 test('POST /v1/chat/completions emits the usage-only chunk when stream_options.include_usage is true', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -194,7 +194,7 @@ test('POST /v1/chat/completions emits the usage-only chunk when stream_options.i
 test('POST /v1/chat/completions does not write any non-auth Hono context slot', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 

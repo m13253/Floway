@@ -114,7 +114,7 @@ const installRepo = (): InMemoryRepo => {
 test('generate native chat-completions target calls provider.callChatCompletions', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -132,7 +132,7 @@ test('generate native chat-completions target calls provider.callChatCompletions
 test('generate translate-to-messages branch routes through messagesAttempt', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -161,6 +161,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
+    headers: new Headers(),
   }));
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -180,7 +181,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
   let observedHeaders: Record<string, string> | undefined;
   const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
     observedHeaders = headers;
-    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k' };
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
   });
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -212,6 +213,7 @@ test('generate inherits invocation headers across translation to Responses', asy
       ok: true,
       events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
       modelKey: 'k',
+      headers: new Headers(),
     };
   });
   const result = await chatCompletionsAttempt.generate({
@@ -225,4 +227,26 @@ test('generate inherits invocation headers across translation to Responses', asy
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(observedHeaders?.['x-test'], 'abc');
+});
+
+test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
+  installRepo();
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'cf-ray': 'cf_ray_cc',
+  });
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    candidate: makeCandidate({ callChatCompletions }),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.headers?.get('cf-ray'), 'cf_ray_cc');
+  await collectEvents(result.events);
 });

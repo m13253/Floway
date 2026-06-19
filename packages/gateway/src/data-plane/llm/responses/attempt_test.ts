@@ -157,6 +157,7 @@ test('generate native success wraps the upstream event stream once', async () =>
     ok: true,
     events: makeProviderEvents([completedEvent]),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
 
   const candidate = makeCandidate(callResponses);
@@ -345,6 +346,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
           yield doneFrame();
         })(),
         modelKey: 'k',
+        headers: new Headers(),
       };
     },
   });
@@ -441,7 +443,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   ];
   const callResponses = vi.fn(async (_model, body): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
     capturedBody = body as { input?: unknown[] };
-    return { ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key' };
+    return { ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
   const candidate = makeCandidate(callResponses);
   // The shim early-returns inactive unless the binding has the flag. The
@@ -501,4 +503,38 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     !input.some(i => i.type === 'function_call_output' && typeof i.output === 'string' && i.output.includes('Prior search results were not preserved')),
     'shim emitted the not-preserved placeholder despite a stored private payload',
   );
+});
+
+test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
+  installRepo();
+  const completedEvent: ResponsesStreamEvent = {
+    type: 'response.completed',
+    sequence_number: 0,
+    response: makeResponsesResult(),
+  };
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'request-id': 'req_resp_xyz',
+  });
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProviderEvents([completedEvent]),
+    modelKey: 'test-model-key',
+    headers: upstreamHeaders,
+  }));
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const result = await responsesAttempt.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store,
+    candidate,
+    snapshotMode: 'append',
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.headers?.get('request-id'), 'req_resp_xyz');
+  await collectEvents(result.events);
 });

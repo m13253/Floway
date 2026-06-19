@@ -261,9 +261,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
     const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
       messagesProtocolFrames(),
       testTelemetryModelIdentity,
-      undefined,
-      undefined,
-      forwardedHeadersFixture(),
+      { headers: forwardedHeadersFixture() },
     );
     const { response } = await respondMessages(c, result, wantsStream, makeRespondCtx());
     captured = response;
@@ -280,8 +278,6 @@ test('respondMessages forwards allowlisted upstream headers on the non-streaming
   assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
   assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
-  // The allowlist is by prefix or exact name — unrelated upstream headers
-  // must not be proxied to the client.
   assertEquals(response.headers.get('x-internal-cache-id'), null);
 });
 

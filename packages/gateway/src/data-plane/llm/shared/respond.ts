@@ -80,7 +80,7 @@ export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata[
 const FORWARDED_HEADER_PREFIXES = ['anthropic-ratelimit-'] as const;
 const FORWARDED_HEADER_NAMES = new Set(['request-id', 'x-request-id', 'cf-ray']);
 
-export const isForwardableUpstreamHeader = (name: string): boolean => {
+const isForwardableUpstreamHeader = (name: string): boolean => {
   const lowered = name.toLowerCase();
   if (FORWARDED_HEADER_NAMES.has(lowered)) return true;
   return FORWARDED_HEADER_PREFIXES.some(prefix => lowered.startsWith(prefix));

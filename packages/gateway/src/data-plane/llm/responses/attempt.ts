@@ -95,8 +95,11 @@ export const responsesAttempt = {
         responseId,
       }),
       chainResult.modelIdentity,
-      chainResult.performance,
-      chainResult.finalMetadata,
+      {
+        performance: chainResult.performance,
+        finalMetadata: chainResult.finalMetadata,
+        headers: chainResult.headers,
+      },
     );
   },
 
@@ -249,6 +252,6 @@ const callResponsesCompactAsExecuteResult = async (
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),
-    context,
+    { performance: context },
   );
 };

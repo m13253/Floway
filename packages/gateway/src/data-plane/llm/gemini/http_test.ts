@@ -113,7 +113,7 @@ const makeMessagesEvents = (): readonly MessagesStreamEvent[] => [
 test('POST /v1beta/models/:model:generateContent returns a single JSON body for non-stream generate', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -133,7 +133,7 @@ test('POST /v1beta/models/:model:generateContent returns a single JSON body for 
 test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini SSE body', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -196,7 +196,7 @@ test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest 
 test('POST /v1beta/models/:model:generateContent translates through Messages target end to end', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'messages', callMessages })]);
 
@@ -234,7 +234,7 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
   let resolvedModel: string | undefined;
   const callChatCompletions = vi.fn(async (model): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
     resolvedModel = (model as { id: string }).id;
-    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k' };
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers() };
   });
   queueCandidates([makeCandidate({ callChatCompletions })]);
 

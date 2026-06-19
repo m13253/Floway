@@ -146,7 +146,7 @@ const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K)
 test('generate translates through native Chat Completions target end to end', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
 
@@ -165,7 +165,7 @@ test('generate translates through native Chat Completions target end to end', as
 test('generate translates through Messages when only that endpoint is exposed', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'messages', callMessages })]);
 
@@ -184,7 +184,7 @@ test('generate translates through Messages when only that endpoint is exposed', 
 test('generate translates through Responses when only that endpoint is exposed', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k',
+    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'responses', callResponses })]);
 
@@ -209,7 +209,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     ok: false, response: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions: firstCall }),
@@ -234,7 +234,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
 test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions }),

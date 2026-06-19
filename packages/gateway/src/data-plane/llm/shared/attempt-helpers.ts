@@ -35,6 +35,6 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   return eventResult(
     withUpstreamTelemetry(providerResult.events as AsyncIterable<ProtocolFrame<TEvent>>, ctx, context, candidate.targetApi, durationMs),
     telemetryModelIdentity(candidate, providerResult.modelKey),
-    context,
+    { performance: context, headers: providerResult.headers },
   );
 };

@@ -134,7 +134,7 @@ const protocolResult = (events: readonly ResponsesStreamEvent[], modelIdentity =
       for (const event of events) yield eventFrame(event);
     })(),
     modelIdentity,
-    performance,
+    { performance },
   );
 
 const collectFrames = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {

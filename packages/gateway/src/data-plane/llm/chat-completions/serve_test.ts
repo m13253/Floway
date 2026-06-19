@@ -146,7 +146,7 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
 test('generate routes a native Chat Completions candidate end to end', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'test-model-key',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'test-model-key', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_a', callChatCompletions })]);
 
@@ -166,7 +166,7 @@ test('generate routes a native Chat Completions candidate end to end', async () 
 test('generate translates through the Messages target when only that endpoint is exposed', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'messages-model-key',
+    ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'messages-model-key', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_m', targetApi: 'messages', callMessages })]);
 
@@ -185,7 +185,7 @@ test('generate translates through the Messages target when only that endpoint is
 test('generate translates through the Responses target when only that endpoint is exposed', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'responses-model-key',
+    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'responses-model-key', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
 
@@ -210,7 +210,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     ok: false, response: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callChatCompletions: firstCall }),
@@ -234,7 +234,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
 test('generate is a routing no-op when the payload carries no reasoning carriers (degenerate path)', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'test-model-key',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'test-model-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callChatCompletions }),
