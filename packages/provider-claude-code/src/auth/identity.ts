@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { CLAUDE_CODE_PROFILE_URL } from '../constants.ts';
+import { logWarn } from '../log.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 // Identity derived from `GET /api/oauth/profile` plus the optional CLI
@@ -67,10 +68,10 @@ export const fetchClaudeCodeIdentity = async (
   // `state.accounts[0]` which is keyed by accountUuid.
   if (response.status === 403 && isPermissionError(parsed)) {
     const accountUuid = deriveDegradedAccountUuid(accessToken);
-    console.warn(
-      'Claude Code /api/oauth/profile returned 403 (token lacks user:profile scope); '
-      + `falling back to degraded identity ${accountUuid}`,
-    );
+    logWarn('claude_code_identity_degraded_fallback', {
+      account_uuid: accountUuid,
+      reason: 'profile_403_missing_user_profile_scope',
+    });
     return { email: null, accountUuid, organizationUuid: null, subscriptionType: null };
   }
 
@@ -154,7 +155,7 @@ const deriveDegradedAccountUuid = (accessToken: string): string => {
 // omits it) — we return null to mirror the official CLI (cli.js v2.1.10
 // deriver A10 returns null on missing/unknown organization_type). Unrecognized
 // `organization_type` strings also return null so a new Anthropic tier does
-// not break ingest; we log via console.warn for operator visibility. The one
+// not break ingest; we log the unknown value for operator visibility. The one
 // throw is for `claude_max` with an unrecognized `rate_limit_tier`, which
 // signals genuine Anthropic shape drift on a tier we recognize.
 const deriveSubscriptionType = (
@@ -170,7 +171,10 @@ const deriveSubscriptionType = (
   if (organizationType === 'claude_pro') return 'pro';
   if (organizationType === 'claude_enterprise') return 'enterprise';
   if (organizationType === 'claude_team') return 'team';
-  console.warn(`Claude Code /api/oauth/profile carries unknown organization_type='${organizationType}'; subscriptionType will be null`);
+  logWarn('claude_code_unknown_organization_type', {
+    organization_type: organizationType,
+    rate_limit_tier: rateLimitTier,
+  });
   return null;
 };
 

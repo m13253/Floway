@@ -2,6 +2,7 @@ import {
   ClaudeCodeOAuthSessionTerminatedError,
   refreshClaudeCodeAccessToken,
 } from './auth/oauth.ts';
+import { logInfo, logWarn } from './log.ts';
 import {
   readClaudeCodeUpstreamState,
   type ClaudeCodeAccessTokenEntry,
@@ -132,7 +133,11 @@ const ensureClaudeCodeAccessTokenInner = async (
       return { entry: account.accessToken, freshlyMinted: false };
     }
     const message = 'Setup token expired or absent; re-import to recover';
-    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, message);
+    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, {
+      reason: 'setup_token_expired',
+      message,
+      oauthCode: null,
+    });
     throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
   }
 
@@ -155,7 +160,11 @@ const ensureClaudeCodeAccessTokenInner = async (
         const recovered = await recoverFromRefreshRace(args, account.refreshToken);
         if (recovered) return recovered;
       }
-      await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, error.upstreamMessage);
+      await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, {
+        reason: 'oauth_refresh_failed',
+        message: error.upstreamMessage,
+        oauthCode: error.code,
+      });
     }
     throw error;
   }
@@ -202,8 +211,24 @@ const ensureClaudeCodeAccessTokenInner = async (
       `Claude Code refresh-token rotation lost CAS for upstream ${args.upstreamId}; another rotation won`,
     );
   }
+  logInfo('claude_code_refresh_token_rotated', {
+    upstream_id: args.upstreamId,
+    account_uuid: account.accountUuid,
+    expires_in_seconds: refreshed.expires_in,
+    refreshed_at: now,
+  });
   return { entry: newAccessTokenEntry, freshlyMinted: true };
 };
+
+interface TerminalFlipFields {
+  reason: string;
+  message: string;
+  // The raw OAuth `error` code (e.g. `invalid_grant`,
+  // `app_session_terminated`) when the flip was triggered by an upstream
+  // OAuth response; `null` for code-internal flips (e.g. setup-token
+  // expiry) that have no upstream code to attribute.
+  oauthCode: string | null;
+}
 
 const persistTerminalState = async (
   repo: UpstreamsRepoSlim,
@@ -211,16 +236,26 @@ const persistTerminalState = async (
   expectedState: unknown,
   current: ClaudeCodeUpstreamState,
   accountIndex: number,
-  message: string,
+  fields: TerminalFlipFields,
 ): Promise<void> => {
+  const account = current.accounts[accountIndex];
   const flipped = replaceAccountAt(current, accountIndex, account => ({
     ...account,
     state: 'refresh_failed',
-    stateMessage: message,
+    stateMessage: fields.message,
     stateUpdatedAt: new Date().toISOString(),
     accessToken: null,
   }));
   await repo.saveState(upstreamId, flipped, { expectedState });
+  logWarn('claude_code_account_state_flip', {
+    upstream_id: upstreamId,
+    account_uuid: account.accountUuid,
+    from_state: account.state,
+    to_state: 'refresh_failed',
+    reason: fields.reason,
+    oauth_code: fields.oauthCode,
+    message: fields.message,
+  });
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
@@ -241,9 +276,13 @@ const recoverFromRefreshRace = async (
   const rereadAccount = rereadState.accounts[0];
   if (rereadAccount.state !== 'active') return null;
   if (rereadAccount.refreshToken === usedRefreshToken) return null;
-  console.info(
-    `Claude Code refresh-race recovered for upstream ${args.upstreamId}: sibling rotated, using their access token`,
-  );
+  logInfo('claude_code_refresh_race_recovered', {
+    upstream_id: args.upstreamId,
+    account_uuid: rereadAccount.accountUuid,
+    rotated_refresh_token_prefix: rereadAccount.refreshToken === null
+      ? null
+      : rereadAccount.refreshToken.slice(0, 6),
+  });
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
     return { entry: rereadAccount.accessToken, freshlyMinted: false };
   }

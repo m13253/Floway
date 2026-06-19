@@ -1,6 +1,7 @@
 import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token-cache.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
+import { logWarn, logInfo } from './log.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
@@ -141,11 +142,27 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) return;
   const state = readClaudeCodeUpstreamState(fresh.state);
+  const account = state.accounts[0];
+  const priorStatus = account.quotaSnapshot === null ? null : account.quotaSnapshot.data.status;
   const next = replaceStateAccount(state, account => ({
     ...account,
     quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
   }));
   await getProviderRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  // Emit only on transition. Persisting every response would flood the log
+  // with one event per request; the dashboard already reads the snapshot
+  // verbatim. Operators care about the moment the upstream flipped from
+  // `allowed` to `rejected` (or back), not the steady state.
+  if (priorStatus !== snapshot.status) {
+    logInfo('claude_code_quota_state_transition', {
+      upstream_id: upstreamId,
+      account_uuid: account.accountUuid,
+      from_status: priorStatus,
+      to_status: snapshot.status,
+      reset_at_iso: snapshot.reset,
+      representative_claim: snapshot.representativeClaim,
+    });
+  }
 };
 
 // Best-effort persist: a CAS loss to a concurrent rotation or quota write is
@@ -170,7 +187,10 @@ const persistQuotaFromHeadersFireAndForget = (
   const snapshot = parseClaudeCodeQuotaHeaders(headers);
   if (Object.keys(snapshot.raw).length === 0) return;
   const persist = persistQuotaSnapshot(upstreamId, snapshot).catch(error => {
-    console.warn(`Claude Code: failed to persist quota snapshot for upstream ${upstreamId}: ${String(error)}`);
+    logWarn('claude_code_quota_persist_failed', {
+      upstream_id: upstreamId,
+      error: String(error),
+    });
   });
   waitUntil?.(persist);
 };
@@ -222,14 +242,20 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
   return null;
 };
 
-const persistTerminalAccountState = async (upstreamId: string, terminalMessage: string): Promise<void> => {
+const persistTerminalAccountState = async (
+  upstreamId: string,
+  terminalMessage: string,
+  reason: string,
+  upstreamStatus: number,
+): Promise<void> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) return;
   const state = readClaudeCodeUpstreamState(fresh.state);
+  const account = state.accounts[0];
   // Already terminal — a sibling write (e.g. an OAuth refresh death) won;
   // skip overwriting the prior message so the dashboard keeps the first
   // signal.
-  if (state.accounts[0].state !== 'active') return;
+  if (account.state !== 'active') return;
   const flipped = replaceStateAccount(state, account => ({
     ...account,
     state: 'refresh_failed',
@@ -238,6 +264,15 @@ const persistTerminalAccountState = async (upstreamId: string, terminalMessage: 
     accessToken: null,
   }));
   await getProviderRepo().upstreams.saveState(upstreamId, flipped, { expectedState: fresh.state });
+  logWarn('claude_code_account_state_flip', {
+    upstream_id: upstreamId,
+    account_uuid: account.accountUuid,
+    from_state: account.state,
+    to_state: 'refresh_failed',
+    reason,
+    upstream_status: upstreamStatus,
+    message: terminalMessage,
+  });
 };
 
 // Fire-and-forget: clones the response so the original body still streams
@@ -269,9 +304,18 @@ const maybePersistTerminalFromBodyFireAndForget = (
     }
     const terminalMessage = detectTerminalSentinel(response.status, bodyText);
     if (terminalMessage === null) return;
-    await persistTerminalAccountState(upstreamId, terminalMessage);
+    const reason = response.status === 400 ? 'org_disabled_400_sentinel' : 'org_banned_403_sentinel';
+    logWarn('claude_code_terminal_sentinel_detected', {
+      upstream_id: upstreamId,
+      upstream_status: response.status,
+      reason,
+    });
+    await persistTerminalAccountState(upstreamId, terminalMessage, reason, response.status);
   })().catch(error => {
-    console.warn(`Claude Code: failed to persist terminal sentinel for upstream ${upstreamId}: ${String(error)}`);
+    logWarn('claude_code_terminal_sentinel_persist_failed', {
+      upstream_id: upstreamId,
+      error: String(error),
+    });
   });
   waitUntil?.(task);
 };
