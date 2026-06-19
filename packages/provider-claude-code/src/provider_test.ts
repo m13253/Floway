@@ -184,7 +184,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.system).toHaveLength(3);
     expect(body.system[0].text).toMatch(/^x-anthropic-billing-header:/);
     expect(body.system[1].text).toMatch(/^You are Claude Code/);
-    expect(body.system[2].cache_control).toEqual({ type: 'ephemeral' });
+    expect(body.system[2].cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
     expect(typeof body.metadata.user_id).toBe('string');
     expect(body.metadata.user_id.startsWith('{')).toBe(true);
   });

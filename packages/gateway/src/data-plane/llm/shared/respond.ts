@@ -72,10 +72,25 @@ export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata[
 // with no rate-limit state. The allowlist is by prefix so new dimensions
 // the upstream introduces (e.g. a future `anthropic-ratelimit-tier-*`) are
 // forwarded automatically.
+//
+// `request-id` and `cf-ray` (the exact-name allowlist) are the trace ids
+// operators need to file Anthropic support tickets — without them, a
+// downstream client cannot correlate a failure to anything Anthropic can
+// look up. The passthrough route already forwards these
+// (`passthrough-serve.ts` retry-after / x-request-id / cf-ray); the LLM
+// response surface lagged behind. We match `request-id` (Anthropic emits
+// the bare name; some CDNs and proxies add an `x-` prefix, which is also
+// accepted).
 const FORWARDED_HEADER_PREFIXES = ['anthropic-ratelimit-'] as const;
+const FORWARDED_HEADER_NAMES: ReadonlySet<string> = new Set([
+  'request-id',
+  'x-request-id',
+  'cf-ray',
+]);
 
 export const isForwardableUpstreamHeader = (name: string): boolean => {
   const lowered = name.toLowerCase();
+  if (FORWARDED_HEADER_NAMES.has(lowered)) return true;
   return FORWARDED_HEADER_PREFIXES.some(prefix => lowered.startsWith(prefix));
 };
 

@@ -63,12 +63,13 @@ const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Re
   );
 };
 
-// `anthropic-ratelimit-unified-status: rejected` means the upstream's
-// primary plan window is exhausted and a fresh request would 429 right
-// away; short-circuit at the gate so we don't burn an OAuth refresh on
-// a request that has no chance.
+// `anthropic-ratelimit-unified-status: rejected` paired with a future
+// `unified-reset` timestamp means the upstream's primary plan window is
+// exhausted and a fresh request would 429 right away; short-circuit at
+// the gate so we don't burn an OAuth refresh on a request that has no
+// chance.
 //
-// Note: `overage.status: rejected` (typically paired with
+// Note 1: `overage.status: rejected` (typically paired with
 // `overage-disabled-reason: out_of_credits`) is NOT a short-circuit
 // signal. It only reports that the account has no extra-usage credits
 // to spill into once the primary window runs out — which is the steady
@@ -76,13 +77,20 @@ const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Re
 // blocking on it would refuse every request to such accounts. The
 // primary `status` already reflects whether the upstream will actually
 // reject the next request.
+//
+// Note 2: a primary `status: rejected` WITHOUT a `reset` is treated as
+// non-gating. Sub2api `ratelimit_service.go:953-961` flags this exact
+// shape as "likely not a real rate limit" (e.g. an "Extra usage required"
+// body sentinel) and passes it through verbatim — without a reset we'd
+// otherwise lock the account out indefinitely because the next request
+// never fires to refresh the snapshot.
 const isRateLimitedNow = (
   snapshot: ClaudeCodeQuotaSnapshot | null,
   now: Date,
 ): snapshot is ClaudeCodeQuotaSnapshot => {
   if (!snapshot) return false;
   if (snapshot.status !== 'rejected') return false;
-  if (!snapshot.reset) return true;
+  if (!snapshot.reset) return false;
   return new Date(snapshot.reset).getTime() > now.getTime();
 };
 

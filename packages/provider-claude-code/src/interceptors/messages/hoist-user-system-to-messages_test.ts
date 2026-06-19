@@ -28,8 +28,8 @@ test('captures a string system into a synthetic user/assistant pair and drops `s
 
   assertEquals(ctx.payload.system, undefined);
   assertEquals(ctx.payload.messages, [
-    { role: 'user', content: '<system>\nYou are a pirate.\n</system>' },
-    { role: 'assistant', content: 'I will follow the above instructions.' },
+    { role: 'user', content: [{ type: 'text', text: '[System Instructions]\nYou are a pirate.' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'Understood. I will follow these instructions.' }] },
     { role: 'user', content: 'real question' },
   ]);
 });
@@ -48,7 +48,7 @@ test('joins multi-block system into one synthetic turn with blank-line separator
   await hoistUserSystemToMessages(ctx, {}, okEvents);
 
   assertEquals(ctx.payload.system, undefined);
-  assertEquals(ctx.payload.messages[0], { role: 'user', content: '<system>\nfirst rule\n\nsecond rule\n</system>' });
+  assertEquals(ctx.payload.messages[0], { role: 'user', content: [{ type: 'text', text: '[System Instructions]\nfirst rule\n\nsecond rule' }] });
 });
 
 test('drops system entirely when caller did not send one and leaves messages untouched', async () => {

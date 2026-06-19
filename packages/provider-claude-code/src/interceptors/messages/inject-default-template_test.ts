@@ -30,5 +30,5 @@ test('appends DEFAULT_TEMPLATE_BLOCK as system[2] with ephemeral cache_control i
 
   assertEquals(ctx.payload.system, [billing, IDENTITY_BLOCK, DEFAULT_TEMPLATE_BLOCK]);
   if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
-  assertEquals(ctx.payload.system[2]!.cache_control, { type: 'ephemeral' });
+  assertEquals(ctx.payload.system[2]!.cache_control, { type: 'ephemeral', ttl: '5m' });
 });

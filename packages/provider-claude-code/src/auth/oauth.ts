@@ -34,17 +34,23 @@ export class ClaudeCodeOAuthSessionTerminatedError extends Error {
 }
 
 // Terminal-code sets are split by grant type, mirroring codex
-// (provider-codex/src/auth/oauth.ts:100-104, :117-123). `invalid_grant` on a
-// refresh means the refresh_token is revoked/replayed (recoverable only by
-// re-import) and so is terminal. `invalid_grant` on the PKCE exchange means
-// the operator pasted a stale or wrong callback URL — recoverable by
-// restarting the PKCE flow, not by re-importing — so it is not terminal here.
+// (provider-codex/src/auth/oauth.ts:100-104, :117-123). The refresh-side
+// codes match sub2api's `isNonRetryableRefreshError`
+// (backend/internal/service/token_refresh_service.go:429-451) — all signal
+// a dead credential that only re-import can recover. `invalid_grant`
+// on the PKCE exchange means the operator pasted a stale or wrong
+// callback URL — recoverable by restarting the PKCE flow, not by
+// re-importing — so it is not terminal on the exchange path.
 const EXCHANGE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
   'app_session_terminated',
 ]);
 const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
   'app_session_terminated',
   'invalid_grant',
+  'invalid_refresh_token',
+  'invalid_client',
+  'unauthorized_client',
+  'access_denied',
 ]);
 
 const claudeCodeTokenRequest = async (

@@ -26,7 +26,7 @@ describe('IDENTITY_BLOCK', () => {
 describe('DEFAULT_TEMPLATE_BLOCK', () => {
   test('is a text block with an ephemeral cache breakpoint', () => {
     expect(DEFAULT_TEMPLATE_BLOCK.type).toBe('text');
-    expect(DEFAULT_TEMPLATE_BLOCK.cache_control).toEqual({ type: 'ephemeral' });
+    expect(DEFAULT_TEMPLATE_BLOCK.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' });
   });
 
   test('opens with the interactive-agent introduction line', () => {

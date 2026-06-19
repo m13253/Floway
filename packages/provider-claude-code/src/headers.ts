@@ -26,6 +26,12 @@ const STAINLESS_PACKAGE_VERSION = '0.94.0';
 // emits it that way. OS / Arch / Runtime values verified against the macOS
 // arm64 CC binary 2026-06-19; cross-platform CC builds (Windows / x86_64)
 // would emit different values, so re-capture on any platform bump.
+//
+// `X-Stainless-Helper-Method: stream` is always set: every /v1/messages
+// call we make to Anthropic is a streaming call (see `wireBody.stream =
+// true` in fetch.ts), so this matches real CC's wire output captured in
+// `@anthropic-ai/claude-code@2.1.10` cli.js and sub2api's pinned set
+// (gateway_service.go:7427-7429 / allowedHeaders list at :432).
 const STAINLESS_BASE = {
   'X-Stainless-Lang': 'js',
   'X-Stainless-Package-Version': STAINLESS_PACKAGE_VERSION,
@@ -35,6 +41,7 @@ const STAINLESS_BASE = {
   'X-Stainless-Runtime-Version': 'v24.3.0',
   'X-Stainless-Retry-Count': '0',
   'X-Stainless-Timeout': '600',
+  'X-Stainless-Helper-Method': 'stream',
 } as const;
 
 const BASE_HEADERS = {
@@ -47,13 +54,18 @@ const BASE_HEADERS = {
 } as const;
 
 // `anthropic-beta` flag set carried by Sonnet/Opus Claude Code requests at
-// v2.1.181. Order kept stable to match real CLI output; the upstream is
-// space-tolerant but order-stable simplifies fixture diffs.
+// v2.1.181. Order matches sub2api's curated set
+// (`backend/internal/service/constants.go` `FullClaudeCodeMimicryBetas`),
+// which itself was derived from captured real-CC traffic. The audit
+// previously included `fine-grained-tool-streaming-2025-05-14` here;
+// sub2api dropped it as one of several tokens that, when present on the
+// OAuth-mimicry path, contributed to detector keying on "extra token =
+// likely not real CC". Order matters: leading with `claude-code-20250219`
+// matches the wire fixtures.
 const ANTHROPIC_BETA_SONNET_OPUS = [
-  'oauth-2025-04-20',
   'claude-code-20250219',
+  'oauth-2025-04-20',
   'interleaved-thinking-2025-05-14',
-  'fine-grained-tool-streaming-2025-05-14',
   'prompt-caching-scope-2026-01-05',
   'effort-2025-11-24',
   'context-management-2025-06-27',

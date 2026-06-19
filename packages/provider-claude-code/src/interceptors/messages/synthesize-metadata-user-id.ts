@@ -8,7 +8,7 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 // always populate it on the re-mimicry path.
 //
 // The shape we emit is the new JSON form, matching CC v2.1.78+ verbatim:
-//   {"device_id":"<32-hex>","account_uuid":"","session_id":"<uuidv4>"}
+//   {"device_id":"<64-hex>","account_uuid":"","session_id":"<uuidv4>"}
 //
 // Deterministic ids: device_id is per-upstream stable (one CC "device" per
 // upstream record), session_id is per-payload (so a multi-turn conversation
@@ -24,7 +24,7 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 // in ctx.config but does not need to leak into per-request mimicry.
 //
 // References:
-//   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/claude_code_handler.go
+//   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/metadata_userid.go#L15
 
 export const synthesizeMetadataUserId = async <TResult>(
   ctx: ClaudeCodeMessagesBoundaryCtx,
@@ -42,11 +42,16 @@ export const synthesizeMetadataUserId = async <TResult>(
   return await run();
 };
 
-// 32 hex chars matches the format real CC emits (collected from packet
-// captures cross-referenced with sub2api fixtures).
+// 64 hex chars (32 bytes) matches the format real CC emits, captured in
+// sub2api test fixtures (`gateway_prompt_test.go:17`,
+// `claude_code_validator_test.go:14`) and asserted by sub2api's
+// `metadata_userid.go:15` comment "64-char hex (or arbitrary client id)".
+// An earlier version of this code emitted 32 hex chars (16 bytes) on a
+// mistaken capture reading; an off-length device_id is one of several
+// CC-shape failures the detector keys on.
 const deviceIdForUpstream = async (upstreamId: string): Promise<string> => {
   const hex = await sha256Hex(`claude-code-device:${upstreamId}`);
-  return hex.slice(0, 32);
+  return hex.slice(0, 64);
 };
 
 // Session id derives from the upstream id plus the first user message text,

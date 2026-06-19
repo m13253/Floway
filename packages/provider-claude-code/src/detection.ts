@@ -129,7 +129,12 @@ const extractSystemTexts = (body: MessagesPayload): string[] => {
   const { system } = body;
   if (!system) return [];
   if (typeof system === 'string') return [system];
-  return system.map(block => block.text);
+  // Mirrors sub2api `claude_code_validator.go:175-178`: hand-crafted
+  // payloads can land here with a structured `system` block whose `.text`
+  // is missing or non-string, and the detector must skip those rather
+  // than throw — a TypeError here would crash the inbound request before
+  // any upstream call is made.
+  return system.flatMap(block => (typeof block.text === 'string' && block.text.length > 0 ? [block.text] : []));
 };
 
 export interface ClaudeCodeShapedRequestInput {

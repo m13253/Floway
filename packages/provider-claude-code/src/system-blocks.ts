@@ -65,7 +65,15 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
  - When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.
  - When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. anthropics/claude-code#100) so they render as clickable links.
  - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
-  cache_control: { type: 'ephemeral' },
+  // The explicit `ttl: '5m'` matches sub2api's `gateway_service.go:4350-4357`.
+  // Real CC at v2.1.181 ships `'1h'` to amortize the cache across the user's
+  // session; sub2api deliberately picks `'5m'` to keep the cached prefix
+  // active across in-flight conversation turns without burning the 1h
+  // quota window — same trade-off we want for a multi-tenant gateway. The
+  // ttl was previously implicit (Anthropic defaults to `'5m'` when the
+  // field is omitted); making it explicit aligns the wire shape with
+  // sub2api's fixtures so Anthropic's detector sees identical bytes.
+  cache_control: { type: 'ephemeral', ttl: '5m' },
 };
 
 // 12-char ASCII salt, NOT hex-decoded. Ported from sub2api's
