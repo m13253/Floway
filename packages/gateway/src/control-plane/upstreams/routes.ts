@@ -79,6 +79,18 @@ type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+// Pulls the wire-side identifier from a provider's opaque `providerData`
+// blob when the provider distinguishes between the public catalog id and
+// the upstream id (e.g. claude-code exposes `claude-sonnet-4-5` publicly
+// while sending `claude-sonnet-4-5-20250929` on the wire). Falls through
+// to undefined when the blob is absent or lacks the field, in which case
+// the caller's fallback (`model.id`) keeps the legacy behaviour.
+const providerDataUpstreamModelId = (data: unknown): string | undefined => {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const candidate = (data as { upstreamModelId?: unknown }).upstreamModelId;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+};
+
 // Run the per-provider invariant asserts on a freshly-built or freshly-merged
 // record before it hits the repo. Request-time zod schemas only validate JSON
 // shape; these helpers enforce the URL / endpoint-mix / path-override rules
@@ -353,7 +365,7 @@ export const listUpstreamModels = async (c: Context) => {
     const instance = await createProviderInstance(record);
     const models = await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: refresh });
     const data = models.map(model => ({
-      upstreamModelId: model.id,
+      upstreamModelId: providerDataUpstreamModelId(model.providerData) ?? model.id,
       publicModelId: model.id,
       kind: model.kind,
       endpoints: model.endpoints,
