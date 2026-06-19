@@ -6,14 +6,13 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi, type ApiClient } from '../../api/client.ts';
+import type { BillingDimension } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
-
-import type { BillingDimension } from '../../api/types.ts';
 
 interface DisplayUsageRecord {
   keyId: string;

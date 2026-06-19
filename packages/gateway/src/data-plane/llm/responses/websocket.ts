@@ -296,10 +296,12 @@ const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
   const usage = response.usage;
   if (!usage) return null;
   const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
+  const tier = response.service_tier;
   return tokenUsage({
     input: usage.input_tokens - cacheRead,
     input_cache_read: cacheRead,
     output: usage.output_tokens,
+    ...(tier != null && tier !== 'default' && tier !== 'auto' ? { tier } : {}),
   });
 };
 
