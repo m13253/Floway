@@ -6,6 +6,7 @@ import type {
   DumpRequest,
   DumpStreamEvent,
 } from '@floway-dev/protocols/dump';
+import type { CollectOutcome } from '@floway-dev/protocols/dump-collect';
 import {
   collectChatCompletionsStream,
   collectGeminiStream,
@@ -115,15 +116,18 @@ const bytesView = computed<BytesView | null>(() => {
 });
 
 interface CollectedView {
-  text: string;
+  result: unknown;
+  resultText: string | null;
   copyText: string;
+  error: string | null;
+  truncated: boolean;
 }
 
 // Pick the right collect* function from the request path. Gemini uses
 // `/v1beta/models/...:streamGenerateContent`; the others sit at well-known
 // segments. count_tokens never reaches the dump middleware, so the
 // `/messages` branch never sees that suffix.
-const collectStream = (path: string, events: readonly DumpStreamEvent[]): unknown => {
+const collectStream = (path: string, events: readonly DumpStreamEvent[]): CollectOutcome<unknown> => {
   if (path.includes('/v1beta/models/')) return collectGeminiStream(events);
   if (path.includes('/chat/completions')) return collectChatCompletionsStream(events);
   if (path.includes('/responses')) return collectResponsesStream(events);
@@ -131,15 +135,24 @@ const collectStream = (path: string, events: readonly DumpStreamEvent[]): unknow
   throw new Error(`No collect strategy for path ${path}`);
 };
 
-const collectedView = computed<CollectedView | { error: string } | null>(() => {
+const collectedView = computed<CollectedView | { thrown: string } | null>(() => {
   const r = record.value;
   if (r?.response.type !== 'stream') return null;
   try {
-    const collected = collectStream(r.request.path, r.response.events);
-    const text = JSON.stringify(collected, null, 2);
-    return { text, copyText: text };
+    const outcome = collectStream(r.request.path, r.response.events);
+    const resultText = outcome.result === null ? null : JSON.stringify(outcome.result, null, 2);
+    // Copy whatever's most useful: the reconstructed result if we have one,
+    // otherwise fall back to the error so users can paste the diagnostic.
+    const copyText = resultText ?? outcome.error ?? '';
+    return {
+      result: outcome.result,
+      resultText,
+      copyText,
+      error: outcome.error,
+      truncated: outcome.truncated,
+    };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : String(e) };
+    return { thrown: e instanceof Error ? e.message : String(e) };
   }
 });
 
@@ -338,9 +351,31 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
 
           <template v-else-if="record.response.type === 'stream'">
             <template v-if="streamView === 'collected'">
-              <pre v-if="collectedView && 'text' in collectedView" class="overflow-x-auto px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ collectedView.text }}</pre>
-              <div v-else-if="collectedView && 'error' in collectedView" class="px-3 py-2 text-xs text-accent-rose">
-                Could not collect stream: {{ collectedView.error }}
+              <template v-if="collectedView && 'copyText' in collectedView">
+                <!-- Show error in preference to truncated when both flags are set: error carries
+                     the upstream diagnostic, while truncated just signals "no terminal frame". -->
+                <div
+                  v-if="collectedView.error"
+                  class="mx-3 mt-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
+                >
+                  Stream error: {{ collectedView.error }}
+                </div>
+                <div
+                  v-else-if="collectedView.truncated"
+                  class="mx-3 mt-3 rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber"
+                >
+                  Stream truncated — terminal frame missing. Showing best-effort accumulated state.
+                </div>
+                <pre
+                  v-if="collectedView.resultText !== null"
+                  class="overflow-x-auto px-3 py-2 text-xs font-mono leading-relaxed text-gray-200"
+                >{{ collectedView.resultText }}</pre>
+                <p v-else class="px-3 py-4 text-center text-xs text-gray-500">
+                  No data could be reconstructed from the captured events.
+                </p>
+              </template>
+              <div v-else-if="collectedView && 'thrown' in collectedView" class="px-3 py-2 text-xs text-accent-rose">
+                Could not collect stream: {{ collectedView.thrown }}
               </div>
             </template>
             <ul v-else class="divide-y divide-white/[0.04] text-xs">
