@@ -1,6 +1,7 @@
-import { CLAUDE_CODE_PROFILE_URL } from '../constants.ts';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { CLAUDE_CODE_PROFILE_URL } from '../constants.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 // Identity derived from `GET /api/oauth/profile` plus the optional CLI
@@ -67,7 +68,7 @@ export const fetchClaudeCodeIdentity = async (
   if (response.status === 403 && isPermissionError(parsed)) {
     const accountUuid = deriveDegradedAccountUuid(accessToken);
     console.warn(
-      `Claude Code /api/oauth/profile returned 403 (token lacks user:profile scope); `
+      'Claude Code /api/oauth/profile returned 403 (token lacks user:profile scope); '
       + `falling back to degraded identity ${accountUuid}`,
     );
     return { email: null, accountUuid, organizationUuid: null, subscriptionType: null };
