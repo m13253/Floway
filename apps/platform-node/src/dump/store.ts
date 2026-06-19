@@ -10,8 +10,6 @@ import type {
   DumpRecordId,
 } from '@floway-dev/protocols/dump';
 
-// Page size cap — list() will never return more rows than this, regardless of
-// what the caller asks for.
 const MAX_LIST_LIMIT = 200;
 
 const fileKey = (keyId: string, recordId: DumpRecordId): string =>
@@ -48,23 +46,27 @@ export class NodeDumpStore implements DumpStore {
     const limit = Math.min(opts.limit, MAX_LIST_LIMIT);
     const retentionSeconds = await this.retentionResolver(keyId);
     const threshold = retentionSeconds === null ? null : Date.now() - retentionSeconds * 1000;
+    // ORDER BY (created_at DESC, id DESC) lets the (key_id, created_at DESC)
+    // index drive the sort. The id tie-breaker is for same-ms records — ULID
+    // ids are time-ordered, so `id < before` still means "earlier in time"
+    // and preserves the existing cursor contract.
     const rows = opts.before === undefined
       ? threshold === null
         ? await this.db
-            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY id DESC LIMIT ?')
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY created_at DESC, id DESC LIMIT ?')
             .bind(keyId, limit)
             .all<{ meta_json: string }>()
         : await this.db
-            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND created_at >= ? ORDER BY id DESC LIMIT ?')
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND created_at >= ? ORDER BY created_at DESC, id DESC LIMIT ?')
             .bind(keyId, threshold, limit)
             .all<{ meta_json: string }>()
       : threshold === null
         ? await this.db
-            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? ORDER BY created_at DESC, id DESC LIMIT ?')
             .bind(keyId, opts.before, limit)
             .all<{ meta_json: string }>()
         : await this.db
-            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? AND created_at >= ? ORDER BY id DESC LIMIT ?')
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? AND created_at >= ? ORDER BY created_at DESC, id DESC LIMIT ?')
             .bind(keyId, opts.before, threshold, limit)
             .all<{ meta_json: string }>();
     return rows.results.map(r => JSON.parse(r.meta_json) as DumpMetadata);
