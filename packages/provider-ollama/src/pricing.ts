@@ -28,7 +28,7 @@
 // surfaces cached_tokens — switching to billed cache reads then becomes a
 // pure ingestion-side change.
 //
-// Refresh procedure: .agents/skills/refresh-ollama-pricing/.
+// Refresh procedure: .agents/skills/fetching-models-pricing/.
 
 import type { ModelPricing } from '@floway-dev/protocols/common';
 
