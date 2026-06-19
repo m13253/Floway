@@ -70,6 +70,14 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   return assertNever(kind);
 };
 
+const providerBadgeLabel = (kind: UpstreamProviderKind): string => ({
+  custom: 'Custom',
+  azure: 'Azure',
+  copilot: 'Copilot',
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+}[kind]);
+
 // Intrinsic floor for the aside: smallest height at which every
 // non-flag-editor section is fully laid out AND the flag editor still has
 // its declared min-h-[16rem]. Drives `min-h` on the aside so the rail
@@ -122,7 +130,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <span
         class="rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
         :class="providerBadgeClass(activeProvider)"
-      >{{ activeProvider }}</span>
+      >{{ providerBadgeLabel(activeProvider) }}</span>
       <h2 class="min-w-0 truncate text-sm font-semibold text-white">
         {{ name || (mode === 'create' ? 'New upstream' : 'Upstream') }}
       </h2>
