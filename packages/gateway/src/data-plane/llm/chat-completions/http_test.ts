@@ -190,7 +190,8 @@ test('POST /v1/chat/completions emits the usage-only chunk when stream_options.i
 // The http entry MUST NOT mutate any non-auth Hono context slot — caller
 // intent (stream_options.include_usage, etc.) belongs in the request-scoped
 // locals the entry threads through serve, never in middleware-visible
-// context-slot smuggling.
+// context-slot smuggling. The one exception is `dumpAccounting`, which the
+// respond path writes for the capture-dump middleware to read out of band.
 test('POST /v1/chat/completions does not write any non-auth Hono context slot', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
@@ -198,7 +199,7 @@ test('POST /v1/chat/completions does not write any non-auth Hono context slot', 
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
-  const knownAuthKeys = new Set(['apiKeyId', 'apiKeyUpstreamIds']);
+  const knownAuthKeys = new Set(['apiKeyId', 'apiKeyUpstreamIds', 'dumpAccounting']);
   const observedKeys: string[] = [];
 
   const app = makeApp(c => {

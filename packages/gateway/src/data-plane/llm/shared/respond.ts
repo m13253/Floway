@@ -1,3 +1,5 @@
+import type { Context } from 'hono';
+
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
 import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
@@ -55,6 +57,23 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
 
 export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
+};
+
+// Stamp the per-attempt accounting that `captureRequestDump` reads when it
+// finalizes the dump record. Mirrors the values `recordUsage` /
+// `recordPerformance` already track, but lives on the Hono context so the
+// capture middleware can pick it up after the handler returns.
+export const setDumpAccounting = (c: Context, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): void => {
+  const inputTokens = usage
+    ? (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) + (usage.input_image ?? 0)
+    : 0;
+  const outputTokens = usage ? (usage.output ?? 0) + (usage.output_image ?? 0) : 0;
+  c.set('dumpAccounting', {
+    upstream: modelIdentity.upstream,
+    model: modelIdentity.model,
+    inputTokens: usage ? inputTokens : null,
+    outputTokens: usage ? outputTokens : null,
+  });
 };
 
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {

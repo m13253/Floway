@@ -5,7 +5,7 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToRes
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage, setDumpAccounting } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
@@ -42,7 +42,9 @@ export const respondResponses = async (
     try {
       const response = await collectResponsesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
+      const usage = tokenUsageFromResponsesResult(response);
+      setDumpAccounting(c, metadata.modelIdentity, usage);
+      await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed');
       return { success: true, response: Response.json(response) };
     } catch (error) {
@@ -60,6 +62,7 @@ export const respondResponses = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      setDumpAccounting(c, metadata.modelIdentity, state.usage);
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {

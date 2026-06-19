@@ -151,6 +151,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
+      setPassthroughDumpAccounting(c, binding.upstream, modelId, usage);
       if (usage) {
         scheduleUsageRecord(
           backgroundScheduler,
@@ -184,3 +185,18 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
 // Uniform error envelope for this endpoint family.
 export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
+
+// Mirrors the LLM respond path: stamp the per-request accounting that
+// `captureRequestDump` reads when finalizing the dump record. Sums every
+// input-side and output-side dimension into a single inputTokens/outputTokens
+// pair — the dump UI shows totals, not the per-dimension split.
+const setPassthroughDumpAccounting = (c: Context, upstream: string, model: string, usage: TokenUsage | null): void => {
+  c.set('dumpAccounting', {
+    upstream,
+    model,
+    inputTokens: usage
+      ? (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) + (usage.input_image ?? 0)
+      : null,
+    outputTokens: usage ? (usage.output ?? 0) + (usage.output_image ?? 0) : null,
+  });
+};

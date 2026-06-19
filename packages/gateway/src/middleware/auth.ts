@@ -48,6 +48,10 @@ export const authMiddleware = async (c: Context, next: Next) => {
 
   setUserContext(c, user);
   c.set('apiKeyId', apiKey.id);
+  // The capture-dump middleware reads `dumpRetentionSeconds` off this row to
+  // decide whether to record; exposing the full ApiKey avoids a second
+  // findByRawKey on every captured request.
+  c.set('apiKey', apiKey);
   c.set('apiKeyUpstreamIds', apiKey.upstreamIds);
   await next();
 };
