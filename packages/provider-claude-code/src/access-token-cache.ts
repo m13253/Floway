@@ -136,7 +136,8 @@ export const invalidateClaudeCodeAccessToken = async (args: {
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
   const accountIndex = 0;
-  if (state.accounts[accountIndex].accessToken === null) return;
+  const account = state.accounts[accountIndex];
+  if (account.accessToken === null) return;
   const cleared = replaceAccountAt(state, accountIndex, account => ({ ...account, accessToken: null }));
   await args.repo.saveState(args.upstreamId, cleared, { expectedState: fresh.state });
 };
