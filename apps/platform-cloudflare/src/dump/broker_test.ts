@@ -5,27 +5,38 @@ import type { KeyDumpDO } from './key-dump-do.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
-// Minimal WebSocket-like double — enough surface for the broker subscribe
-// loop. Uses a plain EventTarget under the hood so dispatchEvent + add/remove
-// listeners behave like a workerd-style WebSocket without pulling in the real
-// runtime.
+// Two-ended WebSocket pair double, mirroring the workerd shape: a real
+// WebSocketPair has independent client and server endpoints, and send() on
+// one fires a 'message' event on the other. The broker calls accept() on
+// the value returned by fetch().webSocket — which is the client side. The
+// DO would normally call send() on its server side; here the test publishes
+// via server.send() and asserts client.dispatchEvent surfaces it.
 class FakeWebSocket extends EventTarget {
-  accept(): void { /* runtime no-op outside the DO host */ }
-  close(): void { this.dispatchEvent(new Event('close')); }
+  peer: FakeWebSocket | null = null;
+  accept(): void {}
 
-  pushMessage(payload: string): void {
-    this.dispatchEvent(new MessageEvent('message', { data: payload }));
+  send(payload: string): void {
+    this.peer?.dispatchEvent(new MessageEvent('message', { data: payload }));
   }
 
-  serverClose(): void {
+  close(): void {
+    this.peer?.dispatchEvent(new Event('close'));
     this.dispatchEvent(new Event('close'));
   }
 }
 
-const fakeNamespace = (ws: FakeWebSocket): DurableObjectNamespace<KeyDumpDO> => ({
+const fakePair = (): { client: FakeWebSocket; server: FakeWebSocket } => {
+  const client = new FakeWebSocket();
+  const server = new FakeWebSocket();
+  client.peer = server;
+  server.peer = client;
+  return { client, server };
+};
+
+const fakeNamespace = (client: FakeWebSocket): DurableObjectNamespace<KeyDumpDO> => ({
   idFromName: name => ({ name }),
   get: () => ({
-    fetch: async () => ({ webSocket: ws }) as unknown as Response,
+    fetch: async () => ({ webSocket: client }) as unknown as Response,
   }) as unknown as DurableObjectStub & KeyDumpDO,
 });
 
@@ -45,8 +56,8 @@ const meta = (id: string): DumpMetadata => ({
 });
 
 test('subscribe yields published metadata in order then exits when the server closes the socket', async () => {
-  const ws = new FakeWebSocket();
-  const broker = createCloudflareDumpBroker(fakeNamespace(ws));
+  const { client, server } = fakePair();
+  const broker = createCloudflareDumpBroker(fakeNamespace(client));
   const controller = new AbortController();
 
   const received: DumpMetadata[] = [];
@@ -58,13 +69,13 @@ test('subscribe yields published metadata in order then exits when the server cl
 
   // Allow the subscribe generator to attach its listeners before we publish.
   await Promise.resolve();
-  ws.pushMessage(JSON.stringify(meta('a')));
-  ws.pushMessage(JSON.stringify(meta('b')));
+  server.send(JSON.stringify(meta('a')));
+  server.send(JSON.stringify(meta('b')));
 
   // Server-initiated close (DO eviction, retention turned off mid-session).
   // Without the closed-flag fix this hangs forever inside the await.
   await new Promise(resolve => setTimeout(resolve, 5));
-  ws.serverClose();
+  server.close();
 
   // Bound the wait — the iterator must end on its own; if it doesn't, the
   // race below keeps the test from hanging indefinitely so the failure mode

@@ -40,6 +40,9 @@ export const createCloudflareDumpBroker = (
     const markClosed = (): void => { closed = true; wake(); };
     ws.addEventListener('close', markClosed);
     ws.addEventListener('error', markClosed);
+    // { once: true } only auto-removes after the listener fires. If the
+    // iterator returns normally (not via abort) on a shared signal that
+    // outlives this call, the listener would otherwise accumulate.
     signal.addEventListener('abort', wake, { once: true });
 
     try {
@@ -56,7 +59,8 @@ export const createCloudflareDumpBroker = (
         yield queue.shift()!;
       }
     } finally {
-      try { ws.close(); } catch { /* socket already closed */ }
+      signal.removeEventListener('abort', wake);
+      try { ws.close(); } catch {}
     }
   },
 });
