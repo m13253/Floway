@@ -3,11 +3,11 @@ import { streamSSE } from 'hono/streaming';
 
 import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './events/to-result.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
-import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -44,7 +44,7 @@ export const respondChatCompletions = async (
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage) : null;
+      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
@@ -77,21 +77,6 @@ export const respondChatCompletions = async (
   return { success: true, response };
 };
 
-// --- token usage ---
-
-// OpenAI Chat usage reports prompt_tokens inclusive of cached and
-// cache-creation tokens; subtract them to recover the disjoint bare input.
-const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>) => {
-  const cacheRead = u.prompt_tokens_details?.cached_tokens ?? 0;
-  const cacheWrite = u.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
-  return tokenUsage({
-    input: u.prompt_tokens - cacheRead - cacheWrite,
-    input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
-    output: u.completion_tokens,
-  });
-};
-
 // --- error rendering ---
 
 const internalChatCompletionsErrorPayload = (error: InternalDebugError) => ({
@@ -119,7 +104,7 @@ const observeChatCompletionsFrames = async function* (frames: AsyncIterable<Prot
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage) : null);
+      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage, frame.event.service_tier) : null);
     }
     if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
