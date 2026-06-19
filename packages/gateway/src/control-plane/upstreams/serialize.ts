@@ -45,6 +45,22 @@ const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Recor
   });
 };
 
+const serializeAccessToken = (upstream: UpstreamRecord, value: unknown): { expiresAt: unknown; refreshedAt: unknown } | null => {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accessToken: expected object or null`);
+  }
+  return { expiresAt: clone(value.expiresAt), refreshedAt: clone(value.refreshedAt) };
+};
+
+const serializeQuotaSnapshot = (upstream: UpstreamRecord, value: unknown): unknown => {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed quotaSnapshot: expected object or null`);
+  }
+  return clone(value);
+};
+
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
   if (!isRecord(upstream.config)) {
     throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
@@ -128,14 +144,12 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
         stateUpdatedAt: clone(a.stateUpdatedAt),
         refreshTokenSet: hasSecret(a.refreshToken),
         // accessToken.expiresAt + quotaSnapshot are non-secret summaries the
-        // dashboard surfaces directly. accessToken.token is dropped.
-        accessToken: isRecord(a.accessToken)
-          ? {
-              expiresAt: clone(a.accessToken.expiresAt),
-              refreshedAt: clone(a.accessToken.refreshedAt),
-            }
-          : null,
-        quotaSnapshot: isRecord(a.quotaSnapshot) ? clone(a.quotaSnapshot) : null,
+        // dashboard surfaces directly. accessToken.token is dropped. Both
+        // fields are contractually `<entry> | null` per state.ts; a string /
+        // array / number here is genuine shape drift and must throw, not
+        // collapse into null silently.
+        accessToken: serializeAccessToken(upstream, a.accessToken),
+        quotaSnapshot: serializeQuotaSnapshot(upstream, a.quotaSnapshot),
       })),
     };
   case 'copilot':
