@@ -121,7 +121,7 @@ test('getPricingForModelKey resolves manual cost first, then falls back to the O
   // Unpinned model falls back to the table.
   assertEquals(instance.provider.getPricingForModelKey('deepseek-v4-flash')?.input, 0.14);
   // Unknown model returns null rather than fabricating a guess.
-  assertEquals(instance.provider.getPricingForModelKey('rnj-1:8b'), null);
+  assertEquals(instance.provider.getPricingForModelKey('devstral-small-2:24b'), null);
 });
 
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
