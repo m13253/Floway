@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { fetchOllamaCatalog } from './fetch-models.ts';
-import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
+import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   id: 'up_ollama',
@@ -101,4 +101,19 @@ test('fetchOllamaCatalog converts modified_at ISO string to unix seconds', async
     // 2025-08-05T00:00:00Z → 1754352000
     assertEquals(gptoss.modifiedAt, Math.floor(Date.parse('2025-08-05T00:00:00Z') / 1000));
   });
+});
+
+test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/tags returns a shape it cannot parse', async () => {
+  // 200 OK + body that satisfies isRecord but lacks a `models` array. The
+  // scaffold must see parseTagsResponse return null and convert that to the
+  // shared error class (rather than the catalog quietly resolving to []).
+  await withMockedFetch(
+    async () => jsonResponse({ unexpected: 'shape' }),
+    async () => {
+      await assertRejects(
+        () => fetchOllamaCatalog(config, directFetcher),
+        ProviderModelsUnavailableError,
+      );
+    },
+  );
 });
