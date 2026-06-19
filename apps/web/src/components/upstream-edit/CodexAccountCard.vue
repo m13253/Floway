@@ -5,7 +5,7 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, UpstreamRecord } from '../../api/types.ts';
-import { Badge, Card } from '@floway-dev/ui';
+import { Badge } from '@floway-dev/ui';
 
 // The Codex account card only ever renders for a codex-provider upstream.
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
@@ -76,7 +76,7 @@ const windows = computed(() => {
 </script>
 
 <template>
-  <Card :padded="false" class="space-y-4 p-4">
+  <div class="space-y-4">
     <div class="flex items-start gap-3">
       <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-700 text-gray-400">
         <i class="i-lucide-circle-user-round size-6" />
@@ -127,5 +127,5 @@ const windows = computed(() => {
     </template>
 
     <p v-else class="text-xs text-gray-500">No quota snapshot yet. Make a Codex call to populate.</p>
-  </Card>
+  </div>
 </template>

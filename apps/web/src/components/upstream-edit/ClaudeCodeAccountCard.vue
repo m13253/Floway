@@ -6,7 +6,7 @@
 import { computed } from 'vue';
 
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, UpstreamRecord } from '../../api/types.ts';
-import { Badge, Card } from '@floway-dev/ui';
+import { Badge } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
 
@@ -151,7 +151,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
 </script>
 
 <template>
-  <Card :padded="false" class="space-y-4 p-4">
+  <div class="space-y-4">
     <div class="flex items-start gap-3">
       <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-700 text-gray-400">
         <i class="i-lucide-bot size-6" />
@@ -239,5 +239,5 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         <span v-if="accessTokenExpiry">access token expires {{ accessTokenExpiry.relative }}</span>
       </footer>
     </template>
-  </Card>
+  </div>
 </template>

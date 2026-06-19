@@ -3,7 +3,6 @@ import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { CopilotQuotaSnapshot, CopilotUpstreamConfig } from '../../api/types.ts';
-import { Card } from '@floway-dev/ui';
 
 const props = defineProps<{
   upstreamId: string;
@@ -43,7 +42,7 @@ const usedPercent = computed(() => {
 
 <template>
   <div class="space-y-4">
-    <Card :padded="false" class="space-y-3 p-4">
+    <div class="space-y-3">
       <div class="flex items-center gap-3">
         <img
           v-if="config.user.avatar_url"
@@ -56,9 +55,9 @@ const usedPercent = computed(() => {
           <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ config.accountType }}</p>
         </div>
       </div>
-    </Card>
+    </div>
 
-    <Card :padded="false" class="space-y-3 p-4">
+    <div class="space-y-3 border-t border-white/[0.06] pt-4">
       <header class="flex items-center justify-between">
         <h4 class="text-sm font-semibold text-white">Premium quota</h4>
         <button
@@ -89,6 +88,6 @@ const usedPercent = computed(() => {
         </div>
       </template>
       <p v-else-if="!loadingQuota" class="text-xs text-gray-500">No premium quota reported.</p>
-    </Card>
+    </div>
   </div>
 </template>
