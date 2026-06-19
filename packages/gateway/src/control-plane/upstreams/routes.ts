@@ -597,7 +597,11 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     const nextAccount = {
       ...account,
       refresh_token: tokens.refresh_token,
-      state_updated_at: now.toISOString(),
+      // Keep `state_updated_at` untouched on a successful refresh — the row's
+      // credential-health status hasn't changed (still 'active'), and bumping
+      // the timestamp on every refresh would muddy the dashboard's "credential
+      // health changed" signal. Matches claude-code refresh-now (:781-787) and
+      // both providers' data-plane refresh paths in access-token-cache.ts.
       accessToken: {
         token: tokens.access_token,
         expiresAt: now.getTime() + tokens.expires_in * 1000,
