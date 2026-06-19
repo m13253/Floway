@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 
 import RecordDetail from '../../../../components/dump/RecordDetail.vue';
 import RequestList from '../../../../components/dump/RequestList.vue';
 import { useDumpSubscription } from '../../../../composables/useDumpSubscription.ts';
+import { useHashRef } from '../../../../composables/useHashRef.ts';
 
 const route = useRoute('/dashboard/keys/[keyId]/requests');
 const keyId = computed(() => route.params.keyId);
-const selectedId = ref<string | null>(null);
+const selectedId = useHashRef();
 
 watch(keyId, () => { selectedId.value = null; });
 
