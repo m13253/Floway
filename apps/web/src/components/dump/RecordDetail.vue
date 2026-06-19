@@ -24,6 +24,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const streamView = ref<'collected' | 'events'>('collected');
 const copied = ref<string | null>(null);
+const copyFailed = ref<string | null>(null);
 
 const fetchRecord = async (keyId: string, recordId: string) => {
   loading.value = true;
@@ -187,7 +188,17 @@ const copyTo = async (text: string, tag: string) => {
     await navigator.clipboard.writeText(text);
     copied.value = tag;
     window.setTimeout(() => { if (copied.value === tag) copied.value = null; }, 1500);
-  } catch { /* clipboard blocked; silent — the user sees no checkmark and tries again */ }
+  } catch (err) {
+    console.error('[clipboard]', err);
+    copyFailed.value = tag;
+    window.setTimeout(() => { if (copyFailed.value === tag) copyFailed.value = null; }, 2000);
+  }
+};
+
+const copyLabel = (tag: string) => {
+  if (copyFailed.value === tag) return 'Copy failed';
+  if (copied.value === tag) return 'Copied';
+  return 'Copy';
 };
 
 const formatStatus = (status: number) => status === 0 ? 'No response' : String(status);
@@ -213,8 +224,12 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
         <section class="glass-card overflow-hidden">
           <div class="sticky top-0 z-[1] flex items-center justify-between border-b border-white/[0.05] bg-surface-800/95 px-3 py-2 backdrop-blur">
             <span class="text-xs font-medium text-gray-400">Request headers</span>
-            <Button size="sm" variant="secondary" @click="copyTo(requestHeadersCopy, 'req-headers')">
-              {{ copied === 'req-headers' ? 'Copied' : 'Copy' }}
+            <Button
+              size="sm"
+              :variant="copyFailed === 'req-headers' ? 'danger' : 'secondary'"
+              @click="copyTo(requestHeadersCopy, 'req-headers')"
+            >
+              {{ copyLabel('req-headers') }}
             </Button>
           </div>
           <div class="px-3 py-2 text-xs">
@@ -236,8 +251,12 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
         <section v-if="requestBody" class="glass-card overflow-hidden">
           <div class="flex items-center justify-between border-b border-white/[0.05] px-3 py-2">
             <span class="text-xs font-medium text-gray-400">Request body</span>
-            <Button size="sm" variant="secondary" @click="copyTo(requestBody.copyText, 'req-body')">
-              {{ copied === 'req-body' ? 'Copied' : 'Copy' }}
+            <Button
+              size="sm"
+              :variant="copyFailed === 'req-body' ? 'danger' : 'secondary'"
+              @click="copyTo(requestBody.copyText, 'req-body')"
+            >
+              {{ copyLabel('req-body') }}
             </Button>
           </div>
           <pre class="overflow-x-auto px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ requestBody.pretty ?? requestBody.text }}</pre>
@@ -248,8 +267,12 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
             <span class="text-xs font-medium text-gray-400">
               Response headers <span class="ml-2 font-mono text-gray-500">{{ formatStatus(record.response.status) }}</span>
             </span>
-            <Button size="sm" variant="secondary" @click="copyTo(responseHeadersCopy, 'res-headers')">
-              {{ copied === 'res-headers' ? 'Copied' : 'Copy' }}
+            <Button
+              size="sm"
+              :variant="copyFailed === 'res-headers' ? 'danger' : 'secondary'"
+              @click="copyTo(responseHeadersCopy, 'res-headers')"
+            >
+              {{ copyLabel('res-headers') }}
             </Button>
           </div>
           <div class="px-3 py-2 text-xs">
@@ -284,17 +307,28 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
               </div>
               <Button
                 v-if="streamView === 'collected' && collectedView && 'copyText' in collectedView"
-                size="sm" variant="secondary"
+                size="sm"
+                :variant="copyFailed === 'res-body' ? 'danger' : 'secondary'"
                 @click="copyTo(collectedView.copyText, 'res-body')"
               >
-                {{ copied === 'res-body' ? 'Copied' : 'Copy' }}
+                {{ copyLabel('res-body') }}
               </Button>
-              <Button v-else-if="streamView === 'events'" size="sm" variant="secondary" @click="copyTo(eventsCopyText, 'res-body')">
-                {{ copied === 'res-body' ? 'Copied' : 'Copy' }}
+              <Button
+                v-else-if="streamView === 'events'"
+                size="sm"
+                :variant="copyFailed === 'res-body' ? 'danger' : 'secondary'"
+                @click="copyTo(eventsCopyText, 'res-body')"
+              >
+                {{ copyLabel('res-body') }}
               </Button>
             </div>
-            <Button v-else-if="bytesView" size="sm" variant="secondary" @click="copyTo(bytesView.copyText, 'res-body')">
-              {{ copied === 'res-body' ? 'Copied' : 'Copy' }}
+            <Button
+              v-else-if="bytesView"
+              size="sm"
+              :variant="copyFailed === 'res-body' ? 'danger' : 'secondary'"
+              @click="copyTo(bytesView.copyText, 'res-body')"
+            >
+              {{ copyLabel('res-body') }}
             </Button>
           </div>
 
