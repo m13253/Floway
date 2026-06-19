@@ -44,9 +44,9 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | '/dashboard/'
       | '/dashboard/keys/'
-      | '/dashboard/keys/[keyId]/requests'
       | '/dashboard/models'
       | '/dashboard/performance'
+      | '/dashboard/requests'
       | '/dashboard/settings'
       | '/dashboard/upstreams/[id]'
       | '/dashboard/upstreams/new'
@@ -67,13 +67,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    '/dashboard/keys/[keyId]/requests': RouteRecordInfo<
-      '/dashboard/keys/[keyId]/requests',
-      '/dashboard/keys/:keyId/requests',
-      { keyId: ParamValue<true> },
-      { keyId: ParamValue<false> },
-      | never
-    >,
     '/dashboard/models': RouteRecordInfo<
       '/dashboard/models',
       '/dashboard/models',
@@ -84,6 +77,13 @@ declare module 'vue-router/auto-routes' {
     '/dashboard/performance': RouteRecordInfo<
       '/dashboard/performance',
       '/dashboard/performance',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    '/dashboard/requests': RouteRecordInfo<
+      '/dashboard/requests',
+      '/dashboard/requests',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -160,9 +160,9 @@ declare module 'vue-router/auto-routes' {
         | '/dashboard'
         | '/dashboard/'
         | '/dashboard/keys/'
-        | '/dashboard/keys/[keyId]/requests'
         | '/dashboard/models'
         | '/dashboard/performance'
+        | '/dashboard/requests'
         | '/dashboard/settings'
         | '/dashboard/upstreams/[id]'
         | '/dashboard/upstreams/new'
@@ -183,12 +183,6 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/dashboard/keys/[keyId]/requests.vue': {
-      routes:
-        | '/dashboard/keys/[keyId]/requests'
-      views:
-        | never
-    }
     'src/pages/dashboard/models.vue': {
       routes:
         | '/dashboard/models'
@@ -198,6 +192,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/dashboard/performance.vue': {
       routes:
         | '/dashboard/performance'
+      views:
+        | never
+    }
+    'src/pages/dashboard/requests.vue': {
+      routes:
+        | '/dashboard/requests'
       views:
         | never
     }

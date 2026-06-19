@@ -35,11 +35,8 @@ const observeSentinel = (el: HTMLElement | null) => {
 watch(sentinel, observeSentinel);
 onScopeDispose(() => observer?.disconnect());
 
-const truncatePath = (path: string) => path.length <= 56 ? path : `${path.slice(0, 53)}…`;
-
 const statusTone = (status: number): 'emerald' | 'amber' | 'rose' | 'zinc' => {
-  if (status === 0) return 'rose';
-  if (status >= 500) return 'rose';
+  if (status === 0 || status >= 500) return 'rose';
   if (status >= 400) return 'amber';
   if (status >= 200 && status < 300) return 'emerald';
   return 'zinc';
@@ -47,25 +44,25 @@ const statusTone = (status: number): 'emerald' | 'amber' | 'rose' | 'zinc' => {
 
 const statusLabel = (status: number) => status === 0 ? 'ERR' : String(status);
 
-const tokenSummary = (r: DumpMetadata): string | null => {
-  const inTok = r.inputTokens;
-  const outTok = r.outputTokens;
-  if (inTok === null && outTok === null) return null;
-  return `${inTok ?? 0} in · ${outTok ?? 0} out`;
-};
-
 const formatDuration = (ms: number) => {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms / 1000)}s`;
 };
 
+// "12→340" reads cleaner than "12 in · 340 out" at the row scale. Skip when
+// both counts are zero (no model accounting yet).
+const tokenSummary = (r: DumpMetadata): string | null => {
+  const inTok = r.inputTokens ?? 0;
+  const outTok = r.outputTokens ?? 0;
+  if (inTok === 0 && outTok === 0 && r.inputTokens === null && r.outputTokens === null) return null;
+  return `${inTok}→${outTok}`;
+};
+
 const isFailed = (r: DumpMetadata) => r.status === 0 || r.status >= 400 || r.error !== null;
 
 const onSelect = (id: string) => { selectedId.value = id; };
 
-// Re-observe when records grow so the IntersectionObserver fires repeatedly
-// instead of only the first time the sentinel scrolls into view.
 watch(() => props.records.length, () => {
   if (sentinel.value) observeSentinel(sentinel.value);
 });
@@ -73,19 +70,15 @@ watch(() => props.records.length, () => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <header class="flex items-center justify-between border-b border-white/[0.05] px-4 py-3">
-      <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Requests</span>
-      <span v-if="loading" class="flex items-center gap-1.5 text-xs text-gray-500">
-        <Spinner class="size-3" /> Loading…
-      </span>
-      <span v-else class="text-xs text-gray-600">{{ records.length }}</span>
-    </header>
-
     <div v-if="error" class="m-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
       {{ error }}
     </div>
 
-    <p v-if="!loading && records.length === 0 && !error" class="px-4 py-6 text-center text-sm text-gray-500">
+    <div v-if="loading && records.length === 0" class="flex items-center justify-center gap-2 py-8 text-xs text-gray-500">
+      <Spinner class="size-3" /> Loading…
+    </div>
+
+    <p v-if="!loading && records.length === 0 && !error" class="px-4 py-8 text-center text-sm text-gray-500">
       No requests recorded yet.
     </p>
 
@@ -94,27 +87,26 @@ watch(() => props.records.length, () => {
         <li
           v-for="r in records"
           :key="r.id"
-          class="cursor-pointer px-4 py-3 transition-colors"
+          class="cursor-pointer px-4 py-2.5 transition-colors"
           :class="[
-            selectedId === r.id ? 'bg-accent-cyan/8' : 'hover:bg-white/[0.02]',
+            selectedId === r.id ? 'bg-accent-cyan/10' : 'hover:bg-white/[0.02]',
             isFailed(r) ? 'bg-accent-rose/[0.04]' : '',
           ]"
           @click="onSelect(r.id)"
         >
           <div class="flex items-center gap-2 text-xs">
             <Badge :tone="statusTone(r.status)" size="sm">{{ statusLabel(r.status) }}</Badge>
-            <span class="font-mono font-semibold text-gray-300">{{ r.method }}</span>
-            <span class="min-w-0 flex-1 truncate font-mono text-gray-400" :title="r.path">{{ truncatePath(r.path) }}</span>
-            <span class="shrink-0 text-gray-600" :title="dayjs(r.startedAt).format('YYYY-MM-DD HH:mm:ss')">
+            <span class="font-mono font-semibold text-gray-300 shrink-0">{{ r.method }}</span>
+            <span class="min-w-0 flex-1 truncate font-mono text-gray-400" :title="r.path">{{ r.path }}</span>
+            <span class="shrink-0 text-[11px] text-gray-600" :title="dayjs(r.startedAt).format('YYYY-MM-DD HH:mm:ss')">
               {{ dayjs(r.startedAt).fromNow(true) }}
             </span>
           </div>
 
-          <div class="mt-1 flex items-center gap-3 text-[11px] text-gray-500">
-            <span v-if="r.model" class="font-mono">{{ r.model }}</span>
-            <span>{{ formatDuration(r.durationMs) }}</span>
-            <span v-if="tokenSummary(r)">{{ tokenSummary(r) }}</span>
-            <span v-if="r.upstream" class="ml-auto truncate text-gray-600">{{ r.upstream }}</span>
+          <div class="mt-1 flex items-center gap-3 truncate text-[11px] text-gray-500">
+            <span v-if="r.model" class="min-w-0 truncate font-mono">{{ r.model }}</span>
+            <span class="shrink-0">{{ formatDuration(r.durationMs) }}</span>
+            <span v-if="tokenSummary(r)" class="shrink-0 font-mono">{{ tokenSummary(r) }}</span>
           </div>
 
           <p v-if="r.error" class="mt-1 truncate text-[11px] text-accent-rose" :title="r.error">{{ r.error }}</p>

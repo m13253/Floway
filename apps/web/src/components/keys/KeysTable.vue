@@ -2,7 +2,6 @@
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed } from 'vue';
-import { RouterLink } from 'vue-router';
 
 import type { ApiKey } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
@@ -129,20 +128,6 @@ const upstreamsTextClass = (k: ApiKey) => {
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </button>
-              <RouterLink
-                v-if="k.dump_retention_seconds !== null"
-                :to="`/dashboard/keys/${k.id}/requests`"
-                class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
-                aria-label="View captured requests"
-                title="Requests"
-                @click.stop
-              >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 6h18" />
-                  <path d="M3 12h18" />
-                  <path d="M3 18h12" />
-                </svg>
-              </RouterLink>
               <button
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
                 aria-label="Edit API key"
