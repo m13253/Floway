@@ -103,6 +103,11 @@ const accountIdShort = computed(() => {
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 });
 
+// Email is null when the access token lacks `user:profile`. Substitute the
+// short account-uuid badge as a stable identifier so the header still names
+// the account.
+const headerLabel = computed(() => account.value?.email ?? accountIdShort.value);
+
 const windows = computed(() => {
   const q = quota.value;
   if (!q) return [];
@@ -133,10 +138,11 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         <i class="i-lucide-bot size-6" />
       </div>
       <div class="min-w-0 flex-1 space-y-1">
-        <p class="truncate text-sm font-medium text-white">{{ account?.email }}</p>
+        <p class="truncate text-sm font-medium text-white">{{ headerLabel }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           <Badge v-if="account?.subscriptionType" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
           <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
+          <span v-if="account && account.email === null" class="text-[11px] text-gray-500" title="The OAuth token does not carry user:profile scope">no email scope</span>
         </div>
       </div>
       <Badge :tone="badge.tone" size="sm">{{ badge.label }}</Badge>

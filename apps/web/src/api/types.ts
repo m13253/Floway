@@ -118,7 +118,10 @@ export interface CodexQuotaSnapshot {
 // accessToken.token is dropped while expiresAt / refreshedAt remain so the
 // dashboard can display a relative-time badge.
 export interface ClaudeCodeAccountIdentity {
-  email: string;
+  // null when the access token lacks the `user:profile` scope (personal
+  // accounts whose CLI flow did not request it). Dashboard substitutes the
+  // accountUuid short prefix in that case.
+  email: string | null;
   accountUuid: string;
   organizationUuid: string | null;
   // null for personal accounts (no organization block) and for unrecognized

@@ -48,7 +48,10 @@ const subtitle = computed(() => {
   }
   case 'claude-code': {
     const account = u.config.accounts[0];
-    return account.subscriptionType ? `${account.email} · ${account.subscriptionType}` : account.email;
+    // email is null for tokens that lack `user:profile`; fall back to the
+    // short accountUuid prefix so the row still has a stable identifier.
+    const label = account.email ?? `${account.accountUuid.slice(0, 8)}…`;
+    return account.subscriptionType ? `${label} · ${account.subscriptionType}` : label;
   }
   }
   return assertNever(u);
