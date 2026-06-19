@@ -174,14 +174,26 @@ describe('createCodexProvider', () => {
   });
 
   test.each([
-    'callEmbeddings',
-    'callImagesGenerations',
-    'callImagesEdits',
-    'callMessagesCountTokens',
-  ] as const)('%s throws (data plane never dispatches these to Codex)', async method => {
+    // callMessages and callMessagesCountTokens carry an extra `anthropicBeta`
+    // arg between `headers` and `opts`; the rest are uniform.
+    ['callEmbeddings', 5],
+    ['callImagesGenerations', 5],
+    ['callImagesEdits', 5],
+    ['callChatCompletions', 5],
+    ['callMessagesCountTokens', 6],
+    ['callMessages', 6],
+  ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async (method, arity) => {
     const instance = await createCodexProvider(baseRecord);
     const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
-    // @ts-expect-error: each method has a different param shape; we just want to assert throw.
-    await expect(instance.provider[method](model, {}, undefined, {})).rejects.toThrow(/Codex/);
+    const args = arity === 6
+      ? [model, {}, undefined, {}, undefined, noopUpstreamCallOptions]
+      : [model, {}, undefined, {}, noopUpstreamCallOptions];
+    // @ts-expect-error: each method has a different param shape; we just want
+    // to assert the synthetic 405 envelope is what comes back.
+    const result = await instance.provider[method](...args) as { response: Response };
+    expect(result.response.status).toBe(405);
+    const body = await result.response.json() as { error: { type: string; message: string } };
+    expect(body.error.type).toBe('method_not_allowed');
+    expect(body.error.message).toMatch(/codex/i);
   });
 });
