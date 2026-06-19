@@ -249,14 +249,15 @@ export const updateUpstreamBody = z.object({
   config: z.unknown().optional(),
 });
 
-// Draft /models browse: accepts an in-progress custom config so callers can
+// Draft /models browse: accepts an in-progress upstream config so callers can
 // fetch the upstream's live model list before saving. `id` is present in
-// edit mode so the handler can substitute the stored secret when bearerToken
-// is left blank ("keep the stored secret").
-export const fetchModelsBody = z.object({
-  id: z.string().optional(),
-  config: customConfigSchema,
-});
+// edit mode so the handler can substitute the stored secret when the secret
+// is left blank ("keep the stored secret"). Discriminated by `provider` so
+// each provider's draft preview surfaces a typed catalog.
+export const fetchModelsBody = z.discriminatedUnion('provider', [
+  z.object({ provider: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
+  z.object({ provider: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
+]);
 
 // --- copilot device flow ---
 

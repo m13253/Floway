@@ -1,50 +1,77 @@
 <script setup lang="ts">
-// Ollama provider-specific fields: just a base URL (default ollama.com) and
-// an optional bearer token. The catalog is always live-fetched from
-// /api/tags + /api/show — no toggle, no path overrides, no auth-style
-// choice. The model-overrides list lives in a separate panel.
+// Ollama provider-specific fields: a base URL (default ollama.com) and an
+// optional bearer token. The catalog is always live-fetched from /api/tags +
+// /api/show — no toggle, no path overrides, no auth-style choice. The
+// model-overrides list lives in a separate panel.
+//
+// In create mode the panel exposes a Fetch button so the operator can preview
+// the upstream's resolved catalog before saving; on edit mode the cache-status
+// panel above already drives a force-refresh.
 
 import type { OllamaDraft } from './customConfig.ts';
 import SecretInput from '../shared/SecretInput.vue';
-import { Input } from '@floway-dev/ui';
+import { Button, Input } from '@floway-dev/ui';
 
 const draft = defineModel<OllamaDraft>({ required: true });
 
 defineProps<{
   apiKeySet: boolean;
   editMode: boolean;
+  fetchLoading: boolean;
+  fetchError: string | null;
+  /** Wall-clock summary of the last draft fetch, e.g. "35 returned · 1m ago". */
+  fetchStatus: string | null;
 }>();
+
+const emit = defineEmits<{ 'fetch-models': [] }>();
 </script>
 
 <template>
   <div class="space-y-5">
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <div>
-        <label class="mb-1.5 block text-xs font-medium text-gray-500">Base URL</label>
-        <Input
-          :model-value="draft.baseUrl"
-          placeholder="https://ollama.com"
-          class="font-mono"
-          @update:model-value="v => draft = { ...draft, baseUrl: v }"
-        />
-        <p class="mt-1.5 text-[11px] text-gray-600">
-          Defaults to <code class="font-mono">https://ollama.com</code>. Point at a self-hosted Ollama daemon (e.g. <code class="font-mono">http://127.0.0.1:11434</code>) to use local models.
-        </p>
+    <div>
+      <label class="mb-1.5 block text-xs font-medium text-gray-500">Base URL</label>
+      <Input
+        :model-value="draft.baseUrl"
+        placeholder="https://ollama.com"
+        class="font-mono"
+        @update:model-value="v => draft = { ...draft, baseUrl: v }"
+      />
+      <p class="mt-1.5 text-[11px] text-gray-600">
+        Defaults to <code class="font-mono">https://ollama.com</code>. Point at a self-hosted Ollama daemon (e.g. <code class="font-mono">http://127.0.0.1:11434</code>) to use local models.
+      </p>
+    </div>
+
+    <div>
+      <label class="mb-1.5 block text-xs font-medium text-gray-500">
+        API Key<span v-if="editMode && apiKeySet" class="text-gray-500"> (leave blank to keep)</span>
+      </label>
+      <SecretInput
+        :model-value="draft.apiKey"
+        :placeholder="apiKeySet ? '••••••••' : 'paste from ollama.com/settings/keys'"
+        class="font-mono"
+        @update:model-value="v => draft = { ...draft, apiKey: v }"
+      />
+      <p class="mt-1.5 text-[11px] text-gray-600">
+        Required for <code class="font-mono">ollama.com</code>; optional for an unauthenticated local daemon. Sent as <code class="font-mono">Authorization: Bearer &lt;key&gt;</code> when set.
+      </p>
+    </div>
+
+    <div v-if="!editMode">
+      <div class="mb-2 flex items-baseline justify-between gap-3">
+        <p class="text-xs font-medium text-gray-500">Preview Catalog</p>
+        <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
       </div>
-      <div>
-        <label class="mb-1.5 block text-xs font-medium text-gray-500">
-          API Key<span v-if="editMode && apiKeySet" class="text-gray-500"> (leave blank to keep)</span>
-        </label>
-        <SecretInput
-          :model-value="draft.apiKey"
-          :placeholder="apiKeySet ? '••••••••' : 'ollama_xxxxx (optional)'"
-          class="font-mono"
-          @update:model-value="v => draft = { ...draft, apiKey: v }"
-        />
-        <p class="mt-1.5 text-[11px] text-gray-600">
-          Required for <code class="font-mono">ollama.com</code>; optional for an unauthenticated local daemon. Sent as <code class="font-mono">Authorization: Bearer &lt;key&gt;</code> when set.
-        </p>
-      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        :loading="fetchLoading"
+        :disabled="fetchLoading"
+        @click="emit('fetch-models')"
+      >Fetch /api/tags</Button>
+      <p v-if="fetchError" class="mt-1.5 text-[11px] text-accent-rose">{{ fetchError }}</p>
+      <p v-else class="mt-1.5 text-[11px] text-gray-600">
+        Calls the upstream's <code class="font-mono">/api/tags</code> then <code class="font-mono">/api/show</code> for each model to populate the auto rows on the right.
+      </p>
     </div>
   </div>
 </template>

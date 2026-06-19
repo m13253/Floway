@@ -159,6 +159,10 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           v-model="ollamaDraft"
           :api-key-set="ollamaApiKeySet"
           :edit-mode="mode === 'edit'"
+          :fetch-loading="fetchLoading"
+          :fetch-error="fetchError"
+          :fetch-status="fetchStatus"
+          @fetch-models="$emit('fetch-models')"
         />
       </section>
 
