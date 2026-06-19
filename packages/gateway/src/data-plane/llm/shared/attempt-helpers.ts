@@ -14,15 +14,8 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
   cost: candidate.binding.provider.getPricingForModelKey(modelKey),
 });
 
-// Assemble the per-call `UpstreamCallOptions` from the request-scoped pieces
-// the attempt layer already has on hand. The optional `clientRequest*` fields
-// only appear when the gateway is serving a real Hono request (so providers
-// can decide whether the inbound call is already shaped like their native
-// client's wire payload); translated or synthesized callsites that have no
-// inbound HTTP context leave them undefined. `waitUntil` reuses the
-// request-scoped background scheduler — they share the runtime primitive
-// (`ExecutionContext.waitUntil` on workerd, a no-op on Node) and the
-// per-call name reads more naturally at the provider boundary.
+// Project the request-scoped pieces an attempt has on hand into per-call
+// UpstreamCallOptions; see provider.ts for what each field means.
 export const buildUpstreamCallOptions = (
   candidate: ProviderCandidate,
   ctx: GatewayCtx,
@@ -31,8 +24,8 @@ export const buildUpstreamCallOptions = (
   fetcher: candidate.fetcher,
   recordUpstreamLatency,
   waitUntil: ctx.backgroundScheduler,
-  ...(ctx.clientRequestHeaders !== undefined ? { clientRequestHeaders: ctx.clientRequestHeaders } : {}),
-  ...(ctx.clientRequestPathname !== undefined ? { clientRequestPathname: ctx.clientRequestPathname } : {}),
+  clientRequestHeaders: ctx.clientRequestHeaders,
+  clientRequestPathname: ctx.clientRequestPathname,
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult

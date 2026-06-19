@@ -169,14 +169,6 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   };
 };
 
-// Codex advertises only /responses; a request that somehow reaches one of
-// the other surfaces is a routing bug, not user input. Return a synthetic
-// 405 (carrying the same JSON error envelope shape the rest of the
-// gateway uses) so the boundary can relay it verbatim instead of leaking
-// a raw stack trace. The response still flows through `recordUpstreamLatency`
-// to honour the wrap-once contract — every code path that produces a
-// boundary-facing response must invoke the recorder exactly once, even when
-// the response is synthesized without ever hitting the network.
 const synthetic405 = (): Response => new Response(
   JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by codex provider' } }),
   { status: 405, headers: { 'content-type': 'application/json' } },

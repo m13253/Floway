@@ -75,34 +75,23 @@ export type ProviderCompactionResult =
 // retries (e.g. invalidate-token-and-redo), only the most recent invocation's
 // measurement is kept.
 //
-// `clientRequestHeaders` and `clientRequestPathname` describe the inbound
-// HTTP request the gateway is serving — not the outbound wire headers we
-// build for the upstream. Both are present only for data-plane calls that
-// originated from a real Hono request; translated paths and synthesized
-// calls leave them undefined. A provider that needs to inspect the
-// incoming request shape — for instance, to decide whether a payload
-// already matches its native client's wire shape and can pass through
-// unmodified — reads from these fields.
-//
 // `waitUntil` registers a fire-and-forget promise that must outlive the
-// response. In Cloudflare Workers it maps to `ExecutionContext.waitUntil`
-// so workerd does not terminate the isolate the moment the response is
-// returned; in Node and tests it is a no-op because the process keeps
-// running anyway. Providers use it for post-response persistence (quota
-// snapshots, token refreshes) the caller has already stopped waiting on.
+// response. On workerd it maps to `ExecutionContext.waitUntil` so the
+// isolate is not terminated when the response is returned; on Node it is a
+// no-op. Providers use it for post-response persistence the caller has
+// already stopped waiting on.
+//
+// `clientRequestHeaders` / `clientRequestPathname` describe the inbound
+// HTTP request the gateway is serving. They are absent for translated and
+// synthesized callsites that have no inbound HTTP context. Providers that
+// can pass an inbound payload through to the upstream when it already
+// matches their native client's wire shape read from these fields.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
-  /**
-   * Inbound request headers, forwarded as the original `Headers` instance
-   * the runtime gave us. Header lookups stay native; no per-request
-   * Record snapshot is built on the gateway hot path. Synthetic call
-   * sites may pass a plain record, which a consumer wraps with
-   * `new Headers(...)` the same way it would wrap a `Headers` value.
-   */
-  clientRequestHeaders?: Headers | Record<string, string>;
+  waitUntil: (promise: Promise<unknown>) => void;
+  clientRequestHeaders?: Headers;
   clientRequestPathname?: string;
-  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export interface ModelProvider {

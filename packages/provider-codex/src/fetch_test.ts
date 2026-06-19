@@ -315,6 +315,7 @@ const enforcingRecorder = () => {
     options: {
       fetcher,
       recordUpstreamLatency: record,
+      waitUntil: () => {},
     },
     invocations: () => wrappedPromises.length,
     durationMs: (): number => {
