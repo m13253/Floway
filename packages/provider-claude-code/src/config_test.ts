@@ -31,6 +31,11 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
       accounts: [{ ...goodAccount, subscriptionType: null }],
     }))).not.toThrow();
   });
+  test('accepts an account with null email (degraded-identity import path)', () => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap({
+      accounts: [{ ...goodAccount, email: null }],
+    }))).not.toThrow();
+  });
   test.each([
     ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
     ['email type', { accounts: [{ ...goodAccount, email: 123 }] }],

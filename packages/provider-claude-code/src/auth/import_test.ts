@@ -217,6 +217,30 @@ describe('importClaudeCodeFromCredentialsJson', () => {
     expect(result.config.accounts[0].subscriptionType).toBe('max_20x');
   });
 
+  test('credentials.json import with a 403-permission_error token yields a degraded identity', async () => {
+    // Token minted without `user:profile` scope: profile endpoint 403s, the
+    // identity fallback returns a deterministic accountUuid + nulls for
+    // email/org/subscriptionType. credentials.json may still carry the CLI
+    // `subscriptionType` field — when present, that wins over the degraded
+    // null per the buildClaudeCodeImportResult contract (CLI-persisted
+    // subscriptionType is authoritative).
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
+      error: { type: 'permission_error', message: 'token lacks user:profile scope' },
+    }, 403));
+    const raw = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'at_no_scope', refreshToken: 'r', expiresAt: farFutureMs,
+        subscriptionType: 'max_5x',
+      },
+    });
+    const result = await importClaudeCodeFromCredentialsJson(raw);
+    expect(result.config.accounts[0].email).toBeNull();
+    expect(result.config.accounts[0].organizationUuid).toBeNull();
+    expect(result.config.accounts[0].subscriptionType).toBe('max_5x');
+    expect(result.config.accounts[0].accountUuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(result.state.accounts[0].accessToken?.token).toBe('at_no_scope');
+  });
+
   test('rejects when JSON is malformed', async () => {
     await expect(importClaudeCodeFromCredentialsJson('{ not json')).rejects.toThrow();
   });

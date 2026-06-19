@@ -4,7 +4,10 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 // at import time. Mutating credentials (refreshToken, accessToken, credential
 // health) live in ClaudeCodeUpstreamState instead.
 export interface ClaudeCodeAccountIdentity {
-  email: string;
+  // null when the OAuth token lacks `user:profile` scope (the profile
+  // endpoint returns 403 and we fall back to a degraded identity). The
+  // dashboard shows a placeholder in that case.
+  email: string | null;
   accountUuid: string;
   // Anthropic returns null for personal accounts and a UUID for team / org-tier
   // members. Modeled as nullable so the on-disk shape distinguishes "we asked
@@ -55,8 +58,8 @@ const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void =>
       throw new TypeError(`${where} has unexpected key '${key}'`);
     }
   }
-  if (typeof obj.email !== 'string' || obj.email === '') {
-    throw new TypeError(`${where}.email must be a non-empty string`);
+  if (obj.email !== null && (typeof obj.email !== 'string' || obj.email === '')) {
+    throw new TypeError(`${where}.email must be null or a non-empty string`);
   }
   if (typeof obj.accountUuid !== 'string' || obj.accountUuid === '') {
     throw new TypeError(`${where}.accountUuid must be a non-empty string`);

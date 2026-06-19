@@ -1,12 +1,20 @@
 import { CLAUDE_CODE_PROFILE_URL } from '../constants.ts';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 // Identity derived from `GET /api/oauth/profile` plus the optional CLI
 // `subscriptionType` field. The Anthropic upstream returns nested
 // `account.uuid` / `organization.uuid`; we flatten at the boundary so the
 // rest of the package never re-handles the wire shape.
+//
+// `email` is nullable because Anthropic only exposes it to tokens carrying
+// the `user:profile` scope. A token minted with the inference-only scope
+// (some Claude Code subscription deployments do this) gets 403 on the
+// profile endpoint, and we fall back to a degraded identity rather than
+// refusing to import — see fetchClaudeCodeIdentity for the fallback shape.
 export interface ClaudeCodeIdentity {
-  email: string;
+  email: string | null;
   accountUuid: string;
   organizationUuid: string | null;
   subscriptionType: string | null;
@@ -46,6 +54,23 @@ export const fetchClaudeCodeIdentity = async (
     parsed = rawText.length > 0 ? JSON.parse(rawText) : null;
   } catch (cause) {
     throw new Error(`Claude Code /api/oauth/profile returned non-JSON body (${response.status})`, { cause: cause as Error });
+  }
+
+  // 403 with a `permission_error` body means the token was minted without the
+  // `user:profile` scope — the import path must not refuse credential
+  // ingestion just because the operator picked an inference-only scope set.
+  // Fall back to a degraded identity: a deterministic UUID-shaped account id
+  // derived from the access token (so the same token always presents the
+  // same account-uuid for dedup), and nulls for the personal fields. The
+  // hot-path data plane never reads these nulls — it consumes
+  // `state.accounts[0]` which is keyed by accountUuid.
+  if (response.status === 403 && isPermissionError(parsed)) {
+    const accountUuid = deriveDegradedAccountUuid(accessToken);
+    console.warn(
+      `Claude Code /api/oauth/profile returned 403 (token lacks user:profile scope); `
+      + `falling back to degraded identity ${accountUuid}`,
+    );
+    return { email: null, accountUuid, organizationUuid: null, subscriptionType: null };
   }
 
   if (!response.ok) {
@@ -97,6 +122,28 @@ export const fetchClaudeCodeIdentity = async (
     organizationUuid,
     subscriptionType: deriveSubscriptionType(organizationType, rateLimitTier),
   };
+};
+
+// Anthropic's `permission_error` shape: `{ "error": { "type":
+// "permission_error", ... } }`. We don't strict-match the message because it
+// drifts over time, only the type discriminator.
+const isPermissionError = (parsed: unknown): boolean => {
+  if (typeof parsed !== 'object' || parsed === null) return false;
+  const root = parsed as Record<string, unknown>;
+  const error = root.error;
+  if (typeof error !== 'object' || error === null) return false;
+  const err = error as Record<string, unknown>;
+  return err.type === 'permission_error';
+};
+
+// Format the first 32 hex chars of sha256(accessToken) into the canonical
+// 8-4-4-4-12 UUID layout so the degraded id sorts and displays consistently
+// with real Anthropic account UUIDs. Not a real UUID v4 — we don't set the
+// version/variant nibbles, because this is purely a local dedup key and the
+// upstream never sees it.
+const deriveDegradedAccountUuid = (accessToken: string): string => {
+  const hex = bytesToHex(sha256(new TextEncoder().encode(accessToken))).slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 };
 
 // Maps the (organization_type, rate_limit_tier) pair to the same string the
