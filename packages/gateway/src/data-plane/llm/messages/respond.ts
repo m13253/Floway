@@ -77,14 +77,23 @@ export const respondMessages = async (
 };
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the
-// cache figures. Map them straight onto the billing dimensions without summing.
-const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) =>
-  tokenUsage({
+// cache figures. Map them straight onto the billing dimensions without
+// summing. When the upstream emits the `cache_creation` sub-object
+// (extended-cache-ttl-2025-04-11), split the per-TTL counts onto the 5m and
+// 1h dimensions; the flat `cache_creation_input_tokens` is the sum and is
+// only consulted when the sub-object is absent.
+const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
+  const cacheWrite5m = u.cache_creation?.ephemeral_5m_input_tokens;
+  const cacheWrite1h = u.cache_creation?.ephemeral_1h_input_tokens;
+  const cacheWriteRolledUp = u.cache_creation_input_tokens ?? 0;
+  return tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
-    input_cache_write: u.cache_creation_input_tokens ?? 0,
+    input_cache_write: cacheWrite5m ?? cacheWriteRolledUp,
+    input_cache_write_1h: cacheWrite1h ?? 0,
     output: u.output_tokens,
   });
+};
 
 export const createMessagesStreamUsageState = () => ({
   current: tokenUsage({}),
@@ -102,7 +111,7 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
     // cache reads; the input accounting still arrived, so the flag must reflect
     // every input-side dimension, not bare input alone — otherwise a later
     // delta carrying input_tokens re-merges and drops the cache counts.
-    state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) > 0;
+    state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) + (state.current.input_cache_write_1h ?? 0) > 0;
   }
   if (event.type === 'message_delta' && event.usage) {
     if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {

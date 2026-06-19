@@ -139,3 +139,69 @@ test('Messages stream usage keeps cache-only start when a later delta carries in
     output: 50,
   });
 });
+
+test('Messages stream usage splits cache_creation per-TTL when the sub-object is present', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: {
+          input_tokens: 12,
+          output_tokens: 1,
+          // The flat field is the sum of both sub-buckets and is consulted
+          // only as a fallback. With the sub-object present the per-TTL split
+          // must take precedence — otherwise this row would double-count.
+          cache_creation_input_tokens: 9,
+          cache_creation: { ephemeral_5m_input_tokens: 4, ephemeral_1h_input_tokens: 5 },
+          cache_read_input_tokens: 3,
+        },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_read: 3,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 1,
+  });
+});
+
+test('Messages stream usage falls back to the rolled-up cache_creation when the sub-object is absent', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-sonnet-4-6',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 12, output_tokens: 1, cache_creation_input_tokens: 9, cache_read_input_tokens: 3 },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_read: 3,
+    input_cache_write: 9,
+    output: 1,
+  });
+});
