@@ -2,9 +2,9 @@ import type { Context } from 'hono';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createResponsesWsSession } from './items/store.ts';
+import { tokenUsageFromResponsesResult } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import { createGatewayCtxForWs, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
@@ -397,17 +397,6 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error, 'responses'),
   code: 'internal_error',
 });
-
-const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
-  const usage = response.usage;
-  if (!usage) return null;
-  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
-  return tokenUsage({
-    input: usage.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: usage.output_tokens,
-  });
-};
 
 const responseDoneSummary = (event: unknown) => {
   if (!event || typeof event !== 'object') return null;

@@ -2,49 +2,40 @@ import { test } from 'vitest';
 
 import { createMessagesStreamUsageState, tokenUsageFromMessagesFrame } from './respond.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamEvent);
+
+const messageStart = (usage: MessagesUsage) =>
+  eventFrame({
+    type: 'message_start',
+    message: {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: 'claude-test',
+      stop_reason: null,
+      stop_sequence: null,
+      usage,
+    },
+  } satisfies MessagesStreamEvent);
+
+const messageDelta = (usage: NonNullable<Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']>) =>
+  eventFrame({ type: 'message_delta', delta: {}, usage } satisfies MessagesStreamEvent);
 
 test('Messages stream usage keeps start input and delta output', () => {
   const state = createMessagesStreamUsageState();
 
   assertEquals(
     tokenUsageFromMessagesFrame(
-      eventFrame({
-        type: 'message_start',
-        message: {
-          id: 'msg_1',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: {
-            input_tokens: 12,
-            output_tokens: 1,
-            cache_creation_input_tokens: 4,
-            cache_read_input_tokens: 3,
-          },
-        },
-      } satisfies MessagesStreamEvent),
+      messageStart({ input_tokens: 12, output_tokens: 1, cache_creation_input_tokens: 4, cache_read_input_tokens: 3 }),
       state,
     ),
     null,
   );
-  assertEquals(
-    tokenUsageFromMessagesFrame(
-      eventFrame({
-        type: 'message_delta',
-        delta: {},
-        usage: { output_tokens: 7 },
-      } satisfies MessagesStreamEvent),
-      state,
-    ),
-    null,
-  );
+  assertEquals(tokenUsageFromMessagesFrame(messageDelta({ output_tokens: 7 }), state), null);
 
   assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
     input: 12,
@@ -57,43 +48,12 @@ test('Messages stream usage keeps start input and delta output', () => {
 test('Messages stream usage can recover input from delta', () => {
   const state = createMessagesStreamUsageState();
 
+  tokenUsageFromMessagesFrame(messageStart({ input_tokens: 0, output_tokens: 0 }), state);
   tokenUsageFromMessagesFrame(
-    eventFrame({
-      type: 'message_start',
-      message: {
-        id: 'msg_1',
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: 'claude-test',
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 },
-      },
-    } satisfies MessagesStreamEvent),
+    messageDelta({ input_tokens: 11, output_tokens: 2, cache_creation_input_tokens: 7, cache_read_input_tokens: 5 }),
     state,
   );
-  tokenUsageFromMessagesFrame(
-    eventFrame({
-      type: 'message_delta',
-      delta: {},
-      usage: {
-        input_tokens: 11,
-        output_tokens: 2,
-        cache_creation_input_tokens: 7,
-        cache_read_input_tokens: 5,
-      },
-    } satisfies MessagesStreamEvent),
-    state,
-  );
-  tokenUsageFromMessagesFrame(
-    eventFrame({
-      type: 'message_delta',
-      delta: {},
-      usage: { output_tokens: 6 },
-    } satisfies MessagesStreamEvent),
-    state,
-  );
+  tokenUsageFromMessagesFrame(messageDelta({ output_tokens: 6 }), state);
 
   assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
     input: 11,
@@ -110,32 +70,77 @@ test('Messages stream usage keeps cache-only start when a later delta carries in
   const state = createMessagesStreamUsageState();
 
   tokenUsageFromMessagesFrame(
-    eventFrame({
-      type: 'message_start',
-      message: {
-        id: 'msg_1',
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: 'claude-test',
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 1, cache_read_input_tokens: 1000 },
-      },
-    } satisfies MessagesStreamEvent),
+    messageStart({ input_tokens: 0, output_tokens: 1, cache_read_input_tokens: 1000 }),
     state,
   );
-  tokenUsageFromMessagesFrame(
-    eventFrame({
-      type: 'message_delta',
-      delta: {},
-      usage: { input_tokens: 0, output_tokens: 50 },
-    } satisfies MessagesStreamEvent),
-    state,
-  );
+  tokenUsageFromMessagesFrame(messageDelta({ input_tokens: 0, output_tokens: 50 }), state);
 
   assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
     input_cache_read: 1000,
     output: 50,
   });
+});
+
+test('Messages stream usage splits cache_creation per-TTL when the sub-object is present', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    messageStart({
+      input_tokens: 12,
+      output_tokens: 1,
+      cache_creation_input_tokens: 9,
+      cache_creation: { ephemeral_5m_input_tokens: 4, ephemeral_1h_input_tokens: 5 },
+      cache_read_input_tokens: 3,
+    }),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_read: 3,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 1,
+  });
+});
+
+test('Messages stream usage falls back to the rolled-up cache_creation when the sub-object is absent', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    messageStart({ input_tokens: 12, output_tokens: 1, cache_creation_input_tokens: 9, cache_read_input_tokens: 3 }),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_read: 3,
+    input_cache_write: 9,
+    output: 1,
+  });
+});
+
+test('Messages stream usage captures speed=fast as tier=fast', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    messageStart({ input_tokens: 5, output_tokens: 0, speed: 'fast' }),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+    tier: 'fast',
+  });
+});
+
+test('Messages stream usage leaves tier unset when speed is standard', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    messageStart({ input_tokens: 5, output_tokens: 0, speed: 'standard' }),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), { input: 5 });
 });

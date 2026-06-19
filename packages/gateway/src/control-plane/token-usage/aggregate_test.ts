@@ -84,3 +84,42 @@ test('aggregateUsageForDisplay charges image dimensions separately', () => {
   // 10 + 5 + 40 + 30 = $85.
   assertAlmostEquals(out[0].cost, 85, 1e-9);
 });
+
+test('aggregateUsageForDisplay applies the per-tier override when the bucket carries a tier', () => {
+  // Opus 4.8 standard: $5 input / $25 output. Fast: $10 / $50.
+  const cost: ModelPricing = {
+    input: 5,
+    output: 25,
+    tiers: { fast: { input: 10, output: 50 } },
+  };
+  const fastRow = baseRecord({ tier: 'fast', cost, tokens: { input: 1_000_000, output: 1_000_000 } });
+  const standardRow = baseRecord({ tier: null, cost, tokens: { input: 1_000_000, output: 1_000_000 } });
+
+  const fastOut = aggregateUsageForDisplay([fastRow]);
+  // 1M * $10 + 1M * $50 = $60.
+  assertAlmostEquals(fastOut[0].cost, 60, 1e-9);
+
+  const standardOut = aggregateUsageForDisplay([standardRow]);
+  // 1M * $5 + 1M * $25 = $30.
+  assertAlmostEquals(standardOut[0].cost, 30, 1e-9);
+});
+
+test('aggregateUsageForDisplay leaves base pricing alone when the tier has no override entry', () => {
+  const cost: ModelPricing = {
+    input: 5,
+    output: 25,
+    tiers: { fast: { input: 10, output: 50 } },
+  };
+  const out = aggregateUsageForDisplay([baseRecord({ tier: 'priority', cost, tokens: { input: 1_000_000 } })]);
+  // Unknown tier → falls back to base $5 input. 1M * $5 = $5.
+  assertAlmostEquals(out[0].cost, 5, 1e-9);
+});
+
+test('aggregateUsageForDisplay prices the input_cache_write_1h dimension via the 1h-specific rate', () => {
+  const cost: ModelPricing = { input: 5, input_cache_write: 6.25, input_cache_write_1h: 10, output: 25 };
+  const out = aggregateUsageForDisplay([
+    baseRecord({ cost, tokens: { input_cache_write_1h: 1_000_000 } }),
+  ]);
+  // 1M * $10 = $10.
+  assertAlmostEquals(out[0].cost, 10, 1e-9);
+});

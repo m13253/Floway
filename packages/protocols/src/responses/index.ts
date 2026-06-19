@@ -395,6 +395,11 @@ export interface ResponsesResult {
   // never synthesizes it.
   incomplete_details: { reason: string } | null;
   error: { message: string; code: string; type?: string } | null;
+  // OpenAI stamps the actual processing tier on the response object whenever
+  // the request set `service_tier`. Wire values: 'auto' | 'default' |
+  // 'flex' | 'scale' | 'priority' (open-ended string here so a future tier
+  // round-trips verbatim). https://developers.openai.com/api/reference/resources/responses/methods/create
+  service_tier?: string | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;

@@ -7,8 +7,8 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
-// actually billed. `tier` (a non-numeric service-tier marker) survives the
-// filter so per-tier pricing overrides resolve at recording time.
+// actually billed. `tier` is a non-numeric service-tier marker, not a billing
+// dimension; it survives the filter.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
@@ -18,6 +18,13 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   if (counts.tier != null) out.tier = counts.tier;
   return out;
 };
+
+// OpenAI `service_tier` echoes the actual processing tier (priority, flex,
+// scale, default, auto). `default` and `auto` denote base pricing — stamping
+// every row with one of them would split base-tier buckets pointlessly from
+// rows where the upstream omitted the field — so they collapse to null.
+export const normalizeOpenAiServiceTier = (tier: string | null | undefined): string | null =>
+  tier == null || tier === 'default' || tier === 'auto' ? null : tier;
 
 export const tokenUsageFromPromptTokenResponse = (usage: unknown): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;

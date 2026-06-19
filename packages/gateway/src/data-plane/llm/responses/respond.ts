@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { normalizeOpenAiServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
@@ -76,15 +76,20 @@ export const respondResponses = async (
 // --- token usage ---
 
 // OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input.
-const tokenUsageFromResponsesResult = (r: ResponsesResult) => {
-  const u = r.usage;
-  if (!u) return null;
-  const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
+// the cached split to recover the disjoint bare input. The top-level
+// `service_tier` echoes the actual processing tier the upstream served the
+// request at, which we surface as the `tier` slot so per-tier pricing
+// overrides resolve at recording time.
+export const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
+  const usage = response.usage;
+  if (!usage) return null;
+  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
+  const tier = normalizeOpenAiServiceTier(response.service_tier);
   return tokenUsage({
-    input: u.input_tokens - cacheRead,
+    input: usage.input_tokens - cacheRead,
     input_cache_read: cacheRead,
-    output: u.output_tokens,
+    output: usage.output_tokens,
+    ...(tier !== null ? { tier } : {}),
   });
 };
 

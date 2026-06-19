@@ -225,7 +225,18 @@ export interface MessagesUsage {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  // Per-TTL split for cache writes introduced by extended-cache-ttl-2025-04-11.
+  // Each `ephemeral_*` field is a disjoint subset of `cache_creation_input_tokens`
+  // (the legacy flat field is the sum of both); upstreams that have not opted
+  // into the beta omit `cache_creation` entirely and emit only the flat field.
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
   service_tier?: 'standard' | 'priority' | 'batch';
+  // Opus 4.6+ stamps the inference speed on the usage object; `fast` selects
+  // a per-tier pricing override (see `ModelPricing.tiers`).
+  speed?: 'standard' | 'fast';
   server_tool_use?: MessagesUsageServerToolUse;
 }
 
@@ -300,6 +311,11 @@ export interface MessagesMessageDeltaEvent {
     output_tokens: number;
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
+    cache_creation?: {
+      ephemeral_5m_input_tokens?: number;
+      ephemeral_1h_input_tokens?: number;
+    };
+    speed?: 'standard' | 'fast';
     server_tool_use?: MessagesUsageServerToolUse;
   };
 }

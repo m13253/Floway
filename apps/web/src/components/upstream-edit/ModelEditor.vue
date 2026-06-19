@@ -4,7 +4,7 @@ import { computed } from 'vue';
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
-import type { FlagDef, ModelKind, ModelPricing, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import type { BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -37,14 +37,15 @@ const kindOptions: { value: ModelKind; label: string }[] = [
 const PRICING_LABELS: Record<string, string> = {
   input: 'Input ($/MTok)',
   input_cache_read: 'Cache Read ($/MTok)',
-  input_cache_write: 'Cache Write ($/MTok)',
+  input_cache_write: 'Cache Write 5m ($/MTok)',
+  input_cache_write_1h: 'Cache Write 1h ($/MTok)',
   input_image: 'Image Input ($/MTok)',
   output: 'Output ($/MTok)',
   output_image: 'Image Output ($/MTok)',
 };
 
-const PRICING_BY_KIND: Record<ModelKind, (keyof ModelPricing)[]> = {
-  chat: ['input', 'input_cache_read', 'input_cache_write', 'output'],
+const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
+  chat: ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'output'],
   embedding: ['input'],
   image: ['input', 'input_image', 'output', 'output_image'],
 };
@@ -81,7 +82,7 @@ const updateLimit = (
   patch({ limits: Object.keys(limits).length > 0 ? limits : undefined });
 };
 
-const updateCost = (key: keyof ModelPricing, raw: string | number | null | undefined) => {
+const updateCost = (key: BillingDimension, raw: string | number | null | undefined) => {
   if (!config.value) return;
   const cost = { ...(config.value.cost ?? {}) } as Record<string, unknown>;
   const num = parseOptionalNumber(raw);
