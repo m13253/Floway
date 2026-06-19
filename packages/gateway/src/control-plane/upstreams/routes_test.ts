@@ -1184,6 +1184,118 @@ test('POST /api/upstreams/:id/claude-code-refresh-now flips the row to refresh_f
   assertEquals(typeof storedState.accounts[0].stateMessage, 'string');
 });
 
+// Refresh-race recovery (audit axis #10): when our refresh-now mint loses
+// the rotation race to a sibling — typically a data-plane request that
+// hit `/v1/oauth/token` a moment earlier and already wrote the rotated
+// state — the operator should NOT see a misleading "credential dead"
+// toast. The data-plane analog is `recoverFromRefreshRace` in
+// access-token-cache.ts (commit f1efc9dd); these tests pin the
+// control-plane mirror.
+
+test('POST /api/upstreams/:id/claude-code-refresh-now recovers as success when a sibling already rotated mid-flight', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  // Race simulation: when our route POSTs /v1/oauth/token, a sibling has
+  // already rotated the RT and written a fresh access token. The upstream
+  // sees our (now stale) RT and answers `invalid_grant`. The route should
+  // re-read state, observe the sibling's rotation, and surface success.
+  const siblingExpiresAt = Date.now() + 3_600_000;
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') {
+        // Plant the sibling's rotation result before answering with invalid_grant.
+        const row = await repo.upstreams.getById(created.id);
+        const rowState = row!.state as { accounts: Array<Record<string, unknown>> };
+        await repo.upstreams.save({
+          ...row!,
+          state: {
+            accounts: rowState.accounts.map(a => ({
+              ...a,
+              refreshToken: 'rt_sibling_rotated',
+              accessToken: {
+                token: 'at_sibling_rotated',
+                expiresAt: siblingExpiresAt,
+                refreshedAt: new Date().toISOString(),
+              },
+            })),
+          },
+        });
+        return new Response(
+          JSON.stringify({ error: { code: 'invalid_grant', message: 'Refresh token already used' } }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { state: { accounts: Array<{ state: string; accessToken: { expiresAt: number } | null }> } };
+      // The surfaced state mirrors the sibling's rotation — still active,
+      // access token timestamps match what the sibling wrote.
+      assertEquals(body.state.accounts[0].state, 'active');
+      assertEquals(body.state.accounts[0].accessToken?.expiresAt, siblingExpiresAt);
+    },
+  );
+
+  // Underlying row is the sibling's rotation — we did not clobber it with
+  // a refresh_failed flip or an attempt to re-write the same state.
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ state: string; refreshToken: string; accessToken: { token: string } | null }> };
+  assertEquals(storedState.accounts[0].state, 'active');
+  assertEquals(storedState.accounts[0].refreshToken, 'rt_sibling_rotated');
+  assertEquals(storedState.accounts[0].accessToken?.token, 'at_sibling_rotated');
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now still flips terminal when invalid_grant is genuine (RT unchanged)', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  // No sibling rotation: the upstream rejects our RT and the row still
+  // carries the same RT on re-read. Recovery must conclude "genuine
+  // failure" and fall through to the terminal-flip path.
+  await withMockedFetch(
+    () => new Response(
+      JSON.stringify({ error: { code: 'invalid_grant', message: 'Refresh token revoked' } }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    ),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+      assertEquals(resp.status, 400);
+      const body = (await resp.json()) as { error: string };
+      assertEquals(body.error.includes('Re-import'), true);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ state: string; stateMessage?: string }> };
+  assertEquals(storedState.accounts[0].state, 'refresh_failed');
+  assertEquals(typeof storedState.accounts[0].stateMessage, 'string');
+});
+
 // --- proxy_fallback_list ---
 //
 // The list has set semantics — duplicates are dropped silently before

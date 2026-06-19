@@ -952,10 +952,117 @@ export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeC
   return c.json(await serializeForResponse(next));
 };
 
+// Same freshness skew as the access-token cache (access-token-cache.ts):
+// a sibling-minted access token within this much of expiry is treated as
+// "not fresh enough to surface as success" and triggers the recovery
+// re-mint path.
+const CLAUDE_CODE_REFRESH_SKEW_MS = 5 * 60 * 1000;
+
+// Re-reads the row after a losing refresh attempt and decides what the
+// operator actually observed. Three outcomes:
+//   - 'recovered': sibling already rotated and wrote a fresh access token —
+//     the operator's refresh is effectively done.
+//   - 'retry-mint': sibling rotated the RT but the access token slot is
+//     empty (e.g. a concurrent invalidateClaudeCodeAccessToken cleared it);
+//     re-enter the refresh once with the live RT.
+//   - 'genuine-failure': nobody rotated, or the row flipped to terminal.
+//     Caller falls through to the terminal-flip path.
+//
+// Mirrors `recoverFromRefreshRace` in
+// `packages/provider-claude-code/src/access-token-cache.ts` (commit
+// f1efc9dd) but lighter: the data-plane recovery has to return a usable
+// token to keep the request flowing, while here we only need to decide
+// whether the dashboard sees "refresh succeeded" or "refresh failed."
+const recoverRefreshNow = async (
+  id: string,
+  refreshTokenWeUsed: string,
+): Promise<'recovered' | 'retry-mint' | 'genuine-failure'> => {
+  const reread = await getRepo().upstreams.getById(id);
+  if (!reread) return 'genuine-failure';
+  const rereadAccount = readClaudeCodeUpstreamState(reread.state).accounts[0];
+  // Sibling already flipped to terminal, or the row was hand-mutated away
+  // from active. Either way, no recovery to report.
+  if (rereadAccount.state !== 'active') return 'genuine-failure';
+  if (rereadAccount.tokenKind !== 'oauth') return 'genuine-failure';
+  // RT unchanged: nobody else rotated. If the upstream said invalid_grant
+  // on our RT, the credential really is dead.
+  if (rereadAccount.refreshToken === refreshTokenWeUsed) return 'genuine-failure';
+
+  if (
+    rereadAccount.accessToken
+    && rereadAccount.accessToken.expiresAt > Date.now() + CLAUDE_CODE_REFRESH_SKEW_MS
+  ) {
+    console.info(
+      `Claude Code refresh-now recovered for upstream ${id}: sibling rotated, surfacing their access token`,
+    );
+    return 'recovered';
+  }
+  return 'retry-mint';
+};
+
+// One attempt at a refresh round-trip + CAS write. Re-reads the row at the
+// start so a recovery re-mint picks up the sibling-rotated RT instead of
+// replaying our stale copy.
+type RefreshAttempt =
+  | { kind: 'ok' }
+  | { kind: 'cas-lost'; refreshTokenUsed: string }
+  | { kind: 'oauth-terminal'; error: ClaudeCodeOAuthSessionTerminatedError; refreshTokenUsed: string; baselineRaw: unknown; baselineAccount: ClaudeCodeAccountCredential };
+
+const attemptClaudeCodeRefresh = async (id: string, fetcher: Fetcher): Promise<RefreshAttempt> => {
+  const fresh = await getRepo().upstreams.getById(id);
+  if (!fresh) throw new Error(`Claude Code upstream ${id} disappeared mid-refresh`);
+  const account = readClaudeCodeUpstreamState(fresh.state).accounts[0];
+  if (account.state !== 'active' || account.tokenKind !== 'oauth') {
+    throw new Error(`Claude Code upstream ${id} no longer eligible for refresh mid-attempt`);
+  }
+
+  let tokens;
+  try {
+    tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
+  } catch (err) {
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      return { kind: 'oauth-terminal', error: err, refreshTokenUsed: account.refreshToken, baselineRaw: fresh.state, baselineAccount: account };
+    }
+    throw err;
+  }
+  // The refresh round-trip always carries a refresh_token; guard for shape
+  // drift so a malformed upstream response can't corrupt the persisted row.
+  if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
+    throw new Error('Claude Code OAuth /token response missing refresh_token on refresh');
+  }
+  const now = new Date();
+  const nextAccount: ClaudeCodeAccountCredential = {
+    ...account,
+    refreshToken: tokens.refresh_token,
+    // Keep `state` untouched on a successful refresh — 'active' is already
+    // the value we want and bumping stateUpdatedAt on every refresh would
+    // muddy the dashboard's "credential health changed" signal. Match the
+    // access-token cache's behavior in the data-plane hot path.
+    accessToken: {
+      token: tokens.access_token,
+      expiresAt: now.getTime() + tokens.expires_in * 1000,
+      refreshedAt: now.toISOString(),
+    },
+  };
+  const nextState: ClaudeCodeUpstreamState = { accounts: [nextAccount] };
+  const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: fresh.state });
+  if (!result.updated) return { kind: 'cas-lost', refreshTokenUsed: account.refreshToken };
+  return { kind: 'ok' };
+};
+
 // The body carries an optional `proxy_fallback_list` override so a refresh
 // fired from an unsaved edit-form uses the proxy chain the operator is
 // currently editing, not the persisted one. Absent override → fall back to
 // the persisted row's list. See proxy-resolution.ts for the layered policy.
+//
+// Refresh-race recovery: the operator-initiated refresh and the data-plane
+// access-token cache both call `/v1/oauth/token` with the same RT. When the
+// two interleave (operator click while a data-plane request is mid-mint),
+// one of them rotates the RT and the other observes either CAS-loss or
+// `invalid_grant`. We mirror the data-plane's recovery (see
+// `recoverFromRefreshRace` in access-token-cache.ts, commit f1efc9dd): on
+// loss, re-read the row; if a sibling rotated successfully, report success
+// instead of a misleading "credential dead" toast.
 export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
@@ -968,10 +1075,7 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   // hand-edited or written by a buggier branch — the framework-level 500
   // handler stack-traces internally without surfacing the parse error to the
   // dashboard.
-  const state = readClaudeCodeUpstreamState(existing.state);
-  // The state schema enforces exactly one account; refresh-now mutates that
-  // single entry.
-  const account = state.accounts[0];
+  const account = readClaudeCodeUpstreamState(existing.state).accounts[0];
   if (account.state !== 'active') {
     return c.json({ error: `Claude Code upstream is ${account.state}; re-import to recover` }, 400);
   }
@@ -992,65 +1096,62 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
     return c.json({ error: errorMessage(err) }, 400);
   }
 
-  try {
-    const tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
-    // The refresh round-trip always carries a refresh_token; guard for shape
-    // drift so a malformed upstream response can't corrupt the persisted row.
-    if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
-      throw new Error('Claude Code OAuth /token response missing refresh_token on refresh');
-    }
-    const now = new Date();
-    const nextAccount: ClaudeCodeAccountCredential = {
-      ...account,
-      refreshToken: tokens.refresh_token,
-      // Keep `state` untouched on a successful refresh — 'active' is already
-      // the value we want and bumping stateUpdatedAt on every refresh would
-      // muddy the dashboard's "credential health changed" signal. Match the
-      // access-token cache's behavior in the data-plane hot path.
-      accessToken: {
-        token: tokens.access_token,
-        expiresAt: now.getTime() + tokens.expires_in * 1000,
-        refreshedAt: now.toISOString(),
-      },
-    };
-    const nextState: ClaudeCodeUpstreamState = { accounts: [nextAccount] };
-    // CAS keyed on the just-read state. A losing race here means a concurrent
-    // data-plane refresh already rotated the row; their write is at least as
-    // fresh as ours, so we surface 409 rather than retry.
-    const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: state });
-    if (!result.updated) {
+  const respondWithFreshRow = async () => {
+    const refreshed = await getRepo().upstreams.getById(id);
+    return c.json(refreshed ? await serializeForResponse(refreshed) : { ok: true });
+  };
+
+  // Bounded by `recoveryAllowed`: at most one recovery re-mint per request.
+  // Mirrors the data-plane depth guard.
+  let recoveryAllowed = true;
+  while (true) {
+    const attempt = await attemptClaudeCodeRefresh(id, fetcher);
+
+    if (attempt.kind === 'ok') return await respondWithFreshRow();
+
+    if (attempt.kind === 'cas-lost') {
+      if (recoveryAllowed) {
+        const outcome = await recoverRefreshNow(id, attempt.refreshTokenUsed);
+        if (outcome === 'recovered') return await respondWithFreshRow();
+        if (outcome === 'retry-mint') { recoveryAllowed = false; continue; }
+      }
+      // Either out of recovery budget, or the re-read shows no sibling
+      // rotation — surface 409 so the operator can retry on a calmer window.
       return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
     }
-    const fresh = await getRepo().upstreams.getById(id);
-    return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
-  } catch (err) {
-    // OAuth session terminated (refresh_token replayed, revoked, or
-    // app_session_terminated): mirror the data-plane behavior — flip the row
-    // to `refresh_failed` so the dashboard surfaces the red badge and the
-    // operator sees a Re-import affordance instead of a stale Refresh button.
-    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
-      const failedAccount: ClaudeCodeAccountCredential = {
-        ...account,
-        state: 'refresh_failed',
-        stateMessage: err.upstreamMessage,
-        stateUpdatedAt: new Date().toISOString(),
-        // Refresh failure invalidates whatever access token still sat in state;
-        // even if the data-plane somehow bypassed the active-state gate, the
-        // cached token wouldn't outlive the refresh failure for long.
-        accessToken: null,
-      };
-      const failedState: ClaudeCodeUpstreamState = { accounts: [failedAccount] };
-      // Best-effort: a losing CAS means a concurrent rotation already wrote
-      // newer state, which by definition supersedes ours.
-      await getRepo().upstreams.saveState(id, failedState, { expectedState: state });
-      // 400, not 502: the upstream IS answering — it's telling us the stored
-      // refresh token is dead. That's a client-side credential problem, not
-      // an upstream outage. 401 is wrong too: the dashboard's auth client
-      // logs the operator out on any 401 (apps/web/src/api/client.ts), and
-      // a "your claude-code credential is dead" condition must not be confused
-      // with "your dashboard auth is invalid".
-      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
+
+    // attempt.kind === 'oauth-terminal'
+    if (attempt.error.code === 'invalid_grant' && recoveryAllowed) {
+      const outcome = await recoverRefreshNow(id, attempt.refreshTokenUsed);
+      if (outcome === 'recovered') return await respondWithFreshRow();
+      if (outcome === 'retry-mint') { recoveryAllowed = false; continue; }
+      // genuine-failure: fall through to the terminal-flip path below.
     }
-    return c.json({ error: errorMessage(err) }, 502);
+
+    // OAuth session terminated without a recoverable sibling rotation:
+    // mirror the data-plane behavior — flip the row to `refresh_failed`
+    // so the dashboard surfaces the red badge and the operator sees a
+    // Re-import affordance instead of a stale Refresh button.
+    const failedAccount: ClaudeCodeAccountCredential = {
+      ...attempt.baselineAccount,
+      state: 'refresh_failed',
+      stateMessage: attempt.error.upstreamMessage,
+      stateUpdatedAt: new Date().toISOString(),
+      // Refresh failure invalidates whatever access token still sat in state;
+      // even if the data-plane somehow bypassed the active-state gate, the
+      // cached token wouldn't outlive the refresh failure for long.
+      accessToken: null,
+    };
+    const failedState: ClaudeCodeUpstreamState = { accounts: [failedAccount] };
+    // Best-effort: a losing CAS means a concurrent rotation already wrote
+    // newer state, which by definition supersedes ours.
+    await getRepo().upstreams.saveState(id, failedState, { expectedState: attempt.baselineRaw });
+    // 400, not 502: the upstream IS answering — it's telling us the stored
+    // refresh token is dead. That's a client-side credential problem, not
+    // an upstream outage. 401 is wrong too: the dashboard's auth client
+    // logs the operator out on any 401 (apps/web/src/api/client.ts), and
+    // a "your claude-code credential is dead" condition must not be confused
+    // with "your dashboard auth is invalid".
+    return c.json({ error: `Claude Code refresh failed: ${attempt.error.upstreamMessage}. Re-import the credential to recover.` }, 400);
   }
 };
