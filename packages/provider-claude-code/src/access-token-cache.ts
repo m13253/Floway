@@ -145,12 +145,6 @@ const ensureClaudeCodeAccessTokenInner = async (
     return { entry: account.accessToken, freshlyMinted: false };
   }
 
-  // The `oauth` kind guarantees a non-empty refresh token; the state asserter
-  // enforces it on read.
-  if (account.refreshToken === null) {
-    throw new Error(`Claude Code upstream ${args.upstreamId} has tokenKind='oauth' but null refreshToken`);
-  }
-
   let refreshed;
   try {
     refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);

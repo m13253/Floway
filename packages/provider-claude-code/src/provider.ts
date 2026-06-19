@@ -60,16 +60,14 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       // shaped path skips straight to the terminal call, which forwards the
       // caller's headers and body byte-for-byte (Authorization swap only).
       //
-      // `clientRequestHeaders` / `clientRequestPathname` carry the inbound
-      // HTTP request's identity (UA, anthropic-version, x-app, pathname).
-      // When the gateway is invoked outside a real Hono request (synthetic
-      // tests, translation chains that never originated as /v1/messages),
-      // both fields are undefined and detection downgrades to "not shaped".
+      // `clientRequestHeaders` carries the inbound HTTP request's identity
+      // (UA, anthropic-version, x-app). When the gateway is invoked outside a
+      // real Hono request (synthetic tests, translation chains that never
+      // originated as /v1/messages), it is undefined and detection downgrades
+      // to "not shaped".
       const looksShaped = opts.clientRequestHeaders !== undefined
-        && opts.clientRequestPathname !== undefined
         && isClaudeCodeShapedRequest({
           headers: new Headers(opts.clientRequestHeaders),
-          pathname: opts.clientRequestPathname,
           body: ctx.payload,
           isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
         });

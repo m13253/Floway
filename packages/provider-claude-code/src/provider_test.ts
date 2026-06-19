@@ -90,7 +90,6 @@ const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): Upstre
     'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
   },
-  clientRequestPathname: '/v1/messages',
   ...overrides,
 });
 
@@ -260,7 +259,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
   });
 
-  test('CC UA but missing clientRequestPathname still runs the chain', async () => {
+  test('CC UA but a payload that fails the strict shape gate still runs the chain', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 

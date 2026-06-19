@@ -72,7 +72,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('accepts canonical UA', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.181' }),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -81,7 +80,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('accepts older CC UA', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.10' }),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -90,7 +88,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('rejects UA missing patch version', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1' }),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -99,7 +96,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('rejects non-prefix UA', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'not-claude-cli/2.1.10' }),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -108,7 +104,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
   test('rejects bare claude-cli/ UA', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/' }),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -119,7 +114,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     h.delete('user-agent');
     expect(isClaudeCodeShapedRequest({
       headers: h,
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -127,28 +121,9 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
 });
 
 describe('isClaudeCodeShapedRequest — short-circuit paths', () => {
-  test('non-messages path passes on UA alone (no body needed)', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      pathname: '/v1/oauth/profile',
-      body: null,
-      isMaxTokensOneHaikuProbe: false,
-    })).toBe(true);
-  });
-
-  test('count_tokens path passes on UA alone', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      pathname: '/v1/messages/count_tokens',
-      body: null,
-      isMaxTokensOneHaikuProbe: false,
-    })).toBe(true);
-  });
-
   test('max_tokens=1 Haiku probe passes without system/metadata', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1,
@@ -163,7 +138,6 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
   test('accepts a request whose first system block is the billing header', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; cc_entrypoint=cli; cch=00000;'),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -172,7 +146,6 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
   test('rejects a billing-like header missing cc_entrypoint=cli', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.181.abc; some_other_marker=1;'),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -191,7 +164,6 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
   ])('matches identity template: %s', text => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem(text),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -200,7 +172,6 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
   test('rejects a non-CC system prompt that does not Dice-match any template', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem('Translate the following passage into French and preserve the original meter.'),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -213,7 +184,6 @@ describe('isClaudeCodeShapedRequest — strict header gate', () => {
     h.delete(key);
     expect(isClaudeCodeShapedRequest({
       headers: h,
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -224,7 +194,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
   test('accepts legacy form', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdLegacy),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -233,7 +202,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
   test('accepts JSON form', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdJson),
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -248,7 +216,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     body.metadata = { user_id: raw };
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body,
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -259,7 +226,6 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
     delete body.metadata;
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body,
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);
@@ -277,7 +243,6 @@ describe('isClaudeCodeShapedRequest — system shape variants', () => {
     };
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body,
       isMaxTokensOneHaikuProbe: false,
     })).toBe(true);
@@ -288,7 +253,6 @@ describe('isClaudeCodeShapedRequest — system shape variants', () => {
     body.system = [];
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
-      pathname: '/v1/messages',
       body,
       isMaxTokensOneHaikuProbe: false,
     })).toBe(false);

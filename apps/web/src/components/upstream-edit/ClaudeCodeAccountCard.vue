@@ -255,7 +255,7 @@ const hasInfoChips = computed<boolean>(() => {
 
 const rawEntries = computed<Array<[string, string]>>(() => {
   const raw = quota.value?.raw;
-  if (!raw || typeof raw !== 'object') return [];
+  if (!raw) return [];
   return Object.entries(raw).sort(([a], [b]) => a.localeCompare(b));
 });
 
