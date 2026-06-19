@@ -566,6 +566,11 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   return c.json(await serializeForResponse(next));
 };
 
+// The body schema is `z.object({})` but the handler keeps the typed
+// `CtxWithJson` wrapper as a compile-time drift anchor: if the schema at the
+// `zValidator` registration site (`control-plane/routes.ts`) ever grows a
+// field, the handler signature breaks alongside it instead of silently
+// drifting out of sync.
 export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
@@ -755,6 +760,11 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   return c.json(await serializeForResponse(next));
 };
 
+// The body schema is `z.object({})` but the handler keeps the typed
+// `CtxWithJson` wrapper as a compile-time drift anchor: if the schema at the
+// `zValidator` registration site (`control-plane/routes.ts`) ever grows a
+// field, the handler signature breaks alongside it instead of silently
+// drifting out of sync.
 export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
