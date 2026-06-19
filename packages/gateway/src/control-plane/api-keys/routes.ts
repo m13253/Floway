@@ -119,16 +119,19 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   };
   await getRepo().apiKeys.save(updated);
 
-  // Disabling dump or shrinking the window must be reflected in storage
+  // Disabling dump or changing the window must be reflected in storage
   // before responding 200 — the dashboard treats a successful PATCH as
   // "the world has caught up", so a deferred purge would let stale records
-  // resurface in a follow-up read.
+  // resurface in a follow-up read. Any positive-value change (including
+  // raise and enable-from-null) calls purgeExpired so the CF DO refreshes
+  // its cached retention and reschedules its alarm; on Node the call is a
+  // no-op when no records sit over the new window.
   if (body.dump_retention_seconds !== undefined) {
     const previous = owned.dumpRetentionSeconds;
     const next = updated.dumpRetentionSeconds;
     if (next === null && previous !== null) {
       await getDumpStore().purgeAll(updated.id);
-    } else if (next !== null && previous !== null && next < previous) {
+    } else if (next !== null && next !== previous) {
       await getDumpStore().purgeExpired(updated.id, next);
     }
   }

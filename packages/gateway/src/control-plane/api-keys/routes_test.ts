@@ -157,7 +157,7 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
   assertEquals(stored.userId, apiKey.userId);
 });
 
-test('PATCH /api/keys/:id turns dump retention on (null → 3600) without purging', async () => {
+test('PATCH /api/keys/:id enable from null calls purgeExpired to populate DO state', async () => {
   const { repo, apiKey } = await setupAppTest();
   const purges = installPurgeRecorder();
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 3600 }, apiKey.key);
@@ -168,7 +168,7 @@ test('PATCH /api/keys/:id turns dump retention on (null → 3600) without purgin
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.dumpRetentionSeconds, 3600);
-  assertEquals(purges.length, 0);
+  assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 3600 }]);
 });
 
 test('PATCH /api/keys/:id turns dump retention off (3600 → null) and purges every record', async () => {
@@ -195,14 +195,14 @@ test('PATCH /api/keys/:id shrinks the window (3600 → 1800) and purges expired 
   assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 1800 }]);
 });
 
-test('PATCH /api/keys/:id raises the window (3600 → 7200) without purging', async () => {
+test('PATCH /api/keys/:id retention raise calls purgeExpired to refresh DO state', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const purges = installPurgeRecorder();
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 7200 }, apiKey.key);
   assertEquals(response.status, 200);
-  assertEquals(purges.length, 0);
+  assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 7200 }]);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
