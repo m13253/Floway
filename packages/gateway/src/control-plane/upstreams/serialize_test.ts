@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -103,4 +103,79 @@ test('upstreamRecordToFullJson includes provider config secrets for export', () 
   assertEquals(result.id, 'up_custom_test');
   assertEquals(config.bearerToken, 'sk-secret-token-12345');
   assertEquals(config.bearerTokenSet, undefined);
+});
+
+// Strict-throw helpers in serialize.ts fail loud rather than silently
+// collapse shape drift into nulls. The list endpoint maps
+// serializeForResponse over every row, so a single malformed row in
+// production blocks `/api/upstreams`. These tests pin that contract.
+
+const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
+  id: 'up_cc_test',
+  provider: 'claude-code',
+  name: 'Claude Code',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+  config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
+  state: overrides.state ?? null,
+} as unknown as UpstreamRecord);
+
+const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
+  id: 'up_cx_test',
+  provider: 'codex',
+  name: 'Codex',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
+  config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
+  state: overrides.state ?? null,
+} as unknown as UpstreamRecord);
+
+test('upstreamRecordToJson throws when claude-code state.accessToken is a string', () => {
+  const record = claudeCodeBase({
+    state: { accounts: [{ accountUuid: 'u', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: 'not-an-object', quotaSnapshot: null }] },
+  });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed accessToken/);
+});
+
+test('upstreamRecordToJson throws when claude-code state.quotaSnapshot is a string', () => {
+  const record = claudeCodeBase({
+    state: { accounts: [{ accountUuid: 'u', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: null, quotaSnapshot: 'not-an-object' }] },
+  });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed quotaSnapshot/);
+});
+
+test('upstreamRecordToJson throws when claude-code config.accounts is not an array', () => {
+  const record = claudeCodeBase({ config: { accounts: 'not-an-array' } });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed accounts/);
+});
+
+test('upstreamRecordToJson throws when claude-code state.accounts is not an array', () => {
+  const record = claudeCodeBase({
+    config: { accounts: [{ email: 'a@example.com' }] },
+    state: { accounts: 'not-an-array' },
+  });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed accounts/);
+});
+
+test('upstreamRecordToJson throws when codex config.accounts is not an array', () => {
+  const record = codexBase({ config: { accounts: 'not-an-array' } });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed accounts/);
+});
+
+test('upstreamRecordToJson throws when codex state.accounts is not an array', () => {
+  const record = codexBase({
+    config: { accounts: [{ email: 'a@example.com' }] },
+    state: { accounts: 'not-an-array' },
+  });
+  expect(() => upstreamRecordToJson(record)).toThrow(/malformed accounts/);
 });
