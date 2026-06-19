@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest';
 
+import { initDumpStore } from '../../runtime/dump.ts';
 import { hashPassword } from '../../shared/passwords.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
+import type { DumpStore } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const adminPost = (sessionId: string, body: unknown) => requestApp('/api/users', {
@@ -128,6 +130,46 @@ test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () =>
   expect(await repo.users.getById(user.id)).toBeNull();
   expect(await repo.apiKeys.getById(defaultKey.id)).toBeNull();
   assertEquals((await repo.sessions.deleteByUserId(user.id)), 0);
+});
+
+test('DELETE /api/users/:id purges dumps for every live key before cascading soft-delete', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
+  const { user } = (await created.json()) as { user: { id: number } };
+
+  // Add a second key so the test asserts the loop covers every live key,
+  // not just the auto-provisioned Default.
+  await repo.apiKeys.save({
+    id: 'key_second',
+    userId: user.id,
+    name: 'Second',
+    key: 'raw_second',
+    createdAt: '2026-03-15T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+  });
+  const liveKeyIds = (await repo.apiKeys.listByUserId(user.id)).map(k => k.id).sort();
+  assertEquals(liveKeyIds.length, 2);
+
+  const purges: string[] = [];
+  const recordingStore: DumpStore = {
+    put: async () => {},
+    list: async () => [],
+    get: async () => null,
+    purgeExpired: async () => {},
+    purgeAll: async keyId => { purges.push(keyId); },
+  };
+  initDumpStore(recordingStore);
+
+  const response = await adminDelete(adminSession, user.id);
+  assertEquals(response.status, 200);
+
+  // Each live key was purged exactly once. listByUserId stops returning
+  // soft-deleted ids, so the recorded set matching the pre-delete live set
+  // proves the loop ran before the cascading soft-delete.
+  assertEquals(purges.length, 2);
+  assertEquals([...purges].sort(), liveKeyIds);
 });
 
 test('PATCH /api/users/me/password requires session and a correct current password', async () => {

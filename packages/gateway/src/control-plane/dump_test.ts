@@ -170,7 +170,7 @@ test('GET /api/dump/keys/:keyId/records returns newest-first with exclusive `bef
   assertEquals(olderBody.records.map(r => r.id), ['01B', '01A']);
 });
 
-test('GET /api/dump/keys/:keyId/records caps limit at 200', async () => {
+test('GET /api/dump/keys/:keyId/records limit handling', async () => {
   const { apiKey } = await setupAppTest();
   const { store } = installStubs();
   let observedLimit = -1;
@@ -181,11 +181,42 @@ test('GET /api/dump/keys/:keyId/records caps limit at 200', async () => {
       return [];
     },
   });
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=10000`, {
+
+  // Missing → default of 100 (the cap is the upper bound, not the default).
+  const dflt = await requestApp(`/api/dump/keys/${apiKey.id}/records`, {
     headers: { 'x-api-key': apiKey.key },
   });
-  assertEquals(response.status, 200);
+  assertEquals(dflt.status, 200);
+  assertEquals(observedLimit, 100);
+
+  // Explicit valid value passes through.
+  const explicit = await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=50`, {
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(explicit.status, 200);
+  assertEquals(observedLimit, 50);
+
+  // Over-cap → clamped to 200.
+  const over = await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=10000`, {
+    headers: { 'x-api-key': apiKey.key },
+  });
+  assertEquals(over.status, 200);
   assertEquals(observedLimit, 200);
+
+  // Non-numeric, non-positive, and empty inputs are rejected rather than
+  // silently substituted — surfacing the operator's bad input is the point.
+  assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=abc`, {
+    headers: { 'x-api-key': apiKey.key },
+  })).status, 400);
+  assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=-1`, {
+    headers: { 'x-api-key': apiKey.key },
+  })).status, 400);
+  assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=0`, {
+    headers: { 'x-api-key': apiKey.key },
+  })).status, 400);
+  assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=`, {
+    headers: { 'x-api-key': apiKey.key },
+  })).status, 400);
 });
 
 test('GET /api/dump/keys/:keyId/records/:recordId returns the full record', async () => {

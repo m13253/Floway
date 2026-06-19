@@ -5,6 +5,7 @@ import { getRepo } from '../repo/index.ts';
 import { getDumpBroker, getDumpStore } from '../runtime/dump.ts';
 
 const RECORDS_LIST_HARD_CAP = 200;
+const RECORDS_LIST_DEFAULT = 100;
 const STREAM_INITIAL_SNAPSHOT_LIMIT = 100;
 
 const ownedKeyOr404 = async (c: Context, keyId: string): Promise<true | Response> => {
@@ -16,10 +17,14 @@ const ownedKeyOr404 = async (c: Context, keyId: string): Promise<true | Response
   return true;
 };
 
-const parseLimit = (raw: string | undefined): number => {
-  if (raw === undefined) return RECORDS_LIST_HARD_CAP;
+// Missing → default. Garbage or non-positive → null so the caller rejects
+// with 400 rather than silently substituting a value the operator did not
+// ask for. Over-cap is clamped: the cap is the upper bound, not a hint that
+// the input itself was invalid.
+const parseLimit = (raw: string | undefined): number | null => {
+  if (raw === undefined) return RECORDS_LIST_DEFAULT;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return RECORDS_LIST_HARD_CAP;
+  if (!Number.isFinite(n) || n <= 0) return null;
   return Math.min(Math.floor(n), RECORDS_LIST_HARD_CAP);
 };
 
@@ -48,6 +53,7 @@ export const dump = new Hono()
 
     const before = c.req.query('before');
     const limit = parseLimit(c.req.query('limit'));
+    if (limit === null) return c.json({ error: '`limit` must be a positive integer' }, 400);
     const records = await getDumpStore().list(keyId, {
       limit,
       ...(before !== undefined ? { before } : {}),
