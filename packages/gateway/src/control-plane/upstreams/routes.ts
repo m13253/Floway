@@ -12,7 +12,7 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeReimportBody, codexImportBody, codexPkceStartBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -566,7 +566,7 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   return c.json(await serializeForResponse(next));
 };
 
-export const codexRefreshNow = async (c: Context) => {
+export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
@@ -755,7 +755,7 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   return c.json(await serializeForResponse(next));
 };
 
-export const claudeCodeRefreshNow = async (c: Context) => {
+export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
