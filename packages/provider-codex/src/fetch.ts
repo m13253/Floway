@@ -112,15 +112,17 @@ const performUpstreamCall = async (
       // Quota persistence is best-effort — getCodexQuota already treats a
       // missing or stale snapshot as null, so a CAS loss or transient
       // storage error is recoverable noise rather than something to crash
-      // the request on.
-      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
+      // the request on. The write is registered with the runtime's
+      // waitUntil slot so workerd does not cancel the in-flight CAS the
+      // moment the streaming response is returned to the client.
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
       return ensureSseContentType(response);
     }
 
     if (response.status === 429) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
       return response;
     }
 
@@ -154,7 +156,7 @@ const performUpstreamCall = async (
     let newAccessToken: string;
     try {
       const minted = await mintAccessToken(opts, opts.account.refresh_token);
-      putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted).catch(() => {});
+      registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
       newAccessToken = minted.token;
     } catch (err) {
       if (err instanceof CodexOAuthSessionTerminatedError) {
@@ -205,4 +207,20 @@ const ensureSseContentType = (response: Response): Response => {
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
+
+// Best-effort state writes that outlive the response stream must be handed
+// to the runtime's waitUntil slot — on workerd a fire-and-forget promise is
+// cancelled the instant the streaming response returns to the client, which
+// drops quota snapshots and freshly-minted access tokens on the floor. We
+// still swallow the error here because these writes are recoverable noise
+// (CAS losses to a concurrent rotation, transient storage failures) and
+// must not crash the request, but the swallow happens inside the lifetime
+// the runtime promises us instead of inside one that has already ended.
+// Synthetic call sites (tests, internal compaction) legitimately omit
+// `waitUntil`; the optional chain degrades to the original fire-and-forget
+// shape there.
+const registerBackgroundWrite = (opts: CallCodexResponsesOptions, write: Promise<void>): void => {
+  const guarded = write.catch(() => {});
+  opts.call.waitUntil?.(guarded);
 };
