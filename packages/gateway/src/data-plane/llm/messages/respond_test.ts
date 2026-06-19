@@ -15,6 +15,10 @@ const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamE
 test('Messages stream usage keeps start input and delta output', () => {
   const state = createMessagesStreamUsageState();
 
+  // Every revising frame returns the running snapshot so the observer can
+  // checkpoint partial usage into SourceStreamState before the terminal
+  // message_stop — required for billing fidelity when the client disconnects
+  // mid-stream.
   assertEquals(
     tokenUsageFromMessagesFrame(
       eventFrame({
@@ -37,7 +41,12 @@ test('Messages stream usage keeps start input and delta output', () => {
       } satisfies MessagesStreamEvent),
       state,
     ),
-    null,
+    {
+      input: 12,
+      input_cache_read: 3,
+      input_cache_write: 4,
+      output: 1,
+    },
   );
   assertEquals(
     tokenUsageFromMessagesFrame(
@@ -48,7 +57,12 @@ test('Messages stream usage keeps start input and delta output', () => {
       } satisfies MessagesStreamEvent),
       state,
     ),
-    null,
+    {
+      input: 12,
+      input_cache_read: 3,
+      input_cache_write: 4,
+      output: 7,
+    },
   );
 
   assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
@@ -340,4 +354,92 @@ test('respondMessages forwards anthropic-ratelimit-* headers on the streaming SS
   // background `finally` block in `streamSSE` doesn't keep the test runner
   // alive.
   await response.text();
+});
+
+// --- partial usage checkpointing on client disconnect ---
+
+interface ControlledEvents {
+  events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
+  emit: (event: MessagesStreamEvent) => Promise<void>;
+}
+
+// A generator whose next() resolves only when emit() supplies the next event.
+// Lets a test interleave "upstream emitted frame X" with "downstream cancels",
+// so the streaming finally block fires while message_stop is still in flight.
+const controlledMessagesEvents = (): ControlledEvents => {
+  const queue: Array<MessagesStreamEvent> = [];
+  const waiters: Array<(value: MessagesStreamEvent) => void> = [];
+  const events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>> = (async function* () {
+    while (true) {
+      const event = queue.shift() ?? (await new Promise<MessagesStreamEvent>(resolve => waiters.push(resolve)));
+      yield eventFrame(event);
+      if (event.type === 'message_stop') return;
+    }
+  })();
+  return {
+    events,
+    emit: async event => {
+      const waiter = waiters.shift();
+      if (waiter) waiter(event);
+      else queue.push(event);
+      // Yield so the generator's `for await` consumer can advance past the
+      // freshly-yielded frame before the test issues the next step.
+      await Promise.resolve();
+      await Promise.resolve();
+    },
+  };
+};
+
+test('respondMessages records the last observed message_delta usage when the client disconnects mid-stream', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const controlled = controlledMessagesEvents();
+  const app = new Hono();
+  app.get('/', c => {
+    const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
+      controlled.events,
+      testTelemetryModelIdentity,
+      undefined,
+      undefined,
+      new Headers({ 'content-type': 'text/event-stream' }),
+    );
+    const downstreamAbortController = new AbortController();
+    const ctx: GatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
+    return respondMessages(c, result, true, ctx).then(({ response }) => response);
+  });
+  const response = await app.request('/');
+  const reader = response.body!.getReader();
+
+  await controlled.emit({
+    type: 'message_start',
+    message: {
+      id: 'msg_abort', type: 'message', role: 'assistant', content: [], model: 'claude-test',
+      stop_reason: null, stop_sequence: null,
+      usage: { input_tokens: 20, output_tokens: 0 },
+    },
+  });
+  await reader.read();
+  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 5 } });
+  await reader.read();
+  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 11 } });
+  await reader.read();
+  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 17 } });
+  await reader.read();
+
+  // Client disconnect before message_stop. The streamSSE finally block must
+  // still record the latest message_delta's output count or the operator's
+  // billing telemetry under-counts every aborted session.
+  await reader.cancel();
+
+  // The InMemoryRepo's recordTokenUsage is synchronous, but the finally block
+  // runs after the cancellation propagates through streamSSE. A short poll
+  // covers that hand-off without coupling the test to a fixed schedule.
+  for (let i = 0; i < 20; i++) {
+    if ((await repo.usage.listAll()).length > 0) break;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+
+  const rows = await repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].tokens, { input: 20, output: 17 });
 });
