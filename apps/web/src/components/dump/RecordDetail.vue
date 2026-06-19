@@ -35,6 +35,15 @@ const revealedHeaderIdx = ref(new Set<number>());
 
 const SENSITIVE_HEADERS = new Set(['x-api-key', 'authorization']);
 const isSensitiveHeader = (name: string) => SENSITIVE_HEADERS.has(name.toLowerCase());
+// Redact preserves length so the visual mass of the original value is
+// preserved while the middle is hidden. The first and last 8 characters
+// stay visible — enough for the operator to recognize the credential type
+// (sk-ant-… / cgw-main-…) and match the tail against their notes. Values
+// of 16 or fewer chars are fully masked because there is no "middle".
+const redactValue = (v: string): string => {
+  if (v.length <= 16) return '•'.repeat(v.length);
+  return v.slice(0, 8) + '•'.repeat(v.length - 16) + v.slice(-8);
+};
 const toggleReveal = (i: number) => {
   if (revealedHeaderIdx.value.has(i)) revealedHeaderIdx.value.delete(i);
   else revealedHeaderIdx.value.add(i);
@@ -212,14 +221,16 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
       Select a request to inspect.
     </p>
 
-    <!-- Outer scroll over the whole detail pane. Each section renders at its
-         natural height up to a generous max so a long body can scroll inside
-         without pushing the page to a huge total scroll distance. -->
+    <!-- Outer scroll over the whole detail pane. Sections sit flush against
+         each other with a single divider between them; each section's header
+         is sticky so it stays pinned to the top of the scroll viewport while
+         its body scrolls, and only gives way once the next section's header
+         reaches the top. -->
     <OverlayScrollbars v-else-if="record" class="min-h-0 flex-1" no-tabindex>
-      <div class="flex flex-col gap-3 p-4">
+      <div class="divide-y divide-white/[0.06]">
         <!-- Request headers -->
-        <section class="glass-card flex flex-col overflow-hidden">
-          <header class="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
+        <section>
+          <header class="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
             <span class="text-xs font-medium text-gray-400">Request headers</span>
             <Button
               size="sm"
@@ -227,40 +238,38 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
               @click="copyTo(requestHeadersCopy, 'req-headers')"
             >{{ copyLabel('req-headers') }}</Button>
           </header>
-          <OverlayScrollbars class="max-h-[70vh]" no-tabindex>
-            <div class="px-3 py-2 text-xs">
-              <div class="mb-2 flex items-center gap-2 font-mono">
-                <span class="font-semibold text-white">{{ record.request.method }}</span>
-                <span class="break-all text-gray-300">{{ record.request.path }}</span>
-              </div>
-              <table class="w-full">
-                <tbody>
-                  <tr v-for="([k, v], i) in record.request.headers" :key="`${i}-${k}`" class="border-t border-white/[0.03]">
-                    <td class="py-1 pr-3 align-top font-mono text-gray-500 whitespace-nowrap">{{ k }}</td>
-                    <td class="py-1 align-top break-all font-mono text-gray-300">
-                      <template v-if="isSensitiveHeader(k)">
-                        <span>{{ revealedHeaderIdx.has(i) ? v : '••••••••' }}</span><button
-                          type="button"
-                          class="ml-1 inline-flex size-4 items-center justify-center align-middle text-gray-600 hover:text-gray-300"
-                          :aria-label="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
-                          :title="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
-                          @click="toggleReveal(i)"
-                        >
-                          <i :class="revealedHeaderIdx.has(i) ? 'i-lucide-eye-off' : 'i-lucide-eye'" class="size-3.5" />
-                        </button>
-                      </template>
-                      <template v-else>{{ v }}</template>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <div class="px-3 py-2 text-xs">
+            <div class="mb-2 flex items-center gap-2 font-mono">
+              <span class="font-semibold text-white">{{ record.request.method }}</span>
+              <span class="break-all text-gray-300">{{ record.request.path }}</span>
             </div>
-          </OverlayScrollbars>
+            <table class="w-full">
+              <tbody>
+                <tr v-for="([k, v], i) in record.request.headers" :key="`${i}-${k}`" class="border-t border-white/[0.03]">
+                  <td class="py-1 pr-3 align-top font-mono text-gray-500 whitespace-nowrap">{{ k }}</td>
+                  <td class="py-1 align-top break-all font-mono text-gray-300">
+                    <template v-if="isSensitiveHeader(k)">
+                      <span>{{ revealedHeaderIdx.has(i) ? v : redactValue(v) }}</span><button
+                        type="button"
+                        class="ml-1 inline-flex size-4 items-center justify-center align-middle text-gray-600 hover:text-gray-300"
+                        :aria-label="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
+                        :title="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
+                        @click="toggleReveal(i)"
+                      >
+                        <i :class="revealedHeaderIdx.has(i) ? 'i-lucide-eye-off' : 'i-lucide-eye'" class="size-3.5" />
+                      </button>
+                    </template>
+                    <template v-else>{{ v }}</template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <!-- Request body -->
-        <section class="glass-card flex flex-col overflow-hidden">
-          <header class="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
+        <section>
+          <header class="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
             <span class="text-xs font-medium text-gray-400">Request body</span>
             <Button
               v-if="requestBody"
@@ -269,24 +278,19 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
               @click="copyTo(requestBody.copyText, 'req-body')"
             >{{ copyLabel('req-body') }}</Button>
           </header>
-          <div class="flex flex-col min-h-0">
-            <Code
-              v-if="requestBody?.pretty"
-              class="max-h-[70vh]"
-              :code="requestBody.pretty"
-              :language="requestBody.isJson ? 'json' : 'text'"
-              :copyable="false"
-            />
-            <OverlayScrollbars v-else-if="requestBody" class="max-h-[70vh]" no-tabindex>
-              <pre class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ requestBody.text }}</pre>
-            </OverlayScrollbars>
-            <p v-else class="px-3 py-4 text-center text-xs text-gray-500">No request body.</p>
-          </div>
+          <Code
+            v-if="requestBody?.pretty"
+            :code="requestBody.pretty"
+            :language="requestBody.isJson ? 'json' : 'text'"
+            :copyable="false"
+          />
+          <pre v-else-if="requestBody" class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ requestBody.text }}</pre>
+          <p v-else class="px-3 py-4 text-center text-xs text-gray-500">No request body.</p>
         </section>
 
         <!-- Response headers + status -->
-        <section class="glass-card flex flex-col overflow-hidden">
-          <header class="flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
+        <section>
+          <header class="sticky top-0 z-10 flex items-center justify-between border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
             <span class="text-xs font-medium text-gray-400">
               Response headers <span class="ml-2 font-mono text-gray-500">{{ formatStatus(record.response.status) }}</span>
             </span>
@@ -296,23 +300,21 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
               @click="copyTo(responseHeadersCopy, 'res-headers')"
             >{{ copyLabel('res-headers') }}</Button>
           </header>
-          <OverlayScrollbars class="max-h-[70vh]" no-tabindex>
-            <div class="px-3 py-2 text-xs">
-              <table class="w-full">
-                <tbody>
-                  <tr v-for="([k, v], i) in record.response.headers" :key="`${i}-${k}`" class="border-t border-white/[0.03]">
-                    <td class="py-1 pr-3 align-top font-mono text-gray-500 whitespace-nowrap">{{ k }}</td>
-                    <td class="py-1 align-top break-all font-mono text-gray-300">{{ v }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </OverlayScrollbars>
+          <div class="px-3 py-2 text-xs">
+            <table class="w-full">
+              <tbody>
+                <tr v-for="([k, v], i) in record.response.headers" :key="`${i}-${k}`" class="border-t border-white/[0.03]">
+                  <td class="py-1 pr-3 align-top font-mono text-gray-500 whitespace-nowrap">{{ k }}</td>
+                  <td class="py-1 align-top break-all font-mono text-gray-300">{{ v }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <!-- Response body -->
-        <section class="glass-card flex flex-col overflow-hidden">
-          <header class="flex shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
+        <section>
+          <header class="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-white/[0.06] bg-surface-800/95 px-3 py-2 backdrop-blur">
             <span class="text-xs font-medium text-gray-400">Response body</span>
             <div v-if="record.response.type === 'stream'" class="flex items-center gap-2">
               <div class="inline-flex rounded-md bg-surface-700 p-0.5 text-[11px]">
@@ -350,65 +352,57 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
             >{{ copyLabel('res-body') }}</Button>
           </header>
 
-          <div class="flex flex-col min-h-0">
-            <!-- bytes (non-stream) -->
-            <template v-if="bytesView">
-              <Code
-                v-if="bytesView.pretty"
-                class="max-h-[70vh]"
-                :code="bytesView.pretty"
-                :language="bytesView.isJson ? 'json' : 'text'"
-                :copyable="false"
-              />
-              <OverlayScrollbars v-else class="max-h-[70vh]" no-tabindex>
-                <pre class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ bytesView.raw }}</pre>
-              </OverlayScrollbars>
-            </template>
+          <!-- bytes (non-stream) -->
+          <template v-if="bytesView">
+            <Code
+              v-if="bytesView.pretty"
+              :code="bytesView.pretty"
+              :language="bytesView.isJson ? 'json' : 'text'"
+              :copyable="false"
+            />
+            <pre v-else class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ bytesView.raw }}</pre>
+          </template>
 
-            <!-- stream → toggle -->
-            <template v-else-if="record.response.type === 'stream'">
-              <template v-if="streamView === 'collected'">
-                <template v-if="collectedView && 'copyText' in collectedView">
-                  <div
-                    v-if="collectedView.error"
-                    class="mx-3 mt-3 shrink-0 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
-                  >Stream error: {{ collectedView.error }}</div>
-                  <div
-                    v-else-if="collectedView.truncated"
-                    class="mx-3 mt-3 shrink-0 rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber"
-                  >Stream truncated — terminal frame missing. Showing best-effort accumulated state.</div>
-                  <Code
-                    v-if="collectedView.resultText !== null"
-                    class="max-h-[70vh]"
-                    :code="collectedView.resultText"
-                    language="json"
-                    :copyable="false"
-                  />
-                  <p v-else class="px-3 py-4 text-center text-xs text-gray-500">No data could be reconstructed from the captured events.</p>
-                </template>
-                <div v-else-if="collectedView && 'thrown' in collectedView" class="px-3 py-2 text-xs text-accent-rose">
-                  Could not collect stream: {{ collectedView.thrown }}
-                </div>
+          <!-- stream → toggle -->
+          <template v-else-if="record.response.type === 'stream'">
+            <template v-if="streamView === 'collected'">
+              <template v-if="collectedView && 'copyText' in collectedView">
+                <div
+                  v-if="collectedView.error"
+                  class="mx-3 mt-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
+                >Stream error: {{ collectedView.error }}</div>
+                <div
+                  v-else-if="collectedView.truncated"
+                  class="mx-3 mt-3 rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber"
+                >Stream truncated — terminal frame missing. Showing best-effort accumulated state.</div>
+                <Code
+                  v-if="collectedView.resultText !== null"
+                  :code="collectedView.resultText"
+                  language="json"
+                  :copyable="false"
+                />
+                <p v-else class="px-3 py-4 text-center text-xs text-gray-500">No data could be reconstructed from the captured events.</p>
               </template>
-              <OverlayScrollbars v-else class="max-h-[70vh]" no-tabindex>
-                <ul class="divide-y divide-white/[0.04] text-xs">
-                  <li v-for="(ev, i) in eventsView" :key="i" class="px-3 py-2">
-                    <div class="flex items-center gap-2 text-[11px] text-gray-500">
-                      <span class="font-mono text-accent-cyan">{{ ev.event ?? '(unlabeled)' }}</span>
-                      <span class="text-gray-600">+{{ ev.ts }}ms</span>
-                    </div>
-                    <Code class="mt-1 max-h-[40vh]" :code="ev.pretty" language="json" :copyable="false" />
-                  </li>
-                </ul>
-              </OverlayScrollbars>
+              <div v-else-if="collectedView && 'thrown' in collectedView" class="px-3 py-2 text-xs text-accent-rose">
+                Could not collect stream: {{ collectedView.thrown }}
+              </div>
             </template>
+            <ul v-else class="divide-y divide-white/[0.04] text-xs">
+              <li v-for="(ev, i) in eventsView" :key="i" class="px-3 py-2">
+                <div class="flex items-center gap-2 text-[11px] text-gray-500">
+                  <span class="font-mono text-accent-cyan">{{ ev.event ?? '(unlabeled)' }}</span>
+                  <span class="text-gray-600">+{{ ev.ts }}ms</span>
+                </div>
+                <Code class="mt-1" :code="ev.pretty" language="json" :copyable="false" />
+              </li>
+            </ul>
+          </template>
 
-            <!-- none -->
-            <p v-else class="px-3 py-4 text-center text-xs text-gray-500">
-              No response body was produced.
-              <span v-if="record.meta.error" class="mt-1 block text-accent-rose">{{ record.meta.error }}</span>
-            </p>
-          </div>
+          <!-- none -->
+          <p v-else class="px-3 py-4 text-center text-xs text-gray-500">
+            No response body was produced.
+            <span v-if="record.meta.error" class="mt-1 block text-accent-rose">{{ record.meta.error }}</span>
+          </p>
         </section>
       </div>
     </OverlayScrollbars>
