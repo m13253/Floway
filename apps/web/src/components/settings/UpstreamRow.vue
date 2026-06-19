@@ -44,11 +44,10 @@ const subtitle = computed(() => {
   }
   case 'codex': {
     const account = u.config.accounts[0];
-    return account ? `${account.email} · ${account.planType}` : 'ChatGPT Codex account';
+    return `${account.email} · ${account.planType}`;
   }
   case 'claude-code': {
     const account = u.config.accounts[0];
-    if (!account) return 'Claude Code account';
     return account.subscriptionType ? `${account.email} · ${account.subscriptionType}` : account.email;
   }
   }
