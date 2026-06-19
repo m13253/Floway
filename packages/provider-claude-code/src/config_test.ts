@@ -26,6 +26,11 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
       accounts: [{ ...goodAccount, organizationUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }],
     }))).not.toThrow();
   });
+  test('accepts a personal-account config with null subscriptionType', () => {
+    expect(() => assertClaudeCodeUpstreamRecord(wrap({
+      accounts: [{ ...goodAccount, subscriptionType: null }],
+    }))).not.toThrow();
+  });
   test.each([
     ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
     ['email type', { accounts: [{ ...goodAccount, email: 123 }] }],
@@ -35,6 +40,7 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
     ['organizationUuid wrong type', { accounts: [{ ...goodAccount, organizationUuid: 123 }] }],
     ['subscriptionType missing', { accounts: [{ ...goodAccount, subscriptionType: undefined }] }],
     ['subscriptionType empty', { accounts: [{ ...goodAccount, subscriptionType: '' }] }],
+    ['subscriptionType wrong type', { accounts: [{ ...goodAccount, subscriptionType: 123 }] }],
     ['extra unknown field on account', { accounts: [{ ...goodAccount, extra: 1 }] }],
     ['extra unknown field at top level', { ...good, extra: 1 }],
     ['accounts not an array', { accounts: goodAccount }],

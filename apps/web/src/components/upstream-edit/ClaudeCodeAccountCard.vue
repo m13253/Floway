@@ -137,7 +137,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ account?.email }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-          <Badge v-if="account" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
+          <Badge v-if="account?.subscriptionType" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
           <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
         </div>
       </div>

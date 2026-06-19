@@ -100,6 +100,53 @@ describe('importClaudeCodeFromCallback', () => {
     expect(result.state.accounts[0].accessToken?.token).toBe('at');
     expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
   });
+
+  test('personal account (no organization block) yields null subscriptionType', async () => {
+    // Mirrors what Anthropic's profile endpoint returns for free/pro personal
+    // accounts: the `organization` object is omitted entirely. The official
+    // CLI's deriver A10 returns null in this case (cli.js v2.1.10); we follow.
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(tokenResponse))
+      .mockResolvedValueOnce(jsonResponse({
+        account: { uuid: 'acc-uuid-personal', email: 'me@example.com', has_claude_pro: true },
+      }));
+
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER' });
+
+    expect(result.config.accounts).toEqual([{
+      email: 'me@example.com',
+      accountUuid: 'acc-uuid-personal',
+      organizationUuid: null,
+      subscriptionType: null,
+    }]);
+  });
+
+  test('unknown organization_type yields null subscriptionType', async () => {
+    // Forward-compat: a new Anthropic tier (e.g. "personal", "individual") must
+    // not break ingest. Mirrors CLI deriver A10's default-null arm.
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(tokenResponse))
+      .mockResolvedValueOnce(jsonResponse({
+        account: { uuid: 'acc-uuid-future', email: 'future@example.com' },
+        organization: { uuid: 'org-uuid-future', organization_type: 'claude_personal', rate_limit_tier: 'default_claude_personal' },
+      }));
+
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER' });
+    expect(result.config.accounts[0].subscriptionType).toBeNull();
+    expect(result.config.accounts[0].organizationUuid).toBe('org-uuid-future');
+  });
+
+  test('claude_max with unknown rate_limit_tier throws (Anthropic shape drift)', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(tokenResponse))
+      .mockResolvedValueOnce(jsonResponse({
+        account: { uuid: 'acc-uuid-2', email: 'max@example.com' },
+        organization: { uuid: 'org-uuid-2', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_99x' },
+      }));
+
+    await expect(importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER' }))
+      .rejects.toThrow(/rate_limit_tier/);
+  });
 });
 
 describe('importClaudeCodeFromCredentialsJson', () => {
@@ -138,8 +185,37 @@ describe('importClaudeCodeFromCredentialsJson', () => {
         accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs,
       },
     });
-    const result = await importClaudeCodeFromCredentialsJson(raw, directFetcher);
+    const result = await importClaudeCodeFromCredentialsJson(raw);
     expect(result.config.accounts[0].subscriptionType).toBe('max_5x');
+  });
+
+  test('personal account with neither persisted nor derived subscriptionType yields null', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
+      account: { uuid: 'acc-uuid-personal', email: 'me@example.com' },
+    }));
+    const raw = JSON.stringify({
+      claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs },
+    });
+    const result = await importClaudeCodeFromCredentialsJson(raw);
+    expect(result.config.accounts[0].subscriptionType).toBeNull();
+    expect(result.config.accounts[0].organizationUuid).toBeNull();
+  });
+
+  test('persisted subscriptionType wins even when derived is null', async () => {
+    // Operator's credentials.json carried `subscriptionType: 'max_20x'` from the
+    // CLI, but the live /api/oauth/profile shows no organization block.
+    // Persisted non-null should win — the JSON is the authoritative snapshot.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
+      account: { uuid: 'acc-uuid-personal', email: 'me@example.com' },
+    }));
+    const raw = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs,
+        subscriptionType: 'max_20x',
+      },
+    });
+    const result = await importClaudeCodeFromCredentialsJson(raw);
+    expect(result.config.accounts[0].subscriptionType).toBe('max_20x');
   });
 
   test('rejects when JSON is malformed', async () => {

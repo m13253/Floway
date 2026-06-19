@@ -13,7 +13,12 @@ export interface ClaudeCodeAccountIdentity {
   // Free-form value passed through from the upstream — 'pro', 'max_5x',
   // 'max_20x', 'team', and possibly future tiers. Captured for dashboard
   // display; not enum-cast so a new value from Anthropic doesn't fail import.
-  subscriptionType: string;
+  // null for personal accounts (the profile endpoint omits the organization
+  // block) and for organization_type values we do not yet recognize, so a new
+  // Anthropic tier does not break ingest. Mirrors the official CLI's on-disk
+  // shape (subscriptionType in ~/.claude/.credentials.json is nullable;
+  // deriver A10 in cli.js returns null on unknown organization_type).
+  subscriptionType: string | null;
 }
 
 // Account pool. v1 always carries exactly one entry; the wire shape stays
@@ -59,8 +64,8 @@ const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void =>
   if (obj.organizationUuid !== null && (typeof obj.organizationUuid !== 'string' || obj.organizationUuid === '')) {
     throw new TypeError(`${where}.organizationUuid must be null or a non-empty string`);
   }
-  if (typeof obj.subscriptionType !== 'string' || obj.subscriptionType === '') {
-    throw new TypeError(`${where}.subscriptionType must be a non-empty string`);
+  if (obj.subscriptionType !== null && (typeof obj.subscriptionType !== 'string' || obj.subscriptionType === '')) {
+    throw new TypeError(`${where}.subscriptionType must be null or a non-empty string`);
   }
 };
 

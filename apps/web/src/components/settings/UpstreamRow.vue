@@ -48,7 +48,8 @@ const subtitle = computed(() => {
   }
   case 'claude-code': {
     const account = u.config.accounts[0];
-    return account ? `${account.email} · ${account.subscriptionType}` : 'Claude Code account';
+    if (!account) return 'Claude Code account';
+    return account.subscriptionType ? `${account.email} · ${account.subscriptionType}` : account.email;
   }
   }
   return assertNever(u);

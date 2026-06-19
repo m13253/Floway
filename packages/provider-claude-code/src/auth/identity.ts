@@ -9,7 +9,7 @@ export interface ClaudeCodeIdentity {
   email: string;
   accountUuid: string;
   organizationUuid: string | null;
-  subscriptionType: string;
+  subscriptionType: string | null;
 }
 
 // Cross-checked third-party gateways:
@@ -101,18 +101,19 @@ export const fetchClaudeCodeIdentity = async (
 
 // Maps the (organization_type, rate_limit_tier) pair to the same string the
 // CLI persists in credentials.json. `claude_max` requires the rate-limit tier
-// to disambiguate 5x vs 20x; the other recognized tiers are 1:1. An absent
-// organization block, an unknown organization_type, or a claude_max without a
-// recognized rate_limit_tier is thrown rather than silently coerced — future
-// Anthropic shape changes (new tiers, new types) should fail loud at ingest
-// time so the operator notices, instead of silently mislabeling accounts.
+// to disambiguate 5x vs 20x; the other recognized tiers are 1:1. Personal
+// accounts arrive with no `organization` block (Anthropic's profile endpoint
+// omits it) — we return null to mirror the official CLI (cli.js v2.1.10
+// deriver A10 returns null on missing/unknown organization_type). Unrecognized
+// `organization_type` strings also return null so a new Anthropic tier does
+// not break ingest; we log via console.warn for operator visibility. The one
+// throw is for `claude_max` with an unrecognized `rate_limit_tier`, which
+// signals genuine Anthropic shape drift on a tier we recognize.
 const deriveSubscriptionType = (
   organizationType: string | null,
   rateLimitTier: string | null,
-): string => {
-  if (organizationType === null) {
-    throw new Error('Claude Code /api/oauth/profile response is missing `organization.organization_type`');
-  }
+): string | null => {
+  if (organizationType === null) return null;
   if (organizationType === 'claude_max') {
     if (rateLimitTier === 'default_claude_max_20x') return 'max_20x';
     if (rateLimitTier === 'default_claude_max_5x') return 'max_5x';
@@ -121,7 +122,8 @@ const deriveSubscriptionType = (
   if (organizationType === 'claude_pro') return 'pro';
   if (organizationType === 'claude_enterprise') return 'enterprise';
   if (organizationType === 'claude_team') return 'team';
-  throw new Error(`Claude Code /api/oauth/profile carries unknown organization_type='${organizationType}'`);
+  console.warn(`Claude Code /api/oauth/profile carries unknown organization_type='${organizationType}'; subscriptionType will be null`);
+  return null;
 };
 
 const readErrorMessage = (parsed: unknown): string | null => {

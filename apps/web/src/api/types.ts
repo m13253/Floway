@@ -121,7 +121,9 @@ export interface ClaudeCodeAccountIdentity {
   email: string;
   accountUuid: string;
   organizationUuid: string | null;
-  subscriptionType: string;
+  // null for personal accounts (no organization block) and for unrecognized
+  // organization_type values. Dashboard renders an em-dash placeholder.
+  subscriptionType: string | null;
 }
 
 export interface ClaudeCodeUpstreamConfig {
