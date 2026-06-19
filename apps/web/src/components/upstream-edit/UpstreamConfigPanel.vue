@@ -166,6 +166,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :record="copilotRecord"
           :initial-quota="initialCopilotQuota"
           :initial-quota-error="initialCopilotQuotaError"
+          :proxy-fallback-list="proxyFallbackList"
           @completed="u => $emit('copilot-completed', u)"
         />
       </section>
@@ -174,6 +175,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <CodexConfigPanel
           :mode="mode"
           :record="codexRecord"
+          :proxy-fallback-list="proxyFallbackList"
           @imported="u => $emit('codex-imported', u)"
           @error="m => $emit('codex-error', m)"
         />
@@ -183,6 +185,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <ClaudeCodeConfigPanel
           :mode="mode"
           :record="claudeCodeRecord"
+          :proxy-fallback-list="proxyFallbackList"
           @imported="u => $emit('claude-code-imported', u)"
           @error="m => $emit('claude-code-error', m)"
         />

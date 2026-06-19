@@ -13,6 +13,10 @@ type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
 const props = defineProps<{
   mode: 'create' | 'edit';
   record: CodexUpstreamRecord | null;
+  // Operator's current edit-form proxy_fallback_list. Forwarded into refresh-now
+  // so a refresh fired before saving uses the in-progress chain rather than
+  // the persisted one.
+  proxyFallbackList: string[];
 }>();
 
 const emit = defineEmits<{
@@ -86,7 +90,10 @@ const submit = async () => {
 const refreshTokenNow = async () => {
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
-    () => api.api.upstreams[':id']['codex-refresh-now'].$post({ param: { id: props.record!.id }, json: {} }),
+    () => api.api.upstreams[':id']['codex-refresh-now'].$post({
+      param: { id: props.record!.id },
+      json: { proxy_fallback_list: props.proxyFallbackList },
+    }),
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }

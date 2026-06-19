@@ -13,6 +13,10 @@ type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code
 const props = defineProps<{
   mode: 'create' | 'edit';
   record: ClaudeCodeUpstreamRecord | null;
+  // Operator's current edit-form proxy_fallback_list. Forwarded into refresh-now
+  // so a refresh fired before saving uses the in-progress chain rather than
+  // the persisted one.
+  proxyFallbackList: string[];
 }>();
 
 const emit = defineEmits<{
@@ -94,7 +98,10 @@ const refreshTokenNow = async () => {
   const id = props.record.id;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
-    () => api.api.upstreams[':id']['claude-code-refresh-now'].$post({ param: { id }, json: {} }),
+    () => api.api.upstreams[':id']['claude-code-refresh-now'].$post({
+      param: { id },
+      json: { proxy_fallback_list: props.proxyFallbackList },
+    }),
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }
