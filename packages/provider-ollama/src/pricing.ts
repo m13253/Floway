@@ -15,6 +15,16 @@
 // omitted — `pricingForOllamaModelKey` returns null and `usage.unit_price`
 // is left NULL rather than fabricated.
 //
+// `input_cache_read` entries are intentional but DORMANT today: ollama.com
+// internally caches prompt context (per its pricing FAQ, "prompts that share
+// cached context use less"), but none of the three API surfaces
+// (/v1/chat/completions, /api/chat, /v1/messages) currently exposes a cached-
+// token count to clients. Without an upstream signal there is nothing to
+// dimension a cache-read row against, so the rate sits unused. Leaving the
+// commodity-host cache rates in the table keeps them ready the day Ollama
+// surfaces cached_tokens — switching to billed cache reads then becomes a
+// pure ingestion-side change.
+//
 // Refresh procedure: .agents/skills/refresh-ollama-pricing/.
 
 import type { ModelPricing } from '@floway-dev/protocols/common';
