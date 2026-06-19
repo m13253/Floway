@@ -13,9 +13,11 @@ type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code
 const props = defineProps<{
   mode: 'create' | 'edit';
   record: ClaudeCodeUpstreamRecord | null;
-  // Operator's current edit-form proxy_fallback_list. Forwarded into refresh-now
-  // so a refresh fired before saving uses the in-progress chain rather than
-  // the persisted one.
+  // Operator's current edit-form proxy_fallback_list. Forwarded into
+  // import / re-import (so the OAuth bootstrap routes through the chain
+  // the operator is editing AND the chain is persisted on the new row)
+  // and into refresh-now (so a refresh fired before saving uses the
+  // in-progress chain rather than the persisted one).
   proxyFallbackList: string[];
 }>();
 
@@ -76,14 +78,18 @@ const submit = async () => {
 
   submitting.value = true;
   let result;
+  // Thread the in-flight proxy chain into both the bootstrap (so OAuth /
+  // identity calls route through it) and into persistence (so the new /
+  // updated row carries the same chain — same rationale as refresh-now).
+  const payload = { ...body.value, proxy_fallback_list: props.proxyFallbackList };
   if (props.mode === 'create') {
-    result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: body.value }));
+    result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: payload }));
   } else {
     // The re-import button is rendered only when `record` is bound; the
     // template guard upstream guarantees non-null here.
     if (!props.record) throw new Error('Re-import requires a saved record');
     const id = props.record.id;
-    result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id }, json: body.value }));
+    result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id }, json: payload }));
   }
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }

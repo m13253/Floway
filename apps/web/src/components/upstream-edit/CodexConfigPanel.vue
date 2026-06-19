@@ -13,9 +13,11 @@ type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
 const props = defineProps<{
   mode: 'create' | 'edit';
   record: CodexUpstreamRecord | null;
-  // Operator's current edit-form proxy_fallback_list. Forwarded into refresh-now
-  // so a refresh fired before saving uses the in-progress chain rather than
-  // the persisted one.
+  // Operator's current edit-form proxy_fallback_list. Forwarded into
+  // import / re-import (so the OAuth bootstrap routes through the chain
+  // the operator is editing AND the chain is persisted on the new row)
+  // and into refresh-now (so a refresh fired before saving uses the
+  // in-progress chain rather than the persisted one).
   proxyFallbackList: string[];
 }>();
 
@@ -72,12 +74,16 @@ const submit = async () => {
   if (!body.ok) { emit('error', body.error); return; }
 
   submitting.value = true;
+  // Thread the in-flight proxy chain into both the bootstrap (so OAuth /
+  // identity calls route through it) and into persistence (so the new /
+  // updated row carries the same chain — same rationale as refresh-now).
+  const payload = { ...body.value, proxy_fallback_list: props.proxyFallbackList };
   const result = props.mode === 'create'
     ? await callApi<UpstreamRecord>(
-        () => api.api.upstreams['codex-import'].$post({ json: body.value }),
+        () => api.api.upstreams['codex-import'].$post({ json: payload }),
       )
     : await callApi<UpstreamRecord>(
-        () => api.api.upstreams[':id']['codex-reimport'].$post({ param: { id: props.record!.id }, json: body.value }),
+        () => api.api.upstreams[':id']['codex-reimport'].$post({ param: { id: props.record!.id }, json: payload }),
       );
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
