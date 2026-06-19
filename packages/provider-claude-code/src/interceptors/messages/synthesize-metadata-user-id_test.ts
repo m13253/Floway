@@ -1,5 +1,7 @@
 import { test } from 'vitest';
 
+import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';
+import { claudeCodeMessagesChain } from './index.ts';
 import { synthesizeMetadataUserId } from './synthesize-metadata-user-id.ts';
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import { parseMetadataUserID } from '../../detection.ts';
@@ -76,4 +78,45 @@ test('preserves a caller-supplied user_id verbatim', async () => {
   });
   await synthesizeMetadataUserId(ctx, {}, okEvents);
   assertEquals(ctx.payload.metadata?.user_id, explicit);
+});
+
+// Regression: synthesize must run BEFORE hoist in the chain, otherwise hoist's
+// synthetic `<system>\n${captured}\n</system>` becomes the "first user message"
+// the session id derives from — and two unrelated conversations sharing one
+// operator system prompt collapse onto the same session_id, breaking prompt
+// cache routing and rate-limit accounting.
+test('session_id differs when system prompt is shared but user message differs (chain order)', async () => {
+  const sharedSystem = 'You are a careful research assistant. Always cite sources.';
+  const a = invocation({
+    model: 'm',
+    max_tokens: 1,
+    system: sharedSystem,
+    messages: [{ role: 'user', content: 'What is the capital of France?' }],
+  });
+  const b = invocation({
+    model: 'm',
+    max_tokens: 1,
+    system: sharedSystem,
+    messages: [{ role: 'user', content: 'Who wrote The Great Gatsby?' }],
+  });
+
+  // Drive the same step pair the production chain does: synthesize first,
+  // then hoist. Synthesize sees the operator's real first user message;
+  // hoist runs after and rewrites `messages` for the wire shape.
+  await synthesizeMetadataUserId(a, {}, () => hoistUserSystemToMessages(a, {}, okEvents));
+  await synthesizeMetadataUserId(b, {}, () => hoistUserSystemToMessages(b, {}, okEvents));
+
+  const ad = parseMetadataUserID(a.payload.metadata!.user_id!)!;
+  const bd = parseMetadataUserID(b.payload.metadata!.user_id!)!;
+  if (ad.sessionId === bd.sessionId) {
+    throw new Error('expected different session_ids for distinct user prompts sharing a system prompt');
+  }
+});
+
+test('chain registers synthesize before hoist', () => {
+  const chain = claudeCodeMessagesChain();
+  const synthIdx = chain.indexOf(synthesizeMetadataUserId);
+  const hoistIdx = chain.indexOf(hoistUserSystemToMessages);
+  if (synthIdx === -1 || hoistIdx === -1) throw new Error('chain missing required step');
+  if (synthIdx >= hoistIdx) throw new Error(`synthesize (${synthIdx}) must run before hoist (${hoistIdx}) so session_id derives from the real user message`);
 });
