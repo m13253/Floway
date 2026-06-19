@@ -9,10 +9,13 @@ interface ListResponse {
 }
 
 // Open a single EventSource against /api/dump/keys/<id>/stream and expose the
-// running record list. `snapshot` seeds the array; `appended` prepends. A
-// `Set<string>` deduplicates so the snapshot/subscribe race in the gateway
-// (where a record completed in the small window between read-snapshot and
-// subscribe is intentionally allowed to surface twice) collapses to one row.
+// running record list. `snapshot` is treated as ground truth on every arrival
+// (including the browser's silent auto-reconnect, which fires snapshot again
+// without us calling open) — the list is rebuilt and the seen-set is reset
+// from the new snapshot. `appended` prepends individual rows, deduped via the
+// seen-set so the snapshot/subscribe race in the gateway (where a record
+// completed in the small window between read-snapshot and subscribe is
+// intentionally allowed to surface twice) collapses to one row.
 export const useDumpSubscription = (keyId: Ref<string>) => {
   const records = ref<DumpMetadata[]>([]);
   const loading = ref(true);
@@ -37,13 +40,8 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
 
     es.addEventListener('snapshot', ev => {
       const data = JSON.parse((ev as MessageEvent).data) as DumpMetadata[];
-      const fresh: DumpMetadata[] = [];
-      for (const meta of data) {
-        if (seen.has(meta.id)) continue;
-        seen.add(meta.id);
-        fresh.push(meta);
-      }
-      records.value = fresh;
+      seen = new Set(data.map(meta => meta.id));
+      records.value = [...data];
       loading.value = false;
     });
 
