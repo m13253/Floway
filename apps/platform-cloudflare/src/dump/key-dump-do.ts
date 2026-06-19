@@ -76,9 +76,9 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
 
   async getRecord(keyId: string, id: DumpRecordId): Promise<DumpRecord | null> {
     const cutoff = this.expiryCutoff();
-    const row = this.sql
+    const [row] = this.sql
       .exec<{ created_at: number }>('SELECT created_at FROM records WHERE id = ?', id)
-      .one();
+      .toArray();
     if (!row || row.created_at < cutoff) return null;
     const object = await this.env.DUMP_BLOBS.get(blobKey(keyId, id));
     if (!object) return null;
@@ -174,9 +174,12 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   // it after every put keeps the schedule tight without overwriting an earlier
   // pending alarm; an empty table clears the alarm entirely.
   private async scheduleNextAlarm(retentionSeconds: number): Promise<void> {
-    const oldest = this.sql
+    // .toArray()[0] returns undefined on an empty result set; .one() would
+    // throw "Expected exactly one result" and we want the empty-records
+    // case to gracefully clear the alarm.
+    const [oldest] = this.sql
       .exec<{ created_at: number }>('SELECT created_at FROM records ORDER BY created_at ASC LIMIT 1')
-      .one();
+      .toArray();
     if (!oldest) {
       await this.ctx.storage.deleteAlarm();
       return;
@@ -198,7 +201,9 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   }
 
   private readState(k: string): string | undefined {
-    const row = this.sql.exec<{ v: string }>('SELECT v FROM state WHERE k = ?', k).one();
+    // .toArray()[0] returns undefined on missing row; .one() throws which
+    // would break the "no state yet" branches in expiryCutoff / alarm.
+    const [row] = this.sql.exec<{ v: string }>('SELECT v FROM state WHERE k = ?', k).toArray();
     return row?.v;
   }
 
