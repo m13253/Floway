@@ -306,6 +306,9 @@ importers:
 
   packages/platform:
     dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       image-size:
         specifier: ^2.0.2
         version: 2.0.2

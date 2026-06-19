@@ -1,0 +1,23 @@
+import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
+
+export interface DumpListOptions {
+  // Exclusive cursor — return records strictly older than this id. Omit
+  // for the newest page.
+  before?: DumpRecordId;
+  // Server-side cap (implementations enforce e.g. 200).
+  limit: number;
+}
+
+// Per-key durable storage for completed request dumps. Implementations
+// decide how to map a keyId to backing resources (one Durable Object per
+// key on Cloudflare; one filesystem subdirectory + sqlite rows on Node).
+export interface DumpStore {
+  put(keyId: string, record: DumpRecord): Promise<void>;
+  list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
+  get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null>;
+  // Removes records whose created_at is older than now - retentionSeconds*1000.
+  purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
+  // Removes every record for this key. Called when the key disables dump or
+  // is soft-deleted.
+  purgeAll(keyId: string): Promise<void>;
+}
