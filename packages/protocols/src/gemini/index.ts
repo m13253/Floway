@@ -106,3 +106,6 @@ export interface GeminiErrorResponse {
 }
 
 export type GeminiStreamEvent = GeminiResult | GeminiErrorResponse;
+
+export { parseGeminiStream } from './stream.ts';
+export { collectGeminiStream } from './collect.ts';

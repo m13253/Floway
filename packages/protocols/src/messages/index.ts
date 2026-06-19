@@ -326,3 +326,4 @@ export interface MessagesErrorEvent {
 }
 
 export { parseMessagesStream, type ParseMessagesStreamOptions } from './stream.ts';
+export { collectMessagesStream } from './collect.ts';
