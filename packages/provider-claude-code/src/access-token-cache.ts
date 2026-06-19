@@ -56,8 +56,27 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // reusing our response would be rejected as `invalid_grant`. We throw so
 // the next request re-reads state and refreshes from the live tail of the
 // rotation chain.
+//
+// Refresh-race recovery: when the upstream returns `invalid_grant`, it
+// might mean either (a) the refresh token is genuinely revoked, or (b) a
+// sibling worker raced us, won the rotation, and our copy is now stale.
+// `recoverFromRefreshRace` distinguishes by re-reading state and comparing
+// the refresh token we used against what is now stored. If a sibling
+// rotated, we return their freshly-minted access token (`freshlyMinted:
+// false` because this call site did not mint it). If the stored value
+// hasn't moved, we treat it as a real death and flip to terminal. Mirrors
+// sub2api `oauth_refresh_api.go:tryRecoverFromRefreshRace` (lines
+// 173-193). All other terminal codes (`app_session_terminated`,
+// `invalid_refresh_token`, `invalid_client`, `unauthorized_client`,
+// `access_denied`) signal credential death under any race scenario and
+// flip to terminal without a recovery attempt.
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
+): Promise<EnsuredAccessToken> => ensureClaudeCodeAccessTokenInner(args, true);
+
+const ensureClaudeCodeAccessTokenInner = async (
+  args: EnsureClaudeCodeAccessTokenArgs,
+  recoveryAllowed: boolean,
 ): Promise<EnsuredAccessToken> => {
   const fresh = await args.repo.getById(args.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
@@ -66,7 +85,11 @@ export const ensureClaudeCodeAccessToken = async (
   const accountIndex = 0;
   const account = state.accounts[accountIndex];
   if (account.state !== 'active') {
-    throw new ClaudeCodeOAuthSessionTerminatedError(account.stateMessage);
+    // Surface the stored health state as the `code` so a caller distinguishing
+    // by code (e.g. metrics) reflects the persisted reason, not a synthetic
+    // OAuth code. Never reaches the refresh-race recovery branch — that only
+    // fires inside the catch around the live /v1/oauth/token call below.
+    throw new ClaudeCodeOAuthSessionTerminatedError({ code: account.state, message: account.stateMessage });
   }
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return { entry: account.accessToken, freshlyMinted: false };
@@ -77,6 +100,10 @@ export const ensureClaudeCodeAccessToken = async (
     refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);
   } catch (error) {
     if (error instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      if (error.code === 'invalid_grant' && recoveryAllowed) {
+        const recovered = await recoverFromRefreshRace(args, account.refreshToken);
+        if (recovered) return recovered;
+      }
       await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, error.upstreamMessage);
     }
     throw error;
@@ -124,6 +151,40 @@ const persistTerminalState = async (
     accessToken: null,
   }));
   await repo.saveState(upstreamId, flipped, { expectedState });
+};
+
+// `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
+// us and we hold the rotated-out copy. Re-read state and compare. The
+// "sibling rotated but no cached access token yet" subcase (e.g. a
+// concurrent `invalidateClaudeCodeAccessToken` cleared it) re-enters the
+// refresh flow once with the fresh RT in hand; the depth guard prevents
+// runaway recursion if recovery itself observes a stale view. Returns
+// `null` when the original error should be re-raised as a real session
+// termination.
+const recoverFromRefreshRace = async (
+  args: EnsureClaudeCodeAccessTokenArgs,
+  usedRefreshToken: string,
+): Promise<EnsuredAccessToken | null> => {
+  const reread = await args.repo.getById(args.upstreamId);
+  if (!reread) return null;
+  const rereadState = readClaudeCodeUpstreamState(reread.state);
+  const rereadAccount = rereadState.accounts[0];
+  if (rereadAccount.state !== 'active') return null;
+  if (rereadAccount.refreshToken === usedRefreshToken) return null;
+  console.info(
+    `Claude Code refresh-race recovered for upstream ${args.upstreamId}: sibling rotated, using their access token`,
+  );
+  if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
+    return { entry: rereadAccount.accessToken, freshlyMinted: false };
+  }
+  // Sibling rotated the refresh token but no usable access token sits in
+  // state — most likely an `invalidateClaudeCodeAccessToken` ran between
+  // the sibling's rotation and our re-read. Re-enter the refresh flow once
+  // with the live RT; the re-entrant call sees the rotated row and goes
+  // straight through the standard refresh path. The depth guard suppresses
+  // a second recovery attempt — if `invalid_grant` strikes again the
+  // refresh token really is dead and we want the terminal flip.
+  return await ensureClaudeCodeAccessTokenInner(args, false);
 };
 
 // Used in 401-retry: clear the cached access token without touching the

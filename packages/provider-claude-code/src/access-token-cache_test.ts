@@ -110,7 +110,7 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(out.freshlyMinted).toBe(true);
   });
 
-  test('throws ClaudeCodeOAuthSessionTerminatedError when refresh returns invalid_grant, and flips state to refresh_failed', async () => {
+  test('invalid_grant with no sibling rotation (stored RT unchanged) → terminal flip', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       error: 'invalid_grant', error_description: 'Refresh token revoked',
     }), { status: 400, headers: { 'content-type': 'application/json' } }));
@@ -123,6 +123,48 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toContain('Refresh token revoked');
     expect(persisted.accounts[0].accessToken).toBeNull();
+  });
+
+  test('invalid_grant with a sibling rotation in flight → returns the sibling-minted access token, no terminal flip', async () => {
+    // Simulate the race: between our pre-refresh getById and the upstream
+    // rejecting our refresh_token, a sibling worker won the rotation and
+    // CAS-wrote rt_v2 + at_sibling. Re-read on recovery observes the new
+    // pair; we should return it as a non-freshly-minted entry instead of
+    // destroying a working credential.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: 'invalid_grant', error_description: 'Refresh token revoked',
+    }), { status: 400, headers: { 'content-type': 'application/json' } }));
+    const siblingEntry: ClaudeCodeAccessTokenEntry = { token: 'at_sibling', expiresAt: farFutureMs, refreshedAt: 'sibling' };
+    getByIdSpy.mockImplementationOnce(async () => current).mockImplementationOnce(async () => {
+      // Mutate the shared `current` so subsequent reads also see the rotation,
+      // matching the live D1 repo's read-after-write semantics.
+      current = makeRecord({ accounts: [{ ...baseAccount, refreshToken: 'rt_v2', accessToken: siblingEntry }] });
+      return current;
+    });
+
+    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    expect(out.entry).toEqual(siblingEntry);
+    expect(out.freshlyMinted).toBe(false);
+    // No terminal-state persist — the recovery path must not touch state.
+    expect(saveStateSpy).not.toHaveBeenCalled();
+  });
+
+  test('app_session_terminated never attempts race recovery — always flips to terminal', async () => {
+    // `app_session_terminated` signals credential death even under a race
+    // scenario, so we should not even re-read state; the terminal flip is
+    // unconditional. Assert via the absence of a second getById call.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'app_session_terminated', message: 'Session ended by Anthropic' },
+    }), { status: 400, headers: { 'content-type': 'application/json' } }));
+
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+
+    expect(getByIdSpy).toHaveBeenCalledTimes(1);
+    expect(saveStateSpy).toHaveBeenCalledTimes(1);
+    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
+    expect(persisted.accounts[0].state).toBe('refresh_failed');
+    expect(persisted.accounts[0].stateMessage).toBe('Session ended by Anthropic');
   });
 
   test('CAS loss on refresh-token rotation surfaces as an error (sibling rotation already won)', async () => {

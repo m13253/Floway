@@ -25,11 +25,20 @@ export interface ClaudeOAuthTokenResponse {
 
 // Terminal error: refresh_token is dead, operator must re-import. Distinct
 // from generic OAuth 4xx so callers can react to session-termination
-// separately from a transient upstream message.
+// separately from a transient upstream message. `code` carries the raw OAuth
+// `error` value (`invalid_grant`, `app_session_terminated`, etc.) so the
+// refresh-race recovery in the access-token cache can single out
+// `invalid_grant` — which is the only terminal code that might actually mean
+// "a sibling worker just rotated the refresh token, and our copy is stale" —
+// from codes that signal genuine credential death under any race scenario.
 export class ClaudeCodeOAuthSessionTerminatedError extends Error {
-  constructor(public readonly upstreamMessage: string) {
-    super(`Claude Code OAuth session terminated: ${upstreamMessage}`);
+  readonly code: string;
+  readonly upstreamMessage: string;
+  constructor(args: { code: string; message: string }) {
+    super(`Claude Code OAuth session terminated: ${args.message}`);
     this.name = 'ClaudeCodeOAuthSessionTerminatedError';
+    this.code = args.code;
+    this.upstreamMessage = args.message;
   }
 }
 
@@ -100,7 +109,7 @@ const claudeCodeTokenRequest = async (
     message ??= code;
     message ??= rawText.slice(0, 256);
     if (code && terminalCodes.has(code)) {
-      throw new ClaudeCodeOAuthSessionTerminatedError(message);
+      throw new ClaudeCodeOAuthSessionTerminatedError({ code, message });
     }
     throw new Error(`Claude Code OAuth /token returned ${response.status}: ${message}`);
   }
