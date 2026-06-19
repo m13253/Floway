@@ -10,10 +10,10 @@
 //
 // Coverage: every model in https://ollama.com/search that has a published
 // per-token price from a credible host. Models without a defensible reference
-// (Ollama-exclusive distillations, version names that don't map to any
-// upstream release, sub-families with no host pricing) are deliberately
-// omitted — `pricingForOllamaModelKey` returns null and `usage.unit_price`
-// is left NULL rather than fabricated.
+// (version names that don't map to any upstream release, sub-families with
+// no host pricing, free-tier-only Labs SKUs whose pricing is non-commercial)
+// are deliberately omitted — `pricingForOllamaModelKey` returns null and
+// `usage.unit_price` is left NULL rather than fabricated.
 //
 // `input_cache_read` entries are intentional but DORMANT today: ollama.com
 // internally caches prompt context (per its pricing FAQ, "prompts that share
@@ -42,11 +42,29 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://deepinfra.com/Qwen/Qwen3-Coder-480B-A35B-Instruct
   ['qwen3-coder:480b', { input: 0.3, output: 1.0 }],
 
-  // DeepSeek V4 — DeepSeek first-party API. DeepSeek operates its own
-  // inference, so the first-party rate is the floor.
-  // https://api-docs.deepseek.com/quick_start/pricing
+  // Qwen3-Coder-Next — OpenRouter's `qwen/qwen3-coder-next` SKU. Distinct
+  // from `qwen3-coder-flash` despite the size overlap; the Ollama tag maps
+  // to the -next variant.
+  // https://openrouter.ai/qwen/qwen3-coder-next
+  ['qwen3-coder-next', { input: 0.11, input_cache_read: 0.07, output: 0.8 }],
+
+  // Qwen 3.5 397B-a17b — Alibaba International first-party.
+  // https://www.alibabacloud.com/help/en/model-studio/models
+  ['qwen3.5:397b', { input: 0.6, output: 3.6 }],
+
+  // DeepSeek — DeepSeek operates its own inference, so the first-party rate
+  // is the floor for V3.2 and V4; V3.1 falls back to OpenRouter's dedicated
+  // frozen-snapshot SKU since DeepSeek's `deepseek-chat` alias has since
+  // rotated past it. https://api-docs.deepseek.com/quick_start/pricing
+  ['deepseek-v3.1:671b', { input: 0.21, input_cache_read: 0.13, output: 0.79 }],
+  ['deepseek-v3.2', { input: 0.23, output: 0.34 }],
   ['deepseek-v4-pro', { input: 0.435, input_cache_read: 0.003625, output: 0.87 }],
   ['deepseek-v4-flash', { input: 0.14, input_cache_read: 0.0028, output: 0.28 }],
+
+  // GLM 4.7 — Z.ai first-party; OpenRouter and DeepInfra pass through at
+  // the same rate. Don't extrapolate from 5.x; 4.7 is priced lower.
+  // https://docs.z.ai/guides/llm
+  ['glm-4.7', { input: 0.4, input_cache_read: 0.08, output: 1.75 }],
 
   // GLM 5.x — Z.ai first-party. Together / Fireworks pass through at similar
   // rates; Z.ai is the only fully-published source covering 5 / 5.1 / 5.2.
@@ -64,11 +82,39 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://www.minimax.io/platform_overview
   [/^minimax-(m2(\.\d+)?|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
 
-  // NVIDIA Nemotron-3 — DeepInfra hosts the Super; the Ultra runs on
-  // DeepInfra / Together at higher rates. NVIDIA has no public per-token API.
+  // Mistral family — first-party `mistral-large-2512` and `devstral-2512`
+  // are the priced sources; OpenRouter mirrors at the same rates. Ollama's
+  // `mistral-large-3:675b` size suffix doesn't match any real Mistral
+  // release (Large 3 isn't a 675B model), but the name match is
+  // authoritative against the canonical Large 3 SKU.
+  // https://mistral.ai/products/la-plateforme
+  ['mistral-large-3:675b', { input: 0.5, output: 1.5 }],
+  ['devstral-2:123b', { input: 0.4, output: 2.0 }],
+  // `devstral-small-2:24b` is intentionally omitted: Mistral's only listed
+  // SKU is the free Labs tier (no commercial pricing) and no commodity host
+  // carries Devstral Small 2 at a paid rate. Persisting $0 would misrepresent
+  // the upstream as zero-cost.
+
+  // Ministral 3B / 8B — Mistral first-party. The 14B has no first-party SKU;
+  // OpenRouter's `mistralai/ministral-14b-2512` is the only published source.
+  // https://mistral.ai/products/la-plateforme
+  ['ministral-3:3b', { input: 0.04, output: 0.04 }],
+  ['ministral-3:8b', { input: 0.1, output: 0.1 }],
+  ['ministral-3:14b', { input: 0.2, input_cache_read: 0.02, output: 0.2 }],
+
+  // NVIDIA Nemotron-3 — DeepInfra hosts the Super; the Nano sits on
+  // OpenRouter; the Ultra runs on DeepInfra / Together at higher rates.
+  // NVIDIA itself has no public per-token API.
   // https://deepinfra.com/nvidia
+  ['nemotron-3-nano:30b', { input: 0.05, output: 0.2 }],
   ['nemotron-3-super', { input: 0.1, output: 0.5 }],
   ['nemotron-3-ultra', { input: 0.6, input_cache_read: 0.15, output: 3.0 }],
+
+  // Essential AI Rnj-1 — `essentialai/Rnj-1-Instruct` open weights, served
+  // by Together and OpenRouter at a flat rate. The Ollama tag carries the
+  // unconventional `rnj-1:8b` slug but maps cleanly to the upstream weights.
+  // https://together.ai/models/essentialai/Rnj-1-Instruct
+  ['rnj-1:8b', { input: 0.15, output: 0.15 }],
 
   // Gemini 3 Flash (preview) — Google AI Studio.
   // https://ai.google.dev/gemini-api/docs/pricing
