@@ -74,6 +74,7 @@ const upstreamModelSchema = z.object({
     output: z.number().optional(),
     input_cache_read: z.number().optional(),
     input_cache_write: z.number().optional(),
+    input_cache_write_1h: z.number().optional(),
     input_image: z.number().optional(),
     output_image: z.number().optional(),
   }).optional(),

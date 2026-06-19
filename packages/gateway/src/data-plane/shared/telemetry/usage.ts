@@ -7,13 +7,15 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
-// actually billed.
+// actually billed. `tier` (a non-numeric service-tier marker) survives the
+// filter so per-tier pricing overrides resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const value = counts[dimension] ?? 0;
     if (value > 0) out[dimension] = value;
   }
+  if (counts.tier != null) out.tier = counts.tier;
   return out;
 };
 
@@ -82,6 +84,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       upstream: modelIdentity.upstream,
       modelKey: modelIdentity.modelKey,
       hour: currentHour(),
+      tier: usage.tier ?? null,
       requests: 1,
       tokens: usage,
       cost: modelIdentity.cost,

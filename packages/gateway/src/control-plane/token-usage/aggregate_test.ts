@@ -14,6 +14,7 @@ const baseRecord = (overrides: Partial<UsageRecord>): UsageRecord => ({
   model: 'claude-opus-4-7',
   upstream: 'up_copilot',
   modelKey: 'claude-opus-4-7',
+  tier: null,
   requests: 1,
   tokens: { input: 100, output: 50 },
   cost: opus47Pricing,
