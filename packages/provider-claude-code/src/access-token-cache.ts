@@ -72,7 +72,7 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // flip to terminal without a recovery attempt.
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
-): Promise<EnsuredAccessToken> => ensureClaudeCodeAccessTokenInner(args, true);
+): Promise<EnsuredAccessToken> => await ensureClaudeCodeAccessTokenInner(args, true);
 
 const ensureClaudeCodeAccessTokenInner = async (
   args: EnsureClaudeCodeAccessTokenArgs,
