@@ -28,11 +28,25 @@ const error = ref<string | null>(null);
 const streamView = ref<'collected' | 'events'>('collected');
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
+// Per-header reveal state for sensitive request headers (x-api-key,
+// authorization). Keyed by row index so repeated headers each toggle
+// independently. Reset whenever a new record loads.
+const revealedHeaderIdx = ref(new Set<number>());
+
+const SENSITIVE_HEADERS = new Set(['x-api-key', 'authorization']);
+const isSensitiveHeader = (name: string) => SENSITIVE_HEADERS.has(name.toLowerCase());
+const toggleReveal = (i: number) => {
+  if (revealedHeaderIdx.value.has(i)) revealedHeaderIdx.value.delete(i);
+  else revealedHeaderIdx.value.add(i);
+  // Trigger reactivity (Sets don't deep-track mutation in Vue 3).
+  revealedHeaderIdx.value = new Set(revealedHeaderIdx.value);
+};
 
 const fetchRecord = async (keyId: string, recordId: string) => {
   loading.value = true;
   error.value = null;
   record.value = null;
+  revealedHeaderIdx.value = new Set();
   try {
     const res = await authFetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -223,7 +237,20 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
                 <tbody>
                   <tr v-for="([k, v], i) in record.request.headers" :key="`${i}-${k}`" class="border-t border-white/[0.03]">
                     <td class="py-1 pr-3 align-top font-mono text-gray-500 whitespace-nowrap">{{ k }}</td>
-                    <td class="py-1 align-top break-all font-mono text-gray-300">{{ v }}</td>
+                    <td class="py-1 align-top break-all font-mono text-gray-300">
+                      <template v-if="isSensitiveHeader(k)">
+                        <span>{{ revealedHeaderIdx.has(i) ? v : '••••••••' }}</span><button
+                          type="button"
+                          class="ml-1 inline-flex size-4 items-center justify-center align-middle text-gray-600 hover:text-gray-300"
+                          :aria-label="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
+                          :title="revealedHeaderIdx.has(i) ? 'Hide value' : 'Reveal value'"
+                          @click="toggleReveal(i)"
+                        >
+                          <i :class="revealedHeaderIdx.has(i) ? 'i-lucide-eye-off' : 'i-lucide-eye'" class="size-3.5" />
+                        </button>
+                      </template>
+                      <template v-else>{{ v }}</template>
+                    </td>
                   </tr>
                 </tbody>
               </table>
