@@ -4,6 +4,7 @@ import { userToRawWire } from './wire.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
+import { getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
@@ -114,6 +115,12 @@ export const deleteUser = async (c: Context) => {
   const repo = getRepo();
   const ok = await repo.users.softDelete(id);
   if (!ok) return c.json({ error: 'user not found' }, 404);
+
+  // Purge dumps for every live key under this user before soft-deleting the
+  // keys themselves; once a key is soft-deleted its id stops resolving via
+  // listByUserId, so iterating that list later would miss them.
+  const liveKeys = await repo.apiKeys.listByUserId(id);
+  for (const key of liveKeys) await getDumpStore().purgeAll(key.id);
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);

@@ -4,6 +4,7 @@ import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
+import { getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
 
@@ -14,6 +15,7 @@ const apiKeyToJson = (key: ApiKey) => ({
   created_at: key.createdAt,
   last_used_at: key.lastUsedAt ?? null,
   upstream_ids: key.upstreamIds,
+  dump_retention_seconds: key.dumpRetentionSeconds,
 });
 
 const validateUpstreamIdsAgainstUserCap = async (
@@ -76,6 +78,7 @@ export const deleteKey = async (c: Context) => {
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
   await getRepo().apiKeys.softDelete(id);
+  await getDumpStore().purgeAll(id);
   return c.json({ ok: true });
 };
 
@@ -93,8 +96,8 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   const id = c.req.param('id')!;
   const body = c.req.valid('json');
 
-  if (body.name === undefined && body.upstream_ids === undefined) {
-    return c.json({ error: 'Provide a new name or upstream selection to update.' }, 400);
+  if (body.name === undefined && body.upstream_ids === undefined && body.dump_retention_seconds === undefined) {
+    return c.json({ error: 'Provide a new name, upstream selection, or dump retention to update.' }, 400);
   }
 
   const owned = await ownedKeyOr404(c, id);
@@ -109,7 +112,23 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...owned,
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.upstream_ids !== undefined ? { upstreamIds: body.upstream_ids } : {}),
+    ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
   };
   await getRepo().apiKeys.save(updated);
+
+  // Disabling dump or shrinking the window must be reflected in storage
+  // before responding 200 — the dashboard treats a successful PATCH as
+  // "the world has caught up", so a deferred purge would let stale records
+  // resurface in a follow-up read.
+  if (body.dump_retention_seconds !== undefined) {
+    const previous = owned.dumpRetentionSeconds;
+    const next = updated.dumpRetentionSeconds;
+    if (next === null && previous !== null) {
+      await getDumpStore().purgeAll(updated.id);
+    } else if (next !== null && previous !== null && next < previous) {
+      await getDumpStore().purgeExpired(updated.id, next);
+    }
+  }
+
   return c.json(apiKeyToJson(updated));
 };

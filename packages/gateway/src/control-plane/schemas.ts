@@ -182,6 +182,11 @@ export const changeOwnPasswordBody = z.object({
 
 // --- api keys ---
 
+// `dump_retention_seconds`: null disables capture; a positive integer is the
+// per-record TTL in seconds. Zero would mean "capture but expire immediately"
+// which has no sensible behavior, so it is rejected at the schema layer.
+const dumpRetentionSecondsSchema = z.number().int().positive().nullable();
+
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
@@ -190,6 +195,7 @@ export const createKeyBody = z.object({
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
 });
 
 // --- upstreams ---
