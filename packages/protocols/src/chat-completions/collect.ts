@@ -67,7 +67,8 @@ const buildToolCalls = (choice: ChoiceAccumulator): ChatCompletionsToolCall[] | 
     const acc = choice.toolCalls.get(i)!;
     // A truncated stream can drop the chunk carrying `id` entirely; surface a
     // placeholder rather than throwing so the partial tool call is still
-    // visible. Real id-bearing rows will have already overwritten this.
+    // visible. Tool calls that received an id chunk will have set `acc.id` to
+    // a real value before reaching here.
     const id = acc.id ?? `__missing_id_${i}__`;
     return {
       id,

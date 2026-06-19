@@ -16,6 +16,7 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
+import { sumDumpTokens } from './dump-tokens.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
@@ -191,12 +192,11 @@ export const passthroughApiError = (c: Context, message: string, status: Content
 // input-side and output-side dimension into a single inputTokens/outputTokens
 // pair — the dump UI shows totals, not the per-dimension split.
 const setPassthroughDumpAccounting = (c: Context, upstream: string, model: string, usage: TokenUsage | null): void => {
+  const tokens = sumDumpTokens(usage);
   c.set('dumpAccounting', {
     upstream,
     model,
-    inputTokens: usage
-      ? (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) + (usage.input_image ?? 0)
-      : null,
-    outputTokens: usage ? (usage.output ?? 0) + (usage.output_image ?? 0) : null,
+    inputTokens: tokens?.inputTokens ?? null,
+    outputTokens: tokens?.outputTokens ?? null,
   });
 };

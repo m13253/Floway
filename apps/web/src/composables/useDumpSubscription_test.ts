@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { effectScope, nextTick, ref } from 'vue';
 
 import { useDumpSubscription } from './useDumpSubscription.ts';

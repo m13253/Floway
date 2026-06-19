@@ -20,7 +20,7 @@ export interface DumpStore {
   put(keyId: string, record: DumpRecord): Promise<void>;
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
   get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null>;
-  // Removes records whose created_at is older than now - retentionSeconds*1000.
+  // Strict `<` against `now - retentionSeconds*1000` (ms).
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
   // Removes every record for this key. Called when the key disables dump or
   // is soft-deleted.

@@ -11,7 +11,6 @@ import type {
   DumpResponseBody,
   DumpStreamEvent,
 } from '@floway-dev/protocols/dump';
-import { parseGeminiStream } from '@floway-dev/protocols/gemini';
 
 // We intentionally do NOT redact `authorization`, `x-api-key`, `cookie`, or
 // any other header. The api-key value is already in our own database; the
@@ -83,23 +82,6 @@ const captureSSE = async (forCapture: ReadableStream<Uint8Array>, startedAt: num
   try {
     for await (const frame of parseSSEStream(counted)) {
       events.push({ event: frame.event ?? null, data: frame.data, ts: Date.now() - startedAt });
-    }
-  } catch (err) {
-    streamingError = err;
-  }
-  return { body: { type: 'stream', events }, bodyBase64: false, responseBytes, streamingError };
-};
-
-const captureGeminiStream = async (forCapture: ReadableStream<Uint8Array>, startedAt: number): Promise<CapturedBody> => {
-  const events: DumpStreamEvent[] = [];
-  let streamingError: unknown = null;
-  let responseBytes = 0;
-  const counted = forCapture.pipeThrough(new TransformStream({
-    transform(chunk, controller) { responseBytes += chunk.byteLength; controller.enqueue(chunk); },
-  }));
-  try {
-    for await (const chunk of parseGeminiStream(counted)) {
-      events.push({ event: null, data: chunk.chunk, ts: Date.now() - startedAt });
     }
   } catch (err) {
     streamingError = err;
@@ -182,14 +164,6 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   const rawResponseHeaders = hasResponse ? headerPairs(c.res.headers) : [];
   const responseContentType = hasResponse ? c.res.headers.get('content-type') : null;
   const isSSE = responseContentType?.startsWith('text/event-stream') ?? false;
-  // Gemini's `:streamGenerateContent` returns chunked JSON framed as
-  // `data: <json>\n\n`. In production our gateway re-emits this through
-  // `streamSSE` so the response carries `text/event-stream` (handled by the
-  // SSE branch above), but we still keep this branch so a future passthrough
-  // path that surfaces the upstream `application/json` body verbatim parses
-  // into per-chunk events instead of a single bytes blob.
-  const isGeminiStream = (responseContentType?.startsWith('application/json') ?? false)
-    && c.req.path.includes(':streamGenerateContent');
 
   // Set up the body capture pipeline. We tee the response body so the client
   // continues to receive bytes while the capture half drains in the
@@ -205,15 +179,14 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
     c.res = new Response(forClient, { status: c.res.status, headers: c.res.headers });
     if (isSSE) {
       capturedBodyPromise = captureSSE(forCapture, startedAt);
-    } else if (isGeminiStream) {
-      capturedBodyPromise = captureGeminiStream(forCapture, startedAt);
     } else {
       capturedBodyPromise = captureBytes(forCapture, responseContentType);
     }
   }
 
   const reqContentType = c.req.raw.headers.get('content-type');
-  const path = c.req.path + new URL(c.req.url).search;
+  const queryIdx = c.req.url.indexOf('?');
+  const path = queryIdx >= 0 ? c.req.path + c.req.url.slice(queryIdx) : c.req.path;
   const method = c.req.method;
 
   // Defer reading dumpAccounting until the capture pipeline settles — the

@@ -11,9 +11,16 @@ const props = withDefaults(defineProps<{
   code: string;
   language?: 'bash' | 'toml' | 'json' | 'text';
   copyable?: boolean;
+  // When true, the root becomes a flex-column and the inner OverlayScrollbars
+  // claims `min-h-0 flex-1` so a `max-h-*` (or any height cap inherited from
+  // the parent flex column) routes through to the scroll viewport instead of
+  // clipping the content. Off by default — Code is also used in flow layouts
+  // where flex-column would change every site's vertical sizing.
+  fillParent?: boolean;
 }>(), {
   copyable: true,
   language: 'text',
+  fillParent: false,
 });
 
 const copied = ref(false);
@@ -39,8 +46,8 @@ const highlighted = computed(() => {
 </script>
 
 <template>
-  <div class="code-block relative group flex min-h-0 flex-col">
-    <OverlayScrollbars class="min-h-0 flex-1 rounded-xl border border-white/[0.04] bg-surface-900" no-tabindex>
+  <div class="code-block relative group" :class="fillParent ? 'flex min-h-0 flex-col' : ''">
+    <OverlayScrollbars :class="['rounded-xl border border-white/[0.04] bg-surface-900', fillParent ? 'min-h-0 flex-1' : '']" no-tabindex>
       <pre class="min-w-max p-4 pr-11 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
     </OverlayScrollbars>
     <button

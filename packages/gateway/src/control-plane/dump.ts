@@ -1,23 +1,13 @@
-import { type Context, Hono } from 'hono';
+import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { getRepo } from '../repo/index.ts';
-import type { ApiKey } from '../repo/types.ts';
+import { ownedKeyOr404 } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../runtime/dump.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 const RECORDS_LIST_HARD_CAP = 200;
 const RECORDS_LIST_DEFAULT = 100;
 const STREAM_INITIAL_SNAPSHOT_LIMIT = 100;
-
-const ownedKeyOr404 = async (c: Context, keyId: string): Promise<ApiKey | Response> => {
-  const userId = c.get('userId') as number;
-  const key = await getRepo().apiKeys.getById(keyId);
-  // Returning 404 (not 403) on foreign or unknown keys avoids leaking the
-  // existence of another user's key id to the actor.
-  if (key?.userId !== userId) return c.json({ error: 'Key not found' }, 404);
-  return key;
-};
 
 // Missing → default. Garbage or non-positive → null so the caller rejects
 // with 400 rather than silently substituting a value the operator did not
@@ -47,7 +37,7 @@ export const dump = new Hono()
       try {
         for await (const meta of subscription) await sink(meta);
       } catch (err) {
-        console.error('[dump-stream]', err);
+        console.error('[dump-stream]', keyId, err);
       }
     })();
 

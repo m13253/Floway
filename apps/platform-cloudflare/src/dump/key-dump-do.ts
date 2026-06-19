@@ -29,6 +29,13 @@ const blobKey = (keyId: string, recordId: string): string => `dump/${keyId}/${re
 export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   private readonly sql = this.ctx.storage.sql;
   private readonly sockets = new Set<WebSocket>();
+  // In-instance cache for the `state` table writes — keyId is fixed per DO
+  // for the lifetime of the instance, and retentionSeconds only changes on
+  // a control-plane PATCH. Skipping the SQL when the value is unchanged
+  // saves a write per put. On eviction the constructor's SCHEMA-create runs
+  // and the cache repopulates lazily on the first put afterwards.
+  private lastWrittenKeyId: string | null = null;
+  private lastWrittenRetention: string | null = null;
 
   constructor(ctx: DurableObjectState, env: KeyDumpDOEnv) {
     super(ctx, env);
@@ -38,8 +45,8 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   }
 
   async put(keyId: string, retentionSeconds: number, record: DumpRecord): Promise<void> {
-    this.writeState('keyId', keyId);
-    this.writeState('retentionSeconds', String(retentionSeconds));
+    this.writeStateOnce('keyId', keyId, () => this.lastWrittenKeyId, v => { this.lastWrittenKeyId = v; });
+    this.writeStateOnce('retentionSeconds', String(retentionSeconds), () => this.lastWrittenRetention, v => { this.lastWrittenRetention = v; });
 
     await this.env.DUMP_BLOBS.put(blobKey(keyId, record.meta.id), JSON.stringify(record));
     // created_at uses completedAt so retention measures the lifetime of the
@@ -86,7 +93,7 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   }
 
   async purgeExpired(retentionSeconds: number): Promise<void> {
-    this.writeState('retentionSeconds', String(retentionSeconds));
+    this.writeStateOnce('retentionSeconds', String(retentionSeconds), () => this.lastWrittenRetention, v => { this.lastWrittenRetention = v; });
     await this.purgeOlderThan(Date.now() - retentionSeconds * 1000);
     await this.scheduleNextAlarm(retentionSeconds);
   }
@@ -101,6 +108,10 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     // schema here so the next put / purgeExpired hits live tables instead
     // of `no such table: state`.
     for (const stmt of SCHEMA) this.sql.exec(stmt);
+    // The cache reflected rows that no longer exist; reset so the next put
+    // rewrites them.
+    this.lastWrittenKeyId = null;
+    this.lastWrittenRetention = null;
   }
 
   async alarm(): Promise<void> {
@@ -213,7 +224,9 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     return row?.v;
   }
 
-  private writeState(k: string, v: string): void {
+  private writeStateOnce(k: string, v: string, get: () => string | null, set: (v: string) => void): void {
+    if (get() === v) return;
     this.sql.exec('INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)', k, v);
+    set(v);
   }
 }

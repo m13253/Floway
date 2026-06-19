@@ -57,7 +57,8 @@ const formatBytes = (n: number) => {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
-// Show "1.2 M" / "12.3 K" / plain integer.
+// The row column is narrow, so collapse to K/M for compactness instead of
+// using `toLocaleString` which would blow past the available width.
 const formatTokens = (n: number) => {
   if (n < 1000) return String(n);
   if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
@@ -71,7 +72,6 @@ const totalTokens = (r: DumpMetadata): number | null => {
   return (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
 };
 
-// Tone classes by upstream kind; no badge, just a tinted label.
 const providerColorClass = (kind: string): string => {
   if (kind === 'copilot') return 'text-accent-cyan';
   if (kind === 'azure') return 'text-accent-emerald';
@@ -115,13 +115,10 @@ watch(() => props.records.length, () => {
           ]"
           @click="onSelect(r.id)"
         >
-          <!-- Line 1: status + (model | "Unknown") + time. Model is the most
-               operator-relevant identifier so it takes the prominent slot;
-               when accounting didn't resolve one (e.g. a 4xx before the
-               upstream attempt) we show "Unknown" in a non-mono font as a
-               clear "no value" cue. Method is recorded server-side but not
-               shown — every captured endpoint is POST, so it adds no signal
-               in the list. -->
+          <!-- Model is the most operator-relevant identifier so it takes the
+               prominent slot; when accounting didn't resolve one (e.g. a 4xx
+               before the upstream attempt) we show "Unknown" in a non-mono
+               font as a clear "no value" cue. -->
           <div class="flex items-center gap-2 text-xs">
             <Badge :tone="statusTone(r.status)" size="sm">{{ statusLabel(r.status) }}</Badge>
             <span
@@ -135,7 +132,6 @@ watch(() => props.records.length, () => {
             </span>
           </div>
 
-          <!-- Line 2: path (left, secondary) and metrics (right). -->
           <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
             <span class="mr-auto min-w-0 truncate font-mono" :title="r.path">{{ r.path }}</span>
             <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -151,7 +147,6 @@ watch(() => props.records.length, () => {
             </span>
           </div>
 
-          <!-- Line 3 (optional): provider name (colored) + total tokens -->
           <div
             v-if="r.upstream || totalTokens(r) !== null"
             class="mt-1 flex items-center justify-between gap-3 text-[11px]"

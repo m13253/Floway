@@ -5,6 +5,6 @@ import type { DumpMetadata } from '@floway-dev/protocols/dump';
 export interface DumpBroker {
   // Fire-and-forget. Must never block the capture path.
   publish(keyId: string, meta: DumpMetadata): void;
-  // Yields metadata as it is published. Returns when the signal aborts.
+  // Returns when the signal aborts.
   subscribe(keyId: string, signal: AbortSignal): AsyncIterable<DumpMetadata>;
 }

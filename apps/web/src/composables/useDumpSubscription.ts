@@ -44,8 +44,9 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
     // Browsers cannot set custom headers on EventSource, so the SSE endpoint
     // accepts the session token as a query string. See auth middleware.
     const token = auth.authToken;
-    const url = `/api/dump/keys/${encodeURIComponent(id)}/stream`
-      + (token ? `?session=${encodeURIComponent(token)}` : '');
+    const url = token
+      ? `/api/dump/keys/${encodeURIComponent(id)}/stream?session=${encodeURIComponent(token)}`
+      : `/api/dump/keys/${encodeURIComponent(id)}/stream`;
     const es = new EventSource(url);
     source = es;
 

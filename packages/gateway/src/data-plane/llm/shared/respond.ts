@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import { sumDumpTokens } from '../../shared/dump-tokens.ts';
 import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
 import { hasTokenUsage, recordTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -64,15 +65,12 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 // `recordPerformance` already track, but lives on the Hono context so the
 // capture middleware can pick it up after the handler returns.
 export const setDumpAccounting = (c: Context, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): void => {
-  const inputTokens = usage
-    ? (usage.input ?? 0) + (usage.input_cache_read ?? 0) + (usage.input_cache_write ?? 0) + (usage.input_image ?? 0)
-    : 0;
-  const outputTokens = usage ? (usage.output ?? 0) + (usage.output_image ?? 0) : 0;
+  const tokens = sumDumpTokens(usage);
   c.set('dumpAccounting', {
     upstream: modelIdentity.upstream,
     model: modelIdentity.model,
-    inputTokens: usage ? inputTokens : null,
-    outputTokens: usage ? outputTokens : null,
+    inputTokens: tokens?.inputTokens ?? null,
+    outputTokens: tokens?.outputTokens ?? null,
   });
 };
 

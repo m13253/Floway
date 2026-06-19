@@ -41,7 +41,8 @@ initRepo(new SqlRepo(db));
 
 const dumpStore = new NodeDumpStore(db, files, async keyId => {
   const key = await getRepo().apiKeys.getById(keyId);
-  return key?.dumpRetentionSeconds ?? null;
+  if (!key) throw new Error(`unknown key ${keyId}`);
+  return key.dumpRetentionSeconds;
 });
 initDumpStore(dumpStore);
 initDumpBroker(new NodeDumpBroker());

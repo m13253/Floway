@@ -69,11 +69,6 @@ const setImageGenStatus = (item: ResponsesOutputItem, status: ResponsesOutputIma
   return { ...item, status };
 };
 
-const seedFromCreated = (response: ResponsesResult): ResponsesResult => ({
-  ...response,
-  output: cloneOutput(response.output),
-});
-
 export const collectResponsesStream = (events: readonly DumpStreamEvent[]): CollectOutcome<ResponsesResult> => {
   let snapshot: ResponsesResult | null = null;
   const output: ResponsesOutputItem[] = [];
@@ -93,7 +88,7 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
     switch (event.type) {
     case 'response.created':
     case 'response.in_progress':
-      snapshot = seedFromCreated(event.response);
+      snapshot = { ...event.response, output: cloneOutput(event.response.output) };
       break;
     case 'response.output_item.added':
       output[event.output_index] = cloneOutputItem(event.item);

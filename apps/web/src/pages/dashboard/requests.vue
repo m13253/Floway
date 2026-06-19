@@ -8,7 +8,6 @@ import RecordDetail from '../../components/dump/RecordDetail.vue';
 import RequestList from '../../components/dump/RequestList.vue';
 import { useDumpSubscription } from '../../composables/useDumpSubscription.ts';
 import { useHashRef } from '../../composables/useHashRef.ts';
-import { OverlayScrollbars } from '@floway-dev/ui';
 
 export const useRequestsPageData = defineBasicLoader(async () => {
   const api = useApi();

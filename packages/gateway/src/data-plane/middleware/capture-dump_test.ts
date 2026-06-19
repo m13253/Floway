@@ -2,11 +2,14 @@ import { Hono } from 'hono';
 import { beforeEach, expect, test } from 'vitest';
 
 import { captureRequestDump } from './capture-dump.ts';
+import { getRepo, initRepo } from '../../repo/index.ts';
+import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../runtime/background.ts';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
+import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const apiKeyWithDump = (overrides: Partial<ApiKey> = {}): ApiKey => ({
@@ -18,6 +21,22 @@ const apiKeyWithDump = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   upstreamIds: null,
   deletedAt: null,
   dumpRetentionSeconds: 3600,
+  ...overrides,
+});
+
+const seedUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
+  id: 'up_test',
+  provider: 'custom',
+  name: 'Test Upstream',
+  enabled: true,
+  sortOrder: 0,
+  createdAt: '2026-06-19T00:00:00.000Z',
+  updatedAt: '2026-06-19T00:00:00.000Z',
+  config: {},
+  state: null,
+  flagOverrides: {},
+  disabledPublicModelIds: [],
+  proxyFallbackList: [],
   ...overrides,
 });
 
@@ -40,7 +59,7 @@ const makeStubBroker = (): { publishes: RecordedPublish[]; broker: DumpBroker } 
   const publishes: RecordedPublish[] = [];
   const broker: DumpBroker = {
     publish: (keyId, meta) => { publishes.push({ keyId, meta }); },
-    async *subscribe() { /* no-op for tests */ },
+    async *subscribe() {},
   };
   return { publishes, broker };
 };
@@ -60,10 +79,6 @@ const makeApp = (apiKey: ApiKey): Hono<{ Variables: CaptureVars }> => {
   return app;
 };
 
-// Wait for the fire-and-forget scheduler queue to flush. The test scheduler
-// captures every scheduled promise into `scheduled`; this just awaits them
-// in order, including any that get re-scheduled during finalize.
-
 let stubStore: ReturnType<typeof makeStubStore>;
 let stubBroker: ReturnType<typeof makeStubBroker>;
 let scheduled: Promise<unknown>[];
@@ -72,6 +87,7 @@ beforeEach(() => {
   stubStore = makeStubStore();
   stubBroker = makeStubBroker();
   scheduled = [];
+  initRepo(new InMemoryRepo());
   initDumpStore(stubStore.store);
   initDumpBroker(stubBroker.broker);
   initBackgroundSchedulerResolver(_c => promise => {
@@ -80,6 +96,9 @@ beforeEach(() => {
   });
 });
 
+// Wait for the fire-and-forget scheduler queue to flush. The test scheduler
+// captures every scheduled promise into `scheduled`; this just awaits them
+// in order, including any that get re-scheduled during finalize.
 const drainScheduled = async (): Promise<void> => {
   while (scheduled.length > 0) {
     const pending = scheduled;
@@ -211,6 +230,8 @@ test('headers are captured verbatim — no redaction of authorization / x-api-ke
 });
 
 test('dumpAccounting context var feeds the record metadata', async () => {
+  await getRepo().upstreams.save(seedUpstream({ id: 'up_test', name: 'Test Upstream', provider: 'custom' }));
+
   const app = makeApp(apiKeyWithDump());
   app.use('/v1/messages', async (c, next) => {
     c.set('dumpAccounting', { upstream: 'up_test', model: 'mod_test', inputTokens: 12, outputTokens: 7 });
@@ -222,7 +243,7 @@ test('dumpAccounting context var feeds the record metadata', async () => {
   await drainScheduled();
 
   const meta = stubStore.puts[0]!.record.meta;
-  assertEquals(meta.upstream, 'up_test');
+  assertEquals(meta.upstream, { id: 'up_test', name: 'Test Upstream', kind: 'custom' });
   assertEquals(meta.model, 'mod_test');
   assertEquals(meta.inputTokens, 12);
   assertEquals(meta.outputTokens, 7);
@@ -260,7 +281,7 @@ test('non-text response body round-trips through base64 with a ;base64 suffix on
   assertEquals(ct?.[1], 'image/jpeg;base64');
 });
 
-// F3 — the request body is tee'd, not buffered to memory. The downstream
+// The request body is tee'd, not buffered to memory. The downstream
 // handler must see request bytes streaming in as they arrive; the capture
 // drains its half concurrently. This test sends chunks separated by an
 // await turn and asserts the handler observed each chunk before EOF, and

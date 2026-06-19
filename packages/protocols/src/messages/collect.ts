@@ -16,12 +16,7 @@ const parseEvent = (raw: DumpStreamEvent): MessagesStreamEvent | null => {
   return JSON.parse(data) as MessagesStreamEvent;
 };
 
-const seedFromMessageStart = (event: MessagesMessageStartEvent): MessagesResult => ({
-  ...event.message,
-  content: [],
-  stop_reason: null,
-  stop_sequence: null,
-});
+const seedFromMessageStart = (event: MessagesMessageStartEvent): MessagesResult => ({ ...event.message });
 
 const openContentBlock = (event: MessagesContentBlockStartEvent): MessagesAssistantContentBlock => {
   const block = event.content_block;

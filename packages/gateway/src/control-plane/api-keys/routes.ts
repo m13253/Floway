@@ -7,6 +7,7 @@ import type { ApiKey } from '../../repo/types.ts';
 import { getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
+import { ownedKeyOr404 } from '../shared/owned-key.ts';
 
 const apiKeyToJson = (key: ApiKey) => ({
   id: key.id,
@@ -35,15 +36,6 @@ const validateUpstreamIdsAgainstUserCap = async (
   return blocked.length
     ? `Some selected upstreams aren't available to your account: ${blocked.join(', ')}`
     : null;
-};
-
-const ownedKeyOr404 = async (c: Context, id: string): Promise<ApiKey | Response> => {
-  const userId = c.get('userId') as number;
-  const key = await getRepo().apiKeys.getById(id);
-  // Returning 404 on foreign keys (rather than 403) avoids leaking the
-  // existence of another user's key id to the actor.
-  if (key?.userId !== userId) return c.json({ error: 'Key not found' }, 404);
-  return key;
 };
 
 export const listKeys = async (c: Context) => {

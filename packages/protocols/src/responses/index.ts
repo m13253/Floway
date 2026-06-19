@@ -720,4 +720,3 @@ export { responsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream.ts';
-export { collectResponsesStream } from './collect.ts';

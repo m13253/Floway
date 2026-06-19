@@ -2,7 +2,6 @@
 import { computed, ref, shallowRef, watch } from 'vue';
 
 import { authFetch } from '../../api/client.ts';
-
 import type {
   DumpRecord,
   DumpRequest,
@@ -84,7 +83,7 @@ const headerValue = (headers: Array<[string, string]>, name: string): string | n
 
 const isJsonContentType = (ct: string | null) => !!ct && /\b(application\/json|application\/.*\+json)\b/i.test(ct);
 
-interface DecodedBody { text: string; pretty: string | null; copyText: string; isJson: boolean }
+interface DecodedBody { text: string; pretty: string | null; copyText: string; isJson: boolean; decodeError: string | null }
 
 const decodeRequestBody = (req: DumpRequest): DecodedBody => {
   const ct = headerValue(req.headers, 'content-type') ?? '';
@@ -93,18 +92,22 @@ const decodeRequestBody = (req: DumpRequest): DecodedBody => {
       const decoded = new TextDecoder('utf-8', { fatal: true }).decode(
         Uint8Array.from(atob(req.body), c => c.charCodeAt(0)),
       );
-      return { text: decoded, pretty: null, copyText: decoded, isJson: false };
-    } catch {
-      return { text: req.body, pretty: null, copyText: req.body, isJson: false };
+      return { text: decoded, pretty: null, copyText: decoded, isJson: false, decodeError: null };
+    } catch (err) {
+      // Decoding failed — surface the raw base64 alongside an explicit signal
+      // so the operator can tell apart "we showed you the bytes" from
+      // "the bytes already looked like base64".
+      const msg = err instanceof Error ? err.message : String(err);
+      return { text: req.body, pretty: null, copyText: req.body, isJson: false, decodeError: msg };
     }
   }
   if (isJsonContentType(ct)) {
     try {
       const pretty = JSON.stringify(JSON.parse(req.body), null, 2);
-      return { text: req.body, pretty, copyText: pretty, isJson: true };
+      return { text: req.body, pretty, copyText: pretty, isJson: true, decodeError: null };
     } catch { /* fall through */ }
   }
-  return { text: req.body, pretty: null, copyText: req.body, isJson: false };
+  return { text: req.body, pretty: null, copyText: req.body, isJson: false, decodeError: null };
 };
 
 const requestBody = computed(() => record.value ? decodeRequestBody(record.value.request) : null);
@@ -284,7 +287,13 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
             :language="requestBody.isJson ? 'json' : 'text'"
             :copyable="false"
           />
-          <pre v-else-if="requestBody" class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ requestBody.text }}</pre>
+          <template v-else-if="requestBody">
+            <div
+              v-if="requestBody.decodeError"
+              class="mx-3 mt-3 rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber"
+            >Could not decode the request body ({{ requestBody.decodeError }}); showing raw base64 below.</div>
+            <pre class="px-3 py-2 text-xs font-mono leading-relaxed text-gray-200">{{ requestBody.text }}</pre>
+          </template>
           <p v-else class="px-3 py-4 text-center text-xs text-gray-500">No request body.</p>
         </section>
 
