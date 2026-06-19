@@ -79,6 +79,11 @@ interface CapturedBody {
   streamingError: unknown;
 }
 
+interface CapturedRequestBody {
+  bytes: Uint8Array;
+  streamingError: unknown;
+}
+
 const captureSSE = async (forCapture: ReadableStream<Uint8Array>, startedAt: number): Promise<CapturedBody> => {
   const events: DumpStreamEvent[] = [];
   let streamingError: unknown = null;
@@ -140,9 +145,9 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   // signal/cache/credentials/referrer — the second arg only overrides what
   // it explicitly names. `duplex: 'half'` is required by Node 18+ and
   // workerd whenever a Request is built with a ReadableStream body.
-  let capturedRequestBytesPromise: Promise<Uint8Array>;
+  let capturedRequestPromise: Promise<CapturedRequestBody>;
   if (c.req.raw.body === null) {
-    capturedRequestBytesPromise = Promise.resolve(new Uint8Array());
+    capturedRequestPromise = Promise.resolve({ bytes: new Uint8Array(), streamingError: null });
   } else {
     const [forHandler, forCapture] = c.req.raw.body.tee();
     const replayReq = new Request(c.req.raw, {
@@ -150,20 +155,29 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
       duplex: 'half',
     } as RequestInit & { duplex: 'half' });
     Object.defineProperty(c.req, 'raw', { value: replayReq, configurable: true });
-    capturedRequestBytesPromise = (async () => {
+    capturedRequestPromise = (async () => {
+      // Mirror the response-side reader loop: a client that aborts
+      // mid-upload is exactly the kind of failure operators want to inspect,
+      // so we keep whatever arrived before the error and stamp the error
+      // onto meta.error via the same channel as response streaming errors.
       const reader = forCapture.getReader();
       const chunks: Uint8Array[] = [];
       let total = 0;
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        total += value.byteLength;
+      let streamingError: unknown = null;
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          total += value.byteLength;
+        }
+      } catch (err) {
+        streamingError = err;
       }
       const out = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.byteLength; }
-      return out;
+      return { bytes: out, streamingError };
     })();
   }
 
@@ -217,12 +231,12 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   // Awaiting the capture promise here therefore guarantees `dumpAccounting`
   // is already written by the time we read it below.
   const finalize = async (): Promise<void> => {
-    const requestBodyBytes = await capturedRequestBytesPromise;
-    const reqEncoded = encodeBody(requestBodyBytes, reqContentType);
+    const capturedRequest = await capturedRequestPromise;
+    const reqEncoded = encodeBody(capturedRequest.bytes, reqContentType);
     const captured = await capturedBodyPromise;
     const completedAt = Date.now();
     const accounting = c.get('dumpAccounting') as DumpAccounting | undefined;
-    const finalError = upstreamError ?? captured.streamingError;
+    const finalError = upstreamError ?? captured.streamingError ?? capturedRequest.streamingError;
     // Resolve upstream id → {name, kind} from the repo so the dashboard
     // can show a human label colored by provider kind without round-tripping.
     // A deleted upstream — or a transient repo failure on the lookup — falls
@@ -257,7 +271,7 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
         model: accounting?.model ?? null,
         inputTokens: accounting?.inputTokens ?? null,
         outputTokens: accounting?.outputTokens ?? null,
-        requestBytes: requestBodyBytes.byteLength,
+        requestBytes: capturedRequest.bytes.byteLength,
         responseBytes: captured.responseBytes,
         durationMs: completedAt - startedAt,
         error: finalError !== null ? errorSummary(finalError) : null,

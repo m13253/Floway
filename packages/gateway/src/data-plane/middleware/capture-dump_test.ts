@@ -502,4 +502,39 @@ describe('failure modes', () => {
     assertEquals(record.response.events[1]!.data, 'world');
     expect(record.meta.error).toMatch(/upstream sse blew up/);
   });
+
+  test('request-body mid-stream error preserves the bytes received and surfaces the error in meta.error', async () => {
+    const app = makeApp(apiKeyWithDump());
+    // The handler drains its tee'd half so the capture half is allowed to
+    // pull through and observe the eventual stream error.
+    app.post('/v1/messages', async c => {
+      const reader = c.req.raw.body!.getReader();
+      try { for (;;) { const { done } = await reader.read(); if (done) break; } } catch { /* swallow on the handler side */ }
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode('partial-'));
+        await new Promise(resolve => setTimeout(resolve, 5));
+        controller.enqueue(new TextEncoder().encode('upload-'));
+        await new Promise(resolve => setTimeout(resolve, 5));
+        controller.error(new Error('client aborted mid-upload'));
+      },
+    });
+    await Promise.resolve(app.request('/v1/messages', {
+      method: 'POST',
+      body,
+      headers: { 'content-type': 'application/json' },
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' })).catch(() => {});
+    await drainScheduled();
+
+    assertEquals(stubStore.puts.length, 1);
+    const record = stubStore.puts[0]!.record;
+    // Partial buffered payload is preserved — operators get to inspect what
+    // arrived before the abort instead of losing the record entirely.
+    assertEquals(record.request.body, 'partial-upload-');
+    expect(record.meta.error).toMatch(/client aborted mid-upload/);
+  });
 });

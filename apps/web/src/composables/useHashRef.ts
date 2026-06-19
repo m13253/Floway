@@ -7,7 +7,6 @@ import { onScopeDispose, ref, watch, type Ref } from 'vue';
 // propagate back into the ref via the `hashchange` event.
 export const useHashRef = (): Ref<string | null> => {
   const readHash = () => {
-    if (typeof location === 'undefined') return null;
     const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
     return raw === '' ? null : raw;
   };
@@ -15,7 +14,6 @@ export const useHashRef = (): Ref<string | null> => {
   const value = ref<string | null>(readHash());
 
   watch(value, next => {
-    if (typeof history === 'undefined' || typeof location === 'undefined') return;
     if (next === null) {
       if (location.hash === '') return;
       history.replaceState({}, '', `${location.pathname}${location.search}`);
@@ -31,10 +29,8 @@ export const useHashRef = (): Ref<string | null> => {
     if (value.value !== next) value.value = next;
   };
 
-  if (typeof window !== 'undefined') {
-    window.addEventListener('hashchange', onHashChange);
-    onScopeDispose(() => window.removeEventListener('hashchange', onHashChange));
-  }
+  window.addEventListener('hashchange', onHashChange);
+  onScopeDispose(() => window.removeEventListener('hashchange', onHashChange));
 
   return value;
 };
