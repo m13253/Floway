@@ -1,70 +1,85 @@
 ---
 name: refresh-ollama-pricing
 description: Use when ollama.com's hosted catalog changes (new model lands, old
-  one retires) or when an upstream commodity host changes its rate, to refresh
+  one retires) or when an upstream price moves, to refresh
   packages/provider-ollama/src/pricing.ts. Manual — no script.
 ---
 
 # Refresh Ollama Pricing
 
 `OLLAMA_MODEL_PRICING` is notional: Ollama itself doesn't price per token, so
-each entry mirrors the cheapest credible commodity host for the same open
-weights. Catalog churn is weekly, so re-validate periodically.
+each entry mirrors the upstream the model would otherwise be paid on — the
+vendor's own first-party API when the vendor operates one, or the cheapest
+credible commodity host when the model is open-weights-only. Catalog churn
+is weekly, so re-validate periodically.
 
 ## Flow
 
 1. **Pull the live catalog.**
    `curl -s https://ollama.com/api/tags | jq -r '.models[].name' | sort`
    Diff against the string keys + regex coverage in
-   `packages/provider-ollama/src/pricing.ts`. Note new models, retired models,
-   and entries whose family no longer appears upstream.
+   `packages/provider-ollama/src/pricing.ts`. Note new models, retired
+   models, and entries whose family no longer appears upstream.
 
-2. **For each model needing a price, look up sibling-provider rates from
-   models.dev.** `curl -s https://models.dev/api.json | jq '.<provider>.models["<sibling-id>"].cost'`
-   Map by weights, not by name — Ollama renames freely. Typical anchors:
+2. **Identify the upstream lane for each new model.** First-party API takes
+   precedence over commodity-host mirrors (DeepSeek, Z.ai, Moonshot,
+   MiniMax, Mistral, Alibaba, Google all run their own APIs and publish
+   per-token rates). Mirrors (DeepInfra, Together, Fireworks, OpenRouter)
+   are only the right anchor for open-weights-only releases (OpenAI's
+   gpt-oss, NVIDIA's Nemotron, Essential AI's Rnj-1).
 
-   | Family | Sibling provider on models.dev |
+   | Family | Anchor |
    |---|---|
-   | `gpt-oss:*` | `groq` (`openai/gpt-oss-*`) |
-   | `qwen3-coder:*` | `deepinfra` (cheaper than DashScope) |
-   | `deepseek-v*` | `deepseek` first-party |
-   | `glm-*` | `zai` first-party |
-   | `kimi-k2.*` | `moonshotai` international |
-   | `minimax-m*` | `minimax` international |
-   | `nemotron-3-*` | `deepinfra` |
-   | `gemini-*` | `google` (AI Studio) |
-   | `gemma*` | open weights — `{input: 0, output: 0}` |
+   | `gpt-oss:*` | Groq (cheapest commodity host with cached-input pricing) |
+   | `qwen*` | Alibaba International first-party (`qwencloud.com/models/<id>`); fall back to DeepInfra Turbo only when Alibaba doesn't publish a SKU |
+   | `deepseek-v*` | DeepSeek first-party (`api-docs.deepseek.com/quick_start/pricing`); for past versions whose `deepseek-chat` alias has rotated, use Wayback snapshots from the period the version was current |
+   | `glm-*` | Z.ai first-party (`docs.z.ai/guides/overview/pricing`) |
+   | `kimi-*` | Moonshot international (`platform.moonshot.ai/docs/pricing/chat`) |
+   | `minimax-*` | MiniMax international PAYGo (`platform.minimax.io/docs/guides/pricing-paygo`) |
+   | `mistral-large-*` / `devstral-*` / `ministral-*` | Mistral first-party (`mistral.ai/pricing`) |
+   | `nemotron-3-*` | DeepInfra (cheapest commodity host) |
+   | `gemini-*` | Google AI Studio (`ai.google.dev/gemini-api/docs/pricing`) |
+   | `gemma*` | Vertex AI sells per-token only for `gemma-4-26b-a4b-it`; every other Gemma tag is GPU-hour self-host. Leave NULL. |
+   | `rnj-*` | Together (Essential AI doesn't run an API of its own) |
 
-3. **Pick the cheapest credible host**, not first-party — Ollama is reselling
-   GPU access, so the commodity floor is the most defensible "what the operator
-   would pay in tokens" anchor. Record the source URL in the entry's comment.
+3. **Verify against multiple sources before writing.** Cross-check the
+   first-party rate against models.dev's catalog
+   (`curl -s https://models.dev/api.json | jq '.<provider>.models["<id>"].cost'`)
+   and against OpenRouter's `/api/v1/models`. OpenRouter rates that sit
+   *below* first-party are mirror prices (some other host running the open
+   weights more cheaply) and are NOT the canonical anchor — the same
+   first-party-vs-mirror split that bit DeepSeek V3.x and Qwen3-Coder-Next
+   in earlier passes. Use first-party.
 
 4. **Edit `pricing.ts`.** Add/update entries with `input`,
-   `input_cache_read` (when the sibling exposes it), `output`. Group exact
-   string keys above; use a regex only when the entire family genuinely shares
-   a flat rate (see `minimax-m*`, `gemma[34]:`).
+   `input_cache_read` (when the upstream publishes one), `output`. Group
+   exact string keys; use a regex only when several versions genuinely share
+   a single rate. Cite the source URL in the comment so the next refresh
+   doesn't have to re-derive it.
 
-5. **Leave NULL when there's no defensible reference.** Models with no sibling
-   host (Ollama-exclusive distillations like `rnj-*`), versions whose name
-   doesn't map to any upstream release (e.g. a `qwen3.5` family that doesn't
-   match a DashScope SKU), or sub-families with no published per-token price.
+5. **Leave NULL when there's no defensible reference.** Examples:
+   - Versions whose name doesn't map to any upstream release (`qwen3.5`
+     without size suffix; sub-family naming the vendor never sold).
+   - Free-tier-only Labs SKUs with no commercial rate (e.g.
+     `devstral-small-2:24b`).
+   - Open weights with no published per-token host (rare; investigate
+     before falling back).
    `pricingForOllamaModelKey` returning `null` is correct — it persists
-   `usage.unit_price` as NULL, which aggregates to zero cost. Better than a
-   guess.
+   `usage.unit_price` as NULL, which aggregates to zero cost. Better than
+   a guess.
 
-6. **Backfill historical rows** with `backfill-model-pricing` when an existing
-   model's rate moved. New rows pick the new price automatically.
+6. **Backfill historical rows** with `backfill-model-pricing` when an
+   existing model's rate moved. New rows pick the new price automatically.
 
 ## Sources to avoid
 
-- **LiteLLM `model_prices_and_context_window.json`** — `ollama/*` entries are
-  hardcoded to `0.0` by design. Reading from there silently zeros every row.
-- **OpenRouter `/api/v1/models`** — has no `ollama/*` ids; you'd have to keep
-  a name-mapping table just to use it, which is what models.dev already does
-  with its sibling-provider structure.
+- **LiteLLM `model_prices_and_context_window.json`** — `ollama/*` entries
+  are hardcoded to `0.0` by design. Reading from there silently zeros every
+  row.
 - **HTML scraping the per-model tier label** (`Light` / `Medium` / `High` /
   `Extra High` on `https://ollama.com/library/<m>`) — it's the subscription
-  GPU-time weight, not a token price, and conflating them silently mis-bills.
+  GPU-time weight, not a token price, and conflating them silently
+  mis-bills.
 
 ## Cautions
 
@@ -73,10 +88,9 @@ weights. Catalog churn is weekly, so re-validate periodically.
 - Don't map by name string when the version reads ambiguous. `qwen3.5` on
   Ollama and `qwen3-235b-a22b-instruct-2507` on DashScope are not necessarily
   the same release; confirm with a release-note pair before linking them.
-- Cross-provider spread is large (gpt-oss-120b ranges 75× on models.dev,
-  qwen3-coder-480b 5×). The choice of sibling host changes user-visible cost
-  several-fold — pick deliberately, and write the choice into the comment so
-  the next refresh doesn't have to re-derive it.
+- Cross-provider spread is large; the choice of anchor changes user-visible
+  cost several-fold. Pick deliberately, and write the choice into the
+  comment so the next refresh doesn't have to re-derive it.
 - Pricing is USD per million tokens, single REAL per `BillingDimension`.
   Falls back per `unitPriceForDimension` (cached → uncached, image → text).
   Don't pre-bake the fallback into the table.

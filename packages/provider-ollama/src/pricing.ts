@@ -3,9 +3,12 @@
 // upstream cost on a self-hosted deployment, neither of which is per-token.
 // To keep the dashboard's "value consumed" view meaningful for an operator
 // paying the subscription, the gateway tracks usage cost as if the operator
-// were paying the cheapest credible commodity host (DeepInfra, Groq,
-// DeepSeek, Moonshot, MiniMax, Z.ai, etc.) for the same open weights. Values
-// are USD per million tokens, aligned with the `Cost` schema in models.dev:
+// were paying the model on its own API: the vendor's first-party rate when
+// the vendor operates one (DeepSeek, Z.ai, Moonshot, MiniMax, Mistral,
+// Alibaba, Google), or the cheapest credible commodity host (DeepInfra,
+// Groq, OpenRouter, Together) when the model is open-weights-only (OpenAI
+// gpt-oss, NVIDIA Nemotron, Essential AI Rnj-1). Values are USD per million
+// tokens, aligned with the `Cost` schema in models.dev:
 // https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts
 //
 // Coverage: every model in https://ollama.com/search that has a published
@@ -21,7 +24,7 @@
 // (/v1/chat/completions, /api/chat, /v1/messages) currently exposes a cached-
 // token count to clients. Without an upstream signal there is nothing to
 // dimension a cache-read row against, so the rate sits unused. Leaving the
-// commodity-host cache rates in the table keeps them ready the day Ollama
+// upstream's cache rate in the table keeps it ready for the day Ollama
 // surfaces cached_tokens — switching to billed cache reads then becomes a
 // pure ingestion-side change.
 //
@@ -93,21 +96,19 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   ['kimi-k2.6', { input: 0.95, input_cache_read: 0.16, output: 4.0 }],
   ['kimi-k2.7-code', { input: 0.95, input_cache_read: 0.19, output: 4.0 }],
 
-  // MiniMax — flat international rate across the M2 family and M3 EXCEPT
-  // for cache_read, which is $0.03/M for the older trio (m2 / m2.1 / m2.5)
-  // and $0.06/M for the newer m2.7 / m3. M3's >512k tier doubles to
-  // $0.60/$0.12/$2.40 — not encodable in flat per-model pricing, so the
-  // entry reflects only the ≤512k tier.
+  // MiniMax — international PAYGo. The cache_read rate is $0.03/M for the
+  // older trio (m2 / m2.1 / m2.5) and $0.06/M for the newer m2.7 / m3 — the
+  // M3 ≤512k row is currently flagged "Permanent 50% off" on MiniMax's page
+  // and would otherwise be $0.60/$0.12/$2.40, the same as M3's >512k tier
+  // (which is not encodable in flat per-model pricing).
   // https://platform.minimax.io/docs/guides/pricing-paygo
   [/^minimax-m2(\.[15])?$/, { input: 0.3, input_cache_read: 0.03, output: 1.2 }],
   [/^minimax-(m2\.7|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
 
-  // Mistral family — first-party `mistral-large-2512` and `devstral-2512`
-  // are the priced sources; OpenRouter mirrors at the same rates. Ollama's
-  // `mistral-large-3:675b` size suffix doesn't match any real Mistral
-  // release (Large 3 isn't a 675B model), but the name match is
-  // authoritative against the canonical Large 3 SKU.
-  // https://mistral.ai/products/la-plateforme
+  // Mistral family — `mistral-large-3` is Mistral's MoE flagship (41B
+  // active / 675B total per https://mistral.ai/news/mistral-3), and
+  // `devstral-2` is the Devstral 2512 release. Both priced first-party.
+  // https://mistral.ai/pricing
   ['mistral-large-3:675b', { input: 0.5, output: 1.5 }],
   ['devstral-2:123b', { input: 0.4, output: 2.0 }],
   // `devstral-small-2:24b` is intentionally omitted: Mistral's only listed
@@ -116,18 +117,23 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // the upstream as zero-cost.
 
   // Ministral 3B / 8B / 14B — Mistral first-party. The 2024-era $0.04/$0.10
-  // rates were bumped; 14B has a first-party SKU too (earlier research
-  // missed it and anchored on an OpenRouter mirror with a non-canonical
-  // input_cache_read field).
+  // rates got bumped; the 14B SKU exists and ships with a published
+  // `input_cache_read` rate ($0.02/M).
   // https://mistral.ai/pricing
   ['ministral-3:3b', { input: 0.1, output: 0.1 }],
   ['ministral-3:8b', { input: 0.15, output: 0.15 }],
-  ['ministral-3:14b', { input: 0.2, output: 0.2 }],
+  ['ministral-3:14b', { input: 0.2, input_cache_read: 0.02, output: 0.2 }],
 
   // NVIDIA Nemotron-3 — DeepInfra hosts the Super; the Nano sits on
   // OpenRouter; the Ultra runs on DeepInfra / Together at higher rates.
   // NVIDIA itself has no public per-token API.
   // https://deepinfra.com/nvidia
+  // NVIDIA Nemotron-3 — DeepInfra and OpenRouter host the open weights; Nano
+  // sits on OpenRouter, Super on DeepInfra, Ultra runs on DeepInfra FP8.
+  // NVIDIA itself sells no public per-token SKU (NIM Hub surfaces partner
+  // endpoints, not a first-party API).
+  // https://deepinfra.com/nvidia
+  // https://openrouter.ai/nvidia/nemotron-3-nano-30b-a3b
   ['nemotron-3-nano:30b', { input: 0.05, output: 0.2 }],
   ['nemotron-3-super', { input: 0.1, output: 0.5 }],
   ['nemotron-3-ultra', { input: 0.5, input_cache_read: 0.1, output: 2.2 }],

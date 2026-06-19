@@ -75,10 +75,18 @@ test('pricingForOllamaModelKey returns table rates for known model ids', () => {
 });
 
 test('pricingForOllamaModelKey matches regex-keyed families', () => {
-  // glm-5 family table covers 5 / 5.1 / 5.2 with one regex entry.
-  const glm52 = pricingForOllamaModelKey('glm-5.2');
-  assertEquals(glm52?.input, 1.4);
-  assertEquals(glm52?.output, 4.4);
+  // GLM 5 split: bare `glm-5` is cheaper than `glm-5.1` / `glm-5.2`.
+  assertEquals(pricingForOllamaModelKey('glm-5')?.input, 1.0);
+  assertEquals(pricingForOllamaModelKey('glm-5')?.output, 3.2);
+  assertEquals(pricingForOllamaModelKey('glm-5.1')?.input, 1.4);
+  assertEquals(pricingForOllamaModelKey('glm-5.2')?.output, 4.4);
+
+  // MiniMax split: m2 / m2.1 / m2.5 carry cache_read 0.03; m2.7 / m3 carry
+  // cache_read 0.06. Input/output are identical across both branches.
+  assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.input_cache_read, 0.03);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.input_cache_read, 0.03);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.input_cache_read, 0.06);
+  assertEquals(pricingForOllamaModelKey('minimax-m3')?.input_cache_read, 0.06);
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {
