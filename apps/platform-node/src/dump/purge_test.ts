@@ -9,8 +9,8 @@ class RecordingDumpStore implements DumpStore {
   readonly purgedExpired: Array<{ keyId: string; retentionSeconds: number }> = [];
 
   put(_keyId: string, _record: DumpRecord): Promise<void> { return Promise.resolve(); }
-  list(_keyId: string, _opts: DumpListOptions): Promise<DumpMetadata[]> { return Promise.resolve([]); }
-  get(_keyId: string, _id: DumpRecordId): Promise<DumpRecord | null> { return Promise.resolve(null); }
+  list(_keyId: string, _opts: DumpListOptions, _retentionSeconds: number | null): Promise<DumpMetadata[]> { return Promise.resolve([]); }
+  get(_keyId: string, _id: DumpRecordId, _retentionSeconds: number | null): Promise<DumpRecord | null> { return Promise.resolve(null); }
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
     this.purgedExpired.push({ keyId, retentionSeconds });
     return Promise.resolve();

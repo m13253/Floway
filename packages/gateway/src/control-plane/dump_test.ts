@@ -14,15 +14,20 @@ const makeStubStore = () => {
       arr.unshift(record);
       records.set(keyId, arr);
     },
-    async list(keyId, opts) {
+    async list(keyId, opts, retentionSeconds) {
       const all = records.get(keyId) ?? [];
+      const cutoff = retentionSeconds === null ? -Infinity : Date.now() - retentionSeconds * 1000;
+      const withinRetention = all.filter(r => r.meta.startedAt >= cutoff);
       const sliced = opts.before
-        ? all.slice(all.findIndex(r => r.meta.id === opts.before) + 1)
-        : all;
+        ? withinRetention.slice(withinRetention.findIndex(r => r.meta.id === opts.before) + 1)
+        : withinRetention;
       return sliced.slice(0, opts.limit).map(r => r.meta);
     },
-    async get(keyId, recordId) {
-      return records.get(keyId)?.find(r => r.meta.id === recordId) ?? null;
+    async get(keyId, recordId, retentionSeconds) {
+      const cutoff = retentionSeconds === null ? -Infinity : Date.now() - retentionSeconds * 1000;
+      const hit = records.get(keyId)?.find(r => r.meta.id === recordId);
+      if (!hit || hit.meta.startedAt < cutoff) return null;
+      return hit;
     },
     async purgeExpired() {},
     async purgeAll() {},
@@ -176,7 +181,7 @@ test('GET /api/dump/keys/:keyId/records limit handling', async () => {
   let observedLimit = -1;
   initDumpStore({
     ...store.store,
-    async list(_keyId: string, opts: DumpListOptions) {
+    async list(_keyId: string, opts: DumpListOptions, _retentionSeconds: number | null) {
       observedLimit = opts.limit;
       return [];
     },

@@ -53,9 +53,9 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     await this.scheduleNextAlarm(retentionSeconds);
   }
 
-  async list(opts: { before?: DumpRecordId; limit: number }): Promise<DumpMetadata[]> {
+  async list(opts: { before?: DumpRecordId; limit: number }, retentionSeconds: number | null): Promise<DumpMetadata[]> {
     const limit = Math.min(Math.max(opts.limit, 1), 200);
-    const cutoff = this.expiryCutoff();
+    const cutoff = this.expiryCutoff(retentionSeconds);
     const rows = opts.before !== undefined
       ? this.sql.exec<{ meta_json: string }>(
           'SELECT meta_json FROM records WHERE id < ? AND created_at >= ? ORDER BY id DESC LIMIT ?',
@@ -71,8 +71,8 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     return rows.map(r => JSON.parse(r.meta_json) as DumpMetadata);
   }
 
-  async getRecord(id: DumpRecordId): Promise<DumpRecord | null> {
-    const cutoff = this.expiryCutoff();
+  async getRecord(id: DumpRecordId, retentionSeconds: number | null): Promise<DumpRecord | null> {
+    const cutoff = this.expiryCutoff(retentionSeconds);
     const row = this.sql
       .exec<{ created_at: number }>('SELECT created_at FROM records WHERE id = ?', id)
       .one();
@@ -180,10 +180,9 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     if (current === null || current > expiresAt) await this.ctx.storage.setAlarm(expiresAt);
   }
 
-  private expiryCutoff(): number {
-    const retention = Number(this.readState('retentionSeconds') ?? '0');
-    if (retention <= 0) return -Infinity;
-    return Date.now() - retention * 1000;
+  private expiryCutoff(retentionSeconds: number | null): number {
+    if (retentionSeconds === null || retentionSeconds <= 0) return -Infinity;
+    return Date.now() - retentionSeconds * 1000;
   }
 
   private readState(k: string): string | null {

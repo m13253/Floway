@@ -81,7 +81,7 @@ test('put/get round-trips a streaming-response record verbatim', () => withStore
     },
   });
   await store.put('key1', rec);
-  assertEquals(await store.get('key1', rec.meta.id), rec);
+  assertEquals(await store.get('key1', rec.meta.id, null), rec);
 }));
 
 test('put/get round-trips a bytes-response record verbatim', () => withStore(async store => {
@@ -100,7 +100,7 @@ test('put/get round-trips a bytes-response record verbatim', () => withStore(asy
     },
   });
   await store.put('key1', rec);
-  const round = await store.get('key1', rec.meta.id);
+  const round = await store.get('key1', rec.meta.id, null);
   assertEquals(round, rec);
   // Header order and duplicates must be preserved.
   assertEquals(round!.response.headers, rec.response.headers);
@@ -117,11 +117,11 @@ test('put/get round-trips a none-response record verbatim', () => withStore(asyn
     },
   });
   await store.put('key1', rec);
-  assertEquals(await store.get('key1', rec.meta.id), rec);
+  assertEquals(await store.get('key1', rec.meta.id, null), rec);
 }));
 
 test('get returns null for an unknown record id', () => withStore(async store => {
-  assertEquals(await store.get('key1', '01HXMISSING00000000000'), null);
+  assertEquals(await store.get('key1', '01HXMISSING00000000000', null), null);
 }));
 
 test('list returns newest-first and respects limit', () => withStore(async store => {
@@ -133,10 +133,10 @@ test('list returns newest-first and respects limit', () => withStore(async store
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const all = await store.list('key1', { limit: 10 });
+  const all = await store.list('key1', { limit: 10 }, null);
   assertEquals(all.map(m => m.id), [...ids].reverse());
 
-  const capped = await store.list('key1', { limit: 2 });
+  const capped = await store.list('key1', { limit: 2 }, null);
   assertEquals(capped.map(m => m.id), [ids[2], ids[1]]);
 }));
 
@@ -149,7 +149,7 @@ test('list before is strictly exclusive', () => withStore(async store => {
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const page = await store.list('key1', { before: ids[2], limit: 10 });
+  const page = await store.list('key1', { before: ids[2], limit: 10 }, null);
   assertEquals(page.map(m => m.id), [ids[1], ids[0]]);
 }));
 
@@ -162,8 +162,66 @@ test('list caps the page size at 200', () => withStore(async store => {
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const page = await store.list('key1', { limit: 1000 });
+  const page = await store.list('key1', { limit: 1000 }, null);
   assertEquals(page.length, 200);
+}));
+
+test('list lazy-filters records older than the caller retention before any sweep has run', () => withStore(async store => {
+  const now = Date.now();
+  // Lower-lex id for the older record so list's newest-first ordering by id
+  // matches the temporal order; otherwise the unfiltered assertion below
+  // would assert on the wrong sequence.
+  const stale = recordWith({
+    id: '01HXLAZYA00OLD0000000A',
+    startedAt: now - 7200_000,
+    response: { status: 200, headers: [], type: 'none' },
+  });
+  const fresh = recordWith({
+    id: '01HXLAZYZ00NEW0000000Z',
+    startedAt: now - 100,
+    response: { status: 200, headers: [], type: 'none' },
+  });
+  await store.put('key1', stale);
+  await store.put('key1', fresh);
+
+  // 1h retention hides the 2h-old record without us calling purgeExpired.
+  const filtered = await store.list('key1', { limit: 10 }, 3600);
+  assertEquals(filtered.map(m => m.id), [fresh.meta.id]);
+
+  // Same rows, no filter (null retention) — both come back, newest id first.
+  const unfiltered = await store.list('key1', { limit: 10 }, null);
+  assertEquals(unfiltered.map(m => m.id), [fresh.meta.id, stale.meta.id]);
+}));
+
+test('get lazy-filters an expired record before any sweep has run', () => withStore(async store => {
+  const now = Date.now();
+  const stale = recordWith({
+    id: '01HXLAZYGET00000000000',
+    startedAt: now - 7200_000,
+    response: { status: 200, headers: [], type: 'none' },
+  });
+  await store.put('key1', stale);
+
+  assertEquals(await store.get('key1', stale.meta.id, 3600), null);
+  // Without a retention filter the same row is returned.
+  assert((await store.get('key1', stale.meta.id, null)) !== null);
+}));
+
+test('list reflects a raised retention immediately (records within the new window become visible again)', () => withStore(async store => {
+  const now = Date.now();
+  const tenMinutesOld = recordWith({
+    id: '01HXRAISE000000000000A',
+    startedAt: now - 600_000,
+    response: { status: 200, headers: [], type: 'none' },
+  });
+  await store.put('key1', tenMinutesOld);
+
+  // Under a 5-minute retention the 10-minute-old record is hidden,
+  assertEquals(await store.list('key1', { limit: 10 }, 300), []);
+  // but a raised retention exposes it on the very next read — no put or
+  // sweep required in between.
+  const raised = await store.list('key1', { limit: 10 }, 86_400);
+  assertEquals(raised.map(m => m.id), [tenMinutesOld.meta.id]);
 }));
 
 test('purgeExpired removes records older than now - retentionSeconds*1000 and keeps fresher ones', () => withStore(async store => {
@@ -186,10 +244,10 @@ test('purgeExpired removes records older than now - retentionSeconds*1000 and ke
 
   await store.purgeExpired('key1', retentionSeconds);
 
-  assertEquals(await store.get('key1', old.meta.id), null);
-  assert((await store.get('key1', fresh.meta.id)) !== null);
+  assertEquals(await store.get('key1', old.meta.id, null), null);
+  assert((await store.get('key1', fresh.meta.id, null)) !== null);
 
-  const remaining = await store.list('key1', { limit: 10 });
+  const remaining = await store.list('key1', { limit: 10 }, null);
   assertEquals(remaining.map(m => m.id), [fresh.meta.id]);
 }));
 
@@ -208,7 +266,7 @@ test('purgeExpired keeps a record whose timestamp equals the cutoff (strict less
 
   await store.purgeExpired('key1', 1);
 
-  assert((await store.get('key1', rec.meta.id)) !== null);
+  assert((await store.get('key1', rec.meta.id, null)) !== null);
 }));
 
 test('purgeAll removes every row and every file for the key', () => withStore(async store => {
@@ -227,9 +285,9 @@ test('purgeAll removes every row and every file for the key', () => withStore(as
 
   await store.purgeAll('key1');
 
-  assertEquals(await store.list('key1', { limit: 10 }), []);
+  assertEquals(await store.list('key1', { limit: 10 }, null), []);
   // Other keys are untouched.
-  const other = await store.list('key2', { limit: 10 });
+  const other = await store.list('key2', { limit: 10 }, null);
   assertEquals(other.length, 1);
-  assert((await store.get('key2', '01HXKEEP00000000000000')) !== null);
+  assert((await store.get('key2', '01HXKEEP00000000000000', null)) !== null);
 }));

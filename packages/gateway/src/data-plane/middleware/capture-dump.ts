@@ -14,11 +14,9 @@ import { parseGeminiStream } from '@floway-dev/protocols/gemini';
 
 // We intentionally do NOT redact `authorization`, `x-api-key`, `cookie`, or
 // any other header. The api-key value is already in our own database; the
-// dump exposes no secret the operator does not already control. See the
-// "No header redaction" non-goal in
-// docs/specs/2026-06-19-request-dump-design.md. Do not "fix" this by
-// adding redaction — the dashboard already restricts dump reads to the
-// owning operator.
+// dump exposes no secret the operator does not already control. The
+// dashboard restricts dump reads to the owning operator, so verbatim
+// capture stays scoped to that operator's own surface area.
 const headerPairs = (h: Headers): Array<[string, string]> => {
   const out: Array<[string, string]> = [];
   h.forEach((v, k) => out.push([k, v]));
@@ -188,7 +186,6 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   const reqEncoded = encodeBody(requestBodyBytes, reqContentType);
   const path = c.req.path + new URL(c.req.url).search;
   const method = c.req.method;
-  const reqPath = c.req.path;
 
   // Defer reading dumpAccounting until the capture pipeline settles — the
   // streaming respond paths set it inside their stream-end `finally`, which
@@ -215,7 +212,7 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
       },
       request: {
         method,
-        path: reqPath,
+        path,
         headers: annotateBase64ContentType(requestHeaders, reqEncoded.base64),
         body: reqEncoded.body,
       },

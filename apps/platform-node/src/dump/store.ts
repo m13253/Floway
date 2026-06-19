@@ -40,21 +40,41 @@ export class NodeDumpStore implements DumpStore {
       .run();
   }
 
-  async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
+  async list(keyId: string, opts: DumpListOptions, retentionSeconds: number | null): Promise<DumpMetadata[]> {
     const limit = Math.min(opts.limit, MAX_LIST_LIMIT);
+    const threshold = retentionSeconds === null ? null : Date.now() - retentionSeconds * 1000;
     const rows = opts.before === undefined
-      ? await this.db
-          .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY id DESC LIMIT ?')
-          .bind(keyId, limit)
-          .all<{ meta_json: string }>()
-      : await this.db
-          .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
-          .bind(keyId, opts.before, limit)
-          .all<{ meta_json: string }>();
+      ? threshold === null
+        ? await this.db
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY id DESC LIMIT ?')
+            .bind(keyId, limit)
+            .all<{ meta_json: string }>()
+        : await this.db
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND created_at >= ? ORDER BY id DESC LIMIT ?')
+            .bind(keyId, threshold, limit)
+            .all<{ meta_json: string }>()
+      : threshold === null
+        ? await this.db
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
+            .bind(keyId, opts.before, limit)
+            .all<{ meta_json: string }>()
+        : await this.db
+            .prepare('SELECT meta_json FROM dump_records WHERE key_id = ? AND id < ? AND created_at >= ? ORDER BY id DESC LIMIT ?')
+            .bind(keyId, opts.before, threshold, limit)
+            .all<{ meta_json: string }>();
     return rows.results.map(r => JSON.parse(r.meta_json) as DumpMetadata);
   }
 
-  async get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null> {
+  async get(keyId: string, recordId: DumpRecordId, retentionSeconds: number | null): Promise<DumpRecord | null> {
+    if (retentionSeconds !== null) {
+      const threshold = Date.now() - retentionSeconds * 1000;
+      const row = await this.db
+        .prepare('SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?')
+        .bind(keyId, recordId)
+        .all<{ created_at: number }>();
+      const first = row.results[0];
+      if (!first || first.created_at < threshold) return null;
+    }
     const bytes = await this.files.get(fileKey(keyId, recordId));
     if (bytes === null) return null;
     return JSON.parse(decoder.decode(bytes)) as DumpRecord;
