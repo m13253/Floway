@@ -239,6 +239,16 @@ const validateProxyFallbackReferences = (
   return null;
 };
 
+const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
+
+const parseImportedDumpRetention = (value: unknown): number | null => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > DUMP_RETENTION_MAX_SECONDS) {
+    throw new Error(`dumpRetentionSeconds must be null or a positive integer up to ${DUMP_RETENTION_MAX_SECONDS}`);
+  }
+  return value;
+};
+
 const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
@@ -265,7 +275,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
         deletedAt: record.deletedAt,
-        dumpRetentionSeconds: null,
+        dumpRetentionSeconds: parseImportedDumpRetention(record.dumpRetentionSeconds),
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };

@@ -93,7 +93,14 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     return JSON.parse(new TextDecoder().decode(await object.arrayBuffer())) as DumpRecord;
   }
 
-  async purgeExpired(retentionSeconds: number): Promise<void> {
+  async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
+    // Seed keyId into the state table before delegating to purgeOlderThan,
+    // which reads it back to address R2 blobs. The control plane calls
+    // purgeExpired on every null→positive retention PATCH, including the
+    // first one on a brand-new key whose DO has never seen a put. Without
+    // this seed, purgeOlderThan's "state was wiped" tripwire would fire on
+    // that legitimate path.
+    this.writeStateOnce('keyId', keyId, () => this.lastWrittenKeyId, v => { this.lastWrittenKeyId = v; });
     this.writeStateOnce('retentionSeconds', String(retentionSeconds), () => this.lastWrittenRetention, v => { this.lastWrittenRetention = v; });
     await this.purgeOlderThan(Date.now() - retentionSeconds * 1000);
     await this.scheduleNextAlarm(retentionSeconds);

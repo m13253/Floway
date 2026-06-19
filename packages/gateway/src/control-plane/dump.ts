@@ -64,26 +64,34 @@ export const dump = new Hono()
     }
 
     return streamSSE(c, async stream => {
-      await stream.writeSSE({ event: 'snapshot', data: JSON.stringify(snapshot) });
-      while (buffered.length > 0) {
-        const meta = buffered.shift()!;
-        await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
-      }
-      // Hand the broker pump its real sink. Reassigning `sink` between the
-      // drain and `await pump` is atomic across this synchronous gap: V8
-      // cannot interleave a broker push here because the pump's `await sink`
-      // can only resume on a later microtask, by which time the live sink is
-      // in place. The pump awaits each sink call, so writeSSE keeps ordering
-      // and backpressure intact.
-      sink = meta => stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
-      await pump;
-      // A broker failure (the iterator threw, not just signal-aborted) emits
-      // one final `event: error` SSE frame so the dashboard sees a reason
-      // instead of an opaque disconnect; the SSE close that follows then
-      // stops the autoreconnect loop with context.
-      if (brokerError !== null) {
-        const message = brokerError instanceof Error ? brokerError.message : String(brokerError);
-        await stream.writeSSE({ event: 'error', data: message });
+      try {
+        await stream.writeSSE({ event: 'snapshot', data: JSON.stringify(snapshot) });
+        while (buffered.length > 0) {
+          const meta = buffered.shift()!;
+          await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
+        }
+        // Hand the broker pump its real sink. Reassigning `sink` between the
+        // drain and `await pump` is atomic across this synchronous gap: V8
+        // cannot interleave a broker push here because the pump's `await sink`
+        // can only resume on a later microtask, by which time the live sink is
+        // in place. The pump awaits each sink call, so writeSSE keeps ordering
+        // and backpressure intact.
+        sink = meta => stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
+        await pump;
+        // A broker failure (the iterator threw, not just signal-aborted) emits
+        // one final `event: error` SSE frame so the dashboard sees a reason
+        // instead of an opaque disconnect; the SSE close that follows then
+        // stops the autoreconnect loop with context.
+        if (brokerError !== null) {
+          const message = brokerError instanceof Error ? brokerError.message : String(brokerError);
+          await stream.writeSSE({ event: 'error', data: message });
+        }
+      } finally {
+        // The listener was added with `{ once: true }`, but on broker-error /
+        // clean-close paths the abort never fires and the listener would
+        // otherwise sit on the request's signal until GC. Drop it explicitly
+        // to mirror the CF broker subscription's finally hygiene.
+        c.req.raw.signal.removeEventListener('abort', onRequestAbort);
       }
     });
   })

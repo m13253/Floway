@@ -76,7 +76,18 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
       records.value = [meta, ...records.value];
     });
 
-    es.addEventListener('error', () => {
+    es.addEventListener('error', ev => {
+      // Per WHATWG SSE, a server-sent `event: error` frame dispatches to this
+      // listener as a MessageEvent with `.data` set and readyState still OPEN,
+      // while transport-level failures dispatch with empty data and may close
+      // the connection. Surface the server's message verbatim when present so
+      // the dashboard sees the broker error instead of the generic disconnect.
+      const data = (ev as MessageEvent).data;
+      if (typeof data === 'string' && data.length > 0) {
+        error.value = data;
+        loading.value = false;
+        return;
+      }
       // EventSource autoreconnects; surface the disconnect once so the UI
       // can show "reconnecting…" without flickering on every retry.
       if (es.readyState === EventSource.CLOSED) {

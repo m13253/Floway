@@ -203,9 +203,11 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   const path = queryIdx >= 0 ? c.req.path + c.req.url.slice(queryIdx) : c.req.path;
   const method = c.req.method;
 
-  // Defer reading dumpAccounting until the capture pipeline settles — the
-  // streaming respond paths set it inside their stream-end `finally`, which
-  // fires after the upstream stream has been fully consumed by `forCapture`.
+  // The streaming respond paths set `dumpAccounting` inside their stream-end
+  // `finally`, which runs before the response body stream closes; that close
+  // is what lets `forCapture` see `done` and resolve `capturedBodyPromise`.
+  // Awaiting the capture promise here therefore guarantees `dumpAccounting`
+  // is already written by the time we read it below.
   const finalize = async (): Promise<void> => {
     const requestBodyBytes = await capturedRequestBytesPromise;
     const reqEncoded = encodeBody(requestBodyBytes, reqContentType);

@@ -94,9 +94,7 @@ export class NodeDumpStore implements DumpStore {
       .prepare('SELECT id FROM dump_records WHERE key_id = ? AND created_at < ?')
       .bind(keyId, threshold)
       .all<{ id: string }>();
-    for (const row of expired.results) {
-      await this.files.delete(fileKey(keyId, row.id));
-    }
+    await Promise.all(expired.results.map(r => this.files.delete(fileKey(keyId, r.id))));
     await this.db
       .prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?')
       .bind(keyId, threshold)

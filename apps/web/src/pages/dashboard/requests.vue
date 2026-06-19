@@ -31,6 +31,16 @@ const dumpKeys = computed(() => keys.value.filter(k => k.dump_retention_seconds 
 const selectedKeyId = ref<string | null>(dumpKeys.value[0]?.id ?? null);
 const selectedKeyIdReactive = computed(() => selectedKeyId.value ?? '');
 
+// Focus refetch (or another tab toggling dump retention off on the selected
+// key) can shrink `dumpKeys` out from under the selection. Reconcile to the
+// first remaining dump-enabled key — `useDumpSubscription`'s keyId watcher
+// then tears down the now-stale stream.
+watch(dumpKeys, list => {
+  if (selectedKeyId.value !== null && !list.some(k => k.id === selectedKeyId.value)) {
+    selectedKeyId.value = list[0]?.id ?? null;
+  }
+});
+
 const selectedId = useHashRef();
 watch(selectedKeyId, () => { selectedId.value = null; });
 

@@ -17,6 +17,7 @@ interface FakeEventSource {
   addEventListener: (type: string, fn: (ev: MessageEvent) => void) => void;
   close: () => void;
   dispatch: (event: string, data: unknown) => void;
+  dispatchError: (data?: string) => void;
 }
 
 const created: FakeEventSource[] = [];
@@ -43,6 +44,13 @@ const installEventSource = () => {
     dispatch(event: string, data: unknown): void {
       const list = this.listeners.get(event) ?? [];
       const ev = { data: JSON.stringify(data) } as MessageEvent;
+      for (const fn of list) fn(ev);
+    }
+    // Server-sent `event: error` SSE frame: data is the raw broker message
+    // (already a string on the wire) and readyState stays OPEN.
+    dispatchError(data?: string): void {
+      const list = this.listeners.get('error') ?? [];
+      const ev = { data: data ?? '' } as MessageEvent;
       for (const fn of list) fn(ev);
     }
   }
@@ -164,4 +172,32 @@ test('appended after reconnect prepends and dedupes against preserved older rows
   // Re-dispatch of an already-seen row is dropped (preserved row stays unique).
   es.dispatch('appended', meta('01HXAPND0000000000008X', 800));
   expect(sub.records.value).toHaveLength(3);
+});
+
+test('a server-sent error frame surfaces the broker message verbatim in error.value', async () => {
+  const sub = run(() => useDumpSubscription(ref('key1')));
+  await nextTick();
+  const es = created[0]!;
+  es.dispatch('snapshot', [meta('01HXERR00000000000001A', 100)]);
+  expect(sub.loading.value).toBe(false);
+
+  // Broker failure path: gateway writes `event: error` with the error message
+  // as `data`. readyState stays OPEN (no transport close yet) — the test
+  // mirrors that, so the only signal the listener can use is the .data string.
+  es.dispatchError('subscribe failed: socket reset');
+  expect(sub.error.value).toBe('subscribe failed: socket reset');
+  expect(sub.loading.value).toBe(false);
+});
+
+test('a transport error with no data falls back to the generic disconnect message when readyState is CLOSED', async () => {
+  const sub = run(() => useDumpSubscription(ref('key1')));
+  await nextTick();
+  const es = created[0]!;
+  es.dispatch('snapshot', [meta('01HXERR00000000000002B', 200)]);
+
+  // Native EventSource transport-error path: empty data, connection closed.
+  es.close();
+  es.dispatchError();
+  expect(sub.error.value).toBe('Stream disconnected');
+  expect(sub.loading.value).toBe(false);
 });
