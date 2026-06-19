@@ -58,7 +58,7 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
 
     <div v-if="!editMode">
       <div class="mb-2 flex items-baseline justify-between gap-3">
-        <p class="text-xs font-medium text-gray-500">Preview Catalog</p>
+        <p class="text-xs font-medium text-gray-500">Fetch <code class="font-mono">/api/tags</code></p>
         <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
       </div>
       <Button
@@ -67,11 +67,8 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
         :loading="fetchLoading"
         :disabled="fetchLoading"
         @click="emit('fetch-models')"
-      >Fetch /api/tags</Button>
+      >Fetch</Button>
       <p v-if="fetchError" class="mt-1.5 text-[11px] text-accent-rose">{{ fetchError }}</p>
-      <p v-else class="mt-1.5 text-[11px] text-gray-600">
-        Calls the upstream's <code class="font-mono">/api/tags</code> then <code class="font-mono">/api/show</code> for each model to populate the auto rows on the right.
-      </p>
     </div>
   </div>
 </template>
