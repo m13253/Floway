@@ -400,6 +400,12 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  packages/provider-ollama:
+    dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+
   packages/proxy:
     dependencies:
       '@floway-dev/http':
