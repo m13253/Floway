@@ -290,7 +290,6 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
 
 test('export emits the v6 envelope with users and upstreams', async () => {
   const { app, repo } = setup();
-  // Seed the admin user 1 — exports always carry the users table.
   await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);
@@ -852,7 +851,6 @@ test('v6 export/import round-trips users and per-key user_id', async () => {
   assertEquals(exportResult.version, 6);
   assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
 
-  // Wipe and round-trip.
   const result = await doImport(app, 'replace', exportResult.data, 6);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported.users, 2);
@@ -1004,7 +1002,6 @@ test('v6 replace import refuses payload missing user 1', async () => {
 
 test('a full v6 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
-  // Seed one of every collection the export emits.
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
   await repo.apiKeys.save(KEY_A);
