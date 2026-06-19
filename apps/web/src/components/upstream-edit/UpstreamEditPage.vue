@@ -363,6 +363,14 @@ const onClaudeCodeImported = async (newRecord: UpstreamRecord) => {
   await router.replace(`/dashboard/upstreams/${newRecord.id}`);
 };
 
+// Quota refresh is data-only: the gateway persisted the new
+// `usageProbeSnapshot` slot and the panel handed us a locally-merged record.
+// Land it on `liveRecord` so AccountCard re-renders, but do not emit `saved`
+// or navigate — neither the route nor the store list view changes.
+const onClaudeCodeQuotaRefreshed = (newRecord: UpstreamRecord) => {
+  liveRecord.value = newRecord;
+};
+
 const onClaudeCodeError = (message: string) => {
   saveError.value = message;
 };
@@ -502,7 +510,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         :mode="mode"
-        :record="record"
+        :record="liveRecord"
         :flags="flags"
         :colo-aware="coloAware"
         :current-colo="currentColo"
@@ -523,6 +531,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         @codex-imported="onCodexImported"
         @codex-error="onCodexError"
         @claude-code-imported="onClaudeCodeImported"
+        @claude-code-quota-refreshed="onClaudeCodeQuotaRefreshed"
         @claude-code-error="onClaudeCodeError"
       />
       <ModelsPanel

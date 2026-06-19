@@ -23,6 +23,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   imported: [record: UpstreamRecord];
+  // Quota refresh updates a single in-place slot (`usageProbeSnapshot`) on
+  // the existing record. A distinct event from `imported` because the
+  // parent's `imported` handler navigates / re-keys the loader, which is
+  // the wrong response for a non-mutating data refresh.
+  'quota-refreshed': [record: UpstreamRecord];
   error: [message: string];
 }>();
 
@@ -38,6 +43,7 @@ const draft = ref<{
 );
 const submitting = ref(false);
 const refreshing = ref(false);
+const probing = ref(false);
 const reimportOpen = ref(false);
 
 const pkce = ref<ClaudeCodePkceStartResult | null>(null);
@@ -174,12 +180,52 @@ const refreshTokenNow = async () => {
   if (error) { emit('error', error.message); return; }
   emit('imported', data);
 };
+
+// The probe-quota route returns the live `/api/oauth/usage` body spread at
+// the top level alongside a gateway-stamped `fetched_at`. The gateway also
+// persists into `state.accounts[0].usageProbeSnapshot`, but we don't have a
+// per-record GET endpoint to re-read — and re-running the upstreams list
+// for a single non-mutating snapshot would be wasteful. Mirror the persisted
+// shape locally from the response so the card re-renders against the same
+// data the next list-load would yield.
+interface ProbeResponse {
+  fetched_at: string;
+  // Anthropic adds fields without warning; we round-trip the rest of the
+  // body into the dashboard's `data: unknown` slot exactly as the gateway
+  // persists it.
+  [k: string]: unknown;
+}
+
+const refreshQuotaNow = async () => {
+  if (!props.record) throw new Error('refreshQuotaNow requires a saved record');
+  const record = props.record;
+  // The gateway route mints an access token via ensureClaudeCodeAccessToken,
+  // which throws when state has no account credentials. Refuse here so the
+  // UI doesn't fire a doomed request when the button surface bypasses the
+  // AccountCard's missing-state warning.
+  if (!record.state || record.state.accounts.length === 0) {
+    emit('error', 'Quota probe requires a Claude Code credential — re-import to populate state.');
+    return;
+  }
+  probing.value = true;
+  const { data, error } = await callApi<ProbeResponse>(
+    () => api.api.upstreams[':id']['probe-quota'].$post({ param: { id: record.id } }),
+  );
+  probing.value = false;
+  if (error) { emit('error', error.message); return; }
+
+  const { fetched_at: fetchedAtIso, ...body } = data;
+  const fetchedAtMs = Date.parse(fetchedAtIso);
+  const nextAccounts = record.state.accounts.map((acc, idx) => idx === 0 ? { ...acc, usageProbeSnapshot: { fetchedAt: fetchedAtMs, data: body } } : acc);
+  const next: UpstreamRecord = { ...record, state: { ...record.state, accounts: nextAccounts } };
+  emit('quota-refreshed', next);
+};
 </script>
 
 <template>
   <div class="space-y-4">
     <template v-if="mode === 'edit' && record">
-      <ClaudeCodeAccountCard :record="record" />
+      <ClaudeCodeAccountCard :record="record" :probing="probing" @refresh-quota="refreshQuotaNow" />
       <div class="flex flex-wrap items-center gap-2">
         <Button v-if="refreshable" :loading="refreshing" @click="refreshTokenNow">
           <Spinner v-if="refreshing" class="size-3.5" />

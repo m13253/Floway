@@ -52,6 +52,7 @@ defineEmits<{
   'codex-imported': [upstream: UpstreamRecord];
   'codex-error': [message: string];
   'claude-code-imported': [upstream: UpstreamRecord];
+  'claude-code-quota-refreshed': [upstream: UpstreamRecord];
   'claude-code-error': [message: string];
 }>();
 
@@ -197,6 +198,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :record="claudeCodeRecord"
           :proxy-fallback-list="proxyFallbackList"
           @imported="u => $emit('claude-code-imported', u)"
+          @quota-refreshed="u => $emit('claude-code-quota-refreshed', u)"
           @error="m => $emit('claude-code-error', m)"
         />
       </section>

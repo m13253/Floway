@@ -179,6 +179,17 @@ export interface ClaudeCodeQuotaSnapshotEntry {
   data: ClaudeCodeQuotaSnapshotData;
 }
 
+// Live `/api/oauth/usage` probe response cached on the credential. Distinct
+// slot from `quotaSnapshot` because the wire shape is owned by Anthropic and
+// evolves on their schedule — `data` is `unknown` so a new field never
+// blocks dashboard parse. The dashboard walks the known three windows
+// (`five_hour`, `seven_day`, `seven_day_sonnet`) and renders anything else
+// raw under a debug disclosure.
+export interface ClaudeCodeUsageProbeSnapshotEntry {
+  fetchedAt: number;
+  data: unknown;
+}
+
 export interface ClaudeCodeAccountCredentialSummary {
   accountUuid: string;
   // `oauth` is the full Claude Code sign-in (rotating refresh token).
@@ -192,6 +203,7 @@ export interface ClaudeCodeAccountCredentialSummary {
   refreshTokenSet: boolean;
   accessToken: ClaudeCodeAccessTokenSummary | null;
   quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
+  usageProbeSnapshot: ClaudeCodeUsageProbeSnapshotEntry | null;
 }
 
 export interface ClaudeCodeUpstreamState {
