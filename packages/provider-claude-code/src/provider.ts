@@ -31,10 +31,9 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
 
     getPricingForModelKey: pricingForClaudeCodeModelKey,
 
-    callMessages: async (model, body, signal, headers, _anthropicBeta, opts) => {
+    callMessages: async (model, body, signal, _headers, _anthropicBeta, opts) => {
       const ctx: ClaudeCodeMessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...headers },
         model,
         upstreamId: record.id,
       };
@@ -70,7 +69,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
           upstreamId: record.id,
           model,
           body: wireBody,
-          headers: ctx.headers,
           shaped: looksShaped,
           signal,
           call: opts,

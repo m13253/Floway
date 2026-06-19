@@ -9,7 +9,6 @@ import type { UpstreamModel } from '@floway-dev/provider';
 // not on per-call randomness).
 export interface ClaudeCodeMessagesBoundaryCtx {
   payload: MessagesPayload;
-  headers: Record<string, string>;
   readonly model: UpstreamModel;
   readonly upstreamId: string;
 }

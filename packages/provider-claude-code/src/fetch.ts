@@ -34,17 +34,52 @@ export interface CallClaudeCodeMessagesOptions {
   upstreamId: string;
   model: UpstreamModel;
   body: Omit<MessagesPayload, 'model'>;
-  headers: Record<string, string>;
   // `shaped: true` means the inbound request already looks like real CC
-  // traffic (operator's CC client sent through verbatim); preserve the
-  // caller's header surface and only swap Authorization. `shaped: false`
-  // means the gateway's re-mimicry chain has already rebuilt the payload's
-  // system blocks / metadata / model id — replace headers with the pinned
-  // CC set so the wire shape matches end-to-end.
+  // traffic (operator's CC client sent through verbatim). The wire header
+  // surface is rebuilt from `opts.call.clientRequestHeaders` through a tight
+  // whitelist that matches sub2api's `allowedHeaders`
+  // (gateway_service.go:422-444), preserving the operator's genuine
+  // X-Stainless-* / anthropic-beta / x-claude-code-session-id fingerprint
+  // end-to-end. Only Authorization is swapped for our cached OAuth token.
+  // `shaped: false` means the gateway's re-mimicry chain rebuilt the
+  // payload's system blocks / metadata / model id — replace headers with
+  // the pinned CC set so the wire shape matches end-to-end.
   shaped: boolean;
   signal?: AbortSignal;
   call: UpstreamCallOptions;
 }
+
+// Sub2api's `allowedHeaders` allowlist verbatim
+// (gateway_service.go:422-444). On the shaped passthrough path we only
+// forward inbound headers whose lowercased name appears here; everything
+// else (e.g. ad-hoc debug headers, `host`, `cookie`) is dropped before
+// hitting Anthropic. `authorization` is intentionally excluded — we set
+// our own from the cached OAuth token. `content-type` is forwarded when
+// the inbound carries one; the call site defaults it to
+// `application/json` otherwise.
+const SHAPED_PASSTHROUGH_HEADER_ALLOWLIST = new Set<string>([
+  'accept',
+  'x-stainless-retry-count',
+  'x-stainless-timeout',
+  'x-stainless-lang',
+  'x-stainless-package-version',
+  'x-stainless-os',
+  'x-stainless-arch',
+  'x-stainless-runtime',
+  'x-stainless-runtime-version',
+  'x-stainless-helper-method',
+  'anthropic-dangerous-direct-browser-access',
+  'anthropic-version',
+  'x-app',
+  'anthropic-beta',
+  'accept-language',
+  'sec-fetch-mode',
+  'user-agent',
+  'content-type',
+  'accept-encoding',
+  'x-claude-code-session-id',
+  'x-client-request-id',
+]);
 
 const syntheticResponse = (status: number, body: unknown, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
@@ -225,12 +260,25 @@ const performUpstreamCall = async (
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
-    // Drop any inbound authorization before setting ours.
-    // `clientRequestHeaders` is typed lowercase-only (`UpstreamCallOptions`
-    // JSDoc + `headersToRecord` guarantee), so a single lowercase delete is
-    // sufficient.
-    const passthrough: Record<string, string> = { ...opts.headers };
-    delete passthrough.authorization;
+    // Shaped path: forward the operator's inbound CC fingerprint through a
+    // tight whitelist (see SHAPED_PASSTHROUGH_HEADER_ALLOWLIST). The shaped
+    // detector guarantees `clientRequestHeaders` is set
+    // (`provider.ts:54-55` requires it before `looksShaped` can be true),
+    // so an undefined here is a programmer error worth surfacing.
+    if (!opts.call.clientRequestHeaders) {
+      throw new Error('Claude Code shaped path requires opts.call.clientRequestHeaders');
+    }
+    const inbound = new Headers(opts.call.clientRequestHeaders);
+    const passthrough: Record<string, string> = {};
+    for (const [name, value] of inbound.entries()) {
+      // `Headers` iterator lowercases names per the Fetch spec, so the
+      // allowlist (also lowercase) matches directly without re-lowering.
+      if (SHAPED_PASSTHROUGH_HEADER_ALLOWLIST.has(name)) passthrough[name] = value;
+    }
+    // Sub2api always sets Content-Type when the inbound omits it
+    // (`gateway_service.go` request-forwarding path), so the upstream
+    // never receives a body-bearing request without a media type.
+    if (!('content-type' in passthrough)) passthrough['content-type'] = 'application/json';
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
     headers = { ...pickClaudeCodeHeaders(upstreamModelId), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };

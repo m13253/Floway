@@ -11,7 +11,6 @@ const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
 
 const invocation = (payload: MessagesPayload): ClaudeCodeMessagesBoundaryCtx => ({
   payload,
-  headers: {},
   model: stubUpstreamModel({ endpoints: { messages: {} } }),
   upstreamId: 'up_test',
 });

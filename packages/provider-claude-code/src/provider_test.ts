@@ -216,6 +216,15 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.system[0].text).toMatch(/^You are Claude Code/);
     // metadata.user_id stays verbatim.
     expect(body.metadata.user_id).toBe(userId);
+    // Whitelisted inbound headers reach the wire so the operator's CC
+    // fingerprint stays end-to-end consistent (sub2api allowedHeaders).
+    const wireHeaders = new Headers(init.headers);
+    expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
+    expect(wireHeaders.get('x-app')).toBe('cli');
+    expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20');
+    expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
+    // Authorization is replaced by the cached OAuth token.
+    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
   });
 
   test('CC UA but missing clientRequestPathname still runs the chain', async () => {

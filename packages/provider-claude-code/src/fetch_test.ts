@@ -140,7 +140,7 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
   test('non-active account → synthetic 503', async () => {
     seedAccount({ state: 'session_terminated', stateMessage: 'revoked' });
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -169,7 +169,7 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
       },
     });
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -180,19 +180,76 @@ describe('callClaudeCodeMessages — pre-fetch gates', () => {
 });
 
 describe('callClaudeCodeMessages — header surface', () => {
-  test('shaped:true preserves caller headers and only swaps Authorization', async () => {
+  test('shaped:true forwards inbound client headers through the whitelist and swaps Authorization', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody,
-      headers: { 'user-agent': 'claude-cli/2.1.181 (external, cli)', 'x-app': 'cli', authorization: 'Bearer client-side-token' },
-      shaped: true, call: noopUpstreamCallOptions,
+      shaped: true,
+      call: {
+        ...noopUpstreamCallOptions,
+        clientRequestHeaders: {
+          'user-agent': 'claude-cli/2.1.181 (external, cli)',
+          'x-app': 'cli',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'oauth-2025-04-20,claude-code-20250219',
+          'x-stainless-package-version': '0.94.0',
+          'x-claude-code-session-id': 'sess-abc',
+          'x-client-request-id': 'req-xyz',
+          // Authorization is dropped by the whitelist; ours replaces it.
+          authorization: 'Bearer client-side-token',
+          // Not on the whitelist; must not reach the wire.
+          'x-leaky-debug': 'should-be-dropped',
+        },
+      },
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
     expect(wireHeaders.get('user-agent')).toBe('claude-cli/2.1.181 (external, cli)');
     expect(wireHeaders.get('x-app')).toBe('cli');
+    expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
+    expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20,claude-code-20250219');
+    expect(wireHeaders.get('x-stainless-package-version')).toBe('0.94.0');
+    expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
+    expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
+    expect(wireHeaders.get('x-leaky-debug')).toBeNull();
+  });
+
+  test('shaped:true defaults Content-Type to application/json when the inbound omits it', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: { ...noopUpstreamCallOptions, clientRequestHeaders: { 'user-agent': 'claude-cli/2.1.181' } },
+    });
+    const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
+    expect(wireHeaders.get('content-type')).toBe('application/json');
+  });
+
+  test('shaped:true forwards inbound Content-Type verbatim when present', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: {
+        ...noopUpstreamCallOptions,
+        clientRequestHeaders: { 'user-agent': 'claude-cli/2.1.181', 'content-type': 'application/json; charset=utf-8' },
+      },
+    });
+    const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
+    expect(wireHeaders.get('content-type')).toBe('application/json; charset=utf-8');
+  });
+
+  test('shaped:true with no clientRequestHeaders throws (programmer error — detector guarantees it is set)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    await expect(callClaudeCodeMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: noopUpstreamCallOptions,
+    })).rejects.toThrow(/clientRequestHeaders/);
   });
 
   test('shaped:false on sonnet replaces headers with pinned sonnet/opus set', async () => {
@@ -200,7 +257,6 @@ describe('callClaudeCodeMessages — header surface', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody,
-      headers: { 'x-leaky-debug': 'should-be-dropped' },
       shaped: false, call: noopUpstreamCallOptions,
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -208,14 +264,13 @@ describe('callClaudeCodeMessages — header surface', () => {
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
     expect(wireHeaders.get('user-agent')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['User-Agent']);
     expect(wireHeaders.get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta']);
-    expect(wireHeaders.get('x-leaky-debug')).toBeNull();
   });
 
   test('shaped:false on haiku uses the leaner haiku header set', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
-      upstreamId, model: haikuModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: haikuModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     expect(new Headers(init.headers).get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_HAIKU['anthropic-beta']);
@@ -229,7 +284,7 @@ describe('callClaudeCodeMessages — wire body', () => {
     await callClaudeCodeMessages({
       upstreamId, model: sonnetModel,
       body: { ...minimalBody, stream: false },
-      headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      shaped: false, call: noopUpstreamCallOptions,
     });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.stream).toBe(true);
@@ -240,7 +295,7 @@ describe('callClaudeCodeMessages — wire body', () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages?beta=true');
   });
@@ -254,7 +309,7 @@ describe('callClaudeCodeMessages — 401 retry', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
       .mockResolvedValueOnce(sseResponse());
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
     expect(currentState().accounts[0]!.accessToken?.token).toBe('at_new');
@@ -268,7 +323,7 @@ describe('callClaudeCodeMessages — 401 retry', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
@@ -280,7 +335,7 @@ describe('callClaudeCodeMessages — 401 retry', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(401);
@@ -296,7 +351,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
       'anthropic-ratelimit-unified-7d-utilization': '0.5',
     }));
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(true);
     await flushAsyncQueue();
@@ -315,7 +370,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
       'retry-after': '60',
     }));
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: noopUpstreamCallOptions,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.response.status).toBe(429);
@@ -339,7 +394,7 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
     const call = { ...noopUpstreamCallOptions, waitUntil } as typeof noopUpstreamCallOptions;
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
     expect(result.ok).toBe(true);
     expect(waitUntil).toHaveBeenCalledTimes(1);
@@ -369,7 +424,7 @@ describe('callClaudeCodeMessages — recorder contract', () => {
     seedAccount({ state: 'refresh_failed', stateMessage: 'gone' });
     const recorder = enforcingRecorder();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
     });
     expect(result.ok).toBe(false);
     expect(recorder.invocations()).toBe(1);
@@ -380,7 +435,7 @@ describe('callClaudeCodeMessages — recorder contract', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const recorder = enforcingRecorder();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
     });
     expect(result.ok).toBe(true);
     expect(recorder.invocations()).toBe(1);
@@ -394,7 +449,7 @@ describe('callClaudeCodeMessages — recorder contract', () => {
       .mockResolvedValueOnce(sseResponse());
     const recorder = enforcingRecorder();
     const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, headers: {}, shaped: false, call: recorder.options,
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
     });
     expect(result.ok).toBe(true);
     expect(recorder.invocations()).toBe(2);
