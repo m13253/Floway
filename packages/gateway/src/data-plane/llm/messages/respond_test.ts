@@ -4,11 +4,13 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { FakeTime } from '../../../test-time.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { UPSTREAM_IDLE_TIMEOUT_MS } from '../shared/stream/sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamEvent);
 
@@ -442,4 +444,70 @@ test('respondMessages records the last observed message_delta usage when the cli
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].tokens, { input: 20, output: 17 });
+});
+
+// --- upstream idle timeout ---
+
+test('respondMessages aborts the upstream and surfaces an error frame when the SSE stream stalls', async () => {
+  const time = new FakeTime();
+  try {
+    initRepo(new InMemoryRepo());
+    const controlled = controlledMessagesEvents();
+    const downstreamAbortController = new AbortController();
+    const app = new Hono();
+    app.get('/', c => {
+      const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
+        controlled.events,
+        testTelemetryModelIdentity,
+        undefined,
+        undefined,
+        new Headers({ 'content-type': 'text/event-stream' }),
+      );
+      const ctx: GatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
+      return respondMessages(c, result, true, ctx).then(({ response }) => response);
+    });
+    const response = await app.request('/');
+    const reader = response.body!.getReader();
+
+    // First frame lands normally, so the stream is fully open.
+    await controlled.emit({
+      type: 'message_start',
+      message: {
+        id: 'msg_idle', type: 'message', role: 'assistant', content: [], model: 'claude-test',
+        stop_reason: null, stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 0 },
+      },
+    });
+    const firstRead = await reader.read();
+    assert(!firstRead.done);
+    const firstChunk = new TextDecoder().decode(firstRead.value);
+    assertStringIncludes(firstChunk, 'event: message_start');
+
+    // Upstream goes silent. The downstream keepalive emits pings every 15s
+    // while the upstream wrapper waits out the 60s idle window. After the
+    // window the wrapper must abort the downstreamAbortController and emit
+    // a synthetic error frame so the client sees a clean failure instead
+    // of a hung socket.
+    const decoder = new TextDecoder();
+    const collected: string[] = [];
+    const drainUntilError = (async () => {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) return;
+        const text = decoder.decode(chunk.value);
+        collected.push(text);
+        if (text.includes('event: error')) return;
+      }
+    })();
+    await time.tickAsync(UPSTREAM_IDLE_TIMEOUT_MS + 100);
+    await drainUntilError;
+    const joined = collected.join('');
+    assertStringIncludes(joined, 'event: error');
+    assertStringIncludes(joined, 'UpstreamIdleTimeoutError');
+    assert(downstreamAbortController.signal.aborted, 'idle timeout should abort the upstream');
+
+    await reader.cancel();
+  } finally {
+    time.restore();
+  }
 });

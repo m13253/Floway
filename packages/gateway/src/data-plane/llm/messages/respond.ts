@@ -6,7 +6,7 @@ import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
-import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
+import { type StreamCompletion, UPSTREAM_IDLE_TIMEOUT_MS, withIdleTimeout, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -39,7 +39,16 @@ export const respondMessages = async (
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
+  // A genuinely stuck upstream pin would otherwise hold the request open until
+  // the Workers HTTP timeout (~100s) or the client's read timeout. Resetting
+  // on every frame (Anthropic's own `event: ping` heartbeats count, since
+  // parse-sse surfaces them as frames) covers both true stalls and TCP-level
+  // hangs without false-firing on normal slow generation.
+  const idleEvents = withIdleTimeout(result.events, {
+    ms: UPSTREAM_IDLE_TIMEOUT_MS,
+    onTimeout: () => ctx.downstreamAbortController?.abort(),
+  });
+  const frames = observeMessagesFrames(idleEvents, state, usageState, wantsStream);
 
   if (!wantsStream) {
     try {
