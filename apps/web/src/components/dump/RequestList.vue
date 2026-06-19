@@ -50,13 +50,34 @@ const formatDuration = (ms: number) => {
   return `${Math.round(ms / 1000)}s`;
 };
 
-// "12→340" reads cleaner than "12 in · 340 out" at the row scale. Skip when
-// both counts are zero (no model accounting yet).
-const tokenSummary = (r: DumpMetadata): string | null => {
-  const inTok = r.inputTokens ?? 0;
-  const outTok = r.outputTokens ?? 0;
-  if (inTok === 0 && outTok === 0 && r.inputTokens === null && r.outputTokens === null) return null;
-  return `${inTok}→${outTok}`;
+const formatBytes = (n: number) => {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
+
+// Show "1.2 M" / "12.3 K" / plain integer.
+const formatTokens = (n: number) => {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)} K`;
+  if (n < 10_000_000) return `${(n / 1_000_000).toFixed(1)} M`;
+  return `${Math.round(n / 1_000_000)} M`;
+};
+
+const totalTokens = (r: DumpMetadata): number | null => {
+  if (r.inputTokens === null && r.outputTokens === null) return null;
+  return (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
+};
+
+// Tone classes by upstream kind; no badge, just a tinted label.
+const providerColorClass = (kind: string): string => {
+  if (kind === 'copilot') return 'text-accent-cyan';
+  if (kind === 'azure') return 'text-accent-emerald';
+  if (kind === 'custom') return 'text-accent-amber';
+  if (kind === 'codex') return 'text-accent-cyan';
+  return 'text-gray-400';
 };
 
 const isFailed = (r: DumpMetadata) => r.status === 0 || r.status >= 400 || r.error !== null;
@@ -94,19 +115,50 @@ watch(() => props.records.length, () => {
           ]"
           @click="onSelect(r.id)"
         >
+          <!-- Line 1: status + method + path + relative time -->
           <div class="flex items-center gap-2 text-xs">
             <Badge :tone="statusTone(r.status)" size="sm">{{ statusLabel(r.status) }}</Badge>
-            <span class="font-mono font-semibold text-gray-300 shrink-0">{{ r.method }}</span>
+            <span class="shrink-0 font-mono font-semibold text-gray-300">{{ r.method }}</span>
             <span class="min-w-0 flex-1 truncate font-mono text-gray-400" :title="r.path">{{ r.path }}</span>
             <span class="shrink-0 text-[11px] text-gray-600" :title="dayjs(r.startedAt).format('YYYY-MM-DD HH:mm:ss')">
               {{ dayjs(r.startedAt).fromNow(true) }}
             </span>
           </div>
 
-          <div class="mt-1 flex items-center gap-3 truncate text-[11px] text-gray-500">
-            <span v-if="r.model" class="min-w-0 truncate font-mono">{{ r.model }}</span>
-            <span class="shrink-0">{{ formatDuration(r.durationMs) }}</span>
-            <span v-if="tokenSummary(r)" class="shrink-0 font-mono">{{ tokenSummary(r) }}</span>
+          <!-- Line 2: metrics (left) and model (right). flex-wrap keeps metrics
+               leftmost on the first wrapped row and model rightmost on whichever
+               row it lands. justify-between + the mr-auto on the metrics group
+               carries the alignment through wraps. -->
+          <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
+            <span class="mr-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="inline-flex items-center gap-1" :title="`${r.durationMs} ms`">
+                <i class="i-lucide-timer size-3" />{{ formatDuration(r.durationMs) }}
+              </span>
+              <span class="inline-flex items-center gap-1 font-mono" :title="`request body ${r.requestBytes} bytes`">
+                <i class="i-lucide-arrow-up size-3" />{{ formatBytes(r.requestBytes) }}
+              </span>
+              <span class="inline-flex items-center gap-1 font-mono" :title="`response body ${r.responseBytes} bytes`">
+                <i class="i-lucide-arrow-down size-3" />{{ formatBytes(r.responseBytes) }}
+              </span>
+            </span>
+            <span v-if="r.model" class="truncate font-mono" :title="r.model">{{ r.model }}</span>
+          </div>
+
+          <!-- Line 3 (optional): provider name (colored) + total tokens -->
+          <div
+            v-if="r.upstream || totalTokens(r) !== null"
+            class="mt-1 flex items-center justify-between gap-3 text-[11px]"
+          >
+            <span
+              v-if="r.upstream"
+              class="min-w-0 truncate"
+              :class="providerColorClass(r.upstream.kind)"
+              :title="`${r.upstream.kind} · ${r.upstream.id}`"
+            >{{ r.upstream.name }}</span>
+            <span v-else />
+            <span v-if="totalTokens(r) !== null" class="shrink-0 font-mono text-gray-500">
+              {{ formatTokens(totalTokens(r)!) }} tokens
+            </span>
           </div>
 
           <p v-if="r.error" class="mt-1 truncate text-[11px] text-accent-rose" :title="r.error">{{ r.error }}</p>

@@ -95,6 +95,12 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     const keyId = this.readState('keyId');
     if (keyId !== undefined) await this.deleteR2Prefix(`dump/${keyId}/`);
     await this.ctx.storage.deleteAll();
+    // deleteAll drops every SQLite table, including `records` and `state`,
+    // but the runtime keeps the DO instance alive so the constructor (which
+    // creates the schema) does not run again until eviction. Re-create the
+    // schema here so the next put / purgeExpired hits live tables instead
+    // of `no such table: state`.
+    for (const stmt of SCHEMA) this.sql.exec(stmt);
   }
 
   async alarm(): Promise<void> {

@@ -5,6 +5,15 @@
 
 export type DumpRecordId = string;  // ULID
 
+export interface DumpUpstreamRef {
+  id: string;
+  name: string;
+  // Free-form provider kind string ('copilot' | 'custom' | 'azure' | 'codex'
+  // and any future addition). The dashboard colors by this; unknown kinds
+  // get a neutral tone.
+  kind: string;
+}
+
 export interface DumpMetadata {
   id: DumpRecordId;
   startedAt: number;        // Unix ms.
@@ -12,10 +21,14 @@ export interface DumpMetadata {
   method: string;
   path: string;             // includes query string.
   status: number;           // 0 when no response status was produced.
-  upstream: string | null;
+  upstream: DumpUpstreamRef | null;
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
+  // Captured wire-level byte counts; rendered as upload/download indicators
+  // in the request list.
+  requestBytes: number;
+  responseBytes: number;
   durationMs: number;
   error: string | null;     // single-line summary; null on clean responses.
 }

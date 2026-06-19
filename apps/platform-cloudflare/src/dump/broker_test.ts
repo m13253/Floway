@@ -51,6 +51,8 @@ const meta = (id: string): DumpMetadata => ({
   model: null,
   inputTokens: null,
   outputTokens: null,
+  requestBytes: 0,
+  responseBytes: 0,
   durationMs: 10,
   error: null,
 });

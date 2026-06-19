@@ -59,10 +59,12 @@ const meta = (id: string, startedAt: number): DumpMetadata => ({
   method: 'POST',
   path: '/v1/messages',
   status: 200,
-  upstream: 'copilot',
+  upstream: { id: 'up_copilot', name: 'Copilot', kind: 'copilot' },
   model: 'm',
   inputTokens: 1,
   outputTokens: 2,
+  requestBytes: 64,
+  responseBytes: 128,
   durationMs: 10,
   error: null,
 });

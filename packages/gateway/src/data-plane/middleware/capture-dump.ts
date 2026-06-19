@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 
+import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
@@ -67,33 +68,43 @@ interface DumpAccounting {
 interface CapturedBody {
   body: DumpResponseBody;
   bodyBase64: boolean;
+  responseBytes: number;
   streamingError: unknown;
 }
 
 const captureSSE = async (forCapture: ReadableStream<Uint8Array>, startedAt: number): Promise<CapturedBody> => {
   const events: DumpStreamEvent[] = [];
   let streamingError: unknown = null;
+  let responseBytes = 0;
+  // Tap the raw stream for byte counting before re-feeding it to parseSSEStream.
+  const counted = forCapture.pipeThrough(new TransformStream({
+    transform(chunk, controller) { responseBytes += chunk.byteLength; controller.enqueue(chunk); },
+  }));
   try {
-    for await (const frame of parseSSEStream(forCapture)) {
+    for await (const frame of parseSSEStream(counted)) {
       events.push({ event: frame.event ?? null, data: frame.data, ts: Date.now() - startedAt });
     }
   } catch (err) {
     streamingError = err;
   }
-  return { body: { type: 'stream', events }, bodyBase64: false, streamingError };
+  return { body: { type: 'stream', events }, bodyBase64: false, responseBytes, streamingError };
 };
 
 const captureGeminiStream = async (forCapture: ReadableStream<Uint8Array>, startedAt: number): Promise<CapturedBody> => {
   const events: DumpStreamEvent[] = [];
   let streamingError: unknown = null;
+  let responseBytes = 0;
+  const counted = forCapture.pipeThrough(new TransformStream({
+    transform(chunk, controller) { responseBytes += chunk.byteLength; controller.enqueue(chunk); },
+  }));
   try {
-    for await (const chunk of parseGeminiStream(forCapture)) {
+    for await (const chunk of parseGeminiStream(counted)) {
       events.push({ event: null, data: chunk.chunk, ts: Date.now() - startedAt });
     }
   } catch (err) {
     streamingError = err;
   }
-  return { body: { type: 'stream', events }, bodyBase64: false, streamingError };
+  return { body: { type: 'stream', events }, bodyBase64: false, responseBytes, streamingError };
 };
 
 const captureBytes = async (forCapture: ReadableStream<Uint8Array>, contentType: string | null): Promise<CapturedBody> => {
@@ -105,7 +116,7 @@ const captureBytes = async (forCapture: ReadableStream<Uint8Array>, contentType:
     streamingError = err;
   }
   const encoded = encodeBody(bytes, contentType);
-  return { body: { type: 'bytes', body: encoded.body }, bodyBase64: encoded.base64, streamingError };
+  return { body: { type: 'bytes', body: encoded.body }, bodyBase64: encoded.base64, responseBytes: bytes.byteLength, streamingError };
 };
 
 export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
@@ -186,9 +197,9 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   // is not held open on the parser or the storage write.
   let capturedBodyPromise: Promise<CapturedBody>;
   if (!hasResponse) {
-    capturedBodyPromise = Promise.resolve({ body: { type: 'none' }, bodyBase64: false, streamingError: null });
+    capturedBodyPromise = Promise.resolve({ body: { type: 'none' }, bodyBase64: false, responseBytes: 0, streamingError: null });
   } else if (!c.res.body) {
-    capturedBodyPromise = Promise.resolve({ body: { type: 'bytes', body: '' }, bodyBase64: false, streamingError: null });
+    capturedBodyPromise = Promise.resolve({ body: { type: 'bytes', body: '' }, bodyBase64: false, responseBytes: 0, streamingError: null });
   } else {
     const [forClient, forCapture] = c.res.body.tee();
     c.res = new Response(forClient, { status: c.res.status, headers: c.res.headers });
@@ -215,6 +226,16 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
     const completedAt = Date.now();
     const accounting = c.get('dumpAccounting') as DumpAccounting | undefined;
     const finalError = upstreamError ?? captured.streamingError;
+    // Resolve upstream id → {name, kind} from the repo so the dashboard
+    // can show a human label colored by provider kind without round-tripping.
+    // A deleted upstream falls back to id-as-name with kind:'unknown'.
+    let upstreamRef: { id: string; name: string; kind: string } | null = null;
+    if (accounting?.upstream) {
+      const row = await getRepo().upstreams.getById(accounting.upstream);
+      upstreamRef = row
+        ? { id: row.id, name: row.name, kind: row.provider }
+        : { id: accounting.upstream, name: accounting.upstream, kind: 'unknown' };
+    }
     const record: DumpRecord = {
       meta: {
         id: recordId,
@@ -223,10 +244,12 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
         method,
         path,
         status: responseStatus,
-        upstream: accounting?.upstream ?? null,
+        upstream: upstreamRef,
         model: accounting?.model ?? null,
         inputTokens: accounting?.inputTokens ?? null,
         outputTokens: accounting?.outputTokens ?? null,
+        requestBytes: requestBodyBytes.byteLength,
+        responseBytes: captured.responseBytes,
         durationMs: completedAt - startedAt,
         error: finalError !== null ? errorSummary(finalError) : null,
       },
