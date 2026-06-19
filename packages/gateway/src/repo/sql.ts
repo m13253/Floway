@@ -1277,7 +1277,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
 };
 
 const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
-  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code') return provider;
+  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code' || provider === 'ollama') return provider;
   throw new TypeError(`Invalid upstream provider kind: ${provider}`);
 };
 

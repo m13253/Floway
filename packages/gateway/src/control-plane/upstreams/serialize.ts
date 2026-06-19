@@ -122,6 +122,12 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
         ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
       })),
     };
+  case 'ollama':
+    return {
+      ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
+      ...(config.models !== undefined ? { models: clone(config.models) } : {}),
+      apiKeySet: hasSecret(config.apiKey),
+    };
   default: {
     const exhaustive: never = upstream.provider;
     throw new Error(`Unknown upstream provider for redaction: ${String(exhaustive)}`);
@@ -170,6 +176,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   case 'copilot':
   case 'custom':
   case 'azure':
+  case 'ollama':
     // These providers have no autonomous state.
     return null;
   default: {

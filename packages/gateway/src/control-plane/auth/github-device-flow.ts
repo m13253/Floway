@@ -19,11 +19,8 @@ interface GitHubDeviceFlowStart {
   interval: number;
 }
 
-// All GitHub egress accepts a Fetcher so the caller can route through a
-// proxy chain — copilot auth poll forwards the operator's edit-form proxy
-// override here so the very first call lands on whatever egress they're
-// configuring. Defaults stay on `directFetcher`, matching the prior bare
-// `fetch` behavior for callers that do not care.
+// All GitHub egress accepts a Fetcher so the copilot auth poll can forward
+// the operator's edit-form proxy override; absent that, direct egress.
 export const startGitHubDeviceFlow = async (fetcher: Fetcher = directFetcher) => {
   const resp = await fetcher('https://github.com/login/device/code', {
     method: 'POST',

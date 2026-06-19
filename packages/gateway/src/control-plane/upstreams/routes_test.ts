@@ -337,7 +337,7 @@ test('POST /api/upstreams/fetch-models fetches a draft custom upstream model lis
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
       assertEquals(body.data.map(m => m.id), ['gpt-a', 'gpt-b']);
@@ -368,12 +368,59 @@ test('POST /api/upstreams/fetch-models rejects calls that supply a saved upstrea
   // (the SWR-cached path); fetch-models stays draft-only.
   const resp = await requestApp(
     '/api/upstreams/fetch-models',
-    authed(adminSession, { id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
+    authed(adminSession, { provider: 'custom', id: 'up_stored_secret', config: { ...customConfig, bearerToken: '' } }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { message: string; type: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message.includes('refresh=true'), true);
+});
+
+test('POST /api/upstreams/fetch-models projects an ollama draft into UpstreamModelConfig rows with capability-derived endpoints', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'ollama.com' && url.pathname === '/api/tags') {
+        return jsonResponse({ models: [{ name: 'gpt-oss:120b' }, { name: 'nomic-embed-text:latest' }] });
+      }
+      if (url.hostname === 'ollama.com' && url.pathname === '/api/show') {
+        const body = await request.json() as { name?: string };
+        if (body.name === 'gpt-oss:120b') {
+          return jsonResponse({
+            capabilities: ['completion', 'tools', 'thinking'],
+            details: { family: 'gptoss' },
+            model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
+          });
+        }
+        if (body.name === 'nomic-embed-text:latest') {
+          return jsonResponse({
+            capabilities: ['embedding'],
+            details: { family: 'nomic-bert' },
+            model_info: { 'general.architecture': 'nomic-bert', 'nomic-bert.context_length': 8192 },
+          });
+        }
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, {
+        provider: 'ollama',
+        config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
+      }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
+      const ids = body.data.map(m => m.upstreamModelId).sort();
+      assertEquals(ids, ['gpt-oss:120b', 'nomic-embed-text:latest']);
+      const gptoss = body.data.find(m => m.upstreamModelId === 'gpt-oss:120b')!;
+      assertEquals(gptoss.kind, 'chat');
+      assertEquals(Object.keys(gptoss.endpoints as Record<string, unknown>).sort(), ['chatCompletions', 'messages', 'responses']);
+      const embed = body.data.find(m => m.upstreamModelId === 'nomic-embed-text:latest')!;
+      assertEquals(embed.kind, 'embedding');
+      assertEquals(Object.keys(embed.endpoints as Record<string, unknown>), ['embeddings']);
+    },
+  );
 });
 
 test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures as 502', async () => {
@@ -388,7 +435,30 @@ test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
+      assertEquals(resp.status, 502);
+      const body = (await resp.json()) as { error: { message: string; type: string } };
+      assertEquals(body.error.type, 'api_error');
+    },
+  );
+});
+
+test('POST /api/upstreams/fetch-models surfaces an ollama /api/tags failure as 502', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'ollama.com' && url.pathname === '/api/tags') {
+        return jsonResponse({ error: 'unauthorized' }, 401);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, {
+        provider: 'ollama',
+        config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
+      }));
       assertEquals(resp.status, 502);
       const body = (await resp.json()) as { error: { message: string; type: string } };
       assertEquals(body.error.type, 'api_error');
@@ -401,7 +471,7 @@ test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400
 
   // Blank token with no id and no stored secret to substitute: the runtime
   // assert rejects the empty bearerToken, surfaced as a 400 validation error.
-  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: { ...customConfig, bearerToken: '' } }));
+  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: { ...customConfig, bearerToken: '' } }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('bearerToken'), true);
@@ -547,7 +617,7 @@ test('POST /api/upstreams/fetch-models without an id still serves draft preview'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
       assertEquals(body.data.map(m => m.id), ['draft-only']);
@@ -1400,6 +1470,8 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   assertEquals(remaining[0]!.upstreamId, 'other_upstream');
 });
 
+// --- pre-save proxy_fallback_list override ---
+
 test('POST /api/upstreams/:id/claude-code-refresh-now honors the proxy_fallback_list override over the persisted list', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -1433,7 +1505,7 @@ test('POST /api/upstreams/:id/claude-code-refresh-now honors the proxy_fallback_
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-test('POST /api/upstreams/:id/codex-refresh-now honors the proxy_fallback_list override', async () => {
+test('POST /api/upstreams/:id/codex-refresh-now honors the proxy_fallback_list override over the persisted list', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -1474,6 +1546,20 @@ test('POST /api/upstreams/:id/claude-code-refresh-now without an override falls 
       assertEquals(resp.status, 200);
     },
   );
+});
+
+test('POST /api/upstreams/copilot/auth/poll honors the proxy_fallback_list override', async () => {
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp(
+    '/api/upstreams/copilot/auth/poll',
+    authed(adminSession, { device_code: 'dev', proxy_fallback_list: [{ id: 'p_unknown' }] }),
+  );
+  // resolveControlPlaneFetcher throws synchronously when validating the
+  // override; the handler's outer catch maps that to a 502 with the
+  // error message intact.
+  assertEquals(resp.status, 502);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
 // --- import / reimport proxy_fallback_list override ---
@@ -1882,6 +1968,80 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
   const storedState = stored?.state as { accounts: Array<{ tokenKind: string; accessToken: { token: string } | null }> };
   assertEquals(storedState.accounts[0].tokenKind, 'setup-token');
   assertEquals(storedState.accounts[0].accessToken?.token, 'st_v2');
+});
+
+test('POST /api/upstreams/copilot/auth/poll persists the override on the freshly-created row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.proxies.insert({ id: 'p_real', name: 'Real', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  // Drive the device-flow poll deterministically: every GitHub-side call
+  // the handler makes (oauth token exchange, /user, /copilot_internal/user,
+  // and the post-save warmup's /copilot_internal/v2/token mint) must
+  // resolve, otherwise the warmup falls into copilot auth's withRetry
+  // backoff and the test stalls for ~7s before passing.
+  await withMockedFetch(
+    async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') {
+        return jsonResponse({ access_token: 'ghu_test', token_type: 'bearer', scope: 'read:user' });
+      }
+      if (url.hostname === 'api.github.com' && url.pathname === '/user') {
+        return jsonResponse({ login: 'octo', avatar_url: 'https://example.com/a.png', name: 'Octo', id: 99 });
+      }
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') {
+        return jsonResponse({ copilot_plan: 'individual' });
+      }
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'ct_test', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200, endpoints: { api: 'https://api.githubcopilot.com' } });
+      }
+      // Models warmup probes the copilot api host; an empty list keeps the
+      // warmup quiet without exercising the catalog.
+      if (url.hostname === 'api.githubcopilot.com') {
+        return jsonResponse({ data: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(
+        '/api/upstreams/copilot/auth/poll',
+        authed(adminSession, {
+          device_code: 'dev',
+          // 'direct' short-circuits the override fetcher to direct so the
+          // mocks above serve the bootstrap; persistence still records the
+          // full chain.
+          proxy_fallback_list: [{ id: 'direct' }, { id: 'p_real' }],
+        }),
+      );
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { status: string; upstream: { id: string; proxy_fallback_list: Array<{ id: string }> } };
+      assertEquals(body.status, 'complete');
+      assertEquals(body.upstream.proxy_fallback_list, [{ id: 'direct' }, { id: 'p_real' }]);
+      const stored = await repo.upstreams.getById(body.upstream.id);
+      assertEquals(stored?.proxyFallbackList, [{ id: 'direct' }, { id: 'p_real' }]);
+    },
+  );
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now without an override falls back to the persisted list', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
+
+  // No override → persisted ([]) → direct egress → the mocked fetch
+  // serves the refresh response. A 200 proves the "no override" path
+  // skipped catalog validation entirely.
+  await withMockedFetch(
+    () => jsonResponse({ access_token: 'at_rotated', refresh_token: 'rt_rotated', id_token: fakeIdToken({}), expires_in: 600 }),
+    async () => {
+      const resp = await requestApp(
+        `/api/upstreams/${created.id}/codex-refresh-now`,
+        authed(adminSession, {}),
+      );
+      assertEquals(resp.status, 200);
+    },
+  );
 });
 
 // --- POST /api/upstreams/:id/probe-quota ---

@@ -55,6 +55,7 @@ import {
 } from '@floway-dev/provider-codex';
 import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
+import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
 // Serialize for the HTTP response, attaching the live codex_quota snapshot
 // when the row is a Codex upstream and the SWR models-cache freshness for
@@ -102,6 +103,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
     if (record.provider === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
+    if (record.provider === 'ollama') return { ok: true, value: assertOllamaUpstreamRecord(record).config };
     if (record.provider === 'codex') {
       assertCodexUpstreamRecord(record);
       return { ok: true, value: record.config };
@@ -302,13 +304,19 @@ export const deleteUpstream = async (c: Context) => {
   return c.json({ ok: true });
 };
 
-// Browse the live `/models` list of a DRAFT (unsaved) custom upstream so
-// the editor can pick models before saving. Saved upstreams use
+// Browse the live `/models` list of a DRAFT (unsaved) upstream so the editor
+// can pick models before saving. Saved upstreams use
 // GET /api/upstreams/:id/models?refresh=true instead, which routes through
 // the SWR cache.
+//
+// Custom returns the raw upstream `/models` response verbatim — the dashboard
+// applies the per-draft endpoints map to translate each row into a manual
+// override candidate. Ollama returns already-projected `UpstreamModelConfig`
+// rows, since the per-model endpoints fall out of the per-model `capabilities`
+// the upstream itself reports.
 export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
-  const { id, config } = c.req.valid('json');
-  if (id !== undefined) {
+  const body = c.req.valid('json');
+  if (body.id !== undefined) {
     return c.json({
       error: { message: 'use GET /api/upstreams/:id/models?refresh=true for saved upstreams', type: 'invalid_request_error' },
     }, 400);
@@ -317,8 +325,8 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
   const now = new Date().toISOString();
   const record: UpstreamRecord = {
     id: newId(),
-    provider: 'custom',
-    name: 'Draft custom upstream',
+    provider: body.provider,
+    name: `Draft ${body.provider} upstream`,
     enabled: true,
     sortOrder: 0,
     createdAt: now,
@@ -326,25 +334,43 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
-    config,
+    config: body.config,
     state: null,
   };
 
-  let assertedConfig;
   try {
-    assertedConfig = assertCustomUpstreamRecord(record).config;
+    if (body.provider === 'custom') {
+      const assertedConfig = assertCustomUpstreamRecord(record).config;
+      const result = await fetchCustomModels(assertedConfig, directFetcher);
+      return c.json(result);
+    }
+    // body.provider === 'ollama' — the provider's own getProvidedModels
+    // already projects /api/tags + /api/show into UpstreamModel; reshape each
+    // into UpstreamModelConfig so the dashboard can drop them straight into
+    // the auto rows without re-deriving endpoints from capabilities.
+    assertOllamaUpstreamRecord(record);
+    const instance = createOllamaProvider(record);
+    const models = await instance.provider.getProvidedModels(directFetcher);
+    const data = models.map(model => {
+      const upstreamModelId = model.providerData as string;
+      const config: Record<string, unknown> = {
+        upstreamModelId,
+        publicModelId: model.id,
+        kind: model.kind,
+        endpoints: model.endpoints,
+      };
+      if (model.display_name !== undefined) config.display_name = model.display_name;
+      if (Object.keys(model.limits).length > 0) config.limits = model.limits;
+      if (model.cost) config.cost = model.cost;
+      return config;
+    });
+    return c.json({ data });
   } catch (e) {
-    return c.json({ error: errorMessage(e) }, 400);
-  }
-
-  try {
-    const result = await fetchCustomModels(assertedConfig, directFetcher);
-    return c.json(result);
-  } catch (e) {
-    // Mirror the control-plane /models convention: squash genuine upstream
-    // HTTP/parse failures to a generic 502 without leaking provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
+    }
+    if (e instanceof Error && /Malformed .* upstream config/.test(e.message)) {
+      return c.json({ error: errorMessage(e) }, 400);
     }
     throw e;
   }
@@ -402,9 +428,8 @@ const copilotConfigUserId = (config: unknown): number | null => {
 };
 
 // The body's optional `proxy_fallback_list` is the operator's in-progress
-// edit-form override. Threaded into every GitHub-side fetch (poll, user
-// lookup, account-type) so the device flow lands through the proxy chain
-// they're configuring rather than direct egress.
+// edit-form override, forwarded into every GitHub-side fetch so the device
+// flow lands through the same proxy chain they're configuring.
 export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>) => {
   try {
     const { device_code: deviceCode, proxy_fallback_list: proxyFallbackList } = c.req.valid('json');
@@ -450,11 +475,10 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           updatedAt: now,
           flagOverrides: {},
           disabledPublicModelIds: [],
-          // Persist the override on initial create so the next data-plane
-          // call honors the same chain. Existing rows keep their stored
-          // fallback list — overrides during poll on an already-existing
-          // row are still routed correctly above, but we don't clobber the
-          // operator's prior persisted choice.
+          // Persist the override on initial create so subsequent data-plane
+          // calls honor the same chain. Existing rows keep their stored
+          // list — the override above already routes the poll itself
+          // correctly without clobbering a prior persisted choice.
           proxyFallbackList: proxyFallbackList !== undefined ? normalizeProxyFallbackList(proxyFallbackList) : [],
           config,
           state: null,
@@ -617,9 +641,8 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
 };
 
 // The body carries an optional `proxy_fallback_list` override so a refresh
-// fired from an unsaved edit-form uses the proxy chain the operator is
-// currently editing, not the persisted one. Absent override → fall back to
-// the persisted row's list. See proxy-resolution.ts for the layered policy.
+// fired from an unsaved edit-form uses the in-progress chain rather than
+// the persisted one. See proxy-resolution.ts for the layered policy.
 export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);

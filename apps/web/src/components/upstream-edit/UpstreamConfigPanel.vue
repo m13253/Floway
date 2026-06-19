@@ -5,10 +5,11 @@ import AzureConfigPanel from './AzureConfigPanel.vue';
 import ClaudeCodeConfigPanel from './ClaudeCodeConfigPanel.vue';
 import CodexConfigPanel from './CodexConfigPanel.vue';
 import CopilotConfigPanel from './CopilotConfigPanel.vue';
-import type { AzureDraft, CustomDraft } from './customConfig.ts';
+import type { AzureDraft, CustomDraft, OllamaDraft } from './customConfig.ts';
 import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
+import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { CopilotQuotaSnapshot, FlagDef, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
@@ -22,6 +23,7 @@ const flagOverrides = defineModel<Record<string, boolean>>('flagOverrides', { re
 const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
+const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
 const props = defineProps<{
@@ -30,6 +32,7 @@ const props = defineProps<{
   flags: FlagDef[];
   customBearerTokenSet: boolean;
   azureApiKeySet: boolean;
+  ollamaApiKeySet: boolean;
   fetchLoading: boolean;
   fetchError: string | null;
   fetchStatus: string | null;
@@ -68,6 +71,7 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
+  case 'ollama': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
   case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
   return assertNever(kind);
@@ -79,6 +83,7 @@ const providerBadgeLabel = (kind: UpstreamProviderKind): string => ({
   copilot: 'Copilot',
   codex: 'Codex',
   'claude-code': 'Claude Code',
+  ollama: 'Ollama',
 }[kind]);
 
 // Intrinsic floor for the aside: smallest height at which every
@@ -169,6 +174,18 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           v-model="azureDraft"
           :api-key-set="azureApiKeySet"
           :edit-mode="mode === 'edit'"
+        />
+      </section>
+
+      <section v-else-if="activeProvider === 'ollama'" class="shrink-0">
+        <OllamaConfigPanel
+          v-model="ollamaDraft"
+          :api-key-set="ollamaApiKeySet"
+          :edit-mode="mode === 'edit'"
+          :fetch-loading="fetchLoading"
+          :fetch-error="fetchError"
+          :fetch-status="fetchStatus"
+          @fetch-models="$emit('fetch-models')"
         />
       </section>
 

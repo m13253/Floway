@@ -13,11 +13,10 @@ type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
 const props = defineProps<{
   mode: 'create' | 'edit';
   record: CodexUpstreamRecord | null;
-  // Operator's current edit-form proxy_fallback_list. Forwarded into
-  // import / re-import (so the OAuth bootstrap routes through the chain
-  // the operator is editing AND the chain is persisted on the new row)
-  // and into refresh-now (so a refresh fired before saving uses the
-  // in-progress chain rather than the persisted one).
+  // Current edit-form chain; forwarded into import / re-import (so the OAuth
+  // bootstrap routes through the chain the operator is editing AND the
+  // chain is persisted on the row) and into refresh-now (so a refresh fired
+  // before saving uses the in-progress chain).
   proxyFallbackList: ProxyFallbackEntry[];
 }>();
 

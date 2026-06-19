@@ -11,14 +11,16 @@ import {
   type AzureDraft,
   blankAzureDraft,
   blankCustomDraft,
+  blankOllamaDraft,
   buildCustomConfigCore,
   type CustomDraft,
+  type OllamaDraft,
   seedPathOverrides,
 } from './customConfig.ts';
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
@@ -75,6 +77,7 @@ const disabledPublicModelIds = ref<string[]>([]);
 const proxyFallbackList = ref<ProxyFallbackEntry[]>([]);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
+const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
 
 const upstreamModels = ref<UpstreamModelConfig[]>(props.initialUpstreamModels ?? []);
 const upstreamModelsError = ref<string | null>(props.initialUpstreamModelsError ?? null);
@@ -93,7 +96,8 @@ const defaultName = (p: UpstreamProviderKind) =>
     : p === 'copilot' ? 'GitHub Copilot'
       : p === 'codex' ? 'ChatGPT Codex'
         : p === 'claude-code' ? 'Claude Code'
-          : 'Custom upstream';
+          : p === 'ollama' ? 'Ollama'
+            : 'Custom upstream';
 
 const seedFromRecord = (r: UpstreamRecord) => {
   activeProvider.value = r.provider;
@@ -128,6 +132,13 @@ const seedFromRecord = (r: UpstreamRecord) => {
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
+  } else if (r.provider === 'ollama') {
+    const cfg = r.config as OllamaUpstreamConfig;
+    ollamaDraft.value = {
+      baseUrl: cfg.baseUrl,
+      apiKey: '',
+      models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
+    };
   }
 };
 
@@ -140,6 +151,7 @@ const seedFresh = () => {
   proxyFallbackList.value = [];
   customDraft.value = blankCustomDraft();
   azureDraft.value = blankAzureDraft();
+  ollamaDraft.value = blankOllamaDraft();
 };
 
 if (props.mode === 'edit' && props.record) seedFromRecord(props.record);
@@ -163,15 +175,25 @@ const azureApiKeySet = computed(() => {
   if (props.record?.provider !== 'azure') return false;
   return props.record.config.apiKeySet === true;
 });
+const ollamaApiKeySet = computed(() => {
+  const cfg = props.record?.config as OllamaUpstreamConfig | undefined;
+  return cfg?.apiKeySet === true;
+});
 
 // Create-mode draft preview state for the inline "Fetch" button on the
-// Custom panel: POST /upstreams/fetch-models renders the unsaved config's
-// /models response so the operator can pick rows before saving. Saved
+// Custom and Ollama panels: POST /upstreams/fetch-models renders the unsaved
+// config's catalog so the operator can pick rows before saving. Saved
 // upstreams flow through the unified GET path and `upstreamModels` instead.
+// `fetchedRaw` carries the Custom raw rows (translated through the draft's
+// endpoints by `customAutoModelsFromDraft`); `fetchedOllamaModels` carries
+// the Ollama rows the backend already projected — no further translation
+// needed since the per-model endpoints fall out of upstream capabilities.
 const fetchedRaw = ref<CustomRawModel[]>([]);
+const fetchedOllamaModels = ref<UpstreamModelConfig[]>([]);
 const fetchLoading = ref(false);
 const fetchError = ref<string | null>(null);
 const fetchedAtMs = ref<number | null>(null);
+const fetchedCount = ref(0);
 
 // A custom raw model carries no per-endpoint hint beyond its kind. Embedding
 // and image map to their fixed endpoints; chat models follow the
@@ -199,22 +221,40 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
 }));
 
 const fetchDraftModels = async () => {
-  if (activeProvider.value !== 'custom' || props.mode !== 'create') return;
+  if (props.mode !== 'create') return;
   fetchLoading.value = true;
   fetchError.value = null;
   try {
-    const { data, error } = await callApi<{ data: CustomRawModel[] }>(
-      () => api.api.upstreams['fetch-models'].$post({
-        json: { config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
-      }),
-    );
-    // The toggle may have been turned off while this request was in flight;
-    // with fetch disabled the auto block is hidden and dropped on save, so
-    // discard the late result rather than repopulating stale auto rows.
-    if (!customDraft.value.modelsFetch.enabled) return;
-    if (error) { fetchError.value = error.message; return; }
-    fetchedRaw.value = data.data;
-    fetchedAtMs.value = Date.now();
+    if (activeProvider.value === 'custom') {
+      const { data, error } = await callApi<{ data: CustomRawModel[] }>(
+        () => api.api.upstreams['fetch-models'].$post({
+          json: { provider: 'custom', config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
+        }),
+      );
+      // The toggle may have been turned off while this request was in flight;
+      // with fetch disabled the auto block is hidden and dropped on save, so
+      // discard the late result rather than repopulating stale auto rows.
+      if (!customDraft.value.modelsFetch.enabled) return;
+      if (error) { fetchError.value = error.message; return; }
+      fetchedRaw.value = data.data;
+      fetchedCount.value = data.data.length;
+      fetchedAtMs.value = Date.now();
+    } else if (activeProvider.value === 'ollama') {
+      type FetchModelsBody = InferRequestType<typeof api.api.upstreams['fetch-models']['$post']>['json'];
+      type OllamaFetchConfig = Extract<FetchModelsBody, { provider: 'ollama' }>['config'];
+      const config: OllamaFetchConfig = {
+        baseUrl: ollamaDraft.value.baseUrl.trim(),
+        models: ollamaDraft.value.models,
+      };
+      if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
+      const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
+        () => api.api.upstreams['fetch-models'].$post({ json: { provider: 'ollama', config } }),
+      );
+      if (error) { fetchError.value = error.message; return; }
+      fetchedOllamaModels.value = data.data;
+      fetchedCount.value = data.data.length;
+      fetchedAtMs.value = Date.now();
+    }
   } finally {
     fetchLoading.value = false;
   }
@@ -225,6 +265,7 @@ watch(() => customDraft.value.modelsFetch.enabled, on => {
     fetchedRaw.value = [];
     fetchError.value = null;
     fetchedAtMs.value = null;
+    fetchedCount.value = 0;
   }
 });
 
@@ -234,7 +275,7 @@ const fetchStatus = computed<string | null>(() => {
   const ago = Math.max(0, Date.now() - fetchedAtMs.value);
   const mins = Math.floor(ago / 60000);
   const label = mins < 1 ? 'just now' : `${mins}m ago`;
-  return `${fetchedRaw.value.length} returned · ${label}`;
+  return `${fetchedCount.value} returned · ${label}`;
 });
 
 const refreshing = ref(false);
@@ -294,6 +335,15 @@ const buildAzureConfig = (): Extract<CreateBody, { provider: 'azure' }>['config'
   return config;
 };
 
+const buildOllamaConfig = (): Extract<CreateBody, { provider: 'ollama' }>['config'] => {
+  const config: Extract<CreateBody, { provider: 'ollama' }>['config'] = {
+    baseUrl: ollamaDraft.value.baseUrl.trim(),
+    models: ollamaDraft.value.models,
+  };
+  if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
+  return config;
+};
+
 const baseFields = () => ({
   name: name.value.trim(),
   enabled: enabled.value,
@@ -316,6 +366,8 @@ const save = async () => {
         body = { provider: 'custom', ...baseFields(), config: buildCustomConfig() };
       } else if (activeProvider.value === 'azure') {
         body = { provider: 'azure', ...baseFields(), config: buildAzureConfig() };
+      } else if (activeProvider.value === 'ollama') {
+        body = { provider: 'ollama', ...baseFields(), config: buildOllamaConfig() };
       } else {
         // Unreachable: see showSaveButton.
         saveError.value = `${activeProvider.value} upstreams are created through their dedicated panel.`;
@@ -328,6 +380,7 @@ const save = async () => {
       const patch: PatchBody = baseFields();
       if (activeProvider.value === 'custom') patch.config = buildCustomConfig();
       else if (activeProvider.value === 'azure') patch.config = buildAzureConfig();
+      else if (activeProvider.value === 'ollama') patch.config = buildOllamaConfig();
       const { error } = await callApi(
         () => api.api.upstreams[':id'].$patch({ param: { id: props.record!.id }, json: patch }),
       );
@@ -382,25 +435,32 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
   get: () => {
     if (activeProvider.value === 'custom') return customDraft.value.models;
     if (activeProvider.value === 'azure') return azureDraft.value.models;
+    if (activeProvider.value === 'ollama') return ollamaDraft.value.models;
     return [];
   },
   set: next => {
     if (activeProvider.value === 'custom') customDraft.value = { ...customDraft.value, models: next };
     else if (activeProvider.value === 'azure') azureDraft.value = { ...azureDraft.value, models: next };
+    else if (activeProvider.value === 'ollama') ollamaDraft.value = { ...ollamaDraft.value, models: next };
   },
 });
 
 // Auto rows are the live catalog the upstream itself decides. For copilot,
-// codex, claude-code, and saved custom upstreams that comes from the SWR
-// cache via `upstreamModels`. Create-mode custom drafts fall back to the
-// inline POST /fetch-models preview translated through the draft's
-// endpoints. Azure has no auto rows (the loader does not fetch for it),
-// so `upstreamModels` is empty and the same fall-through is correct.
+// codex, claude-code, and saved custom/ollama upstreams that comes from the
+// SWR cache via `upstreamModels`. Create-mode custom and ollama drafts fall
+// back to the inline POST /fetch-models preview — custom rows are translated
+// through the draft's endpoints; ollama rows arrive already projected. Azure
+// has no auto rows (the loader does not fetch for it), so `upstreamModels`
+// is empty and the same fall-through is correct.
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
   if (activeProvider.value === 'custom') {
     if (!customDraft.value.modelsFetch.enabled) return [];
     if (props.mode === 'edit') return upstreamModels.value;
     return customAutoModelsFromDraft.value;
+  }
+  if (activeProvider.value === 'ollama') {
+    if (props.mode === 'edit') return upstreamModels.value;
+    return fetchedOllamaModels.value;
   }
   return upstreamModels.value;
 });
@@ -509,6 +569,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:proxy-fallback-list="proxyFallbackList"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
+        v-model:ollama="ollamaDraft"
         :mode="mode"
         :record="liveRecord"
         :flags="flags"
@@ -516,6 +577,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :current-colo="currentColo"
         :custom-bearer-token-set="customBearerTokenSet"
         :azure-api-key-set="azureApiKeySet"
+        :ollama-api-key-set="ollamaApiKeySet"
         :fetch-loading="fetchLoading"
         :fetch-error="fetchError"
         :fetch-status="fetchStatus"

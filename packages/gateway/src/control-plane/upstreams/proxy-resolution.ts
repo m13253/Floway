@@ -1,31 +1,16 @@
 import { createFetcher, type ProxyEntry } from '../../dial/fetcher.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
 import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
 
-// One-shot fetcher resolution for control-plane operations that fire BEFORE
-// or DURING an upstream edit, where the form's current proxy_fallback_list
-// must take precedence over whatever is persisted. Three layered cases:
-//
-// 1. `override` present       → build a fetcher walking that list. Lets the
-//                                operator's in-progress proxy edit reach the
-//                                upstream even before the row is saved.
-// 2. `override` absent, `upstreamId` present → reuse the per-request fetcher
-//                                bound to the persisted row's fallback list,
-//                                so a refresh-now click without any edit
-//                                still uses the proxy chain the operator
-//                                already configured.
-// 3. neither present          → `directFetcher`. Same shape as the prior
-//                                bootstrap-only direct egress used during
-//                                import.
-//
-// The override path validates proxy ids against the catalog and surfaces a
-// parse / unknown-id error as a thrown rejection at call time, mirroring
-// `createPerRequestFetcher`'s isolation policy: a single bad row must not
-// take down the call.
+// Fetcher resolution for control-plane operations that fire from the
+// dashboard edit form, where the in-progress proxy_fallback_list must take
+// precedence over whatever is persisted. The override path validates proxy
+// ids against the catalog and throws on unknown / malformed entries; the
+// persisted path reuses the per-request fetcher bound to the saved row.
 export const resolveControlPlaneFetcher = async (opts: {
   override?: readonly ProxyFallbackEntry[];
   upstreamId?: string;
@@ -34,7 +19,7 @@ export const resolveControlPlaneFetcher = async (opts: {
     return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft');
   }
   if (opts.upstreamId !== undefined) {
-    return await buildPersistedFetcher(opts.upstreamId);
+    return (await createPerRequestFetcherForAdmin())(opts.upstreamId);
   }
   return directFetcher;
 };
@@ -82,9 +67,4 @@ const buildOverrideFetcher = async (rawList: readonly ProxyFallbackEntry[], upst
     runDirect: directFetcher,
     socketDial: getSocketDial,
   });
-};
-
-const buildPersistedFetcher = async (upstreamId: string): Promise<Fetcher> => {
-  const fetcherFor = await createPerRequestFetcher(null);
-  return fetcherFor(upstreamId);
 };

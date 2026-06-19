@@ -10,7 +10,7 @@ import type {
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
 export interface ProxyFallbackEntry {
   id: string;
@@ -89,6 +89,15 @@ export interface CodexAccountIdentity {
 
 export interface CodexUpstreamConfig {
   accounts: CodexAccountIdentity[];
+}
+
+export interface OllamaUpstreamConfig {
+  baseUrl: string;
+  // apiKeySet mirrors customConfig.bearerTokenSet — the wire never carries the
+  // real secret, only a flag the dashboard uses to render the "leave blank to
+  // keep" hint and the "••••••••" placeholder.
+  apiKeySet?: boolean;
+  models: UpstreamModelConfig[];
 }
 
 export interface CodexAccountCredentialState {
@@ -247,7 +256,8 @@ export type UpstreamRecord =
   | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
   | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: null })
   | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
-  | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null });
+  | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
+  | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
   id: string;

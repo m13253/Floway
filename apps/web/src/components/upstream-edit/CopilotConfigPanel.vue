@@ -10,9 +10,8 @@ defineProps<{
   record: CopilotUpstreamRecord | null;
   initialQuota?: CopilotQuotaSnapshot | null;
   initialQuotaError?: string | null;
-  // Operator's current edit-form proxy_fallback_list. Forwarded into the
-  // device-flow poll so the GitHub-side calls (poll, user lookup,
-  // account-type detection) honor the in-progress chain.
+  // Current edit-form chain forwarded into the device-flow poll so the
+  // GitHub-side calls honor the in-progress proxy override.
   proxyFallbackList: ProxyFallbackEntry[];
 }>();
 

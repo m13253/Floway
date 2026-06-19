@@ -6,9 +6,8 @@ import type { DeviceFlowPoll, DeviceFlowStart, ProxyFallbackEntry, UpstreamRecor
 import { Button, Code, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
-  // Operator's current edit-form proxy_fallback_list. Forwarded into the
-  // poll body so the GitHub-side egress respects the chain the operator is
-  // configuring rather than direct.
+  // Current edit-form chain; forwarded into the poll body so the
+  // GitHub-side egress honors the in-progress chain.
   proxyFallbackList: ProxyFallbackEntry[];
 }>();
 

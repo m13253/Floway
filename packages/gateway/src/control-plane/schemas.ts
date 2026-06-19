@@ -124,6 +124,14 @@ const copilotConfigSchema = z.object({
   }),
 });
 
+const ollamaConfigSchema = z.object({
+  baseUrl: z.string().min(1),
+  // Optional: required against ollama.com, typically absent for a private
+  // daemon. PATCH passes `null` to explicitly clear it.
+  apiKey: z.string().nullable().optional(),
+  models: z.array(upstreamModelSchema).optional(),
+});
+
 // --- auth ---
 
 // Cap PBKDF2 input length: 1024 bytes — well above any real passphrase. The
@@ -226,6 +234,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
   z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
   z.object({ provider: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ provider: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
 // Update is provider-agnostic: provider is read from the existing record, and
@@ -238,7 +247,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code']).optional(),
+  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -248,22 +257,22 @@ export const updateUpstreamBody = z.object({
   config: z.unknown().optional(),
 });
 
-// Draft /models browse: accepts an in-progress custom config so callers can
+// Draft /models browse: accepts an in-progress upstream config so callers can
 // fetch the upstream's live model list before saving. `id` is present in
-// edit mode so the handler can substitute the stored secret when bearerToken
-// is left blank ("keep the stored secret").
-export const fetchModelsBody = z.object({
-  id: z.string().optional(),
-  config: customConfigSchema,
-});
+// edit mode so the handler can substitute the stored secret when the secret
+// is left blank ("keep the stored secret"). Discriminated by `provider` so
+// each provider's draft preview surfaces a typed catalog.
+export const fetchModelsBody = z.discriminatedUnion('provider', [
+  z.object({ provider: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
+  z.object({ provider: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
+]);
 
 // --- copilot device flow ---
 
 export const copilotAuthPollBody = z.object({
   device_code: z.string().min(1),
-  // Pre-save proxy override: when the operator is editing the proxy chain
-  // before completing the device-flow handshake, route every GitHub-side
-  // call (poll, user lookup, account-type detection) through that chain.
+  // Edit-form override routing every GitHub-side call through the
+  // operator's in-progress chain. See proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
@@ -332,11 +341,8 @@ export const codexReimportBody = z.object({
 }).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
 export const codexRefreshNowBody = z.object({
-  // Pre-save / edit-time override: the operator's in-progress
-  // proxy_fallback_list edit takes precedence over whatever is persisted, so
-  // a refresh-now click while editing the proxy chain reaches the upstream
-  // through the new chain rather than the old one. Absent → fall back to the
-  // persisted row's list.
+  // Edit-form override; absent falls back to the persisted row's list. See
+  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
@@ -370,28 +376,22 @@ export const claudeCodeImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...claudeCodeCredentialFields,
-  // Pre-save proxy override: a brand-new upstream has no persisted chain, so
-  // the OAuth bootstrap goes direct by default. When the operator has
-  // already picked a fallback list in the in-flight form, send it here so
-  // the bootstrap routes through that chain AND so the same chain is
-  // persisted on the new row for subsequent data-plane calls.
+  // Edit-form override; persisted onto the freshly-created row so subsequent
+  // data-plane calls honor the same chain. See proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...claudeCodeCredentialFields,
-  // Edit-time override: same rationale as claudeCodeImportBody — the operator
-  // may be changing the proxy chain in the same edit that re-imports the
-  // credential. When present, route the bootstrap through the override and
-  // overwrite the persisted list with it.
+  // Edit-form override; overwrites the persisted list when present. See
+  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
 export const claudeCodeRefreshNowBody = z.object({
-  // Pre-save / edit-time override: same rationale as codexRefreshNowBody —
-  // a Refresh-now click during a proxy edit must reach the upstream through
-  // the in-progress chain, not the persisted one.
+  // Edit-form override; absent falls back to the persisted row's list. See
+  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
@@ -414,13 +414,16 @@ export const claudeCodeSetupTokenImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...claudeCodeSetupTokenCallbackFields,
-  // Same proxy-bootstrap rationale as claudeCodeImportBody.
+  // Edit-form override; persisted onto the freshly-created row. See
+  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
 export const claudeCodeSetupTokenReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...claudeCodeSetupTokenCallbackFields,
+  // Edit-form override; overwrites the persisted list when present. See
+  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
