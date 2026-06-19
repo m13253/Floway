@@ -22,6 +22,7 @@ export const createCloudflareDumpBroker = (
     ws.accept();
 
     const queue: DumpMetadata[] = [];
+    let closed = false;
     let resolveNext: (() => void) | null = null;
     const wake = (): void => {
       const r = resolveNext;
@@ -36,13 +37,19 @@ export const createCloudflareDumpBroker = (
       queue.push(JSON.parse(data) as DumpMetadata);
       wake();
     });
-    ws.addEventListener('close', wake);
-    ws.addEventListener('error', wake);
+    const markClosed = (): void => { closed = true; wake(); };
+    ws.addEventListener('close', markClosed);
+    ws.addEventListener('error', markClosed);
     signal.addEventListener('abort', wake, { once: true });
 
     try {
       while (!signal.aborted) {
         if (queue.length === 0) {
+          // The socket can close from the server side (DO eviction, retention
+          // turned off mid-session). Exit once the queue is drained so the SSE
+          // handler closes its end instead of hanging on an awaited promise
+          // that will never resolve.
+          if (closed) return;
           await new Promise<void>(resolve => { resolveNext = resolve; });
           continue;
         }

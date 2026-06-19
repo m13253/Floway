@@ -37,12 +37,18 @@ const incrementRand = (): void => {
 };
 
 export const ulid = (now: number = Date.now()): string => {
-  if (now === lastTime) {
+  // Treat a backwards clock jump (NTP correction) as a same-millisecond
+  // collision: keep lastTime and increment the random tail. Without this,
+  // resetting lastTime to a smaller `now` would let the next id encode an
+  // earlier timestamp than the previous, breaking the lexicographic ordering
+  // the DumpStore relies on for page cursors.
+  const ts = now > lastTime ? now : lastTime;
+  if (ts === lastTime) {
     incrementRand();
   } else {
-    lastTime = now;
+    lastTime = ts;
     const fresh = crypto.getRandomValues(new Uint8Array(RAND_LEN));
     for (let i = 0; i < RAND_LEN; i++) lastRand[i] = fresh[i]! & 31;
   }
-  return encodeTime(now) + encodeRand(lastRand);
+  return encodeTime(ts) + encodeRand(lastRand);
 };
