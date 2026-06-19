@@ -467,8 +467,13 @@ test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s f
 
   const resp = await requestApp(`/api/upstreams/${created.id}/models`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { data: Array<{ upstreamModelId: string; kind: string; endpoints: Record<string, unknown> }> };
-  assertEquals(body.data[0].upstreamModelId, 'gpt-public');
+  const body = (await resp.json()) as { data: Array<{ upstreamModelId: string; publicModelId: string; kind: string; endpoints: Record<string, unknown> }> };
+  // Azure config carries `upstreamModelId: 'gpt-prod', publicModelId: 'gpt-public'`,
+  // so the GET response round-trips both ids: the operator's wire-side
+  // deployment id under `upstreamModelId`, and the public alias (the catalog
+  // `model.id`) under `publicModelId`.
+  assertEquals(body.data[0].upstreamModelId, 'gpt-prod');
+  assertEquals(body.data[0].publicModelId, 'gpt-public');
   assertEquals(body.data[0].kind, 'chat');
 
   const missing = await requestApp('/api/upstreams/nope/models', { headers: { 'x-floway-session': adminSession } });
