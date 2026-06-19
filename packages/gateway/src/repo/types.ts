@@ -43,19 +43,34 @@ export interface UsageRecord {
   upstream: string | null;
   modelKey: string;
   hour: string;
+  // Service tier the upstream stamped on this bucket (Anthropic `speed`,
+  // OpenAI `service_tier`). null = the base / default tier. Distinct tiers
+  // for the same (keyId, model, upstream, modelKey, hour) are stored as
+  // separate buckets so per-tier pricing overrides apply correctly.
+  tier: string | null;
   requests: number;
-  // Disjoint per-dimension token counts for this bucket (see TokenUsage).
-  tokens: TokenUsage;
+  // Disjoint per-dimension token counts for this bucket. The tier the bucket
+  // was stamped under lives on the `tier` field above — do not encode it
+  // inside this map.
+  tokens: Partial<Record<BillingDimension, number>>;
   // Pricing snapshot taken at write time. null means the provider did not
   // resolve pricing for this model (Custom upstreams, unknown Copilot
   // public id, etc.). The repo derives per-dimension unit prices from it via
-  // unitPriceForDimension; aggregation treats a null snapshot as cost 0.
+  // unitPriceForDimension after `resolveEffectivePricing(cost, tier)` folds
+  // in the bucket's tier override; aggregation treats a null snapshot as
+  // cost 0.
   cost: ModelPricing | null;
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that
-// dimension. No key's count overlaps another's.
-export type TokenUsage = Partial<Record<BillingDimension, number>>;
+// dimension. No key's count overlaps another's. `tier` is the upstream-
+// reported service-tier marker (Anthropic `usage.speed`, OpenAI
+// `usage.service_tier`) that selects an override against `cost.tiers`
+// before any per-dimension unit-price lookup; absent / null = the model's
+// base pricing applies.
+export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
+  tier?: string | null;
+}
 
 export type SearchUsageAction = 'search' | 'fetch_page';
 
@@ -137,10 +152,10 @@ export interface SessionsRepo {
 }
 
 export interface UsageRepo {
-  // Additive upsert: on (keyId, model, upstream, modelKey, hour) conflict,
-  // token counts are summed. cost is COALESCED — the first write within a
-  // bucket establishes the pricing snapshot for that row, later writes that
-  // share the bucket keep the original snapshot.
+  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier)
+  // conflict, token counts are summed. cost is COALESCED — the first write
+  // within a bucket establishes the pricing snapshot for that row, later
+  // writes that share the bucket keep the original snapshot.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;

@@ -23,7 +23,14 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 // Keys are billing dimensions: bare `input`/`output` are the text/fallback rate
 // and `_image` keys are the image modality. Every key is optional; an absent key
 // falls back per `unitPriceForDimension` (modality → bare, cached → uncached).
-export type ModelPricing = Partial<Record<BillingDimension, number>>;
+//
+// `tiers` carries per-request service-tier overrides (Anthropic fast mode,
+// OpenAI priority/flex). Each tier key is the wire-value the upstream stamps
+// on the usage object (`fast`, `priority`, `flex`, ...). Resolve through
+// `resolveEffectivePricing(pricing, usage.tier)` before any unit-price lookup.
+export interface ModelPricing extends Partial<Record<BillingDimension, number>> {
+  tiers?: Record<string, Partial<Record<BillingDimension, number>>>;
+}
 
 // Resolve the USD-per-million-tokens unit price for one dimension against a
 // pricing snapshot, applying the LiteLLM-style fallback chain: a modality with
@@ -50,6 +57,21 @@ export const unitPriceForDimension = (pricing: ModelPricing | null, dimension: B
   case 'output_image':
     return pricing.output_image ?? pricing.output ?? null;
   }
+};
+
+// Fold the per-tier override (if any) into a flat ModelPricing snapshot, so
+// every downstream `unitPriceForDimension` call sees one self-contained map.
+// Per-dimension shallow merge: overlay keys win, omitted keys inherit the
+// base rate (and then flow through `unitPriceForDimension`'s fallback chain).
+// Returns a fresh object that never carries `tiers` — recursion would not
+// match any real billing surface. An unknown or absent tier returns the base
+// snapshot unchanged (sans `tiers`), so old usage rows with no tier carry on
+// pricing identically to before.
+export const resolveEffectivePricing = (pricing: ModelPricing | null, tier: string | null | undefined): ModelPricing | null => {
+  if (!pricing) return null;
+  const { tiers, ...base } = pricing;
+  const override = tier != null ? tiers?.[tier] : undefined;
+  return override ? { ...base, ...override } : base;
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

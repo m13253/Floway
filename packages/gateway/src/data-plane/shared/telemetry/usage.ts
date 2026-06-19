@@ -6,14 +6,27 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
 
+// Map an upstream-reported service tier onto the tier marker the gateway
+// stores on the usage row. `default` and `auto` (OpenAI's response-side base
+// values) and `standard` (Anthropic's response-side base value) all denote
+// base pricing and collapse to null so they aggregate with rows that carry
+// no tier at all.
+// https://developers.openai.com/api/docs/guides/priority-processing
+// https://docs.claude.com/en/api/service-tiers
+// https://docs.claude.com/en/build-with-claude/fast-mode
+export const billableServiceTier = (tier: string | null | undefined): string | null =>
+  tier != null && tier !== 'default' && tier !== 'auto' && tier !== 'standard' ? tier : null;
+
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
-// actually billed.
+// actually billed. `tier` (a non-numeric service-tier marker) survives the
+// filter so per-tier pricing overrides resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const value = counts[dimension] ?? 0;
     if (value > 0) out[dimension] = value;
   }
+  if (counts.tier != null) out.tier = counts.tier;
   return out;
 };
 
@@ -82,6 +95,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       upstream: modelIdentity.upstream,
       modelKey: modelIdentity.modelKey,
       hour: currentHour(),
+      tier: usage.tier ?? null,
       requests: 1,
       tokens: usage,
       cost: modelIdentity.cost,
