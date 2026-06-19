@@ -42,7 +42,9 @@ const recordWith = (overrides: {
   response: overrides.response,
 });
 
-const withStore = async (fn: (store: NodeDumpStore) => Promise<void>): Promise<void> => {
+const withStore = async (
+  fn: (store: NodeDumpStore, setRetention: (keyId: string, retentionSeconds: number | null) => void) => Promise<void>,
+): Promise<void> => {
   const dir = await mkdtemp(join(tmpdir(), 'node-dump-store-'));
   try {
     const db = createNodeSqliteDatabase(join(dir, 'test.db'));
@@ -56,7 +58,12 @@ const withStore = async (fn: (store: NodeDumpStore) => Promise<void>): Promise<v
       + ')',
     );
     const files = new FsFileProvider(join(dir, 'files'));
-    await fn(new NodeDumpStore(db, files));
+    const retentions = new Map<string, number | null>();
+    const setRetention = (keyId: string, retentionSeconds: number | null): void => {
+      retentions.set(keyId, retentionSeconds);
+    };
+    const store = new NodeDumpStore(db, files, async keyId => retentions.get(keyId) ?? null);
+    await fn(store, setRetention);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -81,7 +88,7 @@ test('put/get round-trips a streaming-response record verbatim', () => withStore
     },
   });
   await store.put('key1', rec);
-  assertEquals(await store.get('key1', rec.meta.id, null), rec);
+  assertEquals(await store.get('key1', rec.meta.id), rec);
 }));
 
 test('put/get round-trips a bytes-response record verbatim', () => withStore(async store => {
@@ -100,7 +107,7 @@ test('put/get round-trips a bytes-response record verbatim', () => withStore(asy
     },
   });
   await store.put('key1', rec);
-  const round = await store.get('key1', rec.meta.id, null);
+  const round = await store.get('key1', rec.meta.id);
   assertEquals(round, rec);
   // Header order and duplicates must be preserved.
   assertEquals(round!.response.headers, rec.response.headers);
@@ -117,11 +124,11 @@ test('put/get round-trips a none-response record verbatim', () => withStore(asyn
     },
   });
   await store.put('key1', rec);
-  assertEquals(await store.get('key1', rec.meta.id, null), rec);
+  assertEquals(await store.get('key1', rec.meta.id), rec);
 }));
 
 test('get returns null for an unknown record id', () => withStore(async store => {
-  assertEquals(await store.get('key1', '01HXMISSING00000000000', null), null);
+  assertEquals(await store.get('key1', '01HXMISSING00000000000'), null);
 }));
 
 test('list returns newest-first and respects limit', () => withStore(async store => {
@@ -133,10 +140,10 @@ test('list returns newest-first and respects limit', () => withStore(async store
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const all = await store.list('key1', { limit: 10 }, null);
+  const all = await store.list('key1', { limit: 10 });
   assertEquals(all.map(m => m.id), [...ids].reverse());
 
-  const capped = await store.list('key1', { limit: 2 }, null);
+  const capped = await store.list('key1', { limit: 2 });
   assertEquals(capped.map(m => m.id), [ids[2], ids[1]]);
 }));
 
@@ -149,7 +156,7 @@ test('list before is strictly exclusive', () => withStore(async store => {
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const page = await store.list('key1', { before: ids[2], limit: 10 }, null);
+  const page = await store.list('key1', { before: ids[2], limit: 10 });
   assertEquals(page.map(m => m.id), [ids[1], ids[0]]);
 }));
 
@@ -162,11 +169,11 @@ test('list caps the page size at 200', () => withStore(async store => {
       response: { status: 200, headers: [], type: 'none' },
     }));
   }
-  const page = await store.list('key1', { limit: 1000 }, null);
+  const page = await store.list('key1', { limit: 1000 });
   assertEquals(page.length, 200);
 }));
 
-test('list lazy-filters records older than the caller retention before any sweep has run', () => withStore(async store => {
+test('list lazy-filters records older than the resolver retention before any sweep has run', () => withStore(async (store, setRetention) => {
   const now = Date.now();
   // Lower-lex id for the older record so list's newest-first ordering by id
   // matches the temporal order; otherwise the unfiltered assertion below
@@ -185,15 +192,17 @@ test('list lazy-filters records older than the caller retention before any sweep
   await store.put('key1', fresh);
 
   // 1h retention hides the 2h-old record without us calling purgeExpired.
-  const filtered = await store.list('key1', { limit: 10 }, 3600);
+  setRetention('key1', 3600);
+  const filtered = await store.list('key1', { limit: 10 });
   assertEquals(filtered.map(m => m.id), [fresh.meta.id]);
 
   // Same rows, no filter (null retention) — both come back, newest id first.
-  const unfiltered = await store.list('key1', { limit: 10 }, null);
+  setRetention('key1', null);
+  const unfiltered = await store.list('key1', { limit: 10 });
   assertEquals(unfiltered.map(m => m.id), [fresh.meta.id, stale.meta.id]);
 }));
 
-test('get lazy-filters an expired record before any sweep has run', () => withStore(async store => {
+test('get lazy-filters an expired record before any sweep has run', () => withStore(async (store, setRetention) => {
   const now = Date.now();
   const stale = recordWith({
     id: '01HXLAZYGET00000000000',
@@ -202,12 +211,14 @@ test('get lazy-filters an expired record before any sweep has run', () => withSt
   });
   await store.put('key1', stale);
 
-  assertEquals(await store.get('key1', stale.meta.id, 3600), null);
+  setRetention('key1', 3600);
+  assertEquals(await store.get('key1', stale.meta.id), null);
   // Without a retention filter the same row is returned.
-  assert((await store.get('key1', stale.meta.id, null)) !== null);
+  setRetention('key1', null);
+  assert((await store.get('key1', stale.meta.id)) !== null);
 }));
 
-test('list reflects a raised retention immediately (records within the new window become visible again)', () => withStore(async store => {
+test('list reflects a raised retention immediately (records within the new window become visible again)', () => withStore(async (store, setRetention) => {
   const now = Date.now();
   const tenMinutesOld = recordWith({
     id: '01HXRAISE000000000000A',
@@ -217,10 +228,12 @@ test('list reflects a raised retention immediately (records within the new windo
   await store.put('key1', tenMinutesOld);
 
   // Under a 5-minute retention the 10-minute-old record is hidden,
-  assertEquals(await store.list('key1', { limit: 10 }, 300), []);
+  setRetention('key1', 300);
+  assertEquals(await store.list('key1', { limit: 10 }), []);
   // but a raised retention exposes it on the very next read — no put or
   // sweep required in between.
-  const raised = await store.list('key1', { limit: 10 }, 86_400);
+  setRetention('key1', 86_400);
+  const raised = await store.list('key1', { limit: 10 });
   assertEquals(raised.map(m => m.id), [tenMinutesOld.meta.id]);
 }));
 
@@ -244,10 +257,10 @@ test('purgeExpired removes records older than now - retentionSeconds*1000 and ke
 
   await store.purgeExpired('key1', retentionSeconds);
 
-  assertEquals(await store.get('key1', old.meta.id, null), null);
-  assert((await store.get('key1', fresh.meta.id, null)) !== null);
+  assertEquals(await store.get('key1', old.meta.id), null);
+  assert((await store.get('key1', fresh.meta.id)) !== null);
 
-  const remaining = await store.list('key1', { limit: 10 }, null);
+  const remaining = await store.list('key1', { limit: 10 });
   assertEquals(remaining.map(m => m.id), [fresh.meta.id]);
 }));
 
@@ -266,7 +279,7 @@ test('purgeExpired keeps a record whose timestamp equals the cutoff (strict less
 
   await store.purgeExpired('key1', 1);
 
-  assert((await store.get('key1', rec.meta.id, null)) !== null);
+  assert((await store.get('key1', rec.meta.id)) !== null);
 }));
 
 test('purgeAll removes every row and every file for the key', () => withStore(async store => {
@@ -285,9 +298,9 @@ test('purgeAll removes every row and every file for the key', () => withStore(as
 
   await store.purgeAll('key1');
 
-  assertEquals(await store.list('key1', { limit: 10 }, null), []);
+  assertEquals(await store.list('key1', { limit: 10 }), []);
   // Other keys are untouched.
-  const other = await store.list('key2', { limit: 10 }, null);
+  const other = await store.list('key2', { limit: 10 });
   assertEquals(other.length, 1);
-  assert((await store.get('key2', '01HXKEEP00000000000000', null)) !== null);
+  assert((await store.get('key2', '01HXKEEP00000000000000')) !== null);
 }));

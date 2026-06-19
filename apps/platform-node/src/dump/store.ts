@@ -26,6 +26,10 @@ export class NodeDumpStore implements DumpStore {
   constructor(
     private readonly db: SqlDatabase,
     private readonly files: FileProvider,
+    // Resolved on every read so a freshly-raised retention takes effect on
+    // the very next list/get without waiting for a put or sweep to refresh
+    // any cached value. Returns null when the key disabled dump capture.
+    private readonly retentionResolver: (keyId: string) => Promise<number | null>,
   ) {}
 
   async put(keyId: string, record: DumpRecord): Promise<void> {
@@ -40,8 +44,9 @@ export class NodeDumpStore implements DumpStore {
       .run();
   }
 
-  async list(keyId: string, opts: DumpListOptions, retentionSeconds: number | null): Promise<DumpMetadata[]> {
+  async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
     const limit = Math.min(opts.limit, MAX_LIST_LIMIT);
+    const retentionSeconds = await this.retentionResolver(keyId);
     const threshold = retentionSeconds === null ? null : Date.now() - retentionSeconds * 1000;
     const rows = opts.before === undefined
       ? threshold === null
@@ -65,7 +70,8 @@ export class NodeDumpStore implements DumpStore {
     return rows.results.map(r => JSON.parse(r.meta_json) as DumpMetadata);
   }
 
-  async get(keyId: string, recordId: DumpRecordId, retentionSeconds: number | null): Promise<DumpRecord | null> {
+  async get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null> {
+    const retentionSeconds = await this.retentionResolver(keyId);
     if (retentionSeconds !== null) {
       const threshold = Date.now() - retentionSeconds * 1000;
       const row = await this.db

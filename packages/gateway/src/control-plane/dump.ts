@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey } from '../repo/types.ts';
 import { getDumpBroker, getDumpStore } from '../runtime/dump.ts';
+import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 const RECORDS_LIST_HARD_CAP = 200;
 const RECORDS_LIST_DEFAULT = 100;
@@ -35,24 +36,33 @@ export const dump = new Hono()
     const owned = await ownedKeyOr404(c, keyId);
     if (owned instanceof Response) return owned;
 
-    // Snapshot before subscribe so we never miss a record that completes after
-    // the subscribe is in place but before the snapshot read returns. The
-    // tradeoff is a small gap window: a record completed in the moment between
-    // the snapshot read and the subscribe attach is delivered by neither path
-    // and surfaces only when the dashboard scrolls back via loadOlder. The
-    // dashboard already needs loadOlder to recover from any disconnect, so
-    // accepting the gap is cheaper than tolerating duplicate ids.
-    const snapshot = await getDumpStore().list(
-      keyId,
-      { limit: STREAM_INITIAL_SNAPSHOT_LIMIT },
-      owned.dumpRetentionSeconds,
-    );
+    // Subscribe FIRST and buffer broker pushes, then read the snapshot, then
+    // drain the buffer to the client. A record completing between subscribe
+    // and snapshot is delivered by both paths and the client dedupes by id —
+    // at-worst-twice beats the alternative of a silent gap.
+    const subscription = getDumpBroker().subscribe(keyId, c.req.raw.signal);
+    const buffered: DumpMetadata[] = [];
+    let sink: (meta: DumpMetadata) => void | Promise<void> = meta => { buffered.push(meta); };
+    const pump = (async () => {
+      try {
+        for await (const meta of subscription) await sink(meta);
+      } catch (err) {
+        console.error('[dump-stream]', err);
+      }
+    })();
+
+    const snapshot = await getDumpStore().list(keyId, { limit: STREAM_INITIAL_SNAPSHOT_LIMIT });
 
     return streamSSE(c, async stream => {
       await stream.writeSSE({ event: 'snapshot', data: JSON.stringify(snapshot) });
-      for await (const meta of getDumpBroker().subscribe(keyId, c.req.raw.signal)) {
+      while (buffered.length > 0) {
+        const meta = buffered.shift()!;
         await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
       }
+      // Hand the broker pump its real sink. The pump awaits each sink call,
+      // so writeSSE keeps ordering and backpressure intact.
+      sink = meta => stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
+      await pump;
     });
   })
   .get('/keys/:keyId/records', async c => {
@@ -66,7 +76,6 @@ export const dump = new Hono()
     const records = await getDumpStore().list(
       keyId,
       { limit, ...(before !== undefined ? { before } : {}) },
-      owned.dumpRetentionSeconds,
     );
     return c.json({ records });
   })
@@ -76,7 +85,7 @@ export const dump = new Hono()
     const owned = await ownedKeyOr404(c, keyId);
     if (owned instanceof Response) return owned;
 
-    const record = await getDumpStore().get(keyId, recordId, owned.dumpRetentionSeconds);
+    const record = await getDumpStore().get(keyId, recordId);
     if (record === null) return c.json({ error: 'Record not found' }, 404);
     return c.json(record);
   });

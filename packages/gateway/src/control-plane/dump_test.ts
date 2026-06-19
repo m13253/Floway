@@ -14,20 +14,15 @@ const makeStubStore = () => {
       arr.unshift(record);
       records.set(keyId, arr);
     },
-    async list(keyId, opts, retentionSeconds) {
+    async list(keyId, opts) {
       const all = records.get(keyId) ?? [];
-      const cutoff = retentionSeconds === null ? -Infinity : Date.now() - retentionSeconds * 1000;
-      const withinRetention = all.filter(r => r.meta.startedAt >= cutoff);
       const sliced = opts.before
-        ? withinRetention.slice(withinRetention.findIndex(r => r.meta.id === opts.before) + 1)
-        : withinRetention;
+        ? all.slice(all.findIndex(r => r.meta.id === opts.before) + 1)
+        : all;
       return sliced.slice(0, opts.limit).map(r => r.meta);
     },
-    async get(keyId, recordId, retentionSeconds) {
-      const cutoff = retentionSeconds === null ? -Infinity : Date.now() - retentionSeconds * 1000;
-      const hit = records.get(keyId)?.find(r => r.meta.id === recordId);
-      if (!hit || hit.meta.startedAt < cutoff) return null;
-      return hit;
+    async get(keyId, recordId) {
+      return records.get(keyId)?.find(r => r.meta.id === recordId) ?? null;
     },
     async purgeExpired() {},
     async purgeAll() {},
@@ -181,7 +176,7 @@ test('GET /api/dump/keys/:keyId/records limit handling', async () => {
   let observedLimit = -1;
   initDumpStore({
     ...store.store,
-    async list(_keyId: string, opts: DumpListOptions, _retentionSeconds: number | null) {
+    async list(_keyId: string, opts: DumpListOptions) {
       observedLimit = opts.limit;
       return [];
     },
@@ -292,4 +287,71 @@ test('cross-user ownership check applies to every dump endpoint', async () => {
   assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records`, { headers: intruderHeaders })).status, 404);
   assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/records/anything`, { headers: intruderHeaders })).status, 404);
   assertEquals((await requestApp(`/api/dump/keys/${apiKey.id}/stream`, { headers: intruderHeaders })).status, 404);
+});
+
+// Subscribe runs before snapshot, so a record completing inside the snapshot
+// window can be delivered by both paths; the client dedupes by id. The point
+// of this test is to prove the at-worst-twice guarantee is honored — never
+// dropped. We delay `list` to widen the window and publish during it.
+test('GET /api/dump/keys/:keyId/stream — record completing during snapshot read is delivered (not lost)', async () => {
+  const { apiKey } = await setupAppTest();
+  const store = makeStubStore();
+  const broker = makeBlockingBroker();
+
+  let unblockList: (() => void) | null = null;
+  const listGate = new Promise<void>(resolve => { unblockList = resolve; });
+  const slowStore: DumpStore = {
+    ...store.store,
+    async list(keyId, opts) {
+      await listGate;
+      return store.store.list(keyId, opts);
+    },
+  };
+  initDumpStore(slowStore);
+  initDumpBroker(broker.broker);
+
+  await store.store.put(apiKey.id, buildRecord('01A'));
+
+  const controller = new AbortController();
+  const responsePromise = requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
+    headers: { 'x-api-key': apiKey.key },
+    signal: controller.signal,
+  });
+
+  // Wait for the subscribe to attach (next microtask after the handler enters
+  // the awaited list call); then publish a record that the snapshot won't
+  // include because we put it after the list call's underlying data was
+  // captured. Even so, the buffered subscription must deliver it.
+  await new Promise(resolve => setTimeout(resolve, 10));
+  await store.store.put(apiKey.id, buildRecord('01B'));
+  broker.broker.publish(apiKey.id, buildRecord('01B').meta);
+  unblockList!();
+
+  const response = await responsePromise;
+  assertEquals(response.status, 200);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  // Collect at least one snapshot + one appended frame.
+  for (let i = 0; i < 200; i++) {
+    const events = parseSSEText(buffer);
+    if (events.some(e => e.event === 'snapshot') && events.some(e => e.event === 'appended')) break;
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+  }
+  const events = parseSSEText(buffer);
+  const snapshotEv = events.find(e => e.event === 'snapshot')!;
+  const appendedEvs = events.filter(e => e.event === 'appended');
+  const snapshotIds = (JSON.parse(snapshotEv.data) as DumpMetadata[]).map(r => r.id);
+  const appendedIds = appendedEvs.map(e => (JSON.parse(e.data) as DumpMetadata).id);
+
+  // 01B must appear at least once across snapshot+appended. Duplicates are
+  // explicitly allowed by spec; the client dedupes by id.
+  const seenIds = new Set([...snapshotIds, ...appendedIds]);
+  assertEquals(seenIds.has('01B'), true);
+
+  controller.abort();
+  await reader.cancel().catch(() => {});
 });

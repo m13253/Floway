@@ -39,7 +39,10 @@ const { db, files } = bootstrapNodePlatform({ dbPath, filesDir });
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-const dumpStore = new NodeDumpStore(db, files);
+const dumpStore = new NodeDumpStore(db, files, async keyId => {
+  const key = await getRepo().apiKeys.getById(keyId);
+  return key?.dumpRetentionSeconds ?? null;
+});
 initDumpStore(dumpStore);
 initDumpBroker(new NodeDumpBroker());
 
