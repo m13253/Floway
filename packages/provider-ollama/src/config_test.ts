@@ -79,11 +79,6 @@ test('pricingForOllamaModelKey matches regex-keyed families', () => {
   const glm52 = pricingForOllamaModelKey('glm-5.2');
   assertEquals(glm52?.input, 1.4);
   assertEquals(glm52?.output, 4.4);
-
-  // Gemma's regex covers any gemma3/gemma4 size suffix.
-  const gemma = pricingForOllamaModelKey('gemma4:31b');
-  assertEquals(gemma?.input, 0);
-  assertEquals(gemma?.output, 0);
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {
@@ -91,4 +86,9 @@ test('pricingForOllamaModelKey returns null for ids without a defensible referen
   assertEquals(pricingForOllamaModelKey('rnj-1:8b'), null);
   // Version that does not map to any upstream release.
   assertEquals(pricingForOllamaModelKey('qwen3.5'), null);
+  // Gemma — Vertex sells per-token only for gemma-4-26b-a4b-it (not on
+  // Ollama Cloud); every Ollama Gemma tag is self-host-on-Vertex GPU-hour,
+  // not per-token, so deliberately unpriced.
+  assertEquals(pricingForOllamaModelKey('gemma3:27b'), null);
+  assertEquals(pricingForOllamaModelKey('gemma4:31b'), null);
 });

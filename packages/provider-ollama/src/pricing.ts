@@ -74,10 +74,14 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://ai.google.dev/gemini-api/docs/pricing
   ['gemini-3-flash-preview', { input: 0.5, input_cache_read: 0.05, output: 3.0 }],
 
-  // Gemma — open weights, served free of charge on AI Studio (rate-limited).
-  // The commodity-host floor is effectively zero across the 3.x and 4.x lines.
-  // https://ai.google.dev/gemini-api/docs/pricing
-  [/^gemma[34]:/, { input: 0, output: 0 }],
+  // Gemma 3.x and Gemma 4 31B intentionally have no entries: Vertex AI sells
+  // a per-token MaaS SKU only for `gemma-4-26b-a4b-it` ($0.15/$0.60/$0.015),
+  // which Ollama Cloud does not carry. Every Gemma tag Ollama does carry runs
+  // on Vertex Model Garden as a self-hosted GPU/TPU deployment (priced by
+  // accelerator-hour, not tokens), and Ollama's pricing FAQ never quotes a
+  // per-token rate for them. Leaving these unpriced rather than fabricating
+  // an "AI Studio is free" zero — usage rows resolve to NULL unit_price.
+  // https://cloud.google.com/vertex-ai/generative-ai/pricing — Gemma table
 ];
 
 // Model keys persisted in `usage.model_key` for the Ollama provider are the
