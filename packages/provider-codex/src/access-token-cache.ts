@@ -1,4 +1,4 @@
-import { refreshCodexAccessToken } from './auth/oauth.ts';
+import { CodexOAuthSessionTerminatedError, refreshCodexAccessToken } from './auth/oauth.ts';
 import { readCodexUpstreamState, type CodexAccessTokenEntry, type CodexUpstreamState } from './state.ts';
 import { getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
@@ -76,14 +76,23 @@ export const invalidateCodexAccessToken = async (
   accountId: string,
 ): Promise<void> => { await persistAccessToken(upstreamId, accountId, null, 'invalidateCodexAccessToken'); };
 
-// Refresh-token rotation is deliberately not folded in here: the caller's
-// CAS hook for refresh_token has to coordinate with terminal-state
-// transitions and lives upstream of this function. `mintCodexAccessToken`
-// below is the standard implementation of that callback.
+// Reads, mints, and persists. The mint callback is responsible for routing
+// the rotated refresh_token through the upstream's CAS hook;
+// `mintCodexAccessToken` below is the standard implementation.
+//
+// Refresh-race recovery: when the mint throws `invalid_grant`, the
+// refresh_token may either be genuinely revoked, or a sibling worker may
+// have raced us, won the rotation, and left our copy stale. The cache
+// distinguishes by re-reading state and comparing — see
+// `recoverFromRefreshRace` below. Other terminal codes (defined in
+// `REFRESH_TERMINAL_OAUTH_CODES`) signal credential death under any race
+// scenario and skip recovery. Mirrors sub2api's `tryRecoverFromRefreshRace`:
+// https://github.com/Wei-Shaw/sub2api/blob/49e99e9d519a55cbe6d3bd94b810978dd64ce4b8/backend/internal/service/oauth_refresh_api.go#L175
 export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
+  recoveryAllowed = true,
 ): Promise<CodexAccessTokenEntry> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
@@ -93,9 +102,50 @@ export const ensureCodexAccessToken = async (
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return account.accessToken;
   }
-  const minted = await mint(account.refresh_token);
+
+  let minted: CodexAccessTokenEntry;
+  try {
+    minted = await mint(account.refresh_token);
+  } catch (err) {
+    if (err instanceof CodexOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
+      const recovered = await recoverFromRefreshRace(upstreamId, accountId, account.refresh_token, mint);
+      if (recovered) return recovered;
+    }
+    throw err;
+  }
   await persistAccessToken(upstreamId, accountId, minted, 'ensureCodexAccessToken');
   return minted;
+};
+
+// Re-read state for the same accountId slot and decide whether the
+// `invalid_grant` we just saw came from a sibling rotation (return their
+// freshly-minted access token) or from a genuinely dead refresh_token
+// (return null so the caller re-raises). When a sibling rotated but no
+// cached access token is stored — e.g. a concurrent `invalidateCodexAccessToken`
+// cleared it — we re-enter the refresh flow once with the live RT in hand.
+// The depth guard (`recoveryAllowed: false` on the re-entrant call)
+// suppresses a second recovery attempt — if `invalid_grant` strikes again
+// the refresh token really is dead and we want the terminal flip.
+const recoverFromRefreshRace = async (
+  upstreamId: string,
+  accountId: string,
+  usedRefreshToken: string,
+  mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
+): Promise<CodexAccessTokenEntry | null> => {
+  const reread = await getProviderRepo().upstreams.getById(upstreamId);
+  if (!reread) return null;
+  const rereadState = readCodexUpstreamState(reread.state);
+  const rereadAccount = rereadState.accounts.find(a => a.chatgptAccountId === accountId);
+  if (!rereadAccount) return null;
+  if (rereadAccount.state !== 'active') return null;
+  if (rereadAccount.refresh_token === usedRefreshToken) return null;
+  console.info(
+    `Codex refresh-race recovered for upstream ${upstreamId} account ${accountId}: sibling rotated, using their access token`,
+  );
+  if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
+    return rereadAccount.accessToken;
+  }
+  return await ensureCodexAccessToken(upstreamId, accountId, mint, false);
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated
