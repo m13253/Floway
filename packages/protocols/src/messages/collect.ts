@@ -8,6 +8,7 @@ import type {
   MessagesStreamEvent,
 } from './index.ts';
 import type { DumpStreamEvent } from '../dump/index.ts';
+import type { CollectOutcome } from '../dump-collect/index.ts';
 
 const parseEvent = (raw: DumpStreamEvent): MessagesStreamEvent | null => {
   const data = raw.data.trim();
@@ -63,14 +64,23 @@ const applyDelta = (block: MessagesAssistantContentBlock, event: MessagesContent
 
 const finalizeJsonBuffer = (block: MessagesAssistantContentBlock, buffered: string | undefined): MessagesAssistantContentBlock => {
   if (block.type !== 'tool_use' || buffered === undefined) return block;
-  const input = buffered.length > 0 ? JSON.parse(buffered) as Record<string, unknown> : {};
-  return { ...block, input };
+  if (buffered.length === 0) return { ...block, input: {} };
+  try {
+    return { ...block, input: JSON.parse(buffered) as Record<string, unknown> };
+  } catch {
+    // A truncated stream can leave the partial_json buffer mid-token. Surface
+    // the raw fragment under `_partial_json` so the dashboard can show what
+    // actually arrived; `input` stays an empty object so the shape is honest.
+    return { ...block, input: { _partial_json: buffered } };
+  }
 };
 
-export const collectMessagesStream = (events: readonly DumpStreamEvent[]): MessagesResult => {
+export const collectMessagesStream = (events: readonly DumpStreamEvent[]): CollectOutcome<MessagesResult> => {
   let result: MessagesResult | null = null;
   const content: MessagesAssistantContentBlock[] = [];
   const jsonBuffers = new Map<number, string>();
+  let error: string | null = null;
+  let sawMessageStop = false;
 
   for (const raw of events) {
     const event = parseEvent(raw);
@@ -81,29 +91,61 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Messa
       continue;
     }
 
-    if (result === null) throw new Error('collectMessagesStream: no message_start event in stream');
+    if (event.type === 'error') {
+      // Capture the upstream-reported error verbatim and keep folding so any
+      // partial content already streamed before the error is still preserved.
+      error ??= event.error.message;
+      continue;
+    }
+
+    if (result === null) {
+      // Child frames before `message_start` (or with `message_start` missing
+      // entirely) cannot be folded into an envelope. Record the situation but
+      // keep scanning so a later `error` frame is still surfaced.
+      error ??= `unexpected '${event.type}' before message_start`;
+      continue;
+    }
 
     switch (event.type) {
     case 'content_block_start':
       content[event.index] = openContentBlock(event);
       break;
-    case 'content_block_delta':
-      content[event.index] = applyDelta(content[event.index], event, jsonBuffers, event.index);
+    case 'content_block_delta': {
+      const block = content[event.index];
+      if (block === undefined) break;
+      content[event.index] = applyDelta(block, event, jsonBuffers, event.index);
       break;
+    }
     case 'content_block_stop':
-      content[event.index] = finalizeJsonBuffer(content[event.index], jsonBuffers.get(event.index));
+      if (content[event.index] !== undefined) {
+        content[event.index] = finalizeJsonBuffer(content[event.index], jsonBuffers.get(event.index));
+      }
       jsonBuffers.delete(event.index);
       break;
     case 'message_delta':
       result = applyMessageDelta(result, event);
+      break;
+    case 'message_stop':
+      sawMessageStop = true;
       break;
     default:
       break;
     }
   }
 
-  if (result === null) throw new Error('collectMessagesStream: no message_start event in stream');
-  return { ...result, content };
+  if (result === null) {
+    return { result: null, error: error ?? 'no message_start event in stream', truncated: true };
+  }
+
+  // Any tool_use block whose `input_json_delta` buffer was never closed by a
+  // `content_block_stop` is still folded so the partial buffer is visible.
+  for (const [index, buffered] of jsonBuffers) {
+    const block = content[index];
+    if (block !== undefined) content[index] = finalizeJsonBuffer(block, buffered);
+  }
+
+  const truncated = !sawMessageStop || error !== null;
+  return { result: { ...result, content }, error, truncated };
 };
 
 const applyMessageDelta = (result: MessagesResult, event: MessagesMessageDeltaEvent): MessagesResult => {

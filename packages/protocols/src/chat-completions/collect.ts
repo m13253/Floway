@@ -5,11 +5,38 @@ import type {
   ChatCompletionsToolCall,
 } from './index.ts';
 import type { DumpStreamEvent } from '../dump/index.ts';
+import type { CollectOutcome } from '../dump-collect/index.ts';
 
-const parseEvent = (raw: DumpStreamEvent): ChatCompletionsStreamEvent | null => {
+// OpenAI Chat Completions SSE has no dedicated error event type — upstream
+// errors land as an ordinary `data:` JSON whose body lacks `choices` and
+// instead carries `{ error: { message, code, ... } }`. Detect that shape
+// before attempting to fold the chunk as a normal event.
+interface ChatCompletionsErrorChunk {
+  error: { message?: string; code?: string; type?: string };
+}
+
+const isErrorChunk = (parsed: unknown): parsed is ChatCompletionsErrorChunk => {
+  if (typeof parsed !== 'object' || parsed === null) return false;
+  if (!('error' in parsed)) return false;
+  const err = (parsed as { error: unknown }).error;
+  return typeof err === 'object' && err !== null;
+};
+
+type ParsedChunk =
+  | { kind: 'event'; event: ChatCompletionsStreamEvent }
+  | { kind: 'error'; message: string }
+  | { kind: 'done' }
+  | { kind: 'empty' };
+
+const parseChunk = (raw: DumpStreamEvent): ParsedChunk => {
   const data = raw.data.trim();
-  if (data.length === 0 || data === '[DONE]') return null;
-  return JSON.parse(data) as ChatCompletionsStreamEvent;
+  if (data.length === 0) return { kind: 'empty' };
+  if (data === '[DONE]') return { kind: 'done' };
+  const parsed = JSON.parse(data) as unknown;
+  if (isErrorChunk(parsed)) {
+    return { kind: 'error', message: parsed.error.message ?? 'unknown chat completions error' };
+  }
+  return { kind: 'event', event: parsed as ChatCompletionsStreamEvent };
 };
 
 interface ToolCallAccumulator {
@@ -38,24 +65,38 @@ const buildToolCalls = (choice: ChoiceAccumulator): ChatCompletionsToolCall[] | 
   const indices = [...choice.toolCalls.keys()].sort((a, b) => a - b);
   return indices.map(i => {
     const acc = choice.toolCalls.get(i)!;
-    if (acc.id === null) throw new Error(`collectChatCompletionsStream: tool_call at index ${i} missing id`);
+    // A truncated stream can drop the chunk carrying `id` entirely; surface a
+    // placeholder rather than throwing so the partial tool call is still
+    // visible. Real id-bearing rows will have already overwritten this.
+    const id = acc.id ?? `__missing_id_${i}__`;
     return {
-      id: acc.id,
+      id,
       type: 'function',
       function: { name: acc.name, arguments: acc.arguments },
     };
   });
 };
 
-export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[]): ChatCompletionsResult => {
+export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[]): CollectOutcome<ChatCompletionsResult> => {
   let envelope: Pick<ChatCompletionsResult, 'id' | 'object' | 'created' | 'model'> | null = null;
   let usage: ChatCompletionsResult['usage'];
   const choices = new Map<number, ChoiceAccumulator>();
+  let error: string | null = null;
+  let sawDone = false;
 
   for (const raw of events) {
-    const event = parseEvent(raw);
-    if (event === null) continue;
+    const parsed = parseChunk(raw);
+    if (parsed.kind === 'empty') continue;
+    if (parsed.kind === 'done') {
+      sawDone = true;
+      continue;
+    }
+    if (parsed.kind === 'error') {
+      error ??= parsed.message;
+      continue;
+    }
 
+    const { event } = parsed;
     envelope ??= { id: event.id, object: 'chat.completion', created: event.created, model: event.model };
     if (event.usage) usage = event.usage;
 
@@ -76,7 +117,18 @@ export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[])
     }
   }
 
-  if (envelope === null) throw new Error('collectChatCompletionsStream: no chunks in stream');
+  if (envelope === null) {
+    return {
+      result: null,
+      error: error ?? 'no chunks in stream',
+      truncated: true,
+    };
+  }
+
+  // Any choice still missing its `finish_reason` (or, more obviously, the
+  // entire stream missing `[DONE]`) is a sign of an interrupted stream.
+  const anyChoiceMissingFinish = [...choices.values()].some(c => c.finish_reason === null);
+  const truncated = !sawDone || anyChoiceMissingFinish || error !== null;
 
   const finalChoices: ChatCompletionsChoiceNonStreaming[] = [...choices.values()]
     .sort((a, b) => a.index - b.index)
@@ -95,8 +147,12 @@ export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[])
     });
 
   return {
-    ...envelope,
-    choices: finalChoices,
-    ...(usage ? { usage } : {}),
+    result: {
+      ...envelope,
+      choices: finalChoices,
+      ...(usage ? { usage } : {}),
+    },
+    error,
+    truncated,
   };
 };
