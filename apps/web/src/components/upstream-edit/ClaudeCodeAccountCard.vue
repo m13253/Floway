@@ -38,6 +38,10 @@ const credentialLookup = computed<CredentialLookup>(() => {
 
 const credential = computed<ClaudeCodeAccountCredentialSummary | null>(() => credentialLookup.value.kind === 'present' ? credentialLookup.value.credential : null);
 
+// `tokenKind` is omitted on legacy serializations (records written before
+// the discriminator existed). Treat absence as the historic `oauth` flow.
+const isSetupToken = computed<boolean>(() => credential.value?.tokenKind === 'setup-token');
+
 const quota = computed(() => credential.value?.quotaSnapshot?.data ?? null);
 
 const formatTimestamp = (iso: string | null | undefined): string => {
@@ -159,6 +163,7 @@ const rawEntries = computed<Array<[string, string]>>(() => {
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ headerLabel }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+          <Badge v-if="isSetupToken" tone="violet" size="sm" class="!uppercase tracking-wide" title="Long-lived inference-only credential; cannot self-mint API keys and cannot be refreshed.">Setup Token</Badge>
           <Badge v-if="account?.subscriptionType" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
           <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
           <span v-if="account && account.email === null" class="text-[11px] text-gray-500" title="The OAuth token does not carry user:profile scope">no email scope</span>

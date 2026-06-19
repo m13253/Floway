@@ -4,36 +4,52 @@ import { ref } from 'vue';
 import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
-const props = defineProps<{
+// `pkce` and `setupTokenPkce` carry independent in-flight PKCE sessions
+// because each authorize URL bakes a different `scope` at Anthropic, and
+// the operator may open one tab without ever visiting the other. The
+// parent fetches each lazily when its tab is selected.
+defineProps<{
   pkce: ClaudeCodePkceStartResult | null;
   pkceLoading: boolean;
   pkceError: string | null;
+  setupTokenPkce: ClaudeCodePkceStartResult | null;
+  setupTokenPkceLoading: boolean;
+  setupTokenPkceError: string | null;
 }>();
 
 const activeTab = defineModel<ClaudeCodeImportTab>('activeTab', { required: true });
 const credentialsJsonText = defineModel<string>('credentialsJsonText', { required: true });
 const callbackUrlText = defineModel<string>('callbackUrlText', { required: true });
+const setupTokenCallbackUrlText = defineModel<string>('setupTokenCallbackUrlText', { required: true });
 
 const importTabs = [
   { value: 'callback', label: 'Sign in with Claude' },
+  { value: 'setup_token_callback', label: 'Setup Token' },
   { value: 'credentials_json', label: 'Paste credentials.json' },
 ] as const;
 
 // 'copied' shows a tick for 2s on success; 'failed' surfaces the underlying
 // clipboard error inline so the operator can fall back to selecting the
-// visible link manually.
-const copyStatus = ref<{ kind: 'idle' } | { kind: 'copied' } | { kind: 'failed'; message: string }>({ kind: 'idle' });
-let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
+// visible link manually. One status per copyable URL so two near-simultaneous
+// copies don't overwrite each other's feedback.
+type CopyState = { kind: 'idle' } | { kind: 'copied' } | { kind: 'failed'; message: string };
+const oauthCopyStatus = ref<CopyState>({ kind: 'idle' });
+const setupTokenCopyStatus = ref<CopyState>({ kind: 'idle' });
+let oauthCopyResetTimer: ReturnType<typeof setTimeout> | undefined;
+let setupTokenCopyResetTimer: ReturnType<typeof setTimeout> | undefined;
 
-const copyAuthorizeUrl = async () => {
-  if (!props.pkce) return;
-  if (copyResetTimer !== undefined) clearTimeout(copyResetTimer);
+const copyUrl = async (url: string, target: 'oauth' | 'setup-token') => {
+  const status = target === 'oauth' ? oauthCopyStatus : setupTokenCopyStatus;
+  if (target === 'oauth' && oauthCopyResetTimer !== undefined) clearTimeout(oauthCopyResetTimer);
+  if (target === 'setup-token' && setupTokenCopyResetTimer !== undefined) clearTimeout(setupTokenCopyResetTimer);
   try {
-    await navigator.clipboard.writeText(props.pkce.authorize_url);
-    copyStatus.value = { kind: 'copied' };
-    copyResetTimer = setTimeout(() => { copyStatus.value = { kind: 'idle' }; }, 2000);
+    await navigator.clipboard.writeText(url);
+    status.value = { kind: 'copied' };
+    const timer = setTimeout(() => { status.value = { kind: 'idle' }; }, 2000);
+    if (target === 'oauth') oauthCopyResetTimer = timer;
+    else setupTokenCopyResetTimer = timer;
   } catch (e) {
-    copyStatus.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
+    status.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
   }
 };
 </script>
@@ -59,11 +75,11 @@ const copyAuthorizeUrl = async () => {
             {{ pkce.authorize_url }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-            <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
+            <Button size="sm" variant="secondary" @click="copyUrl(pkce.authorize_url, 'oauth')">
               <i class="i-lucide-clipboard size-3.5" /> Copy URL
             </Button>
-            <span v-if="copyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
-            <span v-else-if="copyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ copyStatus.message }}</span>
+            <span v-if="oauthCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
+            <span v-else-if="oauthCopyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ oauthCopyStatus.message }}</span>
             <span>Expires in {{ Math.round(pkce.expires_in_seconds / 60) }} min</span>
           </div>
         </div>
@@ -72,6 +88,45 @@ const copyAuthorizeUrl = async () => {
 
         <Textarea
           v-model="callbackUrlText"
+          :rows="3"
+          monospace
+          placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=..."
+        />
+      </div>
+    </template>
+
+    <template #setup_token_callback>
+      <div class="space-y-3">
+        <p class="text-xs text-gray-500">
+          The Setup Token is a long-lived (~1 year) credential scoped to inference only — it cannot create or
+          rotate API keys, and the gateway cannot refresh it. When the token eventually expires you re-import
+          a fresh one through this same flow. Preferable to the full OAuth flow for shared deployments where
+          the gateway should not hold a credential that can self-mint API keys.
+        </p>
+
+        <div v-if="setupTokenPkceLoading" class="flex items-center gap-2 text-sm text-gray-400">
+          <Spinner class="size-4" /> Preparing PKCE flow&hellip;
+        </div>
+
+        <div v-else-if="setupTokenPkce" class="space-y-2">
+          <p class="text-xs font-medium text-gray-500">Authorize URL</p>
+          <a :href="setupTokenPkce.authorize_url" target="_blank" rel="noopener" class="block break-all text-xs text-accent-cyan hover:underline">
+            {{ setupTokenPkce.authorize_url }}
+          </a>
+          <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+            <Button size="sm" variant="secondary" @click="copyUrl(setupTokenPkce.authorize_url, 'setup-token')">
+              <i class="i-lucide-clipboard size-3.5" /> Copy URL
+            </Button>
+            <span v-if="setupTokenCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
+            <span v-else-if="setupTokenCopyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ setupTokenCopyStatus.message }}</span>
+            <span>Expires in {{ Math.round(setupTokenPkce.expires_in_seconds / 60) }} min</span>
+          </div>
+        </div>
+
+        <p v-if="setupTokenPkceError" class="text-xs text-accent-rose">{{ setupTokenPkceError }}</p>
+
+        <Textarea
+          v-model="setupTokenCallbackUrlText"
           :rows="3"
           monospace
           placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=..."
