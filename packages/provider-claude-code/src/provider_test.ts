@@ -37,6 +37,7 @@ const activeAccount: ClaudeCodeAccountCredential = {
     refreshedAt: new Date(Date.now() - 60 * 1000).toISOString(),
   } as ClaudeCodeAccessTokenEntry,
   quotaSnapshot: null,
+  usageProbeSnapshot: null,
 };
 
 const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({

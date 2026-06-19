@@ -23,6 +23,7 @@ const goodAccount = {
   stateUpdatedAt: '2026-06-19T00:00:00Z',
   accessToken: null,
   quotaSnapshot: null,
+  usageProbeSnapshot: null,
 };
 const good: ClaudeCodeUpstreamState = {
   accounts: [{ ...goodAccount }],
@@ -36,6 +37,7 @@ const goodSetupTokenAccount = {
   stateUpdatedAt: '2026-06-19T00:00:00Z',
   accessToken: { token: 'st_long_lived', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-19T00:00:00Z' },
   quotaSnapshot: null,
+  usageProbeSnapshot: null,
 };
 
 describe('assertClaudeCodeUpstreamState', () => {
@@ -172,6 +174,31 @@ describe('assertClaudeCodeUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: { status: 'allowed' } } }],
     })).toThrow(/data\.reset/);
   });
+
+  test('accepts usageProbeSnapshot null / populated', () => {
+    expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, usageProbeSnapshot: null }] })).not.toThrow();
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{
+        ...goodAccount,
+        usageProbeSnapshot: { fetchedAt: 1_700_000_000_000, data: { five_hour: { utilization: 0.5 }, anything: 'goes' } },
+      }],
+    })).not.toThrow();
+  });
+  test('rejects absent usageProbeSnapshot (must be explicit null on the wire)', () => {
+    const { usageProbeSnapshot: _drop, ...without } = goodAccount;
+    expect(() => assertClaudeCodeUpstreamState({ accounts: [without] })).toThrow(/usageProbeSnapshot/);
+  });
+  test('rejects malformed usageProbeSnapshot wrapper', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, usageProbeSnapshot: { fetchedAt: 'soon', data: {} } }],
+    })).toThrow(/fetchedAt/);
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, usageProbeSnapshot: { fetchedAt: 1, data: 'oops' } }],
+    })).toThrow(/data/);
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, usageProbeSnapshot: { fetchedAt: 1, data: {}, extra: 1 } }],
+    })).toThrow(/extra/);
+  });
 });
 
 describe('readClaudeCodeUpstreamState', () => {
@@ -201,5 +228,11 @@ describe('readClaudeCodeUpstreamState', () => {
     const out = readClaudeCodeUpstreamState({ accounts: [{ ...goodSetupTokenAccount }] });
     expect(out.accounts[0].tokenKind).toBe('setup-token');
     expect(out.accounts[0].refreshToken).toBeNull();
+  });
+
+  test('defaults missing usageProbeSnapshot to null on legacy records', () => {
+    const { usageProbeSnapshot: _drop, ...legacy } = goodAccount;
+    const out = readClaudeCodeUpstreamState({ accounts: [legacy] });
+    expect(out.accounts[0].usageProbeSnapshot).toBeNull();
   });
 });

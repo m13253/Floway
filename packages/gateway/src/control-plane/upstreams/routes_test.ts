@@ -1883,3 +1883,137 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
   assertEquals(storedState.accounts[0].tokenKind, 'setup-token');
   assertEquals(storedState.accounts[0].accessToken?.token, 'st_v2');
 });
+
+// --- POST /api/upstreams/:id/probe-quota ---
+//
+// Operator-driven active quota probe — Claude Code only. Mirrors real CC's
+// `fetchUtilization: GET /api/oauth/usage` call so operators get the same
+// snapshot the CLI sees without burning a model request. Returns the body
+// verbatim and persists into usageProbeSnapshot state for the dashboard.
+
+const usageProbeBody = {
+  five_hour: { utilization: 0.42, resets_at: '2026-06-19T20:00:00Z' },
+  seven_day: { utilization: 0.10, resets_at: '2026-06-25T18:00:00Z' },
+  seven_day_sonnet: { utilization: 0.05, resets_at: '2026-06-25T18:00:00Z' },
+};
+
+test('POST /api/upstreams/:id/probe-quota returns Anthropic body verbatim and persists into state', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://api.anthropic.com/api/oauth/usage') {
+        assertEquals(request.headers.get('authorization'), 'Bearer cli_at');
+        assertEquals(request.headers.get('anthropic-beta'), 'oauth-2025-04-20');
+        return jsonResponse(usageProbeBody);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as Record<string, unknown> & { fetched_at: string };
+      assertEquals(typeof body.fetched_at, 'string');
+      assertEquals(body.five_hour, usageProbeBody.five_hour);
+      assertEquals(body.seven_day, usageProbeBody.seven_day);
+      assertEquals(body.seven_day_sonnet, usageProbeBody.seven_day_sonnet);
+    },
+  );
+
+  // The persisted snapshot is observable via the next GET /api/upstreams.
+  const stored = await repo.upstreams.getById(created.id);
+  const storedState = stored?.state as { accounts: Array<{ usageProbeSnapshot: { fetchedAt: number; data: Record<string, unknown> } | null }> };
+  assertEquals(storedState.accounts[0].usageProbeSnapshot?.data, usageProbeBody);
+  assertEquals(typeof storedState.accounts[0].usageProbeSnapshot?.fetchedAt, 'number');
+});
+
+test('POST /api/upstreams/:id/probe-quota mints a fresh access token when the cached one is stale', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Import then expire the cached access token so the route's ensureClaudeCodeAccessToken
+  // call falls through to the refresh path. The refresh round-trip + probe
+  // call both ride through the mocked fetch.
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson({ expiresAt: Date.now() - 60_000 }) }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    async (request: Request) => {
+      if (request.url === 'https://platform.claude.com/v1/oauth/token') {
+        return jsonResponse(claudeCodeTokenBody({ access_token: 'at_refreshed', refresh_token: 'rt_v2' }));
+      }
+      if (request.url === 'https://api.anthropic.com/api/oauth/usage') {
+        // Probe rides on the freshly-minted access token, not the stale one.
+        assertEquals(request.headers.get('authorization'), 'Bearer at_refreshed');
+        return jsonResponse(usageProbeBody);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      assertEquals(resp.status, 200);
+    },
+  );
+});
+
+test('POST /api/upstreams/:id/probe-quota surfaces upstream 401 as 502', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  await withMockedFetch(
+    () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } }),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      assertEquals(resp.status, 502);
+      const body = (await resp.json()) as { error: string };
+      assertEquals(body.error.includes('401'), true);
+    },
+  );
+});
+
+test('POST /api/upstreams/:id/probe-quota rejects non-claude-code upstreams with 404', async () => {
+  const { adminSession } = await setupAppTest();
+  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json()) as { id: string };
+
+  const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+  assertEquals(resp.status, 404);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.includes('claude-code'), true);
+});
+
+test('POST /api/upstreams/:id/probe-quota 404s for an unknown upstream id', async () => {
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp('/api/upstreams/nope/probe-quota', authed(adminSession, {}));
+  assertEquals(resp.status, 404);
+});

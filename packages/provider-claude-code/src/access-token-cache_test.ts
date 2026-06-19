@@ -45,6 +45,7 @@ const baseAccount: ClaudeCodeUpstreamState['accounts'][number] = {
   stateUpdatedAt: '2026-06-01T00:00:00.000Z',
   accessToken: null,
   quotaSnapshot: null,
+  usageProbeSnapshot: null,
 };
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
@@ -299,6 +300,7 @@ describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
     stateUpdatedAt: '2026-06-01T00:00:00.000Z',
     accessToken: { token: 'st_long_lived', expiresAt: farFutureMs, refreshedAt: '2026-06-01T00:00:00.000Z' },
     quotaSnapshot: null,
+    usageProbeSnapshot: null,
   };
 
   test('returns the long-lived bearer when fresh; never hits /v1/oauth/token', async () => {

@@ -61,6 +61,18 @@ const serializeQuotaSnapshot = (upstream: UpstreamRecord, value: unknown): unkno
   return clone(value);
 };
 
+// Same shape rationale as serializeQuotaSnapshot: surface the operator-
+// driven live probe verbatim to the dashboard. The wire shape is owned by
+// Anthropic's /api/oauth/usage endpoint and evolves on their schedule, so
+// we round-trip the entry without re-shaping any inner fields.
+const serializeUsageProbeSnapshot = (upstream: UpstreamRecord, value: unknown): unknown => {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed usageProbeSnapshot: expected object or null`);
+  }
+  return clone(value);
+};
+
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
   if (!isRecord(upstream.config)) {
     throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
@@ -144,13 +156,15 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
         ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
         stateUpdatedAt: clone(a.stateUpdatedAt),
         refreshTokenSet: hasSecret(a.refreshToken),
-        // accessToken.expiresAt + quotaSnapshot are non-secret summaries the
-        // dashboard surfaces directly. accessToken.token is dropped. Both
-        // fields are contractually `<entry> | null` per state.ts; a string /
-        // array / number here is genuine shape drift and must throw, not
-        // collapse into null silently.
+        // accessToken.expiresAt + quotaSnapshot + usageProbeSnapshot are
+        // non-secret summaries the dashboard surfaces directly.
+        // accessToken.token is dropped. Each field is contractually
+        // `<entry> | null` per state.ts; a string / array / number here is
+        // genuine shape drift and must throw, not collapse into null
+        // silently.
         accessToken: serializeAccessToken(upstream, a.accessToken),
         quotaSnapshot: serializeQuotaSnapshot(upstream, a.quotaSnapshot),
+        usageProbeSnapshot: serializeUsageProbeSnapshot(upstream, a.usageProbeSnapshot),
       })),
     };
   case 'copilot':

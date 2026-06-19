@@ -43,6 +43,21 @@ export interface ClaudeCodeQuotaSnapshotEntry {
   data: ClaudeCodeQuotaSnapshot;
 }
 
+// Most recent live probe against Anthropic's `GET /api/oauth/usage`
+// endpoint. Distinct from `quotaSnapshot` because the wire shape is
+// totally different: header-derived snapshots carry the
+// `anthropic-ratelimit-unified-*` family parsed into a fixed schema, while
+// the live probe returns a free-form JSON document Anthropic ships from
+// the /api/oauth/usage endpoint (`five_hour`, `seven_day`,
+// `seven_day_sonnet`, optional overage fields, ...). We store the
+// upstream's body verbatim — the dashboard renders by walking known
+// fields and ignores anything new, so a strict shape gate here would
+// reject a still-usable response the moment Anthropic adds a field.
+export interface ClaudeCodeUsageProbeSnapshotEntry {
+  fetchedAt: number;
+  data: unknown;
+}
+
 // One account's autonomous credential state, joined back to its identity in
 // ClaudeCodeUpstreamConfig.accounts via `accountUuid`. The `tokenKind` axis
 // crosses with the `state` (health) axis: each combination is independently
@@ -60,6 +75,9 @@ interface ClaudeCodeAccountCredentialBase {
   stateUpdatedAt: string;
   accessToken: ClaudeCodeAccessTokenEntry | null;
   quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
+  // Most recent /api/oauth/usage probe. Populated by the operator-driven
+  // probe-quota route; the data-plane hot path never writes it.
+  usageProbeSnapshot: ClaudeCodeUsageProbeSnapshotEntry | null;
 }
 
 // The credential class. `oauth` carries a non-empty rotating refresh token
@@ -99,7 +117,8 @@ const assertOnlyKeys = (obj: Record<string, unknown>, allowed: readonly string[]
 
 const ACCESS_TOKEN_KEYS = ['token', 'expiresAt', 'refreshedAt'] as const;
 const QUOTA_SNAPSHOT_KEYS = ['fetchedAt', 'data'] as const;
-const CREDENTIAL_KEYS = ['accountUuid', 'tokenKind', 'refreshToken', 'state', 'stateMessage', 'stateUpdatedAt', 'accessToken', 'quotaSnapshot'] as const;
+const USAGE_PROBE_SNAPSHOT_KEYS = ['fetchedAt', 'data'] as const;
+const CREDENTIAL_KEYS = ['accountUuid', 'tokenKind', 'refreshToken', 'state', 'stateMessage', 'stateUpdatedAt', 'accessToken', 'quotaSnapshot', 'usageProbeSnapshot'] as const;
 const STATE_KEYS = ['accounts'] as const;
 
 const assertClaudeCodeAccessTokenEntry = (value: unknown, where: string): void => {
@@ -129,6 +148,24 @@ const assertClaudeCodeQuotaSnapshotEntry = (value: unknown, where: string): void
     throw new TypeError(`${where}.fetchedAt must be a finite number`);
   }
   assertClaudeCodeQuotaSnapshot(obj.data, `${where}.data`);
+};
+
+// `data` is intentionally untyped: the upstream's /api/oauth/usage body
+// is the source of truth, and Anthropic adds fields (priorIsUsingOverage,
+// hadPriorUtilizationData, ...) on its own schedule. We require only that
+// it is a non-null object so the dashboard can walk it safely.
+const assertClaudeCodeUsageProbeSnapshotEntry = (value: unknown, where: string): void => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError(`${where} must be a plain object`);
+  }
+  const obj = value as Record<string, unknown>;
+  assertOnlyKeys(obj, USAGE_PROBE_SNAPSHOT_KEYS, where);
+  if (typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) {
+    throw new TypeError(`${where}.fetchedAt must be a finite number`);
+  }
+  if (typeof obj.data !== 'object' || obj.data === null || Array.isArray(obj.data)) {
+    throw new TypeError(`${where}.data must be a plain object`);
+  }
 };
 
 const assertClaudeCodeAccountCredential = (value: unknown, where: string): void => {
@@ -175,6 +212,9 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
   if (obj.quotaSnapshot !== null) {
     assertClaudeCodeQuotaSnapshotEntry(obj.quotaSnapshot, `${where}.quotaSnapshot`);
   }
+  if (obj.usageProbeSnapshot !== null) {
+    assertClaudeCodeUsageProbeSnapshotEntry(obj.usageProbeSnapshot, `${where}.usageProbeSnapshot`);
+  }
 };
 
 export function assertClaudeCodeUpstreamState(value: unknown): asserts value is ClaudeCodeUpstreamState {
@@ -195,12 +235,13 @@ export function assertClaudeCodeUpstreamState(value: unknown): asserts value is 
 }
 
 // Asserts the wire shape and returns the typed view. The asserter rejects
-// absent `accessToken` / `quotaSnapshot` keys (they must be explicit `null`
-// when not populated). Legacy records written before `tokenKind` existed
-// are normalized to `'oauth'` here so the asserter's strict shape stays
-// honest; new writes always supply the field explicitly.
+// absent `accessToken` / `quotaSnapshot` / `usageProbeSnapshot` keys (they
+// must be explicit `null` when not populated). Legacy records written
+// before `tokenKind` or `usageProbeSnapshot` existed are normalized here
+// so the asserter's strict shape stays honest; new writes always supply
+// every field explicitly.
 export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamState => {
-  const normalized = normalizeLegacyTokenKind(raw);
+  const normalized = normalizeLegacyAccountFields(raw);
   assertClaudeCodeUpstreamState(normalized);
   return normalized;
 };
@@ -208,7 +249,7 @@ export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamSta
 // Mutates a defensive clone, not the input. The asserter runs after, so any
 // shape violation (including a non-object `raw`) surfaces with the asserter's
 // error rather than a crash here.
-const normalizeLegacyTokenKind = (raw: unknown): unknown => {
+const normalizeLegacyAccountFields = (raw: unknown): unknown => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
   const root = raw as Record<string, unknown>;
   if (!Array.isArray(root.accounts)) return raw;
@@ -217,8 +258,10 @@ const normalizeLegacyTokenKind = (raw: unknown): unknown => {
     accounts: root.accounts.map(account => {
       if (typeof account !== 'object' || account === null || Array.isArray(account)) return account;
       const obj = account as Record<string, unknown>;
-      if (obj.tokenKind !== undefined) return obj;
-      return { ...obj, tokenKind: 'oauth' };
+      const next: Record<string, unknown> = { ...obj };
+      if (next.tokenKind === undefined) next.tokenKind = 'oauth';
+      if (next.usageProbeSnapshot === undefined) next.usageProbeSnapshot = null;
+      return next;
     }),
   };
 };

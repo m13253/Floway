@@ -11,7 +11,7 @@ import { authLoginBody, changeOwnPasswordBody, claudeCodeImportBody, claudeCodeP
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { claudeCodeImport, claudeCodePkceStart, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenPkceStart, claudeCodeSetupTokenReimport, codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { claudeCodeImport, claudeCodePkceStart, claudeCodeProbeQuota, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenPkceStart, claudeCodeSetupTokenReimport, codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getRuntimeInfo } from '../runtime/runtime-info.ts';
@@ -73,6 +73,7 @@ export const controlPlaneRoutes = new Hono()
     .post('/upstreams/claude-code-import', zValidator('json', claudeCodeImportBody), claudeCodeImport)
     .post('/upstreams/:id/claude-code-reimport', zValidator('json', claudeCodeReimportBody), claudeCodeReimport)
     .post('/upstreams/:id/claude-code-refresh-now', zValidator('json', claudeCodeRefreshNowBody), claudeCodeRefreshNow)
+    .post('/upstreams/:id/probe-quota', claudeCodeProbeQuota)
     .post('/upstreams/claude-code-setup-token-pkce-start', zValidator('json', claudeCodePkceStartBody), claudeCodeSetupTokenPkceStart)
     .post('/upstreams/claude-code-setup-token-import', zValidator('json', claudeCodeSetupTokenImportBody), claudeCodeSetupTokenImport)
     .post('/upstreams/:id/claude-code-setup-token-reimport', zValidator('json', claudeCodeSetupTokenReimportBody), claudeCodeSetupTokenReimport)

@@ -24,11 +24,14 @@ import {
   ClaudeCodeOAuthSessionTerminatedError,
   assertClaudeCodeUpstreamRecord,
   buildClaudeCodeAuthorizeUrl,
+  ensureClaudeCodeAccessToken,
   extractClaudeCodeCallbackParams,
+  fetchClaudeCodeUsageProbe,
   generateClaudeCodePkce,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
+  logInfo,
   readClaudeCodeUpstreamState,
   refreshClaudeCodeAccessToken,
 } from '@floway-dev/provider-claude-code';
@@ -1154,4 +1157,97 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
     // with "your dashboard auth is invalid".
     return c.json({ error: `Claude Code refresh failed: ${attempt.error.upstreamMessage}. Re-import the credential to recover.` }, 400);
   }
+};
+
+// Operator-driven active quota probe — Claude Code only. Mirrors real CC's
+// `fetchUtilization: GET /api/oauth/usage` call (binary string in
+// @anthropic-ai/claude-code@2.1.181). Returns the upstream body verbatim
+// plus the wall-clock fetched_at and persists into `usageProbeSnapshot`
+// state so the dashboard's next render sees the freshest snapshot without
+// re-probing. Persistence is best-effort: a CAS loss to a concurrent
+// rotation is fine because the live response already returned to the
+// operator regardless.
+const persistUsageProbeSnapshot = async (
+  upstreamId: string,
+  fetchedAt: string,
+  body: unknown,
+  auditActor: number,
+): Promise<void> => {
+  const fresh = await getRepo().upstreams.getById(upstreamId);
+  if (!fresh) return;
+  const state = readClaudeCodeUpstreamState(fresh.state);
+  const account = state.accounts[0];
+  const next: ClaudeCodeUpstreamState = {
+    ...state,
+    accounts: state.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? {
+      ...a,
+      usageProbeSnapshot: { fetchedAt: Date.parse(fetchedAt), data: body },
+    } : a),
+  };
+  const result = await getRepo().upstreams.saveState(upstreamId, next, { expectedState: fresh.state });
+  if (!result.updated) {
+    logInfo('claude_code_admin_action', {
+      upstream_id: upstreamId,
+      action: 'quota_probe',
+      actor: auditActor,
+      outcome: 'persist_cas_lost',
+      account_uuid: account.accountUuid,
+    });
+  }
+};
+
+export const claudeCodeProbeQuota = async (c: Context) => {
+  const id = c.req.param('id');
+  if (!id) return c.json({ error: 'upstream id is required' }, 400);
+  const existing = await getRepo().upstreams.getById(id);
+  if (!existing) return c.json({ error: 'Upstream not found' }, 404);
+  // Setup-token credentials lack the user:profile scope; /api/oauth/usage
+  // still answers under inference-only scopes (sub2api hits it identically
+  // for setup tokens), so we don't gate by tokenKind. The provider gate is
+  // the only relevant filter.
+  if (existing.provider !== 'claude-code') {
+    return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 404);
+  }
+
+  const actor = c.get('userId') as number;
+  const fetcher = await resolveControlPlaneFetcher({ upstreamId: id });
+
+  let probe;
+  try {
+    const access = await ensureClaudeCodeAccessToken({
+      upstreamId: id,
+      repo: getRepo().upstreams,
+      fetcher,
+    });
+    probe = await fetchClaudeCodeUsageProbe(access.entry.token, fetcher);
+  } catch (err) {
+    logInfo('claude_code_admin_action', {
+      upstream_id: id,
+      action: 'quota_probe',
+      actor,
+      outcome: 'error',
+      error: errorMessage(err),
+    });
+    // A terminal credential surfaces as 503 (mirroring the data-plane wrap)
+    // so the dashboard can render the same "credential dead" affordance.
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}` }, 503);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+
+  await persistUsageProbeSnapshot(id, probe.fetched_at, probe.body, actor);
+  logInfo('claude_code_admin_action', {
+    upstream_id: id,
+    action: 'quota_probe',
+    actor,
+    outcome: 'ok',
+  });
+  // Spread the upstream body at the top level so the response shape
+  // matches what real CC's `fetchUtilization` parses (five_hour,
+  // seven_day, seven_day_sonnet, optional overage fields). `fetched_at`
+  // rides alongside as the gateway-stamped wall-clock. The body is
+  // typed unknown by the helper because Anthropic adds fields without
+  // warning — surface as Record so Hono's c.json accepts it.
+  return c.json({ fetched_at: probe.fetched_at, ...(probe.body as Record<string, unknown>) });
 };

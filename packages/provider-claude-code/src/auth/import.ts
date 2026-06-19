@@ -31,6 +31,7 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
     stateUpdatedAt: params.now,
     accessToken: accessTokenEntry,
     quotaSnapshot: null,
+    usageProbeSnapshot: null,
   };
   let credential: ClaudeCodeAccountCredential;
   if (params.tokenKind === 'setup-token') {
