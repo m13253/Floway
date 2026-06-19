@@ -142,14 +142,14 @@ const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRe
 
 test('upstreamRecordToJson throws when claude-code state.accessToken is a string', () => {
   const record = claudeCodeBase({
-    state: { accounts: [{ accountUuid: 'u', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: 'not-an-object', quotaSnapshot: null }] },
+    state: { accounts: [{ accountUuid: 'u', tokenKind: 'oauth', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: 'not-an-object', quotaSnapshot: null }] },
   });
   expect(() => upstreamRecordToJson(record)).toThrow(/malformed accessToken/);
 });
 
 test('upstreamRecordToJson throws when claude-code state.quotaSnapshot is a string', () => {
   const record = claudeCodeBase({
-    state: { accounts: [{ accountUuid: 'u', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: null, quotaSnapshot: 'not-an-object' }] },
+    state: { accounts: [{ accountUuid: 'u', tokenKind: 'oauth', state: 'active', stateUpdatedAt: timestamp, refreshToken: 'r', accessToken: null, quotaSnapshot: 'not-an-object' }] },
   });
   expect(() => upstreamRecordToJson(record)).toThrow(/malformed quotaSnapshot/);
 });

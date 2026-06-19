@@ -20,6 +20,22 @@ export const CLAUDE_CODE_OAUTH_SCOPE =
   'org:create_api_key user:profile user:inference user:sessions:claude_code '
   + 'user:mcp_servers user:file_upload';
 
+// Setup-Token scope: inference only. This is the credential class minted by
+// Anthropic's "Create a Long-Lived Token" UI — safer for shared deployments
+// because the token cannot mint API keys, hit `/api/oauth/profile`, or touch
+// any account surface beyond inference. The trade-off: the token has no
+// refresh_token and lasts ~1 year, so when it expires the operator must
+// re-import. Cross-checked third-party gateways:
+// https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeInference)
+// https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES_SETUP)
+export const CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE = 'user:inference';
+
+// 1 year in seconds. Sent in the setup-token `authorization_code` exchange
+// body to request a long-lived access token; both sub2api and crs send the
+// same literal. Regular OAuth exchanges omit this so the upstream picks the
+// default (~1 hour) and we rely on the refresh_token for renewal.
+export const CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60;
+
 // User-Agent on /v1/oauth/token. Real Claude Code's underlying HTTP layer is
 // axios; pinning this matches the wire shape independent reimplementations
 // observe in production.

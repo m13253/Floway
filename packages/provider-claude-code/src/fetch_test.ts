@@ -15,6 +15,7 @@ const upstreamId = 'up_cc';
 
 const activeAccount: ClaudeCodeAccountCredential = {
   accountUuid: 'acc-1',
+  tokenKind: 'oauth',
   refreshToken: 'rt_v1',
   state: 'active',
   stateUpdatedAt: '2026-01-01T00:00:00Z',

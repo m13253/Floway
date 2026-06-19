@@ -39,6 +39,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
 
 const baseAccount: ClaudeCodeUpstreamState['accounts'][number] = {
   accountUuid,
+  tokenKind: 'oauth',
   refreshToken: 'rt_v1',
   state: 'active',
   stateUpdatedAt: '2026-06-01T00:00:00.000Z',
@@ -220,5 +221,46 @@ describe('invalidateClaudeCodeAccessToken', () => {
     current = null;
     await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo })).rejects.toThrow(/disappeared/);
     expect(saveStateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
+  const setupTokenAccount: ClaudeCodeUpstreamState['accounts'][number] = {
+    accountUuid,
+    tokenKind: 'setup-token',
+    refreshToken: null,
+    state: 'active',
+    stateUpdatedAt: '2026-06-01T00:00:00.000Z',
+    accessToken: { token: 'st_long_lived', expiresAt: farFutureMs, refreshedAt: '2026-06-01T00:00:00.000Z' },
+    quotaSnapshot: null,
+  };
+
+  test('returns the long-lived bearer when fresh; never hits /v1/oauth/token', async () => {
+    current = makeRecord({ accounts: [{ ...setupTokenAccount }] });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    expect(out.entry.token).toBe('st_long_lived');
+    expect(out.freshlyMinted).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(saveStateSpy).not.toHaveBeenCalled();
+  });
+
+  test('expired setup-token flips to refresh_failed and surfaces session-terminated (operator must re-import)', async () => {
+    const expiredEntry: ClaudeCodeAccessTokenEntry = {
+      token: 'st_expired', expiresAt: Date.now() - 60 * 1000, refreshedAt: '2025-01-01T00:00:00Z',
+    };
+    current = makeRecord({ accounts: [{ ...setupTokenAccount, accessToken: expiredEntry }] });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
+      .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+    // No upstream call — there's nothing to refresh against.
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    expect(saveStateSpy).toHaveBeenCalledTimes(1);
+    const persisted = saveStateSpy.mock.calls[0][1] as ClaudeCodeUpstreamState;
+    expect(persisted.accounts[0].state).toBe('refresh_failed');
+    expect(persisted.accounts[0].stateMessage).toMatch(/re-import/);
+    expect(persisted.accounts[0].accessToken).toBeNull();
   });
 });

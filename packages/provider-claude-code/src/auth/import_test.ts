@@ -4,6 +4,7 @@ import {
   extractClaudeCodeCallbackParams,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
+  importClaudeCodeFromSetupTokenCallback,
 } from './import.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -95,6 +96,7 @@ describe('importClaudeCodeFromCallback', () => {
       subscriptionType: 'max_20x',
     }]);
     expect(result.state.accounts[0].accountUuid).toBe('acc-uuid-1');
+    expect(result.state.accounts[0].tokenKind).toBe('oauth');
     expect(result.state.accounts[0].refreshToken).toBe('rt');
     expect(result.state.accounts[0].state).toBe('active');
     expect(result.state.accounts[0].accessToken?.token).toBe('at');
@@ -293,5 +295,74 @@ describe('importClaudeCodeFromCallback fetcher override', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
     expect(fetcher.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
+  });
+});
+
+describe('importClaudeCodeFromSetupTokenCallback', () => {
+  // Anthropic's setup-token exchange returns a long-lived access token with no
+  // refresh_token. The bearer also lacks `user:profile` so the identity fetch
+  // 403s and falls back to the degraded shape (deterministic accountUuid +
+  // nulls for personal fields).
+  const setupTokenResponse = {
+    access_token: 'st_long_lived',
+    token_type: 'Bearer',
+    expires_in: 31536000,
+    scope: 'user:inference',
+  };
+  const permissionError403 = {
+    error: { type: 'permission_error', message: 'token lacks user:profile scope' },
+  };
+
+  test('exchanges with expires_in=31536000, falls back to degraded identity, persists tokenKind=setup-token', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(setupTokenResponse))
+      .mockResolvedValueOnce(jsonResponse(permissionError403, 403));
+
+    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER' });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
+    const exchangeBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(exchangeBody.expires_in).toBe(31536000);
+    expect(fetchSpy.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
+
+    // Degraded identity: deterministic UUID + nulls.
+    expect(result.config.accounts[0].email).toBeNull();
+    expect(result.config.accounts[0].organizationUuid).toBeNull();
+    expect(result.config.accounts[0].subscriptionType).toBeNull();
+    expect(result.config.accounts[0].accountUuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    // State carries the new kind marker, no refresh token, and the long-lived
+    // access token as the cached credential.
+    expect(result.state.accounts[0].tokenKind).toBe('setup-token');
+    expect(result.state.accounts[0].refreshToken).toBeNull();
+    expect(result.state.accounts[0].accessToken?.token).toBe('st_long_lived');
+    expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now() + 360 * 24 * 60 * 60 * 1000);
+  });
+
+  test('routes both fetches through the supplied fetcher', async () => {
+    const fetcher = vi.fn<Fetcher>()
+      .mockResolvedValueOnce(jsonResponse(setupTokenResponse))
+      .mockResolvedValueOnce(jsonResponse(permissionError403, 403));
+    await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', fetcher });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
+    expect(fetcher.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
+  });
+
+  test('still derives a real identity when the setup-token bearer happens to satisfy user:profile (forward-compat)', async () => {
+    // Anthropic could in principle widen the setup-token scope set in a
+    // future release; if the profile endpoint returns a real account, we
+    // honor it just like the full OAuth path does. The kind marker stays
+    // `setup-token` regardless because the credential class is what matters
+    // for the refresh decision, not the identity richness.
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(setupTokenResponse))
+      .mockResolvedValueOnce(jsonResponse(profileResponse));
+    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER' });
+    expect(result.config.accounts[0].email).toBe('user@example.com');
+    expect(result.config.accounts[0].accountUuid).toBe('acc-uuid-1');
+    expect(result.state.accounts[0].tokenKind).toBe('setup-token');
+    expect(result.state.accounts[0].refreshToken).toBeNull();
   });
 });

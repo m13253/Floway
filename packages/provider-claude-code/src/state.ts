@@ -7,10 +7,22 @@
 // `anthropic-ratelimit-unified-*` snapshot. The asserter calls into quota.ts
 // for the snapshot's inner shape so consumers see the typed `data` field
 // without re-casting at every call site.
+//
+// Two credential kinds share this shape, discriminated by `tokenKind`:
+//
+// - `oauth` (default): a short-lived access token plus a rotating refresh
+//   token. Every refresh call mints a new access token AND rotates the
+//   refresh token; the access-token cache CASes both together.
+// - `setup-token`: a long-lived (~1 year) inference-only bearer with NO
+//   refresh token. The `accessToken` entry IS the credential — when it
+//   expires the operator must re-import. `refreshToken` is null. The
+//   cache short-circuits the refresh path for this kind.
 
 import { assertClaudeCodeQuotaSnapshot, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 
 export type ClaudeCodeCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
+
+export type ClaudeCodeTokenKind = 'oauth' | 'setup-token';
 
 // Short-lived OAuth access token minted by exchanging the stored refreshToken
 // against /v1/oauth/token. The refreshToken itself stays on
@@ -32,14 +44,16 @@ export interface ClaudeCodeQuotaSnapshotEntry {
 }
 
 // One account's autonomous credential state, joined back to its identity in
-// ClaudeCodeUpstreamConfig.accounts via `accountUuid`.
-export type ClaudeCodeAccountCredential = ClaudeCodeAccountCredentialBase & ClaudeCodeAccountCredentialHealth;
+// ClaudeCodeUpstreamConfig.accounts via `accountUuid`. The `tokenKind` axis
+// crosses with the `state` (health) axis: each combination is independently
+// valid on the wire, so the type is a cartesian product of both unions.
+export type ClaudeCodeAccountCredential =
+  & ClaudeCodeAccountCredentialBase
+  & ClaudeCodeAccountCredentialTokenKind
+  & ClaudeCodeAccountCredentialHealth;
 
 interface ClaudeCodeAccountCredentialBase {
   accountUuid: string;
-  // Anthropic rotates the refresh token on every /v1/oauth/token call. Stored
-  // in D1 (not KV) so KV eviction never forces operator re-import.
-  refreshToken: string;
   // ISO 8601, written on every state transition (initial import, rotation,
   // terminal-state flip). The mutation paths always set it together with
   // `state`, so it's required on the wire.
@@ -47,6 +61,15 @@ interface ClaudeCodeAccountCredentialBase {
   accessToken: ClaudeCodeAccessTokenEntry | null;
   quotaSnapshot: ClaudeCodeQuotaSnapshotEntry | null;
 }
+
+// The credential class. `oauth` carries a non-empty rotating refresh token
+// that the cache rotates on every refresh round-trip; `setup-token` is the
+// long-lived inference-only bearer with no refresh counterpart. Old records
+// (written before this discriminator existed) are normalized to `oauth`
+// on read.
+type ClaudeCodeAccountCredentialTokenKind =
+  | { tokenKind: 'oauth'; refreshToken: string }
+  | { tokenKind: 'setup-token'; refreshToken: null };
 
 // `active` carries no message; terminal states carry the upstream's terminal
 // message so the dashboard can render it and ensureClaudeCodeAccessToken can
@@ -76,7 +99,7 @@ const assertOnlyKeys = (obj: Record<string, unknown>, allowed: readonly string[]
 
 const ACCESS_TOKEN_KEYS = ['token', 'expiresAt', 'refreshedAt'] as const;
 const QUOTA_SNAPSHOT_KEYS = ['fetchedAt', 'data'] as const;
-const CREDENTIAL_KEYS = ['accountUuid', 'refreshToken', 'state', 'stateMessage', 'stateUpdatedAt', 'accessToken', 'quotaSnapshot'] as const;
+const CREDENTIAL_KEYS = ['accountUuid', 'tokenKind', 'refreshToken', 'state', 'stateMessage', 'stateUpdatedAt', 'accessToken', 'quotaSnapshot'] as const;
 const STATE_KEYS = ['accounts'] as const;
 
 const assertClaudeCodeAccessTokenEntry = (value: unknown, where: string): void => {
@@ -117,8 +140,18 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
   if (typeof obj.accountUuid !== 'string' || obj.accountUuid === '') {
     throw new TypeError(`${where}.accountUuid must be a non-empty string`);
   }
-  if (typeof obj.refreshToken !== 'string' || obj.refreshToken === '') {
-    throw new TypeError(`${where}.refreshToken must be a non-empty string`);
+  if (obj.tokenKind !== 'oauth' && obj.tokenKind !== 'setup-token') {
+    throw new TypeError(`${where}.tokenKind must be one of 'oauth' | 'setup-token', got ${String(obj.tokenKind)}`);
+  }
+  // Refresh-token presence is keyed off `tokenKind`. `oauth` requires a
+  // non-empty rotating refresh token; `setup-token` carries `null` because
+  // the long-lived bearer has no refresh counterpart.
+  if (obj.tokenKind === 'setup-token') {
+    if (obj.refreshToken !== null) {
+      throw new TypeError(`${where}.refreshToken must be null for setup-token`);
+    }
+  } else if (typeof obj.refreshToken !== 'string' || obj.refreshToken === '') {
+    throw new TypeError(`${where}.refreshToken must be a non-empty string for oauth`);
   }
   if (obj.state !== 'active' && obj.state !== 'session_terminated' && obj.state !== 'refresh_failed') {
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
@@ -163,8 +196,29 @@ export function assertClaudeCodeUpstreamState(value: unknown): asserts value is 
 
 // Asserts the wire shape and returns the typed view. The asserter rejects
 // absent `accessToken` / `quotaSnapshot` keys (they must be explicit `null`
-// when not populated), so no further normalization is needed here.
+// when not populated). Legacy records written before `tokenKind` existed
+// are normalized to `'oauth'` here so the asserter's strict shape stays
+// honest; new writes always supply the field explicitly.
 export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamState => {
-  assertClaudeCodeUpstreamState(raw);
-  return raw;
+  const normalized = normalizeLegacyTokenKind(raw);
+  assertClaudeCodeUpstreamState(normalized);
+  return normalized;
+};
+
+// Mutates a defensive clone, not the input. The asserter runs after, so any
+// shape violation (including a non-object `raw`) surfaces with the asserter's
+// error rather than a crash here.
+const normalizeLegacyTokenKind = (raw: unknown): unknown => {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const root = raw as Record<string, unknown>;
+  if (!Array.isArray(root.accounts)) return raw;
+  return {
+    ...root,
+    accounts: root.accounts.map(account => {
+      if (typeof account !== 'object' || account === null || Array.isArray(account)) return account;
+      const obj = account as Record<string, unknown>;
+      if (obj.tokenKind !== undefined) return obj;
+      return { ...obj, tokenKind: 'oauth' };
+    }),
+  };
 };

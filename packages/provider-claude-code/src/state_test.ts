@@ -17,6 +17,7 @@ const fullQuotaSnapshot: ClaudeCodeQuotaSnapshot = {
 
 const goodAccount = {
   accountUuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  tokenKind: 'oauth' as const,
   refreshToken: 'sk-ant-ort01-rt',
   state: 'active' as const,
   stateUpdatedAt: '2026-06-19T00:00:00Z',
@@ -25,6 +26,16 @@ const goodAccount = {
 };
 const good: ClaudeCodeUpstreamState = {
   accounts: [{ ...goodAccount }],
+};
+
+const goodSetupTokenAccount = {
+  accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  tokenKind: 'setup-token' as const,
+  refreshToken: null,
+  state: 'active' as const,
+  stateUpdatedAt: '2026-06-19T00:00:00Z',
+  accessToken: { token: 'st_long_lived', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-19T00:00:00Z' },
+  quotaSnapshot: null,
 };
 
 describe('assertClaudeCodeUpstreamState', () => {
@@ -60,8 +71,30 @@ describe('assertClaudeCodeUpstreamState', () => {
     const { stateUpdatedAt: _drop, ...withoutTimestamp } = goodAccount;
     expect(() => assertClaudeCodeUpstreamState({ accounts: [withoutTimestamp] })).toThrow(/stateUpdatedAt/);
   });
-  test('rejects empty refreshToken', () => {
+  test('rejects empty refreshToken on oauth', () => {
     expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, refreshToken: '' }] })).toThrow(/refreshToken/);
+  });
+  test('accepts setup-token with null refreshToken + populated accessToken', () => {
+    expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodSetupTokenAccount }] })).not.toThrow();
+  });
+  test('rejects setup-token with a non-null refreshToken', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodSetupTokenAccount, refreshToken: 'leftover' }],
+    })).toThrow(/refreshToken/);
+  });
+  test('rejects oauth with null refreshToken', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, refreshToken: null }],
+    })).toThrow(/refreshToken/);
+  });
+  test('rejects unknown tokenKind', () => {
+    expect(() => assertClaudeCodeUpstreamState({
+      accounts: [{ ...goodAccount, tokenKind: 'apikey' }],
+    })).toThrow(/tokenKind/);
+  });
+  test('rejects missing tokenKind on strict asserter (legacy default fills in readClaudeCodeUpstreamState)', () => {
+    const { tokenKind: _drop, ...withoutKind } = goodAccount;
+    expect(() => assertClaudeCodeUpstreamState({ accounts: [withoutKind] })).toThrow(/tokenKind/);
   });
   test('rejects empty accountUuid', () => {
     expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, accountUuid: '' }] })).toThrow(/accountUuid/);
@@ -85,7 +118,7 @@ describe('assertClaudeCodeUpstreamState', () => {
   });
   test('rejects multiple accounts (v1 invariant: exactly one)', () => {
     expect(() => assertClaudeCodeUpstreamState({
-      accounts: [goodAccount, { ...goodAccount, accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }],
+      accounts: [goodAccount, { ...goodAccount, accountUuid: 'cccccccc-cccc-cccc-cccc-cccccccccccc' }],
     })).toThrow(/exactly one/);
   });
 
@@ -153,5 +186,20 @@ describe('readClaudeCodeUpstreamState', () => {
     const out = readClaudeCodeUpstreamState(populated);
     expect(out.accounts[0].accessToken).toEqual(populated.accounts[0].accessToken);
     expect(out.accounts[0].quotaSnapshot).toEqual(populated.accounts[0].quotaSnapshot);
+  });
+
+  test('defaults missing tokenKind to oauth on legacy records', () => {
+    const { tokenKind: _drop, ...legacy } = goodAccount;
+    const out = readClaudeCodeUpstreamState({ accounts: [legacy] });
+    expect(out.accounts[0].tokenKind).toBe('oauth');
+    // The legacy refresh token must still pass through unchanged so the
+    // first refresh round-trip sees the same bytes the operator imported.
+    expect(out.accounts[0].refreshToken).toBe(goodAccount.refreshToken);
+  });
+
+  test('preserves explicit setup-token kind', () => {
+    const out = readClaudeCodeUpstreamState({ accounts: [{ ...goodSetupTokenAccount }] });
+    expect(out.accounts[0].tokenKind).toBe('setup-token');
+    expect(out.accounts[0].refreshToken).toBeNull();
   });
 });

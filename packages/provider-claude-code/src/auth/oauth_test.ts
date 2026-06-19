@@ -136,4 +136,43 @@ describe('buildClaudeCodeAuthorizeUrl', () => {
     expect(parsed.searchParams.get('code_challenge')).toBe('CHAL');
     expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
   });
+
+  test('setup-token kind narrows scope to user:inference and keeps everything else identical', () => {
+    const url = buildClaudeCodeAuthorizeUrl({ state: 'csrf123', codeChallenge: 'CHAL', kind: 'setup-token' });
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe('https://claude.ai/oauth/authorize');
+    expect(parsed.searchParams.get('client_id')).toBe('9d1c250a-e61b-44d9-88ed-5944d1962f5e');
+    expect(parsed.searchParams.get('response_type')).toBe('code');
+    expect(parsed.searchParams.get('code')).toBe('true');
+    expect(parsed.searchParams.get('redirect_uri')).toBe('https://platform.claude.com/oauth/code/callback');
+    expect(parsed.searchParams.get('scope')).toBe('user:inference');
+    expect(parsed.searchParams.get('state')).toBe('csrf123');
+    expect(parsed.searchParams.get('code_challenge')).toBe('CHAL');
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+});
+
+describe('exchangeClaudeCodeAuthorizationCode (setup-token)', () => {
+  test('adds expires_in=31536000 to the body for the long-lived bearer', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse({
+      access_token: 'st_long',
+      token_type: 'Bearer',
+      expires_in: 31536000,
+      scope: 'user:inference',
+    }));
+    const result = await exchangeClaudeCodeAuthorizationCode({
+      code: 'CODE', codeVerifier: 'VER', kind: 'setup-token',
+    });
+    expect(result.access_token).toBe('st_long');
+    expect(result.refresh_token).toBeUndefined();
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({
+      grant_type: 'authorization_code',
+      code: 'CODE',
+      client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      redirect_uri: 'https://platform.claude.com/oauth/code/callback',
+      code_verifier: 'VER',
+      expires_in: 31536000,
+    });
+  });
 });

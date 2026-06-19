@@ -91,8 +91,29 @@ const ensureClaudeCodeAccessTokenInner = async (
     // fires inside the catch around the live /v1/oauth/token call below.
     throw new ClaudeCodeOAuthSessionTerminatedError({ code: account.state, message: account.stateMessage });
   }
+
+  // Setup-token: the cached access token IS the credential — there is no
+  // refresh counterpart to rotate. When still fresh, return it. When inside
+  // the refresh window, treat as a dead credential: flip to terminal and
+  // surface a session-terminated error so the operator re-imports. The
+  // 1-year validity makes the expiry path rare in practice.
+  if (account.tokenKind === 'setup-token') {
+    if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
+      return { entry: account.accessToken, freshlyMinted: false };
+    }
+    const message = 'Setup token expired or absent; re-import to recover';
+    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, message);
+    throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
+  }
+
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return { entry: account.accessToken, freshlyMinted: false };
+  }
+
+  // The `oauth` kind guarantees a non-empty refresh token; the state asserter
+  // enforces it on read.
+  if (account.refreshToken === null) {
+    throw new Error(`Claude Code upstream ${args.upstreamId} has tokenKind='oauth' but null refreshToken`);
   }
 
   let refreshed;
@@ -109,6 +130,13 @@ const ensureClaudeCodeAccessTokenInner = async (
     throw error;
   }
 
+  // The refresh round-trip always carries a refresh_token; guard for shape
+  // drift so a malformed upstream response can't write `null` into a state
+  // that expects a non-empty rotating token.
+  if (typeof refreshed.refresh_token !== 'string' || refreshed.refresh_token === '') {
+    throw new Error('Claude Code OAuth /token response missing refresh_token on refresh');
+  }
+
   const now = new Date().toISOString();
   const newAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
     token: refreshed.access_token,
@@ -121,11 +149,23 @@ const ensureClaudeCodeAccessTokenInner = async (
   // `stateUpdatedAt` stay untouched on a successful refresh — 'active' is
   // already what we want, and bumping the timestamp on every refresh would
   // muddy the dashboard's "credential health changed" signal.
-  const rotated = replaceAccountAt(state, accountIndex, account => ({
-    ...account,
-    refreshToken: refreshed.refresh_token,
-    accessToken: newAccessTokenEntry,
-  }));
+  //
+  // The `tokenKind === 'setup-token'` early-return above means every
+  // account reaching this branch has `tokenKind: 'oauth'`; spell that out
+  // so the discriminated-union assignment narrows correctly without an
+  // unsafe cast.
+  const rotatedRefreshToken = refreshed.refresh_token;
+  const rotated = replaceAccountAt(state, accountIndex, account => {
+    if (account.tokenKind !== 'oauth') {
+      throw new Error('Claude Code refresh path reached on non-oauth credential');
+    }
+    return {
+      ...account,
+      tokenKind: 'oauth' as const,
+      refreshToken: rotatedRefreshToken,
+      accessToken: newAccessTokenEntry,
+    };
+  });
   const result = await args.repo.saveState(args.upstreamId, rotated, { expectedState: fresh.state });
   if (!result.updated) {
     throw new Error(

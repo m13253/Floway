@@ -853,6 +853,14 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   if (account.state !== 'active') {
     return c.json({ error: `Claude Code upstream is ${account.state}; re-import to recover` }, 400);
   }
+  // Setup-token credentials have no refresh counterpart — there is nothing
+  // to rotate. The UI does not surface a Refresh button for setup-token
+  // accounts, so an inbound request here is either a stale browser tab or a
+  // direct API caller; reject with a precise message rather than silently
+  // succeeding.
+  if (account.tokenKind === 'setup-token') {
+    return c.json({ error: 'Setup-token credentials cannot be refreshed; re-import to rotate' }, 400);
+  }
 
   const body = c.req.valid('json');
   let fetcher;
@@ -864,6 +872,11 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
 
   try {
     const tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
+    // The refresh round-trip always carries a refresh_token; guard for shape
+    // drift so a malformed upstream response can't corrupt the persisted row.
+    if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
+      throw new Error('Claude Code OAuth /token response missing refresh_token on refresh');
+    }
     const now = new Date();
     const nextAccount: ClaudeCodeAccountCredential = {
       ...account,

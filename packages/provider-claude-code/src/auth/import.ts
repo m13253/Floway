@@ -1,5 +1,5 @@
 import type { ClaudeCodeUpstreamConfig } from '../config.ts';
-import type { ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../state.ts';
+import type { ClaudeCodeAccountCredential, ClaudeCodeTokenKind, ClaudeCodeUpstreamState } from '../state.ts';
 import { fetchClaudeCodeIdentity, type ClaudeCodeIdentity } from './identity.ts';
 import { exchangeClaudeCodeAuthorizationCode } from './oauth.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
@@ -9,25 +9,41 @@ export interface ClaudeCodeImportResult {
   state: ClaudeCodeUpstreamState;
 }
 
-const buildClaudeCodeImportResult = (params: {
+interface BuildImportResultParams {
   identity: ClaudeCodeIdentity;
+  tokenKind: ClaudeCodeTokenKind;
   accessToken: string;
-  refreshToken: string;
+  // `null` for `setup-token` (no refresh counterpart); non-empty for `oauth`.
+  refreshToken: string | null;
   expiresAt: number;
   now: string;
-}): ClaudeCodeImportResult => {
-  const credential: ClaudeCodeAccountCredential = {
+}
+
+const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCodeImportResult => {
+  const accessTokenEntry = {
+    token: params.accessToken,
+    expiresAt: params.expiresAt,
+    refreshedAt: params.now,
+  };
+  const credentialBase = {
     accountUuid: params.identity.accountUuid,
-    refreshToken: params.refreshToken,
-    state: 'active',
+    state: 'active' as const,
     stateUpdatedAt: params.now,
-    accessToken: {
-      token: params.accessToken,
-      expiresAt: params.expiresAt,
-      refreshedAt: params.now,
-    },
+    accessToken: accessTokenEntry,
     quotaSnapshot: null,
   };
+  let credential: ClaudeCodeAccountCredential;
+  if (params.tokenKind === 'setup-token') {
+    if (params.refreshToken !== null) {
+      throw new Error('setup-token credentials must not carry a refresh token');
+    }
+    credential = { ...credentialBase, tokenKind: 'setup-token', refreshToken: null };
+  } else {
+    if (params.refreshToken === null || params.refreshToken === '') {
+      throw new Error('oauth credentials must carry a non-empty refresh token');
+    }
+    credential = { ...credentialBase, tokenKind: 'oauth', refreshToken: params.refreshToken };
+  }
   return {
     config: {
       accounts: [{
@@ -89,13 +105,52 @@ export const importClaudeCodeFromCallback = async (opts: {
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
+    kind: 'oauth',
+    fetcher,
+  });
+  // The OAuth flow always carries a refresh_token; the shared assertion in
+  // claudeCodeTokenRequest only enforces presence-when-present, so guard
+  // explicitly here so a malformed upstream response surfaces a precise
+  // error instead of corrupting the persisted state.
+  if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
+    throw new Error('Claude Code OAuth /token response missing refresh_token on full-scope exchange');
+  }
+  const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
+  return buildClaudeCodeImportResult({
+    identity,
+    tokenKind: 'oauth',
+    accessToken: tokens.access_token,
+    refreshToken: tokens.refresh_token,
+    expiresAt: Date.now() + tokens.expires_in * 1000,
+    now: new Date().toISOString(),
+  });
+};
+
+// Setup-Token PKCE flow. Same callback shape as the regular OAuth flow, but
+// the authorize URL carried only `user:inference` scope and the exchange
+// asks the upstream for a ~1 year access token. The response has no
+// `refresh_token` — when this token expires the operator must re-import.
+// The profile endpoint requires `user:profile`; since the bearer lacks
+// that scope, `fetchClaudeCodeIdentity` falls back to a degraded identity
+// (deterministic accountUuid + nulls for email / org / subscription).
+export const importClaudeCodeFromSetupTokenCallback = async (opts: {
+  code: string;
+  pkceVerifier: string;
+  fetcher?: Fetcher;
+}): Promise<ClaudeCodeImportResult> => {
+  const fetcher = opts.fetcher ?? directFetcher;
+  const tokens = await exchangeClaudeCodeAuthorizationCode({
+    code: opts.code,
+    codeVerifier: opts.pkceVerifier,
+    kind: 'setup-token',
     fetcher,
   });
   const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
   return buildClaudeCodeImportResult({
     identity,
+    tokenKind: 'setup-token',
     accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
+    refreshToken: null,
     expiresAt: Date.now() + tokens.expires_in * 1000,
     now: new Date().toISOString(),
   });
@@ -163,6 +218,7 @@ export const importClaudeCodeFromCredentialsJson = async (
 
   return buildClaudeCodeImportResult({
     identity: finalIdentity,
+    tokenKind: 'oauth',
     accessToken,
     refreshToken,
     expiresAt: expiresAtRaw,

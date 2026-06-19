@@ -2,18 +2,32 @@ import {
   CLAUDE_CODE_AUTHORIZE_URL,
   CLAUDE_CODE_CLIENT_ID,
   CLAUDE_CODE_OAUTH_SCOPE,
+  CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE,
   CLAUDE_CODE_OAUTH_TOKEN_URL,
   CLAUDE_CODE_OAUTH_USER_AGENT,
   CLAUDE_CODE_REDIRECT_URI,
+  CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
+
+// Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
+// sign-in: 6-scope grant that mints a short-lived access token + rotating
+// refresh token. `setup-token` is the inference-only long-lived bearer that
+// Anthropic's "Create a Long-Lived Token" UI issues; no refresh_token, ~1
+// year validity, cannot mint API keys. Both share authorize host, client_id,
+// redirect_uri, and exchange endpoint — only the scope on the authorize URL
+// and the optional `expires_in` on the exchange body differ.
+export type ClaudeCodeOAuthFlowKind = 'oauth' | 'setup-token';
 
 export interface ClaudeOAuthTokenResponse {
   access_token: string;
   token_type: 'Bearer';
   // Lifetime in seconds, relative to the server's clock at issue time.
   expires_in: number;
-  refresh_token: string;
+  // Absent on setup-token exchanges (the long-lived bearer has no rotation
+  // counterpart). Always present on the full OAuth flow and on every
+  // refresh-token round-trip.
+  refresh_token?: string;
   scope: string;
   // Optional convenience fields the upstream sometimes returns alongside
   // the token; we re-derive identity from /api/oauth/profile rather than
@@ -63,7 +77,7 @@ const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const claudeCodeTokenRequest = async (
-  body: Record<string, string>,
+  body: Record<string, string | number>,
   terminalCodes: ReadonlySet<string>,
   fetcher: Fetcher,
 ): Promise<ClaudeOAuthTokenResponse> => {
@@ -115,13 +129,18 @@ const claudeCodeTokenRequest = async (
   }
 
   if (root === null) throw new Error('Claude Code OAuth /token response is not an object');
-  for (const key of ['access_token', 'refresh_token'] as const) {
-    if (typeof root[key] !== 'string' || root[key] === '') {
-      throw new Error(`Claude Code OAuth /token response missing ${key}`);
-    }
+  if (typeof root.access_token !== 'string' || root.access_token === '') {
+    throw new Error('Claude Code OAuth /token response missing access_token');
   }
   if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
     throw new Error('Claude Code OAuth /token response missing expires_in');
+  }
+  // `refresh_token` is required on the full OAuth flow (initial exchange and
+  // every refresh round-trip) but absent on setup-token exchanges. Callers
+  // that care about the difference downcast through the kind discriminator
+  // rather than re-validating here.
+  if ('refresh_token' in root && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
+    throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
   }
   return root as unknown as ClaudeOAuthTokenResponse;
 };
@@ -131,18 +150,30 @@ const claudeCodeTokenRequest = async (
 // the control-plane import route can route the exchange through an
 // operator-supplied proxy fallback chain — the same chain that will be
 // persisted on the new upstream.
+//
+// `kind: 'setup-token'` switches the exchange to request the 1-year
+// inference-only bearer by adding `expires_in: 31536000` to the body —
+// matches sub2api `claude_oauth_service.go:200-203` and crs
+// `oauthHelper.js:386`. The response has no `refresh_token`; callers reading
+// `result.refresh_token` after a setup-token exchange must tolerate
+// `undefined`.
 export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   code: string;
   codeVerifier: string;
+  kind?: ClaudeCodeOAuthFlowKind;
   fetcher?: Fetcher;
 }): Promise<ClaudeOAuthTokenResponse> => {
-  const body = {
+  const kind = opts.kind ?? 'oauth';
+  const body: Record<string, string | number> = {
     grant_type: 'authorization_code',
     code: opts.code,
     client_id: CLAUDE_CODE_CLIENT_ID,
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   };
+  if (kind === 'setup-token') {
+    body.expires_in = CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS;
+  }
   return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher ?? directFetcher);
 };
 
@@ -162,17 +193,26 @@ export const refreshClaudeCodeAccessToken = async (
 };
 
 // The literal `code=true` query param matches what the real Claude Code CLI
-// emits during sign-in.
+// emits during sign-in. `kind: 'setup-token'` swaps the 6-scope grant for
+// the inference-only scope while leaving every other parameter identical —
+// matches sub2api `oauth.go:170-183` and crs
+// `oauthHelper.js:generateSetupTokenAuthUrl`. The two host/path/client_id
+// fields are pinned by Anthropic for this OAuth client and never differ
+// between flows.
 export const buildClaudeCodeAuthorizeUrl = (args: {
   state: string;
   codeChallenge: string;
+  kind?: ClaudeCodeOAuthFlowKind;
 }): string => {
+  const scope = (args.kind ?? 'oauth') === 'setup-token'
+    ? CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE
+    : CLAUDE_CODE_OAUTH_SCOPE;
   const params = new URLSearchParams({
     client_id: CLAUDE_CODE_CLIENT_ID,
     response_type: 'code',
     code: 'true',
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
-    scope: CLAUDE_CODE_OAUTH_SCOPE,
+    scope,
     state: args.state,
     code_challenge: args.codeChallenge,
     code_challenge_method: 'S256',
