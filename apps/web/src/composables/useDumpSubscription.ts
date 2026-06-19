@@ -9,18 +9,21 @@ interface ListResponse {
 }
 
 // Open a single EventSource against /api/dump/keys/<id>/stream and expose the
-// running record list. `snapshot` is treated as ground truth on every arrival
-// (including the browser's silent auto-reconnect, which fires snapshot again
-// without us calling open) — the list is rebuilt and the seen-set is reset
-// from the new snapshot. `appended` prepends individual rows, deduped via the
-// seen-set so the snapshot/subscribe race in the gateway (where a record
-// completed in the small window between read-snapshot and subscribe is
-// intentionally allowed to surface twice) collapses to one row.
+// running record list. `snapshot` covers the newest N records and is
+// authoritative for that window; on every arrival (including the browser's
+// silent auto-reconnect, which re-fires snapshot without us calling open) we
+// rebuild the list from the new snapshot but preserve any records older than
+// the snapshot's oldest entry — otherwise a transient disconnect would
+// silently discard everything the user paged in via `loadOlder`. `appended`
+// prepends individual rows, deduped via the seen-set so the snapshot/subscribe
+// race in the gateway (where a record completed in the small window between
+// read-snapshot and subscribe is intentionally allowed to surface twice)
+// collapses to one row.
 export const useDumpSubscription = (keyId: Ref<string>) => {
   const records = ref<DumpMetadata[]>([]);
   const loading = ref(true);
   const error = ref<string | null>(null);
-  let seen = new Set<string>();
+  const seen = new Set<string>();
   let source: EventSource | null = null;
 
   const closeSource = () => {
@@ -31,7 +34,7 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
   const open = (id: string) => {
     closeSource();
     records.value = [];
-    seen = new Set();
+    seen.clear();
     loading.value = true;
     error.value = null;
 
@@ -40,8 +43,16 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
 
     es.addEventListener('snapshot', ev => {
       const data = JSON.parse((ev as MessageEvent).data) as DumpMetadata[];
-      seen = new Set(data.map(meta => meta.id));
-      records.value = [...data];
+      // Records are sorted newest-first; ULID ids encode time, so id-comparison
+      // is equivalent to a startedAt comparison and avoids touching meta fields.
+      const snapshotOldestId = data.length > 0 ? data[data.length - 1]!.id : null;
+      const preserved = snapshotOldestId !== null
+        ? records.value.filter(r => r.id < snapshotOldestId)
+        : [];
+      seen.clear();
+      const merged = [...data, ...preserved];
+      for (const meta of merged) seen.add(meta.id);
+      records.value = merged;
       loading.value = false;
     });
 

@@ -32,13 +32,16 @@ export class NodeDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpRecord): Promise<void> {
     await this.files.put(fileKey(keyId, record.meta.id), encoder.encode(JSON.stringify(record)));
+    // created_at uses completedAt so retention measures the lifetime of the
+    // stored record, not the wall-clock duration of the request that produced
+    // it. A long-running request would otherwise be born already partly aged.
     await this.db
       .prepare(
         'INSERT INTO dump_records (key_id, id, meta_json, created_at) VALUES (?, ?, ?, ?) '
         + 'ON CONFLICT (key_id, id) DO UPDATE SET '
         + 'meta_json = excluded.meta_json, created_at = excluded.created_at',
       )
-      .bind(keyId, record.meta.id, JSON.stringify(record.meta), record.meta.startedAt)
+      .bind(keyId, record.meta.id, JSON.stringify(record.meta), record.meta.completedAt)
       .run();
   }
 

@@ -59,8 +59,12 @@ export const dump = new Hono()
         const meta = buffered.shift()!;
         await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
       }
-      // Hand the broker pump its real sink. The pump awaits each sink call,
-      // so writeSSE keeps ordering and backpressure intact.
+      // Hand the broker pump its real sink. Reassigning `sink` between the
+      // drain and `await pump` is atomic across this synchronous gap: V8
+      // cannot interleave a broker push here because the pump's `await sink`
+      // can only resume on a later microtask, by which time the live sink is
+      // in place. The pump awaits each sink call, so writeSSE keeps ordering
+      // and backpressure intact.
       sink = meta => stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
       await pump;
     });
