@@ -34,7 +34,7 @@ is weekly, so re-validate periodically.
    | `qwen*` | Alibaba International first-party (`qwencloud.com/models/<id>`); fall back to DeepInfra Turbo only when Alibaba doesn't publish a SKU |
    | `deepseek-v*` | DeepSeek first-party (`api-docs.deepseek.com/quick_start/pricing`); for past versions whose `deepseek-chat` alias has rotated, use Wayback snapshots from the period the version was current |
    | `glm-*` | Z.ai first-party (`docs.z.ai/guides/overview/pricing`) |
-   | `kimi-*` | Moonshot international (`platform.moonshot.ai/docs/pricing/chat`) |
+   | `kimi-*` | Kimi first-party (`platform.kimi.ai/docs/pricing/chat`) |
    | `minimax-*` | MiniMax international PAYGo (`platform.minimax.io/docs/guides/pricing-paygo`) |
    | `mistral-large-*` / `devstral-*` / `ministral-*` | Mistral first-party (`mistral.ai/pricing`) |
    | `nemotron-3-*` | DeepInfra (cheapest commodity host) |
@@ -46,16 +46,13 @@ is weekly, so re-validate periodically.
    first-party rate against models.dev's catalog
    (`curl -s https://models.dev/api.json | jq '.<provider>.models["<id>"].cost'`)
    and against OpenRouter's `/api/v1/models`. OpenRouter rates that sit
-   *below* first-party are mirror prices (some other host running the open
-   weights more cheaply) and are NOT the canonical anchor — the same
-   first-party-vs-mirror split that bit DeepSeek V3.x and Qwen3-Coder-Next
-   in earlier passes. Use first-party.
+   *below* first-party are mirror prices — some other host running the open
+   weights more cheaply — not the canonical anchor. Use first-party.
 
 4. **Edit `pricing.ts`.** Add/update entries with `input`,
    `input_cache_read` (when the upstream publishes one), `output`. Group
    exact string keys; use a regex only when several versions genuinely share
-   a single rate. Cite the source URL in the comment so the next refresh
-   doesn't have to re-derive it.
+   a single rate.
 
 5. **Leave NULL when there's no defensible reference.** Examples:
    - Versions whose name doesn't map to any upstream release (`qwen3.5`

@@ -74,24 +74,20 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   ['deepseek-v4-pro', { input: 0.435, input_cache_read: 0.003625, output: 0.87 }],
   ['deepseek-v4-flash', { input: 0.14, input_cache_read: 0.0028, output: 0.28 }],
 
-  // GLM 4.7 — Z.ai first-party. The earlier $0.4/$0.08/$1.75 numbers came
-  // from OpenRouter mirrors; Z.ai's own page has listed $0.6/$0.11/$2.2
-  // since the model's Dec 2025 launch. Don't extrapolate from 5.x; 4.7 is
-  // priced lower.
+  // GLM 4.7 — Z.ai first-party. Priced lower than the 5.x family, so it
+  // needs its own entry (don't shortcut by reusing the 5.x rule).
   // https://docs.z.ai/guides/overview/pricing
   ['glm-4.7', { input: 0.6, input_cache_read: 0.11, output: 2.2 }],
 
-  // GLM 5.x — Z.ai first-party. Bare `glm-5` runs at a different rate than
-  // the 5.1/5.2 variants ($1.0/$0.20/$3.2 vs $1.4/$0.26/$4.4); split the
-  // regex so each line carries its own price rather than over-charging
-  // bare glm-5 to match its successors.
+  // GLM 5.x — Z.ai first-party. Bare `glm-5` is cheaper than `glm-5.1`
+  // and `glm-5.2`, so they need separate rules.
   // https://docs.z.ai/guides/overview/pricing
   ['glm-5', { input: 1.0, input_cache_read: 0.2, output: 3.2 }],
   [/^glm-5\.[12]$/, { input: 1.4, input_cache_read: 0.26, output: 4.4 }],
 
   // Kimi K2.x — Moonshot international API. K2.5 has a cheaper CN-only rate;
   // the international SKU is the defensible reference across regions.
-  // https://platform.moonshot.ai/docs/pricing/chat
+  // https://platform.kimi.ai/docs/pricing/chat
   ['kimi-k2.5', { input: 0.55, input_cache_read: 0.1, output: 2.9 }],
   ['kimi-k2.6', { input: 0.95, input_cache_read: 0.16, output: 4.0 }],
   ['kimi-k2.7-code', { input: 0.95, input_cache_read: 0.19, output: 4.0 }],
