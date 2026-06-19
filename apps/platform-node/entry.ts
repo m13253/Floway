@@ -2,12 +2,18 @@ import { serve, upgradeWebSocket } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
+import { NodeDumpBroker } from './src/dump/broker.ts';
+import { purgeDumpsForAllKeys } from './src/dump/purge.ts';
+import { NodeDumpStore } from './src/dump/store.ts';
 import { applyMigrations } from './src/migrate.ts';
 import {
   app,
+  getRepo,
   initBackgroundSchedulerResolver,
-  initResponsesWebSocketUpgradeResolver,
+  initDumpBroker,
+  initDumpStore,
   initRepo,
+  initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
@@ -29,9 +35,13 @@ const port = Number(process.env.PORT ?? 8788);
 
 const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
-const { db } = bootstrapNodePlatform({ dbPath, filesDir });
+const { db, files } = bootstrapNodePlatform({ dbPath, filesDir });
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
+
+const dumpStore = new NodeDumpStore(db, files);
+initDumpStore(dumpStore);
+initDumpBroker(new NodeDumpBroker());
 
 // Run the scheduled maintenance job once after a short startup delay and
 // then every hour. Without the startup run, a process that restarts more
@@ -41,7 +51,12 @@ initRepo(new SqlRepo(db));
 // unref() on both timers lets the process exit cleanly on SIGINT.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
-  runScheduledMaintenance().catch(err => console.error('[scheduled]', err));
+  void (async () => {
+    try { await runScheduledMaintenance(); } catch (err) { console.error('[scheduled]', err); }
+    try {
+      await purgeDumpsForAllKeys(dumpStore, await getRepo().apiKeys.list());
+    } catch (err) { console.error('[dump-purge]', err); }
+  })();
 };
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
 setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
