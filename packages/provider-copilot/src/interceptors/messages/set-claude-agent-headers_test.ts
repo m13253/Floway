@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 
 const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
-  headers: {},
+  headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { messages: {} } }),
 });
 
@@ -32,11 +32,11 @@ test('Claude agent headers set for the legacy fingerprint with both halves', asy
 
   await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.headers['x-interaction-type'], 'messages-proxy');
-  assertEquals(ctx.headers['openai-intent'], 'messages-proxy');
-  assertEquals(ctx.headers['user-agent'], CLAUDE_AGENT_USER_AGENT);
+  assertEquals(ctx.headers.get('x-interaction-type'), 'messages-proxy');
+  assertEquals(ctx.headers.get('openai-intent'), 'messages-proxy');
+  assertEquals(ctx.headers.get('user-agent'), CLAUDE_AGENT_USER_AGENT);
   // Empty-string sentinel: copilotFetch deletes the base copilot-integration-id.
-  assertEquals(ctx.headers['copilot-integration-id'], '');
+  assertEquals(ctx.headers.get('copilot-integration-id'), '');
 });
 
 test('Claude agent headers set for the JSON fingerprint with device_id + session_id', async () => {
@@ -44,8 +44,8 @@ test('Claude agent headers set for the JSON fingerprint with device_id + session
 
   await withClaudeAgentHeadersSet(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.headers['user-agent'], CLAUDE_AGENT_USER_AGENT);
-  assertEquals(ctx.headers['copilot-integration-id'], '');
+  assertEquals(ctx.headers.get('user-agent'), CLAUDE_AGENT_USER_AGENT);
+  assertEquals(ctx.headers.get('copilot-integration-id'), '');
 });
 
 test('Claude agent headers absent when session_id is missing', async () => {

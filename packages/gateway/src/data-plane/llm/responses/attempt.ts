@@ -34,7 +34,7 @@ export interface ResponsesAttemptGenerateArgs {
   // translated INTO this target protocol. Source-side interceptors write
   // trace headers into the source invocation; passing them in here keeps
   // them on the wire for the translated upstream call.
-  readonly inheritedInvocationHeaders?: Record<string, string>;
+  readonly inheritedInvocationHeaders?: Headers;
 }
 
 export interface ResponsesAttemptCompactArgs {
@@ -70,7 +70,7 @@ export const responsesAttempt = {
       payload: normalized,
       candidate,
       store,
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: new Headers(inheritedInvocationHeaders),
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
       await dispatchResponses(invocation.payload, ctx, store, candidate, invocation.headers));
@@ -112,7 +112,7 @@ export const responsesAttempt = {
     store.beginAttempt(rewritten.references);
     const normalized: ResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
 
-    const invocation: ResponsesInvocation = { payload: normalized, candidate, store, headers: {} };
+    const invocation: ResponsesInvocation = { payload: normalized, candidate, store, headers: new Headers() };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
       await callResponsesCompactAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers));
 
@@ -180,7 +180,7 @@ const dispatchResponses = async (
   ctx: GatewayCtx,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
-  invocationHeaders: Record<string, string>,
+  invocationHeaders: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (candidate.targetApi === 'responses') {
     const { model: _model, ...body } = payload;
@@ -189,8 +189,7 @@ const dispatchResponses = async (
       candidate.binding.upstreamModel,
       body,
       ctx.abortSignal,
-      invocationHeaders,
-      buildUpstreamCallOptions(candidate, ctx, recorder.record),
+      buildUpstreamCallOptions(candidate, ctx, recorder.record, invocationHeaders),
     );
     return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
   }
@@ -229,7 +228,7 @@ const callResponsesCompactAsExecuteResult = async (
   payload: ResponsesPayload,
   ctx: GatewayCtx,
   candidate: ProviderCandidate,
-  invocationHeaders: Record<string, string>,
+  invocationHeaders: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const { model: _model, stream: _stream, store: _store, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
@@ -237,8 +236,7 @@ const callResponsesCompactAsExecuteResult = async (
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    invocationHeaders,
-    buildUpstreamCallOptions(candidate, ctx, recorder.record),
+    buildUpstreamCallOptions(candidate, ctx, recorder.record, invocationHeaders),
   );
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {

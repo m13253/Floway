@@ -14,17 +14,27 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
   cost: candidate.binding.provider.getPricingForModelKey(modelKey),
 });
 
-// Project the request-scoped pieces an attempt has on hand into per-call
+// Project the request-scoped pieces an attempt has on hato per-call
 // UpstreamCallOptions; see provider.ts for what each field means.
+//
+// `headers` is the unified inbound-headers conduit the provider receives on
+// every call. The attempt site owns what goes in: gateway-side invocation
+// interceptor mutations plus protocol-specific values the attempt extracted
+// from `c.req.raw.headers` (e.g. Messages routes the inbound `anthropic-beta`
+// through here so providers can both forward it on the wire and parse it
+// back for variant selection). The bag is always a fresh `Headers` instance
+// — the caller's `invocationHeaders` is consumed by reference — so providers
+// and their boundary chains can mutate it without rippling back.
 export const buildUpstreamCallOptions = (
   candidate: ProviderCandidate,
   ctx: GatewayCtx,
   recordUpstreamLatency: UpstreamCallOptions['recordUpstreamLatency'],
+  invocationHeaders: Headers,
 ): UpstreamCallOptions => ({
   fetcher: candidate.fetcher,
   recordUpstreamLatency,
   waitUntil: ctx.backgroundScheduler,
-  clientRequestHeaders: ctx.clientRequestHeaders,
+  headers: invocationHeaders,
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult

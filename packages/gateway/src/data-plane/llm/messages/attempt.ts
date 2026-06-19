@@ -23,9 +23,8 @@ export interface MessagesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly anthropicBeta?: readonly string[];
   // See responses/attempt.ts for the inherited-headers contract.
-  readonly inheritedInvocationHeaders?: Record<string, string>;
+  readonly inheritedInvocationHeaders?: Headers;
 }
 
 export interface MessagesAttemptCountTokensArgs {
@@ -33,20 +32,18 @@ export interface MessagesAttemptCountTokensArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly anthropicBeta?: readonly string[];
-  readonly inheritedInvocationHeaders?: Record<string, string>;
+  readonly inheritedInvocationHeaders?: Headers;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, anthropicBeta, inheritedInvocationHeaders } = args;
+    const { payload, ctx, store, candidate, inheritedInvocationHeaders } = args;
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
-      ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: seedMessagesInvocationHeaders(ctx, inheritedInvocationHeaders),
     };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
@@ -56,9 +53,7 @@ export const messagesAttempt = {
           candidate.binding.upstreamModel,
           body,
           ctx.abortSignal,
-          invocation.headers,
-          invocation.anthropicBeta,
-          buildUpstreamCallOptions(candidate, ctx, recorder.record),
+          buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
       }
@@ -85,7 +80,7 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, anthropicBeta, inheritedInvocationHeaders } = args;
+    const { payload, ctx, store, candidate, inheritedInvocationHeaders } = args;
     if (candidate.targetApi !== 'messages') {
       throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
     }
@@ -98,8 +93,7 @@ export const messagesAttempt = {
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
-      ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: seedMessagesInvocationHeaders(ctx, inheritedInvocationHeaders),
     };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
@@ -108,9 +102,7 @@ export const messagesAttempt = {
         candidate.binding.upstreamModel,
         body,
         ctx.abortSignal,
-        invocation.headers,
-        invocation.anthropicBeta,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record),
+        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
       );
       return response;
     });
@@ -122,6 +114,26 @@ export const messagesAttempt = {
     void recorder.durationMs();
     return await plainResultFromResponse(response);
   },
+};
+
+// Seed the per-invocation `Headers` bag for messages. Inbound `anthropic-beta`
+// from the source HTTP request rides on the same bag the gateway-side
+// invocation chain mutates; providers consume both halves out of
+// `opts.headers` (they parse the header back into a typed slice for variant
+// selection when needed, and pass the resulting bag straight to the wire).
+// Translation paths that come through `inheritedInvocationHeaders` already
+// carry the header from the source attempt's bag, so the inbound read here
+// only fires for the native Messages → Messages entry path.
+const seedMessagesInvocationHeaders = (
+  ctx: GatewayCtx,
+  inheritedInvocationHeaders: Headers | undefined,
+): Headers => {
+  const headers = new Headers(inheritedInvocationHeaders);
+  const inboundBeta = ctx.clientRequestHeaders?.get('anthropic-beta');
+  if (inboundBeta && !headers.has('anthropic-beta')) {
+    headers.set('anthropic-beta', inboundBeta);
+  }
+  return headers;
 };
 
 // Rewrites stored Responses item carriers (assistant thinking blocks whose

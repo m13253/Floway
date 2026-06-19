@@ -23,7 +23,7 @@ export interface ChatCompletionsAttemptArgs {
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
   // See responses/attempt.ts for the inherited-headers contract.
-  readonly inheritedInvocationHeaders?: Record<string, string>;
+  readonly inheritedInvocationHeaders?: Headers;
 }
 
 export const chatCompletionsAttempt = {
@@ -34,7 +34,7 @@ export const chatCompletionsAttempt = {
     const invocation: ChatCompletionsInvocation = {
       payload: rewritten.payload,
       candidate,
-      headers: { ...(inheritedInvocationHeaders ?? {}) },
+      headers: new Headers(inheritedInvocationHeaders),
     };
     return await runInterceptors(invocation, ctx, chatCompletionsInterceptors, async () => {
       if (candidate.targetApi === 'chat-completions') {
@@ -99,7 +99,7 @@ const callChatCompletionsAsExecuteResult = async (
   payload: ChatCompletionsPayload,
   ctx: GatewayCtx,
   candidate: ProviderCandidate,
-  invocationHeaders: Record<string, string>,
+  invocationHeaders: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
@@ -107,8 +107,7 @@ const callChatCompletionsAsExecuteResult = async (
     candidate.binding.upstreamModel,
     body,
     ctx.abortSignal,
-    invocationHeaders,
-    buildUpstreamCallOptions(candidate, ctx, recorder.record),
+    buildUpstreamCallOptions(candidate, ctx, recorder.record, invocationHeaders),
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
 };

@@ -96,10 +96,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, headers, opts) => {
+    callResponses: async (model, body, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...(headers ?? {}) },
+        headers: new Headers(opts.headers),
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderStreamResult<ResponsesStreamEvent>>(
@@ -120,10 +120,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       );
     },
 
-    callResponsesCompact: async (model, body, signal, headers, opts) => {
+    callResponsesCompact: async (model, body, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...(headers ?? {}) },
+        headers: new Headers(opts.headers),
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
@@ -151,12 +151,12 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // than letting a raw stack trace bubble up the boundary. The synthetic
     // response still flows through the per-call latency recorder so the
     // gateway's wrap-once contract holds even for these stubs.
-    callMessages: (_model, _body, _signal, _headers, _beta, opts) => unsupportedStreamResult(opts),
-    callMessagesCountTokens: (_model, _body, _signal, _headers, _beta, opts) => unsupportedCallResult(opts),
-    callChatCompletions: (_model, _body, _signal, _headers, opts) => unsupportedStreamResult(opts),
-    callEmbeddings: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
-    callImagesGenerations: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
-    callImagesEdits: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
+    callMessages: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
+    callMessagesCountTokens: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callChatCompletions: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
+    callEmbeddings: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callImagesGenerations: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callImagesEdits: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
   };
 
   return {

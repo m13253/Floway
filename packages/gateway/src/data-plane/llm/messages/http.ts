@@ -8,15 +8,6 @@ import { providerModelsUnavailableResponse } from '../shared/upstream-models-err
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
-const parseAnthropicBeta = (raw: string | undefined): readonly string[] | undefined => {
-  if (!raw) return undefined;
-  const values = raw
-    .split(',')
-    .map(part => part.trim())
-    .filter(part => part.length > 0);
-  return values.length > 0 ? values : undefined;
-};
-
 // Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
 const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
@@ -63,8 +54,7 @@ export const messagesHttp = {
       const wantsStream = payload.stream === true;
       const ctx = createGatewayCtxFromHono(c, wantsStream);
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
-      const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-      const result = await messagesServe.generate({ payload, ctx, store, anthropicBeta });
+      const result = await messagesServe.generate({ payload, ctx, store });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
       return response;
     } catch (error) {
@@ -80,8 +70,7 @@ export const messagesHttp = {
 
       const ctx = createGatewayCtxFromHono(c, false);
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
-      const anthropicBeta = parseAnthropicBeta(c.req.header('anthropic-beta'));
-      const result = await messagesServe.countTokens({ payload, ctx, store, anthropicBeta });
+      const result = await messagesServe.countTokens({ payload, ctx, store });
       const { response } = await respondMessages(c, result, false, ctx);
       return response;
     } catch (error) {

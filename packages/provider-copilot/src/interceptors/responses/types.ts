@@ -11,7 +11,7 @@ import type { ExecuteResult, ProviderCompactionResult, UpstreamModel } from '@fl
 // produces, which is the type parameter on the interceptor aliases below.
 export interface ResponsesBoundaryCtx {
   payload: ResponsesPayload;
-  headers: Record<string, string>;
+  headers: Headers;
   readonly model: UpstreamModel;
 }
 

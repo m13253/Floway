@@ -20,9 +20,11 @@ export interface GatewayCtx {
   // dimension. Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
-  // Inbound HTTP request headers the gateway is serving, captured once for
-  // forwarding as the matching UpstreamCallOptions field. Synthetic test
-  // contexts that never reach a provider call leave it undefined.
+  // Inbound HTTP request headers the gateway is serving. Read by attempt
+  // sites that need to pluck a single protocol-specific value (e.g.
+  // `anthropic-beta` for Messages) and encode it onto the unified
+  // `opts.headers` bag. Synthetic test contexts that never reach a provider
+  // call leave it undefined.
   readonly clientRequestHeaders?: Headers;
   readonly currentColo: string | null;
 }

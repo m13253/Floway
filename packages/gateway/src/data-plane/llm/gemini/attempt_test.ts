@@ -11,7 +11,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_gemini_attempt_test';
@@ -84,10 +84,10 @@ const makeChatCompletionsEvents = (): readonly ChatCompletionsStreamEvent[] => [
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
@@ -182,7 +182,7 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
     return {
       response: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
-        headers: { 'content-type': 'application/json' },
+        headers: new Headers({ 'content-type': 'application/json' }),
       }),
       modelKey: 'k',
     };
@@ -215,7 +215,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     candidate: makeCandidate({
       targetApi: 'messages',
       callMessagesCountTokens: async () => ({
-        response: new Response(JSON.stringify({ total_tokens: 19 }), { status: 200, headers: { 'content-type': 'application/json' } }),
+        response: new Response(JSON.stringify({ total_tokens: 19 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
       }),
     }),
@@ -231,7 +231,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     candidate: makeCandidate({
       targetApi: 'messages',
       callMessagesCountTokens: async () => ({
-        response: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: { 'content-type': 'application/json' } }),
+        response: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
       }),
     }),

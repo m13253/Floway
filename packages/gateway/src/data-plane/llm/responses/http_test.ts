@@ -8,7 +8,7 @@ import type { StoredResponsesItem } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
@@ -82,7 +82,7 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -132,7 +132,7 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
   });
 
@@ -158,7 +158,7 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', input: 'hello' }),
   });
 
@@ -186,7 +186,7 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
 
   const response = await makeApp().request('/v1/responses/compact', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
@@ -206,7 +206,7 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   // No candidates need to be queued — the entry rejects before routing runs.
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       previous_response_id: 'resp_missing',
@@ -246,7 +246,7 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       input: [{ type: 'item_reference', id }],
@@ -274,7 +274,7 @@ test('POST /v1/responses rewrites the codex-auto-review alias before routing', a
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'codex-auto-review', input: 'hello' }),
   });
 
@@ -303,7 +303,7 @@ test('POST /v1/responses/compact rewrites the codex-auto-review alias to gpt-5.4
 
   const response = await makeApp().request('/v1/responses/compact', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'codex-auto-review',
       input: [{ type: 'message', role: 'user', content: 'kept' }],

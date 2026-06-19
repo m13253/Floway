@@ -12,7 +12,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -55,10 +55,10 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>): ProviderCandidate => {
+const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>): ProviderCandidate => {
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
-    callResponses: (model, body, signal, headers) => callResponses(model, body, signal, headers),
+    callResponses: (model, body, signal, opts) => callResponses(model, body, signal, opts),
   });
   return {
     provider: {
@@ -238,7 +238,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
-  const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: { 'content-type': 'application/json' } });
+  const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
     ok: false,
     response: upstreamResponse,
@@ -325,11 +325,11 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
 // them on the wire.
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
-  let observedHeaders: Record<string, string> | undefined;
+  let observedHeaders: Headers | undefined;
   const upstreamModel = stubUpstreamModel();
   const messagesProvider = stubProvider({
-    callMessages: async (_model, _body, _signal, headers): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-      observedHeaders = headers;
+    callMessages: async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+      observedHeaders = opts.headers;
       return {
         ok: true,
         events: (async function* () {
@@ -369,12 +369,12 @@ test('generate inherits invocation headers across translation to Messages', asyn
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
     snapshotMode: 'append',
-    inheritedInvocationHeaders: { 'x-test': 'abc' },
+    inheritedInvocationHeaders: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  assertEquals(observedHeaders?.['x-test'], 'abc');
+  assertEquals(observedHeaders?.get('x-test'), 'abc');
 });
 
 test('generate seeds privatePayload before interceptors so the web-search shim replays the prior wsc results on echo', async () => {

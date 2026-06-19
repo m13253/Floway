@@ -15,7 +15,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>
 
 const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
-  headers: {},
+  headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
 });
 
@@ -36,7 +36,7 @@ test('Responses vision header set when an input_image block is present on a top-
 
   await withVisionHeaderSet(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.headers['copilot-vision-request'], 'true');
+  assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
 
 test('Responses vision header set when an input_image is nested inside a non-message item', async () => {
@@ -63,7 +63,7 @@ test('Responses vision header set when an input_image is nested inside a non-mes
 
   await withVisionHeaderSet(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.headers['copilot-vision-request'], 'true');
+  assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
 
 test('Responses vision header absent when content is pure text', async () => {

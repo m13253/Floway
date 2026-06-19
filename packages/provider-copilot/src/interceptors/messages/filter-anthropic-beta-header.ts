@@ -51,6 +51,13 @@ export const withAnthropicBetaHeaderFiltered = async <TResult>(
   const inbound = ctx.anthropicBeta;
   const hasInbound = inbound !== undefined && inbound.length > 0;
 
+  // `ctx.headers` is seeded from the inbound HTTP request, so the unfiltered
+  // `anthropic-beta` is already present when the caller supplied one. Drop
+  // it unconditionally before applying our policy so an empty filter result
+  // (or the no-inbound branch that synthesizes nothing) doesn't leak the
+  // raw value Copilot would 400 on.
+  ctx.headers.delete('anthropic-beta');
+
   // Branch 1: caller supplied betas — filter to the Copilot allow-list and
   // forward exactly what survives, including no header at all when nothing
   // survives. Do NOT auto-add interleaved-thinking here, even when the
@@ -60,7 +67,7 @@ export const withAnthropicBetaHeaderFiltered = async <TResult>(
     const filtered = inbound.filter(value => ALLOWED_ANTHROPIC_BETAS.has(value));
     const unique = [...new Set(filtered)];
     if (unique.length > 0) {
-      ctx.headers['anthropic-beta'] = unique.join(',');
+      ctx.headers.set('anthropic-beta', unique.join(','));
     }
     return await run();
   }
@@ -70,7 +77,7 @@ export const withAnthropicBetaHeaderFiltered = async <TResult>(
   // not in adaptive mode. Matches VSCode Copilot Chat's default.
   const isAdaptiveThinking = ctx.payload.thinking?.type === 'adaptive';
   if (ctx.payload.thinking?.budget_tokens && !isAdaptiveThinking) {
-    ctx.headers['anthropic-beta'] = INTERLEAVED_THINKING_BETA;
+    ctx.headers.set('anthropic-beta', INTERLEAVED_THINKING_BETA);
   }
 
   return await run();

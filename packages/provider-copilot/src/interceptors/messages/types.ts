@@ -11,14 +11,15 @@ import type { ExecuteResult, UpstreamModel } from '@floway-dev/provider';
 // `payload` is the source-shape body with `model` re-attached so interceptors
 // that read the public model id (e.g. claude-opus-4-8 carve-outs) keep
 // working unchanged; the terminal strips it before serializing to the wire.
-// `headers` is the mutable header bag the provider call seeds empty and
-// passes straight through to the upstream fetch. `model` is the resolved
-// UpstreamModel record. `anthropicBeta` carries the inbound Messages-side
-// beta slice so variant selection can read the caller's full intent even
-// after the wire header is filtered down to the Copilot allow-list.
+// `headers` is the mutable header bag the provider call seeds from
+// `opts.headers` and passes straight through to the upstream fetch.
+// `model` is the resolved UpstreamModel record. `anthropicBeta` carries
+// the inbound Messages-side beta slice so variant selection can read the
+// caller's full intent even after the wire header is filtered down to the
+// Copilot allow-list.
 export interface MessagesBoundaryCtx {
   payload: MessagesPayload;
-  headers: Record<string, string>;
+  headers: Headers;
   readonly model: UpstreamModel;
   readonly anthropicBeta?: readonly string[];
 }
@@ -35,7 +36,7 @@ export type CopilotMessagesBoundaryInterceptor = Interceptor<
 // result type.
 export interface MessagesCountTokensBoundaryCtx {
   payload: MessagesPayload;
-  headers: Record<string, string>;
+  headers: Headers;
   readonly model: UpstreamModel;
   readonly anthropicBeta?: readonly string[];
 }
