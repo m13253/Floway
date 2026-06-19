@@ -12,14 +12,16 @@ import {
   type AzureDraft,
   blankAzureDraft,
   blankCustomDraft,
+  blankOllamaDraft,
   buildCustomConfigCore,
   type CustomDraft,
+  type OllamaDraft,
   seedPathOverrides,
 } from './customConfig.ts';
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
-import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, OllamaUpstreamConfig, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
 
@@ -60,6 +62,7 @@ const disabledPublicModelIds = ref<string[]>([]);
 const proxyFallbackList = ref<string[]>([]);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
+const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
 
 const upstreamModels = ref<UpstreamModelConfig[]>(props.initialUpstreamModels ?? []);
 const upstreamModelsError = ref<string | null>(props.initialUpstreamModelsError ?? null);
@@ -74,7 +77,11 @@ const liveRecord = ref<UpstreamRecord | null>(props.record);
 watch(() => props.record, r => { liveRecord.value = r; });
 
 const defaultName = (p: UpstreamProviderKind) =>
-  p === 'azure' ? 'Azure AI' : p === 'copilot' ? 'GitHub Copilot' : p === 'codex' ? 'ChatGPT Codex' : 'Custom upstream';
+  p === 'azure' ? 'Azure AI'
+    : p === 'copilot' ? 'GitHub Copilot'
+      : p === 'codex' ? 'ChatGPT Codex'
+        : p === 'ollama' ? 'Ollama'
+          : 'Custom upstream';
 
 const seedFromRecord = (r: UpstreamRecord) => {
   activeProvider.value = r.provider;
@@ -109,6 +116,13 @@ const seedFromRecord = (r: UpstreamRecord) => {
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
+  } else if (r.provider === 'ollama') {
+    const cfg = r.config as OllamaUpstreamConfig;
+    ollamaDraft.value = {
+      baseUrl: cfg.baseUrl,
+      apiKey: '',
+      models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
+    };
   }
 };
 
@@ -121,6 +135,7 @@ const seedFresh = () => {
   proxyFallbackList.value = [];
   customDraft.value = blankCustomDraft();
   azureDraft.value = blankAzureDraft();
+  ollamaDraft.value = blankOllamaDraft();
 };
 
 if (props.mode === 'edit' && props.record) seedFromRecord(props.record);
@@ -142,6 +157,10 @@ const customBearerTokenSet = computed(() => {
 });
 const azureApiKeySet = computed(() => {
   const cfg = props.record?.config as AzureUpstreamConfig | undefined;
+  return cfg?.apiKeySet === true;
+});
+const ollamaApiKeySet = computed(() => {
+  const cfg = props.record?.config as OllamaUpstreamConfig | undefined;
   return cfg?.apiKeySet === true;
 });
 
@@ -275,6 +294,15 @@ const buildAzureConfig = (): Extract<CreateBody, { provider: 'azure' }>['config'
   return config;
 };
 
+const buildOllamaConfig = (): Extract<CreateBody, { provider: 'ollama' }>['config'] => {
+  const config: Extract<CreateBody, { provider: 'ollama' }>['config'] = {
+    baseUrl: ollamaDraft.value.baseUrl.trim(),
+    models: ollamaDraft.value.models,
+  };
+  if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
+  return config;
+};
+
 const baseFields = () => ({
   name: name.value.trim(),
   enabled: enabled.value,
@@ -297,6 +325,8 @@ const save = async () => {
         body = { provider: 'custom', ...baseFields(), config: buildCustomConfig() };
       } else if (activeProvider.value === 'azure') {
         body = { provider: 'azure', ...baseFields(), config: buildAzureConfig() };
+      } else if (activeProvider.value === 'ollama') {
+        body = { provider: 'ollama', ...baseFields(), config: buildOllamaConfig() };
       } else {
         // Unreachable: see showSaveButton.
         saveError.value = `${activeProvider.value} upstreams are created through their dedicated panel.`;
@@ -309,6 +339,7 @@ const save = async () => {
       const patch: PatchBody = baseFields();
       if (activeProvider.value === 'custom') patch.config = buildCustomConfig();
       else if (activeProvider.value === 'azure') patch.config = buildAzureConfig();
+      else if (activeProvider.value === 'ollama') patch.config = buildOllamaConfig();
       const { error } = await callApi(
         () => api.api.upstreams[':id'].$patch({ param: { id: props.record!.id }, json: patch }),
       );
@@ -346,18 +377,22 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
   get: () => {
     if (activeProvider.value === 'custom') return customDraft.value.models;
     if (activeProvider.value === 'azure') return azureDraft.value.models;
+    if (activeProvider.value === 'ollama') return ollamaDraft.value.models;
     return [];
   },
   set: next => {
     if (activeProvider.value === 'custom') customDraft.value = { ...customDraft.value, models: next };
     else if (activeProvider.value === 'azure') azureDraft.value = { ...azureDraft.value, models: next };
+    else if (activeProvider.value === 'ollama') ollamaDraft.value = { ...ollamaDraft.value, models: next };
   },
 });
 
 // Auto rows are the live catalog the upstream itself decides. For copilot,
-// codex, and saved custom upstreams that comes from the SWR cache via
-// `upstreamModels`. Create-mode custom drafts fall back to the inline
-// POST /fetch-models preview translated through the draft's endpoints.
+// codex, ollama, and saved custom upstreams that comes from the SWR cache
+// via `upstreamModels`. Create-mode custom drafts fall back to the inline
+// POST /fetch-models preview translated through the draft's endpoints; ollama
+// in create mode has no equivalent preview path so the panel just shows
+// "no auto models yet" until save.
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
   if (activeProvider.value === 'azure') return [];
   if (activeProvider.value === 'custom') {
@@ -471,11 +506,13 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:proxy-fallback-list="proxyFallbackList"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
+        v-model:ollama="ollamaDraft"
         :mode="mode"
         :record="record"
         :flags="flags"
         :custom-bearer-token-set="customBearerTokenSet"
         :azure-api-key-set="azureApiKeySet"
+        :ollama-api-key-set="ollamaApiKeySet"
         :fetch-loading="fetchLoading"
         :fetch-error="fetchError"
         :fetch-status="fetchStatus"
