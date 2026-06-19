@@ -242,9 +242,10 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
               @click="copyTo(requestBody.copyText, 'req-body')"
             >{{ copyLabel('req-body') }}</Button>
           </header>
-          <div class="max-h-[70vh] overflow-hidden">
+          <div class="flex flex-col min-h-0">
             <Code
               v-if="requestBody?.pretty"
+              class="max-h-[70vh]"
               :code="requestBody.pretty"
               :language="requestBody.isJson ? 'json' : 'text'"
               :copyable="false"
@@ -322,11 +323,12 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
             >{{ copyLabel('res-body') }}</Button>
           </header>
 
-          <div class="max-h-[70vh] overflow-hidden">
+          <div class="flex flex-col min-h-0">
             <!-- bytes (non-stream) -->
             <template v-if="bytesView">
               <Code
                 v-if="bytesView.pretty"
+                class="max-h-[70vh]"
                 :code="bytesView.pretty"
                 :language="bytesView.isJson ? 'json' : 'text'"
                 :copyable="false"
@@ -350,6 +352,7 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
                   >Stream truncated — terminal frame missing. Showing best-effort accumulated state.</div>
                   <Code
                     v-if="collectedView.resultText !== null"
+                    class="max-h-[70vh]"
                     :code="collectedView.resultText"
                     language="json"
                     :copyable="false"
@@ -367,7 +370,7 @@ const formatStatus = (status: number) => status === 0 ? 'No response' : String(s
                       <span class="font-mono text-accent-cyan">{{ ev.event ?? '(unlabeled)' }}</span>
                       <span class="text-gray-600">+{{ ev.ts }}ms</span>
                     </div>
-                    <Code class="mt-1" :code="ev.pretty" language="json" :copyable="false" />
+                    <Code class="mt-1 max-h-[40vh]" :code="ev.pretty" language="json" :copyable="false" />
                   </li>
                 </ul>
               </OverlayScrollbars>

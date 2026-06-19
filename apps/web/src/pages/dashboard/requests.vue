@@ -41,7 +41,7 @@ const { records, loading, error, loadOlder } = useDumpSubscription(selectedKeyId
     </div>
 
     <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
-      <div class="max-h-56 w-full shrink-0 flex flex-col border-b border-white/[0.06] lg:max-h-none lg:w-80 lg:border-b-0 lg:border-r">
+      <div class="max-h-56 w-full shrink-0 flex flex-col border-b border-white/[0.06] lg:max-h-none lg:w-90 lg:border-b-0 lg:border-r">
         <div class="border-b border-white/[0.06] p-3">
           <select
             v-model="selectedKeyId"

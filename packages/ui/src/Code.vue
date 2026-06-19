@@ -39,8 +39,8 @@ const highlighted = computed(() => {
 </script>
 
 <template>
-  <div class="code-block relative group">
-    <OverlayScrollbars class="rounded-xl border border-white/[0.04] bg-surface-900" no-tabindex>
+  <div class="code-block relative group flex min-h-0 flex-col">
+    <OverlayScrollbars class="min-h-0 flex-1 rounded-xl border border-white/[0.04] bg-surface-900" no-tabindex>
       <pre class="min-w-max p-4 pr-11 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
     </OverlayScrollbars>
     <button

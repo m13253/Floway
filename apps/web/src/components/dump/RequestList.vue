@@ -115,22 +115,30 @@ watch(() => props.records.length, () => {
           ]"
           @click="onSelect(r.id)"
         >
-          <!-- Line 1: status + method + path + relative time -->
+          <!-- Line 1: status + (model | "Unknown") + time. Model is the most
+               operator-relevant identifier so it takes the prominent slot;
+               when accounting didn't resolve one (e.g. a 4xx before the
+               upstream attempt) we show "Unknown" in a non-mono font as a
+               clear "no value" cue. Method is recorded server-side but not
+               shown — every captured endpoint is POST, so it adds no signal
+               in the list. -->
           <div class="flex items-center gap-2 text-xs">
             <Badge :tone="statusTone(r.status)" size="sm">{{ statusLabel(r.status) }}</Badge>
-            <span class="shrink-0 font-mono font-semibold text-gray-300">{{ r.method }}</span>
-            <span class="min-w-0 flex-1 truncate font-mono text-gray-400" :title="r.path">{{ r.path }}</span>
+            <span
+              v-if="r.model"
+              class="min-w-0 flex-1 truncate font-mono text-gray-400"
+              :title="r.model"
+            >{{ r.model }}</span>
+            <span v-else class="min-w-0 flex-1 truncate text-gray-500">Unknown</span>
             <span class="shrink-0 text-[11px] text-gray-600" :title="dayjs(r.startedAt).format('YYYY-MM-DD HH:mm:ss')">
-              {{ dayjs(r.startedAt).fromNow(true) }}
+              {{ dayjs(r.startedAt).fromNow() }}
             </span>
           </div>
 
-          <!-- Line 2: metrics (left) and model (right). flex-wrap keeps metrics
-               leftmost on the first wrapped row and model rightmost on whichever
-               row it lands. justify-between + the mr-auto on the metrics group
-               carries the alignment through wraps. -->
+          <!-- Line 2: path (left, secondary) and metrics (right). -->
           <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500">
-            <span class="mr-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="mr-auto min-w-0 truncate font-mono" :title="r.path">{{ r.path }}</span>
+            <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span class="inline-flex items-center gap-1" :title="`${r.durationMs} ms`">
                 <i class="i-lucide-timer size-3" />{{ formatDuration(r.durationMs) }}
               </span>
@@ -141,7 +149,6 @@ watch(() => props.records.length, () => {
                 <i class="i-lucide-arrow-down size-3" />{{ formatBytes(r.responseBytes) }}
               </span>
             </span>
-            <span v-if="r.model" class="truncate font-mono" :title="r.model">{{ r.model }}</span>
           </div>
 
           <!-- Line 3 (optional): provider name (colored) + total tokens -->
