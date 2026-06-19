@@ -196,6 +196,7 @@ export interface ApiKey {
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string[] | null;
+  dump_retention_seconds: number | null;
 }
 
 export interface ModelEndpointInfo {

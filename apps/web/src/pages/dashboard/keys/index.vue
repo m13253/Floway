@@ -2,13 +2,13 @@
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref } from 'vue';
 
-import { callApi, useApi } from '../../api/client.ts';
-import type { ApiKey } from '../../api/types.ts';
-import CliSnippet from '../../components/keys/CliSnippet.vue';
-import EditKeyDialog from '../../components/keys/EditKeyDialog.vue';
-import KeysTable from '../../components/keys/KeysTable.vue';
-import { useModelsStore } from '../../composables/useModels.ts';
-import { useUpstreamOptionsStore } from '../../composables/useUpstreamOptions.ts';
+import { callApi, useApi } from '../../../api/client.ts';
+import type { ApiKey } from '../../../api/types.ts';
+import CliSnippet from '../../../components/keys/CliSnippet.vue';
+import EditKeyDialog from '../../../components/keys/EditKeyDialog.vue';
+import KeysTable from '../../../components/keys/KeysTable.vue';
+import { useModelsStore } from '../../../composables/useModels.ts';
+import { useUpstreamOptionsStore } from '../../../composables/useUpstreamOptions.ts';
 import { Button, Input } from '@floway-dev/ui';
 
 export const useKeysPageData = defineBasicLoader(async () => {
