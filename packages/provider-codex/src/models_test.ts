@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION } from './constants.ts';
 import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
+import { resolveEffectivePricing } from '@floway-dev/protocols/common';
 import { directFetcher } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -76,9 +77,43 @@ describe('codexRawToUpstreamModel', () => {
 
   test('attaches OpenAI-API-rate cost for known slugs and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToUpstreamModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
-    expect(flagship.cost).toEqual({ input: 2.5, input_cache_read: 0.25, output: 15 });
+    expect(flagship.cost).toEqual({
+      input: 2.5,
+      input_cache_read: 0.25,
+      output: 15,
+      tiers: {
+        flex: { input: 1.25, input_cache_read: 0.13, output: 7.5 },
+        priority: { input: 5, input_cache_read: 0.5, output: 30 },
+      },
+    });
     const review = codexRawToUpstreamModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 }, noFlags);
     expect(review.cost).toEqual(flagship.cost);
+  });
+
+  // End-to-end resolution check: tier keys must match the wire-value strings
+  // billableServiceTier persists, not the enum *names* in Codex's Rust source.
+  // A casing typo here (e.g. `Flex`) or a divergence from the wire value (e.g.
+  // `fast`) would compile cleanly against the structural test above but bill
+  // every tiered request at base.
+  test('cost.tiers keys resolve through resolveEffectivePricing for the wire-value strings', () => {
+    const flagship = codexRawToUpstreamModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
+    if (!flagship.cost) throw new Error('expected cost to be defined');
+
+    expect(resolveEffectivePricing(flagship.cost, 'priority')).toEqual({
+      input: 5,
+      input_cache_read: 0.5,
+      output: 30,
+    });
+    expect(resolveEffectivePricing(flagship.cost, 'flex')).toEqual({
+      input: 1.25,
+      input_cache_read: 0.13,
+      output: 7.5,
+    });
+    expect(resolveEffectivePricing(flagship.cost, null)).toEqual({
+      input: 2.5,
+      input_cache_read: 0.25,
+      output: 15,
+    });
   });
 
   test('omits cost for unknown slugs (forward-compat with new upstream models)', () => {
