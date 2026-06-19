@@ -42,14 +42,17 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://deepinfra.com/Qwen/Qwen3-Coder-480B-A35B-Instruct
   ['qwen3-coder:480b', { input: 0.3, output: 1.0 }],
 
-  // Qwen3-Coder-Next — OpenRouter's `qwen/qwen3-coder-next` SKU. Distinct
-  // from `qwen3-coder-flash` despite the size overlap; the Ollama tag maps
-  // to the -next variant.
-  // https://openrouter.ai/qwen/qwen3-coder-next
-  ['qwen3-coder-next', { input: 0.11, input_cache_read: 0.07, output: 0.8 }],
+  // Qwen3-Coder-Next — Alibaba International first-party SKU
+  // (`qwen3-coder-next`). OpenRouter mirrors it ~2.7×/1.9× cheaper because
+  // it runs the open weights itself; same first-party-vs-mirror split as
+  // DeepSeek V3.x. Anchor to Alibaba.
+  // https://www.qwencloud.com/models/qwen3-coder-next
+  ['qwen3-coder-next', { input: 0.3, output: 1.5 }],
 
-  // Qwen 3.5 397B-a17b — Alibaba International first-party.
-  // https://www.alibabacloud.com/help/en/model-studio/models
+  // Qwen 3.5 397B-a17b — Alibaba International first-party SKU
+  // (`qwen3.5-397b-a17b`). Alibaba CN runs ~3.4× cheaper (regional split,
+  // not a discount); International USD is the right anchor for non-CN.
+  // https://www.qwencloud.com/models/qwen3.5-397b-a17b
   ['qwen3.5:397b', { input: 0.6, output: 3.6 }],
 
   // DeepSeek — DeepSeek operates its own inference cluster, so the first-
@@ -68,15 +71,20 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   ['deepseek-v4-pro', { input: 0.435, input_cache_read: 0.003625, output: 0.87 }],
   ['deepseek-v4-flash', { input: 0.14, input_cache_read: 0.0028, output: 0.28 }],
 
-  // GLM 4.7 — Z.ai first-party; OpenRouter and DeepInfra pass through at
-  // the same rate. Don't extrapolate from 5.x; 4.7 is priced lower.
-  // https://docs.z.ai/guides/llm
-  ['glm-4.7', { input: 0.4, input_cache_read: 0.08, output: 1.75 }],
+  // GLM 4.7 — Z.ai first-party. The earlier $0.4/$0.08/$1.75 numbers came
+  // from OpenRouter mirrors; Z.ai's own page has listed $0.6/$0.11/$2.2
+  // since the model's Dec 2025 launch. Don't extrapolate from 5.x; 4.7 is
+  // priced lower.
+  // https://docs.z.ai/guides/overview/pricing
+  ['glm-4.7', { input: 0.6, input_cache_read: 0.11, output: 2.2 }],
 
-  // GLM 5.x — Z.ai first-party. Together / Fireworks pass through at similar
-  // rates; Z.ai is the only fully-published source covering 5 / 5.1 / 5.2.
-  // https://docs.z.ai/guides/llm
-  [/^glm-5(\.[12])?$/, { input: 1.4, input_cache_read: 0.26, output: 4.4 }],
+  // GLM 5.x — Z.ai first-party. Bare `glm-5` runs at a different rate than
+  // the 5.1/5.2 variants ($1.0/$0.20/$3.2 vs $1.4/$0.26/$4.4); split the
+  // regex so each line carries its own price rather than over-charging
+  // bare glm-5 to match its successors.
+  // https://docs.z.ai/guides/overview/pricing
+  ['glm-5', { input: 1.0, input_cache_read: 0.2, output: 3.2 }],
+  [/^glm-5\.[12]$/, { input: 1.4, input_cache_read: 0.26, output: 4.4 }],
 
   // Kimi K2.x — Moonshot international API. K2.5 has a cheaper CN-only rate;
   // the international SKU is the defensible reference across regions.
@@ -85,9 +93,14 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   ['kimi-k2.6', { input: 0.95, input_cache_read: 0.16, output: 4.0 }],
   ['kimi-k2.7-code', { input: 0.95, input_cache_read: 0.19, output: 4.0 }],
 
-  // MiniMax — flat international rate across the M2 family and M3.
-  // https://www.minimax.io/platform_overview
-  [/^minimax-(m2(\.\d+)?|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
+  // MiniMax — flat international rate across the M2 family and M3 EXCEPT
+  // for cache_read, which is $0.03/M for the older trio (m2 / m2.1 / m2.5)
+  // and $0.06/M for the newer m2.7 / m3. M3's >512k tier doubles to
+  // $0.60/$0.12/$2.40 — not encodable in flat per-model pricing, so the
+  // entry reflects only the ≤512k tier.
+  // https://platform.minimax.io/docs/guides/pricing-paygo
+  [/^minimax-m2(\.[15])?$/, { input: 0.3, input_cache_read: 0.03, output: 1.2 }],
+  [/^minimax-(m2\.7|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
 
   // Mistral family — first-party `mistral-large-2512` and `devstral-2512`
   // are the priced sources; OpenRouter mirrors at the same rates. Ollama's
@@ -102,12 +115,14 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // carries Devstral Small 2 at a paid rate. Persisting $0 would misrepresent
   // the upstream as zero-cost.
 
-  // Ministral 3B / 8B — Mistral first-party. The 14B has no first-party SKU;
-  // OpenRouter's `mistralai/ministral-14b-2512` is the only published source.
-  // https://mistral.ai/products/la-plateforme
-  ['ministral-3:3b', { input: 0.04, output: 0.04 }],
-  ['ministral-3:8b', { input: 0.1, output: 0.1 }],
-  ['ministral-3:14b', { input: 0.2, input_cache_read: 0.02, output: 0.2 }],
+  // Ministral 3B / 8B / 14B — Mistral first-party. The 2024-era $0.04/$0.10
+  // rates were bumped; 14B has a first-party SKU too (earlier research
+  // missed it and anchored on an OpenRouter mirror with a non-canonical
+  // input_cache_read field).
+  // https://mistral.ai/pricing
+  ['ministral-3:3b', { input: 0.1, output: 0.1 }],
+  ['ministral-3:8b', { input: 0.15, output: 0.15 }],
+  ['ministral-3:14b', { input: 0.2, output: 0.2 }],
 
   // NVIDIA Nemotron-3 — DeepInfra hosts the Super; the Nano sits on
   // OpenRouter; the Ultra runs on DeepInfra / Together at higher rates.
@@ -115,7 +130,7 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // https://deepinfra.com/nvidia
   ['nemotron-3-nano:30b', { input: 0.05, output: 0.2 }],
   ['nemotron-3-super', { input: 0.1, output: 0.5 }],
-  ['nemotron-3-ultra', { input: 0.6, input_cache_read: 0.15, output: 3.0 }],
+  ['nemotron-3-ultra', { input: 0.5, input_cache_read: 0.1, output: 2.2 }],
 
   // Essential AI Rnj-1 — `essentialai/Rnj-1-Instruct` open weights, served
   // by Together and OpenRouter at a flat rate. The Ollama tag carries the
