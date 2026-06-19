@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { extractCodexCallbackParams, importCodexFromAuthJson, importCodexFromCallback } from './import.ts';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 const encodeBase64Url = (input: string): string => {
   const b64 = btoa(input);
@@ -73,9 +74,18 @@ describe('importCodexFromCallback', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       access_token: 'at', refresh_token: 'rt', id_token: makeJwt(identityPayload), expires_in: 600,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER' });
+    const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher });
     expect(result.config.accounts[0].email).toBe('a@b.com');
     expect(result.state.accounts[0].refresh_token).toBe('rt');
     expect(result.state.accounts[0].accessToken?.token).toBe('at');
+  });
+
+  test('routes the token exchange through the supplied fetcher', async () => {
+    const fetcher = vi.fn<Fetcher>(async () => new Response(JSON.stringify({
+      access_token: 'at', refresh_token: 'rt', id_token: makeJwt(identityPayload), expires_in: 600,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://auth.openai.com/oauth/token');
   });
 });

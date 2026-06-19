@@ -5,7 +5,7 @@ import {
   CODEX_OAUTH_USER_AGENT,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 
 export interface CodexOAuthTokens {
   access_token: string;
@@ -122,9 +122,13 @@ const codexTokenRequest = async (
   };
 };
 
-// PKCE exchange has no upstream context yet — the upstream is minted from
-// this response.
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string }): Promise<CodexOAuthTokens> => {
+// PKCE exchange runs before the upstream record exists, so there is no
+// persisted proxy chain to read here — the caller must supply the fetcher
+// explicitly. Making `fetcher` required (rather than defaulting to direct
+// egress) keeps every call site honest: callers that want direct egress
+// pass `directFetcher` themselves, and the import path can't accidentally
+// bypass an operator-configured proxy.
+export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: CODEX_CLIENT_ID,
@@ -136,7 +140,7 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
   // exchange typically means the operator pasted a stale or wrong callback
   // URL, which is recoverable by restarting the PKCE flow rather than
   // re-importing.
-  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, directFetcher);
+  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream
