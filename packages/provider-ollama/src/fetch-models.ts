@@ -55,9 +55,7 @@ interface TagEntry {
 
 const parseTagEntry = (value: unknown): TagEntry | null => {
   if (!isRecord(value)) return null;
-  // Ollama publishes the slug under `name`; older releases used `model` —
-  // accept either, preferring `name` when both are present.
-  const name = optionalStringField(value.name) ?? optionalStringField(value.model);
+  const name = optionalStringField(value.name);
   if (!name) return null;
   const entry: TagEntry = { name };
   const modifiedAtRaw = optionalStringField(value.modified_at);

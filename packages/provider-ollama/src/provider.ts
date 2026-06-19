@@ -18,7 +18,7 @@
 // upstreamModelId, mirroring the custom provider's pinning behavior.
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
-import { fetchOllamaCatalog, type OllamaCatalog, type OllamaRawModel } from './fetch-models.ts';
+import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchChatCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
@@ -41,36 +41,28 @@ const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
   (capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS);
 
-const ollamaInternalModel = (raw: OllamaRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
-  const limits: UpstreamModel['limits'] = {};
-  if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
-
-  const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
-    id: raw.id,
-    owned_by: 'ollama',
-    limits,
-  };
-  if (raw.modifiedAt !== undefined) internal.created = raw.modifiedAt;
-  const cost = pricingForOllamaModelKey(raw.id);
-  if (cost) internal.cost = cost;
-  return internal;
-};
-
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
   enabledFlags: ReadonlySet<string>,
 ): UpstreamModel[] => {
   const models: UpstreamModel[] = [];
   for (const raw of catalog.data) {
-    if (!raw.id) continue;
     const endpoints = endpointsForCapabilities(raw.capabilities);
-    models.push({
-      ...ollamaInternalModel(raw),
+    const limits: UpstreamModel['limits'] = {};
+    if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
+    const model: UpstreamModel = {
+      id: raw.id,
+      owned_by: 'ollama',
+      limits,
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: raw.id,
       enabledFlags,
-    });
+    };
+    if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
+    const cost = pricingForOllamaModelKey(raw.id);
+    if (cost) model.cost = cost;
+    models.push(model);
   }
   return models;
 };
@@ -101,13 +93,6 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
   const manualPricingByUpstreamId = new Map<string, ModelPricing>(
     config.models.flatMap(m => (m.cost ? [[m.upstreamModelId, m.cost] as const] : [])),
   );
-
-  const autoFromCatalog = (catalog: OllamaCatalog): UpstreamModel[] => {
-    const filtered: OllamaCatalog = { data: catalog.data.filter(raw => !overriddenIds.has(raw.id)) };
-    return finalizeOllamaModels(filtered, upstreamFlags);
-  };
-
-  const withManual = (auto: UpstreamModel[]): UpstreamModel[] => [...manualModels, ...auto];
 
   const call = (
     transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
@@ -153,7 +138,11 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
   const provider: ModelProvider = {
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
-      return withManual(autoFromCatalog(catalog));
+      const auto = finalizeOllamaModels(
+        { data: catalog.data.filter(raw => !overriddenIds.has(raw.id)) },
+        upstreamFlags,
+      );
+      return [...manualModels, ...auto];
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
     callChatCompletions: (model, body, signal, headers, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, headers, parseChatCompletionsStream, opts),
