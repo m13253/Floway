@@ -79,6 +79,9 @@ importers:
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../../packages/protocols
       hono:
         specifier: ^4
         version: 4.12.22
