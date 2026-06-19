@@ -105,24 +105,24 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   [/^minimax-m2(\.[15])?$/, { input: 0.3, input_cache_read: 0.03, output: 1.2 }],
   [/^minimax-(m2\.7|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
 
-  // Mistral La Plateforme — `mistral-large-3` is Mistral's MoE flagship
-  // (41B active / 675B total per https://mistral.ai/news/mistral-3) and
-  // ships at the rate listed on https://mistral.ai/pricing. Devstral 2 and
-  // the Ministral 3 family are also La Plateforme SKUs (api.mistral.ai)
-  // but Mistral's pricing summary page only renders the flagship tier; the
-  // per-SKU rates surface on OpenRouter's `mistralai`-tagged provider row,
-  // which routes to Mistral's first-party API for these models.
+  // Mistral La Plateforme — Mistral Large 3 is the MoE flagship (41B
+  // active / 675B total per https://mistral.ai/news/mistral-3); Devstral 2
+  // and the Ministral 3 family ship as separate La Plateforme SKUs. Input
+  // and output rates all come straight from Mistral's pricing page; the
+  // `input_cache_read` rates are not on that page but surface on
+  // OpenRouter's `mistralai`-tagged provider row, which routes to Mistral's
+  // first-party API for these models.
   // https://mistral.ai/pricing
   // https://openrouter.ai/mistralai/devstral-2512
   // https://openrouter.ai/mistralai/ministral-14b-2512
   ['mistral-large-3:675b', { input: 0.5, output: 1.5 }],
-  ['devstral-2:123b', { input: 0.4, output: 2.0 }],
+  ['devstral-2:123b', { input: 0.4, input_cache_read: 0.04, output: 2.0 }],
   // `devstral-small-2:24b` is intentionally omitted: Mistral's only listed
   // SKU is the free Labs tier (no commercial pricing) and no commodity host
   // carries Devstral Small 2 at a paid rate. Persisting $0 would misrepresent
   // the upstream as zero-cost.
-  ['ministral-3:3b', { input: 0.1, output: 0.1 }],
-  ['ministral-3:8b', { input: 0.15, output: 0.15 }],
+  ['ministral-3:3b', { input: 0.1, input_cache_read: 0.01, output: 0.1 }],
+  ['ministral-3:8b', { input: 0.15, input_cache_read: 0.015, output: 0.15 }],
   ['ministral-3:14b', { input: 0.2, input_cache_read: 0.02, output: 0.2 }],
 
   // NVIDIA Nemotron-3 — open weights, no first-party per-token API. Nano
