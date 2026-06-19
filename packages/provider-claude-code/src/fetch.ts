@@ -63,23 +63,27 @@ const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Re
   );
 };
 
-// `anthropic-ratelimit-unified-status: rejected` or an overage-rejected snapshot
-// means the upstream would 429 anything we send right now; short-circuit at
-// the gate so we don't burn an OAuth refresh on a request that has no chance.
+// `anthropic-ratelimit-unified-status: rejected` means the upstream's
+// primary plan window is exhausted and a fresh request would 429 right
+// away; short-circuit at the gate so we don't burn an OAuth refresh on
+// a request that has no chance.
+//
+// Note: `overage.status: rejected` (typically paired with
+// `overage-disabled-reason: out_of_credits`) is NOT a short-circuit
+// signal. It only reports that the account has no extra-usage credits
+// to spill into once the primary window runs out — which is the steady
+// state for any plan-tier account that hasn't bought extra credits, so
+// blocking on it would refuse every request to such accounts. The
+// primary `status` already reflects whether the upstream will actually
+// reject the next request.
 const isRateLimitedNow = (
   snapshot: ClaudeCodeQuotaSnapshot | null,
   now: Date,
 ): snapshot is ClaudeCodeQuotaSnapshot => {
   if (!snapshot) return false;
-  if (snapshot.status === 'rejected') {
-    if (!snapshot.reset) return true;
-    return new Date(snapshot.reset).getTime() > now.getTime();
-  }
-  if (snapshot.overage?.status === 'rejected') {
-    if (!snapshot.overage.reset) return true;
-    return new Date(snapshot.overage.reset).getTime() > now.getTime();
-  }
-  return false;
+  if (snapshot.status !== 'rejected') return false;
+  if (!snapshot.reset) return true;
+  return new Date(snapshot.reset).getTime() > now.getTime();
 };
 
 const replaceStateAccount = (
@@ -189,7 +193,7 @@ export const callClaudeCodeMessages = async (
   const now = new Date();
   const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
   if (isRateLimitedNow(quotaData, now)) {
-    const resetIso = quotaData.reset ?? quotaData.overage?.reset ?? null;
+    const resetIso = quotaData.reset;
     return await syntheticReturn(synthetic429(
       resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
       resetIso,

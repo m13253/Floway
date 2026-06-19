@@ -84,9 +84,12 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
   if (c?.state === 'refresh_failed') {
     return { tone: 'rose', label: 'Refresh failed — re-import to recover', detail: c.stateMessage };
   }
-  const overageStatus = quota.value?.overage?.status;
-  if (overageStatus === 'rejected') {
-    return { tone: 'rose', label: 'Overage rejected — limit reached' };
+  // Primary `status: rejected` means the plan window itself is exhausted —
+  // the upstream will 429 the next request. `overage.status: rejected` is
+  // NOT a limit signal; it's the steady state for any plan account that
+  // hasn't bought extra credits (the chip below still surfaces it as info).
+  if (quota.value?.status === 'rejected') {
+    return { tone: 'rose', label: 'Plan window exhausted — wait for reset' };
   }
   const utilizations = [quota.value?.fiveHour?.utilization, quota.value?.sevenDay?.utilization]
     .filter((v): v is number => typeof v === 'number');
