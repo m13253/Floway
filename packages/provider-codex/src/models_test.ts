@@ -83,7 +83,15 @@ describe('codexRawToUpstreamModel', () => {
 
   test('attaches OpenAI-API-rate cost for known slugs and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToUpstreamModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, max_context_window: 1000000 }, noFlags);
-    expect(flagship.cost).toEqual({ input: 2.5, input_cache_read: 0.25, output: 15 });
+    expect(flagship.cost).toEqual({
+      input: 2.5,
+      input_cache_read: 0.25,
+      output: 15,
+      tiers: {
+        flex: { input: 1.25, input_cache_read: 0.13, output: 7.5 },
+        priority: { input: 5, input_cache_read: 0.5, output: 30 },
+      },
+    });
     const review = codexRawToUpstreamModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000, max_context_window: 1000000 }, noFlags);
     expect(review.cost).toEqual(flagship.cost);
   });
