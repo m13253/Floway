@@ -402,6 +402,9 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
+    if (record.tier !== undefined && record.tier !== null && typeof record.tier !== 'string') {
+      return { type: 'invalid', index: i, error: 'record has invalid tier (must be a string or null)' };
+    }
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     const costResult = parseImportedCost(record.cost);
@@ -412,6 +415,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       upstream: record.upstream as string | null,
       modelKey: record.modelKey,
       hour: record.hour,
+      tier: (record.tier as string | null | undefined) ?? null,
       requests: record.requests,
       tokens: tokensResult.tokens,
       cost: costResult.cost,

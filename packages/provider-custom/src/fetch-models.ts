@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
 import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
 
 export interface CustomRawModel {
@@ -58,14 +58,12 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
   return Object.keys(limits).length > 0 ? limits : undefined;
 };
 
-const PRICING_DIMENSIONS: readonly (keyof ModelPricing)[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
-
 const parseCost = (value: unknown): ModelPricing | undefined => {
   // Admit any subset of billing dimensions advertised on the upstream's
   // /v1/models cost block; drop the whole block when none are present.
   if (!isRecord(value)) return undefined;
   const cost: ModelPricing = {};
-  for (const dimension of PRICING_DIMENSIONS) {
+  for (const dimension of BILLING_DIMENSIONS) {
     const rate = optionalNumberField(value[dimension]);
     if (rate !== undefined) cost[dimension] = rate;
   }
