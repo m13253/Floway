@@ -250,6 +250,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../provider-custom
+      '@floway-dev/provider-ollama':
+        specifier: workspace:*
+        version: link:../provider-ollama
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../proxy

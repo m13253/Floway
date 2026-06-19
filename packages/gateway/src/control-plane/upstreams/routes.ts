@@ -37,6 +37,7 @@ import {
 } from '@floway-dev/provider-codex';
 import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
 // Serialize for the HTTP response, attaching the live codex_quota snapshot
 // when the row is a Codex upstream and the SWR models-cache freshness for
@@ -72,6 +73,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
     if (record.provider === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
+    if (record.provider === 'ollama') return { ok: true, value: assertOllamaUpstreamRecord(record).config };
     if (record.provider === 'codex') {
       assertCodexUpstreamRecord(record);
       return { ok: true, value: record.config };

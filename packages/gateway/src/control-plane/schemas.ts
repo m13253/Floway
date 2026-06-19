@@ -123,6 +123,15 @@ const copilotConfigSchema = z.object({
   }),
 });
 
+const ollamaConfigSchema = z.object({
+  baseUrl: z.string().min(1),
+  // Optional: required against ollama.com, typically absent for a private
+  // daemon. PATCH passes `null` to explicitly clear it; nullable() keeps that
+  // escape hatch consistent with custom's bearerToken handling.
+  apiKey: z.string().nullable().optional(),
+  models: z.array(upstreamModelSchema).optional(),
+});
+
 // --- auth ---
 
 // Cap PBKDF2 input length: 1024 bytes — well above any real passphrase. The
@@ -217,6 +226,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
   z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
   z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ provider: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
 // Update is provider-agnostic: provider is read from the existing record, and
@@ -229,7 +239,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot', 'codex']).optional(),
+  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
