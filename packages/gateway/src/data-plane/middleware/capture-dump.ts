@@ -109,30 +109,49 @@ const captureBytes = async (forCapture: ReadableStream<Uint8Array>, contentType:
 };
 
 export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
-  const apiKey = c.get('apiKey') as ApiKey | undefined;
-  if (apiKey?.dumpRetentionSeconds === undefined || apiKey.dumpRetentionSeconds === null) return await next();
-  // The Gemini dispatcher routes :countTokens / :generateContent /
-  // :streamGenerateContent off a single Hono path, but only the generate
-  // variants invoke a billable upstream model — :countTokens is a local
-  // pre-flight that the spec explicitly excludes from capture.
+  const apiKey = c.get('apiKey') as ApiKey;
+  if (apiKey.dumpRetentionSeconds === null) return await next();
+  // `:countTokens` is a local pre-check that does not call upstream, so it
+  // is not captured even though it shares the Gemini dispatcher's path with
+  // the generate variants.
   if (c.req.path.startsWith('/v1beta/models/') && c.req.path.endsWith(':countTokens')) return await next();
 
   const startedAt = Date.now();
   const recordId = ulid();
   const requestHeaders = headerPairs(c.req.raw.headers);
-  const requestBodyBytes = c.req.raw.body
-    ? new Uint8Array(await new Response(c.req.raw.body).arrayBuffer())
-    : new Uint8Array();
 
-  // Replay the buffered bytes back into the request so the downstream handler
-  // can `c.req.json()` / `c.req.text()` / `c.req.formData()` normally.
-  const replayReq = new Request(c.req.raw.url, {
-    method: c.req.raw.method,
-    headers: c.req.raw.headers,
-    body: requestBodyBytes.length > 0 ? requestBodyBytes : null,
-    redirect: c.req.raw.redirect,
-  });
-  Object.defineProperty(c.req, 'raw', { value: replayReq, configurable: true });
+  // Tee the request body so the downstream handler streams its half to
+  // upstream while the capture half drains into our buffer in parallel.
+  // Passing the original Request as `new Request`'s first arg preserves
+  // signal/cache/credentials/referrer — the second arg only overrides what
+  // it explicitly names. `duplex: 'half'` is required by Node 18+ and
+  // workerd whenever a Request is built with a ReadableStream body.
+  let capturedRequestBytesPromise: Promise<Uint8Array>;
+  if (c.req.raw.body === null) {
+    capturedRequestBytesPromise = Promise.resolve(new Uint8Array());
+  } else {
+    const [forHandler, forCapture] = c.req.raw.body.tee();
+    const replayReq = new Request(c.req.raw, {
+      body: forHandler,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+    Object.defineProperty(c.req, 'raw', { value: replayReq, configurable: true });
+    capturedRequestBytesPromise = (async () => {
+      const reader = forCapture.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        total += value.byteLength;
+      }
+      const out = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.byteLength; }
+      return out;
+    })();
+  }
 
   // Hono's compose runs its onError before our `await next()` resumes, so a
   // throw from the inner handler comes back to us as `c.error` plus a 500
@@ -183,7 +202,6 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   }
 
   const reqContentType = c.req.raw.headers.get('content-type');
-  const reqEncoded = encodeBody(requestBodyBytes, reqContentType);
   const path = c.req.path + new URL(c.req.url).search;
   const method = c.req.method;
 
@@ -191,6 +209,8 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
   // streaming respond paths set it inside their stream-end `finally`, which
   // fires after the upstream stream has been fully consumed by `forCapture`.
   const finalize = async (): Promise<void> => {
+    const requestBodyBytes = await capturedRequestBytesPromise;
+    const reqEncoded = encodeBody(requestBodyBytes, reqContentType);
     const captured = await capturedBodyPromise;
     const completedAt = Date.now();
     const accounting = c.get('dumpAccounting') as DumpAccounting | undefined;
@@ -224,13 +244,14 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
     };
     try {
       await getDumpStore().put(apiKey.id, record);
-    } catch (err) {
-      console.error('[dump-store]', err);
-    }
-    try {
       getDumpBroker().publish(apiKey.id, record.meta);
     } catch (err) {
-      console.error('[dump-broker]', err);
+      // Re-throw with keyId+recordId context so the scheduler's logger
+      // (`[background] ...` on Node, CF logs on workerd) shows what the
+      // failure was tied to. The store and broker share one catch because
+      // either failure has identical observability needs.
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`[dump] keyId=${apiKey.id} recordId=${record.meta.id}: ${message}`, { cause: err });
     }
   };
 

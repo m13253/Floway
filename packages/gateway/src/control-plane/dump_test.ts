@@ -304,7 +304,7 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
     ...store.store,
     async list(keyId, opts) {
       await listGate;
-      return store.store.list(keyId, opts);
+      return await store.store.list(keyId, opts);
     },
   };
   initDumpStore(slowStore);

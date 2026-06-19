@@ -50,10 +50,10 @@ interface CaptureVars {
   dumpAccounting: { upstream: string | null; model: string | null; inputTokens: number | null; outputTokens: number | null };
 }
 
-const makeApp = (apiKey: ApiKey | undefined): Hono<{ Variables: CaptureVars }> => {
+const makeApp = (apiKey: ApiKey): Hono<{ Variables: CaptureVars }> => {
   const app = new Hono<{ Variables: CaptureVars }>();
   app.use('*', async (c, next) => {
-    if (apiKey) c.set('apiKey', apiKey);
+    c.set('apiKey', apiKey);
     await next();
   });
   app.use('*', captureRequestDump());
@@ -187,18 +187,6 @@ test('apiKey with null retention is a pass-through; nothing is stored or publish
   assertEquals(stubBroker.publishes.length, 0);
 });
 
-test('absent apiKey context var is a pass-through (e.g. dashboard / non-dump-eligible routes)', async () => {
-  const app = makeApp(undefined);
-  app.post('/api/anything', () => new Response('ok', { status: 200 }));
-
-  const response = await app.request('/api/anything', { method: 'POST' });
-  await response.text();
-  await drainScheduled();
-
-  assertEquals(response.status, 200);
-  assertEquals(stubStore.puts.length, 0);
-});
-
 test('headers are captured verbatim — no redaction of authorization / x-api-key / cookie', async () => {
   const app = makeApp(apiKeyWithDump());
   app.post('/v1/messages', () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -270,4 +258,55 @@ test('non-text response body round-trips through base64 with a ;base64 suffix on
   assertEquals(record.response.body, btoa('\xFF\xD8\xFF\xE0'));
   const ct = record.response.headers.find(([k]) => k.toLowerCase() === 'content-type');
   assertEquals(ct?.[1], 'image/jpeg;base64');
+});
+
+// F3 — the request body is tee'd, not buffered to memory. The downstream
+// handler must see request bytes streaming in as they arrive; the capture
+// drains its half concurrently. This test sends chunks separated by an
+// await turn and asserts the handler observed each chunk before EOF, and
+// that the capture buffer reassembled the same bytes.
+test('streaming request body reaches the handler chunk-by-chunk and the capture buffer reassembles it', async () => {
+  const app = makeApp(apiKeyWithDump());
+  const observedChunks: string[] = [];
+  app.post('/echo', async c => {
+    const reader = c.req.raw.body!.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      observedChunks.push(decoder.decode(value));
+    }
+    return new Response('done', { status: 200, headers: { 'content-type': 'text/plain' } });
+  });
+
+  // Build a request body that pushes one chunk, awaits a microtask, then
+  // pushes the next chunk and closes. If the middleware buffers the body
+  // before calling next(), the handler sees the full body in one read; if
+  // it tees, the handler sees the chunks separately.
+  const chunks = ['{"part":"one",', '"part":"two"}'];
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(new TextEncoder().encode(chunks[0]!));
+      await new Promise(resolve => setTimeout(resolve, 5));
+      controller.enqueue(new TextEncoder().encode(chunks[1]!));
+      controller.close();
+    },
+  });
+  const response = await app.request('/echo', {
+    method: 'POST',
+    body,
+    headers: { 'content-type': 'application/json' },
+    duplex: 'half',
+  } as RequestInit & { duplex: 'half' });
+  assertEquals(response.status, 200);
+  await drainScheduled();
+
+  // The handler observed at least two separate reads — proves the body was
+  // streaming, not pre-buffered into a single Uint8Array.
+  expect(observedChunks.length).toBeGreaterThanOrEqual(2);
+  assertEquals(observedChunks.join(''), chunks.join(''));
+
+  // The capture buffer reassembled the same bytes.
+  const record = stubStore.puts[0]!.record;
+  assertEquals(record.request.body, chunks.join(''));
 });
