@@ -105,33 +105,28 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   [/^minimax-m2(\.[15])?$/, { input: 0.3, input_cache_read: 0.03, output: 1.2 }],
   [/^minimax-(m2\.7|m3)$/, { input: 0.3, input_cache_read: 0.06, output: 1.2 }],
 
-  // Mistral family — `mistral-large-3` is Mistral's MoE flagship (41B
-  // active / 675B total per https://mistral.ai/news/mistral-3), and
-  // `devstral-2` is the Devstral 2512 release. Both priced first-party.
+  // Mistral La Plateforme — `mistral-large-3` is Mistral's MoE flagship
+  // (41B active / 675B total per https://mistral.ai/news/mistral-3) and
+  // ships at the rate listed on https://mistral.ai/pricing. Devstral 2 and
+  // the Ministral 3 family are also La Plateforme SKUs (api.mistral.ai)
+  // but Mistral's pricing summary page only renders the flagship tier; the
+  // per-SKU rates surface on OpenRouter's `mistralai`-tagged provider row,
+  // which routes to Mistral's first-party API for these models.
   // https://mistral.ai/pricing
+  // https://openrouter.ai/mistralai/devstral-2512
+  // https://openrouter.ai/mistralai/ministral-14b-2512
   ['mistral-large-3:675b', { input: 0.5, output: 1.5 }],
   ['devstral-2:123b', { input: 0.4, output: 2.0 }],
   // `devstral-small-2:24b` is intentionally omitted: Mistral's only listed
   // SKU is the free Labs tier (no commercial pricing) and no commodity host
   // carries Devstral Small 2 at a paid rate. Persisting $0 would misrepresent
   // the upstream as zero-cost.
-
-  // Ministral 3B / 8B / 14B — Mistral first-party. The 2024-era $0.04/$0.10
-  // rates got bumped; the 14B SKU exists and ships with a published
-  // `input_cache_read` rate ($0.02/M).
-  // https://mistral.ai/pricing
   ['ministral-3:3b', { input: 0.1, output: 0.1 }],
   ['ministral-3:8b', { input: 0.15, output: 0.15 }],
   ['ministral-3:14b', { input: 0.2, input_cache_read: 0.02, output: 0.2 }],
 
-  // NVIDIA Nemotron-3 — DeepInfra hosts the Super; the Nano sits on
-  // OpenRouter; the Ultra runs on DeepInfra / Together at higher rates.
-  // NVIDIA itself has no public per-token API.
-  // https://deepinfra.com/nvidia
-  // NVIDIA Nemotron-3 — DeepInfra and OpenRouter host the open weights; Nano
-  // sits on OpenRouter, Super on DeepInfra, Ultra runs on DeepInfra FP8.
-  // NVIDIA itself sells no public per-token SKU (NIM Hub surfaces partner
-  // endpoints, not a first-party API).
+  // NVIDIA Nemotron-3 — open weights, no first-party per-token API. Nano
+  // sits on OpenRouter; Super and Ultra run on DeepInfra (Ultra at FP8).
   // https://deepinfra.com/nvidia
   // https://openrouter.ai/nvidia/nemotron-3-nano-30b-a3b
   ['nemotron-3-nano:30b', { input: 0.05, output: 0.2 }],
