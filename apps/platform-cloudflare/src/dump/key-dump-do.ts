@@ -163,10 +163,13 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
 
   private async purgeOlderThan(cutoffMs: number): Promise<void> {
     const keyId = this.readState('keyId');
+    if (keyId === undefined) {
+      throw new Error('purgeOlderThan called with no cached keyId — state was wiped');
+    }
     const expiring = this.sql
       .exec<{ id: string }>('SELECT id FROM records WHERE created_at < ?', cutoffMs)
       .toArray();
-    if (keyId !== undefined && expiring.length > 0) {
+    if (expiring.length > 0) {
       const keys = expiring.map(r => blobKey(keyId, r.id));
       for (let i = 0; i < keys.length; i += R2_DELETE_BATCH) {
         await this.env.DUMP_BLOBS.delete(keys.slice(i, i + R2_DELETE_BATCH));

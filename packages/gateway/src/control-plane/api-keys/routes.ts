@@ -70,8 +70,8 @@ export const deleteKey = async (c: Context) => {
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
   // Purge before soft-delete so a purge failure leaves the key alive and
-  // visible to retry, mirroring the user-cascade ordering. The reverse order
-  // would orphan dumps under a tombstoned key the sweeps no longer iterate.
+  // visible to retry. The reverse order would orphan dumps under a tombstoned
+  // key the sweeps no longer iterate.
   await getDumpStore().purgeAll(id);
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });

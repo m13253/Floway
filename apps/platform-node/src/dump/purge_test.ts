@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { purgeDumpsForAllKeys } from './purge.ts';
 import type { DumpListOptions, DumpStore } from '@floway-dev/platform';
@@ -62,6 +62,8 @@ test('a single failing key does not skip later keys; the failure is logged with 
     assertEquals(errorSpy.mock.calls.length, 1);
     assertEquals(errorSpy.mock.calls[0]![0], '[dump-purge]');
     assertEquals(errorSpy.mock.calls[0]![1], 'key-a');
+    expect(errorSpy.mock.calls[0]![2]).toBeInstanceOf(Error);
+    expect((errorSpy.mock.calls[0]![2] as Error).message).toMatch(/boom for key-a/);
   } finally {
     errorSpy.mockRestore();
   }

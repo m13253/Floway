@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../runtime/dump.ts';
 import { parseSSEText, requestApp, setupAppTest } from '../test-helpers.ts';
@@ -363,4 +363,56 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
 
   controller.abort();
   await reader.cancel().catch(() => {});
+});
+
+// The broker iterator throwing mid-stream (transport error on CF, generic
+// throw on Node) must surface to the dashboard as a final `event: error` SSE
+// frame so a regression that swallowed it would fail loud. The pump in
+// dump.ts catches the iterator throw into `brokerError` and writes the
+// frame after draining buffered metas.
+test('GET /api/dump/keys/:keyId/stream — broker iterator throw after snapshot emits a final SSE error frame', async () => {
+  const { apiKey } = await setupAppTest();
+  const { store } = installStubs();
+  await store.store.put(apiKey.id, buildRecord('01A'));
+
+  const failingBroker: DumpBroker = {
+    publish() {},
+    async *subscribe() {
+      // Yield nothing then throw — the pump enters its catch and the SSE
+      // handler emits the final error frame on its way out.
+      throw new Error('broker websocket errored: simulated transport failure');
+    },
+  };
+  initDumpBroker(failingBroker);
+
+  // The pump logs the iterator throw via console.error; silence it so the
+  // expected failure path doesn't pollute the test output.
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const controller = new AbortController();
+    const response = await requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
+      headers: { 'x-api-key': apiKey.key },
+      signal: controller.signal,
+    });
+    assertEquals(response.status, 200);
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (let i = 0; i < 200; i++) {
+      const events = parseSSEText(buffer);
+      if (events.some(e => e.event === 'error')) break;
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+    }
+    const events = parseSSEText(buffer);
+    const errorEv = events.find(e => e.event === 'error');
+    assertEquals(errorEv?.data, 'broker websocket errored: simulated transport failure');
+
+    controller.abort();
+    await reader.cancel().catch(() => {});
+  } finally {
+    errorSpy.mockRestore();
+  }
 });

@@ -103,7 +103,6 @@ test('signal.abort ends the iterator and closes the underlying socket', async ()
   let ended = false;
   const subscriber = (async () => {
     for await (const _m of broker.subscribe('key1', controller.signal)) {
-      // never reached
     }
     ended = true;
   })();
@@ -120,7 +119,7 @@ test('signal.abort ends the iterator and closes the underlying socket', async ()
   assertEquals(closed, true);
 });
 
-test('multiple subscribers each receive the DO fanout published on their own socket', async () => {
+test('each subscriber consumes its own per-key DO socket independently', async () => {
   // CF broker has no in-process fanout — every subscribe() opens a new
   // WebSocket against the per-key DO, which is the unit that fans out.
   // The test confirms each socket is wired independently so each delivers
@@ -162,4 +161,34 @@ test('multiple subscribers each receive the DO fanout published on their own soc
   await Promise.all([subA, subB]);
   assertEquals(receivedA.map(m => m.id), ['x']);
   assertEquals(receivedB.map(m => m.id), ['x']);
+});
+
+test('a transport error on the underlying socket throws from the iterator (not a clean return)', async () => {
+  // The control-plane pump records iterator throws into `brokerError` and
+  // writes a final `event: error` SSE frame. Treating an `error` event like
+  // a clean close would mute that frame, so the broker must surface the
+  // failure as a throw the pump can catch.
+  const { client } = fakePair();
+  const broker = createCloudflareDumpBroker(fakeNamespace(client));
+  const controller = new AbortController();
+
+  let thrown: unknown = null;
+  const subscriber = (async () => {
+    try {
+      for await (const _m of broker.subscribe('key1', controller.signal)) {}
+    } catch (e) {
+      thrown = e;
+    }
+  })();
+
+  await Promise.resolve();
+  client.dispatchEvent(new ErrorEvent('error', { message: 'simulated socket failure' }));
+
+  const finished = await Promise.race([
+    subscriber.then(() => true),
+    new Promise<false>(resolve => setTimeout(() => resolve(false), 1000)),
+  ]);
+  assertEquals(finished, true);
+  assertEquals(thrown instanceof Error, true);
+  assertEquals((thrown as Error).message, 'broker websocket errored: simulated socket failure');
 });

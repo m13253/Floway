@@ -10,6 +10,7 @@ import type {
   DumpRecord,
   DumpResponseBody,
   DumpStreamEvent,
+  DumpUpstreamRef,
 } from '@floway-dev/protocols/dump';
 
 // We intentionally do NOT redact `authorization`, `x-api-key`, `cookie`, or
@@ -217,16 +218,20 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
     // A deleted upstream — or a transient repo failure on the lookup — falls
     // back to id-as-name with kind:'unknown' so a flaky read can't drop the
     // whole dump.
-    let upstreamRef: { id: string; name: string; kind: string } | null = null;
+    let upstreamRef: DumpUpstreamRef | null = null;
     if (accounting?.upstream) {
       const upstreamId = accounting.upstream;
-      const fallback = { id: upstreamId, name: upstreamId, kind: 'unknown' };
+      const fallback: DumpUpstreamRef = { id: upstreamId, name: upstreamId, kind: 'unknown' };
       try {
         const row = await getRepo().upstreams.getById(upstreamId);
         upstreamRef = row
           ? { id: row.id, name: row.name, kind: row.provider }
           : fallback;
-      } catch {
+      } catch (err) {
+        // A transient repo failure here would otherwise drop to the fallback
+        // silently — log so the operator can tell apart "upstream deleted"
+        // (semantic null) from "repo down" (incident signal).
+        console.error('[dump] upstream lookup failed', upstreamId, err);
         upstreamRef = fallback;
       }
     }

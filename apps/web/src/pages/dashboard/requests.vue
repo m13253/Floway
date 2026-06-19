@@ -1,6 +1,6 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
@@ -18,8 +18,15 @@ export const useRequestsPageData = defineBasicLoader(async () => {
 
 <script setup lang="ts">
 const initialData = useRequestsPageData();
-const keys = initialData.data.value.keys;
-const dumpKeys = computed(() => keys.filter(k => k.dump_retention_seconds !== null));
+// Refetch on window focus so a key created or had its dump retention toggled
+// in another tab is reflected without a manual reload. `reload()` calls the
+// same loader, so the binding above stays the single source of truth.
+const onFocus = () => { void initialData.reload(); };
+onMounted(() => window.addEventListener('focus', onFocus));
+onUnmounted(() => window.removeEventListener('focus', onFocus));
+
+const keys = computed(() => initialData.data.value.keys);
+const dumpKeys = computed(() => keys.value.filter(k => k.dump_retention_seconds !== null));
 
 const selectedKeyId = ref<string | null>(dumpKeys.value[0]?.id ?? null);
 const selectedKeyIdReactive = computed(() => selectedKeyId.value ?? '');

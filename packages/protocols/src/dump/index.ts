@@ -57,13 +57,8 @@ export interface DumpRequest {
   body: string;
 }
 
-export interface DumpResponse {
-  status: number;
-  headers: Array<[string, string]>;
-}
-
 export type DumpRecord = {
   meta: DumpMetadata;
   request: DumpRequest;
-  response: DumpResponse & DumpResponseBody;
+  response: { status: number; headers: Array<[string, string]> } & DumpResponseBody;
 };

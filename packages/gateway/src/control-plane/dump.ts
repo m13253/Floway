@@ -30,7 +30,17 @@ export const dump = new Hono()
     // drain the buffer to the client. A record completing between subscribe
     // and snapshot is delivered by both paths and the client dedupes by id —
     // at-worst-twice beats the alternative of a silent gap.
-    const subscription = getDumpBroker().subscribe(keyId, c.req.raw.signal);
+    //
+    // Own the subscription's lifetime via a local AbortController chained to
+    // the request signal: if the snapshot read throws before we hand the
+    // pump its real sink, we abort the controller in the catch so the broker
+    // subscription tears down (DO websocket closes on CF; in-process queue
+    // exits on Node) instead of orphaning on the request signal that only
+    // fires on client disconnect.
+    const subscriptionController = new AbortController();
+    const onRequestAbort = (): void => subscriptionController.abort();
+    c.req.raw.signal.addEventListener('abort', onRequestAbort, { once: true });
+    const subscription = getDumpBroker().subscribe(keyId, subscriptionController.signal);
     const buffered: DumpMetadata[] = [];
     let brokerError: unknown = null;
     let sink: (meta: DumpMetadata) => void | Promise<void> = meta => { buffered.push(meta); };
@@ -43,7 +53,15 @@ export const dump = new Hono()
       }
     })();
 
-    const snapshot = await getDumpStore().list(keyId, { limit: STREAM_INITIAL_SNAPSHOT_LIMIT });
+    let snapshot: DumpMetadata[];
+    try {
+      snapshot = await getDumpStore().list(keyId, { limit: STREAM_INITIAL_SNAPSHOT_LIMIT });
+    } catch (err) {
+      subscriptionController.abort();
+      c.req.raw.signal.removeEventListener('abort', onRequestAbort);
+      await pump;
+      throw err;
+    }
 
     return streamSSE(c, async stream => {
       await stream.writeSSE({ event: 'snapshot', data: JSON.stringify(snapshot) });

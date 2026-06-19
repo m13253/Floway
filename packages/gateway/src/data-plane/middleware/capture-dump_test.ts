@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { captureRequestDump } from './capture-dump.ts';
 import { getRepo, initRepo } from '../../repo/index.ts';
@@ -380,9 +380,11 @@ describe('failure modes', () => {
     assertEquals(err.cause, cause);
   });
 
-  // After the I3 fix, a repo throw on upstream-ref lookup degrades to a
-  // fallback ref instead of dropping the dump — the record still lands with
-  // upstream={id, name:id, kind:'unknown'}.
+  // A repo throw on upstream-ref lookup must degrade to a fallback ref
+  // rather than drop the entire dump — a transient lookup failure shouldn't
+  // lose the record. The capture middleware also logs via console.error so
+  // the operator can distinguish "upstream deleted" from "repo down"; the
+  // spy below absorbs that expected log line.
   test('upstream-ref lookup failure degrades gracefully — the record still persists with a fallback ref', async () => {
     const repo = new InMemoryRepo();
     repo.upstreams = {
@@ -397,13 +399,23 @@ describe('failure modes', () => {
     });
     app.post('/v1/messages', () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
 
-    await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-    await drainScheduled();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      await drainScheduled();
 
-    assertEquals(scheduledErrors.length, 0);
-    assertEquals(stubStore.puts.length, 1);
-    const meta = stubStore.puts[0]!.record.meta;
-    assertEquals(meta.upstream, { id: 'up_unreachable', name: 'up_unreachable', kind: 'unknown' });
+      assertEquals(scheduledErrors.length, 0);
+      assertEquals(stubStore.puts.length, 1);
+      const meta = stubStore.puts[0]!.record.meta;
+      assertEquals(meta.upstream, { id: 'up_unreachable', name: 'up_unreachable', kind: 'unknown' });
+      // Lookup failure is observable: operator sees the upstream id and the
+      // underlying error rather than a silent fallback.
+      assertEquals(errorSpy.mock.calls[0]![0], '[dump] upstream lookup failed');
+      assertEquals(errorSpy.mock.calls[0]![1], 'up_unreachable');
+      expect((errorSpy.mock.calls[0]![2] as Error).message).toBe('repo down');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   test('captureBytes mid-stream error preserves the bytes received so far in meta.error', async () => {

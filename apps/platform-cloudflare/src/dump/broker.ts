@@ -23,6 +23,7 @@ export const createCloudflareDumpBroker = (
 
     const queue: DumpMetadata[] = [];
     let closed = false;
+    let socketError: Error | null = null;
     let resolveNext: (() => void) | null = null;
     const wake = (): void => {
       const r = resolveNext;
@@ -37,9 +38,17 @@ export const createCloudflareDumpBroker = (
       queue.push(JSON.parse(data) as DumpMetadata);
       wake();
     });
-    const markClosed = (): void => { closed = true; wake(); };
-    ws.addEventListener('close', markClosed);
-    ws.addEventListener('error', markClosed);
+    ws.addEventListener('close', () => { closed = true; wake(); });
+    // Transport errors must surface to the control-plane pump as a thrown
+    // iterator so it can populate `brokerError` and write the `event: error`
+    // SSE frame. Treating an error identically to close would yield a clean
+    // return and the dashboard would see an opaque disconnect.
+    ws.addEventListener('error', e => {
+      const message = (e as ErrorEvent).message ?? (e as { error?: { message?: string } }).error?.message ?? 'unknown';
+      socketError = new Error(`broker websocket errored: ${message}`);
+      closed = true;
+      wake();
+    });
     // { once: true } only auto-removes after the listener fires. If the
     // iterator returns normally (not via abort) on a shared signal that
     // outlives this call, the listener would otherwise accumulate.
@@ -51,7 +60,9 @@ export const createCloudflareDumpBroker = (
           // The socket can close from the server side (DO eviction, retention
           // turned off mid-session). Exit once the queue is drained so the SSE
           // handler closes its end instead of hanging on an awaited promise
-          // that will never resolve.
+          // that will never resolve. A transport error surfaces as a throw
+          // here so the pump's catch records it for the SSE error frame.
+          if (socketError !== null) throw socketError;
           if (closed) return;
           await new Promise<void>(resolve => { resolveNext = resolve; });
           continue;

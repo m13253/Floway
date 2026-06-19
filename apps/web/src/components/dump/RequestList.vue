@@ -8,7 +8,7 @@ import { Badge, OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 dayjs.extend(relativeTime);
 
-const props = defineProps<{
+defineProps<{
   records: DumpMetadata[];
   loading: boolean;
   error: string | null;
@@ -72,21 +72,24 @@ const totalTokens = (r: DumpMetadata): number | null => {
   return (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
 };
 
+// Per-provider accent matches UpstreamPicker's palette so a record's tone
+// in the list lines up with the picker users already learned. We do break
+// from UpstreamPicker's shared cyan for copilot+codex: this list often
+// shows mixed-provider streams in quick succession and codex needs its own
+// hue to stand out at a glance. Limited to the palette declared in
+// `apps/web/uno.config.ts`.
 const providerColorClass = (kind: string): string => {
   if (kind === 'copilot') return 'text-accent-cyan';
+  if (kind === 'codex') return 'text-accent-violet';
   if (kind === 'azure') return 'text-accent-emerald';
   if (kind === 'custom') return 'text-accent-amber';
-  if (kind === 'codex') return 'text-accent-cyan';
+  if (kind === 'ollama') return 'text-accent-rose';
   return 'text-gray-400';
 };
 
 const isFailed = (r: DumpMetadata) => r.status === 0 || r.status >= 400 || r.error !== null;
 
 const onSelect = (id: string) => { selectedId.value = id; };
-
-watch(() => props.records.length, () => {
-  if (sentinel.value) observeSentinel(sentinel.value);
-});
 </script>
 
 <template>

@@ -55,7 +55,10 @@ const retentionPresetFromValue = (sec: number | null): { preset: RetentionPreset
   if (sec % 86400 === 0) return { preset: 'custom', custom: `${sec / 86400}d` };
   if (sec % 3600 === 0) return { preset: 'custom', custom: `${sec / 3600}h` };
   if (sec % 60 === 0) return { preset: 'custom', custom: `${sec / 60}m` };
-  return { preset: 'custom', custom: String(sec) };
+  // Always carry the explicit `s` suffix when rendering raw seconds — the
+  // input placeholder shows mixed units (`30m, 2h, 3d, 1800`) so a bare
+  // integer like `45` reads ambiguously even though the parser accepts it.
+  return { preset: 'custom', custom: `${sec}s` };
 };
 
 const name = ref('');

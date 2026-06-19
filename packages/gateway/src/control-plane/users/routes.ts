@@ -113,17 +113,21 @@ export const deleteUser = async (c: Context) => {
   if (id === actorId) return c.json({ error: 'cannot delete yourself' }, 400);
 
   const repo = getRepo();
-  const ok = await repo.users.softDelete(id);
-  if (!ok) return c.json({ error: 'user not found' }, 404);
 
-  // Purge dumps for every live key under this user before soft-deleting the
-  // keys themselves; once a key is soft-deleted its id stops resolving via
-  // listByUserId, so iterating that list later would miss them.
+  // Purge dumps for every live key under this user before any tombstoning so
+  // a purge failure leaves the user and their keys visible and retriable
+  // (matches deleteKey's purge-then-soft-delete ordering). The reverse order
+  // would orphan dumps under tombstoned keys the sweeps no longer iterate,
+  // and leave the user soft-deleted with no way for a retry to find them.
+  // listByUserId still resolves while the user row is live, so we can iterate
+  // before touching apiKeys.softDeleteByUserId.
   const liveKeys = await repo.apiKeys.listByUserId(id);
   for (const key of liveKeys) await getDumpStore().purgeAll(key.id);
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);
+  const ok = await repo.users.softDelete(id);
+  if (!ok) return c.json({ error: 'user not found' }, 404);
   return c.json({ ok: true });
 };
 

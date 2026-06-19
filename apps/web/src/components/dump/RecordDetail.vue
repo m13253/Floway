@@ -50,20 +50,30 @@ const toggleReveal = (i: number) => {
   revealedHeaderIdx.value = new Set(revealedHeaderIdx.value);
 };
 
+// Selection token guards against a fast A→B click landing A's late fetch
+// after B's, repainting A. Each call captures its token before awaiting;
+// only the latest token allowed to commit results.
+let activeFetchToken = 0;
+
 const fetchRecord = async (keyId: string, recordId: string) => {
+  const token = ++activeFetchToken;
   loading.value = true;
   error.value = null;
   record.value = null;
   revealedHeaderIdx.value = new Set();
   try {
     const res = await authFetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`);
+    if (token !== activeFetchToken) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    record.value = await res.json() as DumpRecord;
+    const data = await res.json() as DumpRecord;
+    if (token !== activeFetchToken) return;
+    record.value = data;
     streamView.value = 'collected';
   } catch (e) {
+    if (token !== activeFetchToken) return;
     error.value = e instanceof Error ? e.message : String(e);
   } finally {
-    loading.value = false;
+    if (token === activeFetchToken) loading.value = false;
   }
 };
 
