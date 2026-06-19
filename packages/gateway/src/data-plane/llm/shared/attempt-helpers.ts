@@ -25,7 +25,6 @@ export const buildUpstreamCallOptions = (
   recordUpstreamLatency,
   waitUntil: ctx.backgroundScheduler,
   clientRequestHeaders: ctx.clientRequestHeaders,
-  clientRequestPathname: ctx.clientRequestPathname,
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult

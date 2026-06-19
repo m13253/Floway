@@ -81,17 +81,16 @@ export type ProviderCompactionResult =
 // no-op. Providers use it for post-response persistence the caller has
 // already stopped waiting on.
 //
-// `clientRequestHeaders` / `clientRequestPathname` describe the inbound
-// HTTP request the gateway is serving. They are absent for translated and
-// synthesized callsites that have no inbound HTTP context. Providers that
-// can pass an inbound payload through to the upstream when it already
-// matches their native client's wire shape read from these fields.
+// `clientRequestHeaders` describes the inbound HTTP request the gateway is
+// serving. Absent for translated and synthesized callsites that have no
+// inbound HTTP context. Providers that can pass an inbound payload through
+// to the upstream when it already matches their native client's wire shape
+// read from this field.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
   waitUntil: (promise: Promise<unknown>) => void;
   clientRequestHeaders?: Headers;
-  clientRequestPathname?: string;
 }
 
 export interface ModelProvider {

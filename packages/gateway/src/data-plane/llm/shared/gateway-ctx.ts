@@ -20,11 +20,10 @@ export interface GatewayCtx {
   // dimension. Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
-  // Inbound HTTP request the gateway is serving, captured once for forwarding
-  // as the matching UpstreamCallOptions fields. Synthetic test contexts that
-  // never reach a provider call leave these undefined.
+  // Inbound HTTP request headers the gateway is serving, captured once for
+  // forwarding as the matching UpstreamCallOptions field. Synthetic test
+  // contexts that never reach a provider call leave it undefined.
   readonly clientRequestHeaders?: Headers;
-  readonly clientRequestPathname?: string;
   readonly currentColo: string | null;
 }
 
@@ -41,7 +40,6 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     clientRequestHeaders: c.req.raw.headers,
-    clientRequestPathname: new URL(c.req.url).pathname,
     currentColo: getCurrentColo(c.req.raw),
   };
 };
@@ -62,7 +60,6 @@ export const createGatewayCtxForWs = (
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     clientRequestHeaders: c.req.raw.headers,
-    clientRequestPathname: new URL(c.req.url).pathname,
     currentColo: getCurrentColo(c.req.raw),
   };
 };
