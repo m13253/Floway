@@ -33,6 +33,7 @@ const KEY_A: ApiKey = {
   lastUsedAt: '2026-01-02T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
+  dumpRetentionSeconds: null,
 };
 
 const KEY_B: ApiKey = {
@@ -43,6 +44,7 @@ const KEY_B: ApiKey = {
   createdAt: '2026-02-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
+  dumpRetentionSeconds: null,
 };
 
 const SEED_ADMIN: User = {

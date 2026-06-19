@@ -56,6 +56,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     createdAt: new Date().toISOString(),
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   };
   await repo.apiKeys.save(defaultKey);
 

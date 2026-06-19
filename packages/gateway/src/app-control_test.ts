@@ -53,6 +53,7 @@ test('API key users only see their own key in /api/keys', async () => {
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const response = await requestApp('/api/keys', {
@@ -101,6 +102,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
   await repo.usage.set({
     keyId: apiKey.id,
@@ -148,6 +150,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     createdAt: '2026-03-16T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
   await repo.usage.set({
     keyId: 'key_actor_secondary',

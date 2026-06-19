@@ -59,9 +59,10 @@ interface ApiKeyRow {
   last_used_at: string | null;
   upstream_ids: string | null;
   deleted_at: string | null;
+  dump_retention_seconds: number | null;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at';
+const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -89,6 +90,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   deletedAt: row.deleted_at,
+  dumpRetentionSeconds: row.dump_retention_seconds,
 });
 
 class SqlApiKeyRepo implements ApiKeyRepo {
@@ -151,14 +153,15 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
            key = excluded.key,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
-           deleted_at = excluded.deleted_at`,
+           deleted_at = excluded.deleted_at,
+           dump_retention_seconds = excluded.dump_retention_seconds`,
       )
       .bind(
         key.id,
@@ -169,6 +172,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),
         key.deletedAt,
+        key.dumpRetentionSeconds,
       )
       .run();
   }

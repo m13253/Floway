@@ -65,6 +65,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   } satisfies ApiKey;
   await getRepo().apiKeys.save(key);
   return c.json(apiKeyToJson(key), 201);

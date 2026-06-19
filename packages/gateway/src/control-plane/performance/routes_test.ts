@@ -64,6 +64,7 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const sample = {
@@ -126,6 +127,7 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const sample = {
@@ -174,6 +176,7 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const sample = {
@@ -216,6 +219,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     createdAt: '2026-04-30T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const sample = {
@@ -365,6 +369,7 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
     createdAt: '2026-04-30T11:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const response = await requestApp(

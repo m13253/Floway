@@ -131,6 +131,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   };
   await repo.apiKeys.save(apiKey);
 
