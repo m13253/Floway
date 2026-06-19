@@ -42,11 +42,14 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     this.writeState('retentionSeconds', String(retentionSeconds));
 
     await this.env.DUMP_BLOBS.put(blobKey(keyId, record.meta.id), JSON.stringify(record));
+    // created_at uses completedAt so retention measures the lifetime of the
+    // stored record, not the wall-clock duration of the request that produced
+    // it. A long-running request would otherwise be born already partly aged.
     this.sql.exec(
       'INSERT OR REPLACE INTO records(id, meta_json, created_at) VALUES(?, ?, ?)',
       record.meta.id,
       JSON.stringify(record.meta),
-      record.meta.startedAt,
+      record.meta.completedAt,
     );
 
     this.fanout(record.meta);
@@ -71,14 +74,12 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     return rows.map(r => JSON.parse(r.meta_json) as DumpMetadata);
   }
 
-  async getRecord(id: DumpRecordId): Promise<DumpRecord | null> {
+  async getRecord(keyId: string, id: DumpRecordId): Promise<DumpRecord | null> {
     const cutoff = this.expiryCutoff();
     const row = this.sql
       .exec<{ created_at: number }>('SELECT created_at FROM records WHERE id = ?', id)
       .one();
     if (!row || row.created_at < cutoff) return null;
-    const keyId = this.readState('keyId');
-    if (keyId === null) return null;
     const object = await this.env.DUMP_BLOBS.get(blobKey(keyId, id));
     if (!object) return null;
     return JSON.parse(new TextDecoder().decode(await object.arrayBuffer())) as DumpRecord;
@@ -92,12 +93,17 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
 
   async purgeAll(): Promise<void> {
     const keyId = this.readState('keyId');
-    if (keyId !== null) await this.deleteR2Prefix(`dump/${keyId}/`);
+    if (keyId !== undefined) await this.deleteR2Prefix(`dump/${keyId}/`);
     await this.ctx.storage.deleteAll();
   }
 
   async alarm(): Promise<void> {
-    const retention = Number(this.readState('retentionSeconds') ?? '0');
+    const raw = this.readState('retentionSeconds');
+    // deleteAll-then-new-put race: purgeAll dropped the state row but the
+    // alarm fires before the next put rewrites it. No retention to enforce
+    // yet — bail and let the next put re-schedule.
+    if (raw === undefined) return;
+    const retention = Number(raw);
     if (retention <= 0) return;
     await this.purgeOlderThan(Date.now() - retention * 1000);
     await this.scheduleNextAlarm(retention);
@@ -131,7 +137,7 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
       try {
         ws.send(payload);
       } catch {
-        try { ws.close(1011, 'send-failed'); } catch { /* socket already gone */ }
+        try { ws.close(1011, 'send-failed'); } catch {}
         this.sockets.delete(ws);
       }
     }
@@ -142,7 +148,7 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     const expiring = this.sql
       .exec<{ id: string }>('SELECT id FROM records WHERE created_at < ?', cutoffMs)
       .toArray();
-    if (keyId !== null && expiring.length > 0) {
+    if (keyId !== undefined && expiring.length > 0) {
       const keys = expiring.map(r => blobKey(keyId, r.id));
       for (let i = 0; i < keys.length; i += R2_DELETE_BATCH) {
         await this.env.DUMP_BLOBS.delete(keys.slice(i, i + R2_DELETE_BATCH));
@@ -182,15 +188,18 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
 
   private expiryCutoff(): number {
     const raw = this.readState('retentionSeconds');
-    if (raw === null) return -Infinity;
+    // No state row (DO just initialized, or purgeAll dropped it) means we
+    // have no retention to enforce yet — return -Infinity so list/get
+    // include every row.
+    if (raw === undefined) return -Infinity;
     const retention = Number(raw);
     if (!Number.isFinite(retention) || retention <= 0) return -Infinity;
     return Date.now() - retention * 1000;
   }
 
-  private readState(k: string): string | null {
+  private readState(k: string): string | undefined {
     const row = this.sql.exec<{ v: string }>('SELECT v FROM state WHERE k = ?', k).one();
-    return row?.v ?? null;
+    return row?.v;
   }
 
   private writeState(k: string, v: string): void {

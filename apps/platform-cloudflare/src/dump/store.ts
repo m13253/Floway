@@ -22,7 +22,7 @@ export const createCloudflareDumpStore = (
       await stub(keyId).put(keyId, retention, record);
     },
     list: (keyId, opts) => stub(keyId).list(opts),
-    get: (keyId, id) => stub(keyId).getRecord(id),
+    get: (keyId, id) => stub(keyId).getRecord(keyId, id),
     purgeExpired: (keyId, s) => stub(keyId).purgeExpired(s),
     purgeAll: keyId => stub(keyId).purgeAll(),
   };
