@@ -638,6 +638,40 @@ test('import rejects api key unique identity conflicts before mutating', async (
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
+test('import preserves a positive dumpRetentionSeconds on api keys', async () => {
+  const { app, repo } = setup();
+
+  const result = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
+  }));
+
+  assertEquals(result.status, 200);
+  const restored = await repo.apiKeys.getById(KEY_A.id);
+  assertEquals(restored?.dumpRetentionSeconds, 3600);
+});
+
+test('import rejects api keys whose dumpRetentionSeconds is out of range', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save(KEY_A);
+
+  const zero = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 0 }],
+  }));
+  const negative = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: -1 }],
+  }));
+  const tooLarge = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 400_000_000 }],
+  }));
+
+  for (const result of [zero, negative, tooLarge]) {
+    assertEquals(result.status, 400);
+    assertEquals(String(result.body.error).includes('dumpRetentionSeconds must be null or a positive integer'), true);
+  }
+  // Nothing was mutated — the validator runs before any write.
+  assertEquals(await repo.apiKeys.list(), [KEY_A]);
+});
+
 test('import rejects legacy provider-prefixed upstream identities before mutating', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);

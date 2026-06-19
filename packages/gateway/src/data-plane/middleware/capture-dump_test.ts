@@ -284,6 +284,27 @@ test('non-text response body round-trips through base64 with a ;base64 suffix on
   assertEquals(ct?.[1], 'image/jpeg;base64');
 });
 
+test('response with no content-type but non-text bytes still surfaces ;base64 via a synthesized header', async () => {
+  // An upstream that sends raw bytes and omits content-type entirely would
+  // otherwise leave the dump body as raw base64 with no signal — the SPA
+  // would render it as text and show garbage. The middleware synthesizes
+  // application/octet-stream;base64 so the SPA's decoder hits the base64 branch.
+  const app = makeApp(apiKeyWithDump());
+  const bytes = new Uint8Array([0x00, 0xFF, 0x10, 0x80]);
+  app.post('/v1/images/generations', () =>
+    new Response(bytes, { status: 200 }));
+
+  await app.request('/v1/images/generations', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await drainScheduled();
+
+  const record = stubStore.puts[0]!.record;
+  assertEquals(record.response.type, 'bytes');
+  if (record.response.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(record.response.body, btoa('\x00\xFF\x10\x80'));
+  const ct = record.response.headers.find(([k]) => k.toLowerCase() === 'content-type');
+  assertEquals(ct?.[1], 'application/octet-stream;base64');
+});
+
 // The request body is tee'd, not buffered to memory. The downstream
 // handler must see request bytes streaming in as they arrive; the capture
 // drains its half concurrently. This test sends chunks separated by an

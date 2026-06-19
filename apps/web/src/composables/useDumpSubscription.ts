@@ -73,6 +73,13 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
       const meta = JSON.parse((ev as MessageEvent).data) as DumpMetadata;
       if (seen.has(meta.id)) return;
       seen.add(meta.id);
+      // Cap the dedup set at a windowed rebuild from the visible list. The
+      // bound is the records list length, not user behavior, so a key that
+      // streams forever does not grow `seen` without limit.
+      if (seen.size > 10_000) {
+        seen.clear();
+        for (const r of records.value) seen.add(r.id);
+      }
       records.value = [meta, ...records.value];
     });
 

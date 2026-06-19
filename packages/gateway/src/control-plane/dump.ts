@@ -9,15 +9,15 @@ const RECORDS_LIST_HARD_CAP = 200;
 const RECORDS_LIST_DEFAULT = 100;
 const STREAM_INITIAL_SNAPSHOT_LIMIT = 100;
 
-// Missing → default. Garbage or non-positive → null so the caller rejects
-// with 400 rather than silently substituting a value the operator did not
-// ask for. Over-cap is clamped: the cap is the upper bound, not a hint that
-// the input itself was invalid.
+// Missing → default. Garbage, non-integer, or non-positive → null so the
+// caller rejects with 400 rather than silently substituting a value the
+// operator did not ask for. Over-cap is clamped: the cap is the upper
+// bound, not a hint that the input itself was invalid.
 const parseLimit = (raw: string | undefined): number | null => {
   if (raw === undefined) return RECORDS_LIST_DEFAULT;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.min(Math.floor(n), RECORDS_LIST_HARD_CAP);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return Math.min(n, RECORDS_LIST_HARD_CAP);
 };
 
 export const dump = new Hono()

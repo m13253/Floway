@@ -47,8 +47,15 @@ const encodeBody = (bytes: Uint8Array, contentType: string | null): { body: stri
   return { body: btoa(bin), base64: true };
 };
 
+// When the body was base64-encoded, the recorded content-type must end in
+// `;base64` so the SPA's decoder hits the base64 branch. If the upstream
+// (or the original request) carried no content-type at all, synthesize
+// `application/octet-stream;base64` rather than leaving the SPA to read
+// raw base64 as text and render garbled output.
 const annotateBase64ContentType = (headers: Array<[string, string]>, base64: boolean): Array<[string, string]> => {
   if (!base64) return headers;
+  const hasContentType = headers.some(([k]) => k.toLowerCase() === 'content-type');
+  if (!hasContentType) return [...headers, ['content-type', 'application/octet-stream;base64']];
   return headers.map(([k, v]): [string, string] =>
     k.toLowerCase() === 'content-type' ? [k, `${v};base64`] : [k, v]);
 };

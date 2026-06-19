@@ -103,8 +103,9 @@ test('purgeExpired succeeds on a fresh DO with no prior put (no cached keyId in 
   const Ctor = KeyDumpDO as unknown as new (ctx: unknown, env: unknown) => KeyDumpDOLike;
   const subject = new Ctor(ctx, env);
 
-  // Must not throw — the R4 invariant ("state was wiped") is only meant to
-  // catch a corrupted DO, not the legitimate first-PATCH-on-empty-DO path.
+  // Must not throw — purgeOlderThan's "state was wiped" tripwire is only
+  // meant to catch a corrupted DO, not the legitimate first-PATCH-on-empty-DO
+  // path.
   let threw: unknown = null;
   try {
     await subject.purgeExpired('key-fresh', 3600);
