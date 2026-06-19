@@ -10,7 +10,7 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_messages_attempt_test';
@@ -60,10 +60,10 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[], opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[], opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'messages';
@@ -233,4 +233,37 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(upstreamSamples.length, 1);
   assertEquals(upstreamSamples[0]?.upstream, 'up_perf');
   assertEquals(upstreamSamples[0]?.requests, 1);
+});
+
+test('generate threads ctx.backgroundScheduler into UpstreamCallOptions.waitUntil so providers can outlive the response', async () => {
+  installRepo();
+  const scheduled: Promise<unknown>[] = [];
+  const ctx: GatewayCtx = {
+    ...makeGatewayCtx(),
+    backgroundScheduler: promise => { scheduled.push(promise); },
+  };
+  let observedWaitUntil: ((p: Promise<unknown>) => void) | undefined;
+  const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal: unknown, _headers: unknown, _beta: unknown, opts?: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedWaitUntil = opts?.waitUntil;
+    opts?.waitUntil?.(Promise.resolve('post-response work'));
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k' };
+  });
+
+  const result = await messagesAttempt.generate({
+    payload: makePayload(),
+    ctx,
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    candidate: makeCandidate({ callMessages }),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertExists(observedWaitUntil);
+  // The provider's `opts.waitUntil(promise)` lands on the same queue the
+  // ctx-level scheduler drains, so a post-response promise actually outlives
+  // the request body. Telemetry also schedules on the same queue, so look up
+  // our marker rather than asserting a precise queue length.
+  const resolved = await Promise.all(scheduled);
+  assertEquals(resolved.includes('post-response work'), true);
 });

@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
+import { initRepo } from '../../../repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -183,6 +185,7 @@ const messagesProtocolFrames = async function* (): AsyncGenerator<ProtocolFrame<
 };
 
 const callRespond = async (wantsStream: boolean): Promise<Response> => {
+  initRepo(new InMemoryRepo());
   const app = new Hono();
   let captured: Response | undefined;
   app.get('/', async c => {
