@@ -57,17 +57,19 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
     </div>
 
     <div v-if="!editMode">
-      <div class="mb-2 flex items-baseline justify-between gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p class="text-xs font-medium text-gray-500">Fetch <code class="font-mono">/api/tags</code></p>
-        <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
+        <div class="flex items-center gap-3">
+          <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            :loading="fetchLoading"
+            :disabled="fetchLoading"
+            @click="emit('fetch-models')"
+          >Fetch</Button>
+        </div>
       </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        :loading="fetchLoading"
-        :disabled="fetchLoading"
-        @click="emit('fetch-models')"
-      >Fetch</Button>
       <p v-if="fetchError" class="mt-1.5 text-[11px] text-accent-rose">{{ fetchError }}</p>
     </div>
   </div>
