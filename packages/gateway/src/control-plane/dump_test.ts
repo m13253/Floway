@@ -294,7 +294,10 @@ test('cross-user ownership check applies to every dump endpoint', async () => {
 // Subscribe runs before snapshot, so a record completing inside the snapshot
 // window can be delivered by both paths; the client dedupes by id. The point
 // of this test is to prove the at-worst-twice guarantee is honored — never
-// dropped. We delay `list` to widen the window and publish during it.
+// dropped. We freeze the snapshot at the moment list begins awaiting the
+// gate so the slow snapshot legitimately excludes the post-subscribe row,
+// then publish during the gate so only the buffered subscribe path can
+// deliver 01B.
 test('GET /api/dump/keys/:keyId/stream — record completing during snapshot read is delivered (not lost)', async () => {
   const { apiKey } = await setupAppTest();
   const store = makeStubStore();
@@ -305,8 +308,12 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
   const slowStore: DumpStore = {
     ...store.store,
     async list(keyId, opts) {
+      // Capture the snapshot result NOW so it can't reflect any record
+      // inserted while the gate is held. This is what proves the buffered
+      // subscribe path is the only one that can deliver 01B.
+      const frozen = await store.store.list(keyId, opts);
       await listGate;
-      return await store.store.list(keyId, opts);
+      return frozen;
     },
   };
   initDumpStore(slowStore);
@@ -322,8 +329,8 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
 
   // Wait for the subscribe to attach (next microtask after the handler enters
   // the awaited list call); then publish a record that the snapshot won't
-  // include because we put it after the list call's underlying data was
-  // captured. Even so, the buffered subscription must deliver it.
+  // include because the snapshot was already frozen. Only the buffered
+  // subscription can deliver it.
   await new Promise(resolve => setTimeout(resolve, 10));
   await store.store.put(apiKey.id, buildRecord('01B'));
   broker.broker.publish(apiKey.id, buildRecord('01B').meta);
@@ -349,11 +356,10 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
   const snapshotIds = (JSON.parse(snapshotEv.data) as DumpMetadata[]).map(r => r.id);
   const appendedIds = appendedEvs.map(e => (JSON.parse(e.data) as DumpMetadata).id);
 
-  // 01B must appear at least once across snapshot+appended. Duplicates are
-  // intentional (see the subscribe-before-snapshot comment in dump.ts);
-  // clients dedupe by id.
-  const seenIds = new Set([...snapshotIds, ...appendedIds]);
-  assertEquals(seenIds.has('01B'), true);
+  // Snapshot was frozen before 01B's put, so 01B must NOT be in the
+  // snapshot; the buffered subscribe path is the only delivery channel.
+  assertEquals(snapshotIds.includes('01B'), false);
+  assertEquals(appendedIds.includes('01B'), true);
 
   controller.abort();
   await reader.cancel().catch(() => {});

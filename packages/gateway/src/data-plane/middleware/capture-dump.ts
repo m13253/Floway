@@ -90,13 +90,26 @@ const captureSSE = async (forCapture: ReadableStream<Uint8Array>, startedAt: num
 };
 
 const captureBytes = async (forCapture: ReadableStream<Uint8Array>, contentType: string | null): Promise<CapturedBody> => {
+  // Drain via a reader loop rather than `new Response(...).arrayBuffer()`:
+  // arrayBuffer() discards every byte received before a mid-stream error,
+  // and dump captures exist precisely so operators can inspect partial data.
+  const reader = forCapture.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   let streamingError: unknown = null;
-  let bytes = new Uint8Array();
   try {
-    bytes = new Uint8Array(await new Response(forCapture).arrayBuffer());
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      total += value.byteLength;
+    }
   } catch (err) {
     streamingError = err;
   }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   const encoded = encodeBody(bytes, contentType);
   return { body: { type: 'bytes', body: encoded.body }, bodyBase64: encoded.base64, responseBytes: bytes.byteLength, streamingError };
 };
@@ -201,13 +214,21 @@ export const captureRequestDump = (): MiddlewareHandler => async (c, next) => {
     const finalError = upstreamError ?? captured.streamingError;
     // Resolve upstream id → {name, kind} from the repo so the dashboard
     // can show a human label colored by provider kind without round-tripping.
-    // A deleted upstream falls back to id-as-name with kind:'unknown'.
+    // A deleted upstream — or a transient repo failure on the lookup — falls
+    // back to id-as-name with kind:'unknown' so a flaky read can't drop the
+    // whole dump.
     let upstreamRef: { id: string; name: string; kind: string } | null = null;
     if (accounting?.upstream) {
-      const row = await getRepo().upstreams.getById(accounting.upstream);
-      upstreamRef = row
-        ? { id: row.id, name: row.name, kind: row.provider }
-        : { id: accounting.upstream, name: accounting.upstream, kind: 'unknown' };
+      const upstreamId = accounting.upstream;
+      const fallback = { id: upstreamId, name: upstreamId, kind: 'unknown' };
+      try {
+        const row = await getRepo().upstreams.getById(upstreamId);
+        upstreamRef = row
+          ? { id: row.id, name: row.name, kind: row.provider }
+          : fallback;
+      } catch {
+        upstreamRef = fallback;
+      }
     }
     const record: DumpRecord = {
       meta: {

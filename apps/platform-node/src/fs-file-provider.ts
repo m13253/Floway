@@ -36,6 +36,10 @@ export class FsFileProvider implements FileProvider {
     }
   }
 
+  async delete(key: string): Promise<void> {
+    await rm(this.pathFor(key), { force: true });
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     // Refuse to delete the entire root: a stray empty-string prefix would
     // otherwise wipe every spilled payload, including ones from concurrent

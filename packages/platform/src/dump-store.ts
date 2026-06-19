@@ -17,6 +17,11 @@ export interface DumpListOptions {
 // freshly-raised retention takes effect on the very next read without
 // waiting for the next put or scheduled purge.
 export interface DumpStore {
+  // The created_at column implementations key retention off of MUST be
+  // `record.meta.completedAt` (not the put-time wall clock, nor
+  // `startedAt`). Retention measures the lifetime of the stored record;
+  // tying it to completedAt prevents a long-running request from being
+  // born already partly aged.
   put(keyId: string, record: DumpRecord): Promise<void>;
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
   get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null>;

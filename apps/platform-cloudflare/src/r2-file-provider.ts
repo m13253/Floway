@@ -27,6 +27,10 @@ export class R2FileProvider implements FileProvider {
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
   }
 
+  async delete(key: string): Promise<void> {
+    await this.bucket.delete(key);
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     let cursor: string | undefined;
     do {

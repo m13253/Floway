@@ -185,7 +185,9 @@ export const changeOwnPasswordBody = z.object({
 // `dump_retention_seconds`: null disables capture; a positive integer is the
 // per-record TTL in seconds. Zero would mean "capture but expire immediately"
 // which has no sensible behavior, so it is rejected at the schema layer.
-const dumpRetentionSecondsSchema = z.number().int().positive().nullable();
+// The 10-year upper bound rejects absurd inputs as a clean validation error
+// rather than letting them through as de-facto "never expire".
+const dumpRetentionSecondsSchema = z.number().int().positive().max(10 * 365 * 24 * 60 * 60).nullable();
 
 export const createKeyBody = z.object({
   name: z.string().min(1),

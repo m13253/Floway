@@ -1,9 +1,17 @@
 // Parse a human-typed retention window. Accepts a plain integer (seconds), or
 // an integer followed by `s`/`m`/`h`/`d`. Returns the equivalent number of
-// seconds, or null when the input does not parse — callers surface that as a
-// validation error rather than substituting a default.
+// seconds, or null when the input does not parse or resolves to zero — the
+// parser is the boundary, so callers don't need to re-check positivity. The
+// backend schema is also `positive()`, so a zero would be rejected there
+// anyway and surface as a raw Zod error to the user.
 export const parseDuration = (input: string): number | null => {
   const trimmed = input.trim();
+  const value = computeDurationSeconds(trimmed);
+  if (value === null || value <= 0) return null;
+  return value;
+};
+
+const computeDurationSeconds = (trimmed: string): number | null => {
   if (/^\d+$/.test(trimmed)) return Number(trimmed);
   const m = /^(\d+)\s*([smhd])$/i.exec(trimmed);
   if (!m) return null;

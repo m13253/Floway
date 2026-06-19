@@ -37,8 +37,8 @@ const isSensitiveHeader = (name: string) => SENSITIVE_HEADERS.has(name.toLowerCa
 // Redact preserves length so the visual mass of the original value is
 // preserved while the middle is hidden. The first and last 8 characters
 // stay visible — enough for the operator to recognize the credential type
-// (sk-ant-… / cgw-main-…) and match the tail against their notes. Values
-// of 16 or fewer chars are fully masked because there is no "middle".
+// and match the tail against their notes. Values of 16 or fewer chars are
+// fully masked because there is no "middle".
 const redactValue = (v: string): string => {
   if (v.length <= 16) return '•'.repeat(v.length);
   return v.slice(0, 8) + '•'.repeat(v.length - 16) + v.slice(-8);

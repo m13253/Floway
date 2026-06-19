@@ -108,12 +108,16 @@ watch(() => props.records.length, () => {
         <li
           v-for="r in records"
           :key="r.id"
+          tabindex="0"
+          role="button"
           class="cursor-pointer px-4 py-2.5 transition-colors"
           :class="[
             selectedId === r.id ? 'bg-accent-cyan/10' : 'hover:bg-white/[0.02]',
             isFailed(r) ? 'bg-accent-rose/[0.04]' : '',
           ]"
           @click="onSelect(r.id)"
+          @keydown.enter.prevent="onSelect(r.id)"
+          @keydown.space.prevent="onSelect(r.id)"
         >
           <!-- Model is the most operator-relevant identifier so it takes the
                prominent slot; when accounting didn't resolve one (e.g. a 4xx

@@ -123,6 +123,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const { id: modelId, model: resolved } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundScheduler);
     if (!resolved) {
+      setPassthroughDumpAccounting(c, null, null, null);
       return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
     }
 
@@ -143,6 +144,10 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       lastPerformance = performanceContext;
 
       if (!response.ok) {
+        // Stamp accounting on the failure path too so the dump record carries
+        // the upstream + model that the call resolved to, not null. Tokens
+        // are null because no usage was reported.
+        setPassthroughDumpAccounting(c, binding.upstream, modelId, null);
         recordUpstreamPerformance(backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
         return forwardUpstreamResponse(response);
@@ -172,8 +177,10 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       return forwardUpstreamResponse(response);
     }
 
+    setPassthroughDumpAccounting(c, null, modelId, null);
     return passthroughApiError(c, noBindingMessage(modelId), 400);
   } catch (e) {
+    setPassthroughDumpAccounting(c, null, null, null);
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) return forwarded;
@@ -190,8 +197,11 @@ export const passthroughApiError = (c: Context, message: string, status: Content
 // Mirrors the LLM respond path: stamp the per-request accounting that
 // `captureRequestDump` reads when finalizing the dump record. Sums every
 // input-side and output-side dimension into a single inputTokens/outputTokens
-// pair — the dump UI shows totals, not the per-dimension split.
-const setPassthroughDumpAccounting = (c: Context, upstream: string, model: string, usage: TokenUsage | null): void => {
+// pair — the dump UI shows totals, not the per-dimension split. Accepts
+// null upstream/model so the error paths (no binding resolved, no model
+// resolved, fetch threw) can stamp explicitly rather than letting the
+// capture middleware fall back to defaults.
+const setPassthroughDumpAccounting = (c: Context, upstream: string | null, model: string | null, usage: TokenUsage | null): void => {
   const tokens = sumDumpTokens(usage);
   c.set('dumpAccounting', {
     upstream,

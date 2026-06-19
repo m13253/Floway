@@ -32,9 +32,6 @@ export class NodeDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpRecord): Promise<void> {
     await this.files.put(fileKey(keyId, record.meta.id), encoder.encode(JSON.stringify(record)));
-    // created_at uses completedAt so retention measures the lifetime of the
-    // stored record, not the wall-clock duration of the request that produced
-    // it. A long-running request would otherwise be born already partly aged.
     await this.db
       .prepare(
         'INSERT INTO dump_records (key_id, id, meta_json, created_at) VALUES (?, ?, ?, ?) '
@@ -98,7 +95,7 @@ export class NodeDumpStore implements DumpStore {
       .bind(keyId, threshold)
       .all<{ id: string }>();
     for (const row of expired.results) {
-      await this.files.deletePrefix(fileKey(keyId, row.id));
+      await this.files.delete(fileKey(keyId, row.id));
     }
     await this.db
       .prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?')

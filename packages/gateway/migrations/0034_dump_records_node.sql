@@ -1,4 +1,6 @@
--- Used by the Node deployment as a shared sqlite-backed metadata index.
+-- Per-key dump metadata index. Applies on both runtimes; CF stores dumps in
+-- its KeyDumpDO + R2 and never queries this table, so on Workers the table
+-- exists but stays empty.
 CREATE TABLE dump_records (
   key_id TEXT NOT NULL,
   id TEXT NOT NULL,

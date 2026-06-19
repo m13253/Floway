@@ -32,11 +32,13 @@ export const dump = new Hono()
     // at-worst-twice beats the alternative of a silent gap.
     const subscription = getDumpBroker().subscribe(keyId, c.req.raw.signal);
     const buffered: DumpMetadata[] = [];
+    let brokerError: unknown = null;
     let sink: (meta: DumpMetadata) => void | Promise<void> = meta => { buffered.push(meta); };
     const pump = (async () => {
       try {
         for await (const meta of subscription) await sink(meta);
       } catch (err) {
+        brokerError = err;
         console.error('[dump-stream]', keyId, err);
       }
     })();
@@ -57,6 +59,14 @@ export const dump = new Hono()
       // and backpressure intact.
       sink = meta => stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
       await pump;
+      // A broker failure (the iterator threw, not just signal-aborted) emits
+      // one final `event: error` SSE frame so the dashboard sees a reason
+      // instead of an opaque disconnect; the SSE close that follows then
+      // stops the autoreconnect loop with context.
+      if (brokerError !== null) {
+        const message = brokerError instanceof Error ? brokerError.message : String(brokerError);
+        await stream.writeSSE({ event: 'error', data: message });
+      }
     });
   })
   .get('/keys/:keyId/records', async c => {

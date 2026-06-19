@@ -31,20 +31,24 @@ const cloneOutput = (output: ResponsesOutputItem[]): ResponsesOutputItem[] => ou
 
 const appendOutputText = (item: ResponsesOutputItem, contentIndex: number, delta: string): ResponsesOutputItem => {
   if (item.type !== 'message') return item;
+  const existing = item.content[contentIndex];
+  // Bail when an existing slot is a different content type — don't overwrite
+  // data we don't know how to extend. Matches appendReasoningSummary.
+  if (existing !== undefined && existing.type !== 'output_text') return item;
   const content: ResponsesOutputContentBlock[] = item.content.slice();
-  const existing = content[contentIndex] ?? { type: 'output_text', text: '' };
-  if (existing.type === 'output_text') {
-    content[contentIndex] = { type: 'output_text', text: existing.text + delta };
-  }
+  const previousText = existing?.text ?? '';
+  content[contentIndex] = { type: 'output_text', text: previousText + delta };
   const next: ResponsesOutputMessage = { ...item, content };
   return next;
 };
 
 const appendReasoningSummary = (item: ResponsesOutputItem, summaryIndex: number, delta: string): ResponsesOutputItem => {
   if (item.type !== 'reasoning') return item;
+  const existing = item.summary[summaryIndex];
+  if (existing !== undefined && existing.type !== 'summary_text') return item;
   const summary = item.summary.slice();
-  const existing = summary[summaryIndex] ?? { type: 'summary_text' as const, text: '' };
-  summary[summaryIndex] = { type: 'summary_text', text: existing.text + delta };
+  const previousText = existing?.text ?? '';
+  summary[summaryIndex] = { type: 'summary_text', text: previousText + delta };
   const next: ResponsesOutputReasoning = { ...item, summary };
   return next;
 };

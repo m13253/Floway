@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 import { captureRequestDump } from './capture-dump.ts';
 import { getRepo, initRepo } from '../../repo/index.ts';
@@ -82,28 +82,31 @@ const makeApp = (apiKey: ApiKey): Hono<{ Variables: CaptureVars }> => {
 let stubStore: ReturnType<typeof makeStubStore>;
 let stubBroker: ReturnType<typeof makeStubBroker>;
 let scheduled: Promise<unknown>[];
+let scheduledErrors: unknown[];
 
 beforeEach(() => {
   stubStore = makeStubStore();
   stubBroker = makeStubBroker();
   scheduled = [];
+  scheduledErrors = [];
   initRepo(new InMemoryRepo());
   initDumpStore(stubStore.store);
   initDumpBroker(stubBroker.broker);
   initBackgroundSchedulerResolver(_c => promise => {
     scheduled.push(promise);
-    promise.catch(err => console.error('[bg-test]', err));
+    promise.catch(err => { scheduledErrors.push(err); });
   });
 });
 
 // Wait for the fire-and-forget scheduler queue to flush. The test scheduler
 // captures every scheduled promise into `scheduled`; this just awaits them
-// in order, including any that get re-scheduled during finalize.
+// in order, including any that get re-scheduled during finalize. Uses
+// allSettled so a deliberately-failing test doesn't poison the drain.
 const drainScheduled = async (): Promise<void> => {
   while (scheduled.length > 0) {
     const pending = scheduled;
     scheduled = [];
-    await Promise.all(pending);
+    await Promise.allSettled(pending);
   }
 };
 
@@ -330,4 +333,140 @@ test('streaming request body reaches the handler chunk-by-chunk and the capture 
   // The capture buffer reassembled the same bytes.
   const record = stubStore.puts[0]!.record;
   assertEquals(record.request.body, chunks.join(''));
+});
+
+describe('failure modes', () => {
+  // The middleware wraps store/broker failures with a `[dump] keyId=… recordId=…`
+  // prefix so the scheduler's logger anchors the failure to the dump it tried
+  // to write. The wrap must preserve the original error as `cause`.
+  test('store.put failure surfaces with the [dump] keyId/recordId wrap and preserves the original error chain', async () => {
+    const cause = new Error('write failed');
+    initDumpStore({
+      ...stubStore.store,
+      put: async () => { throw cause; },
+    });
+    const app = makeApp(apiKeyWithDump());
+    app.post('/v1/messages', () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    await drainScheduled();
+
+    assertEquals(scheduledErrors.length, 1);
+    const err = scheduledErrors[0];
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/^\[dump\] keyId=key_dumped recordId=.+: write failed$/);
+    assertEquals((err as Error & { cause?: unknown }).cause, cause);
+    // The broker is never reached when put throws.
+    assertEquals(stubBroker.publishes.length, 0);
+  });
+
+  test('broker.publish failure surfaces with the same [dump] keyId/recordId wrap', async () => {
+    const cause = new Error('publish failed');
+    initDumpBroker({
+      ...stubBroker.broker,
+      publish: () => { throw cause; },
+    });
+    const app = makeApp(apiKeyWithDump());
+    app.post('/v1/messages', () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    await drainScheduled();
+
+    // Store.put succeeded before the broker throw — the partial work is on disk.
+    assertEquals(stubStore.puts.length, 1);
+    assertEquals(scheduledErrors.length, 1);
+    const err = scheduledErrors[0] as Error & { cause?: unknown };
+    expect(err.message).toMatch(/^\[dump\] keyId=key_dumped recordId=.+: publish failed$/);
+    assertEquals(err.cause, cause);
+  });
+
+  // After the I3 fix, a repo throw on upstream-ref lookup degrades to a
+  // fallback ref instead of dropping the dump — the record still lands with
+  // upstream={id, name:id, kind:'unknown'}.
+  test('upstream-ref lookup failure degrades gracefully — the record still persists with a fallback ref', async () => {
+    const repo = new InMemoryRepo();
+    repo.upstreams = {
+      ...repo.upstreams,
+      getById: async () => { throw new Error('repo down'); },
+    };
+    initRepo(repo);
+    const app = makeApp(apiKeyWithDump());
+    app.use('/v1/messages', async (c, next) => {
+      c.set('dumpAccounting', { upstream: 'up_unreachable', model: 'm', inputTokens: 1, outputTokens: 2 });
+      await next();
+    });
+    app.post('/v1/messages', () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    await drainScheduled();
+
+    assertEquals(scheduledErrors.length, 0);
+    assertEquals(stubStore.puts.length, 1);
+    const meta = stubStore.puts[0]!.record.meta;
+    assertEquals(meta.upstream, { id: 'up_unreachable', name: 'up_unreachable', kind: 'unknown' });
+  });
+
+  test('captureBytes mid-stream error preserves the bytes received so far in meta.error', async () => {
+    const app = makeApp(apiKeyWithDump());
+    app.post('/v1/messages', () => {
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode('partial-'));
+          // Yield so the teed readers can dequeue the first chunk before the
+          // error lands — proves the reader-loop captured what arrived even
+          // though the stream eventually errored.
+          await new Promise(resolve => setTimeout(resolve, 5));
+          controller.enqueue(new TextEncoder().encode('payload-'));
+          await new Promise(resolve => setTimeout(resolve, 5));
+          controller.error(new Error('upstream cut us off'));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+
+    const response = await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    // Drain the client side; an error mid-stream is propagated by the body
+    // reader, which we catch so the test continues past the response handoff.
+    await response.text().catch(() => {});
+    await drainScheduled();
+
+    assertEquals(stubStore.puts.length, 1);
+    const record = stubStore.puts[0]!.record;
+    if (record.response.type !== 'bytes') throw new Error('expected bytes');
+    // Partial buffered payload is preserved — this is the whole point of
+    // the reader-loop capture: arrayBuffer() would have discarded both
+    // chunks on the error.
+    assertEquals(record.response.body, 'partial-payload-');
+    expect(record.meta.error).toMatch(/upstream cut us off/);
+  });
+
+  test('captureSSE mid-stream error keeps already-parsed frames and surfaces the error in meta.error', async () => {
+    const app = makeApp(apiKeyWithDump());
+    app.post('/v1/messages', () => {
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: start\ndata: hello\n\n'));
+          await new Promise(resolve => setTimeout(resolve, 5));
+          controller.enqueue(new TextEncoder().encode('event: mid\ndata: world\n\n'));
+          await new Promise(resolve => setTimeout(resolve, 5));
+          controller.error(new Error('upstream sse blew up'));
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+
+    const response = await app.request('/v1/messages', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    await response.text().catch(() => {});
+    await drainScheduled();
+
+    assertEquals(stubStore.puts.length, 1);
+    const record = stubStore.puts[0]!.record;
+    if (record.response.type !== 'stream') throw new Error('expected stream');
+    // Frames the parser successfully consumed before the error must survive
+    // so the dump can show what arrived ahead of the failure.
+    assertEquals(record.response.events.length, 2);
+    assertEquals(record.response.events[0]!.data, 'hello');
+    assertEquals(record.response.events[1]!.data, 'world');
+    expect(record.meta.error).toMatch(/upstream sse blew up/);
+  });
 });

@@ -49,9 +49,6 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     this.writeStateOnce('retentionSeconds', String(retentionSeconds), () => this.lastWrittenRetention, v => { this.lastWrittenRetention = v; });
 
     await this.env.DUMP_BLOBS.put(blobKey(keyId, record.meta.id), JSON.stringify(record));
-    // created_at uses completedAt so retention measures the lifetime of the
-    // stored record, not the wall-clock duration of the request that produced
-    // it. A long-running request would otherwise be born already partly aged.
     this.sql.exec(
       'INSERT OR REPLACE INTO records(id, meta_json, created_at) VALUES(?, ?, ?)',
       record.meta.id,
@@ -66,15 +63,19 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   async list(opts: { before?: DumpRecordId; limit: number }): Promise<DumpMetadata[]> {
     const limit = Math.min(Math.max(opts.limit, 1), 200);
     const cutoff = this.expiryCutoff();
+    // ORDER BY (created_at DESC, id DESC) lets the idx_records_created index
+    // drive the sort. The id tie-breaker is for same-ms records — ULID ids
+    // are time-ordered, so the compound `before` predicate still means
+    // "earlier in time" and matches Node's cursor contract.
     const rows = opts.before !== undefined
-      ? this.sql.exec<{ meta_json: string }>(
-          'SELECT meta_json FROM records WHERE id < ? AND created_at >= ? ORDER BY id DESC LIMIT ?',
+      ? this.sql.exec<{ meta_json: string; created_at: number }>(
+          'SELECT meta_json, created_at FROM records WHERE (created_at < (SELECT created_at FROM records WHERE id = ?1) OR (created_at = (SELECT created_at FROM records WHERE id = ?1) AND id < ?1)) AND created_at >= ?2 ORDER BY created_at DESC, id DESC LIMIT ?3',
           opts.before,
           cutoff,
           limit,
         ).toArray()
-      : this.sql.exec<{ meta_json: string }>(
-          'SELECT meta_json FROM records WHERE created_at >= ? ORDER BY id DESC LIMIT ?',
+      : this.sql.exec<{ meta_json: string; created_at: number }>(
+          'SELECT meta_json, created_at FROM records WHERE created_at >= ? ORDER BY created_at DESC, id DESC LIMIT ?',
           cutoff,
           limit,
         ).toArray();
@@ -136,7 +137,7 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
-  async webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): Promise<void> {
+  webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {
     // Dashboards never send to us; ping/pong is handled by the runtime.
   }
 

@@ -46,4 +46,12 @@ describe('parseDuration', () => {
     expect(parseDuration('-5m')).toBeNull();
     expect(parseDuration('3.5h')).toBeNull();
   });
+
+  it('rejects zero-valued inputs so the dialog surfaces them rather than passing to the backend', () => {
+    expect(parseDuration('0')).toBeNull();
+    expect(parseDuration('0s')).toBeNull();
+    expect(parseDuration('0m')).toBeNull();
+    expect(parseDuration('0h')).toBeNull();
+    expect(parseDuration('0d')).toBeNull();
+  });
 });

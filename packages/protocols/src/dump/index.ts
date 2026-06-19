@@ -8,9 +8,8 @@ export type DumpRecordId = string;  // ULID
 export interface DumpUpstreamRef {
   id: string;
   name: string;
-  // Free-form provider kind string ('copilot' | 'custom' | 'azure' | 'codex'
-  // and any future addition). The dashboard colors by this; unknown kinds
-  // get a neutral tone.
+  // Free-form provider kind string. The dashboard colors by this; unknown
+  // kinds get a neutral tone.
   kind: string;
 }
 
@@ -34,8 +33,7 @@ export interface DumpMetadata {
 }
 
 export interface DumpStreamEvent {
-  // SSE "event:" line; null for non-SSE wire formats
-  // (Gemini chunked-JSON, NDJSON, unlabeled SSE).
+  // SSE "event:" line, or null for an SSE frame with only a "data:" line.
   event: string | null;
   data: string;
   ts: number;               // ms relative to startedAt.

@@ -13,8 +13,8 @@ export const mountDataPlane = (app: Hono) => {
   mountCodexRoutes(app);
 
   // Model listing endpoints carry no upstream model call and are excluded
-  // from dump capture by the spec; only the model-invoking endpoints below
-  // wear the capture middleware.
+  // from dump capture; only the model-invoking endpoints below wear the
+  // capture middleware.
   const dump = captureRequestDump();
   app.get('/v1/models', models);
   app.get('/models', models);

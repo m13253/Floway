@@ -14,7 +14,6 @@ interface FakeEventSource {
   url: string;
   readyState: number;
   listeners: Map<string, Array<(ev: MessageEvent) => void>>;
-  closed: boolean;
   addEventListener: (type: string, fn: (ev: MessageEvent) => void) => void;
   close: () => void;
   dispatch: (event: string, data: unknown) => void;
@@ -29,7 +28,6 @@ const installEventSource = () => {
     url: string;
     readyState = 0;
     listeners = new Map<string, Array<(ev: MessageEvent) => void>>();
-    closed = false;
     constructor(url: string) {
       this.url = url;
       created.push(this);
@@ -40,7 +38,6 @@ const installEventSource = () => {
       this.listeners.set(type, list);
     }
     close(): void {
-      this.closed = true;
       this.readyState = EventSourceStub.CLOSED;
     }
     dispatch(event: string, data: unknown): void {

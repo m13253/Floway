@@ -118,15 +118,11 @@ test('collectResponsesStream truncated stream preserves text accumulated only vi
   assertEquals(message.content[0], { type: 'output_text', text: 'partial-text' });
 });
 
-test('collectResponsesStream concatenates split function_call_arguments deltas across a terminal', () => {
-  const completed: ResponsesResult = {
-    ...baseResponse,
-    status: 'completed',
-    output: [
-      { type: 'function_call', id: 'fc_1', call_id: 'call_a', name: 'lookup', arguments: '{"q":"hi"}', status: 'completed' },
-    ],
-  };
-
+test('collectResponsesStream concatenates split function_call_arguments deltas (delta-only fold, no terminal)', () => {
+  // No terminal frame here on purpose: when terminal is present, the collector
+  // adopts its payload verbatim and the delta-fold branch is unreachable. To
+  // prove the delta path actually concatenates, the assertion must depend on
+  // it being the only source of `arguments`.
   const events: DumpStreamEvent[] = [
     dumpEvent({ type: 'response.created', response: baseResponse }),
     dumpEvent({
@@ -136,13 +132,12 @@ test('collectResponsesStream concatenates split function_call_arguments deltas a
     }),
     dumpEvent({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: '{"q":' }),
     dumpEvent({ type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: '"hi"}' }),
-    dumpEvent({ type: 'response.completed', response: completed }),
   ];
 
   const outcome = collectResponsesStream(events);
 
   assertEquals(outcome.error, null);
-  assertEquals(outcome.truncated, false);
+  assertEquals(outcome.truncated, true);
   const item = outcome.result!.output[0];
   if (item.type !== 'function_call') throw new Error('expected function_call');
   assertEquals(item.arguments, '{"q":"hi"}');
@@ -193,7 +188,11 @@ test('collectResponsesStream accumulates reasoning_summary_text deltas', () => {
   assertEquals(item.summary[0], { type: 'summary_text', text: 'think twice' });
 });
 
-test('collectResponsesStream preserves accumulated state when terminal is response.incomplete', () => {
+test('collectResponsesStream marks the outcome truncated when terminal is response.incomplete', () => {
+  // Terminal frames take precedence — the collector adopts response.incomplete
+  // verbatim regardless of mid-stream deltas. What this test actually proves
+  // is the contract that holds: terminal status of `incomplete` or `failed`
+  // surfaces `truncated: true` so callers know the result is partial.
   const incompleteResponse: ResponsesResult = {
     ...baseResponse,
     status: 'incomplete',
@@ -219,9 +218,6 @@ test('collectResponsesStream preserves accumulated state when terminal is respon
   assertEquals(outcome.error, null);
   assertEquals(outcome.truncated, true);
   assertEquals(outcome.result!.status, 'incomplete');
-  const message = outcome.result!.output[0];
-  if (message.type !== 'message') throw new Error('expected message');
-  assertEquals(message.content[0], { type: 'output_text', text: 'cut off' });
 });
 
 test('collectResponsesStream surfaces a mid-stream error frame and keeps the partial result', () => {

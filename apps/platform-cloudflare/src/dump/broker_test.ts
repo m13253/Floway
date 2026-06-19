@@ -90,3 +90,76 @@ test('subscribe yields published metadata in order then exits when the server cl
   assert(ended, 'subscribe should return after the server-side WebSocket close');
   assertEquals(received.map(m => m.id), ['a', 'b']);
 });
+
+test('signal.abort ends the iterator and closes the underlying socket', async () => {
+  const { client } = fakePair();
+  let closed = false;
+  const closingClient = Object.assign(client, {
+    close() { closed = true; client.dispatchEvent(new Event('close')); },
+  });
+  const broker = createCloudflareDumpBroker(fakeNamespace(closingClient));
+  const controller = new AbortController();
+
+  let ended = false;
+  const subscriber = (async () => {
+    for await (const _m of broker.subscribe('key1', controller.signal)) {
+      // never reached
+    }
+    ended = true;
+  })();
+
+  await Promise.resolve();
+  controller.abort();
+  const finished = await Promise.race([
+    subscriber.then(() => true),
+    new Promise<false>(resolve => setTimeout(() => resolve(false), 1000)),
+  ]);
+
+  assert(finished, 'subscribe should return after the signal aborts');
+  assertEquals(ended, true);
+  assertEquals(closed, true);
+});
+
+test('multiple subscribers each receive the DO fanout published on their own socket', async () => {
+  // CF broker has no in-process fanout — every subscribe() opens a new
+  // WebSocket against the per-key DO, which is the unit that fans out.
+  // The test confirms each socket is wired independently so each delivers
+  // its server's pushes, mirroring the per-key DO's actual behavior.
+  const pairs = [fakePair(), fakePair()];
+  let nextClient = 0;
+  const ns: DurableObjectNamespace<KeyDumpDO> = {
+    idFromName: name => ({ name }),
+    get: () => ({
+      fetch: async () => ({ webSocket: pairs[nextClient++]!.client }) as unknown as Response,
+    }) as unknown as DurableObjectStub & KeyDumpDO,
+  };
+  const broker = createCloudflareDumpBroker(ns);
+
+  const ctlA = new AbortController();
+  const ctlB = new AbortController();
+  const receivedA: DumpMetadata[] = [];
+  const receivedB: DumpMetadata[] = [];
+
+  const subA = (async () => {
+    for await (const m of broker.subscribe('key1', ctlA.signal)) {
+      receivedA.push(m);
+      if (receivedA.length === 1) ctlA.abort();
+    }
+  })();
+  const subB = (async () => {
+    for await (const m of broker.subscribe('key1', ctlB.signal)) {
+      receivedB.push(m);
+      if (receivedB.length === 1) ctlB.abort();
+    }
+  })();
+
+  await Promise.resolve();
+  // Each subscriber owns its own server endpoint; simulating the DO's fanout
+  // means publishing on both servers.
+  pairs[0]!.server.send(JSON.stringify(meta('x')));
+  pairs[1]!.server.send(JSON.stringify(meta('x')));
+
+  await Promise.all([subA, subB]);
+  assertEquals(receivedA.map(m => m.id), ['x']);
+  assertEquals(receivedB.map(m => m.id), ['x']);
+});

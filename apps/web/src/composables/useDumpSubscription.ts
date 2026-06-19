@@ -51,6 +51,10 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
     source = es;
 
     es.addEventListener('snapshot', ev => {
+      // Reset the error banner on every fresh snapshot so a successful
+      // (auto-)reconnect dismisses "Stream disconnected" rather than leaving
+      // it stuck after recovery.
+      error.value = null;
       const data = JSON.parse((ev as MessageEvent).data) as DumpMetadata[];
       // Records are sorted newest-first; ULID ids encode time, so id-comparison
       // is equivalent to a startedAt comparison and avoids touching meta fields.
@@ -101,7 +105,21 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
     if (fresh.length) records.value = [...records.value, ...fresh];
   };
 
-  watch(keyId, id => open(id), { immediate: true });
+  watch(keyId, id => {
+    // No key selected → tear down any open stream and reset state. Calling
+    // `open('')` would build a malformed /api/dump/keys//stream URL and
+    // burn cycles on the browser's auto-reconnect loop with a permanent
+    // "Stream disconnected" banner.
+    if (!id) {
+      closeSource();
+      records.value = [];
+      seen.clear();
+      loading.value = false;
+      error.value = null;
+      return;
+    }
+    open(id);
+  }, { immediate: true });
   onScopeDispose(closeSource);
 
   return { records, loading, error, loadOlder };

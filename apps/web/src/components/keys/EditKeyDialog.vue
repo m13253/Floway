@@ -91,7 +91,7 @@ const previousRetention = computed(() => props.apiKey.dump_retention_seconds);
 
 const retentionWarning = computed<string | null>(() => {
   const previous = previousRetention.value;
-  if (previous === null || previous <= 0) return null;
+  if (previous === null) return null;
   const next = proposedRetentionSeconds.value;
   if (next === 'invalid') return null;
   if (next === null) return 'Saving will immediately delete dumps for this key.';

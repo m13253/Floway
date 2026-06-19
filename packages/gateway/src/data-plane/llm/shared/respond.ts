@@ -61,17 +61,47 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 };
 
 // Stamp the per-attempt accounting that `captureRequestDump` reads when it
-// finalizes the dump record. Mirrors the values `recordUsage` /
-// `recordPerformance` already track, but lives on the Hono context so the
-// capture middleware can pick it up after the handler returns.
-export const setDumpAccounting = (c: Context, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): void => {
+// finalizes the dump record. Accepts every field as a nullable so error
+// paths (where no upstream call resolved a model identity) can still set
+// the field explicitly rather than letting the capture middleware fall
+// back to defaults.
+export const setDumpAccounting = (
+  c: Context,
+  accounting: { upstream: string | null; model: string | null; inputTokens: number | null; outputTokens: number | null },
+): void => {
+  c.set('dumpAccounting', accounting);
+};
+
+// Convenience wrapper for the success path: derives accounting from the
+// model identity the provider returned plus the parsed usage figures.
+export const setDumpAccountingFromIdentity = (c: Context, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): void => {
   const tokens = sumDumpTokens(usage);
-  c.set('dumpAccounting', {
+  setDumpAccounting(c, {
     upstream: modelIdentity.upstream,
     model: modelIdentity.model,
     inputTokens: tokens?.inputTokens ?? null,
     outputTokens: tokens?.outputTokens ?? null,
   });
+};
+
+// Error-path accounting: model/upstream come from the performance telemetry
+// context the provider attached (when the failure happened past binding
+// resolution); tokens are always null because no usage was reported.
+export const errorDumpAccounting = (performance: EventResultMetadata['performance'] | undefined) => ({
+  upstream: performance?.upstream ?? null,
+  model: performance?.model ?? null,
+  inputTokens: null,
+  outputTokens: null,
+});
+
+// Plain (count_tokens) accounting: the plain endpoint is a local pre-check
+// that never reaches an upstream, so model/upstream/tokens are explicitly
+// null rather than relying on the capture middleware's defaults.
+export const plainDumpAccounting = {
+  upstream: null,
+  model: null,
+  inputTokens: null,
+  outputTokens: null,
 };
 
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
