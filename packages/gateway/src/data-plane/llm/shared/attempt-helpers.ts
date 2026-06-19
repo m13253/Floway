@@ -19,7 +19,10 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
 // only appear when the gateway is serving a real Hono request (so providers
 // can decide whether the inbound call is already shaped like their native
 // client's wire payload); translated or synthesized callsites that have no
-// inbound HTTP context leave them undefined.
+// inbound HTTP context leave them undefined. `waitUntil` reuses the
+// request-scoped background scheduler — they share the runtime primitive
+// (`ExecutionContext.waitUntil` on workerd, a no-op on Node) and the
+// per-call name reads more naturally at the provider boundary.
 export const buildUpstreamCallOptions = (
   candidate: ProviderCandidate,
   ctx: GatewayCtx,
@@ -27,6 +30,7 @@ export const buildUpstreamCallOptions = (
 ): UpstreamCallOptions => ({
   fetcher: candidate.fetcher,
   recordUpstreamLatency,
+  waitUntil: ctx.backgroundScheduler,
   ...(ctx.clientRequestHeaders !== undefined ? { clientRequestHeaders: ctx.clientRequestHeaders } : {}),
   ...(ctx.clientRequestPathname !== undefined ? { clientRequestPathname: ctx.clientRequestPathname } : {}),
 });

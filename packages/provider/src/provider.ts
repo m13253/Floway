@@ -83,6 +83,13 @@ export type ProviderCompactionResult =
 // incoming request shape — for instance, to decide whether a payload
 // already matches its native client's wire shape and can pass through
 // unmodified — reads from these fields.
+//
+// `waitUntil` registers a fire-and-forget promise that must outlive the
+// response. In Cloudflare Workers it maps to `ExecutionContext.waitUntil`
+// so workerd does not terminate the isolate the moment the response is
+// returned; in Node and tests it is a no-op because the process keeps
+// running anyway. Providers use it for post-response persistence (quota
+// snapshots, token refreshes) the caller has already stopped waiting on.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
@@ -95,6 +102,7 @@ export interface UpstreamCallOptions {
    */
   clientRequestHeaders?: Headers | Record<string, string>;
   clientRequestPathname?: string;
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export interface ModelProvider {

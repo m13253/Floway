@@ -129,7 +129,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       if (!bindingServesEndpoint(binding)) continue;
 
       const recorder = createUpstreamLatencyRecorder();
-      const { response, modelKey } = await call(binding, { fetcher: fetcherForUpstream(binding.upstream), recordUpstreamLatency: recorder.record });
+      const { response, modelKey } = await call(binding, { fetcher: fetcherForUpstream(binding.upstream), recordUpstreamLatency: recorder.record, waitUntil: backgroundScheduler });
       const upstreamDurationMs = recorder.durationMs();
       const performanceContext: PerformanceTelemetryContext = {
         keyId: apiKeyId,
