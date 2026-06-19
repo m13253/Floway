@@ -127,6 +127,22 @@ const accessTokenExpiry = computed(() => {
   return { expiresAt: t.expiresAt, relative: formatRelative(t.expiresAt) };
 });
 
+// Hide the `out_of_credits` reason because it's the steady state pair of
+// `overage.status: rejected` — every plan account without purchased credits
+// reports it. Any other value (a code we haven't seen, a future Anthropic
+// signal) surfaces verbatim so operators see it.
+const unexpectedDisabledReason = computed<string | null>(() => {
+  const reason = quota.value?.overage?.disabledReason;
+  if (!reason || reason === 'out_of_credits') return null;
+  return reason;
+});
+
+const hasInfoChips = computed<boolean>(() => {
+  const q = quota.value;
+  if (!q) return false;
+  return Boolean(q.representativeClaim) || q.overage?.status === 'allowed' || unexpectedDisabledReason.value !== null || q.fallbackAvailable === false;
+});
+
 const rawEntries = computed<Array<[string, string]>>(() => {
   const raw = quota.value?.raw;
   if (!raw || typeof raw !== 'object') return [];
@@ -187,10 +203,16 @@ const rawEntries = computed<Array<[string, string]>>(() => {
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2 text-[11px]">
+      <!-- `overage.status: rejected` + `overage.disabledReason: out_of_credits`
+           is the steady state for any plan-tier account that hasn't bought
+           extra credits — rendering them on every account makes the dashboard
+           look error-y for the normal case. Surface them only when the values
+           signal something operator-actionable; the raw-headers details
+           element below still exposes the underlying numbers for debugging. -->
+      <div v-if="hasInfoChips" class="flex flex-wrap items-center gap-2 text-[11px]">
         <Badge v-if="quota.representativeClaim" tone="zinc" size="sm">representative: {{ quota.representativeClaim }}</Badge>
-        <Badge v-if="quota.overage?.status" tone="zinc" size="sm">overage: {{ quota.overage.status }}</Badge>
-        <Badge v-if="quota.overage?.disabledReason" tone="rose" size="sm">disabled: {{ quota.overage.disabledReason }}</Badge>
+        <Badge v-if="quota.overage?.status === 'allowed'" tone="emerald" size="sm">overage: allowed</Badge>
+        <Badge v-if="unexpectedDisabledReason" tone="rose" size="sm">disabled: {{ unexpectedDisabledReason }}</Badge>
         <Badge v-if="quota.fallbackAvailable === false" tone="amber" size="sm">fallback unavailable</Badge>
       </div>
 
