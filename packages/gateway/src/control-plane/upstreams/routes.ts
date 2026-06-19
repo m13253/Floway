@@ -260,10 +260,6 @@ export const deleteUpstream = async (c: Context) => {
   return c.json({ ok: true });
 };
 
-// Browse the live `/models` list of a DRAFT (unsaved) custom upstream so
-// the editor can pick models before saving. Saved upstreams use
-// GET /api/upstreams/:id/models?refresh=true instead, which routes through
-// the SWR cache.
 // Browse the live `/models` list of a DRAFT (unsaved) upstream so the editor
 // can pick models before saving. Saved upstreams use
 // GET /api/upstreams/:id/models?refresh=true instead, which routes through
@@ -312,7 +308,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     const instance = createOllamaProvider(record);
     const models = await instance.provider.getProvidedModels(directFetcher);
     const data = models.map(model => {
-      const upstreamModelId = (model.providerData as string | undefined) ?? model.id;
+      const upstreamModelId = model.providerData as string;
       const config: Record<string, unknown> = {
         upstreamModelId,
         publicModelId: model.id,

@@ -126,8 +126,7 @@ const copilotConfigSchema = z.object({
 const ollamaConfigSchema = z.object({
   baseUrl: z.string().min(1),
   // Optional: required against ollama.com, typically absent for a private
-  // daemon. PATCH passes `null` to explicitly clear it; nullable() keeps that
-  // escape hatch consistent with custom's bearerToken handling.
+  // daemon. PATCH passes `null` to explicitly clear it.
   apiKey: z.string().nullable().optional(),
   models: z.array(upstreamModelSchema).optional(),
 });

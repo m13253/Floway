@@ -21,7 +21,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -68,8 +68,8 @@ const parseTagEntry = (value: unknown): TagEntry | null => {
   return entry;
 };
 
-const parseTagsResponse = (value: unknown): TagEntry[] => {
-  if (!isRecord(value) || !Array.isArray(value.models)) return [];
+const parseTagsResponse = (value: unknown): TagEntry[] | null => {
+  if (!isRecord(value) || !Array.isArray(value.models)) return null;
   const entries: TagEntry[] = [];
   for (const item of value.models) {
     const entry = parseTagEntry(item);
@@ -82,10 +82,12 @@ const parseTagsResponse = (value: unknown): TagEntry[] => {
 // publishes (e.g. `gptoss.context_length`, `qwen3moe.context_length`,
 // `kimi-k2.context_length`). The prefix varies per family — sometimes it
 // includes a hyphen, sometimes a digit — so consumers must enumerate the keys
-// rather than hardcoding the prefix. We pick the first hit ending in the
-// requested suffix.
+// rather than hardcoding the prefix. Skip `general.*` (carries
+// `general.architecture` / `general.parameter_count`) so a hypothetical
+// `general.context_length` cannot shadow the real per-arch entry.
 const findArchSuffixedNumber = (modelInfo: Record<string, unknown>, suffix: string): number | undefined => {
   for (const [key, value] of Object.entries(modelInfo)) {
+    if (key.startsWith('general.')) continue;
     if (key.endsWith(suffix)) {
       const n = optionalNumberField(value);
       if (n !== undefined && n > 0) return n;
@@ -150,13 +152,16 @@ const fetchShowForTag = async (
 };
 
 export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaCatalog> => {
-  const tagsResponse = await ollamaFetchTags(config, { method: 'GET' }, { fetcher });
-  if (!tagsResponse.ok) {
-    throw new Error(`Ollama /api/tags fetch failed: ${tagsResponse.status} ${await tagsResponse.text().then(t => t.slice(0, 200)).catch(() => '')}`);
-  }
-  const tags = parseTagsResponse(await tagsResponse.json());
-  // Fan out /api/show calls in parallel. allSettled keeps a single per-model
-  // failure from dropping the whole catalog; a rejected entry just falls out.
+  // /api/tags through the shared scaffold so network / non-2xx / shape errors
+  // surface as ProviderModelsUnavailableError — same envelope every other
+  // provider's catalog fetch produces, which the control-plane and SWR cache
+  // both branch on.
+  const tags = await fetchUpstreamModels(
+    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher }),
+    parseTagsResponse,
+  );
+  // /api/show fan-out stays outside the scaffold: `allSettled` already drops
+  // a single failed lookup cleanly without poisoning the whole catalog.
   const settled = await Promise.allSettled(tags.map(tag => fetchShowForTag(config, fetcher, tag)));
   const data: OllamaRawModel[] = [];
   for (const result of settled) {

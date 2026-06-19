@@ -441,6 +441,29 @@ test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures 
   );
 });
 
+test('POST /api/upstreams/fetch-models surfaces an ollama /api/tags failure as 502', async () => {
+  const { adminSession } = await setupAppTest();
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'ollama.com' && url.pathname === '/api/tags') {
+        return jsonResponse({ error: 'unauthorized' }, 401);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, {
+        provider: 'ollama',
+        config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
+      }));
+      assertEquals(resp.status, 502);
+      const body = (await resp.json()) as { error: { message: string; type: string } };
+      assertEquals(body.error.type, 'api_error');
+    },
+  );
+});
+
 test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400', async () => {
   const { adminSession } = await setupAppTest();
 

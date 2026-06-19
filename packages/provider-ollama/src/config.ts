@@ -63,12 +63,13 @@ export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstre
   if (record.provider !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.provider}`);
   if (!isRecord(record.config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
+  const apiKey = apiKeyField(record.config.apiKey);
   return {
     ...record,
     provider: 'ollama',
     config: {
       baseUrl: baseUrlField(record.config.baseUrl),
-      ...(record.config.apiKey !== undefined ? { apiKey: apiKeyField(record.config.apiKey) } : {}),
+      ...(apiKey !== undefined ? { apiKey } : {}),
       models: modelsField(record.config.models ?? [], 'ollama'),
     },
   };
