@@ -48,7 +48,7 @@ const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v ===
 const assertRawModel = (value: unknown): CodexRawModel => {
   if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
   const slug = value.slug;
-  if (typeof slug !== 'string') throw new TypeError('Codex model entry missing slug');
+  if (typeof slug !== 'string') throw new TypeError(`Codex model entry missing slug: ${JSON.stringify(value).slice(0, 200)}`);
   const display_name = value.display_name;
   if (typeof display_name !== 'string') throw new TypeError(`Codex model entry ${slug} missing display_name`);
   const context_window = value.context_window;

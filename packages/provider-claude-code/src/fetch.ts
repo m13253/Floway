@@ -153,7 +153,7 @@ export const callClaudeCodeMessages = async (
   const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = state.accounts[0]!;
+  const account = state.accounts[0];
 
   if (account.state !== 'active') {
     return await syntheticReturn(synthetic503(

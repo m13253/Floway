@@ -80,8 +80,8 @@ const claudeCodeTokenRequest = async (
     let message: string | null = null;
     if (typeof root?.error === 'string') {
       code = root.error;
-    } else if (root && typeof root.error === 'object' && root.error !== null) {
-      const err = root.error as Record<string, unknown>;
+    } else if (isRecord(root?.error)) {
+      const err = root.error;
       if (typeof err.code === 'string') code = err.code;
       if (typeof err.message === 'string') message = err.message;
     }
@@ -89,8 +89,8 @@ const claudeCodeTokenRequest = async (
     // `error_description`; prefer that over the bare `error` code when both
     // are present so the operator sees "Refresh token revoked" rather than
     // "invalid_grant".
-    if (message === null && typeof root?.error_description === 'string') message = root.error_description;
-    if (message === null && typeof root?.detail === 'string') message = root.detail;
+    if (typeof root?.error_description === 'string') message ??= root.error_description;
+    if (typeof root?.detail === 'string') message ??= root.detail;
     message ??= code;
     message ??= rawText.slice(0, 256);
     if (code && terminalCodes.has(code)) {
@@ -160,3 +160,6 @@ export const buildClaudeCodeAuthorizeUrl = (args: {
   });
   return `${CLAUDE_CODE_AUTHORIZE_URL}?${params.toString()}`;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
