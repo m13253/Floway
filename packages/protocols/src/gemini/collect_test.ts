@@ -95,7 +95,7 @@ test('collectGeminiStream folds multiple candidates independently and sorts by i
   assertEquals(candidates[1].content.parts, [{ text: 'two' }]);
 });
 
-test('collectGeminiStream concatenates function-call arguments delivered across chunks', () => {
+test('collectGeminiStream concatenates text parts split across chunk boundaries', () => {
   const events: DumpStreamEvent[] = [
     dumpEvent({
       candidates: [{
@@ -115,6 +115,7 @@ test('collectGeminiStream concatenates function-call arguments delivered across 
   const outcome = collectGeminiStream(events);
 
   assertEquals(outcome.truncated, false);
+  // The 'pre' and 'fix' fragments at index 0 collapse into a single 'prefix' part.
   assertEquals(outcome.result!.candidates![0].content.parts, [{ text: 'prefix' }]);
 });
 

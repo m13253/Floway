@@ -1,6 +1,6 @@
 import type { DumpStore } from '@floway-dev/platform';
 
-export interface DumpPurgeKey {
+interface DumpPurgeKey {
   id: string;
   dumpRetentionSeconds: number | null;
 }

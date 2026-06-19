@@ -25,7 +25,8 @@ export default {
     initRepo(new SqlRepo(db));
     initDumpStore(createCloudflareDumpStore(env.KEY_DUMP_DO, async keyId => {
       const key = await getRepo().apiKeys.getById(keyId);
-      return key?.dumpRetentionSeconds ?? null;
+      if (!key) throw new Error(`unknown key ${keyId}`);
+      return key.dumpRetentionSeconds;
     }));
     initDumpBroker(createCloudflareDumpBroker(env.KEY_DUMP_DO));
     return app.fetch(req, env, ctx);

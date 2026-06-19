@@ -1,8 +1,6 @@
 import type { DumpBroker } from '@floway-dev/platform';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// publish() resolves the waker to wake the iterator; abort() also resolves
-// it to end the loop.
 type Waker = () => void;
 
 class KeyChannel {

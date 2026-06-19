@@ -218,8 +218,7 @@ export class KeyDumpDO extends DurableObject<KeyDumpDOEnv> {
   }
 
   private readState(k: string): string | undefined {
-    // .toArray()[0] returns undefined on missing row; .one() throws which
-    // would break the "no state yet" branches in expiryCutoff / alarm.
+    // See scheduleNextAlarm for the .toArray()[0] vs .one() rationale.
     const [row] = this.sql.exec<{ v: string }>('SELECT v FROM state WHERE k = ?', k).toArray();
     return row?.v;
   }

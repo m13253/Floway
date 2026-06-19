@@ -350,7 +350,8 @@ test('GET /api/dump/keys/:keyId/stream — record completing during snapshot rea
   const appendedIds = appendedEvs.map(e => (JSON.parse(e.data) as DumpMetadata).id);
 
   // 01B must appear at least once across snapshot+appended. Duplicates are
-  // explicitly allowed by spec; the client dedupes by id.
+  // intentional (see the subscribe-before-snapshot comment in dump.ts);
+  // clients dedupe by id.
   const seenIds = new Set([...snapshotIds, ...appendedIds]);
   assertEquals(seenIds.has('01B'), true);
 
