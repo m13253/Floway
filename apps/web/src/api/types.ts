@@ -1,13 +1,14 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
 import type {
+  BillingDimension,
   ModelEndpointKey,
   ModelEndpoints,
   ModelKind,
   ModelPricing,
 } from '@floway-dev/protocols/common';
 
-export type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code';
 

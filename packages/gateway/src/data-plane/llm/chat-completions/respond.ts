@@ -44,7 +44,7 @@ export const respondChatCompletions = async (
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage) : null;
+      const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.responseHeaders) }) };
@@ -81,7 +81,10 @@ export const respondChatCompletions = async (
 
 // OpenAI Chat usage reports prompt_tokens inclusive of cached and
 // cache-creation tokens; subtract them to recover the disjoint bare input.
-const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>) => {
+// The top-level `service_tier` echoes the actual processing tier; surface it
+// as the `tier` slot so per-tier pricing overrides resolve at recording time
+// (dropping `default` and `auto`, both of which denote base pricing).
+const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
   const cacheRead = u.prompt_tokens_details?.cached_tokens ?? 0;
   const cacheWrite = u.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
   return tokenUsage({
@@ -89,6 +92,7 @@ const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult
     input_cache_read: cacheRead,
     input_cache_write: cacheWrite,
     output: u.completion_tokens,
+    ...(serviceTier != null && serviceTier !== 'default' && serviceTier !== 'auto' ? { tier: serviceTier } : {}),
   });
 };
 
@@ -119,7 +123,7 @@ const observeChatCompletionsFrames = async function* (frames: AsyncIterable<Prot
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {
-      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage) : null);
+      state.rememberUsage(frame.type === 'event' && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage ? tokenUsageFromChatCompletionsUsage(frame.event.usage, frame.event.service_tier) : null);
     }
     if (isChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;

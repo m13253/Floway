@@ -77,15 +77,23 @@ export const respondResponses = async (
 // --- token usage ---
 
 // OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input.
+// the cached split to recover the disjoint bare input. The top-level
+// `service_tier` echoes the actual processing tier the upstream served the
+// request at (priority, flex, scale, default, auto), which we surface as the
+// `tier` slot so per-tier pricing overrides resolve at recording time. We
+// drop `default` and `auto` — both denote base pricing, and stamping every
+// row with one of them would split base-tier buckets pointlessly from rows
+// where the upstream omitted the field.
 const tokenUsageFromResponsesResult = (r: ResponsesResult) => {
   const u = r.usage;
   if (!u) return null;
   const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
+  const tier = r.service_tier;
   return tokenUsage({
     input: u.input_tokens - cacheRead,
     input_cache_read: cacheRead,
     output: u.output_tokens,
+    ...(tier != null && tier !== 'default' && tier !== 'auto' ? { tier } : {}),
   });
 };
 
