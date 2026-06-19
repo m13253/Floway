@@ -12,7 +12,10 @@ import {
   resolveEffectiveFlags,
   type ModelProvider,
   type ModelProviderInstance,
+  type ProviderCallResult,
+  type ProviderCompactionResult,
   type ProviderStreamResult,
+  type UpstreamCallOptions,
   type UpstreamRecord,
 } from '@floway-dev/provider';
 
@@ -84,13 +87,20 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       );
     },
 
-    callMessagesCountTokens: () => Promise.reject(new Error('Claude Code provider does not implement callMessagesCountTokens')),
-    callChatCompletions: () => Promise.reject(new Error('Claude Code provider does not implement callChatCompletions')),
-    callResponses: () => Promise.reject(new Error('Claude Code provider does not implement callResponses')),
-    callResponsesCompact: () => Promise.reject(new Error('Claude Code provider does not implement callResponsesCompact')),
-    callEmbeddings: () => Promise.reject(new Error('Claude Code provider does not implement callEmbeddings')),
-    callImagesGenerations: () => Promise.reject(new Error('Claude Code provider does not implement callImagesGenerations')),
-    callImagesEdits: () => Promise.reject(new Error('Claude Code provider does not implement callImagesEdits')),
+    // Claude Code only exposes /v1/messages; getProvidedModels advertises
+    // that single endpoint and no other entry point is reachable in
+    // practice. A stray dispatch from a routing bug must still produce a
+    // proper 405 with a JSON error envelope rather than letting a raw
+    // stack trace bubble up the boundary. The synthetic response still
+    // flows through the per-call latency recorder so the gateway's
+    // wrap-once contract holds even for these stubs.
+    callMessagesCountTokens: (_model, _body, _signal, _headers, _beta, opts) => unsupportedCallResult(opts),
+    callChatCompletions: (_model, _body, _signal, _headers, opts) => unsupportedStreamResult(opts),
+    callResponses: (_model, _body, _signal, _headers, opts) => unsupportedStreamResult(opts),
+    callResponsesCompact: (_model, _body, _signal, _headers, opts) => unsupportedCompactionResult(opts),
+    callEmbeddings: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
+    callImagesGenerations: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
+    callImagesEdits: (_model, _body, _signal, _headers, opts) => unsupportedCallResult(opts),
   };
 
   return {
@@ -103,3 +113,34 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     resolveRequestedModelId: claudeCodeResolveRequestedModelId,
   };
 };
+
+// Claude Code advertises only /v1/messages; a request that somehow reaches
+// one of the other surfaces is a routing bug, not user input. Return a
+// synthetic 405 (carrying the same JSON error envelope shape the rest of
+// the gateway uses) so the boundary can relay it verbatim instead of
+// leaking a raw stack trace. The response still flows through
+// `recordUpstreamLatency` to honour the wrap-once contract — every code
+// path that produces a boundary-facing response must invoke the recorder
+// exactly once, even when the response is synthesized without ever
+// hitting the network.
+const synthetic405 = (): Response => new Response(
+  JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by claude-code provider' } }),
+  { status: 405, headers: { 'content-type': 'application/json' } },
+);
+
+const unsupportedStreamResult = async <TEvent>(opts: UpstreamCallOptions): Promise<ProviderStreamResult<TEvent>> => ({
+  ok: false,
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
+
+const unsupportedCallResult = async (opts: UpstreamCallOptions): Promise<ProviderCallResult> => ({
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
+
+const unsupportedCompactionResult = async (opts: UpstreamCallOptions): Promise<ProviderCompactionResult> => ({
+  ok: false,
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
