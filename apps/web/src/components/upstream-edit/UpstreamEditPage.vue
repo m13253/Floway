@@ -363,10 +363,9 @@ const onClaudeCodeError = (message: string) => {
   saveError.value = message;
 };
 
-// Copilot's and codex's catalogs are read-only — `ModelsPanel` runs in
-// `read-only` mode for both, so the v-model setter is never invoked. The
-// getter just hands back an empty list to keep the type contract honest.
-// Claude Code follows the same pattern.
+// Copilot, codex, and claude-code catalogs are read-only — ModelsPanel runs
+// in `read-only` mode for all three, so the v-model setter is never invoked.
+// The getter hands back an empty list to keep the type contract honest.
 const modelsManualForActive = computed<UpstreamModelConfig[]>({
   get: () => {
     if (activeProvider.value === 'custom') return customDraft.value.models;

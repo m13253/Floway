@@ -26,7 +26,6 @@ const SYNTHETIC_ACK = 'I will follow the above instructions.';
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/claude_code_handler.go
-//   - https://github.com/zinkawaii/Parrot/blob/master/src/transform/cc_mimicry.py
 export const hoistUserSystemToMessages = async <TResult>(
   ctx: ClaudeCodeMessagesBoundaryCtx,
   _request: object,

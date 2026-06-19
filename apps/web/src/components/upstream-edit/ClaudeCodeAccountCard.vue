@@ -1,15 +1,13 @@
 <script setup lang="ts">
-// Identity + state + quota summary for one Claude Code account. Pure
-// presentation — no API calls. The structured quota slices come straight
-// from state.accounts[].quotaSnapshot.data, mirroring what the gateway
-// parsed from the most recent /v1/messages response headers.
+// The structured quota slices come straight from
+// state.accounts[].quotaSnapshot.data, mirroring what the gateway parsed from
+// the most recent /v1/messages response headers.
 
 import { computed } from 'vue';
 
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, UpstreamRecord } from '../../api/types.ts';
 import { Badge, Card } from '@floway-dev/ui';
 
-// The Claude Code account card only ever renders for a claude-code-provider upstream.
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
 
 const props = defineProps<{

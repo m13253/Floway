@@ -27,11 +27,10 @@ const LEGACY_USER_ID_PATTERN = /^user_([a-fA-F0-9]{64})_account_([a-fA-F0-9-]*)_
 
 const DICE_THRESHOLD = 0.5;
 
-// Canonical identity prefixes real CC sends as the first text block, kept
-// verbatim; includes compact / summarisation flows so genuine CC compact
-// traffic still passes detection. v2.1.181 swapped "interactive CLI tool"
-// for "interactive agent" — both are kept so older and newer CC clients
-// both pass.
+// Canonical identity prefixes real CC sends as the first text block — see
+// IDENTITY_TEMPLATES below for the full set, which covers main / compact /
+// summarisation / file-search flows and both pre- and post-v2.1.181 shapes
+// (that release renamed "interactive CLI tool" → "interactive agent").
 const IDENTITY_TEMPLATES = [
   "You are Claude Code, Anthropic's official CLI for Claude.",
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.",

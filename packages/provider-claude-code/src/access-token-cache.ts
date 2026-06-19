@@ -101,10 +101,6 @@ export const ensureClaudeCodeAccessToken = async (
   }));
   const result = await args.repo.saveState(args.upstreamId, rotated, { expectedState: fresh.state });
   if (!result.updated) {
-    // CAS loss: a sibling rotation persisted a newer refresh token while
-    // we were minting from the prior one. Our fresh response now holds a
-    // token that's no longer the live tail of the rotation chain — surface
-    // it so the caller retries against the just-persisted state.
     throw new Error(
       `Claude Code refresh-token rotation lost CAS for upstream ${args.upstreamId}; another rotation won`,
     );

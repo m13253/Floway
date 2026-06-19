@@ -11,6 +11,11 @@ import { buildBillingBlock, computeCcVersionFingerprint } from '../../system-blo
 // Hoist must have run first so any caller-supplied system text is already
 // captured into `messages`; this interceptor unconditionally starts a fresh
 // `system` array.
+//
+// The fingerprint runs on the post-hoist payload deliberately. That is the
+// shape Anthropic will actually see on the wire, so the fingerprint must
+// reflect it — fingerprinting the pre-hoist shape would compute a different
+// value than what the request body settles to and break CC mimicry.
 export const injectBillingBlock = async <TResult>(
   ctx: ClaudeCodeMessagesBoundaryCtx,
   _request: object,

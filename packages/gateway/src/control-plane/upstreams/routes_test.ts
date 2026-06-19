@@ -3,12 +3,6 @@ import { test } from 'vitest';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-// Test-only alias for opaquely-typed JSON response bodies. Most assertions
-// drill into deeply-dynamic shapes (config.bearerToken, state.accounts[0]…);
-// re-typing every drill is overhead the test layer doesn't earn. Using a
-// named alias instead of inlined `Record<string, any>` keeps the intent
-// ("we're poking at a parsed JSON blob") visible at the call site.
-
 type JsonObject = Record<string, any>;
 
 const customConfig = {
@@ -627,7 +621,6 @@ test('POST /api/upstreams/codex-import (callback) consumes the PKCE state and re
     },
   );
 
-  // Single-use: consume() removed the row, so a follow-up consume returns null.
   const replay = await repo.codexPkcePending.consume(state);
   assertEquals(replay, null);
 });
@@ -722,8 +715,6 @@ test('POST /api/upstreams/codex-import rejects a malformed PKCE callback URL', a
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
-  // The handler unwraps the URL and reports "missing `code`" before ever
-  // touching the token endpoint.
   assertEquals(body.error.includes('missing'), true);
 });
 
@@ -918,7 +909,6 @@ test('POST /api/upstreams/claude-code-import (callback) consumes the PKCE state 
     },
   );
 
-  // Single-use: consume() removed the row, so a follow-up consume returns null.
   const replay = await repo.claudeCodePkcePending.consume(state);
   assertEquals(replay, null);
 });
@@ -1014,8 +1004,6 @@ test('POST /api/upstreams/claude-code-import rejects a malformed callback URL', 
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
-  // The handler unwraps the URL and reports "missing `code`" before touching
-  // the token endpoint.
   assertEquals(body.error.includes('missing'), true);
 });
 
