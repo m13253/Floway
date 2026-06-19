@@ -74,9 +74,27 @@ export type ProviderCompactionResult =
 // once; the gateway throws on a violation so missing wraps fail loud. On
 // retries (e.g. invalidate-token-and-redo), only the most recent invocation's
 // measurement is kept.
+//
+// `clientRequestHeaders` and `clientRequestPathname` describe the inbound
+// HTTP request the gateway is serving — not the outbound wire headers we
+// build for the upstream. Both are present only for data-plane calls that
+// originated from a real Hono request; translated paths and synthesized
+// calls leave them undefined. A provider that needs to inspect the
+// incoming request shape — for instance, to decide whether a payload
+// already matches its native client's wire shape and can pass through
+// unmodified — reads from these fields.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
+  /**
+   * Inbound request headers, forwarded as the original `Headers` instance
+   * the runtime gave us. Header lookups stay native; no per-request
+   * Record snapshot is built on the gateway hot path. Synthetic call
+   * sites may pass a plain record, which a consumer wraps with
+   * `new Headers(...)` the same way it would wrap a `Headers` value.
+   */
+  clientRequestHeaders?: Headers | Record<string, string>;
+  clientRequestPathname?: string;
 }
 
 export interface ModelProvider {

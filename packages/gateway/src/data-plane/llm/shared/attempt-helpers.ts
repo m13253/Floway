@@ -2,7 +2,7 @@ import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { eventResult, readUpstreamError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Telemetry identity for the chosen candidate plus the upstream-reported
 // model key. Pricing reads off the provider so the cost lookup respects any
@@ -12,6 +12,23 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
   upstream: candidate.binding.upstream,
   modelKey,
   cost: candidate.binding.provider.getPricingForModelKey(modelKey),
+});
+
+// Assemble the per-call `UpstreamCallOptions` from the request-scoped pieces
+// the attempt layer already has on hand. The optional `clientRequest*` fields
+// only appear when the gateway is serving a real Hono request (so providers
+// can decide whether the inbound call is already shaped like their native
+// client's wire payload); translated or synthesized callsites that have no
+// inbound HTTP context leave them undefined.
+export const buildUpstreamCallOptions = (
+  candidate: ProviderCandidate,
+  ctx: GatewayCtx,
+  recordUpstreamLatency: UpstreamCallOptions['recordUpstreamLatency'],
+): UpstreamCallOptions => ({
+  fetcher: candidate.fetcher,
+  recordUpstreamLatency,
+  ...(ctx.clientRequestHeaders !== undefined ? { clientRequestHeaders: ctx.clientRequestHeaders } : {}),
+  ...(ctx.clientRequestPathname !== undefined ? { clientRequestPathname: ctx.clientRequestPathname } : {}),
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult

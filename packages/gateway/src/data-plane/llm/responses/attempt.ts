@@ -8,7 +8,7 @@ import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/stor
 import { recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import { providerStreamResultToExecuteResult, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
+import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -190,7 +190,7 @@ const dispatchResponses = async (
       body,
       ctx.abortSignal,
       invocationHeaders,
-      { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
+      buildUpstreamCallOptions(candidate, ctx, recorder.record),
     );
     return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
   }
@@ -238,7 +238,7 @@ const callResponsesCompactAsExecuteResult = async (
     body,
     ctx.abortSignal,
     invocationHeaders,
-    { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
+    buildUpstreamCallOptions(candidate, ctx, recorder.record),
   );
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {

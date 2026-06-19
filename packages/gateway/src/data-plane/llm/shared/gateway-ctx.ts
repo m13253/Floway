@@ -20,6 +20,13 @@ export interface GatewayCtx {
   // dimension. Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
+  // The inbound client HTTP request the gateway is serving. Captured once at
+  // ctx construction and forwarded to provider `call*` methods as the
+  // `clientRequestHeaders` / `clientRequestPathname` UpstreamCallOptions
+  // fields. Synthetic test contexts and non-Hono entry points leave these
+  // undefined.
+  readonly clientRequestHeaders?: Headers;
+  readonly clientRequestPathname?: string;
   readonly currentColo: string | null;
 }
 
@@ -27,6 +34,7 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
   const apiKeyId = c.get('apiKeyId') as string;
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const downstreamAbortController = wantsStream ? new AbortController() : undefined;
+  const url = new URL(c.req.url);
   return {
     apiKeyId,
     upstreamIds,
@@ -35,6 +43,8 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
+    clientRequestHeaders: c.req.raw.headers,
+    clientRequestPathname: url.pathname,
     currentColo: getCurrentColo(c.req.raw),
   };
 };
@@ -45,6 +55,7 @@ export const createGatewayCtxForWs = (
 ): GatewayCtx => {
   const apiKeyId = c.get('apiKeyId') as string;
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
+  const url = new URL(c.req.url);
   return {
     apiKeyId,
     upstreamIds,
@@ -54,6 +65,8 @@ export const createGatewayCtxForWs = (
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
+    clientRequestHeaders: c.req.raw.headers,
+    clientRequestPathname: url.pathname,
     currentColo: getCurrentColo(c.req.raw),
   };
 };
