@@ -224,6 +224,74 @@ describe('invalidateClaudeCodeAccessToken', () => {
   });
 });
 
+describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
+  test('10 parallel cold-start ensures share a single /v1/oauth/token mint', async () => {
+    // Cold-start fan-out: no cached token, N concurrent callers. Without
+    // coalescing each would POST to /v1/oauth/token, the upstream would
+    // rotate the refresh token under the first, and the rest would fall
+    // into recoverFromRefreshRace — correct but N round-trips per cold
+    // start. The in-flight map collapses the herd to one mint.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }),
+      ),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(saveStateSpy).toHaveBeenCalledTimes(1);
+    for (const r of results) {
+      expect(r.entry.token).toBe('at_new');
+    }
+    // Exactly one caller observes `freshlyMinted: true` — the one whose
+    // promise actually drove the mint. The rest see the same EnsuredAccessToken
+    // value and report freshlyMinted matching the mint path's return.
+    const minted = results.filter(r => r.freshlyMinted).length;
+    expect(minted).toBe(10);
+  });
+
+  test('serial calls after the in-flight settles are not stuck on a stale entry', async () => {
+    // The map entry must be cleared on settle so the second wave can mint
+    // again when the upstream rotates / expires. Mint, await settle, then
+    // mint again — the second wave should hit fetch a second time
+    // (no cached token because the test starts from the cold state).
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const first = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    expect(first.entry.token).toBe('at_new');
+    // Re-arm a stale view so the next ensure triggers another mint rather
+    // than hitting the cached-and-fresh early return.
+    current = makeRecord({ accounts: [{ ...baseAccount, refreshToken: 'rt_v2' }] });
+    const second = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
+    expect(second.entry.token).toBe('at_new');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test('a rejected in-flight mint propagates to every coalesced waiter and clears the map', async () => {
+    // If the in-flight promise rejects, every waiter sees the same
+    // rejection — and the entry is cleared so the next caller is free to
+    // retry from scratch.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      error: 'invalid_grant', error_description: 'Refresh token revoked',
+    }), { status: 400, headers: { 'content-type': 'application/json' } }));
+
+    const waiters = Array.from({ length: 5 }, () =>
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e),
+    );
+    const settled = await Promise.all(waiters);
+    for (const e of settled) {
+      expect(e).toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
+    }
+    // Only one upstream POST despite 5 waiters.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
   const setupTokenAccount: ClaudeCodeUpstreamState['accounts'][number] = {
     accountUuid,

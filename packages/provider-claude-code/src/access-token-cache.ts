@@ -11,12 +11,14 @@ import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
 
-// Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when this
-// call exchanged the refresh token (a real /v1/oauth/token round-trip) and
-// false when the cached entry was returned. It means "minted by this call
-// site," not "minted recently": if a sibling request rotated the
-// refresh-token between our repo read and the cache decision, the cache hit
-// branch still reports false even though the cached token is genuinely
+// Result of `ensureClaudeCodeAccessToken`. `freshlyMinted` is true when
+// this call shared in a real /v1/oauth/token round-trip (either drove the
+// mint itself, or coalesced onto an in-flight mint kicked off by a
+// concurrent caller — see `inFlightEnsures` below) and false when a
+// cached entry was returned. It means "this call site observed a fresh
+// mint," not "minted recently": if a sibling request rotated the
+// refresh-token between our repo read and the cache decision, the cache
+// hit branch still reports false even though the cached token is genuinely
 // fresh. The 401-retry path uses this to decide whether a 401 means the
 // cached token is stale (invalidate + retry) or that the credential itself
 // is dead (give up and surface the 401); the false-positive case (a sibling
@@ -49,6 +51,24 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   fetcher: Fetcher;
 }
 
+// Process-local coalescing of concurrent ensure calls. On a cold start N
+// requests on the same isolate would all see `accessToken === null` and
+// each fire a `/v1/oauth/token` POST; the upstream rotates on every call so
+// only one survives and the rest fall into `recoverFromRefreshRace`,
+// burning N round-trips for one usable token. Coalescing here collapses
+// the within-isolate herd to a single mint: later callers await the same
+// promise and observe the first caller's result.
+//
+// Scope: per-isolate only. Cross-isolate dedup is impossible without a
+// shared coordination store (Workers gives us none we have agreed to
+// depend on), so siblings on other isolates still race; `recoverFromRefreshRace`
+// catches the loser and serves the winner's freshly-rotated token. Sub2api
+// gates the same path with a Redis SETNX lease (`oauth_refresh_api.go:91-105`)
+// for true cluster-wide single-mint; we trade that for zero coordination
+// state at the cost of cross-isolate-only round-trip duplication, which is
+// the rare case.
+const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
+
 // Reads, refreshes, and persists. The rotated refresh token and the new
 // cached access token are committed together in a single CAS write. CAS
 // loss on that write is fatal: the upstream rotates on every refresh call,
@@ -72,7 +92,17 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // flip to terminal without a recovery attempt.
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
-): Promise<EnsuredAccessToken> => await ensureClaudeCodeAccessTokenInner(args, true);
+): Promise<EnsuredAccessToken> => {
+  const existing = inFlightEnsures.get(args.upstreamId);
+  if (existing) return await existing;
+  const promise = ensureClaudeCodeAccessTokenInner(args, true);
+  inFlightEnsures.set(args.upstreamId, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightEnsures.delete(args.upstreamId);
+  }
+};
 
 const ensureClaudeCodeAccessTokenInner = async (
   args: EnsureClaudeCodeAccessTokenArgs,
