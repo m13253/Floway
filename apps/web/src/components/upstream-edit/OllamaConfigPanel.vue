@@ -58,7 +58,7 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
 
     <div v-if="!editMode">
       <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <p class="text-xs font-medium text-gray-500">Fetch <code class="font-mono">/api/tags</code></p>
+        <p class="text-xs font-medium text-gray-500">Fetch models</p>
         <div class="flex items-center gap-3">
           <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
           <Button
