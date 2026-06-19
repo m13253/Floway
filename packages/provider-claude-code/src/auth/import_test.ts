@@ -5,7 +5,6 @@ import {
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
 } from './import.ts';
-import { directFetcher } from '@floway-dev/provider';
 
 const profileResponse = {
   account: {
@@ -164,7 +163,7 @@ describe('importClaudeCodeFromCredentialsJson', () => {
       },
     });
 
-    const result = await importClaudeCodeFromCredentialsJson(raw, directFetcher);
+    const result = await importClaudeCodeFromCredentialsJson(raw);
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toBe('https://api.anthropic.com/api/oauth/profile');

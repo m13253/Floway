@@ -2,7 +2,7 @@ import type { ClaudeCodeUpstreamConfig } from '../config.ts';
 import type { ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../state.ts';
 import { fetchClaudeCodeIdentity, type ClaudeCodeIdentity } from './identity.ts';
 import { exchangeClaudeCodeAuthorizationCode } from './oauth.ts';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 
 export interface ClaudeCodeImportResult {
   config: ClaudeCodeUpstreamConfig;
@@ -108,7 +108,6 @@ export const importClaudeCodeFromCallback = async (opts: {
 // effectively a fresh-enough snapshot of the live credential.
 export const importClaudeCodeFromCredentialsJson = async (
   rawJson: string,
-  fetcher: Fetcher = directFetcher,
 ): Promise<ClaudeCodeImportResult> => {
   let parsed: unknown;
   try {
@@ -151,7 +150,7 @@ export const importClaudeCodeFromCredentialsJson = async (
     ? w.subscriptionType
     : null;
 
-  const identity = await fetchClaudeCodeIdentity(accessToken, fetcher);
+  const identity = await fetchClaudeCodeIdentity(accessToken);
   const finalIdentity: ClaudeCodeIdentity = persistedSubscriptionType !== null
     ? { ...identity, subscriptionType: persistedSubscriptionType }
     : identity;
