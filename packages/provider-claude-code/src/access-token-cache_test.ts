@@ -237,8 +237,7 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
 
     const results = await Promise.all(
       Array.from({ length: 10 }, () =>
-        ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }),
-      ),
+        ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher })),
     );
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -281,8 +280,7 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     }), { status: 400, headers: { 'content-type': 'application/json' } }));
 
     const waiters = Array.from({ length: 5 }, () =>
-      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e),
-    );
+      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e));
     const settled = await Promise.all(waiters);
     for (const e of settled) {
       expect(e).toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
