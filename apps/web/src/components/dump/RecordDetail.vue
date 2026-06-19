@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue';
 
+import { authFetch } from '../../api/client.ts';
+
 import type {
   DumpRecord,
   DumpRequest,
@@ -32,7 +34,7 @@ const fetchRecord = async (keyId: string, recordId: string) => {
   error.value = null;
   record.value = null;
   try {
-    const res = await fetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`);
+    const res = await authFetch(`/api/dump/keys/${encodeURIComponent(keyId)}/records/${encodeURIComponent(recordId)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     record.value = await res.json() as DumpRecord;
     streamView.value = 'collected';

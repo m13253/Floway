@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
 import { effectScope, nextTick, ref } from 'vue';
 
 import { useDumpSubscription } from './useDumpSubscription.ts';
@@ -69,6 +70,7 @@ const meta = (id: string, startedAt: number): DumpMetadata => ({
 let scope: ReturnType<typeof effectScope> | null = null;
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   scope = effectScope();
   installEventSource();
 });

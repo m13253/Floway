@@ -1,5 +1,7 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue';
 
+import { authFetch } from '../api/client.ts';
+import { useAuthStore } from '../stores/auth.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 const PAGE_SIZE = 100;
@@ -20,6 +22,7 @@ interface ListResponse {
 // read-snapshot and subscribe is intentionally allowed to surface twice)
 // collapses to one row.
 export const useDumpSubscription = (keyId: Ref<string>) => {
+  const auth = useAuthStore();
   const records = ref<DumpMetadata[]>([]);
   const loading = ref(true);
   const error = ref<string | null>(null);
@@ -38,7 +41,12 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
     loading.value = true;
     error.value = null;
 
-    const es = new EventSource(`/api/dump/keys/${encodeURIComponent(id)}/stream`);
+    // Browsers cannot set custom headers on EventSource, so the SSE endpoint
+    // accepts the session token as a query string. See auth middleware.
+    const token = auth.authToken;
+    const url = `/api/dump/keys/${encodeURIComponent(id)}/stream`
+      + (token ? `?session=${encodeURIComponent(token)}` : '');
+    const es = new EventSource(url);
     source = es;
 
     es.addEventListener('snapshot', ev => {
@@ -77,7 +85,7 @@ export const useDumpSubscription = (keyId: Ref<string>) => {
     const oldest = records.value.at(-1);
     if (!oldest) return;
     const url = `/api/dump/keys/${encodeURIComponent(keyId.value)}/records?before=${encodeURIComponent(oldest.id)}&limit=${PAGE_SIZE}`;
-    const res = await fetch(url);
+    const res = await authFetch(url);
     if (!res.ok) {
       error.value = `Failed to load older records: HTTP ${res.status}`;
       return;
