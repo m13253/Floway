@@ -78,13 +78,13 @@ const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): Upstre
 });
 
 describe('createClaudeCodeProvider — factory surface', () => {
-  test('getProvidedModels returns the three-model catalog', async () => {
+  test('getProvidedModels returns the three-model catalog under public aliases', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);
     expect(models.map(m => m.id)).toEqual([
-      'claude-sonnet-4-5-20250929',
-      'claude-opus-4-5-20251101',
-      'claude-haiku-4-5-20251001',
+      'claude-sonnet-4-5',
+      'claude-opus-4-5',
+      'claude-haiku-4-5',
     ]);
   });
 
@@ -99,7 +99,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     }
   });
 
-  test('getPricingForModelKey wires through the pricing table', async () => {
+  test('getPricingForModelKey wires through the pricing table (keyed by dated upstream id)', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     expect(instance.provider.getPricingForModelKey('claude-sonnet-4-5-20250929'))
       .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
@@ -113,11 +113,10 @@ describe('createClaudeCodeProvider — factory surface', () => {
     expect(instance.upstream).toBe(upstreamId);
   });
 
-  test('non-messages call surfaces throw with "not implemented"', async () => {
+  test('resolveRequestedModelId maps a dated id to its alias', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
-    await expect(instance.provider.callChatCompletions(upstreamModel, { messages: [] }, undefined, undefined, noopUpstreamCallOptions)).rejects.toThrow(/not implement/);
-    await expect(instance.provider.callResponses(upstreamModel, { input: 'x' }, undefined, undefined, noopUpstreamCallOptions)).rejects.toThrow(/not implement/);
-    await expect(instance.provider.callMessagesCountTokens(upstreamModel, { max_tokens: 1, messages: [{ role: 'user', content: 'x' }] }, undefined, undefined, undefined, noopUpstreamCallOptions)).rejects.toThrow(/not implement/);
+    expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5');
+    expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5')).toBeUndefined();
   });
 });
 

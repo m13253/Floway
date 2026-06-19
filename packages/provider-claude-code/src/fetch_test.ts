@@ -23,21 +23,23 @@ const activeAccount: ClaudeCodeAccountCredential = {
 };
 
 const sonnetModel: UpstreamModel = {
-  id: 'claude-sonnet-4-5-20250929',
+  id: 'claude-sonnet-4-5',
   display_name: 'Sonnet',
   kind: 'chat',
   limits: {},
   endpoints: { messages: {} },
   enabledFlags: new Set(),
+  providerData: { upstreamModelId: 'claude-sonnet-4-5-20250929' },
 };
 
 const haikuModel: UpstreamModel = {
-  id: 'claude-haiku-4-5-20251001',
+  id: 'claude-haiku-4-5',
   display_name: 'Haiku',
   kind: 'chat',
   limits: {},
   endpoints: { messages: {} },
   enabledFlags: new Set(),
+  providerData: { upstreamModelId: 'claude-haiku-4-5-20251001' },
 };
 
 const freshAccessTokenEntry: ClaudeCodeAccessTokenEntry = {

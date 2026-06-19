@@ -20,14 +20,16 @@
 //   4. inject-identity-block            system[1]: canonical CC identity text.
 //   5. inject-default-template          system[2]: cached boilerplate template
 //                                       (carries cache_control:ephemeral).
-//   6. pin-dated-model-id               alias → dated id so model_key matches
-//                                       what /v1/models advertises.
+//
+// The on-wire `model` field is set in `fetch.ts` from
+// `opts.model.providerData.upstreamModelId` so the chain never has to rewrite
+// it — the catalog id is already Anthropic's public alias and the dated
+// upstream id is read straight off the resolved model.
 
 import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';
 import { injectBillingBlock } from './inject-billing-block.ts';
 import { injectDefaultTemplate } from './inject-default-template.ts';
 import { injectIdentityBlock } from './inject-identity-block.ts';
-import { pinDatedModelId } from './pin-dated-model-id.ts';
 import { synthesizeMetadataUserId } from './synthesize-metadata-user-id.ts';
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
@@ -40,5 +42,4 @@ export const claudeCodeMessagesChain = <TResult>(): readonly Interceptor<ClaudeC
   injectBillingBlock,
   injectIdentityBlock,
   injectDefaultTemplate,
-  pinDatedModelId,
 ];

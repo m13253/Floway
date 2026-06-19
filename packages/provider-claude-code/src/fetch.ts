@@ -7,6 +7,7 @@ import {
   type ClaudeCodeAccountCredential,
   type ClaudeCodeUpstreamState,
 } from './state.ts';
+import type { ClaudeCodeProviderData } from './types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
@@ -117,6 +118,17 @@ const persistQuotaFromHeadersFireAndForget = (upstreamId: string, headers: Heade
 export const callClaudeCodeMessages = async (
   opts: CallClaudeCodeMessagesOptions,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+  // `model.id` is the public alias on the catalog; the dated upstream id
+  // Anthropic expects on the wire — and that the pricing table keys by —
+  // lives under `providerData.upstreamModelId`. Resolve once so synthetic
+  // gates, the wire body, and the streaming-call modelKey all surface the
+  // same dated id.
+  const providerData = opts.model.providerData as ClaudeCodeProviderData | undefined;
+  if (!providerData || typeof providerData.upstreamModelId !== 'string') {
+    throw new Error(`Claude Code model ${opts.model.id} is missing providerData.upstreamModelId`);
+  }
+  const upstreamModelId = providerData.upstreamModelId;
+
   // recordUpstreamLatency contract: every code path that returns must wrap
   // exactly one fetch (real or synthetic). Synthetic gates ride a resolved
   // promise so the gateway's recorder sees the contract met without
@@ -127,7 +139,7 @@ export const callClaudeCodeMessages = async (
   // the retry.
   const syntheticReturn = async (response: Response): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: false,
-    modelKey: opts.model.id,
+    modelKey: upstreamModelId,
     response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
   });
 
@@ -175,11 +187,12 @@ export const callClaudeCodeMessages = async (
   const ensured = await ensureOrSession503();
   if ('modelKey' in ensured) return ensured;
 
-  return await performUpstreamCall(opts, ensured, false, syntheticReturn, ensureOrSession503);
+  return await performUpstreamCall(opts, upstreamModelId, ensured, false, syntheticReturn, ensureOrSession503);
 };
 
 const performUpstreamCall = async (
   opts: CallClaudeCodeMessagesOptions,
+  upstreamModelId: string,
   accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
   syntheticReturn: (response: Response) => Promise<ProviderStreamResult<MessagesStreamEvent>>,
@@ -195,7 +208,7 @@ const performUpstreamCall = async (
     delete passthrough.authorization;
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = { ...pickClaudeCodeHeaders(opts.model.id), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
+    headers = { ...pickClaudeCodeHeaders(upstreamModelId), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is
@@ -203,7 +216,7 @@ const performUpstreamCall = async (
   // elsewhere. Safe in the shaped passthrough path too: shaped detection
   // requires CC client headers + system blocks + a valid metadata.user_id,
   // and the real Claude Code client always sets `stream: true`.
-  const wireBody: MessagesPayload = { ...opts.body, model: opts.model.id, stream: true };
+  const wireBody: MessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
   const upstreamFetch = opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
@@ -221,7 +234,7 @@ const performUpstreamCall = async (
     return response;
   });
 
-  const result = await streamingProviderCall(upstreamFetch, parseMessagesStream, opts.model.id, opts.signal);
+  const result = await streamingProviderCall(upstreamFetch, parseMessagesStream, upstreamModelId, opts.signal);
 
   if (!result.ok && result.response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
     // Cached token rejected; invalidate so the next mint reads stale=null,
@@ -240,7 +253,7 @@ const performUpstreamCall = async (
     // reflects the synthetic 503 because that is what the caller sees, not the
     // 401 we discarded.
     if ('modelKey' in ensured) return ensured;
-    return await performUpstreamCall(opts, ensured, true, syntheticReturn, ensureOrSession503);
+    return await performUpstreamCall(opts, upstreamModelId, ensured, true, syntheticReturn, ensureOrSession503);
   }
 
   return result;

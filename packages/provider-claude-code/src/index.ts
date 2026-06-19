@@ -14,5 +14,6 @@ export * from './models.ts';
 export * from './pricing.ts';
 export * from './fetch.ts';
 export * from './provider.ts';
+export * from './types.ts';
 export type { ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
 export { claudeCodeMessagesChain } from './interceptors/messages/index.ts';

@@ -2,7 +2,7 @@ import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
-import { buildClaudeCodeModels } from './models.ts';
+import { buildClaudeCodeModels, claudeCodeResolveRequestedModelId } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -58,9 +58,10 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
         });
 
       const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-        // Strip `model` from the payload: callClaudeCodeMessages re-attaches
-        // `model: opts.model.id` on the wire so the resolved upstream id
-        // (not the alias the chain may have used) reaches Anthropic.
+        // Drop `model` from the payload: callClaudeCodeMessages re-attaches the
+        // dated upstream id (from `opts.model.providerData.upstreamModelId`)
+        // on the wire so Anthropic sees a stable per-revision id rather than
+        // the public alias the catalog exposes to clients.
         const { model: _ignored, ...wireBody } = ctx.payload;
         return await callClaudeCodeMessages({
           upstreamId: record.id,
@@ -99,5 +100,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     disabledPublicModelIds: record.disabledPublicModelIds,
     provider,
     supportsResponsesItemReference: false,
+    resolveRequestedModelId: claudeCodeResolveRequestedModelId,
   };
 };
