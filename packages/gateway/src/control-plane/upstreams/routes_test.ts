@@ -1282,3 +1282,79 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
   assertEquals(remaining.length, 1);
   assertEquals(remaining[0]!.upstreamId, 'other_upstream');
 });
+
+test('POST /api/upstreams/:id/claude-code-refresh-now honors the proxy_fallback_list override over the persisted list', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  // Stash a real proxy id so the persisted list has a non-direct entry; the
+  // override below points at a different (unknown) id, so a 400 from the
+  // route proves the override won — not the persisted row.
+  await repo.proxies.insert({ id: 'p_real', name: 'Real', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  // Persist a non-direct fallback list so a successful default-path refresh
+  // would route through `p_real`. The override below should win.
+  await repo.upstreams.save({ ...(await repo.upstreams.getById(created.id))!, proxyFallbackList: ['p_real'] });
+
+  const resp = await requestApp(
+    `/api/upstreams/${created.id}/claude-code-refresh-now`,
+    authed(adminSession, { proxy_fallback_list: ['p_unknown'] }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/:id/codex-refresh-now honors the proxy_fallback_list override', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
+
+  const resp = await requestApp(
+    `/api/upstreams/${created.id}/codex-refresh-now`,
+    authed(adminSession, { proxy_fallback_list: ['p_unknown'] }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/:id/claude-code-refresh-now without an override falls back to the persisted list (no override → no validation failure)', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    async () => {
+      const r = await requestApp(
+        '/api/upstreams/claude-code-import',
+        authed(adminSession, { credentials_json: claudeCodeCredentialsJson() }),
+      );
+      return (await r.json()) as { id: string };
+    },
+  );
+
+  // Empty body → no override → persisted ([]) → direct egress → mocked fetch
+  // serves the refresh response. A successful 200 proves the "no override"
+  // path did not validate against the proxies table (it skipped validation
+  // because no override was sent).
+  await withMockedFetch(
+    () => jsonResponse(claudeCodeTokenBody({ access_token: 'at_rotated', refresh_token: 'rt_rotated' })),
+    async () => {
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-refresh-now`, authed(adminSession, {}));
+      assertEquals(resp.status, 200);
+    },
+  );
+});

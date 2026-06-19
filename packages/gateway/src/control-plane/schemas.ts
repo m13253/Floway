@@ -253,6 +253,10 @@ export const fetchModelsBody = z.object({
 
 export const copilotAuthPollBody = z.object({
   device_code: z.string().min(1),
+  // Pre-save proxy override: when the operator is editing the proxy chain
+  // before completing the device-flow handshake, route every GitHub-side
+  // call (poll, user lookup, account-type detection) through that chain.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
 // --- codex import / PKCE / refresh ---
@@ -308,7 +312,14 @@ export const codexReimportBody = z.object({
   ...codexCredentialFields,
 }).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
 
-export const codexRefreshNowBody = z.object({});
+export const codexRefreshNowBody = z.object({
+  // Pre-save / edit-time override: the operator's in-progress
+  // proxy_fallback_list edit takes precedence over whatever is persisted, so
+  // a refresh-now click while editing the proxy chain reaches the upstream
+  // through the new chain rather than the old one. Absent → fall back to the
+  // persisted row's list.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
 
 // --- claude-code import / PKCE / refresh ---
 //
@@ -347,7 +358,12 @@ export const claudeCodeReimportBody = z.object({
   ...claudeCodeCredentialFields,
 }).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
 
-export const claudeCodeRefreshNowBody = z.object({});
+export const claudeCodeRefreshNowBody = z.object({
+  // Pre-save / edit-time override: same rationale as codexRefreshNowBody —
+  // a Refresh-now click during a proxy edit must reach the upstream through
+  // the in-progress chain, not the persisted one.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
 
 // --- proxies ---
 //
