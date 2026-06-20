@@ -37,7 +37,7 @@ const asString = (v: unknown): string => typeof v === 'string' ? v : '';
 // Anthropic Messages — text deltas land in content_block_delta with
 // `delta.type === 'text_delta'`; thinking_delta is rendered separately so it
 // doesn't bleed into the visible answer. message_delta carries stop_reason.
-export const collectMessagesStream = (events: DumpStreamEvent[]): CollectOutcome => {
+const collectMessagesStream = (events: DumpStreamEvent[]): CollectOutcome => {
   const out = empty();
   for (const ev of events) {
     const parsed = safeParse(ev.data);
@@ -59,7 +59,7 @@ export const collectMessagesStream = (events: DumpStreamEvent[]): CollectOutcome
 
 // OpenAI Chat Completions — text deltas at choices[0].delta.content, finish
 // reason at choices[0].finish_reason on the terminal frame.
-export const collectChatCompletionsStream = (events: DumpStreamEvent[]): CollectOutcome => {
+const collectChatCompletionsStream = (events: DumpStreamEvent[]): CollectOutcome => {
   const out = empty();
   for (const ev of events) {
     const parsed = safeParse(ev.data);
@@ -79,7 +79,7 @@ export const collectChatCompletionsStream = (events: DumpStreamEvent[]): Collect
 // output; we prefer the accumulated text if present so we don't lose anything
 // the deltas dropped (function-call output blocks, etc.). response.failed /
 // response.incomplete are the terminal failure / truncation signals.
-export const collectResponsesStream = (events: DumpStreamEvent[]): CollectOutcome => {
+const collectResponsesStream = (events: DumpStreamEvent[]): CollectOutcome => {
   const out = empty();
   let snapshot: string | null = null;
   for (const ev of events) {
@@ -115,7 +115,7 @@ export const collectResponsesStream = (events: DumpStreamEvent[]): CollectOutcom
 
 // Google Gemini — streamed chunks at candidates[0].content.parts[].text;
 // finishReason on the terminal chunk.
-export const collectGeminiStream = (events: DumpStreamEvent[]): CollectOutcome => {
+const collectGeminiStream = (events: DumpStreamEvent[]): CollectOutcome => {
   const out = empty();
   for (const ev of events) {
     const parsed = safeParse(ev.data);

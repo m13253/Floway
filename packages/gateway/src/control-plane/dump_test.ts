@@ -170,7 +170,9 @@ test('GET /api/dump/keys/:keyId/stream emits event: error when broker throws mid
 
 test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapshot SELECT and subscribe arm', async () => {
   // A record published during the snapshot read must surface as an `appended`
-  // frame after the snapshot frame.
+  // frame after the snapshot frame — proving the subscribe was already armed
+  // when the publish landed (so the buffered-subscribe path delivered it
+  // rather than the snapshot picking it up post-hoc).
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
@@ -210,8 +212,16 @@ test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapsho
 
   const response = await responsePromise;
   const frames = await readFrames(response, 2);
-  const appendedIds = frames
-    .filter(f => f.includes('event: appended'))
-    .map(f => (parseSseFrame(f).data as { id: string }).id);
-  assertEquals(appendedIds.includes('01HZZ0000000000000000000A2'), true);
+  const snapshot = frames.find(f => f.includes('event: snapshot'));
+  const appended = frames.find(f => f.includes('event: appended'));
+  assertExists(snapshot);
+  assertExists(appended);
+  // The published id is not in the snapshot — proves the snapshot SELECT ran
+  // before the publish landed in the store.
+  const snapshotIds = (parseSseFrame(snapshot).data as { records: { id: string }[] }).records.map(r => r.id);
+  assertEquals(snapshotIds.includes('01HZZ0000000000000000000A2'), false);
+  // The published id arrived as an appended frame — proves the subscribe
+  // was armed before the publish, so the buffered-subscribe path delivered
+  // it.
+  assertEquals((parseSseFrame(appended).data as { id: string }).id, '01HZZ0000000000000000000A2');
 });

@@ -46,9 +46,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
 
   initEnv(name => {
     const value = env[name];
-    if (value === undefined || value === null) {
-      throw new Error(`Missing required env var: ${name}`);
-    }
+    if (value === undefined || value === null) return undefined;
     return String(value);
   });
   initRuntimeKind('cloudflare');

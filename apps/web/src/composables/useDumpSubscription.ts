@@ -188,9 +188,8 @@ export const useDumpSubscription = (
       reset();
       return;
     }
-    // open() closes any prior socket via close(); a same-id watch fire
-    // therefore reopens the stream, which is the recovery path after a
-    // server-sent terminal error frame.
+    // open() closes any prior socket via close(), so a keyId change cleanly
+    // tears down the previous stream before opening a fresh one.
     records.value = [];
     seen.clear();
     open(id);

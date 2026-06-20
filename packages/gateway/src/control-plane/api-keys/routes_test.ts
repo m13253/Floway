@@ -191,7 +191,7 @@ test('DELETE /api/keys/:id succeeds when notifyDisabled throws — broker outage
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failNotifyDisabled(new Error('broker down'));
+  stubs.failOn('notifyDisabled', new Error('broker down'));
 
   const response = await requestApp(`/api/keys/${apiKey.id}`, {
     method: 'DELETE',
@@ -219,7 +219,7 @@ test('PATCH /api/keys/:id positive→null succeeds when notifyDisabled throws', 
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failNotifyDisabled(new Error('broker down'));
+  stubs.failOn('notifyDisabled', new Error('broker down'));
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);

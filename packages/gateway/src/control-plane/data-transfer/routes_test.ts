@@ -1127,7 +1127,7 @@ test('replace-mode import succeeds when notifyDisabled throws', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failNotifyDisabled(new Error('broker down'));
+  stubs.failOn('notifyDisabled', new Error('broker down'));
 
   const result = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
@@ -1167,7 +1167,7 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failNotifyDisabled(new Error('broker down'));
+  stubs.failOn('notifyDisabled', new Error('broker down'));
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
@@ -1184,14 +1184,16 @@ test('replace-mode import surfaces a purgeAll failure', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failPurgeAll(new Error('store down'));
+  stubs.failOn('purgeAll', new Error('store down'));
 
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'replace', version: 6, data: latestImportData({
-      apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
-    }) }),
+    body: JSON.stringify({
+      mode: 'replace', version: 6, data: latestImportData({
+        apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
+      }),
+    }),
   });
   assertEquals(resp.status, 500);
 });
@@ -1200,14 +1202,16 @@ test('merge-mode retention transition surfaces a purgeAll failure', async () => 
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failPurgeAll(new Error('store down'));
+  stubs.failOn('purgeAll', new Error('store down'));
 
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'merge', version: 6, data: latestImportData({
-      apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
-    }) }),
+    body: JSON.stringify({
+      mode: 'merge', version: 6, data: latestImportData({
+        apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
+      }),
+    }),
   });
   assertEquals(resp.status, 500);
 });

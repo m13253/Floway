@@ -21,7 +21,9 @@ test('isSensitiveHeader leaves non-credential headers untouched', () => {
 
 test('redactHeaderValue preserves last four characters behind a fixed-width mask', () => {
   expect(redactHeaderValue('sk-abcdef1234')).toBe('••••••••1234');
-  // Short values fall through to displaying the entire string after the mask
-  // — there is nothing meaningful to suffix-truncate.
-  expect(redactHeaderValue('abc')).toBe('••••••••abc');
+  // Values shorter than the safe tail threshold collapse to a tail-less mask
+  // so the secret isn't echoed back wholesale (e.g. a three-char value would
+  // otherwise appear verbatim after the mask).
+  expect(redactHeaderValue('abc')).toBe('••••••••');
+  expect(redactHeaderValue('1234567')).toBe('••••••••');
 });

@@ -125,11 +125,12 @@ describe('useDumpSubscription', () => {
   });
 
   it('snapshot rebuild preserves paged-in older records when the snapshot tail is no longer in memory', async () => {
-    // After a long disconnect during which the operator paged backward, the
-    // reconnect snapshot covers a strictly-newer range than what memory holds.
-    // The paged-in tail (older than the new snapshot's oldest) must survive —
+    // Long-tail scenario: after the operator paged backward, a second snapshot
+    // arrives that covers a strictly-newer range than what memory holds. The
+    // paged-in tail (older than the new snapshot's oldest) must survive —
     // id-comparison is the source of truth, since ULIDs sort lexically by
-    // creation time.
+    // creation time. Two snapshot frames on the same EventSource — no actual
+    // reconnect; just two emissions simulating a fresher view from the server.
     const { scope } = setup();
     const keyId = ref('key1');
     const sub = scope.run(() => useDumpSubscription(keyId, {
@@ -143,8 +144,8 @@ describe('useDumpSubscription', () => {
     await sub.loadOlder();
     expect(sub.records.value.map(r => r.id)).toEqual(['r-005', 'r-004', 'r-003', 'r-002', 'r-001']);
 
-    // Reconnect with a fresh snapshot that has no overlap with memory and
-    // whose oldest id (r-006) is newer than every paged-in row.
+    // Second snapshot has no overlap with memory and whose oldest id (r-006)
+    // is newer than every paged-in row.
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
       records: [newest(10), newest(9), newest(8), newest(7), newest(6)],
     }));
@@ -155,7 +156,10 @@ describe('useDumpSubscription', () => {
     scope.stop();
   });
 
-  it('snapshot rebuild preserves paged-in older records on reconnect', async () => {
+  it('snapshot rebuild merges paged-in older records when a fresher snapshot arrives', async () => {
+    // Two snapshot frames on the same EventSource (not a real reconnect — the
+    // socket stays the same; only the snapshot payload changes). The paged-in
+    // r-002/r-001 must survive the second snapshot's rebuild.
     const { scope } = setup();
     const keyId = ref('key1');
     let mockResponse: { ok: boolean; status: number; json: () => Promise<unknown> } = {
@@ -174,8 +178,8 @@ describe('useDumpSubscription', () => {
     await sub.loadOlder();
     expect(sub.records.value.map(r => r.id)).toEqual(['r-005', 'r-004', 'r-003', 'r-002', 'r-001']);
 
-    // Reconnect: server sends a fresh snapshot (with a new record on top).
-    // The paged-in r-002/r-001 must survive.
+    // Second snapshot frame (with a new record on top) — the paged-in
+    // r-002/r-001 must survive.
     mockResponse = { ok: true, status: 200, json: async () => ({ records: [] }) };
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
       records: [newest(6), newest(5), newest(4), newest(3)],

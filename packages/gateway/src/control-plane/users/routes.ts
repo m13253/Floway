@@ -4,7 +4,7 @@ import { userToRawWire } from './wire.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
-import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
+import { getDumpStore, notifyDisabledBestEffort } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
@@ -122,7 +122,7 @@ export const deleteUser = async (c: Context) => {
   const keys = await repo.apiKeys.listByUserId(id);
   for (const key of keys) {
     await getDumpStore().purgeAll(key.id);
-    try { await getDumpBroker().notifyDisabled(key.id); } catch (err) { console.error('[dump] notifyDisabled failed during deleteUser cascade', key.id, err); }
+    await notifyDisabledBestEffort(key.id, 'deleteUser cascade');
   }
 
   await repo.apiKeys.softDeleteByUserId(id);

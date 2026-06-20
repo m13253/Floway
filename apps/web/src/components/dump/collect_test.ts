@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  collectChatCompletionsStream,
-  collectGeminiStream,
-  collectMessagesStream,
-  collectResponsesStream,
-  detectCollectKind,
-} from './collect.ts';
+import { collectByKind, detectCollectKind } from './collect.ts';
 import type { DumpStreamEvent } from '@floway-dev/protocols/dump';
 
 const ev = (event: string | null, data: unknown, ts = 0): DumpStreamEvent => ({
@@ -17,7 +11,7 @@ const ev = (event: string | null, data: unknown, ts = 0): DumpStreamEvent => ({
 
 describe('collect', () => {
   it('folds Messages text_deltas and surfaces max_tokens', () => {
-    const out = collectMessagesStream([
+    const out = collectByKind('messages', [
       ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }),
       ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ', world!' } }),
       ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }),
@@ -28,7 +22,7 @@ describe('collect', () => {
   });
 
   it('folds Chat Completions deltas and finish_reason length', () => {
-    const out = collectChatCompletionsStream([
+    const out = collectByKind('chat-completions', [
       ev(null, { choices: [{ delta: { content: 'a' } }] }),
       ev(null, { choices: [{ delta: { content: 'bc' } }] }),
       ev(null, { choices: [{ delta: {}, finish_reason: 'length' }] }),
@@ -38,7 +32,7 @@ describe('collect', () => {
   });
 
   it('prefers the response.completed snapshot over delta concatenation when both are present', () => {
-    const out = collectResponsesStream([
+    const out = collectByKind('responses', [
       ev('response.output_text.delta', { delta: 'partial' }),
       ev('response.completed', {
         response: {
@@ -54,7 +48,7 @@ describe('collect', () => {
   });
 
   it('marks Gemini truncation on MAX_TOKENS', () => {
-    const out = collectGeminiStream([
+    const out = collectByKind('gemini', [
       ev(null, { candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
       ev(null, { candidates: [{ content: { parts: [{ text: ' there' }] }, finishReason: 'MAX_TOKENS' }] }),
     ]);
@@ -71,7 +65,7 @@ describe('collect', () => {
   });
 
   it('captures error frames into outcome.error', () => {
-    const out = collectMessagesStream([
+    const out = collectByKind('messages', [
       ev('error', { type: 'error', error: { type: 'overloaded_error', message: 'too busy' } }),
     ]);
     expect(out.error).toBe('too busy');

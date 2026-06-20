@@ -44,15 +44,11 @@ test('InProcessDumpBroker.notifyDisabled ends every subscriber on the key', asyn
 });
 
 test('InProcessDumpBroker detaches its EventTarget listeners when the subscriber aborts before pulling', async () => {
-  // Spy on the inner EventTarget so we can count addEventListener vs
-  // removeEventListener calls. The abort path must detach the listeners
-  // synchronously rather than waiting for a future iterator pull.
-  const originalAdd = EventTarget.prototype.addEventListener;
+  // Spy on `removeEventListener` so we can count detach calls. The abort path
+  // must detach the listeners synchronously rather than waiting for a future
+  // iterator pull.
   const originalRemove = EventTarget.prototype.removeEventListener;
   let removes = 0;
-  EventTarget.prototype.addEventListener = function (...args: Parameters<EventTarget['addEventListener']>) {
-    return originalAdd.apply(this, args);
-  };
   EventTarget.prototype.removeEventListener = function (...args: Parameters<EventTarget['removeEventListener']>) {
     removes += 1;
     return originalRemove.apply(this, args);
@@ -69,7 +65,6 @@ test('InProcessDumpBroker detaches its EventTarget listeners when the subscriber
     // listener on the signal must be removed.
     assertEquals(removes - removesBefore, 3);
   } finally {
-    EventTarget.prototype.addEventListener = originalAdd;
     EventTarget.prototype.removeEventListener = originalRemove;
   }
 });

@@ -334,7 +334,7 @@ test('captureRequestDump propagates DumpStore.put failures through the backgroun
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failPut(new Error('put exploded'));
+  stubs.failOn('put', new Error('put exploded'));
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/put-fail', async c => {
@@ -355,7 +355,7 @@ test('captureRequestDump stores the row even when broker.publish fails', async (
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failPublish(new Error('publish exploded'));
+  stubs.failOn('publish', new Error('publish exploded'));
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/publish-fail', async c => {

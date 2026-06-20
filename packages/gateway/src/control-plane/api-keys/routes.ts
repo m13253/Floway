@@ -4,7 +4,7 @@ import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
+import { getDumpStore, notifyDisabledBestEffort } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
@@ -76,7 +76,7 @@ export const deleteKey = async (c: Context) => {
   // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
   // Broker availability shouldn't block the soft-delete — clients reconcile
   // on the next keys refetch regardless.
-  try { await getDumpBroker().notifyDisabled(id); } catch (err) { console.error('[dump] notifyDisabled failed during deleteKey', id, err); }
+  await notifyDisabledBestEffort(id, 'deleteKey');
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };
@@ -126,7 +126,7 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     const next = body.dump_retention_seconds;
     if (next === null && previous !== null) {
       await getDumpStore().purgeAll(id);
-      try { await getDumpBroker().notifyDisabled(id); } catch (err) { console.error('[dump] notifyDisabled failed during updateKey transition', id, err); }
+      await notifyDisabledBestEffort(id, 'updateKey retention disable');
     } else if (previous !== null && next !== null && next < previous) {
       await getDumpStore().purgeExpired(id, next);
     }

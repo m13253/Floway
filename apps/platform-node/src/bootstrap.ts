@@ -23,11 +23,7 @@ import {
 // — including the runtime paths below — routes through the same contract as
 // every other env consumer (auth, performance telemetry, etc).
 export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
-  initEnv(name => {
-    const value = process.env[name];
-    if (value === undefined) throw new Error(`Missing required env var: ${name}`);
-    return value;
-  });
+  initEnv(name => process.env[name]);
   initRuntimeKind('node');
 
   const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');

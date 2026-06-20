@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { hashPassword } from '../../shared/passwords.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
-import { assertEquals, createDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, installDumpStubs } from '@floway-dev/test-utils';
 
 const adminPost = (sessionId: string, body: unknown) => requestApp('/api/users', {
   method: 'POST',
@@ -139,10 +139,8 @@ test('DELETE /api/users/:id succeeds when notifyDisabled throws on a cascaded ke
   // Enable retention on the cascaded key so notifyDisabled is exercised.
   await repo.apiKeys.save({ ...defaultKey, dumpRetentionSeconds: 3600 });
 
-  const stubs = createDumpStubs();
-  stubs.failNotifyDisabled(new Error('broker down'));
-  initDumpStore(stubs.store);
-  initDumpBroker(stubs.broker);
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  stubs.failOn('notifyDisabled', new Error('broker down'));
 
   const response = await adminDelete(adminSession, user.id);
   assertEquals(response.status, 200);

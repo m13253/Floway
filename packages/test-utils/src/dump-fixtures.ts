@@ -28,6 +28,15 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): DumpRecord =>
 // Shared in-memory stubs for the dump store + broker. Used by every dump
 // test that needs a controllable pair: the control-plane SSE route tests,
 // the capture middleware tests, the cascade-safety tests.
+export type DumpStubFailMethod =
+  | 'put'
+  | 'list'
+  | 'get'
+  | 'purgeAll'
+  | 'purgeExpired'
+  | 'publish'
+  | 'notifyDisabled';
+
 export interface DumpStubHandle {
   store: DumpStore;
   broker: DumpBroker;
@@ -37,10 +46,10 @@ export interface DumpStubHandle {
   purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
   notifiedDisabled: ReadonlyArray<string>;
   seed: (keyId: string, record: DumpRecord) => void;
-  failPut: (err: Error) => void;
-  failPublish: (err: Error) => void;
-  failPurgeAll: (err: Error) => void;
-  failNotifyDisabled: (err: Error) => void;
+  // Inject a thrown error on the next (and subsequent) call to the named
+  // method. One uniform seam over the seven store/broker methods so tests
+  // don't have to chase per-method `failX` accessors.
+  failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 
 export const createDumpStubs = (): DumpStubHandle => {
@@ -51,20 +60,18 @@ export const createDumpStubs = (): DumpStubHandle => {
   const purgedAll: string[] = [];
   const purgedExpired: Array<{ keyId: string; retentionSeconds: number }> = [];
   const notifiedDisabled: string[] = [];
-  let putThrows: Error | null = null;
-  let publishThrows: Error | null = null;
-  let purgeAllThrows: Error | null = null;
-  let notifyDisabledThrows: Error | null = null;
+  const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
     async put(keyId, record) {
-      if (putThrows) throw putThrows;
+      if (throws.put) throw throws.put;
       stored.push({ keyId, record });
       const list = records.get(keyId) ?? [];
       list.unshift(record);
       records.set(keyId, list);
     },
     async list(keyId, opts) {
+      if (throws.list) throw throws.list;
       const list = records.get(keyId) ?? [];
       let start = 0;
       if (opts.before) {
@@ -74,26 +81,28 @@ export const createDumpStubs = (): DumpStubHandle => {
       return list.slice(start, start + opts.limit).map(r => r.meta);
     },
     async get(keyId, id) {
+      if (throws.get) throw throws.get;
       return (records.get(keyId) ?? []).find(r => r.meta.id === id) ?? null;
     },
     async purgeAll(keyId) {
-      if (purgeAllThrows) throw purgeAllThrows;
+      if (throws.purgeAll) throw throws.purgeAll;
       purgedAll.push(keyId);
       records.delete(keyId);
     },
     async purgeExpired(keyId, retentionSeconds) {
+      if (throws.purgeExpired) throw throws.purgeExpired;
       purgedExpired.push({ keyId, retentionSeconds });
     },
   };
 
   const broker: DumpBroker = {
     async publish(keyId, meta) {
-      if (publishThrows) throw publishThrows;
+      if (throws.publish) throw throws.publish;
       published.push({ keyId, meta });
       for (const fn of subscribers.get(keyId) ?? []) fn(meta);
     },
     async notifyDisabled(keyId) {
-      if (notifyDisabledThrows) throw notifyDisabledThrows;
+      if (throws.notifyDisabled) throw throws.notifyDisabled;
       notifiedDisabled.push(keyId);
       for (const fn of subscribers.get(keyId) ?? []) fn(null);
     },
@@ -149,10 +158,7 @@ export const createDumpStubs = (): DumpStubHandle => {
       list.unshift(record);
       records.set(keyId, list);
     },
-    failPut: err => { putThrows = err; },
-    failPublish: err => { publishThrows = err; },
-    failPurgeAll: err => { purgeAllThrows = err; },
-    failNotifyDisabled: err => { notifyDisabledThrows = err; },
+    failOn: (method, err) => { throws[method] = err; },
   };
 };
 

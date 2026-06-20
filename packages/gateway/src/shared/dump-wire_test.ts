@@ -1,31 +1,32 @@
 import { test } from 'vitest';
 
-import { decodeBodyFromWire, encodeBodyForWire, looksTextual } from './dump-wire.ts';
+import { decodeBodyFromWire, encodeBodyForWire } from './dump-wire.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-test('looksTextual recognises common textual content-types', () => {
-  assertEquals(looksTextual('text/plain'), true);
-  assertEquals(looksTextual('text/html; charset=utf-8'), true);
-  assertEquals(looksTextual('application/json'), true);
-  assertEquals(looksTextual('application/json; charset=utf-8'), true);
-  assertEquals(looksTextual('APPLICATION/JSON'), true);
-  assertEquals(looksTextual('application/xml'), true);
-  assertEquals(looksTextual('application/x-www-form-urlencoded'), true);
+// Probe `looksTextual` (a private detail of `encodeBodyForWire`) through the
+// public encode helper: a textual content-type with valid UTF-8 bytes encodes
+// as utf8, a binary content-type or non-UTF-8 bytes falls through to base64.
+const utf8 = new TextEncoder().encode('x');
+
+test('encodeBodyForWire treats common textual content-types as utf8', () => {
+  for (const ct of [
+    'text/plain',
+    'text/html; charset=utf-8',
+    'application/json',
+    'application/json; charset=utf-8',
+    'APPLICATION/JSON',
+    'application/xml',
+    'application/x-www-form-urlencoded',
+    'text/plain;something',
+  ]) {
+    assertEquals(encodeBodyForWire(utf8, ct).encoding, 'utf8');
+  }
 });
 
-test('looksTextual rejects binary content-types', () => {
-  assertEquals(looksTextual('image/png'), false);
-  assertEquals(looksTextual('application/octet-stream'), false);
-  assertEquals(looksTextual('image/jpeg'), false);
-  assertEquals(looksTextual('application/pdf'), false);
-  assertEquals(looksTextual(''), false);
-});
-
-test('looksTextual strips content-type parameters before matching', () => {
-  // The base type wins; trailing content-type parameters (charset, boundary, …)
-  // are ignored.
-  assertEquals(looksTextual('text/plain;something'), true);
-  assertEquals(looksTextual('image/png;base64'), false);
+test('encodeBodyForWire treats binary content-types and empty content-type as base64', () => {
+  for (const ct of ['image/png', 'application/octet-stream', 'image/jpeg', 'application/pdf', '', 'image/png;base64']) {
+    assertEquals(encodeBodyForWire(utf8, ct).encoding, 'base64');
+  }
 });
 
 test('encodeBodyForWire/decodeBodyFromWire round-trip UTF-8 text', () => {

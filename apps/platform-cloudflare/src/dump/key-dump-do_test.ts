@@ -24,10 +24,8 @@ class FakeWebSocket implements WebSocket {
 
   readonly sent: string[] = [];
   closed: { code: number; reason: string } | null = null;
-  shouldThrowOnSend = false;
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-    if (this.shouldThrowOnSend) throw new Error('socket gone');
     this.sent.push(typeof data === 'string' ? data : '');
   }
   close(code = 1000, reason = ''): void { this.closed = { code, reason }; }

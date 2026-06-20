@@ -16,8 +16,10 @@ export const isSensitiveHeader = (key: string): boolean => SENSITIVE_HEADERS.has
 
 // Fixed-width mask: do not leak the secret's length. Keep up to the last four
 // characters so an operator can recognize *which* credential they're looking
-// at without revealing the bulk of it.
+// at without revealing the bulk of it. Short values get a tail-less mask —
+// "the last four characters" of a three-character value would be the entire
+// secret, so suppress the tail when the value is too short to suffix safely.
 export const redactHeaderValue = (value: string): string => {
-  const tail = value.length >= 4 ? value.slice(-4) : value;
-  return `${'•'.repeat(8)}${tail}`;
+  if (value.length < 8) return '•'.repeat(8);
+  return `${'•'.repeat(8)}${value.slice(-4)}`;
 };

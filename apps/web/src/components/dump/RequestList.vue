@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { computed, onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
+import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
-import { statusBadgeClass } from './badge.ts';
+import { rowTintClass, statusBadgeClass } from './badge.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -21,18 +21,22 @@ const emit = defineEmits<{ loadOlder: [] }>();
 
 const sentinelRef = useTemplateRef<HTMLDivElement>('sentinel');
 
-// Single observer for the page lifetime; the sentinel element is static so
-// we don't reattach on every records.length change.
+// Single observer for the page lifetime. The sentinel only mounts inside the
+// scroll shell (which is itself gated by loading/empty branches), so attach
+// when the ref resolves rather than at onMounted — that way a slow first
+// load still arms infinite scroll once the shell finally appears.
 let observer: IntersectionObserver | null = null;
 
-onMounted(() => {
-  if (!sentinelRef.value) return;
+watch(sentinelRef, el => {
+  observer?.disconnect();
+  observer = null;
+  if (!el) return;
   observer = new IntersectionObserver(entries => {
     for (const entry of entries) {
       if (entry.isIntersecting) emit('loadOlder');
     }
   }, { rootMargin: '200px' });
-  observer.observe(sentinelRef.value);
+  observer.observe(el);
 });
 
 onBeforeUnmount(() => {
@@ -71,9 +75,6 @@ const upstreamKindTextClass = (kind: string | undefined): string => {
 };
 
 const statusLabel = (status: number) => status === 0 ? 'ERR' : String(status);
-
-const isFailedRow = (meta: DumpMetadata): boolean =>
-  meta.status === 0 || meta.status >= 400 || meta.error !== null;
 
 const totalTokens = (meta: DumpMetadata): number =>
   (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0);
@@ -130,13 +131,7 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           :aria-selected="selectedId === record.id"
           :data-record-id="record.id"
           class="cursor-pointer px-3 py-2.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent-cyan/60"
-          :class="[
-            selectedId === record.id
-              ? 'bg-accent-cyan/10'
-              : isFailedRow(record)
-                ? 'bg-accent-rose/[0.04] hover:bg-accent-rose/[0.08]'
-                : 'hover:bg-white/[0.02]',
-          ]"
+          :class="rowTintClass(record.status, record.error, selectedId === record.id)"
           @click="onRowKey(record.id)"
           @keydown.enter.prevent="onRowKey(record.id)"
           @keydown.space.prevent="onRowKey(record.id)"

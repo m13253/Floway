@@ -6,11 +6,10 @@ import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protoco
 // holds the abstract interface and binds to the concrete impl through
 // `initDumpStore` / `getDumpStore`.
 //
-// Body storage is split: D1 carries metadata + headers + per-side
-// descriptors; the FileProvider carries the gzipped body bytes themselves
-// at hour-bucketed paths `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
-// The hour bucket exists so the cron sweep can `deletePrefix` whole
-// expired hours without per-record file enumeration.
+// The split is metadata-in-SQL, bytes-in-FileProvider. Each implementation
+// chooses its own path scheme under a per-key prefix — the concrete layout
+// (and the hour-bucket strategy that makes prefix-sweep cheap) lives with
+// the `FileDumpStore` impl in `packages/gateway/src/repo/dump-store.ts`.
 
 export interface DumpListOptions {
   before?: DumpRecordId;

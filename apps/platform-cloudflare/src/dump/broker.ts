@@ -116,14 +116,10 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
   // `openPromise` covers the still-handshaking case: a teardown that races
   // the open still gets to close the socket once it materializes.
   const closeAndEnd = async (): Promise<void> => {
-    if (closed) {
-      const s = await openPromise.catch(() => null);
-      if (s) s.close(1000, 'subscriber done');
-      return;
-    }
-    closed = true;
     const s = await openPromise.catch(() => null);
     if (s) s.close(1000, 'subscriber done');
+    if (closed) return;
+    closed = true;
     deliver({ value: undefined as never, done: true });
   };
 

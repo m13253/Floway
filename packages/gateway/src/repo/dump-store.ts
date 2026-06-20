@@ -16,8 +16,12 @@ import type {
 
 // File-backed `DumpStore` impl shared between deployment targets. See the
 // interface contract in `packages/platform/src/dump-store.ts` for the
-// storage layout (metadata in D1, gzipped bodies under hour-bucketed
-// FileProvider keys) and the put-side ordering invariant.
+// metadata-in-SQL / bytes-in-FileProvider split.
+//
+// Concrete layout: bodies live under hour-bucketed FileProvider keys
+// `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`. The hour bucket
+// exists so the cron sweep can `deletePrefix` whole expired hours without
+// per-record file enumeration.
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;

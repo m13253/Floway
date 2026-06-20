@@ -7,7 +7,7 @@ import type { DumpBody } from '@floway-dev/protocols/dump';
 
 const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
 
-export const looksTextual = (contentType: string): boolean => {
+const looksTextual = (contentType: string): boolean => {
   const base = contentType.toLowerCase().split(';')[0]!.trim();
   return TEXT_LIKE_PREFIXES.some(prefix => base.startsWith(prefix));
 };

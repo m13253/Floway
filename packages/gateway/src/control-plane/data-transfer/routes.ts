@@ -20,7 +20,7 @@ import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
+import { getDumpStore, notifyDisabledBestEffort } from '../../runtime/dump.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -699,7 +699,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // captures, and any live SSE subscriber is told the key went away.
     for (const k of preImportKeys) {
       await getDumpStore().purgeAll(k.id);
-      try { await getDumpBroker().notifyDisabled(k.id); } catch (err) { console.error('[dump] notifyDisabled failed during replace-mode import', k.id, err); }
+      await notifyDisabledBestEffort(k.id, 'replace-mode import');
     }
 
     // Replace mode is intentionally non-atomic across repos: D1 binding does not expose multi-repo
@@ -748,7 +748,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
       if (key.dumpRetentionSeconds === null && previous !== null) {
         await getDumpStore().purgeAll(key.id);
-        try { await getDumpBroker().notifyDisabled(key.id); } catch (err) { console.error('[dump] notifyDisabled failed during merge-mode retention transition', key.id, err); }
+        await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
       } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
         await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
