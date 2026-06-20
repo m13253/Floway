@@ -1,5 +1,8 @@
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
+import { setDumpBroker, setDumpStore } from './src/runtime/dump.ts';
+import type { DumpBroker, DumpStore } from '@floway-dev/platform';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
+import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
 
 // Production always initializes env at boot, so getEnv() never throws in a
 // live request. Mirror that here with a neutral default; tests needing real
@@ -12,3 +15,24 @@ initRuntimeKind('node');
 initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
+
+// Default no-op dump bindings. The capture-dump middleware short-circuits on
+// keys without retention, so every test whose fixture leaves
+// dumpRetentionSeconds null never touches these. The api-keys and users
+// routes call purgeAll on every delete though, so the no-op needs to be
+// installed regardless. Tests that exercise the dump system itself re-init
+// with their own implementations.
+const noopStore: DumpStore = {
+  async put(): Promise<void> { /* noop */ },
+  async list(): Promise<DumpMetadata[]> { return []; },
+  async get(_keyId: string, _id: DumpRecordId): Promise<DumpRecord | null> { return null; },
+  async purgeAll(): Promise<void> { /* noop */ },
+  async purgeExpired(): Promise<void> { /* noop */ },
+};
+const noopBroker: DumpBroker = {
+  async publish(): Promise<void> { /* noop */ },
+  async notifyDisabled(): Promise<void> { /* noop */ },
+  subscribe(): AsyncIterable<DumpMetadata> { return (async function*() {})(); },
+};
+setDumpStore(noopStore);
+setDumpBroker(noopBroker);

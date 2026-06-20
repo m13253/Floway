@@ -1,4 +1,6 @@
 export * from './background.ts';
+export * from './dump-broker.ts';
+export * from './dump-store.ts';
 export * from './env.ts';
 export * from './file-provider.ts';
 export * from './image-cache-store.ts';

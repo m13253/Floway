@@ -13,7 +13,14 @@ export const authMiddleware = async (c: Context, next: Next) => {
   if (PUBLIC_PATHS.has(path) && c.req.method === 'GET') return await next();
   if (AUTH_VALIDATE_PATHS.has(path) && c.req.method === 'POST') return await next();
 
-  const sessionToken = c.req.header('x-floway-session');
+  // Browsers cannot attach custom headers to EventSource, so the dump SSE
+  // stream — the only browser-driven SSE endpoint — accepts the session
+  // token as a query string instead. Path/method are pinned to the single
+  // endpoint that needs it to keep the URL-leak surface narrow.
+  const isDumpStreamGet = c.req.method === 'GET'
+    && /^\/api\/dump\/keys\/[^/]+\/stream$/.test(path);
+  const sessionToken = c.req.header('x-floway-session')
+    ?? (isDumpStreamGet ? c.req.query('session') : undefined);
   if (sessionToken) {
     if (!(path.startsWith('/api/') || path.startsWith('/auth/'))) {
       return c.json({ error: 'Session tokens are only valid on dashboard routes; data-plane requests must use an API key.' }, 401);
@@ -49,6 +56,9 @@ export const authMiddleware = async (c: Context, next: Next) => {
   setUserContext(c, user);
   c.set('apiKeyId', apiKey.id);
   c.set('apiKeyUpstreamIds', apiKey.upstreamIds);
+  // Capture middleware reads dumpRetentionSeconds off this row; stashing the
+  // full ApiKey here avoids a second findByRawKey on every captured request.
+  c.set('apiKey', apiKey);
   await next();
 };
 

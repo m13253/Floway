@@ -4,6 +4,7 @@ import { userToRawWire } from './wire.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
+import { getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
@@ -112,6 +113,12 @@ export const deleteUser = async (c: Context) => {
   if (id === actorId) return c.json({ error: 'cannot delete yourself' }, 400);
 
   const repo = getRepo();
+
+  // Purge each owned key's dumps before the cascade so a purge failure leaves
+  // the user (and their keys) intact and retriable. We iterate live keys
+  // because soft-deleted keys were already purged at their own delete time.
+  const keys = await repo.apiKeys.listByUserId(id);
+  for (const key of keys) await getDumpStore().purgeAll(key.id);
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);

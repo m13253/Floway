@@ -4,6 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './events/to-result.ts';
 import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
+import { errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -26,15 +27,18 @@ export const respondGemini = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
+    errorDumpAccounting(c, `upstream error ${result.status}`);
     return { success: false, response: geminiUpstreamErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    errorDumpAccounting(c, result.error.message);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
 
   if (result.type === 'plain') {
+    c.set('dumpAccounting', plainDumpAccounting);
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -46,11 +50,13 @@ export const respondGemini = async (
       const response = await collectGeminiProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromGeminiResponse(response);
+      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
+      errorDumpAccounting(c, error);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
@@ -64,6 +70,7 @@ export const respondGemini = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {

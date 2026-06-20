@@ -198,7 +198,7 @@ test('POST /v1/chat/completions does not write any non-auth Hono context slot', 
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
-  const knownAuthKeys = new Set(['apiKeyId', 'apiKeyUpstreamIds']);
+  const knownAuthKeys = new Set(['apiKeyId', 'apiKeyUpstreamIds', 'dumpAccounting']);
   const observedKeys: string[] = [];
 
   const app = makeApp(c => {

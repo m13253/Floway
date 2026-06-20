@@ -3,6 +3,7 @@ import { streamSSE } from 'hono/streaming';
 
 import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
+import { errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -27,15 +28,18 @@ export const respondMessages = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
+    errorDumpAccounting(c, `upstream error ${result.status}`);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    errorDumpAccounting(c, result.error.message);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
+    c.set('dumpAccounting', plainDumpAccounting);
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -48,11 +52,13 @@ export const respondMessages = async (
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
+      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
+      errorDumpAccounting(c, error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
@@ -66,6 +72,7 @@ export const respondMessages = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {

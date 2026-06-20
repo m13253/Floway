@@ -1,0 +1,313 @@
+import type {
+  DumpListOptions,
+  DumpStore,
+  FileProvider, SqlDatabase,
+} from '@floway-dev/platform';
+import { sha256Hex } from '@floway-dev/platform';
+import type {
+  DumpMetadata,
+  DumpRecord,
+  DumpRecordId,
+  DumpRequest,
+  DumpResponse,
+  DumpResponseBody,
+  DumpStreamEvent,
+} from '@floway-dev/protocols/dump';
+
+// Both the Cloudflare and Node DumpStore impls share this storage layout:
+// metadata + headers + per-side descriptors in D1; gzipped body bytes in
+// the FileProvider at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
+// The hour bucket lets the cron sweep `deletePrefix` whole expired hours
+// instead of enumerating each record's two files individually.
+
+const ROOT = 'dumps/v1';
+const HOUR_MS = 60 * 60 * 1000;
+
+interface BodyDescriptor {
+  key: string;
+  byteLength: number;
+  sha256: string;
+  encoding: 'gzip';
+  contentType: string;
+  // 'bytes' for non-SSE responses, 'events' for SSE-parsed responses (the
+  // body file holds the JSON array of DumpStreamEvent). Absent on request-
+  // side descriptors — request bodies are always 'bytes' there.
+  type?: 'bytes' | 'events';
+}
+
+interface DumpRow {
+  id: string;
+  created_at: number;
+  meta_json: string;
+  request_headers_json: string;
+  response_headers_json: string | null;
+  request_body_descriptor: string | null;
+  response_body_descriptor: string | null;
+}
+
+const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
+
+const looksTextual = (contentType: string): boolean => {
+  const base = contentType.toLowerCase().split(';')[0]!.trim();
+  return TEXT_LIKE_PREFIXES.some(prefix => base.startsWith(prefix));
+};
+
+const hourBucket = (ms: number): string => {
+  const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
+  const y = date.getUTCFullYear().toString().padStart(4, '0');
+  const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+  const d = date.getUTCDate().toString().padStart(2, '0');
+  const h = date.getUTCHours().toString().padStart(2, '0');
+  return `${y}${m}${d}${h}`;
+};
+
+const hourBucketToMs = (bucket: string): number | null => {
+  if (!/^\d{10}$/.test(bucket)) return null;
+  const y = Number(bucket.slice(0, 4));
+  const m = Number(bucket.slice(4, 6));
+  const d = Number(bucket.slice(6, 8));
+  const h = Number(bucket.slice(8, 10));
+  return Date.UTC(y, m - 1, d, h, 0, 0, 0);
+};
+
+const keyPrefix = (keyId: string): string => `${ROOT}/${keyId}/`;
+const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId}/${bucket}/`;
+const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
+  `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
+
+const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
+  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
+  return new Uint8Array(await stream.arrayBuffer());
+};
+
+const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
+  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')));
+  return new Uint8Array(await stream.arrayBuffer());
+};
+
+const decodeWireBody = (body: string, contentType: string): Uint8Array => {
+  // Wire shape: `;base64` appended to the recorded content-type signals the
+  // body string is base64-encoded raw bytes. Anything else is UTF-8 text.
+  if (contentType.toLowerCase().includes(';base64')) {
+    const binary = atob(body);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  return new TextEncoder().encode(body);
+};
+
+const encodeWireBody = (bytes: Uint8Array, contentType: string): { body: string; contentType: string } => {
+  if (looksTextual(contentType)) {
+    try {
+      return { body: new TextDecoder('utf-8', { fatal: true }).decode(bytes), contentType };
+    } catch {
+      // Fall through — the content-type claimed text but the bytes aren't UTF-8.
+    }
+  }
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+  const suffixed = contentType.toLowerCase().includes(';base64') ? contentType : `${contentType};base64`;
+  return { body: btoa(binary), contentType: suffixed };
+};
+
+const requestContentType = (request: DumpRequest): string => {
+  for (const [name, value] of request.headers) {
+    if (name.toLowerCase() === 'content-type') return value;
+  }
+  return '';
+};
+
+const responseContentType = (response: DumpResponse): string => {
+  for (const [name, value] of response.headers) {
+    if (name.toLowerCase() === 'content-type') return value;
+  }
+  return '';
+};
+
+const putBody = async (
+  files: FileProvider,
+  key: string,
+  rawBytes: Uint8Array,
+  contentType: string,
+  type: 'bytes' | 'events' | undefined,
+): Promise<BodyDescriptor> => {
+  const gz = await gzip(rawBytes);
+  await files.put(key, gz);
+  const descriptor: BodyDescriptor = {
+    key,
+    byteLength: rawBytes.byteLength,
+    sha256: await sha256Hex(gz),
+    encoding: 'gzip',
+    contentType,
+  };
+  if (type !== undefined) descriptor.type = type;
+  return descriptor;
+};
+
+const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<Uint8Array> => {
+  const gz = await files.get(descriptor.key);
+  if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
+  return await gunzip(gz);
+};
+
+const fetchEventsBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<DumpStreamEvent[]> => {
+  const raw = await fetchBody(files, descriptor);
+  const parsed = JSON.parse(new TextDecoder().decode(raw));
+  if (!Array.isArray(parsed)) throw new Error(`dump events payload not an array at key=${descriptor.key}`);
+  return parsed as DumpStreamEvent[];
+};
+
+export class FileDumpStore implements DumpStore {
+  constructor(private readonly db: SqlDatabase, private readonly files: FileProvider) {}
+
+  async put(keyId: string, record: DumpRecord): Promise<void> {
+    const bucket = hourBucket(record.meta.completedAt);
+    const requestRaw = decodeWireBody(record.request.body, requestContentType(record.request));
+    const requestDescriptor = requestRaw.byteLength === 0
+      ? null
+      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, requestContentType(record.request), undefined);
+
+    let responseDescriptor: BodyDescriptor | null = null;
+    if (record.response.type === 'bytes') {
+      const responseRaw = decodeWireBody(record.response.body, responseContentType(record.response));
+      if (responseRaw.byteLength > 0) {
+        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, responseContentType(record.response), 'bytes');
+      }
+    } else if (record.response.type === 'stream') {
+      const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.events));
+      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, responseContentType(record.response), 'events');
+    }
+
+    // Files first, then the row — a partial failure leaves orphan files the
+    // hour-bucket sweep collects, never an orphan row whose detail fetch
+    // would 404 after a successful list.
+    await this.db.prepare(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      keyId,
+      record.meta.id,
+      record.meta.completedAt,
+      JSON.stringify(record.meta),
+      JSON.stringify(record.request.headers),
+      record.response.type === 'none' ? null : JSON.stringify(record.response.headers),
+      requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
+      responseDescriptor === null ? null : JSON.stringify(responseDescriptor),
+    ).run();
+  }
+
+  async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
+    const before = opts.before
+      ? await this.db.prepare(
+          'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
+        ).bind(keyId, opts.before).first<{ created_at: number }>()
+      : null;
+    const beforeTs = before?.created_at ?? null;
+
+    // Newest-first with a compound (created_at, id) cursor so two rows that
+    // share a millisecond still page deterministically. ULID lex order
+    // matches creation order within the millisecond.
+    const sql = beforeTs === null
+      ? 'SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY created_at DESC, id DESC LIMIT ?'
+      : 'SELECT meta_json FROM dump_records WHERE key_id = ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?';
+    const stmt = beforeTs === null
+      ? this.db.prepare(sql).bind(keyId, opts.limit)
+      : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, opts.before!, opts.limit);
+    const { results } = await stmt.all<{ meta_json: string }>();
+    return results.map(row => JSON.parse(row.meta_json) as DumpMetadata);
+  }
+
+  async get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null> {
+    const row = await this.db.prepare(
+      'SELECT id, created_at, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?',
+    ).bind(keyId, recordId).first<DumpRow>();
+    if (!row) return null;
+
+    const meta = JSON.parse(row.meta_json) as DumpMetadata;
+    const requestHeaders = JSON.parse(row.request_headers_json) as Array<[string, string]>;
+    const requestDescriptor = row.request_body_descriptor ? JSON.parse(row.request_body_descriptor) as BodyDescriptor : null;
+    const responseHeaders = row.response_headers_json ? JSON.parse(row.response_headers_json) as Array<[string, string]> : null;
+    const responseDescriptor = row.response_body_descriptor ? JSON.parse(row.response_body_descriptor) as BodyDescriptor : null;
+
+    const request: DumpRequest = {
+      method: meta.method,
+      path: meta.path,
+      headers: requestHeaders,
+      body: requestDescriptor
+        ? encodeWireBody(await fetchBody(this.files, requestDescriptor), requestDescriptor.contentType).body
+        : '',
+    };
+
+    let responseBody: DumpResponseBody;
+    if (responseDescriptor === null || responseHeaders === null) {
+      responseBody = { type: 'none' };
+    } else if (responseDescriptor.type === 'events') {
+      responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
+    } else {
+      const encoded = encodeWireBody(await fetchBody(this.files, responseDescriptor), responseDescriptor.contentType);
+      // The stored content-type stays canonical on the wire response headers;
+      // the encoder only stamps `;base64` on byte bodies that needed it, so we
+      // re-stamp the matching response header pair to keep the dashboard
+      // decoder branch in sync.
+      const adjustedHeaders = adjustContentType(responseHeaders, encoded.contentType);
+      responseBody = { type: 'bytes', body: encoded.body };
+      const response: DumpResponse & DumpResponseBody = { status: meta.status, headers: adjustedHeaders, ...responseBody };
+      return { meta, request, response };
+    }
+
+    const response: DumpResponse & DumpResponseBody = {
+      status: meta.status,
+      headers: responseHeaders ?? [],
+      ...responseBody,
+    };
+    return { meta, request, response };
+  }
+
+  async purgeAll(keyId: string): Promise<void> {
+    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
+    await this.files.deletePrefix(keyPrefix(keyId));
+  }
+
+  async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
+    const cutoff = Date.now() - retentionSeconds * 1000;
+    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
+
+    // Enumerate the immediate hour-bucket subprefixes by listing every file
+    // under the key root and grouping by the bucket segment. R2 doesn't ship a
+    // generic FileProvider `list(delimiter)` so we derive buckets from keys
+    // directly — overkill for hot keys but bounded by the FileProvider's own
+    // listKeys pagination.
+    const prefix = keyPrefix(keyId);
+    const buckets = new Set<string>();
+    for (const file of await this.files.listKeys(prefix)) {
+      const tail = file.slice(prefix.length);
+      const slash = tail.indexOf('/');
+      if (slash > 0) buckets.add(tail.slice(0, slash));
+    }
+    for (const bucket of buckets) {
+      const bucketStart = hourBucketToMs(bucket);
+      if (bucketStart === null) continue;
+      // A bucket whose newest possible record is still within the window must
+      // stay: bucketEnd is the first millisecond of the next hour.
+      const bucketEnd = bucketStart + HOUR_MS;
+      if (bucketEnd <= cutoff) await this.files.deletePrefix(bucketPrefix(keyId, bucket));
+    }
+  }
+}
+
+const adjustContentType = (headers: Array<[string, string]>, contentType: string): Array<[string, string]> => {
+  const out: Array<[string, string]> = [];
+  let replaced = false;
+  for (const [name, value] of headers) {
+    if (name.toLowerCase() === 'content-type') {
+      out.push([name, contentType]);
+      replaced = true;
+    } else {
+      out.push([name, value]);
+    }
+  }
+  if (!replaced) out.push(['content-type', contentType]);
+  return out;
+};

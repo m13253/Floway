@@ -4,6 +4,7 @@ import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
+import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
@@ -68,6 +69,10 @@ export const deleteKey = async (c: Context) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
+  // Purge dump state before the soft-delete so a purge failure leaves a
+  // retriable, still-owned key rather than a half-deleted row whose dump
+  // records are orphaned beyond the operator's reach.
+  await getDumpStore().purgeAll(id);
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };
@@ -106,5 +111,33 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   };
   await getRepo().apiKeys.save(updated);
 
+  if (body.dump_retention_seconds !== undefined) {
+    await applyDumpRetentionTransition(id, owned.dumpRetentionSeconds, body.dump_retention_seconds);
+  }
+
   return c.json(apiKeyToJson(updated));
+};
+
+// Retention transitions:
+//   positive → null: drop every stored record and cut every live subscriber.
+//   null → positive: no purge; the new window only governs future captures.
+//   positive → smaller positive: enforce the shorter window immediately by
+//     sweeping anything already past the new cutoff.
+//   positive → larger positive: nothing to purge; the older records are
+//     within the new window.
+const applyDumpRetentionTransition = async (
+  keyId: string,
+  previous: number | null,
+  next: number | null,
+): Promise<void> => {
+  if (next === null) {
+    if (previous !== null) {
+      await getDumpStore().purgeAll(keyId);
+      await getDumpBroker().notifyDisabled(keyId);
+    }
+    return;
+  }
+  if (previous !== null && next < previous) {
+    await getDumpStore().purgeExpired(keyId, next);
+  }
 };

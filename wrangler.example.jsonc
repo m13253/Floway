@@ -73,6 +73,10 @@
     {
       "binding": "FILES",
       "bucket_name": "<YOUR_R2_BUCKET_NAME>"
+    },
+    {
+      "binding": "DUMP_BLOBS",
+      "bucket_name": "<YOUR_DUMP_R2_BUCKET_NAME>"
     }
   ],
   // Cloudflare Images binding. Inline base64 images on the Copilot egress are
@@ -89,6 +93,27 @@
     {
       "binding": "KV",
       "id": "<YOUR_KV_NAMESPACE_ID>"
+    }
+  ],
+  // Per-API-key dump fan-out. The DO has no persistent state of its own —
+  // dump rows live in D1, bodies live in DUMP_BLOBS, and the actor only
+  // routes WebSocket frames from the capturing data-plane to the SSE
+  // subscribers on the dashboard.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "KEY_DUMP_DO",
+        "class_name": "KeyDumpDO"
+      }
+    ]
+  },
+  // `new_classes` (not `new_sqlite_classes`) — the actor is stateless; no
+  // SQLite mount, no alarms, no migrations to worry about as the schema
+  // evolves on the data-plane side.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["KeyDumpDO"]
     }
   ]
 }
