@@ -1,22 +1,15 @@
 import { test } from 'vitest';
 
 import { InProcessDumpBroker } from './broker.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
-import { assertEquals } from '@floway-dev/test-utils';
-
-const fakeMeta = (id: string): DumpMetadata => ({
-  id, startedAt: 0, completedAt: 1, method: 'POST', path: '/v1/x', status: 200,
-  upstream: null, model: null, inputTokens: null, outputTokens: null,
-  requestBytes: 0, responseBytes: 0, durationMs: 1, error: null,
-});
+import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
 
 test('InProcessDumpBroker delivers published metas to a live subscriber', async () => {
   const broker = new InProcessDumpBroker();
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
-  await broker.publish('k', fakeMeta('A1'));
-  await broker.publish('k', fakeMeta('A2'));
+  await broker.publish('k', fakeMeta({ id: 'A1' }));
+  await broker.publish('k', fakeMeta({ id: 'A2' }));
   controller.abort();
 
   // Two seeded items + the abort-induced terminal value.
@@ -29,8 +22,8 @@ test('InProcessDumpBroker isolates traffic across keys', async () => {
   const broker = new InProcessDumpBroker();
   const controller = new AbortController();
   const iter = broker.subscribe('k1', controller.signal)[Symbol.asyncIterator]();
-  await broker.publish('k2', fakeMeta('foreign'));
-  await broker.publish('k1', fakeMeta('local'));
+  await broker.publish('k2', fakeMeta({ id: 'foreign' }));
+  await broker.publish('k1', fakeMeta({ id: 'local' }));
   controller.abort();
 
   const first = await iter.next();
@@ -52,15 +45,12 @@ test('InProcessDumpBroker.notifyDisabled ends every subscriber on the key', asyn
 
 test('InProcessDumpBroker detaches its EventTarget listeners when the subscriber aborts before pulling', async () => {
   // Spy on the inner EventTarget so we can count addEventListener vs
-  // removeEventListener calls; the leak this test pins regressed when the
-  // abort path didn't call detach() because deliver({done:true}) was a no-op
-  // with no waiting resolveNext.
+  // removeEventListener calls. The abort path must detach the listeners
+  // synchronously rather than waiting for a future iterator pull.
   const originalAdd = EventTarget.prototype.addEventListener;
   const originalRemove = EventTarget.prototype.removeEventListener;
-  let adds = 0;
   let removes = 0;
   EventTarget.prototype.addEventListener = function (...args: Parameters<EventTarget['addEventListener']>) {
-    adds += 1;
     return originalAdd.apply(this, args);
   };
   EventTarget.prototype.removeEventListener = function (...args: Parameters<EventTarget['removeEventListener']>) {
@@ -70,15 +60,14 @@ test('InProcessDumpBroker detaches its EventTarget listeners when the subscriber
   try {
     const broker = new InProcessDumpBroker();
     const controller = new AbortController();
-    // Subscribe — eager listener attach happens here.
     broker.subscribe('k', controller.signal);
-    const after = adds;
-    // Abort immediately without ever calling next(); the prior behavior would
-    // leak the 'appended'/'disabled' listeners forever.
+    // Snapshot the removal counter immediately before the abort so the test
+    // scopes the assertion to the listeners this subscribe actually owns.
+    const removesBefore = removes;
     controller.abort();
-    // Two listeners on the target (appended + disabled) plus the abort
+    // Two listeners on the EventTarget (appended + disabled) plus the abort
     // listener on the signal must be removed.
-    assertEquals(removes - (after - adds) >= 3 ? 'detached' : `leaked (adds=${adds} removes=${removes})`, 'detached');
+    assertEquals(removes - removesBefore, 3);
   } finally {
     EventTarget.prototype.addEventListener = originalAdd;
     EventTarget.prototype.removeEventListener = originalRemove;

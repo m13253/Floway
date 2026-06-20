@@ -1,9 +1,9 @@
+import { decodeBodyFromWire, encodeBodyForWire } from '../shared/dump-wire.ts';
 import type {
   DumpListOptions,
   DumpStore,
   FileProvider, SqlDatabase,
 } from '@floway-dev/platform';
-import { sha256Hex } from '@floway-dev/platform';
 import type {
   DumpMetadata,
   DumpRecord,
@@ -25,8 +25,6 @@ const HOUR_MS = 60 * 60 * 1000;
 interface BodyDescriptor {
   key: string;
   byteLength: number;
-  sha256: string;
-  encoding: 'gzip';
   contentType: string;
   // 'bytes' for non-SSE responses, 'events' for SSE-parsed responses (the
   // body file holds the JSON array of DumpStreamEvent). Absent on request-
@@ -43,13 +41,6 @@ interface DumpRow {
   request_body_descriptor: string | null;
   response_body_descriptor: string | null;
 }
-
-const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
-
-const looksTextual = (contentType: string): boolean => {
-  const base = contentType.toLowerCase().split(';')[0]!.trim();
-  return TEXT_LIKE_PREFIXES.some(prefix => base.startsWith(prefix));
-};
 
 const hourBucket = (ms: number): string => {
   const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
@@ -84,32 +75,6 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   return new Uint8Array(await stream.arrayBuffer());
 };
 
-const decodeWireBody = (body: string, contentType: string): Uint8Array => {
-  // Wire shape: `;base64` appended to the recorded content-type signals the
-  // body string is base64-encoded raw bytes. Anything else is UTF-8 text.
-  if (contentType.toLowerCase().includes(';base64')) {
-    const binary = atob(body);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
-  }
-  return new TextEncoder().encode(body);
-};
-
-const encodeWireBody = (bytes: Uint8Array, contentType: string): { body: string; contentType: string } => {
-  if (looksTextual(contentType)) {
-    try {
-      return { body: new TextDecoder('utf-8', { fatal: true }).decode(bytes), contentType };
-    } catch {
-      // Fall through — the content-type claimed text but the bytes aren't UTF-8.
-    }
-  }
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
-  const suffixed = contentType.toLowerCase().includes(';base64') ? contentType : `${contentType};base64`;
-  return { body: btoa(binary), contentType: suffixed };
-};
-
 const requestContentType = (request: DumpRequest): string => {
   for (const [name, value] of request.headers) {
     if (name.toLowerCase() === 'content-type') return value;
@@ -136,8 +101,6 @@ const putBody = async (
   const descriptor: BodyDescriptor = {
     key,
     byteLength: rawBytes.byteLength,
-    sha256: await sha256Hex(gz),
-    encoding: 'gzip',
     contentType,
   };
   if (type !== undefined) descriptor.type = type;
@@ -162,14 +125,14 @@ export class FileDumpStore implements DumpStore {
 
   async put(keyId: string, record: DumpRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
-    const requestRaw = decodeWireBody(record.request.body, requestContentType(record.request));
+    const requestRaw = decodeBodyFromWire(record.request.body);
     const requestDescriptor = requestRaw.byteLength === 0
       ? null
       : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, requestContentType(record.request), undefined);
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.type === 'bytes') {
-      const responseRaw = decodeWireBody(record.response.body, responseContentType(record.response));
+      const responseRaw = decodeBodyFromWire(record.response.body);
       if (responseRaw.byteLength > 0) {
         responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, responseContentType(record.response), 'bytes');
       }
@@ -235,42 +198,36 @@ export class FileDumpStore implements DumpStore {
       path: meta.path,
       headers: requestHeaders,
       body: requestDescriptor
-        ? encodeWireBody(await fetchBody(this.files, requestDescriptor), requestDescriptor.contentType).body
-        : '',
+        ? encodeBodyForWire(await fetchBody(this.files, requestDescriptor), requestDescriptor.contentType)
+        : { encoding: 'utf8', data: '' },
     };
 
     let responseBody: DumpResponseBody;
-    let responseHeadersFinal: Array<[string, string]>;
     if (responseDescriptor === null || responseHeaders === null) {
       responseBody = { type: 'none' };
-      responseHeadersFinal = responseHeaders ?? [];
     } else if (responseDescriptor.type === 'events') {
       responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
-      responseHeadersFinal = responseHeaders;
     } else {
-      const encoded = encodeWireBody(await fetchBody(this.files, responseDescriptor), responseDescriptor.contentType);
-      // The stored content-type stays canonical on the wire response headers;
-      // the encoder only stamps `;base64` on byte bodies that needed it, so we
-      // re-stamp the matching response header pair to keep the dashboard
-      // decoder branch in sync.
-      responseHeadersFinal = adjustContentType(responseHeaders, encoded.contentType);
-      responseBody = { type: 'bytes', body: encoded.body };
+      responseBody = {
+        type: 'bytes',
+        body: encodeBodyForWire(await fetchBody(this.files, responseDescriptor), responseDescriptor.contentType),
+      };
     }
 
     const response: DumpResponse & DumpResponseBody = {
       status: meta.status,
-      headers: responseHeadersFinal,
+      headers: responseHeaders ?? [],
       ...responseBody,
     };
     return { meta, request, response };
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    // Files-first then DB matches `put`'s ordering invariant: a partial failure
-    // leaves rows pointing at gone files (detail-fetch throws `dump body missing`,
-    // the documented loud-failure path) and the next sweep retries cleanly.
-    // Row-first risked orphan files that no row referenced, so the cron sweep
-    // (which iterates by key from D1) could never reach them.
+    // Files first, then the row — matches `put`'s ordering invariant. A
+    // partial failure leaves rows pointing at gone files (detail-fetch then
+    // throws `dump body missing`, the documented loud-failure path) and the
+    // next sweep retries cleanly. The reverse order would orphan files no
+    // row references, which the cron sweep (D1-driven) could never reach.
     await this.files.deletePrefix(keyPrefix(keyId));
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
   }
@@ -302,18 +259,3 @@ export class FileDumpStore implements DumpStore {
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
   }
 }
-
-const adjustContentType = (headers: Array<[string, string]>, contentType: string): Array<[string, string]> => {
-  const out: Array<[string, string]> = [];
-  let replaced = false;
-  for (const [name, value] of headers) {
-    if (name.toLowerCase() === 'content-type') {
-      out.push([name, contentType]);
-      replaced = true;
-    } else {
-      out.push([name, value]);
-    }
-  }
-  if (!replaced) out.push(['content-type', contentType]);
-  return out;
-};

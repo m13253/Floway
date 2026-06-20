@@ -69,13 +69,18 @@ export const respondResponses = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
+      const failed = state.failedAfter(completion);
+      if (failed) {
+        errorDumpAccounting(c, `responses stream failed (completion=${completion}, source-failed=${state.failed})`);
+      } else {
+        setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
+      }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {
         console.error('Failed to record Responses HTTP usage:', error);
       } finally {
-        recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
+        recordPerformance(ctx, metadata.performance, failed);
       }
     }
   });

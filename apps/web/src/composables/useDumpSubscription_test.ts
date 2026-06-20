@@ -124,6 +124,37 @@ describe('useDumpSubscription', () => {
     scope.stop();
   });
 
+  it('snapshot rebuild preserves paged-in older records when the snapshot tail is no longer in memory', async () => {
+    // The C2 scenario: after a long disconnect during which the operator paged
+    // backward, the reconnect snapshot covers a strictly-newer range than what
+    // memory holds. The paged-in tail (older than the new snapshot's oldest)
+    // must survive — id-comparison is the source of truth, since ULIDs sort
+    // lexically by creation time.
+    const { scope } = setup();
+    const keyId = ref('key1');
+    const sub = scope.run(() => useDumpSubscription(keyId, {
+      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
+      fetcher: async () => ({ ok: true, status: 200, json: async () => ({ records: [newest(2), newest(1)] }) } as unknown as Response),
+    }))!;
+
+    FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
+      records: [newest(5), newest(4), newest(3)],
+    }));
+    await sub.loadOlder();
+    expect(sub.records.value.map(r => r.id)).toEqual(['r-005', 'r-004', 'r-003', 'r-002', 'r-001']);
+
+    // Reconnect with a fresh snapshot that has no overlap with memory and
+    // whose oldest id (r-006) is newer than every paged-in row.
+    FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
+      records: [newest(10), newest(9), newest(8), newest(7), newest(6)],
+    }));
+    expect(sub.records.value.map(r => r.id)).toEqual([
+      'r-010', 'r-009', 'r-008', 'r-007', 'r-006',
+      'r-005', 'r-004', 'r-003', 'r-002', 'r-001',
+    ]);
+    scope.stop();
+  });
+
   it('snapshot rebuild preserves paged-in older records on reconnect', async () => {
     const { scope } = setup();
     const keyId = ref('key1');

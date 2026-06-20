@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'vitest';
 
 import { FsFileProvider } from '../fs-file-provider.ts';
+import { applyMigrations } from '../migrate.ts';
 import { createNodeSqliteDatabase } from '../node-sqlite-database.ts';
 import { FileDumpStore } from '@floway-dev/gateway';
 import type { DumpRecord } from '@floway-dev/protocols/dump';
@@ -15,21 +16,6 @@ import { assertEquals, assertExists } from '@floway-dev/test-utils';
 // pairing (FsFileProvider + node:sqlite) so a regression in either node-only
 // dependency surfaces here.
 
-const MIGRATION = `
-CREATE TABLE dump_records (
-  key_id TEXT NOT NULL,
-  id TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  meta_json TEXT NOT NULL,
-  request_headers_json TEXT NOT NULL,
-  response_headers_json TEXT,
-  request_body_descriptor TEXT,
-  response_body_descriptor TEXT,
-  PRIMARY KEY (key_id, id)
-);
-CREATE INDEX idx_dump_records_key_created ON dump_records(key_id, created_at DESC);
-`;
-
 const sampleRecord = (id: string, completedAt: number): DumpRecord => ({
   meta: {
     id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
@@ -39,28 +25,28 @@ const sampleRecord = (id: string, completedAt: number): DumpRecord => ({
   request: {
     method: 'POST', path: '/v1/x',
     headers: [['content-type', 'application/json']],
-    body: '{"hello":"world"}',
+    body: { encoding: 'utf8', data: '{"hello":"world"}' },
   },
   response: {
     status: 200,
     headers: [['content-type', 'application/json']],
     type: 'bytes',
-    body: '{"id":"abc"}',
+    body: { encoding: 'utf8', data: '{"id":"abc"}' },
   },
 });
 
 test('Node DumpStore: put + get round-trips through FsFileProvider + node:sqlite', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dump-store-'));
   const db = createNodeSqliteDatabase(join(root, 'db.sqlite'));
-  await db.exec(MIGRATION);
+  await applyMigrations(db);
   try {
     const store = new FileDumpStore(db, new FsFileProvider(join(root, 'files')));
     await store.put('key_x', sampleRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0)));
     const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
     assertExists(fetched);
-    assertEquals(fetched.request.body, '{"hello":"world"}');
+    assertEquals(fetched.request.body.data, '{"hello":"world"}');
     if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-    assertEquals(fetched.response.body, '{"id":"abc"}');
+    assertEquals(fetched.response.body.data, '{"id":"abc"}');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

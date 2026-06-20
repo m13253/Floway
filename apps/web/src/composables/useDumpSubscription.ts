@@ -12,6 +12,12 @@ const DEDUP_REBUILD_THRESHOLD = 10_000;
 // Re-fetched per page. Matches the server's LIST_LIMIT_DEFAULT.
 const OLDER_PAGE_LIMIT = 100;
 
+// `EventSource.CLOSED` is `2` per the HTML spec. We reach for the literal
+// rather than the named property because happy-dom — the test environment —
+// does not ship `EventSource` on the global scope, so a reference at this
+// line would crash with `EventSource is not defined` inside the listener.
+const EVENT_SOURCE_CLOSED = 2;
+
 interface DumpSubscription {
   records: Ref<DumpMetadata[]>;
   loading: Ref<boolean>;
@@ -80,25 +86,20 @@ export const useDumpSubscription = (
   };
 
   const handleSnapshot = (snapshot: DumpMetadata[]) => {
-    // Preserve any paged-in older history past the snapshot's tail so a
-    // transient reconnect doesn't wipe what the user already scrolled to.
-    const oldestSnapshotId = snapshot.length > 0 ? snapshot[snapshot.length - 1]!.id : null;
+    // Preserve paged-in older history past the snapshot's tail. ULIDs are
+    // lexically time-ordered, so a record older than the snapshot's oldest
+    // id is exactly the one whose id sorts strictly less. This handles the
+    // long-disconnect case where the user paged backward and the snapshot's
+    // own oldest id is no longer in memory.
     const snapshotIds = new Set(snapshot.map(r => r.id));
-    const olderTail: DumpMetadata[] = [];
-    if (oldestSnapshotId !== null) {
-      let crossed = false;
-      for (const existing of records.value) {
-        if (existing.id === oldestSnapshotId) {
-          crossed = true;
-          continue;
-        }
-        if (crossed && !snapshotIds.has(existing.id)) olderTail.push(existing);
-      }
-    }
+    const oldestSnapshotId = snapshot.length > 0 ? snapshot[snapshot.length - 1]!.id : null;
+    const olderTail = oldestSnapshotId === null
+      ? []
+      : records.value.filter(r => !snapshotIds.has(r.id) && r.id < oldestSnapshotId);
     records.value = [...snapshot, ...olderTail];
     rebuildSeen();
     loading.value = false;
-    // Successful (re)snapshot dismisses any stale transport-error banner.
+    // A successful (re)snapshot dismisses any stale transport-error banner.
     error.value = null;
   };
 
@@ -106,8 +107,7 @@ export const useDumpSubscription = (
     if (seen.has(meta.id)) return;
     records.value = [meta, ...records.value];
     seen.add(meta.id);
-    // Order matters: the just-added id is now in `records.value`, so rebuild
-    // sees it. Doing this before the prepend would drop the new id from `seen`.
+    // Order matters: rebuild after the prepend so it picks up the just-added id.
     if (seen.size > DEDUP_REBUILD_THRESHOLD) rebuildSeen();
   };
 
@@ -116,11 +116,12 @@ export const useDumpSubscription = (
     currentKeyId = id;
     loading.value = true;
     error.value = null;
+    // The composable is mounted only inside the authenticated dashboard
+    // layout, so an empty authToken would be a routing wiring bug rather
+    // than a runtime state — fail loud.
     const token = auth.authToken;
     if (!token) {
-      error.value = 'Not authenticated';
-      loading.value = false;
-      return;
+      throw new Error('useDumpSubscription invoked without an authenticated session');
     }
     const url = `/api/dump/keys/${encodeURIComponent(id)}/stream?session=${encodeURIComponent(token)}`;
     const es = factory(url);
@@ -140,28 +141,26 @@ export const useDumpSubscription = (
       // browser dispatches those as `error` MessageEvents that carry `data`.
       // Native transport errors arrive on the same listener with empty data.
       if (typeof ev.data === 'string' && ev.data.length > 0) {
+        let message = ev.data;
         try {
           const payload = JSON.parse(ev.data) as ServerErrorPayload;
-          error.value = payload.message;
+          message = payload.message;
         } catch {
-          error.value = ev.data;
+          // Non-JSON payload — surface verbatim so the broken-protocol case
+          // doesn't render an empty error banner.
         }
+        error.value = message;
         loading.value = false;
-        // A server-sent error frame is a terminal signal — stop the EventSource
-        // so the browser doesn't keep auto-reconnecting against a stream the
-        // gateway already gave up on. The user recovers by selecting the key
-        // again, which the keyId watcher reopens unconditionally.
+        // A server-sent error frame is terminal — stop the EventSource so the
+        // browser doesn't keep auto-reconnecting against a stream the gateway
+        // already gave up on. Selecting the key again reopens via the watcher.
         close();
         return;
       }
-      // `EventSource.CLOSED === 2`; use the literal so the composable doesn't
-      // require a globally-defined `EventSource` in the unit-test environment.
-      if (es.readyState === 2) {
+      if (es.readyState === EVENT_SOURCE_CLOSED) {
         error.value = 'Stream disconnected';
         loading.value = false;
       }
-      // Intermediate readyState (CONNECTING) means the browser is reconnecting
-      // on its own — staying quiet avoids a flicker for every blip.
     });
   };
 
@@ -189,9 +188,9 @@ export const useDumpSubscription = (
       reset();
       return;
     }
-    // No id-stability guard: open() already closes any prior socket via
-    // close(), so a same-id watch fire reopens the stream (the recovery path
-    // after a server-sent terminal error frame).
+    // open() closes any prior socket via close(); a same-id watch fire
+    // therefore reopens the stream, which is the recovery path after a
+    // server-sent terminal error frame.
     records.value = [];
     seen.clear();
     open(id);

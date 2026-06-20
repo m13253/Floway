@@ -4,6 +4,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
+import { encodeBodyForWire } from '../../shared/dump-wire.ts';
 import { ulid } from '../../shared/ulid.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import {
@@ -17,11 +18,6 @@ import {
 } from '@floway-dev/protocols/dump';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-// What the LLM respond paths (and passthrough-serve) hand back to the capture
-// middleware: the upstream they ended up calling, the model they billed, the
-// usage they decided to record. Stamped by helpers below at the same points
-// `recordUsage` / `recordPerformance` fire — keeping the wiring colocated
-// means a future telemetry-only path inherits dump accounting automatically.
 export interface DumpAccounting {
   upstreamId: string | null;
   model: string | null;
@@ -47,7 +43,7 @@ export const setDumpAccountingFromIdentity = (
     upstreamId: identity.upstream,
     model: identity.model,
     inputTokens: tokenUsageInput(usage),
-    outputTokens: usage?.output ?? null,
+    outputTokens: tokenUsageOutput(usage),
     error: null,
   } satisfies DumpAccounting);
 };
@@ -71,6 +67,15 @@ const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   return total === 0 ? null : total;
 };
 
+// `TokenUsage` carries `output` as an optional dimension; a missing field
+// means "the upstream did not report output tokens for this request". Map
+// that to null on the dump row rather than dropping it through `?? 0`,
+// which would conflate "0 tokens" with "not measured".
+const tokenUsageOutput = (usage: TokenUsage | null): number | null => {
+  if (!usage) return null;
+  return usage.output ?? null;
+};
+
 const oneLineError = (err: unknown): string => {
   const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
   return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
@@ -83,7 +88,10 @@ const oneLineError = (err: unknown): string => {
 // effectively zero overhead.
 export const captureRequestDump = () => async (c: Context, next: Next): Promise<void> => {
   const apiKey = c.get('apiKey') as ApiKey | undefined;
-  if (apiKey?.dumpRetentionSeconds == null) {
+  if (!apiKey) {
+    throw new Error('captureRequestDump: c.get("apiKey") was not set; auth middleware order is wrong');
+  }
+  if (apiKey.dumpRetentionSeconds === null) {
     await next();
     return;
   }
@@ -95,11 +103,11 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const completedAt = Date.now();
   const upstream = c.res;
-  const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
+  const accounting = c.get('dumpAccounting') as DumpAccounting | undefined;
+  if (!accounting) {
+    throw new Error('captureRequestDump: dumpAccounting was not set by the respond layer');
+  }
 
-  // Tee the response body so the client gets one half and the capture
-  // consumer reads the other. Replacing c.res with a fresh Response wired to
-  // the client-side stream is the documented Hono pattern for body rewriting.
   let teedForClient: ReadableStream<Uint8Array> | null = null;
   let teedForCapture: ReadableStream<Uint8Array> | null = null;
   if (upstream.body) {
@@ -122,11 +130,14 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
   // the runtime's own error sink (CF waitUntil swallows + we log; Node logs
   // explicitly) — we let them propagate rather than wrapping in try/catch.
   const finalize = async (): Promise<void> => {
-    const { bytes: requestBytes, streamError: requestStreamError } = await readAllBytes(requestClone.body);
+    const { bytes: requestBytes, streamError: requestStreamError } = await drainBody(requestClone.body, 'request');
     const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0 };
     const captureError = captured.kind !== 'none' ? captured.streamError : null;
 
-    const recordId = ulid(startedAt);
+    // ULID-from-completedAt keeps id-time and `created_at` agreeing on a row:
+    // ordering off-cursor (decoded ULID timestamp == row creation) matches
+    // ordering on-cursor (the ORDER BY (created_at, id) tie-breaker).
+    const recordId = ulid(completedAt);
     const meta: DumpMetadata = {
       id: recordId,
       startedAt,
@@ -141,6 +152,9 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       requestBytes: requestBytes.byteLength,
       responseBytes: captured.byteLength,
       durationMs: completedAt - startedAt,
+      // Precedence: explicit upstream-side errors raised by the respond path
+      // come first; otherwise a request-body read failure (operator-side
+      // payload didn't arrive intact) outranks a response-body read failure.
       error: accounting.error ?? requestStreamError ?? captureError,
     };
 
@@ -187,7 +201,14 @@ const pathWithQuery = (rawUrl: string): string => {
   return `${url.pathname}${url.search}`;
 };
 
-const readAllBytes = async (body: ReadableStream<Uint8Array> | null): Promise<{ bytes: Uint8Array; streamError: string | null }> => {
+// Drain a ReadableStream<Uint8Array> to a single Uint8Array. Returns the
+// best-effort prefix on a mid-read failure plus a labelled streamError; both
+// the request side and the bytes branch of the response side share this so
+// `meta.error` describes a short body symmetrically.
+const drainBody = async (
+  body: ReadableStream<Uint8Array> | null,
+  label: 'request' | 'response',
+): Promise<{ bytes: Uint8Array; streamError: string | null }> => {
   if (!body) return { bytes: new Uint8Array(0), streamError: null };
   const chunks: Uint8Array[] = [];
   const reader = body.getReader();
@@ -199,10 +220,7 @@ const readAllBytes = async (body: ReadableStream<Uint8Array> | null): Promise<{ 
       if (value) chunks.push(value);
     }
   } catch (err) {
-    // Partial body is still useful — return what we got, then surface the
-    // error through `streamError` so meta.error can explain why the bytes
-    // look short. Mirrors `collectResponse`'s response-side contract.
-    streamError = `request body read failed: ${oneLineError(err)}`;
+    streamError = `${label} body read failed: ${oneLineError(err)}`;
   }
   return { bytes: concatChunks(chunks), streamError };
 };
@@ -230,19 +248,7 @@ const collectResponse = async (
   startedAt: number,
 ): Promise<CapturedResponse> => {
   if (!isStream) {
-    const chunks: Uint8Array[] = [];
-    const reader = body.getReader();
-    let streamError: string | null = null;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-      }
-    } catch (err) {
-      streamError = `response body read failed: ${oneLineError(err)}`;
-    }
-    const bytes = concatChunks(chunks);
+    const { bytes, streamError } = await drainBody(body, 'response');
     return { kind: 'bytes', bytes, byteLength: bytes.byteLength, streamError };
   }
 
@@ -250,8 +256,8 @@ const collectResponse = async (
   let byteLength = 0;
   let streamError: string | null = null;
   // Count bytes off the tee separately from SSE parsing because parseSSEStream
-  // consumes the same stream — running the byte counter through a TransformStream
-  // upstream of the parser keeps the wire-byte total honest.
+  // consumes the stream — the byte counter on the other branch keeps the
+  // wire-byte total honest.
   const [forCount, forParse] = body.tee();
   const countingPromise = (async () => {
     const reader = forCount.getReader();
@@ -262,8 +268,8 @@ const collectResponse = async (
         if (value) byteLength += value.byteLength;
       }
     } catch {
-      // Counting failure is non-fatal — the parser path will report the real
-      // error if the stream truly broke. We swallow here to avoid double-reporting.
+      // The parser path reports the real error if the stream broke; counting
+      // failure is non-fatal on its own.
     }
   })();
   try {
@@ -281,33 +287,9 @@ const collectResponse = async (
   return { kind: 'events', events, byteLength, streamError };
 };
 
-const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
-
-const looksTextual = (contentType: string): boolean => {
-  const ct = contentType.toLowerCase();
-  return TEXT_LIKE_PREFIXES.some(prefix => ct.startsWith(prefix));
-};
-
-const encodeBodyForWire = (bytes: Uint8Array, contentType: string): string => {
-  if (looksTextual(contentType)) {
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch {
-      // Fall through to base64 — a content-type lied about being text.
-    }
-  }
-  return bytesToBase64(bytes);
-};
-
-const bytesToBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
-};
-
 const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | null> => {
   if (!id) return null;
   const upstream = await getRepo().upstreams.getById(id);
-  if (!upstream) return { id, name: id, kind: 'unknown' };
+  if (!upstream) return null;
   return { id: upstream.id, name: upstream.name, kind: upstream.provider };
 };

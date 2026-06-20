@@ -13,10 +13,13 @@ import { useHashRef } from '../../composables/useHashRef.ts';
 export const useRequestsPageData = defineBasicLoader(async () => {
   const api = useApi();
   const keysRes = await callApi<ApiKey[]>(() => api.api.keys.$get());
-  return {
-    keys: keysRes.error ? [] : keysRes.data,
-    error: keysRes.error?.message ?? null,
-  };
+  if (keysRes.error) {
+    // Surface the loader error rather than swallowing it into an empty list:
+    // "no dump-enabled keys" and "we failed to load the key list" are
+    // different states and the operator needs to see which one this is.
+    return { keys: null as ApiKey[] | null, error: keysRes.error.message };
+  }
+  return { keys: keysRes.data, error: null as string | null };
 });
 </script>
 
@@ -24,10 +27,10 @@ export const useRequestsPageData = defineBasicLoader(async () => {
 const api = useApi();
 const initialData = useRequestsPageData();
 
-const keys = ref<ApiKey[]>(initialData.data.value.keys);
+const keys = ref<ApiKey[] | null>(initialData.data.value.keys);
 const loadError = ref<string | null>(initialData.data.value.error);
 
-const dumpKeys = computed(() => keys.value.filter(k => k.dump_retention_seconds !== null));
+const dumpKeys = computed(() => (keys.value ?? []).filter(k => k.dump_retention_seconds !== null));
 
 const selectedKeyId = ref<string>(dumpKeys.value[0]?.id ?? '');
 const selectedRecordId = useHashRef();
@@ -35,10 +38,8 @@ const selectedRecordId = useHashRef();
 const subscription = useDumpSubscription(selectedKeyId);
 
 // Single setter for swapping the active key: the selected record id belongs
-// to the previous key and would 404 against the new one, so we null it in
-// the same tick. This eliminates the transient (newKeyId, oldRecordId) pair
-// the child detail component would otherwise see if Vue's watcher order
-// changed.
+// to the previous key and would 404 against the new one, so null it in the
+// same tick.
 const selectKey = (id: string) => {
   selectedKeyId.value = id;
   selectedRecordId.value = null;

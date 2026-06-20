@@ -93,6 +93,15 @@ const proposedRetentionSeconds = computed<number | null | 'invalid'>(() => {
 
 const previousRetention = computed(() => props.apiKey.dump_retention_seconds);
 
+// Whether the dialog's current (proposed) selection enables retention.
+// Drives the "View captured requests" link, which must react to the local
+// form value rather than the persisted prop — otherwise enabling retention
+// from 'off' → '1h' wouldn't reveal the link until the dialog reopens.
+const retentionEnabled = computed(() => {
+  const proposed = proposedRetentionSeconds.value;
+  return proposed !== null && proposed !== 'invalid';
+});
+
 const retentionWarning = computed<string | null>(() => {
   const previous = previousRetention.value;
   if (previous === null) return null;
@@ -169,7 +178,7 @@ const save = async () => {
         <p v-if="retentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ retentionWarning }}
         </p>
-        <p v-if="apiKey.dump_retention_seconds !== null" class="text-xs text-gray-500">
+        <p v-if="retentionEnabled" class="text-xs text-gray-500">
           <RouterLink to="/dashboard/requests" class="text-accent-cyan hover:underline">
             View captured requests →
           </RouterLink>

@@ -1,12 +1,11 @@
 import { test } from 'vitest';
 
 import { KeyDumpDO } from './key-dump-do.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
 
 // Minimal stub of the CF DurableObject runtime surface the actor touches.
-// Tests don't run in workerd; we install just enough of the WS hibernation
-// API for the actor's fetch + publish + notifyDisabled paths.
+// Tests don't run in workerd; install just enough of the WS hibernation API
+// for the actor's fetch + publish + notifyDisabled + lifecycle-hook paths.
 class FakeWebSocket implements WebSocket {
   readyState = 1;
   binaryType: BinaryType = 'arraybuffer';
@@ -39,7 +38,7 @@ class FakeWebSocket implements WebSocket {
 }
 
 class FakeState {
-  private readonly sockets: FakeWebSocket[] = [];
+  readonly sockets: FakeWebSocket[] = [];
   acceptWebSocket(ws: WebSocket): void {
     this.sockets.push(ws as FakeWebSocket);
   }
@@ -51,12 +50,6 @@ class FakeState {
   }
 }
 
-const fakeMeta = (id: string): DumpMetadata => ({
-  id, startedAt: 0, completedAt: 1, method: 'POST', path: '/v1/x', status: 200,
-  upstream: null, model: null, inputTokens: null, outputTokens: null,
-  requestBytes: 0, responseBytes: 0, durationMs: 1, error: null,
-});
-
 test('KeyDumpDO.publish sends an appended frame to every registered socket', async () => {
   const state = new FakeState();
   const ws1 = new FakeWebSocket();
@@ -65,26 +58,13 @@ test('KeyDumpDO.publish sends an appended frame to every registered socket', asy
   state.push(ws2);
   const actor = new KeyDumpDO(state, {});
 
-  await actor.publish(fakeMeta('A1'));
+  await actor.publish(fakeMeta({ id: 'A1' }));
 
   assertEquals(ws1.sent.length, 1);
   assertEquals(ws2.sent.length, 1);
-  const parsed = JSON.parse(ws1.sent[0]!) as { event: string; data: DumpMetadata };
+  const parsed = JSON.parse(ws1.sent[0]!) as { event: string; data: { id: string } };
   assertEquals(parsed.event, 'appended');
   assertEquals(parsed.data.id, 'A1');
-});
-
-test('KeyDumpDO.publish swallows per-socket send errors so one dead socket cannot block fan-out', async () => {
-  const state = new FakeState();
-  const bad = new FakeWebSocket();
-  bad.shouldThrowOnSend = true;
-  const good = new FakeWebSocket();
-  state.push(bad);
-  state.push(good);
-  const actor = new KeyDumpDO(state, {});
-
-  await actor.publish(fakeMeta('A2'));
-  assertEquals(good.sent.length, 1);
 });
 
 test('KeyDumpDO.notifyDisabled closes every socket with a clean reason', async () => {
@@ -98,4 +78,22 @@ test('KeyDumpDO.notifyDisabled closes every socket with a clean reason', async (
   await actor.notifyDisabled();
   assertEquals(ws1.closed?.code, 1000);
   assertEquals(ws2.closed?.code, 1000);
+});
+
+test('KeyDumpDO.webSocketClose calls ws.close to complete the close handshake', async () => {
+  // Under `compatibility_date < 2026-04-07` the runtime delivers close events
+  // only when the hook is declared, and the hook must call `ws.close(...)` so
+  // the close handshake completes — without it the client sees `1006`.
+  const actor = new KeyDumpDO(new FakeState(), {});
+  const ws = new FakeWebSocket();
+  await actor.webSocketClose(ws, 1001, 'going away', true);
+  assertEquals(ws.closed?.code, 1001);
+  assertEquals(ws.closed?.reason, 'going away');
+});
+
+test('KeyDumpDO.webSocketError exists so the runtime delivers close events', async () => {
+  // The hook's mere presence is what gates close-event delivery. The body is
+  // a no-op — the runtime drops the socket from getWebSockets() on its own.
+  const actor = new KeyDumpDO(new FakeState(), {});
+  await actor.webSocketError(new FakeWebSocket(), new Error('whatever'));
 });

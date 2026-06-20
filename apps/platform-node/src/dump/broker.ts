@@ -26,7 +26,12 @@ export class InProcessDumpBroker implements DumpBroker {
 
   async notifyDisabled(keyId: string): Promise<void> {
     const target = this.targets.get(keyId);
-    if (target) target.dispatchEvent(new Event('disabled'));
+    if (!target) return;
+    target.dispatchEvent(new Event('disabled'));
+    // Drop the target entry; a future re-enable on the same keyId allocates a
+    // fresh EventTarget. Leaving it in place would let a publish that races
+    // a re-enable land on the old target's (already-detached) subscribers.
+    this.targets.delete(keyId);
   }
 
   subscribe(keyId: string, signal: AbortSignal): AsyncIterable<DumpMetadata> {

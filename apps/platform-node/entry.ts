@@ -38,12 +38,15 @@ initRepo(new SqlRepo(db));
 // often than the interval (crash loop, frequent deploys) would never run
 // maintenance and the responses-items expiry sweep would silently lag. The
 // 30s delay keeps the very first request after boot from racing the sweep.
-// unref() on both timers lets the process exit cleanly on SIGINT.
+// unref() on both timers lets the process exit cleanly on SIGINT. A failure
+// here must not crash the process — one bad sweep should not stop future
+// sweeps — so log the error with a greppable tag and let the next tick try
+// again.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
-  void (async () => {
-    try { await runScheduledMaintenance(); } catch (err) { console.error('[scheduled]', err); }
-  })();
+  runScheduledMaintenance().catch(err => {
+    console.error('[scheduled-maintenance] sweep failed:', err);
+  });
 };
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
 setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();

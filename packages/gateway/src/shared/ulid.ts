@@ -33,7 +33,9 @@ const randomBytes = (n: number): number[] => {
 const incrementRandom = (chars: number[]): number[] => {
   // Carry-propagating +1 on the random tail. Used when two ULID calls land
   // in the same millisecond — preserves the monotonic-within-ms invariant
-  // the cursor contract depends on without needing a separate counter.
+  // the cursor contract depends on without a separate counter. Overflow
+  // (>32^16 ≈ 10^24 ULIDs in the same ms) is physically unreachable, so we
+  // let the loop fall off the end and throw rather than papering over it.
   for (let i = chars.length - 1; i >= 0; i--) {
     if (chars[i]! < ENCODING_LEN - 1) {
       chars[i]!++;
@@ -41,10 +43,7 @@ const incrementRandom = (chars: number[]): number[] => {
     }
     chars[i] = 0;
   }
-  // Overflow within a single millisecond would only happen on >32^16 ULIDs
-  // generated in the same ms (~10^24, unreachable). Falling through to a
-  // fresh random tail keeps the function total.
-  return randomBytes(RANDOM_LEN);
+  throw new Error('ulid: random-tail overflow within a single millisecond');
 };
 
 const encodeChars = (chars: readonly number[]): string => {

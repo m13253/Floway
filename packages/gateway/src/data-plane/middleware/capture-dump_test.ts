@@ -1,64 +1,31 @@
-
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { type DumpAccounting, captureRequestDump, errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from './capture-dump.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { setDumpBroker, setDumpStore } from '../../runtime/dump.ts';
+import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, createDumpStubs } from '@floway-dev/test-utils';
 
 // The capture middleware reads `apiKey` and `dumpAccounting` off the Hono
 // context. The default Hono Variables map is empty; widen it locally so
 // `c.set(...)` typechecks in the test wiring.
 type TestVars = { apiKey: ApiKey; dumpAccounting: DumpAccounting };
 
-// A minimal in-memory pair of store + broker we can swap into the runtime
-// just for these tests. Reset on every test so a previous capture doesn't
-// leak into the next one — vitest runs files in isolated workers but tests
-// in the same file share module state.
 const installStubs = () => {
-  const stored: Array<{ keyId: string; record: DumpRecord }> = [];
-  const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
-  let putThrows: Error | null = null;
-  let publishThrows: Error | null = null;
-
-  const store: DumpStore = {
-    async put(keyId, record) {
-      if (putThrows) throw putThrows;
-      stored.push({ keyId, record });
-    },
-    async list() { return stored.map(s => s.record.meta); },
-    async get() { return null; },
-    async purgeAll() { /* noop */ },
-    async purgeExpired() { /* noop */ },
-  };
-  const broker: DumpBroker = {
-    async publish(keyId, meta) {
-      if (publishThrows) throw publishThrows;
-      published.push({ keyId, meta });
-    },
-    async notifyDisabled() { /* noop */ },
-    subscribe() { return (async function*() {})(); },
-  };
-  setDumpStore(store);
-  setDumpBroker(broker);
-  return {
-    stored,
-    published,
-    failPut(err: Error) { putThrows = err; },
-    failPublish(err: Error) { publishThrows = err; },
-  };
+  const stubs = createDumpStubs();
+  initDumpStore(stubs.store);
+  initDumpBroker(stubs.broker);
+  return stubs;
 };
 
 const buildApp = (setApiKey: (c: Context<{ Variables: TestVars }>) => void) => {
   const app = new Hono<{ Variables: TestVars }>();
   // Mirror production: auth-style middleware stamps c.set('apiKey', ...)
-  // BEFORE the capture-dump middleware reads it. The test handler can then
-  // own only the response shape + dumpAccounting stamp.
+  // BEFORE the capture-dump middleware reads it. The test handler then
+  // owns only the response shape + dumpAccounting stamp.
   app.use('*', async (c, next) => {
     setApiKey(c);
     await next();
@@ -115,7 +82,8 @@ test('captureRequestDump records a JSON request and JSON response on a retention
   assertEquals(record.meta.path, '/v1/chat/completions');
   assertEquals(record.meta.status, 200);
   assertEquals(record.response.type, 'bytes');
-  assertEquals(record.request.body.includes('"role":"user"'), true);
+  assertEquals(record.request.body.encoding, 'utf8');
+  assertEquals(record.request.body.data.includes('"role":"user"'), true);
 });
 
 test('captureRequestDump publishes only after store.put resolves', async () => {
@@ -135,8 +103,8 @@ test('captureRequestDump publishes only after store.put resolves', async () => {
     async notifyDisabled() { /* noop */ },
     subscribe() { return (async function*() {})(); },
   };
-  setDumpStore(store);
-  setDumpBroker(broker);
+  initDumpStore(store);
+  initDumpBroker(broker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/x', async c => {
@@ -168,6 +136,29 @@ test('captureRequestDump surfaces accounting.error onto meta.error', async () =>
   assertEquals(stubs.stored.length, 1);
   assertEquals(stubs.stored[0]!.record.meta.error, 'upstream blew up');
   assertEquals(stubs.stored[0]!.record.meta.status, 502);
+});
+
+test('captureRequestDump fails loud when the respond layer forgot to stamp accounting', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  // Intentionally omit `c.set('dumpAccounting', ...)`: every billable respond
+  // path is contracted to stamp it. Missing stamps must surface, not silently
+  // store the request with a fabricated empty accounting record.
+  app.post('/v1/no-acct', c => c.json({ ok: 1 }));
+  // Hono's hono-base wraps a try/catch that converts a middleware throw into
+  // a 500 response — we observe the throw through the failed status rather
+  // than as a re-raised error on `app.request`. The throw landing in stderr
+  // is what makes this "loud" — the captured stderr line shows the message.
+  const response = await app.request('/v1/no-acct', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await flushBackground();
+
+  assertEquals(response.status, 500);
+  assertEquals(stubs.stored.length, 0);
+  assertEquals(stubs.published.length, 0);
 });
 
 test('captureRequestDump records identity-derived model + upstream on success', async () => {
@@ -202,29 +193,23 @@ test('captureRequestDump records identity-derived model + upstream on success', 
   assertEquals(meta.outputTokens, 50);
 });
 
-test('captureRequestDump surfaces upstream lookup throws through the background scheduler', async () => {
+test('captureRequestDump emits a null upstream ref when the upstream row no longer exists', async () => {
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const originalGetById = repo.upstreams.getById.bind(repo.upstreams);
-  repo.upstreams.getById = async () => { throw new Error('db down'); };
   const stubs = installStubs();
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
-  app.post('/v1/z', async c => {
-    setDumpAccountingFromIdentity(c, { model: 'm', upstream: 'up_ghost', modelKey: 'mk', cost: null }, null);
+  app.post('/v1/gone', async c => {
+    setDumpAccountingFromIdentity(c, { model: 'm', upstream: 'up_already_deleted', modelKey: 'mk', cost: null }, null);
     return c.json({});
   });
-  const response = await app.request('/v1/z', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  const response = await app.request('/v1/gone', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
   await response.text();
   await flushBackground();
 
-  repo.upstreams.getById = originalGetById;
-
-  // The lookup throw must propagate — no more fake-robust 'unknown' placeholder.
-  // The record is lost; the background scheduler logs the rejection.
-  assertEquals(stubs.stored.length, 0);
-  assertEquals(stubs.published.length, 0);
+  assertEquals(stubs.stored.length, 1);
+  assertEquals(stubs.stored[0]!.record.meta.upstream, null);
 });
 
 test('captureRequestDump captures SSE response as parsed events', async () => {
@@ -254,9 +239,6 @@ test('captureRequestDump captures SSE response as parsed events', async () => {
   assertEquals(responseField.events[1]!.data, 'world');
 });
 
-// A ReadableStream whose pull throws after one chunk simulates a half-arrived
-// request body. The middleware must surface what it got plus a meta.error
-// describing the read failure rather than dropping the whole record on the floor.
 const failingRequestBody = (firstChunk: string, message: string): { body: ReadableStream<Uint8Array>; init: RequestInit } => {
   const encoder = new TextEncoder();
   let pulls = 0;
@@ -286,8 +268,8 @@ test('captureRequestDump captures partial request bytes and surfaces request bod
     // Intentionally do not consume c.req.raw — Node's Request.clone() teeing
     // collapses both branches if the source pulls and errors with a consumer
     // on the original side, masking the partial bytes the clone would otherwise
-    // see. The handler returns immediately so finalize's readAllBytes is the
-    // only consumer of the request body.
+    // see. The handler returns immediately so finalize's drainBody is the only
+    // consumer of the request body.
     c.set('dumpAccounting', plainDumpAccounting);
     return c.json({ ok: 1 });
   });
@@ -299,7 +281,8 @@ test('captureRequestDump captures partial request bytes and surfaces request bod
 
   assertEquals(stubs.stored.length, 1);
   const record = stubs.stored[0]!.record;
-  assertEquals(record.request.body, '{"a":');
+  assertEquals(record.request.body.encoding, 'utf8');
+  assertEquals(record.request.body.data, '{"a":');
   assertEquals(record.meta.error?.includes('request body read failed'), true);
 });
 
@@ -325,11 +308,10 @@ test('captureRequestDump surfaces response body read failure on meta.error when 
 
   assertEquals(stubs.stored.length, 1);
   const record = stubs.stored[0]!.record;
-  // The streamError must surface on meta.error so a viewer can explain why
-  // the body looks short — this is the contract `readAllBytes` and
-  // `collectResponse` share. Partial-bytes preservation is exercised in the
-  // request-body test and at the impl level; tee semantics in test runners
-  // can drop the buffered chunk, so we only assert the error surfacing here.
+  // The streamError surfaces on meta.error so a viewer can explain a short
+  // body. Partial-bytes preservation is exercised on the request side and at
+  // the impl level; tee semantics in test runners can drop the buffered chunk,
+  // so this test only asserts the error surfacing.
   assertEquals(record.meta.error?.includes('response body read failed'), true);
 });
 
@@ -395,7 +377,7 @@ test('captureRequestDump stores the row even when broker.publish fails', async (
   await response.text();
   await flushBackground();
 
-  // Put succeeded; publish threw and the failure bubbled up to the background
+  // Put succeeded; publish threw and the failure bubbled to the background
   // scheduler (logged, doesn't crash the request).
   assertEquals(stubs.stored.length, 1);
   assertEquals(stubs.published.length, 0);

@@ -1,5 +1,5 @@
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
-import { setDumpBroker, setDumpStore } from './src/runtime/dump.ts';
+import { initDumpBroker, initDumpStore } from './src/runtime/dump.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
 import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
@@ -34,5 +34,5 @@ const noopBroker: DumpBroker = {
   async notifyDisabled(): Promise<void> { /* noop */ },
   subscribe(): AsyncIterable<DumpMetadata> { return (async function*() {})(); },
 };
-setDumpStore(noopStore);
-setDumpBroker(noopBroker);
+initDumpStore(noopStore);
+initDumpBroker(noopBroker);

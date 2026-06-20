@@ -25,7 +25,6 @@ const sweepExpiredDumps = async (): Promise<void> => {
   const store = getDumpStore();
   for (const key of await getRepo().apiKeys.list()) {
     if (key.dumpRetentionSeconds === null) continue;
-    if (key.deletedAt !== null) continue;
     try {
       await store.purgeExpired(key.id, key.dumpRetentionSeconds);
     } catch (err) {

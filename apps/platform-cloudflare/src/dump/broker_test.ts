@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { DurableObjectDumpBroker, type KeyDumpNamespace } from './broker.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
 
 class FakeServerSocket {
   readonly listeners = new Map<string, Set<(e: Event) => void>>();
@@ -19,6 +19,7 @@ class FakeServerSocket {
   }
   accept(): void { /* noop */ }
   close(code = 1000, reason = ''): void {
+    if (this.closed) return;
     this.closed = { code, reason };
     this.emit('close', new Event('close'));
   }
@@ -36,10 +37,11 @@ const buildNamespace = (socket: FakeServerSocket) => {
         publish: async () => {},
         notifyDisabled: async () => {},
         fetch: async () => {
-          // Real CF returns 101 here; node Response refuses to construct 101,
-          // so we pin to 200 — the broker only reads `.webSocket`, never the
-          // status, so the substitution is invisible to the code under test.
+          // Real CF returns 101; Node's `Response` rejects status 101 in its
+          // constructor, so synthesise it by overriding `status` after the
+          // fact. The broker only reads `status` and `webSocket`.
           const response = new Response(null, { status: 200 });
+          Object.defineProperty(response, 'status', { value: 101, configurable: true });
           (response as Response & { webSocket?: unknown }).webSocket = socket;
           return response;
         },
@@ -48,12 +50,6 @@ const buildNamespace = (socket: FakeServerSocket) => {
   };
   return ns;
 };
-
-const fakeMeta = (id: string): DumpMetadata => ({
-  id, startedAt: 0, completedAt: 1, method: 'POST', path: '/v1/x', status: 200,
-  upstream: null, model: null, inputTokens: null, outputTokens: null,
-  requestBytes: 0, responseBytes: 0, durationMs: 1, error: null,
-});
 
 test('DurableObjectDumpBroker.subscribe drives metas through the DO socket', async () => {
   const socket = new FakeServerSocket();
@@ -64,14 +60,20 @@ test('DurableObjectDumpBroker.subscribe drives metas through the DO socket', asy
   // Let the subscribe coroutine attach its listeners (one microtask is enough).
   await Promise.resolve();
   await Promise.resolve();
-  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'appended', data: fakeMeta('A1') }) }));
+  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'appended', data: fakeMeta({ id: 'A1' }) }) }));
   const first = await iter.next();
   assertEquals(first.value!.id, 'A1');
 
+  // Abort alone must end the iterator AND close the upstream socket — without
+  // the close, every SSE disconnect would orphan one WS in the DO hibernation
+  // registry per subscriber session.
   controller.abort();
-  socket.close();
   const end = await iter.next();
   assertEquals(end.done, true);
+  // Microtask drains the abort handler's openPromise-then-close chain.
+  await Promise.resolve();
+  await Promise.resolve();
+  assertEquals(socket.closed?.code, 1000);
 });
 
 test('DurableObjectDumpBroker.publish dispatches through the namespace stub', async () => {
@@ -87,7 +89,7 @@ test('DurableObjectDumpBroker.publish dispatches through the namespace stub', as
     },
   };
   const broker = new DurableObjectDumpBroker(ns);
-  await broker.publish('k', fakeMeta('A1'));
+  await broker.publish('k', fakeMeta({ id: 'A1' }));
   assertEquals(calls.length, 1);
   assertEquals(calls[0]!.id, 'A1');
 });

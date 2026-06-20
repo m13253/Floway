@@ -117,8 +117,8 @@ export const deleteUser = async (c: Context) => {
   // Purge each owned key's dumps before the cascade so a purge failure leaves
   // the user (and their keys) intact and retriable. We iterate live keys
   // because soft-deleted keys were already purged at their own delete time.
-  // Each key also gets a notifyDisabled to cut any live SSE subscribers —
-  // broker availability is best-effort and never blocks the cascade.
+  // `notifyDisabled` cuts any live SSE subscriber but is best-effort —
+  // broker availability never blocks the cascade.
   const keys = await repo.apiKeys.listByUserId(id);
   for (const key of keys) {
     await getDumpStore().purgeAll(key.id);

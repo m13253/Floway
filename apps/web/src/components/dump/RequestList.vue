@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, onMounted, useTemplateRef } from 'vue';
 
+import { statusBadgeClass } from './badge.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -69,14 +70,6 @@ const upstreamKindTextClass = (kind: string | undefined): string => {
   }
 };
 
-const statusBadgeClass = (status: number, error: string | null): string => {
-  if (status === 0 || error !== null) return 'bg-accent-rose/15 text-accent-rose border-accent-rose/30';
-  if (status >= 500) return 'bg-accent-rose/15 text-accent-rose border-accent-rose/30';
-  if (status >= 400) return 'bg-accent-amber/15 text-accent-amber border-accent-amber/30';
-  if (status >= 200 && status < 300) return 'bg-accent-emerald/15 text-accent-emerald border-accent-emerald/30';
-  return 'bg-surface-700 text-gray-400 border-white/10';
-};
-
 const statusLabel = (status: number) => status === 0 ? 'ERR' : String(status);
 
 const isFailedRow = (meta: DumpMetadata): boolean =>
@@ -90,14 +83,23 @@ const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
 const onRowKey = (id: string) => { selectedId.value = id; };
 
+// Roving tabindex: only the currently-selected (or, when nothing is selected,
+// the first) row is in the tab order. The listbox itself is one Tab stop;
+// arrow keys move focus within it.
+const rovingTabIndex = (record: DumpMetadata, position: number): 0 | -1 => {
+  if (selectedId.value === record.id) return 0;
+  if (selectedId.value === null && position === 0) return 0;
+  return -1;
+};
+
 const moveSelection = (event: KeyboardEvent, delta: 1 | -1): void => {
-  const current = event.currentTarget as HTMLElement | null;
-  if (!current) return;
+  // The handler binds on each `<li>` so `currentTarget` is always that
+  // element; arrow keys on edge rows just have no sibling to move to.
+  const current = event.currentTarget as HTMLElement;
   const sibling = (delta === 1 ? current.nextElementSibling : current.previousElementSibling) as HTMLElement | null;
   if (!sibling) return;
   sibling.focus();
-  const id = sibling.getAttribute('data-record-id');
-  if (id !== null) selectedId.value = id;
+  selectedId.value = sibling.dataset.recordId!;
 };
 
 const showEmpty = computed(() => !props.loading && props.records.length === 0 && props.error === null);
@@ -121,9 +123,9 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
     <OverlayScrollbars v-else class="min-h-0 flex-1">
       <ul class="divide-y divide-white/[0.03]" role="listbox" aria-label="Captured requests">
         <li
-          v-for="record in records"
+          v-for="(record, position) in records"
           :key="record.id"
-          tabindex="0"
+          :tabindex="rovingTabIndex(record, position)"
           role="option"
           :aria-selected="selectedId === record.id"
           :data-record-id="record.id"

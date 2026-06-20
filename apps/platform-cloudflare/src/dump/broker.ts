@@ -5,17 +5,12 @@ import type { DumpMetadata } from '@floway-dev/protocols/dump';
 // the subset of `DurableObjectNamespace` we actually call — keeps this file
 // off the workers-types dependency.
 export interface KeyDumpNamespace {
-  idFromName(name: string): KeyDumpId;
-  get(id: KeyDumpId): KeyDumpStub;
+  idFromName(name: string): unknown;
+  get(id: unknown): KeyDumpStub;
 }
 
-interface KeyDumpId { /* opaque */ }
-
 interface KeyDumpStub {
-  // Direct method invocation works on workers-types v4+ when the DO class
-  // is part of the same Worker; the CF runtime auto-marshals the call into
-  // an RPC to the actor. We rely on that here so the producer side stays
-  // ergonomic and doesn't have to build Request objects for every publish.
+  // Direct RPC method invocation — see KeyDumpDO for the documented pattern.
   publish(meta: DumpMetadata): Promise<void>;
   notifyDisabled(): Promise<void>;
   fetch(request: Request): Promise<Response>;
@@ -43,6 +38,11 @@ export class DurableObjectDumpBroker implements DumpBroker {
   }
 }
 
+interface AppendedFrame {
+  event: typeof APPENDED_EVENT;
+  data: DumpMetadata;
+}
+
 // Drive an async iterator from the WS the DO returns. The socket open + the
 // message listener attach run eagerly here — before the caller awaits the
 // iterator's first `.next()` — so a publish that races against the iterator
@@ -63,31 +63,32 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
     }
   };
 
-  const onAbort = (): void => {
-    if (closed) return;
-    closed = true;
-    deliver({ value: undefined as never, done: true });
+  const decodeFrame = (data: string | ArrayBuffer): AppendedFrame => {
+    const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+    const parsed = JSON.parse(text) as { event: unknown; data: unknown };
+    if (parsed.event !== APPENDED_EVENT) {
+      throw new Error(`KeyDumpDO emitted unknown event ${String(parsed.event)}`);
+    }
+    return { event: APPENDED_EVENT, data: parsed.data as DumpMetadata };
   };
-  signal.addEventListener('abort', onAbort, { once: true });
 
   const openPromise = (async (): Promise<WebSocket> => {
     const response = await stub.fetch(new Request('https://dump.do/subscribe', {
       headers: { Upgrade: 'websocket' },
     }));
-    const socket = (response as Response & { webSocket?: WebSocket }).webSocket;
-    if (!socket) throw new Error('KeyDumpDO did not return a WebSocket');
+    if (response.status !== 101) {
+      throw new Error(`KeyDumpDO subscribe returned HTTP ${response.status} instead of 101`);
+    }
+    const socket = (response as Response & { webSocket?: WebSocket }).webSocket!;
     socket.accept();
     socket.addEventListener('message', event => {
       if (closed) return;
       try {
-        const parsed = JSON.parse(typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data as ArrayBuffer));
-        if (parsed?.event === APPENDED_EVENT) {
-          deliver({ value: parsed.data as DumpMetadata, done: false });
-        }
+        const frame = decodeFrame(event.data as string | ArrayBuffer);
+        deliver({ value: frame.data, done: false });
       } catch (err) {
         pendingError = err;
-        closed = true;
-        deliver({ value: undefined as never, done: true });
+        closeAndEnd(socket);
       }
     });
     socket.addEventListener('close', () => {
@@ -95,9 +96,11 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
       deliver({ value: undefined as never, done: true });
     });
     socket.addEventListener('error', () => {
-      closed = true;
-      pendingError ??= new Error('KeyDumpDO socket error');
-      deliver({ value: undefined as never, done: true });
+      // The DOM CloseEvent / Event delivered here carries no useful diagnostic
+      // beyond "the runtime decided this socket is unusable". Convey what we
+      // can; if the message-side parse already populated pendingError, keep it.
+      if (pendingError === null) pendingError = new Error('KeyDumpDO socket error');
+      closeAndEnd(socket);
     });
     return socket;
   })();
@@ -106,6 +109,27 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
     closed = true;
     deliver({ value: undefined as never, done: true });
   });
+
+  // Symmetric termination — every path that flips `closed` also has to close
+  // the upstream socket, otherwise an abort or parse-error leaks one WS in
+  // the DO's hibernation registry per subscriber session.
+  const closeSocketIfOpened = async (): Promise<void> => {
+    const s = await openPromise.catch(() => null);
+    if (s) s.close(1000, 'subscriber done');
+  };
+  const closeAndEnd = (socket: WebSocket): void => {
+    if (closed) return;
+    closed = true;
+    socket.close(1000, 'subscriber done');
+    deliver({ value: undefined as never, done: true });
+  };
+
+  signal.addEventListener('abort', () => {
+    if (closed) return;
+    closed = true;
+    deliver({ value: undefined as never, done: true });
+    void closeSocketIfOpened();
+  }, { once: true });
 
   return {
     [Symbol.asyncIterator]: (): AsyncIterator<DumpMetadata> => ({
@@ -121,10 +145,7 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
       },
       async return(): Promise<IteratorResult<DumpMetadata>> {
         closed = true;
-        const socket = await openPromise.catch(() => null);
-        if (socket) {
-          try { socket.close(1000, 'subscriber done'); } catch { /* may already be closed */ }
-        }
+        await closeSocketIfOpened();
         return { value: undefined as never, done: true };
       },
     }),

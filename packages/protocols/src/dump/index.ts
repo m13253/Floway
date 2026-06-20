@@ -3,10 +3,9 @@
 // dashboard SPA all import the same definitions.
 //
 // The dashboard receives a fully-rehydrated `DumpRecord` from the control
-// plane — bodies are inlined as UTF-8 text (or base64 for non-text bytes
-// with `;base64` appended to the captured content-type). On the storage
-// side, bodies live as separate gzipped files referenced by descriptors
-// in D1; the rehydration happens in `DumpStore.get`.
+// plane — bodies are inlined as a discriminated `DumpBody`. Storage-side,
+// bodies live as separate gzipped files referenced by descriptors in D1;
+// the rehydration happens in `DumpStore.get`.
 
 export type DumpRecordId = string;
 
@@ -43,6 +42,14 @@ export interface DumpStreamEvent {
   ts: number;               // ms relative to startedAt
 }
 
+// Discriminated body payload. `utf8` carries text directly; `base64` carries
+// raw bytes the dashboard must decode. The encoding is decided by the
+// capture middleware from the upstream content-type, with a UTF-8-fatal
+// fallback to base64 when a "textual" content-type carried non-UTF-8 bytes.
+export type DumpBody =
+  | { encoding: 'utf8'; data: string }
+  | { encoding: 'base64'; data: string };
+
 export interface DumpRequest {
   method: string;
   path: string;
@@ -50,14 +57,12 @@ export interface DumpRequest {
   // captured verbatim because the API key is already in our database and
   // the dump only surfaces to the key's own operator.
   headers: Array<[string, string]>;
-  // UTF-8 text; or base64 with `;base64` suffix on the recorded
-  // content-type when the body was non-textual at capture time.
-  body: string;
+  body: DumpBody;
 }
 
 export type DumpResponseBody =
   | { type: 'stream'; events: DumpStreamEvent[] }
-  | { type: 'bytes'; body: string }
+  | { type: 'bytes'; body: DumpBody }
   | { type: 'none' };
 
 export interface DumpResponse {

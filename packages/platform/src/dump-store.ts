@@ -4,7 +4,7 @@ import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protoco
 // platform-target apps (`apps/platform-*`), backed by D1 + FileProvider on
 // Cloudflare and by node:sqlite + filesystem on Node. The gateway core only
 // holds the abstract interface and binds to the concrete impl through
-// `setDumpStore` / `getDumpStore`.
+// `initDumpStore` / `getDumpStore`.
 //
 // Body storage is split: D1 carries metadata + headers + per-side
 // descriptors; the FileProvider carries the gzipped body bytes themselves

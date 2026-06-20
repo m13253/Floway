@@ -1,11 +1,9 @@
 import type { DumpStreamEvent } from '@floway-dev/protocols/dump';
 
-// Cross-protocol collected view of a streaming response. Re-implemented as a
-// dashboard-local helper rather than a protocols-package primitive because the
-// only consumer is the RecordDetail.vue viewer and the fold needs to stay
-// permissive ("happy-path text + a terminal-frame snapshot") rather than
-// spec-complete. A truly canonical collect lives behind translate/ for
-// gateway-side use.
+// Cross-protocol collected view of a streaming response. The viewer is the
+// only consumer and only needs a permissive "happy-path text + a terminal
+// frame snapshot" fold — a spec-complete collector belongs behind
+// `translate/` for gateway-side use.
 export interface CollectOutcome {
   text: string;
   // null when the terminal frame did not signal an explicit end — usually a

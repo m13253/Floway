@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue';
 
+import { statusBadgeClass } from './badge.ts';
 import { collectByKind, detectCollectKind, type CollectOutcome } from './collect.ts';
 import { authFetch } from '../../api/client.ts';
-import type { DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
+import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -14,6 +15,11 @@ const props = defineProps<{
 const record = shallowRef<DumpRecord | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+
+// Reveal state for sensitive request/response headers, keyed by
+// `${kind}:${index}`. Declared up here so the keyId/recordId watcher can
+// reset it on every transition.
+const revealedHeaders = ref<Set<string>>(new Set());
 
 // Per-fetch token: only the latest call is allowed to commit. Stale A→B clicks
 // must not paint A's response on top of B's.
@@ -47,18 +53,36 @@ const fetchRecord = async () => {
   }
 };
 
-watch(() => [props.keyId, props.recordId], () => { void fetchRecord(); }, { immediate: true });
+watch(() => [props.keyId, props.recordId], () => {
+  // Headers reveal state keys by `${kind}:${index}` — those indices are
+  // meaningful only inside one record. Reset on every record transition so
+  // revealing position N on record A cannot leak into a different header at
+  // position N on record B.
+  revealedHeaders.value = new Set();
+  void fetchRecord();
+}, { immediate: true });
 
-const SENSITIVE_HEADERS = new Set(['x-api-key', 'authorization']);
+// Default-redacted headers. `cookie` / `set-cookie` / `proxy-authorization`
+// are added on top of the obvious bearer-style headers — a leaked cookie
+// value is just as bad as a leaked bearer token.
+const SENSITIVE_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'proxy-authorization',
+  'set-cookie',
+  'x-api-key',
+  'x-goog-api-key',
+]);
 
 const isSensitiveHeader = (key: string) => SENSITIVE_HEADERS.has(key.toLowerCase());
 
+// Fixed-width mask: do not leak the secret's length. Keep up to the last four
+// characters so an operator can recognize *which* credential they're looking
+// at without revealing the bulk of it.
 const redact = (value: string): string => {
-  if (value.length <= 20) return '•'.repeat(value.length);
-  return `${value.slice(0, 8)}${'•'.repeat(value.length - 16)}${value.slice(-8)}`;
+  const tail = value.length >= 4 ? value.slice(-4) : value;
+  return `${'•'.repeat(8)}${tail}`;
 };
-
-const revealedHeaders = ref<Set<string>>(new Set());
 
 const toggleHeaderReveal = (kind: 'req' | 'res', index: number) => {
   const key = `${kind}:${index}`;
@@ -77,14 +101,6 @@ const contentTypeOf = (headers: Array<[string, string]>): string => {
   return '';
 };
 
-const stripBase64Suffix = (contentType: string): { contentType: string; isBase64: boolean } => {
-  const lower = contentType.toLowerCase().trim();
-  if (lower.endsWith(';base64')) {
-    return { contentType: contentType.slice(0, contentType.toLowerCase().lastIndexOf(';base64')), isBase64: true };
-  }
-  return { contentType, isBase64: false };
-};
-
 const decodeBase64Utf8 = (b64: string): { text: string; ok: boolean } => {
   try {
     const binary = atob(b64);
@@ -98,23 +114,16 @@ const decodeBase64Utf8 = (b64: string): { text: string; ok: boolean } => {
 };
 
 interface RenderedBody {
-  kind: 'json' | 'text' | 'binary';
   text: string;
-  binaryWarning: boolean;
+  isBinaryFallback: boolean;
 }
 
-const renderBody = (rawBody: string, rawContentType: string): RenderedBody => {
-  const { contentType, isBase64 } = stripBase64Suffix(rawContentType);
-  if (rawBody.length === 0) return { kind: 'text', text: '', binaryWarning: false };
-
-  if (isBase64) {
-    const decoded = decodeBase64Utf8(rawBody);
-    if (!decoded.ok) {
-      return { kind: 'binary', text: rawBody, binaryWarning: true };
-    }
-    return renderTextBody(decoded.text, contentType);
-  }
-  return renderTextBody(rawBody, contentType);
+const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
+  if (body.data.length === 0) return { text: '', isBinaryFallback: false };
+  if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
+  const decoded = decodeBase64Utf8(body.data);
+  if (!decoded.ok) return { text: body.data, isBinaryFallback: true };
+  return renderTextBody(decoded.text, contentType);
 };
 
 const isJsonContentType = (ct: string): boolean => {
@@ -128,12 +137,12 @@ const renderTextBody = (body: string, contentType: string): RenderedBody => {
   if (isJsonContentType(contentType)) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return { kind: 'json', text: JSON.stringify(parsed, null, 2), binaryWarning: false };
+      return { text: JSON.stringify(parsed, null, 2), isBinaryFallback: false };
     } catch {
-      return { kind: 'text', text: body, binaryWarning: false };
+      return { text: body, isBinaryFallback: false };
     }
   }
-  return { kind: 'text', text: body, binaryWarning: false };
+  return { text: body, isBinaryFallback: false };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
@@ -163,27 +172,30 @@ const collected = computed<CollectOutcome | null>(() => {
   return collectByKind(collectKind.value, streamEvents.value);
 });
 
-const copiedSection = ref<string | null>(null);
+// Match the KeysTable copy-button convention: surface clipboard write failures
+// so the operator knows the click did nothing rather than silently dropping
+// it. `null` is idle; `${section}` is a successful copy; `error:${section}`
+// is a failed one — the button renders distinct copy in each state.
+const copyState = ref<string | null>(null);
 const copy = async (text: string, section: string) => {
   try {
     await navigator.clipboard.writeText(text);
-    copiedSection.value = section;
-    window.setTimeout(() => { if (copiedSection.value === section) copiedSection.value = null; }, 1500);
+    copyState.value = section;
   } catch {
-    /* clipboard denied — ignore so the operator can still drag-select. */
+    copyState.value = `error:${section}`;
   }
+  window.setTimeout(() => {
+    if (copyState.value === section || copyState.value === `error:${section}`) copyState.value = null;
+  }, 1500);
 };
-
-const statusBadgeClass = (status: number, errorText: string | null): string => {
-  if (status === 0 || errorText !== null) return 'bg-accent-rose/15 text-accent-rose border-accent-rose/30';
-  if (status >= 500) return 'bg-accent-rose/15 text-accent-rose border-accent-rose/30';
-  if (status >= 400) return 'bg-accent-amber/15 text-accent-amber border-accent-amber/30';
-  if (status >= 200 && status < 300) return 'bg-accent-emerald/15 text-accent-emerald border-accent-emerald/30';
-  return 'bg-surface-700 text-gray-400 border-white/10';
+const copyLabelFor = (section: string): string => {
+  if (copyState.value === section) return 'Copied';
+  if (copyState.value === `error:${section}`) return 'Copy failed';
+  return 'Copy';
 };
 
 const formatTs = (ms: number) => {
-  if (ms < 1) return '0ms';
+  if (ms < 1) return `${ms.toFixed(3)}ms`;
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 };
@@ -257,13 +269,13 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
             class="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200"
             @click="copy(requestBody.text, 'req-body')"
           >
-            {{ copiedSection === 'req-body' ? 'Copied' : 'Copy' }}
+            {{ copyLabelFor('req-body') }}
           </button>
         </header>
         <div class="px-4 py-3">
           <p v-if="!requestBody || !requestBody.text" class="text-xs text-gray-600">No request body.</p>
           <template v-else>
-            <p v-if="requestBody.binaryWarning" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            <p v-if="requestBody.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Binary body; UTF-8 decoding failed. Showing base64.
             </p>
             <pre class="whitespace-pre-wrap break-all font-mono text-xs text-gray-300">{{ requestBody.text }}</pre>
@@ -324,7 +336,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
               class="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200"
               @click="copy(responseBodyRendered.text, 'res-body')"
             >
-              {{ copiedSection === 'res-body' ? 'Copied' : 'Copy' }}
+              {{ copyLabelFor('res-body') }}
             </button>
           </template>
         </header>
@@ -336,7 +348,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
           <template v-else-if="record.response.type === 'bytes'">
             <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="text-xs text-gray-600">Empty body.</p>
             <template v-else>
-              <p v-if="responseBodyRendered.binaryWarning" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              <p v-if="responseBodyRendered.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
                 Binary body; UTF-8 decoding failed. Showing base64.
               </p>
               <pre class="whitespace-pre-wrap break-all font-mono text-xs text-gray-300">{{ responseBodyRendered.text }}</pre>

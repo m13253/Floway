@@ -115,33 +115,22 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
   };
   await getRepo().apiKeys.save(updated);
 
+  // Retention transitions:
+  //   positive → null: drop every stored record and cut every live subscriber.
+  //   null → positive: no purge; the new window only governs future captures.
+  //   positive → smaller positive: enforce the shorter window immediately by
+  //     sweeping anything already past the new cutoff.
+  //   positive → larger positive: nothing to purge; older records still fit.
   if (body.dump_retention_seconds !== undefined) {
-    await applyDumpRetentionTransition(id, owned.dumpRetentionSeconds, body.dump_retention_seconds);
+    const previous = owned.dumpRetentionSeconds;
+    const next = body.dump_retention_seconds;
+    if (next === null && previous !== null) {
+      await getDumpStore().purgeAll(id);
+      try { await getDumpBroker().notifyDisabled(id); } catch (err) { console.error('[dump] notifyDisabled failed during updateKey transition', id, err); }
+    } else if (previous !== null && next !== null && next < previous) {
+      await getDumpStore().purgeExpired(id, next);
+    }
   }
 
   return c.json(apiKeyToJson(updated));
-};
-
-// Retention transitions:
-//   positive → null: drop every stored record and cut every live subscriber.
-//   null → positive: no purge; the new window only governs future captures.
-//   positive → smaller positive: enforce the shorter window immediately by
-//     sweeping anything already past the new cutoff.
-//   positive → larger positive: nothing to purge; the older records are
-//     within the new window.
-const applyDumpRetentionTransition = async (
-  keyId: string,
-  previous: number | null,
-  next: number | null,
-): Promise<void> => {
-  if (next === null) {
-    if (previous !== null) {
-      await getDumpStore().purgeAll(keyId);
-      await getDumpBroker().notifyDisabled(keyId);
-    }
-    return;
-  }
-  if (previous !== null && next < previous) {
-    await getDumpStore().purgeExpired(keyId, next);
-  }
 };

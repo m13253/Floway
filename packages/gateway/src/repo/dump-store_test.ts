@@ -15,7 +15,7 @@ import { assertEquals, assertExists } from '@floway-dev/test-utils';
 // test file because the production gateway core never needs it — node-only
 // production code lives in apps/platform-node. Mirrors the shape of the
 // Node app's wrapper just enough to back the dump-store schema.
-const MIGRATION_PATH = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'migrations', '0035_dump_records.sql');
+const MIGRATION_PATH = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'migrations', '0037_dump_records.sql');
 
 const openDb = async (): Promise<SqlDatabase> => {
   const sqlite = new DatabaseSync(':memory:');
@@ -52,13 +52,13 @@ const baseRecord = (id: string, completedAt: number): DumpRecord => ({
   request: {
     method: 'POST', path: '/v1/x',
     headers: [['content-type', 'application/json']],
-    body: '{"hello":"world"}',
+    body: { encoding: 'utf8', data: '{"hello":"world"}' },
   },
   response: {
     status: 200,
     headers: [['content-type', 'application/json']],
     type: 'bytes',
-    body: '{"id":"abc"}',
+    body: { encoding: 'utf8', data: '{"id":"abc"}' },
   },
 });
 
@@ -72,9 +72,36 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
   const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
   assertExists(fetched);
   assertEquals(fetched.meta.id, record.meta.id);
-  assertEquals(fetched.request.body, '{"hello":"world"}');
+  assertEquals(fetched.request.body.encoding, 'utf8');
+  assertEquals(fetched.request.body.data, '{"hello":"world"}');
   if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body, '{"id":"abc"}');
+  assertEquals(fetched.response.body.encoding, 'utf8');
+  assertEquals(fetched.response.body.data, '{"id":"abc"}');
+});
+
+test('FileDumpStore preserves the original content-type header on binary bodies', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  const pngMagic = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).toString('base64');
+  const record: DumpRecord = {
+    ...baseRecord('01HZZ0000000000000000000PNG', Date.UTC(2026, 5, 1, 12, 0, 0)),
+    response: {
+      status: 200,
+      headers: [['content-type', 'image/png']],
+      type: 'bytes',
+      body: { encoding: 'base64', data: pngMagic },
+    },
+  };
+
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000PNG');
+  assertExists(fetched);
+  // The header pair must survive verbatim — no `;base64` suffix tacked on.
+  assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'image/png');
+  if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(fetched.response.body.encoding, 'base64');
+  assertEquals(fetched.response.body.data, pngMagic);
 });
 
 test('FileDumpStore round-trips an SSE record as a stream events array', async () => {

@@ -17,10 +17,11 @@ import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
+import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, createDumpStubs } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
@@ -1104,4 +1105,80 @@ test('any data bearing a historical version is rejected on the version gate, bef
   // Nothing was touched — the version gate runs before any delete or write.
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.upstreams.list()).map(u => u.id), ['up_custom_a']);
+});
+
+const installDumpStubs = () => {
+  const stubs = createDumpStubs();
+  initDumpStore(stubs.store);
+  initDumpBroker(stubs.broker);
+  return stubs;
+};
+
+test('replace-mode import purges every pre-existing key dump and cuts SSE subscribers', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  await repo.apiKeys.save({ ...KEY_B, dumpRetentionSeconds: 1800 });
+  const stubs = installDumpStubs();
+
+  const result = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
+  }));
+  assertEquals(result.status, 200);
+  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+  assertEquals(stubs.purgedAll.includes(KEY_B.id), true);
+  assertEquals(stubs.notifiedDisabled.includes(KEY_A.id), true);
+  assertEquals(stubs.notifiedDisabled.includes(KEY_B.id), true);
+});
+
+test('replace-mode import succeeds when notifyDisabled throws', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const stubs = installDumpStubs();
+  stubs.failNotifyDisabled(new Error('broker down'));
+
+  const result = await doImport(app, 'replace', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
+  }));
+  assertEquals(result.status, 200);
+  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+});
+
+test('merge-mode import flipping retention to null purges + notifies', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const stubs = installDumpStubs();
+
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
+  }));
+  assertEquals(result.status, 200);
+  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+  assertEquals(stubs.notifiedDisabled.includes(KEY_A.id), true);
+});
+
+test('merge-mode import shrinking retention purges expired with the new window', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 7200 });
+  const stubs = installDumpStubs();
+
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 1800 }],
+  }));
+  assertEquals(result.status, 200);
+  const call = stubs.purgedExpired.find(c => c.keyId === KEY_A.id);
+  expect(call).toBeDefined();
+  assertEquals(call!.retentionSeconds, 1800);
+});
+
+test('merge-mode retention transition tolerates dump-broker failure', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const stubs = installDumpStubs();
+  stubs.failNotifyDisabled(new Error('broker down'));
+
+  const result = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
+  }));
+  assertEquals(result.status, 200);
+  assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
 });

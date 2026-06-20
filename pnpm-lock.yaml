@@ -455,6 +455,12 @@ importers:
 
   packages/test-utils:
     dependencies:
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider

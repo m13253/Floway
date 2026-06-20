@@ -46,8 +46,7 @@ export const dumpRoutes = new Hono()
   .get('/keys/:keyId/stream', async c => {
     // Browsers cannot set custom headers on EventSource, so this SSE route
     // accepts the session token via `?session=` (path-pinned in
-    // authMiddleware). The other dump routes inherit the standard
-    // `x-floway-session` / `x-api-key` flow.
+    // authMiddleware).
     const owned = await ownedKey(c);
     if (owned instanceof Response) return owned;
 

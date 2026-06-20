@@ -107,13 +107,14 @@
       }
     ]
   },
-  // `new_classes` (not `new_sqlite_classes`) — the actor is stateless; no
-  // SQLite mount, no alarms, no migrations to worry about as the schema
+  // `new_sqlite_classes` is the current spelling even for stateless DOs;
+  // the KV-backed `new_classes` path is being phased out. The actor has no
+  // SQLite mount, no alarms, and no migrations to manage as the schema
   // evolves on the data-plane side.
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["KeyDumpDO"]
+      "new_sqlite_classes": ["KeyDumpDO"]
     }
   ]
 }

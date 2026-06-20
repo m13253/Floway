@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { hashPassword } from '../../shared/passwords.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, createDumpStubs } from '@floway-dev/test-utils';
 
 const adminPost = (sessionId: string, body: unknown) => requestApp('/api/users', {
   method: 'POST',
@@ -128,6 +129,27 @@ test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () =>
   expect(await repo.users.getById(user.id)).toBeNull();
   expect(await repo.apiKeys.getById(defaultKey.id)).toBeNull();
   assertEquals((await repo.sessions.deleteByUserId(user.id)), 0);
+});
+
+test('DELETE /api/users/:id succeeds when notifyDisabled throws on a cascaded key', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
+  const { user } = (await created.json()) as { user: { id: number } };
+  const [defaultKey] = await repo.apiKeys.listByUserId(user.id);
+  // Enable retention on the cascaded key so notifyDisabled is exercised.
+  await repo.apiKeys.save({ ...defaultKey, dumpRetentionSeconds: 3600 });
+
+  const stubs = createDumpStubs();
+  stubs.failNotifyDisabled(new Error('broker down'));
+  initDumpStore(stubs.store);
+  initDumpBroker(stubs.broker);
+
+  const response = await adminDelete(adminSession, user.id);
+  assertEquals(response.status, 200);
+  // The store purge still ran for the cascaded key.
+  assertEquals(stubs.purgedAll.includes(defaultKey.id), true);
+  // The user soft-delete still landed.
+  expect(await repo.users.getById(user.id)).toBeNull();
 });
 
 test('PATCH /api/users/me/password requires session and a correct current password', async () => {
