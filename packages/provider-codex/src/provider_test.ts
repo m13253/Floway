@@ -161,11 +161,32 @@ describe('createCodexProvider', () => {
     'callEmbeddings',
     'callImagesGenerations',
     'callImagesEdits',
-    'callMessagesCountTokens',
-  ] as const)('%s throws (data plane never dispatches these to Codex)', async method => {
+    'callChatCompletions',
+  ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
     const instance = await createCodexProvider(baseRecord);
     const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
-    // @ts-expect-error: each method has a different param shape; we just want to assert throw.
-    await expect(instance.provider[method](model, {}, undefined, {})).rejects.toThrow(/Codex/);
+    // @ts-expect-error: each method has a different body type; we only assert
+    // the synthetic 405 envelope is what comes back.
+    const result = await instance.provider[method](model, {}, undefined, undefined, noopUpstreamCallOptions) as { response: Response };
+    expect(result.response.status).toBe(405);
+    const body = await result.response.json() as { error: { type: string; message: string } };
+    expect(body.error.type).toBe('method_not_allowed');
+    expect(body.error.message).toMatch(/codex/i);
+  });
+
+  test.each([
+    'callMessagesCountTokens',
+    'callMessages',
+  ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
+    const instance = await createCodexProvider(baseRecord);
+    const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
+    // @ts-expect-error: each method has a different body type; we only assert
+    // the synthetic 405 envelope is what comes back. callMessages*/CountTokens
+    // additionally take an anthropicBeta slice before opts.
+    const result = await instance.provider[method](model, {}, undefined, undefined, undefined, noopUpstreamCallOptions) as { response: Response };
+    expect(result.response.status).toBe(405);
+    const body = await result.response.json() as { error: { type: string; message: string } };
+    expect(body.error.type).toBe('method_not_allowed');
+    expect(body.error.message).toMatch(/codex/i);
   });
 });
