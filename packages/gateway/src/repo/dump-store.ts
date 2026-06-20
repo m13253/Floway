@@ -214,6 +214,10 @@ export class FileDumpStore implements DumpStore {
       };
     }
 
+    // No response headers row means the request never produced an upstream
+    // response (capture middleware writes the row even on synthesized 500s,
+    // where status comes from accounting but no real headers exist). Surface
+    // that as an empty header list — the wire shape requires the array.
     const response: DumpResponse & DumpResponseBody = {
       status: meta.status,
       headers: responseHeaders ?? [],
