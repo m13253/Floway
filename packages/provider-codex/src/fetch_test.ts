@@ -259,6 +259,42 @@ describe('callCodexResponses — upstream classification', () => {
   });
 });
 
+describe('callCodexResponses — background-write registration', () => {
+  // Background state writes (quota snapshot on 2xx/429, access-token put on
+  // 401-retry) must reach the runtime's waitUntil slot so workerd does not
+  // cancel them the instant the streaming response returns to the client.
+  // Without this, freshly-minted Codex tokens and quota snapshots get dropped
+  // on the floor and the next request re-mints / re-races the upstream.
+  test('2xx persists quota snapshot via opts.call.waitUntil', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(),
+      call: { ...noopUpstreamCallOptions, waitUntil },
+    });
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+  });
+
+  test('401-retry registers the freshly-minted access-token put via opts.call.waitUntil', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
+      .mockResolvedValueOnce(sseResponse());
+    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: {}, effects: makeEffects(),
+      call: { ...noopUpstreamCallOptions, waitUntil },
+    });
+    // Two writes get registered: the freshly-minted access token (401 retry
+    // path) and the quota snapshot from the successful second attempt.
+    expect(waitUntil).toHaveBeenCalledTimes(2);
+  });
+});
+
 // Provider-level tests need their own enforcing recorder so they can assert
 // the wrap-once contract without depending on the gateway package. The
 // `fetcher` honours the third-arg recorder because data-plane POSTs thread
@@ -279,6 +315,7 @@ const enforcingRecorder = () => {
     options: {
       fetcher,
       recordUpstreamLatency: record,
+      waitUntil: () => {},
     },
     invocations: () => wrappedPromises.length,
     durationMs: (): number => {

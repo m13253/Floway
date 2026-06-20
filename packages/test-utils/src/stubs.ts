@@ -3,10 +3,12 @@ import { directFetcher, type LlmTargetApi, type ModelProvider, type ModelProvide
 // No-op UpstreamCallOptions for tests calling provider methods directly:
 // identity recordUpstreamLatency satisfies the contract without piping
 // latency anywhere; the fetcher uses runtime fetch so `globalThis.fetch`
-// spies still intercept.
+// spies still intercept; waitUntil drops the promise (the runtime would
+// have absorbed it in production).
 export const noopUpstreamCallOptions: UpstreamCallOptions = {
   fetcher: directFetcher,
   recordUpstreamLatency: <T>(promise: Promise<T>): Promise<T> => promise,
+  waitUntil: () => {},
 };
 
 export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({

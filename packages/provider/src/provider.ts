@@ -74,9 +74,16 @@ export type ProviderCompactionResult =
 // once; the gateway throws on a violation so missing wraps fail loud. On
 // retries (e.g. invalidate-token-and-redo), only the most recent invocation's
 // measurement is kept.
+//
+// `waitUntil` registers a fire-and-forget promise that must outlive the
+// response. On workerd it maps to `ExecutionContext.waitUntil` so the
+// isolate is not terminated when the response is returned; on Node it is a
+// no-op. Providers use it for post-response persistence the caller has
+// already stopped waiting on.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
+  waitUntil: (promise: Promise<unknown>) => void;
 }
 
 export interface ModelProvider {

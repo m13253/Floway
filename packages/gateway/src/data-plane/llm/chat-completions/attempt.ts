@@ -108,7 +108,7 @@ const callChatCompletionsAsExecuteResult = async (
     body,
     ctx.abortSignal,
     invocationHeaders,
-    { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
+    { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record, waitUntil: ctx.backgroundScheduler },
   );
   return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
 };

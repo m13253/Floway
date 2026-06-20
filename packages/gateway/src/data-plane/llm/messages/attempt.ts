@@ -58,7 +58,7 @@ export const messagesAttempt = {
           ctx.abortSignal,
           invocation.headers,
           invocation.anthropicBeta,
-          { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
+          { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record, waitUntil: ctx.backgroundScheduler },
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
       }
@@ -110,7 +110,7 @@ export const messagesAttempt = {
         ctx.abortSignal,
         invocation.headers,
         invocation.anthropicBeta,
-        { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record },
+        { fetcher: candidate.fetcher, recordUpstreamLatency: recorder.record, waitUntil: ctx.backgroundScheduler },
       );
       return response;
     });
