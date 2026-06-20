@@ -47,3 +47,8 @@ export const CLAUDE_CODE_OAUTH_USER_AGENT = 'axios/1.13.6';
 // on api.anthropic.com (not platform.claude.com — the OAuth host) per
 // every cross-checked third-party gateway.
 export const CLAUDE_CODE_PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile';
+
+// Live quota probe Anthropic exposes for the OAuth bearer. Surfaces the
+// same five-hour / seven-day window snapshot the official CLI fetches
+// via its `fetchUtilization` helper.
+export const CLAUDE_CODE_USAGE_PROBE_URL = 'https://api.anthropic.com/api/oauth/usage';

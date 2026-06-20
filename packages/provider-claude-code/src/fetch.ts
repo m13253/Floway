@@ -224,6 +224,7 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
   try {
     parsed = JSON.parse(bodyText);
   } catch {
+    logWarn('claude_code_unparseable_error_body', { status, body_snippet: bodyText.slice(0, 256) });
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
@@ -299,7 +300,12 @@ const maybePersistTerminalFromBodyFireAndForget = (
     let bodyText: string;
     try {
       bodyText = await cloned.text();
-    } catch {
+    } catch (error) {
+      logWarn('claude_code_terminal_sentinel_body_read_failed', {
+        upstream_id: upstreamId,
+        upstream_status: response.status,
+        error: String(error),
+      });
       return;
     }
     const terminalMessage = detectTerminalSentinel(response.status, bodyText);
@@ -329,7 +335,7 @@ export const callClaudeCodeMessages = async (
   // gates, the wire body, and the streaming-call modelKey all surface the
   // same dated id.
   const providerData = opts.model.providerData as ClaudeCodeProviderData | undefined;
-  if (!providerData || typeof providerData.upstreamModelId !== 'string') {
+  if (typeof providerData?.upstreamModelId !== 'string') {
     throw new Error(`Claude Code model ${opts.model.id} is missing providerData.upstreamModelId`);
   }
   const upstreamModelId = providerData.upstreamModelId;
@@ -426,7 +432,7 @@ const performUpstreamCall = async (
     if (!('content-type' in passthrough)) passthrough['content-type'] = 'application/json';
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = { ...pickClaudeCodeHeaders(upstreamModelId), 'Content-Type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
+    headers = { ...pickClaudeCodeHeaders(upstreamModelId), 'content-type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is
@@ -442,13 +448,11 @@ const performUpstreamCall = async (
     body: JSON.stringify(wireBody),
     signal: opts.signal,
   }, opts.call.recordUpstreamLatency).then(response => {
-    // `opts.call.waitUntil` is added by the gateway on Workers so the
+    // `opts.call.waitUntil` is set by the gateway on Workers so the
     // runtime keeps the worker alive past the response (without it, the
-    // persist promise gets cancelled the moment we return the response).
-    // The cast is a transitional shim until UpstreamCallOptions carries
-    // the field natively; the `?.` keeps the call safe under hosts that
-    // don't supply it (Node target / tests).
-    const waitUntil = (opts.call as UpstreamCallOptions & { waitUntil?: (promise: Promise<unknown>) => void }).waitUntil;
+    // persist promise gets cancelled the moment the response returns).
+    // Undefined under hosts that don't supply it (Node target / tests).
+    const { waitUntil } = opts.call;
     // Every Anthropic response (2xx or 429) ships an
     // `anthropic-ratelimit-unified-*` snapshot; capture both so the rate-
     // limited gate above stays accurate as the window evolves. Other

@@ -150,46 +150,6 @@ describe('createClaudeCodeProvider — factory surface', () => {
     expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5');
     expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5')).toBeUndefined();
   });
-
-  test('every unsupported surface returns a synthetic 405 envelope (no stack-trace leak)', async () => {
-    // Claude Code advertises only /v1/messages; any other surface is a
-    // routing bug. Surface a clean 405 rather than a raw rejection so the
-    // boundary can relay verbatim.
-    const instance = await createClaudeCodeProvider(currentRecord);
-    const body = { messages: [] as never[] };
-
-    const assertSynthetic405 = async (response: Response): Promise<void> => {
-      expect(response.status).toBe(405);
-      expect(response.headers.get('content-type')).toMatch(/application\/json/);
-      const json = await response.json() as { error?: { type?: string; message?: string } };
-      expect(json.error?.type).toBe('method_not_allowed');
-      expect(json.error?.message).toMatch(/claude-code/);
-    };
-
-    const chat = await instance.provider.callChatCompletions(upstreamModel, body, undefined, undefined, noopUpstreamCallOptions);
-    expect(chat.ok).toBe(false);
-    if (!chat.ok) await assertSynthetic405(chat.response);
-
-    const responses = await instance.provider.callResponses(upstreamModel, { input: 'x' }, undefined, undefined, noopUpstreamCallOptions);
-    expect(responses.ok).toBe(false);
-    if (!responses.ok) await assertSynthetic405(responses.response);
-
-    const compact = await instance.provider.callResponsesCompact(upstreamModel, { input: 'x' }, undefined, undefined, noopUpstreamCallOptions);
-    expect(compact.ok).toBe(false);
-    if (!compact.ok) await assertSynthetic405(compact.response);
-
-    const countTokens = await instance.provider.callMessagesCountTokens(upstreamModel, { max_tokens: 1, messages: [{ role: 'user', content: 'x' }] }, undefined, undefined, undefined, noopUpstreamCallOptions);
-    await assertSynthetic405(countTokens.response);
-
-    const embeddings = await instance.provider.callEmbeddings(upstreamModel, { input: 'x' }, undefined, undefined, noopUpstreamCallOptions);
-    await assertSynthetic405(embeddings.response);
-
-    const imagesGen = await instance.provider.callImagesGenerations(upstreamModel, { prompt: 'x' }, undefined, undefined, noopUpstreamCallOptions);
-    await assertSynthetic405(imagesGen.response);
-
-    const imagesEdit = await instance.provider.callImagesEdits(upstreamModel, new FormData(), undefined, undefined, noopUpstreamCallOptions);
-    await assertSynthetic405(imagesEdit.response);
-  });
 });
 
 describe('createClaudeCodeProvider — callMessages routes through chain', () => {

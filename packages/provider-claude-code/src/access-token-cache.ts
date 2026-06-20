@@ -184,21 +184,20 @@ const ensureClaudeCodeAccessTokenInner = async (
   // muddy the dashboard's "credential health changed" signal.
   //
   // The `tokenKind === 'setup-token'` early-return above means every
-  // account reaching this branch has `tokenKind: 'oauth'`; spell that out
-  // so the discriminated-union assignment narrows correctly without an
-  // unsafe cast.
+  // account reaching this branch has `tokenKind: 'oauth'`. Re-read the
+  // slot and pin the narrow once outside the patch callback so the
+  // discriminated-union assignment yields an `oauth` credential without
+  // an inline re-check.
   const rotatedRefreshToken = refreshed.refresh_token;
-  const rotated = replaceAccountAt(state, accountIndex, account => {
-    if (account.tokenKind !== 'oauth') {
-      throw new Error('Claude Code refresh path reached on non-oauth credential');
-    }
-    return {
-      ...account,
-      tokenKind: 'oauth' as const,
-      refreshToken: rotatedRefreshToken,
-      accessToken: newAccessTokenEntry,
-    };
-  });
+  const oauthAccount = state.accounts[accountIndex];
+  if (oauthAccount.tokenKind !== 'oauth') {
+    throw new Error('Claude Code refresh path reached on non-oauth credential (structural invariant violation)');
+  }
+  const rotated = replaceAccountAt(state, accountIndex, () => ({
+    ...oauthAccount,
+    refreshToken: rotatedRefreshToken,
+    accessToken: newAccessTokenEntry,
+  }));
   const result = await args.repo.saveState(args.upstreamId, rotated, { expectedState: fresh.state });
   if (!result.updated) {
     throw new Error(
@@ -232,7 +231,7 @@ const persistTerminalState = async (
   accountIndex: number,
   fields: TerminalFlipFields,
 ): Promise<void> => {
-  const account = current.accounts[accountIndex];
+  const previousAccount = current.accounts[accountIndex];
   const flipped = replaceAccountAt(current, accountIndex, account => ({
     ...account,
     state: 'refresh_failed',
@@ -243,8 +242,8 @@ const persistTerminalState = async (
   await repo.saveState(upstreamId, flipped, { expectedState });
   logWarn('claude_code_account_state_flip', {
     upstream_id: upstreamId,
-    account_uuid: account.accountUuid,
-    from_state: account.state,
+    account_uuid: previousAccount.accountUuid,
+    from_state: previousAccount.state,
     to_state: 'refresh_failed',
     reason: fields.reason,
     oauth_code: fields.oauthCode,

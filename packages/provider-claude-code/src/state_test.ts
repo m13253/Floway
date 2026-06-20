@@ -94,7 +94,7 @@ describe('assertClaudeCodeUpstreamState', () => {
       accounts: [{ ...goodAccount, tokenKind: 'apikey' }],
     })).toThrow(/tokenKind/);
   });
-  test('rejects missing tokenKind on strict asserter (legacy default fills in readClaudeCodeUpstreamState)', () => {
+  test('rejects missing tokenKind', () => {
     const { tokenKind: _drop, ...withoutKind } = goodAccount;
     expect(() => assertClaudeCodeUpstreamState({ accounts: [withoutKind] })).toThrow(/tokenKind/);
   });
@@ -215,24 +215,9 @@ describe('readClaudeCodeUpstreamState', () => {
     expect(out.accounts[0].quotaSnapshot).toEqual(populated.accounts[0].quotaSnapshot);
   });
 
-  test('defaults missing tokenKind to oauth on legacy records', () => {
-    const { tokenKind: _drop, ...legacy } = goodAccount;
-    const out = readClaudeCodeUpstreamState({ accounts: [legacy] });
-    expect(out.accounts[0].tokenKind).toBe('oauth');
-    // The legacy refresh token must still pass through unchanged so the
-    // first refresh round-trip sees the same bytes the operator imported.
-    expect(out.accounts[0].refreshToken).toBe(goodAccount.refreshToken);
-  });
-
   test('preserves explicit setup-token kind', () => {
     const out = readClaudeCodeUpstreamState({ accounts: [{ ...goodSetupTokenAccount }] });
     expect(out.accounts[0].tokenKind).toBe('setup-token');
     expect(out.accounts[0].refreshToken).toBeNull();
-  });
-
-  test('defaults missing usageProbeSnapshot to null on legacy records', () => {
-    const { usageProbeSnapshot: _drop, ...legacy } = goodAccount;
-    const out = readClaudeCodeUpstreamState({ accounts: [legacy] });
-    expect(out.accounts[0].usageProbeSnapshot).toBeNull();
   });
 });

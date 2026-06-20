@@ -236,32 +236,9 @@ export function assertClaudeCodeUpstreamState(value: unknown): asserts value is 
 
 // Asserts the wire shape and returns the typed view. The asserter rejects
 // absent `accessToken` / `quotaSnapshot` / `usageProbeSnapshot` keys (they
-// must be explicit `null` when not populated). Legacy records written
-// before `tokenKind` or `usageProbeSnapshot` existed are normalized here
-// so the asserter's strict shape stays honest; new writes always supply
-// every field explicitly.
+// must be explicit `null` when not populated). Every write supplies every
+// field explicitly; no on-disk normalization is performed here.
 export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamState => {
-  const normalized = normalizeLegacyAccountFields(raw);
-  assertClaudeCodeUpstreamState(normalized);
-  return normalized;
-};
-
-// Mutates a defensive clone, not the input. The asserter runs after, so any
-// shape violation (including a non-object `raw`) surfaces with the asserter's
-// error rather than a crash here.
-const normalizeLegacyAccountFields = (raw: unknown): unknown => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
-  const root = raw as Record<string, unknown>;
-  if (!Array.isArray(root.accounts)) return raw;
-  return {
-    ...root,
-    accounts: root.accounts.map(account => {
-      if (typeof account !== 'object' || account === null || Array.isArray(account)) return account;
-      const obj = account as Record<string, unknown>;
-      const next: Record<string, unknown> = { ...obj };
-      if (next.tokenKind === undefined) next.tokenKind = 'oauth';
-      if (next.usageProbeSnapshot === undefined) next.usageProbeSnapshot = null;
-      return next;
-    }),
-  };
+  assertClaudeCodeUpstreamState(raw);
+  return raw;
 };

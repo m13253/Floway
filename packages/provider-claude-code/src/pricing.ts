@@ -45,15 +45,14 @@ const OPUS_LEGACY_TIER: ModelPricing = { input: 15, input_cache_read: 1.5, input
 const OPUS_46_47_FAST: Partial<ModelPricing> = { input: 30, input_cache_read: 3, input_cache_write: 37.5, input_cache_write_1h: 60, output: 150 };
 const OPUS_48_FAST: Partial<ModelPricing> = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
 
-const OPUS_46_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_46_47_FAST } };
-const OPUS_47_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_46_47_FAST } };
+const OPUS_46_47_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_46_47_FAST } };
 const OPUS_48_TIER: ModelPricing = { ...OPUS_TIER, tiers: { fast: OPUS_48_FAST } };
 
 const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   // 4.6+ generation (alias is the upstream id).
   'claude-opus-4-8': OPUS_48_TIER,
-  'claude-opus-4-7': OPUS_47_TIER,
-  'claude-opus-4-6': OPUS_46_TIER,
+  'claude-opus-4-7': OPUS_46_47_TIER,
+  'claude-opus-4-6': OPUS_46_47_TIER,
   'claude-sonnet-4-6': SONNET_TIER,
   'claude-fable-5': FABLE_TIER,
   // 4.5 generation (dated upstream id).

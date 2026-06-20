@@ -1,3 +1,6 @@
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
@@ -34,11 +37,11 @@ export const synthesizeMetadataUserId = async <TResult>(
   const existing = ctx.payload.metadata?.user_id;
   if (typeof existing === 'string' && existing.length > 0) return await run();
 
-  const deviceId = await deviceIdForUpstream(ctx.upstreamId);
-  const sessionId = await sessionIdForPayload(ctx.upstreamId, ctx.payload);
+  const deviceId = deviceIdForUpstream(ctx.upstreamId);
+  const sessionId = sessionIdForPayload(ctx.upstreamId, ctx.payload);
   const userId = JSON.stringify({ device_id: deviceId, account_uuid: '', session_id: sessionId });
 
-  ctx.payload = { ...ctx.payload, metadata: { ...(ctx.payload.metadata ?? {}), user_id: userId } };
+  ctx.payload = { ...ctx.payload, metadata: { ...ctx.payload.metadata, user_id: userId } };
   return await run();
 };
 
@@ -49,10 +52,11 @@ export const synthesizeMetadataUserId = async <TResult>(
 // An earlier version of this code emitted 32 hex chars (16 bytes) on a
 // mistaken capture reading; an off-length device_id is one of several
 // CC-shape failures the detector keys on.
-const deviceIdForUpstream = async (upstreamId: string): Promise<string> => {
-  const hex = await sha256Hex(`claude-code-device:${upstreamId}`);
-  return hex.slice(0, 64);
-};
+//
+// sha256Hex returns exactly 64 hex chars by construction, so no truncation
+// is necessary here.
+const deviceIdForUpstream = (upstreamId: string): string =>
+  sha256Hex(`claude-code-device:${upstreamId}`);
 
 // Session id derives from the upstream id plus the first user message text,
 // so multi-turn conversations of the same conversation prefix re-use the
@@ -60,9 +64,9 @@ const deviceIdForUpstream = async (upstreamId: string): Promise<string> => {
 // different ids. Matches the strategy injectSessionId uses on the Codex
 // side, with a per-upstream salt so two upstreams running the same script
 // don't collide.
-const sessionIdForPayload = async (upstreamId: string, payload: { messages?: unknown }): Promise<string> => {
+const sessionIdForPayload = (upstreamId: string, payload: { messages?: unknown }): string => {
   const firstUser = firstUserMessageText(payload.messages);
-  return await sha256Uuidv4(`claude-code-session:${upstreamId}${firstUser}`);
+  return sha256Uuidv4(`claude-code-session:${upstreamId}${firstUser}`);
 };
 
 const firstUserMessageText = (messages: unknown): string => {
@@ -95,16 +99,13 @@ const firstUserMessageText = (messages: unknown): string => {
   return '';
 };
 
-const sha256Hex = async (input: string): Promise<string> => {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
-};
+const sha256Hex = (input: string): string => bytesToHex(sha256(new TextEncoder().encode(input)));
 
 // Same UUIDv4 stamping trick injectSessionId uses on the Codex side: stamp
 // the sha256 hex with the version-4 nibble inline and overwrite the variant
 // nibble so the output validates as a real UUIDv4.
-const sha256Uuidv4 = async (input: string): Promise<string> => {
-  const hex = await sha256Hex(input);
+const sha256Uuidv4 = (input: string): string => {
+  const hex = sha256Hex(input);
   const variantNibble = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variantNibble}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };

@@ -98,11 +98,12 @@ const bigrams = (s: string): Map<string, number> => {
   return out;
 };
 
-const dice = (a: string, b: string): number => {
-  if (a === b) return 1;
-  if (a.length < 2 || b.length < 2) return 0;
-  const A = bigrams(a);
-  const B = bigrams(b);
+// Precompute bigram maps for each identity template at module load — the
+// templates are constant, the request-side string changes per request, so
+// recomputing the template side on every detection call is wasted work.
+const IDENTITY_TEMPLATE_BIGRAMS = IDENTITY_TEMPLATES.map(tpl => bigrams(normalize(tpl)));
+
+const diceFromBigrams = (A: Map<string, number>, B: Map<string, number>): number => {
   let inter = 0;
   let total = 0;
   for (const [g, ca] of A) {
@@ -116,8 +117,10 @@ const dice = (a: string, b: string): number => {
 
 const matchesAnyIdentityTemplate = (text: string): boolean => {
   const normalized = normalize(text);
-  for (const tpl of IDENTITY_TEMPLATES) {
-    if (dice(normalized, normalize(tpl)) >= DICE_THRESHOLD) return true;
+  if (normalized.length < 2) return false;
+  const textBigrams = bigrams(normalized);
+  for (const tplBigrams of IDENTITY_TEMPLATE_BIGRAMS) {
+    if (diceFromBigrams(textBigrams, tplBigrams) >= DICE_THRESHOLD) return true;
   }
   return false;
 };

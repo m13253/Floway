@@ -24,18 +24,10 @@ export const backfillRequiredFields = async <TResult>(
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const next = { ...ctx.payload };
-  let mutated = false;
 
-  if (next.max_tokens === undefined || next.max_tokens === null) {
-    next.max_tokens = ctx.model.limits.max_output_tokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
-    mutated = true;
-  }
+  next.max_tokens ??= ctx.model.limits.max_output_tokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
+  next.temperature ??= 1;
 
-  if (next.temperature === undefined) {
-    next.temperature = 1;
-    mutated = true;
-  }
-
-  if (mutated) ctx.payload = next;
+  ctx.payload = next;
   return await run();
 };

@@ -49,7 +49,8 @@ test('provider flags: defaultsForProvider returns the catalog-declared defaults'
   assertEquals(copilotDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim', 'retry-cyber-policy', 'strip-billing-attribution']);
   const azureDefaults = [...defaultsForProvider('azure')].sort();
   assertEquals(azureDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim', 'strip-billing-attribution']);
-  assertEquals([...defaultsForProvider('custom')].sort(), ['strip-billing-attribution']);
+  assertEquals([...defaultsForProvider('custom')].sort(), ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim', 'strip-billing-attribution']);
+  assertEquals([...defaultsForProvider('ollama')].sort(), ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim']);
   assertEquals(defaultsForProvider('codex').size, 0);
   assertEquals(defaultsForProvider('claude-code').size, 0);
 });

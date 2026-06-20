@@ -106,22 +106,24 @@ const claudeCodeTokenRequest = async (
 
   if (!response.ok) {
     let code: string | null = null;
-    let message: string | null = null;
+    let nestedMessage: string | null = null;
     if (typeof root?.error === 'string') {
       code = root.error;
     } else if (isRecord(root?.error)) {
       const err = root.error;
       if (typeof err.code === 'string') code = err.code;
-      if (typeof err.message === 'string') message = err.message;
+      if (typeof err.message === 'string') nestedMessage = err.message;
     }
     // Anthropic's OAuth surfaces a human-readable message in
-    // `error_description`; prefer that over the bare `error` code when both
-    // are present so the operator sees "Refresh token revoked" rather than
-    // "invalid_grant".
-    if (typeof root?.error_description === 'string') message ??= root.error_description;
-    if (typeof root?.detail === 'string') message ??= root.detail;
-    message ??= code;
-    message ??= rawText.slice(0, 256);
+    // `error_description`; prefer that over the nested error object's
+    // message and over the bare `error` code so the operator sees
+    // "Refresh token revoked" rather than "invalid_grant".
+    const message =
+      (typeof root?.error_description === 'string' ? root.error_description : null)
+      ?? (typeof root?.detail === 'string' ? root.detail : null)
+      ?? nestedMessage
+      ?? code
+      ?? rawText.slice(0, 256);
     if (code && terminalCodes.has(code)) {
       throw new ClaudeCodeOAuthSessionTerminatedError({ code, message });
     }
@@ -139,10 +141,22 @@ const claudeCodeTokenRequest = async (
   // every refresh round-trip) but absent on setup-token exchanges. Callers
   // that care about the difference downcast through the kind discriminator
   // rather than re-validating here.
-  if ('refresh_token' in root && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
+  if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
     throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
   }
-  return root as unknown as ClaudeOAuthTokenResponse;
+  // Build the typed view explicitly after the runtime guards. `token_type`,
+  // `scope`, `organization`, and `account` ride through verbatim — they
+  // surface in tests and debug logs but the data plane never reads them,
+  // so we don't validate them here.
+  return {
+    access_token: root.access_token,
+    token_type: root.token_type as 'Bearer',
+    expires_in: root.expires_in,
+    refresh_token: typeof root.refresh_token === 'string' ? root.refresh_token : undefined,
+    scope: root.scope as string,
+    organization: root.organization as { uuid: string } | undefined,
+    account: root.account as { uuid: string; email_address: string } | undefined,
+  };
 };
 
 // PKCE exchange runs before the upstream record exists, so direct egress is

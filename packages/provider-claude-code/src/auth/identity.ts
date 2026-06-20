@@ -76,6 +76,9 @@ export const fetchClaudeCodeIdentity = async (
   }
 
   if (!response.ok) {
+    // Last-resort fallback: when the upstream sent neither a structured
+    // error envelope nor any other recognizable shape, surface the raw
+    // body prefix so the operator has something readable to act on.
     const message = readErrorMessage(parsed) ?? rawText.slice(0, 256);
     throw new Error(`Claude Code /api/oauth/profile returned ${response.status}: ${message}`);
   }

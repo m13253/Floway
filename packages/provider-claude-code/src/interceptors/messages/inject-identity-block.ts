@@ -10,7 +10,10 @@ export const injectIdentityBlock = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const system = ctx.payload.system as Exclude<typeof ctx.payload.system, string | undefined>;
+  if (!Array.isArray(ctx.payload.system)) {
+    throw new Error('inject-identity-block: expected system to be an array (inject-billing-block must run first)');
+  }
+  const system = ctx.payload.system;
   ctx.payload = { ...ctx.payload, system: [...system, IDENTITY_BLOCK] };
   return await run();
 };

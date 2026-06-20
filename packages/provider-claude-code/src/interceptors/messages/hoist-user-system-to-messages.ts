@@ -33,7 +33,9 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //
 // Non-text fields on blocks (citations, cache_control) are intentionally
 // dropped — the wrapped turn is best-effort recovery of the operator's
-// intent.
+// intent. System cache breakpoints are not preserved on hoist; CC clients
+// that pay for engineered system caching should send via `system` rather
+// than as system-shaped messages routed through this re-mimicry path.
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
@@ -65,6 +67,6 @@ const captureSystemText = (system: string | MessagesTextBlock[] | undefined): st
   if (typeof system === 'string') return system;
   return system
     .map(block => block.text)
-    .filter(text => text.length > 0)
+    .filter(text => typeof text === 'string' && text.length > 0)
     .join('\n\n');
 };

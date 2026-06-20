@@ -19,10 +19,8 @@
 // hadPriorUtilizationData, ...) without warning; a strict parser would
 // reject a perfectly usable new field as malformed.
 
-import { CLAUDE_CODE_OAUTH_USER_AGENT } from '../constants.ts';
+import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
-
-const CLAUDE_CODE_USAGE_PROBE_URL = 'https://api.anthropic.com/api/oauth/usage';
 
 // `anthropic-beta` is the only non-trivial header the upstream requires.
 // Without `oauth-2025-04-20` the endpoint returns 401 even with a valid

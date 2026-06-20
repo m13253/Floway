@@ -13,7 +13,7 @@
 // `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
 // pricing table key by the per-revision id.
 
-import { pickClaudeCodeHeaders } from './headers.ts';
+import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
 import type { Fetcher, UpstreamModel } from '@floway-dev/provider';
@@ -35,11 +35,11 @@ export const fetchClaudeCodeModelsList = async (
   accessToken: string,
   fetcher: Fetcher,
 ): Promise<ClaudeCodeApiModel[]> => {
-  // The mimicry surface is GET-only here; `pickClaudeCodeHeaders` picks the
-  // Sonnet/Opus profile for any non-haiku id, which is the right shape for
-  // a non-model-specific catalog call.
+  // The mimicry surface is GET-only here; the catalog call has no per-model
+  // dispatch, so we send the Sonnet/Opus header profile directly rather
+  // than threading a fake model id through `pickClaudeCodeHeaders`.
   const headers: Record<string, string> = {
-    ...pickClaudeCodeHeaders('claude-sonnet-placeholder'),
+    ...CLAUDE_CODE_HEADERS_SONNET_OPUS,
     authorization: `Bearer ${accessToken}`,
   };
   const response = await fetcher(ANTHROPIC_MODELS_ENDPOINT, { method: 'GET', headers });
