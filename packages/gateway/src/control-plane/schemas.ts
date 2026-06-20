@@ -60,6 +60,18 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
+// Shared between base pricing and per-tier overlays so the two always carry
+// the same dimension set.
+const pricingDimensionShape = {
+  input: z.number().nonnegative().optional(),
+  output: z.number().nonnegative().optional(),
+  input_cache_read: z.number().nonnegative().optional(),
+  input_cache_write: z.number().nonnegative().optional(),
+  input_cache_write_1h: z.number().nonnegative().optional(),
+  input_image: z.number().nonnegative().optional(),
+  output_image: z.number().nonnegative().optional(),
+};
+
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure and custom upstreams share this per-model entry; the canonical
 // per-model endpoint validation lives in the runtime validator.
@@ -70,13 +82,15 @@ const upstreamModelSchema = z.object({
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   cost: z.object({
-    input: z.number().optional(),
-    output: z.number().optional(),
-    input_cache_read: z.number().optional(),
-    input_cache_write: z.number().optional(),
-    input_cache_write_1h: z.number().optional(),
-    input_image: z.number().optional(),
-    output_image: z.number().optional(),
+    ...pricingDimensionShape,
+    // See ModelPricing.tiers in @floway-dev/protocols/common for semantics.
+    tiers: z.record(
+      z.string().min(1),
+      z.object(pricingDimensionShape).refine(
+        t => Object.values(t).some(v => v !== undefined),
+        { message: 'tier overlay must declare at least one rate' },
+      ),
+    ).optional(),
   }).optional(),
   flagOverrides: z.object({
     enabled: z.boolean(),

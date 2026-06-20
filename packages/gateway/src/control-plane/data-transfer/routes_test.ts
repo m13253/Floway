@@ -177,7 +177,7 @@ const USAGE_1: UsageRecord = {
   upstream: 'up_copilot_a',
   modelKey: 'claude-opus-4.7',
   hour: '2026-01-01T10',
-  tier: null,
+  tier: 'fast',
   requests: 5,
   tokens: { input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 },
   cost: null,
