@@ -50,7 +50,3 @@ export const logInfo = (event: string, fields: LogFields = {}): void => {
 export const logWarn = (event: string, fields: LogFields = {}): void => {
   console.warn(formatLogLine(event, fields));
 };
-
-export const logError = (event: string, fields: LogFields = {}): void => {
-  console.error(formatLogLine(event, fields));
-};

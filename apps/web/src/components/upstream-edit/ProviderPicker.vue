@@ -66,7 +66,7 @@ const active = defineModel<UpstreamProviderKind>({ required: true });
       </template>
     </ProviderCard>
     <ProviderCard
-      tone="rose"
+      tone="orange"
       title="Claude Code"
       subtitle="Claude Pro / Max / Team subscription"
       :selected="active === 'claude-code'"

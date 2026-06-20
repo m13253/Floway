@@ -114,6 +114,7 @@ const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: s
 };
 
 const submit = async () => {
+  if (submitting.value) return;
   const body = buildBody();
   if (!body.ok) { emit('error', body.error); return; }
 
@@ -135,9 +136,10 @@ const submit = async () => {
       result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: payload }));
     }
   } else {
-    // The re-import button is rendered only when `record` is bound; the
-    // template guard upstream guarantees non-null here.
-    if (!props.record) throw new Error('Re-import requires a saved record');
+    // The re-import affordance is rendered only when `record` is bound; if the
+    // ref is somehow empty by the time the click lands, bail rather than fire
+    // a doomed request.
+    if (!props.record) { submitting.value = false; return; }
     const id = props.record.id;
     if (body.value.kind === 'setup-token-callback') {
       const payload = { callback: body.value.callback, ...proxyExtras };
@@ -160,14 +162,16 @@ const submit = async () => {
 };
 
 // Refresh-now is only meaningful for OAuth credentials (setup-token has
-// no rotation counterpart). The button is hidden for setup-token rows.
+// no rotation counterpart). The button is hidden for setup-token rows AND
+// for empty-account rows so the operator never sees a doomed affordance.
 const refreshable = computed(() => {
   const account = props.record?.state?.accounts[0];
-  return account?.tokenKind !== 'setup-token';
+  return account?.tokenKind === 'oauth';
 });
 
 const refreshTokenNow = async () => {
-  if (!props.record) throw new Error('refreshTokenNow requires a saved record');
+  if (refreshing.value) return;
+  if (!props.record) return;
   const id = props.record.id;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
@@ -178,7 +182,11 @@ const refreshTokenNow = async () => {
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }
-  emit('imported', data);
+  // Refresh is a non-mutating data update — the row's credential identity is
+  // unchanged, only the access-token slot rotates. Surface through the same
+  // event as quota refresh so the parent lands the new record on `liveRecord`
+  // without re-keying the loader or navigating.
+  emit('quota-refreshed', data);
 };
 
 // The probe-quota route returns the live `/api/oauth/usage` body spread at
@@ -197,7 +205,8 @@ interface ProbeResponse {
 }
 
 const refreshQuotaNow = async () => {
-  if (!props.record) throw new Error('refreshQuotaNow requires a saved record');
+  if (probing.value) return;
+  if (!props.record) return;
   const record = props.record;
   // The gateway route mints an access token via ensureClaudeCodeAccessToken,
   // which throws when state has no account credentials. Refuse here so the
@@ -209,7 +218,10 @@ const refreshQuotaNow = async () => {
   }
   probing.value = true;
   const { data, error } = await callApi<ProbeResponse>(
-    () => api.api.upstreams[':id']['probe-quota'].$post({ param: { id: record.id } }),
+    () => api.api.upstreams[':id']['probe-quota'].$post({
+      param: { id: record.id },
+      json: { proxy_fallback_list: props.proxyFallbackList },
+    }),
   );
   probing.value = false;
   if (error) { emit('error', error.message); return; }

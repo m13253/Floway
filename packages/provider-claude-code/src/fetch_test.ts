@@ -8,7 +8,7 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from './state.ts';
-import { initProviderRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type Fetcher, type UpstreamCallOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
@@ -388,13 +388,10 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     // UpstreamCallOptions so the persist can extend the worker's lifetime;
     // assert we hand the persist promise to it exactly once and that the
     // promise actually mutates state when awaited.
-    //
-    // The cast bridges until UpstreamCallOptions carries `waitUntil`
-    // natively (lands in a parallel gateway-side change).
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    const call = { ...noopUpstreamCallOptions, waitUntil } as typeof noopUpstreamCallOptions;
+    const call: UpstreamCallOptions = { ...noopUpstreamCallOptions, waitUntil };
     const result = await callClaudeCodeMessages({
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });

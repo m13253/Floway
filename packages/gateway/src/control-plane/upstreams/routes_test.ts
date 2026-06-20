@@ -2162,12 +2162,12 @@ test('POST /api/upstreams/:id/probe-quota surfaces upstream 401 as 502', async (
   );
 });
 
-test('POST /api/upstreams/:id/probe-quota rejects non-claude-code upstreams with 404', async () => {
+test('POST /api/upstreams/:id/probe-quota rejects non-claude-code upstreams with 400', async () => {
   const { adminSession } = await setupAppTest();
   const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json()) as { id: string };
 
   const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
-  assertEquals(resp.status, 404);
+  assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('claude-code'), true);
 });

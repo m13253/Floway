@@ -120,9 +120,8 @@ describe('createClaudeCodeProvider — factory surface', () => {
   });
 
   test('getProvidedModels stamps the effective flag set onto every model', async () => {
-    // strip-billing-attribution defaults OFF for claude-code, and there are
-    // no upstream overrides on the record — the effective set must be empty,
-    // not the copilot/azure/custom default.
+    // claude-code has zero declared flag defaults — verify the effective set
+    // stays empty regardless of the other providers' defaults.
     stubModelsListFetch();
     const instance = await createClaudeCodeProvider(currentRecord);
     const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
 
 import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
@@ -52,6 +52,14 @@ const copyUrl = async (url: string, target: 'oauth' | 'setup-token') => {
     status.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
   }
 };
+
+// Clearing the in-flight reset timers on unmount avoids a late `idle` write
+// to an already-discarded ref when the parent tears the panel down between a
+// copy and its 2s reset.
+onBeforeUnmount(() => {
+  if (oauthCopyResetTimer !== undefined) clearTimeout(oauthCopyResetTimer);
+  if (setupTokenCopyResetTimer !== undefined) clearTimeout(setupTokenCopyResetTimer);
+});
 </script>
 
 <template>

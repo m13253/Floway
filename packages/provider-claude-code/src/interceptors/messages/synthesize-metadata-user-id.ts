@@ -22,9 +22,9 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 //
 // account_uuid is the empty string by convention — real CC uses the empty
 // string for personal accounts and a real UUID for org members; sub2api
-// observed the upstream accepts an empty string regardless. We always emit
-// empty rather than chasing the operator's actual org UUID, which we have
-// in ctx.config but does not need to leak into per-request mimicry.
+// observed the upstream accepts an empty string regardless. We always
+// emit empty rather than leaking the operator's actual account uuid into
+// per-request mimicry.
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/metadata_userid.go#L15

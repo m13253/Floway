@@ -2,9 +2,11 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import { IDENTITY_BLOCK } from '../../system-blocks.ts';
 
 // Appends the canonical CC identity block at system[1]. The chain order in
-// ./index.ts guarantees `injectBillingBlock` has already set
-// `ctx.payload.system` to a fresh array, so we push onto it directly without
-// re-checking the shape.
+// ./index.ts puts `injectBillingBlock` ahead of us, so `ctx.payload.system`
+// is always a fresh array by the time this interceptor runs. The runtime
+// `Array.isArray` guard below fences that invariant structurally — if the
+// chain order is ever rearranged, the throw surfaces the misuse loudly
+// instead of silently `.push`-ing onto a non-array.
 export const injectIdentityBlock = async <TResult>(
   ctx: ClaudeCodeMessagesBoundaryCtx,
   _request: object,

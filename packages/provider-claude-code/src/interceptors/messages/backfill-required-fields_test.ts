@@ -93,7 +93,7 @@ test('preserves caller-supplied temperature', async () => {
 });
 
 // Explicit zero must survive (legitimate deterministic-decoding choice;
-// `=== undefined` rather than falsy check guards this).
+// the `??=` operator only fills `null`/`undefined`, so `0` survives).
 test('preserves caller-supplied temperature: 0', async () => {
   const ctx = invocation({
     model: 'claude-sonnet-4-5-20250929',

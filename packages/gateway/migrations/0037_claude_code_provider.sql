@@ -1,11 +1,11 @@
 -- SQLite CHECK constraints on `upstreams.provider` are immutable; the standard
--- pattern in this repo is to rebuild the table (see 0027_codex_provider.sql).
--- The new value 'claude-code' joins the existing four kinds; no row data
--- changes.
+-- pattern in this repo is to rebuild the table (see 0027_codex_provider.sql,
+-- 0034_ollama_provider.sql). The new value 'claude-code' joins the existing
+-- five kinds; no row data changes.
 
 CREATE TABLE upstreams_new (
   id                         TEXT PRIMARY KEY,
-  provider                   TEXT NOT NULL CHECK (provider IN ('copilot', 'custom', 'azure', 'codex', 'claude-code')),
+  provider                   TEXT NOT NULL CHECK (provider IN ('copilot', 'custom', 'azure', 'codex', 'ollama', 'claude-code')),
   name                       TEXT NOT NULL,
   enabled                    INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   sort_order                 INTEGER NOT NULL DEFAULT 0,

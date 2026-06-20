@@ -89,12 +89,10 @@ describe('assertClaudeCodeUpstreamState', () => {
       accounts: [{ ...goodAccount, refreshToken: null }],
     })).toThrow(/refreshToken/);
   });
-  test('rejects unknown tokenKind', () => {
+  test('rejects unknown or missing tokenKind', () => {
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{ ...goodAccount, tokenKind: 'apikey' }],
     })).toThrow(/tokenKind/);
-  });
-  test('rejects missing tokenKind', () => {
     const { tokenKind: _drop, ...withoutKind } = goodAccount;
     expect(() => assertClaudeCodeUpstreamState({ accounts: [withoutKind] })).toThrow(/tokenKind/);
   });

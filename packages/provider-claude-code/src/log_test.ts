@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { logError, logInfo, logWarn } from './log.ts';
+import { logInfo, logWarn } from './log.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -56,12 +56,6 @@ describe('log helpers', () => {
   test('logWarn routes through console.warn', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     logWarn('claude_code_test_event', { upstream_id: 'up_x' });
-    expect(spy).toHaveBeenCalledExactlyOnceWith('claude_code_test_event upstream_id=up_x');
-  });
-
-  test('logError routes through console.error', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    logError('claude_code_test_event', { upstream_id: 'up_x' });
     expect(spy).toHaveBeenCalledExactlyOnceWith('claude_code_test_event upstream_id=up_x');
   });
 });

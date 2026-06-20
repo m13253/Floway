@@ -7,7 +7,7 @@ import { exportData, importData } from './data-transfer/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { authLoginBody, changeOwnPasswordBody, claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
+import { authLoginBody, changeOwnPasswordBody, claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
@@ -73,7 +73,7 @@ export const controlPlaneRoutes = new Hono()
     .post('/upstreams/claude-code-import', zValidator('json', claudeCodeImportBody), claudeCodeImport)
     .post('/upstreams/:id/claude-code-reimport', zValidator('json', claudeCodeReimportBody), claudeCodeReimport)
     .post('/upstreams/:id/claude-code-refresh-now', zValidator('json', claudeCodeRefreshNowBody), claudeCodeRefreshNow)
-    .post('/upstreams/:id/probe-quota', claudeCodeProbeQuota)
+    .post('/upstreams/:id/probe-quota', zValidator('json', claudeCodeProbeQuotaBody), claudeCodeProbeQuota)
     .post('/upstreams/claude-code-setup-token-pkce-start', zValidator('json', claudeCodePkceStartBody), claudeCodeSetupTokenPkceStart)
     .post('/upstreams/claude-code-setup-token-import', zValidator('json', claudeCodeSetupTokenImportBody), claudeCodeSetupTokenImport)
     .post('/upstreams/:id/claude-code-setup-token-reimport', zValidator('json', claudeCodeSetupTokenReimportBody), claudeCodeSetupTokenReimport)

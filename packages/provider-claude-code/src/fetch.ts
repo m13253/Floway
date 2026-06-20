@@ -5,8 +5,7 @@ import { logWarn, logInfo } from './log.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
-  type ClaudeCodeAccountCredential,
-  type ClaudeCodeUpstreamState,
+  replaceAccountAt,
 } from './state.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -130,21 +129,13 @@ const isRateLimitedNow = (
   return new Date(snapshot.reset).getTime() > now.getTime();
 };
 
-const replaceStateAccount = (
-  state: ClaudeCodeUpstreamState,
-  patch: (account: ClaudeCodeAccountCredential) => ClaudeCodeAccountCredential,
-): ClaudeCodeUpstreamState => ({
-  ...state,
-  accounts: state.accounts.map((account, i) => (i === 0 ? patch(account) : account)),
-});
-
 const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) return;
   const state = readClaudeCodeUpstreamState(fresh.state);
   const account = state.accounts[0];
   const priorStatus = account.quotaSnapshot === null ? null : account.quotaSnapshot.data.status;
-  const next = replaceStateAccount(state, account => ({
+  const next = replaceAccountAt(state, 0, account => ({
     ...account,
     quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
   }));
@@ -243,6 +234,14 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
   return null;
 };
 
+// Terminal flip from the data-plane sentinel detector. Distinct from
+// access-token-cache.ts's `persistTerminalState`: this path runs in a
+// fire-and-forget context with no caller-side state, so we re-read; the
+// flip is body-sentinel-triggered (org disabled/banned), not oauth-error-
+// triggered, so the log carries `upstream_status` instead of `oauth_code`;
+// and a sibling oauth-side flip may have already happened, so we skip the
+// write when the account isn't `active` anymore. Merging the two helpers
+// would force conditional dispatch on every one of these axes.
 const persistTerminalAccountState = async (
   upstreamId: string,
   terminalMessage: string,
@@ -257,7 +256,7 @@ const persistTerminalAccountState = async (
   // skip overwriting the prior message so the dashboard keeps the first
   // signal.
   if (account.state !== 'active') return;
-  const flipped = replaceStateAccount(state, account => ({
+  const flipped = replaceAccountAt(state, 0, account => ({
     ...account,
     state: 'refresh_failed',
     stateMessage: terminalMessage,
@@ -432,7 +431,7 @@ const performUpstreamCall = async (
     if (!('content-type' in passthrough)) passthrough['content-type'] = 'application/json';
     headers = { ...passthrough, authorization: `Bearer ${accessToken.entry.token}` };
   } else {
-    headers = { ...pickClaudeCodeHeaders(upstreamModelId), 'content-type': 'application/json', authorization: `Bearer ${accessToken.entry.token}` };
+    headers = { ...pickClaudeCodeHeaders(upstreamModelId), authorization: `Bearer ${accessToken.entry.token}` };
   }
 
   // Force stream:true regardless of caller intent. The streaming envelope is

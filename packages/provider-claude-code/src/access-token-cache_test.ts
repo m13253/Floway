@@ -246,9 +246,11 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     for (const r of results) {
       expect(r.entry.token).toBe('at_new');
     }
-    // Exactly one caller observes `freshlyMinted: true` — the one whose
-    // promise actually drove the mint. The rest see the same EnsuredAccessToken
-    // value and report freshlyMinted matching the mint path's return.
+    // Every coalesced waiter reports `freshlyMinted: true` — the contract
+    // documented on `EnsuredAccessToken` in access-token-cache.ts is "this
+    // call site shared in a real mint," not "drove the mint itself." All
+    // ten callers fanned out onto the single in-flight promise here, so
+    // all ten observe `freshlyMinted: true`.
     const minted = results.filter(r => r.freshlyMinted).length;
     expect(minted).toBe(10);
   });

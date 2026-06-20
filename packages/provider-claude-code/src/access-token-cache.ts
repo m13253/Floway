@@ -5,6 +5,7 @@ import {
 import { logInfo, logWarn } from './log.ts';
 import {
   readClaudeCodeUpstreamState,
+  replaceAccountAt,
   type ClaudeCodeAccessTokenEntry,
   type ClaudeCodeUpstreamState,
 } from './state.ts';
@@ -36,15 +37,6 @@ const REFRESH_SKEW_MS = 5 * 60 * 1000;
 
 const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
   entry.expiresAt > Date.now() + REFRESH_SKEW_MS;
-
-const replaceAccountAt = (
-  state: ClaudeCodeUpstreamState,
-  index: number,
-  patch: (account: ClaudeCodeUpstreamState['accounts'][number]) => ClaudeCodeUpstreamState['accounts'][number],
-): ClaudeCodeUpstreamState => ({
-  ...state,
-  accounts: state.accounts.map((account, i) => (i === index ? patch(account) : account)),
-});
 
 export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
@@ -223,6 +215,12 @@ interface TerminalFlipFields {
   oauthCode: string | null;
 }
 
+// Terminal flip from the oauth-error path. Distinct from fetch.ts's
+// `persistTerminalAccountState`: caller already holds a fresh state read
+// (so we take it as a param rather than re-reading), the trigger is an
+// oauth-protocol code (logged as `oauth_code`, possibly null for
+// code-internal flips), and the caller has already established the
+// account is active.
 const persistTerminalState = async (
   repo: UpstreamsRepoSlim,
   upstreamId: string,
@@ -268,13 +266,18 @@ const recoverFromRefreshRace = async (
   const rereadState = readClaudeCodeUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts[0];
   if (rereadAccount.state !== 'active') return null;
+  // Recovery only ever fires from the oauth refresh path (the
+  // `tokenKind === 'setup-token'` early return above runs first), so the
+  // re-read row is always an oauth credential. Pin the narrow structurally
+  // so the discriminated-union refreshToken is `string`, not `string | null`.
+  if (rereadAccount.tokenKind !== 'oauth') {
+    throw new Error('Claude Code refresh-race recovery reached on non-oauth credential (structural invariant violation)');
+  }
   if (rereadAccount.refreshToken === usedRefreshToken) return null;
   logInfo('claude_code_refresh_race_recovered', {
     upstream_id: args.upstreamId,
     account_uuid: rereadAccount.accountUuid,
-    rotated_refresh_token_prefix: rereadAccount.refreshToken === null
-      ? null
-      : rereadAccount.refreshToken.slice(0, 6),
+    rotated_refresh_token_prefix: rereadAccount.refreshToken.slice(0, 6),
   });
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
     return { entry: rereadAccount.accessToken, freshlyMinted: false };

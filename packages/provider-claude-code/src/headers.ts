@@ -50,6 +50,7 @@ const BASE_HEADERS = {
   'anthropic-dangerous-direct-browser-access': 'true',
   'anthropic-version': '2023-06-01',
   Accept: 'application/json',
+  'Content-Type': 'application/json',
   ...STAINLESS_BASE,
 } as const;
 

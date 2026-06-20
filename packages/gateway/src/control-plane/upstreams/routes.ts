@@ -13,7 +13,7 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog, type Fetcher, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -874,6 +874,15 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   if (existing?.provider !== 'claude-code') {
     return c.json({ error: 'Claude Code upstream not found' }, 404);
   }
+  // Cross-kind re-import would silently replace a setup-token credential
+  // with an OAuth refresh token (or vice versa), changing the credential's
+  // capability surface (`user:profile` scope, presence of refresh) without
+  // a corresponding name / type change on the dashboard. Reject so the
+  // operator picks the right re-import endpoint.
+  const currentAccount = readClaudeCodeUpstreamState(existing.state).accounts[0];
+  if (currentAccount.tokenKind === 'setup-token') {
+    return c.json({ error: 'row uses setup-token credential; use /claude-code-setup-token-reimport' }, 400);
+  }
 
   const body = c.req.valid('json');
   let fetcher;
@@ -951,6 +960,12 @@ export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeC
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'claude-code') {
     return c.json({ error: 'Claude Code upstream not found' }, 404);
+  }
+  // Symmetric guard to claudeCodeReimport: an OAuth row must not be replaced
+  // with a setup token through the setup-token endpoint.
+  const currentAccount = readClaudeCodeUpstreamState(existing.state).accounts[0];
+  if (currentAccount.tokenKind === 'oauth') {
+    return c.json({ error: 'row uses oauth credential; use /claude-code-reimport' }, 400);
   }
 
   const body = c.req.valid('json');
@@ -1219,7 +1234,7 @@ const persistUsageProbeSnapshot = async (
   }
 };
 
-export const claudeCodeProbeQuota = async (c: Context) => {
+export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbeQuotaBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
@@ -1229,11 +1244,17 @@ export const claudeCodeProbeQuota = async (c: Context) => {
   // for setup tokens), so we don't gate by tokenKind. The provider gate is
   // the only relevant filter.
   if (existing.provider !== 'claude-code') {
-    return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 404);
+    return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 400);
   }
 
+  const body = c.req.valid('json');
   const actor = c.get('userId') as number;
-  const fetcher = await resolveControlPlaneFetcher({ upstreamId: id });
+  let fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
 
   let probe;
   try {

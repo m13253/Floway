@@ -395,6 +395,13 @@ export const claudeCodeRefreshNowBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
+// Same in-flight override slot as the refresh route: a probe fired from an
+// unsaved edit form should reach Anthropic through the proxy chain the
+// operator is currently editing, not the persisted one.
+export const claudeCodeProbeQuotaBody = z.object({
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
 // --- claude-code Setup-Token import / re-import ---
 //
 // The Setup-Token PKCE flow uses the same authorize host / client_id /
