@@ -99,7 +99,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     callResponses: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...(headers ?? {}) },
+        headers: { ...headers },
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderStreamResult<ResponsesStreamEvent>>(
@@ -123,7 +123,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     callResponsesCompact: async (model, body, signal, headers, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...(headers ?? {}) },
+        headers: { ...headers },
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(

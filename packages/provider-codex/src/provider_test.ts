@@ -24,7 +24,6 @@ const baseRecord: UpstreamRecord = {
   proxyFallbackList: [],
 };
 
-// Access token lives in the state slot — there is no separate cache.
 const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({
   ...baseRecord,
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: entry, quotaSnapshot: null }] },
@@ -85,7 +84,6 @@ describe('createCodexProvider', () => {
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
     expect(models[0].endpoints).toEqual({ responses: {} });
-    // No OAuth refresh hit: the only fetch is the catalog.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });

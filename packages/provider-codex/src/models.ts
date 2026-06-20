@@ -8,8 +8,6 @@ import {
 import { pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type UpstreamModel } from '@floway-dev/provider';
 
-// Narrowed shape from /codex/models. Upstream returns
-// `{ models: [{ slug, display_name, visibility, context_window, max_context_window, ... }] }`.
 export interface CodexRawModel {
   id: string;
   display_name: string;
@@ -42,16 +40,17 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
   return parsed.models.map(assertRawModel);
 };
 
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
 const assertRawModel = (value: unknown): CodexRawModel => {
-  if (typeof value !== 'object' || value === null) throw new TypeError('Codex model entry is not an object');
-  const obj = value as Record<string, unknown>;
-  const slug = obj.slug;
+  if (!isPlainRecord(value)) throw new TypeError('Codex model entry is not an object');
+  const slug = value.slug;
   if (typeof slug !== 'string') throw new TypeError('Codex model entry missing slug');
   return {
     id: slug,
-    display_name: typeof obj.display_name === 'string' ? obj.display_name : slug,
-    context_window: typeof obj.context_window === 'number' ? obj.context_window : 0,
-    max_context_window: typeof obj.max_context_window === 'number' ? obj.max_context_window : 0,
+    display_name: typeof value.display_name === 'string' ? value.display_name : slug,
+    context_window: typeof value.context_window === 'number' ? value.context_window : 0,
+    max_context_window: typeof value.max_context_window === 'number' ? value.max_context_window : 0,
   };
 };
 
