@@ -1,3 +1,4 @@
+import { DurableObject } from 'cloudflare:workers';
 import { test } from 'vitest';
 
 import { KeyDumpDO } from './key-dump-do.ts';
@@ -47,6 +48,16 @@ class FakeState {
     this.sockets.push(ws);
   }
 }
+
+test('KeyDumpDO extends DurableObject so the runtime gates RPC dispatch on it', () => {
+  // Without `extends DurableObject` the CF runtime rejects `stub.publish(...)`
+  // and `stub.notifyDisabled(...)` with "the receiving Durable Object does not
+  // support RPC". Errors from publish flow through `waitUntil` and get
+  // swallowed silently, starving SSE subscribers of `appended` frames — a
+  // production regression a deployment smoke test caught that unit tests
+  // alone would never see. Lock the relationship here.
+  assertEquals(Object.getPrototypeOf(KeyDumpDO.prototype) === DurableObject.prototype, true);
+});
 
 test('KeyDumpDO.publish sends an appended frame to every registered socket', async () => {
   const state = new FakeState();

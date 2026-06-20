@@ -1,21 +1,20 @@
+import { DurableObject } from 'cloudflare:workers';
+
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 // `KeyDumpDO` is a stateless WebSocket fan-out actor — one DO instance per
 // api-key id (resolved via `idFromName(keyId)`). The DO accepts WS clients
-// from the gateway's SSE handler via `subscribe`, and the gateway's
+// from the gateway's SSE handler via `fetch`, and the gateway's
 // capture-dump path drives `publish(meta)` on the same instance after the
 // store row is committed. Hibernation lets the actor sleep between bursts
 // without dropping live subscribers.
 //
-// Direct method invocation (`stub.publish(...)`, `stub.notifyDisabled(...)`)
-// is the documented RPC path for stateless coordinator DOs — see the
-// hibernation example in the Cloudflare docs — so we don't build Request
-// objects per publish.
-
-interface KeyDumpState {
-  acceptWebSocket(server: WebSocket): void;
-  getWebSockets(): WebSocket[];
-}
+// `extends DurableObject` is load-bearing: the CF runtime gates RPC method
+// dispatch (`stub.publish(...)`, `stub.notifyDisabled(...)`) on the actor
+// extending this base class. Without it, the runtime rejects the call with
+// "the receiving Durable Object does not support RPC" and the broker's
+// publish path silently fails (errors flow through `waitUntil`), starving
+// SSE subscribers of `appended` frames.
 
 // The WebSocket frame we emit to subscribers. Only `appended` is produced
 // today; the gateway-side SSE handler emits its own `error` frames from
@@ -25,8 +24,13 @@ interface OutboundFrame {
   data: DumpMetadata;
 }
 
-export class KeyDumpDO {
-  constructor(private readonly ctx: KeyDumpState, _env: unknown) {}
+export class KeyDumpDO extends DurableObject {
+  // The base class's constructor signature is what the CF runtime invokes;
+  // declared explicitly here so the type-check sees `(ctx, env)` even when
+  // the `cloudflare:workers` types resolve to a parameterless base.
+  constructor(ctx: DurableObjectState, env: unknown) {
+    super(ctx, env);
+  }
 
   async fetch(_request: Request): Promise<Response> {
     const pair = new WebSocketPair();
