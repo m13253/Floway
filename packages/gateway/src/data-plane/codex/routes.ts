@@ -59,20 +59,12 @@ import {
 import { codexModels } from './models.ts';
 import { responsesHttp } from '../llm/responses/http.ts';
 import { responsesWebSocket } from '../llm/responses/websocket.ts';
-import { captureRequestDump } from '../middleware/capture-dump.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 
 export const mountCodexRoutes = (app: Hono) => {
-  // Codex's `/responses` and `/responses/compact` are billable upstream calls
-  // routed through the same generic responses handlers as `/v1/responses`,
-  // and they get the same dump-capture middleware. The WebSocket upgrade,
-  // catalog/analytics endpoints, MCP/plugins routes, and JWKS are not LLM
-  // calls and stay unwrapped — same exclusion the LLM mount applies to
-  // `count_tokens` and the WS entry.
-  const dump = captureRequestDump();
-  app.post(`${CODEX_BASE_PATH}/responses`, dump, responsesHttp.generate);
-  app.post(`${CODEX_BASE_PATH}/responses/compact`, dump, responsesHttp.compact);
+  app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
+  app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
   app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);
 
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);

@@ -6,7 +6,6 @@ import { SqliteImageCache } from './sqlite-image-cache.ts';
 import { nodeRuntimeRootCAs } from './tls-trust.ts';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
-  type FileProvider,
   IMAGE_CACHE_POLICY,
   initEnv,
   initFileProvider,
@@ -26,15 +25,14 @@ export interface NodePlatformOptions {
 // userspace-TLS handshake.
 export const bootstrapNodePlatform = (
   opts: NodePlatformOptions,
-): { db: SqlDatabase; files: FileProvider } => {
+): { db: SqlDatabase } => {
   initEnv(name => process.env[name] ?? '');
   initRuntimeKind('node');
-  const files = new FsFileProvider(opts.filesDir);
-  initFileProvider(files);
+  initFileProvider(new FsFileProvider(opts.filesDir));
   initSocketDial(nodeSocketDial);
   addTrustedRootCAs(nodeRuntimeRootCAs);
   const db = createNodeSqliteDatabase(opts.dbPath);
   initImageCacheStore(new SqliteImageCache(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());
-  return { db, files };
+  return { db };
 };

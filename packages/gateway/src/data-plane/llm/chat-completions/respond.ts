@@ -5,7 +5,7 @@ import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtoc
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, errorDumpAccounting, eventResultMetadata, plainDumpAccounting, plainResultToResponse, recordPerformance, recordUsage, setDumpAccounting, setDumpAccountingFromIdentity } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -26,19 +26,16 @@ export const respondChatCompletions = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
-    setDumpAccounting(c, errorDumpAccounting(result.performance));
     recordPerformance(ctx, result.performance, true);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    setDumpAccounting(c, errorDumpAccounting(result.performance));
     recordPerformance(ctx, result.performance, true);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    setDumpAccounting(c, plainDumpAccounting);
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -50,12 +47,10 @@ export const respondChatCompletions = async (
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage) : null;
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response) };
     } catch (error) {
-      setDumpAccounting(c, errorDumpAccounting(result.performance));
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error, 'chat-completions')) };
     }
@@ -70,7 +65,6 @@ export const respondChatCompletions = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {

@@ -17,7 +17,6 @@ import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, StoredResponsesItem, UsageRecord, User } from '../../repo/types.ts';
-import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -259,21 +258,6 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
 const setup = () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  // The replace-mode import path purges every existing key's dump bundles
-  // before wiping the api_keys table, so the dump store has to be wired up;
-  // a no-op implementation is enough here — the dump-layer behavior has its
-  // own dedicated tests.
-  initDumpStore({
-    put: async () => {},
-    list: async () => [],
-    get: async () => null,
-    purgeExpired: async () => {},
-    purgeAll: async () => {},
-  });
-  initDumpBroker({
-    publish: () => {},
-    async *subscribe() {},
-  });
   const app = new Hono();
   app.get('/export', zValidator('query', exportQuery), exportData);
   app.post('/import', zValidator('json', importBody), importData);

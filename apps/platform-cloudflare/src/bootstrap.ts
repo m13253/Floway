@@ -1,4 +1,3 @@
-import { type KeyDumpDO } from './dump/key-dump-do.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
@@ -21,18 +20,15 @@ export interface CloudflareEnv {
   FILES: R2BucketLike;
   IMAGES: ImagesBinding;
   KV: KvNamespace;
-  KEY_DUMP_DO: DurableObjectNamespace<KeyDumpDO>;
-  DUMP_BLOBS: R2BucketLike;
   [key: string]: unknown;
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
-// config and telemetry, R2 holds spilled payloads and dump bundles, Images
-// compresses inline images, KV memoises compressed image results, the
-// KeyDumpDO namespace partitions per-key dump storage and fanout. A missing
-// binding means wrangler.jsonc drifted from the code, so we refuse to
-// initialise rather than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'KEY_DUMP_DO', 'DUMP_BLOBS'] as const;
+// config and telemetry, R2 holds spilled payloads, Images compresses inline
+// images, KV memoises compressed image results. A missing binding means
+// wrangler.jsonc drifted from the code, so we refuse to initialise rather
+// than 503 on first use of the absent binding.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined || env[name] === null);

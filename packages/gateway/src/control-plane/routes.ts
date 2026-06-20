@@ -4,7 +4,6 @@ import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
-import { dump } from './dump.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
@@ -41,7 +40,6 @@ export const controlPlaneRoutes = new Hono()
   .post('/api/keys/:id/rotate', rotateKey)
   .patch('/api/keys/:id', zValidator('json', updateKeyBody), updateKey)
   .delete('/api/keys/:id', deleteKey)
-  .route('/api/dump', dump)
   .get('/api/token-usage', zValidator('query', tokenUsageQuery), tokenUsage)
   .get('/api/search-usage', zValidator('query', searchUsageQuery), searchUsage)
   .get('/api/performance', zValidator('query', performanceQuery), performanceTelemetry)

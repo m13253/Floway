@@ -5,7 +5,7 @@ import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResul
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, errorDumpAccounting, eventResultMetadata, plainDumpAccounting, plainResultToResponse, recordPerformance, recordUsage, setDumpAccounting, setDumpAccountingFromIdentity } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
@@ -26,19 +26,16 @@ export const respondMessages = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
-    setDumpAccounting(c, errorDumpAccounting(result.performance));
     recordPerformance(ctx, result.performance, true);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    setDumpAccounting(c, errorDumpAccounting(result.performance));
     recordPerformance(ctx, result.performance, true);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    setDumpAccounting(c, plainDumpAccounting);
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -51,12 +48,10 @@ export const respondMessages = async (
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response) };
     } catch (error) {
-      setDumpAccounting(c, errorDumpAccounting(result.performance));
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
@@ -71,7 +66,6 @@ export const respondMessages = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {

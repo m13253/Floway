@@ -1,26 +1,7 @@
 import { test } from 'vitest';
 
-import { initDumpStore } from '../../runtime/dump.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
-import type { DumpStore } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
-
-interface RecordedPurge { kind: 'all' | 'expired'; keyId: string; retention?: number }
-
-const installPurgeRecorder = (): RecordedPurge[] => {
-  const purges: RecordedPurge[] = [];
-  const recordingStore: DumpStore = {
-    put: async () => {},
-    list: async () => [],
-    get: async () => null,
-    purgeAll: async keyId => { purges.push({ kind: 'all', keyId }); },
-    purgeExpired: async (keyId, retentionSeconds) => {
-      purges.push({ kind: 'expired', keyId, retention: retentionSeconds });
-    },
-  };
-  initDumpStore(recordingStore);
-  return purges;
-};
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
   requestApp(`/api/keys/${id}`, {
@@ -157,9 +138,8 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
   assertEquals(stored.userId, apiKey.userId);
 });
 
-test('PATCH /api/keys/:id enable from null calls purgeExpired to populate DO state', async () => {
+test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const purges = installPurgeRecorder();
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 3600 }, apiKey.key);
   assertEquals(response.status, 200);
   const body = (await response.json()) as { dump_retention_seconds: number | null };
@@ -168,13 +148,11 @@ test('PATCH /api/keys/:id enable from null calls purgeExpired to populate DO sta
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.dumpRetentionSeconds, 3600);
-  assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 3600 }]);
 });
 
-test('PATCH /api/keys/:id turns dump retention off (3600 → null) and purges every record', async () => {
+test('PATCH /api/keys/:id clears dump_retention_seconds back to null', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const purges = installPurgeRecorder();
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
@@ -182,31 +160,6 @@ test('PATCH /api/keys/:id turns dump retention off (3600 → null) and purges ev
   const stored = await repo.apiKeys.getById(apiKey.id);
   assertExists(stored);
   assertEquals(stored.dumpRetentionSeconds, null);
-  assertEquals(purges, [{ kind: 'all', keyId: apiKey.id }]);
-});
-
-test('PATCH /api/keys/:id shrinks the window (3600 → 1800) and purges expired records', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const purges = installPurgeRecorder();
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 1800 }]);
-});
-
-test('PATCH /api/keys/:id retention raise calls purgeExpired to refresh DO state', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const purges = installPurgeRecorder();
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 7200 }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals(purges, [{ kind: 'expired', keyId: apiKey.id, retention: 7200 }]);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.dumpRetentionSeconds, 7200);
 });
 
 test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
@@ -215,15 +168,13 @@ test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', asy
   assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
 });
 
-test('DELETE /api/keys/:id soft-deletes the key and purges every record', async () => {
+test('DELETE /api/keys/:id soft-deletes the key', async () => {
   const { repo, apiKey } = await setupAppTest();
-  const purges = installPurgeRecorder();
   const response = await requestApp(`/api/keys/${apiKey.id}`, {
     method: 'DELETE',
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 200);
-  assertEquals(purges, [{ kind: 'all', keyId: apiKey.id }]);
 
   const stored = await repo.apiKeys.getById(apiKey.id);
   // getById hides soft-deleted rows; falling back to listIncludingDeleted

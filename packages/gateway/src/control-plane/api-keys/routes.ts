@@ -4,7 +4,6 @@ import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { getDumpStore } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
@@ -69,10 +68,6 @@ export const deleteKey = async (c: Context) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
-  // Purge before soft-delete so a purge failure leaves the key alive and
-  // visible to retry. The reverse order would orphan dumps under a tombstoned
-  // key the sweeps no longer iterate.
-  await getDumpStore().purgeAll(id);
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };
@@ -110,23 +105,6 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.dump_retention_seconds !== undefined ? { dumpRetentionSeconds: body.dump_retention_seconds } : {}),
   };
   await getRepo().apiKeys.save(updated);
-
-  // Disabling dump or changing the window must be reflected in storage
-  // before responding 200 — the dashboard treats a successful PATCH as
-  // "the world has caught up", so a deferred purge would let stale records
-  // resurface in a follow-up read. Any positive-value change (including
-  // raise and enable-from-null) calls purgeExpired so the CF DO refreshes
-  // its cached retention and reschedules its alarm; on Node the call is a
-  // no-op when no records sit over the new window.
-  if (body.dump_retention_seconds !== undefined) {
-    const previous = owned.dumpRetentionSeconds;
-    const next = updated.dumpRetentionSeconds;
-    if (next === null && previous !== null) {
-      await getDumpStore().purgeAll(updated.id);
-    } else if (next !== null && next !== previous) {
-      await getDumpStore().purgeExpired(updated.id, next);
-    }
-  }
 
   return c.json(apiKeyToJson(updated));
 };

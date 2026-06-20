@@ -20,7 +20,6 @@ import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getDumpStore } from '../../runtime/dump.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -690,12 +689,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
     // leaves the deployment partially wiped. Operators should back up before running replace mode.
-    //
-    // Purge dump bundles before wiping api_keys so the per-key DO/R2/disk
-    // state goes with the row. The in-app DELETE handler purges first
-    // for the same reason; replace-mode import must match that ordering.
-    const existingKeys = await repo.apiKeys.listIncludingDeleted();
-    await Promise.all(existingKeys.map(k => getDumpStore().purgeAll(k.id)));
     const deletes: Promise<unknown>[] = [
       repo.sessions.deleteAll(),
       repo.apiKeys.deleteAll(),

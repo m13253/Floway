@@ -5,8 +5,7 @@ import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
-import { initDumpBroker, initDumpStore } from './runtime/dump.ts';
-import { createInMemoryImageProcessor, type DumpBroker, type DumpStore, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
+import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -95,19 +94,6 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
   };
 };
 
-const noopDumpStore = (): DumpStore => ({
-  put: async () => {},
-  list: async () => [],
-  get: async () => null,
-  purgeExpired: async () => {},
-  purgeAll: async () => {},
-});
-
-const noopDumpBroker = (): DumpBroker => ({
-  publish: () => {},
-  async *subscribe() {},
-});
-
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
   initRepo(repo);
@@ -116,12 +102,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   initBackgroundSchedulerResolver(_c => promise => {
     promise.catch(err => console.error('[background]', err));
   });
-  // No-op defaults so tests that exercise dump-touching endpoints (DELETE,
-  // user soft-delete) do not need to wire stubs themselves. Tests that
-  // assert on dump-layer calls install their own stubs via initDumpStore /
-  // initDumpBroker after this returns.
-  initDumpStore(noopDumpStore());
-  initDumpBroker(noopDumpBroker());
 
   const adminKey = options.adminKey ?? 'admin-test-key';
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));

@@ -2,16 +2,10 @@ import { serve, upgradeWebSocket } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
-import { NodeDumpBroker } from './src/dump/broker.ts';
-import { purgeDumpsForAllKeys } from './src/dump/purge.ts';
-import { NodeDumpStore } from './src/dump/store.ts';
 import { applyMigrations } from './src/migrate.ts';
 import {
   app,
-  getRepo,
   initBackgroundSchedulerResolver,
-  initDumpBroker,
-  initDumpStore,
   initRepo,
   initResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
@@ -35,17 +29,9 @@ const port = Number(process.env.PORT ?? 8788);
 
 const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
-const { db, files } = bootstrapNodePlatform({ dbPath, filesDir });
+const { db } = bootstrapNodePlatform({ dbPath, filesDir });
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
-
-const dumpStore = new NodeDumpStore(db, files, async keyId => {
-  const key = await getRepo().apiKeys.getById(keyId);
-  if (!key) throw new Error(`unknown key ${keyId}`);
-  return key.dumpRetentionSeconds;
-});
-initDumpStore(dumpStore);
-initDumpBroker(new NodeDumpBroker());
 
 // Run the scheduled maintenance job once after a short startup delay and
 // then every hour. Without the startup run, a process that restarts more
@@ -57,9 +43,6 @@ const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
   void (async () => {
     try { await runScheduledMaintenance(); } catch (err) { console.error('[scheduled]', err); }
-    try {
-      await purgeDumpsForAllKeys(dumpStore, await getRepo().apiKeys.list());
-    } catch (err) { console.error('[dump-purge] list', err); }
   })();
 };
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
