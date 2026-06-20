@@ -63,30 +63,45 @@ export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata[
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
-// Upstream-emitted hints we propagate verbatim to the downstream client.
+// Upstream response headers we propagate verbatim to the downstream client.
+// A blocklist (not an allowlist): operators want to see what the upstream
+// actually sent — vendor traces (`request-id`, `cf-ray`), plan-billing state
+// (`anthropic-ratelimit-*`, which the official `claude-code` CLI's `/status`
+// indicator reads), and any future `x-*` an upstream introduces. We only
+// strip what we MUST or what would actively break downstream framing:
 //
-// The prefix list covers Anthropic's plan-billing surface: the
-// `anthropic-ratelimit-unified-*` family carries quotas, resets, and warning
-// thresholds, and the official `claude-code` CLI's `/status` indicator reads
-// them. Dropping the headers makes the gateway look like an account with no
-// rate-limit state. The allowlist is by prefix so new dimensions the upstream
-// introduces (e.g. a future `anthropic-ratelimit-tier-*`) are forwarded
-// automatically.
-//
-// The exact-name list covers operator-trace identifiers — `request-id` /
-// `x-request-id` (Anthropic / OpenAI vendor traces) and `cf-ray` (Cloudflare's
-// edge trace). Support tickets and live debugging rely on these reaching the
-// downstream client unmodified.
-const FORWARDED_HEADER_PREFIXES = ['anthropic-ratelimit-'] as const;
-const FORWARDED_HEADER_NAMES = new Set(['request-id', 'x-request-id', 'cf-ray']);
+//   - hop-by-hop headers (RFC 7230 §6.1) MUST NOT be forwarded by
+//     intermediaries.
+//   - `content-length` / `content-encoding` / `content-type` are managed by
+//     the streaming layer: it rewrites the body (SSE re-framing, optional
+//     decompression + re-encode) so upstream's values would mis-frame the
+//     downstream response. The SSE writer sets its own `text/event-stream`;
+//     non-SSE pass-throughs hand content-type back via their own path.
+//   - `set-cookie` / `set-cookie2`: we didn't issue these and propagating
+//     upstream session bindings is a footgun.
+const BLOCKED_UPSTREAM_HEADERS: ReadonlySet<string> = new Set([
+  // hop-by-hop (RFC 7230 §6.1)
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+  // body framing — owned by the streaming layer
+  'content-length',
+  'content-encoding',
+  'content-type',
+  // cookies
+  'set-cookie',
+  'set-cookie2',
+]);
 
-const isForwardableUpstreamHeader = (name: string): boolean => {
-  const lowered = name.toLowerCase();
-  if (FORWARDED_HEADER_NAMES.has(lowered)) return true;
-  return FORWARDED_HEADER_PREFIXES.some(prefix => lowered.startsWith(prefix));
-};
+export const isForwardableUpstreamHeader = (name: string): boolean =>
+  !BLOCKED_UPSTREAM_HEADERS.has(name.toLowerCase());
 
-// Stages allowlisted upstream headers onto the Hono context so the next
+// Stages forwardable upstream headers onto the Hono context so the next
 // `c.newResponse` (or `streamSSE`'s internal `c.newResponse`) emits them on
 // the response. Hono's `c.header()` is the only knob that survives a later
 // `c.json` or `streamSSE` call without being overwritten. Safe to call with
@@ -98,7 +113,7 @@ export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined)
   }
 };
 
-// Returns a `HeadersInit` extending `base` with every allowlisted entry from
+// Returns a `HeadersInit` extending `base` with every forwardable entry from
 // `upstream`. Used by non-streaming JSON responses where the response is
 // built directly (`Response.json(...)`) instead of through Hono's `c`.
 export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): HeadersInit => {

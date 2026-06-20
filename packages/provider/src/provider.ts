@@ -42,9 +42,10 @@ export interface ProviderCallResult {
 // protocol frames directly — the provider drives the upstream fetch, parses
 // the SSE wire via @floway-dev/protocols, and emits the typed event stream.
 // `ok: true` optionally carries the raw upstream `Headers` so the source-side
-// `respond` layer can forward an allowlist (see gateway `shared/respond.ts`).
-// Absent on lifted/synthesized streams that have no upstream Response behind
-// them, matching the same shape on `EventResult`.
+// `respond` layer can forward them to the downstream client (blocklist in
+// gateway `shared/respond.ts` — hop-by-hop, body framing, cookies). Absent
+// on lifted/synthesized streams that have no upstream Response behind them,
+// matching the same shape on `EventResult`.
 // `ok: false` carries the raw upstream Response verbatim so the gateway
 // boundary can relay status + body + headers unchanged. Non-2xx-but-not-SSE
 // responses throw from the provider as a contract violation (provider always

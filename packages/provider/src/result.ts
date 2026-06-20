@@ -8,7 +8,7 @@ export interface EventResult<T> {
   performance?: PerformanceTelemetryContext;
   finalMetadata?: Promise<EventResultMetadata>;
   // Raw upstream response headers for the source-side `respond` layer to
-  // forward (allowlist in gateway `shared/respond.ts`). Absent on
+  // forward (blocklist in gateway `shared/respond.ts`). Absent on
   // lifted/synthesized streams that have no upstream Response behind them.
   headers?: Headers;
 }

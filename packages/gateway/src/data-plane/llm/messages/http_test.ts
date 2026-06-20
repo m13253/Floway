@@ -190,13 +190,15 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 });
 
-test('POST /v1/messages forwards allowlisted upstream response headers end-to-end (streaming)', async () => {
+test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
   installRepo();
   const upstreamHeaders = new Headers({
     'anthropic-ratelimit-unified-status': 'allowed',
     'anthropic-ratelimit-unified-remaining': '99',
     'request-id': 'req_e2e_stream',
-    'x-internal-cache-id': 'cache-omit',
+    'openai-version': '2024-10-21',
+    'connection': 'close',
+    'set-cookie': 'session=secret',
   });
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
@@ -213,12 +215,17 @@ test('POST /v1/messages forwards allowlisted upstream response headers end-to-en
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(response.headers.get('anthropic-ratelimit-unified-remaining'), '99');
   assertEquals(response.headers.get('request-id'), 'req_e2e_stream');
-  // Non-allowlisted upstream headers must not leak through.
-  assertEquals(response.headers.get('x-internal-cache-id'), null);
+  assertEquals(response.headers.get('openai-version'), '2024-10-21');
+  // hop-by-hop and cookies are stripped. `connection` is special-cased
+  // because Hono's streamSSE writer sets its own `keep-alive`; assert
+  // upstream's distinctive `close` did not survive instead of asserting
+  // absence.
+  assert(response.headers.get('connection') !== 'close');
+  assertEquals(response.headers.get('set-cookie'), null);
   await response.text();
 });
 
-test('POST /v1/messages forwards allowlisted upstream response headers end-to-end (non-streaming)', async () => {
+test('POST /v1/messages forwards upstream response headers end-to-end (non-streaming)', async () => {
   installRepo();
   const upstreamHeaders = new Headers({
     'anthropic-ratelimit-unified-status': 'allowed',
