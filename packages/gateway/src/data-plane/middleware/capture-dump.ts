@@ -103,10 +103,13 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const completedAt = Date.now();
   const upstream = c.res;
-  const accounting = c.get('dumpAccounting') as DumpAccounting | undefined;
-  if (!accounting) {
-    throw new Error('captureRequestDump: dumpAccounting was not set by the respond layer');
-  }
+  // Default to the plain "no upstream identified" shape when a respond path
+  // didn't stamp accounting. The data plane mounts capture-dump across every
+  // billable surface plus support routes (/models, /embeddings list, the
+  // Codex stub endpoints, the responses WS upgrade) — many of those never
+  // reach a respond layer and have no model/upstream to attribute. The dump
+  // viewer still wants to see them, just with null model/upstream.
+  const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
 
   let teedForClient: ReadableStream<Uint8Array> | null = null;
   let teedForCapture: ReadableStream<Uint8Array> | null = null;

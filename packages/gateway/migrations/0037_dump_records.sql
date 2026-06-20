@@ -15,8 +15,10 @@ CREATE TABLE dump_records (
   request_headers_json TEXT NOT NULL,
   response_headers_json TEXT,  -- NULL when no response was produced
   -- Each descriptor is either NULL (no body for that side) or
-  -- {key, byteLength, sha256, encoding, contentType, type?} JSON.
-  -- The response descriptor's `type` discriminates 'bytes' vs 'events'.
+  -- {key, byteLength, contentType, type?} JSON. The response descriptor's
+  -- `type` discriminates 'bytes' vs 'events'. The body files themselves
+  -- are gzipped at rest in the FileProvider; the descriptor doesn't carry
+  -- a hash because we don't deduplicate across keys.
   request_body_descriptor TEXT,
   response_body_descriptor TEXT,
   PRIMARY KEY (key_id, id)

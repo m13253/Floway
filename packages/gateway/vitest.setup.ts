@@ -1,5 +1,6 @@
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
 import { initDumpBroker, initDumpStore } from './src/runtime/dump.ts';
+import { trackBackground } from './src/test-helpers/background-tracker.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
 import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
@@ -12,9 +13,7 @@ initEnv(() => '');
 // runtime behaviour re-init this with 'cloudflare'.
 initRuntimeKind('node');
 
-initBackgroundSchedulerResolver(_c => promise => {
-  promise.catch(err => console.error('[background]', err));
-});
+initBackgroundSchedulerResolver(_c => trackBackground);
 
 // Default no-op dump bindings. The capture-dump middleware short-circuits on
 // keys without retention, so every test whose fixture leaves

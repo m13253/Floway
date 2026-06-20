@@ -5,6 +5,7 @@ import { test } from 'vitest';
 import { type DumpAccounting, captureRequestDump, errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from './capture-dump.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
+import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
 import { assertEquals, assertExists, createDumpStubs } from '@floway-dev/test-utils';
@@ -32,12 +33,6 @@ const buildApp = (setApiKey: (c: Context<{ Variables: TestVars }>) => void) => {
   });
   app.use('*', captureRequestDump());
   return app;
-};
-
-const flushBackground = async (): Promise<void> => {
-  for (let i = 0; i < 20; i++) {
-    await new Promise(resolve => setTimeout(resolve, 5));
-  }
 };
 
 test('captureRequestDump short-circuits when the key has no retention', async () => {
@@ -138,27 +133,28 @@ test('captureRequestDump surfaces accounting.error onto meta.error', async () =>
   assertEquals(stubs.stored[0]!.record.meta.status, 502);
 });
 
-test('captureRequestDump fails loud when the respond layer forgot to stamp accounting', async () => {
+test('captureRequestDump captures the request with plain accounting when the route did not stamp', async () => {
+  // The data plane mounts capture-dump across non-LLM routes too (/models,
+  // /embeddings list, the Codex stub endpoints, the responses WS upgrade)
+  // that never reach a respond layer. Those still get dumped — just with
+  // null model/upstream — rather than treated as a hard contract violation.
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
   const stubs = installStubs();
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
-  // Intentionally omit `c.set('dumpAccounting', ...)`: every billable respond
-  // path is contracted to stamp it. Missing stamps must surface, not silently
-  // store the request with a fabricated empty accounting record.
   app.post('/v1/no-acct', c => c.json({ ok: 1 }));
-  // Hono's hono-base wraps a try/catch that converts a middleware throw into
-  // a 500 response — we observe the throw through the failed status rather
-  // than as a re-raised error on `app.request`. The throw landing in stderr
-  // is what makes this "loud" — the captured stderr line shows the message.
   const response = await app.request('/v1/no-acct', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await response.text();
   await flushBackground();
 
-  assertEquals(response.status, 500);
-  assertEquals(stubs.stored.length, 0);
-  assertEquals(stubs.published.length, 0);
+  assertEquals(response.status, 200);
+  assertEquals(stubs.stored.length, 1);
+  const meta = stubs.stored[0]!.record.meta;
+  assertEquals(meta.upstream, null);
+  assertEquals(meta.model, null);
+  assertEquals(meta.error, null);
 });
 
 test('captureRequestDump records identity-derived model + upstream on success', async () => {

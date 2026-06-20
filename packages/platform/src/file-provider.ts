@@ -1,8 +1,6 @@
 export interface FileProvider {
   put(key: string, body: Uint8Array): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
-  // Delete one file. No-op when the key has no object.
-  delete(key: string): Promise<void>;
   deletePrefix(prefix: string): Promise<void>;
   // Enumerate every object key under `prefix`. The sweeper uses this to find
   // which time-bucket prefixes still exist so it can delete each expired one.
@@ -29,10 +27,6 @@ export class MemoryFileProvider implements FileProvider {
 
   async get(key: string): Promise<Uint8Array | null> {
     return this.files.get(key)?.slice() ?? null;
-  }
-
-  async delete(key: string): Promise<void> {
-    this.files.delete(key);
   }
 
   async deletePrefix(prefix: string): Promise<void> {
