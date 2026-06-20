@@ -21,7 +21,9 @@ class FakeServerSocket {
   close(code = 1000, reason = ''): void {
     if (this.closed) return;
     this.closed = { code, reason };
-    this.emit('close', new Event('close'));
+    // workerd emits the 'close' event asynchronously after close() returns;
+    // mirror that here so subscribers can't observe a synchronous close.
+    queueMicrotask(() => this.emit('close', new Event('close')));
   }
   send(data: string): void { this.sent.push(data); }
   emit(type: string, event: Event): void {

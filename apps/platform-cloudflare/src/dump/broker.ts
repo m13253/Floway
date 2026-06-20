@@ -79,7 +79,8 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
     if (response.status !== 101) {
       throw new Error(`KeyDumpDO subscribe returned HTTP ${response.status} instead of 101`);
     }
-    const socket = (response as Response & { webSocket?: WebSocket }).webSocket!;
+    const socket = (response as Response & { webSocket?: WebSocket }).webSocket;
+    if (!socket) throw new Error('KeyDumpDO returned 101 without a webSocket');
     socket.accept();
     socket.addEventListener('message', event => {
       if (closed) return;
