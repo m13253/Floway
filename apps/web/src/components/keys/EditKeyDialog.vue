@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
@@ -167,6 +168,11 @@ const save = async () => {
         />
         <p v-if="retentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ retentionWarning }}
+        </p>
+        <p v-if="apiKey.dump_retention_seconds !== null" class="text-xs text-gray-500">
+          <RouterLink to="/dashboard/requests" class="text-accent-cyan hover:underline">
+            View captured requests →
+          </RouterLink>
         </p>
       </div>
 
