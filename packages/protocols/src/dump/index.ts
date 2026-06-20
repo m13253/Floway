@@ -53,9 +53,10 @@ export type DumpBody =
 export interface DumpRequest {
   method: string;
   path: string;
-  // Order-preserving header pairs. We do not redact: every header is
-  // captured verbatim because the API key is already in our database and
-  // the dump only surfaces to the key's own operator.
+  // Header pairs preserving duplicate values; iteration order follows the
+  // Headers spec. We do not redact: every header is captured verbatim
+  // because the API key is already in our database and the dump only
+  // surfaces to the key's own operator.
   headers: Array<[string, string]>;
   body: DumpBody;
 }

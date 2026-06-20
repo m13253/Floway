@@ -13,8 +13,8 @@ const DEDUP_REBUILD_THRESHOLD = 10_000;
 const OLDER_PAGE_LIMIT = 100;
 
 // `EventSource.CLOSED` is `2` per the HTML spec. We reach for the literal
-// rather than the named property because happy-dom — the test environment —
-// does not ship `EventSource` on the global scope, so a reference at this
+// rather than the named property because the unit-test environment is
+// `node`, which exposes no `EventSource` global, so a reference at this
 // line would crash with `EventSource is not defined` inside the listener.
 const EVENT_SOURCE_CLOSED = 2;
 
@@ -37,8 +37,10 @@ interface ListResponse {
   records: DumpMetadata[];
 }
 
-// Test seam: vitest's `happy-dom` ships `EventSource`, but unit tests prefer
-// to inject a controllable stub. The factory defaults to the global ctor.
+// Test seam: the unit-test environment is `node`, which exposes no
+// `EventSource` global. The factory exists so tests can inject a
+// controllable stub without standing up any DOM-shimmed `EventSource`,
+// and defaults to the global ctor in the browser.
 type EventSourceFactory = (url: string) => EventSource;
 
 export interface UseDumpSubscriptionOptions {

@@ -739,8 +739,9 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   }
   for (const key of apiKeys) {
     // Merge mode: a flipped/shrunk dump retention must trigger the same purge
-    // transition `updateKey` applies. Replace mode wiped the table above, so
-    // `preImportRetentionById` is empty there and the transition is a no-op.
+    // transition `updateKey` applies. Replace mode is skipped by the
+    // `mode === 'merge'` guard below — the pre-import retention map exists
+    // only to drive merge-mode transitions.
     const previous = preImportRetentionById.get(key.id) ?? null;
     await repo.apiKeys.save(key);
     if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {

@@ -204,9 +204,19 @@ export class FileDumpStore implements DumpStore {
         : { encoding: 'utf8', data: '' },
     };
 
+    // Header presence is the response-existence discriminator: `put` writes
+    // `response_headers_json` for every `bytes`/`stream` response (including
+    // legitimate empty-body 200/204s, where the body descriptor stays null
+    // because there are no bytes to gzip) and leaves headers null only for
+    // `type: 'none'`. A null descriptor with headers therefore means an
+    // empty-body `bytes` response — reconstruct it from a zero-length buffer
+    // so the wire shape's discriminator survives the round trip.
     let responseBody: DumpResponseBody;
-    if (responseDescriptor === null || responseHeaders === null) {
+    if (responseHeaders === null) {
       responseBody = { type: 'none' };
+    } else if (responseDescriptor === null) {
+      const contentType = responseHeaders.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
+      responseBody = { type: 'bytes', body: encodeBodyForWire(new Uint8Array(0), contentType) };
     } else if (responseDescriptor.type === 'events') {
       responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
     } else {
@@ -233,7 +243,7 @@ export class FileDumpStore implements DumpStore {
     // partial failure leaves rows pointing at gone files (detail-fetch then
     // throws `dump body missing`, the documented loud-failure path) and the
     // next sweep retries cleanly. The reverse order would orphan files no
-    // row references, which the cron sweep (D1-driven) could never reach.
+    // row references, which the cron sweep (metadata-driven) could never reach.
     await this.files.deletePrefix(keyPrefix(keyId));
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
   }

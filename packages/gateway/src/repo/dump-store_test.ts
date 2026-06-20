@@ -104,6 +104,32 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   assertEquals(fetched.response.body.data, pngMagic);
 });
 
+test('FileDumpStore preserves the bytes discriminator on an empty-body response', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  // 204-style: real upstream response with status + headers but a zero-length
+  // body. Persistence drops the body file (nothing to gzip), but headers are
+  // still written — the read path must surface this as `bytes`, not `none`.
+  const record: DumpRecord = {
+    ...baseRecord('01HZZ0000000000000000000E1', Date.UTC(2026, 5, 1, 12, 0, 0)),
+    response: {
+      status: 204,
+      headers: [['content-type', 'application/json']],
+      type: 'bytes',
+      body: { encoding: 'utf8', data: '' },
+    },
+  };
+
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', '01HZZ0000000000000000000E1');
+  assertExists(fetched);
+  if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(fetched.response.body.encoding, 'utf8');
+  assertEquals(fetched.response.body.data, '');
+  assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'application/json');
+});
+
 test('FileDumpStore round-trips an SSE record as a stream events array', async () => {
   const db = await openDb();
   const files = new MemoryFileProvider();

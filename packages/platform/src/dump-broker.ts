@@ -12,7 +12,7 @@ import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 export interface DumpBroker {
   // Called by the capture finalize path after the DumpStore.put has
-  // succeeded and the D1 row is committed. The publish itself is best-
+  // succeeded and the metadata row is committed. The publish itself is best-
   // effort: a subscriber that misses the live frame will see the record
   // on its next snapshot fetch (the store is the source of truth).
   publish(keyId: string, meta: DumpMetadata): Promise<void>;

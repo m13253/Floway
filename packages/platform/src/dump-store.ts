@@ -18,9 +18,9 @@ export interface DumpListOptions {
 
 export interface DumpStore {
   // Persist a freshly-captured record. Implementations must write the body
-  // files BEFORE inserting the D1 row, so a partial failure leaves orphan
-  // files (which the sweep will catch) rather than orphan rows (which
-  // would surface as broken records in list/get).
+  // files BEFORE inserting the metadata row, so a partial failure leaves
+  // orphan files (which the sweep will catch) rather than orphan rows
+  // (which would surface as broken records in list/get).
   put(keyId: string, record: DumpRecord): Promise<void>;
 
   // Newest-first metadata-only list, paginated by ULID cursor. Implementations
