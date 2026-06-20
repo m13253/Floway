@@ -149,3 +149,12 @@ test('FileDumpStore.purgeAll wipes every row and every file under the key prefix
   assertEquals((await store.list('key_x', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/key_x/')).length, 0);
 });
+
+test('FileDumpStore.purgeExpired against a never-written key resolves without throwing', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  await store.purgeExpired('never_written_key', 3600);
+  assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
+  assertEquals((await files.listKeys('dumps/v1/never_written_key/')).length, 0);
+});

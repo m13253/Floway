@@ -25,9 +25,10 @@ export interface DumpStore {
   put(keyId: string, record: DumpRecord): Promise<void>;
 
   // Newest-first metadata-only list, paginated by ULID cursor. Implementations
-  // filter by the key's current retention window (records older than
-  // `now - retentionSeconds*1000` are excluded even if they have not been
-  // physically purged yet).
+  // return every stored record matching the cursor/limit; physical retention
+  // enforcement is the cron sweep's responsibility, not list's. Between sweeps
+  // the dashboard may briefly show records that have aged past retention; the
+  // next sweep window will drop them.
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
 
   // Full record fetch: rehydrates body files from the FileProvider, ungzips,

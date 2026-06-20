@@ -62,32 +62,37 @@ const iterateFromTarget = (target: EventTarget, signal: AbortSignal): AsyncItera
   const onDisabled = (): void => {
     if (closed) return;
     closed = true;
+    detach();
     deliver({ value: undefined as never, done: true });
   };
-  const onAbort = (): void => onDisabled();
-
-  target.addEventListener('appended', onAppended);
-  target.addEventListener('disabled', onDisabled);
-  signal.addEventListener('abort', onAbort, { once: true });
-
+  const onAbort = (): void => {
+    if (closed) return;
+    closed = true;
+    detach();
+    deliver({ value: undefined as never, done: true });
+  };
   const detach = (): void => {
     target.removeEventListener('appended', onAppended);
     target.removeEventListener('disabled', onDisabled);
     signal.removeEventListener('abort', onAbort);
   };
 
+  target.addEventListener('appended', onAppended);
+  target.addEventListener('disabled', onDisabled);
+  signal.addEventListener('abort', onAbort, { once: true });
+
   return {
     [Symbol.asyncIterator]: (): AsyncIterator<DumpMetadata> => ({
       async next(): Promise<IteratorResult<DumpMetadata>> {
         if (queue.length > 0) return { value: queue.shift()!, done: false };
-        if (closed) { detach(); return { value: undefined as never, done: true }; }
-        const result = await new Promise<IteratorResult<DumpMetadata>>(resolve => { resolveNext = resolve; });
-        if (result.done) detach();
-        return result;
+        if (closed) return { value: undefined as never, done: true };
+        return await new Promise<IteratorResult<DumpMetadata>>(resolve => { resolveNext = resolve; });
       },
       async return(): Promise<IteratorResult<DumpMetadata>> {
-        closed = true;
-        detach();
+        if (!closed) {
+          closed = true;
+          detach();
+        }
         return { value: undefined as never, done: true };
       },
     }),

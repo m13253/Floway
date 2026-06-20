@@ -67,14 +67,4 @@ export class KeyDumpDO {
       }
     }
   }
-
-  webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): void {
-    // Hibernation handles registry detachment; no-op here. The hook stays
-    // declared so the CF runtime knows to deliver close events to this
-    // class rather than dropping them on the floor.
-  }
-
-  webSocketError(_ws: WebSocket, _error: unknown): void {
-    // Same as close — hibernation cleans up.
-  }
 }

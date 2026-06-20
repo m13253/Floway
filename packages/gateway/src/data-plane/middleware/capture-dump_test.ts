@@ -202,7 +202,7 @@ test('captureRequestDump records identity-derived model + upstream on success', 
   assertEquals(meta.outputTokens, 50);
 });
 
-test('captureRequestDump falls back to placeholder upstream ref when lookup throws', async () => {
+test('captureRequestDump surfaces upstream lookup throws through the background scheduler', async () => {
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
@@ -221,12 +221,10 @@ test('captureRequestDump falls back to placeholder upstream ref when lookup thro
 
   repo.upstreams.getById = originalGetById;
 
-  assertEquals(stubs.stored.length, 1);
-  const upstream = stubs.stored[0]!.record.meta.upstream;
-  assertExists(upstream);
-  assertEquals(upstream!.id, 'up_ghost');
-  assertEquals(upstream!.name, 'up_ghost');
-  assertEquals(upstream!.kind, 'unknown');
+  // The lookup throw must propagate — no more fake-robust 'unknown' placeholder.
+  // The record is lost; the background scheduler logs the rejection.
+  assertEquals(stubs.stored.length, 0);
+  assertEquals(stubs.published.length, 0);
 });
 
 test('captureRequestDump captures SSE response as parsed events', async () => {
@@ -254,4 +252,151 @@ test('captureRequestDump captures SSE response as parsed events', async () => {
   assertEquals(responseField.events.length, 2);
   assertEquals(responseField.events[0]!.data, 'hello');
   assertEquals(responseField.events[1]!.data, 'world');
+});
+
+// A ReadableStream whose pull throws after one chunk simulates a half-arrived
+// request body. The middleware must surface what it got plus a meta.error
+// describing the read failure rather than dropping the whole record on the floor.
+const failingRequestBody = (firstChunk: string, message: string): { body: ReadableStream<Uint8Array>; init: RequestInit } => {
+  const encoder = new TextEncoder();
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (pulls === 0) {
+        pulls += 1;
+        controller.enqueue(encoder.encode(firstChunk));
+        return;
+      }
+      controller.error(new Error(message));
+    },
+  });
+  // @ts-expect-error -- DOM RequestInit accepts ReadableStream as body; the lib
+  // shipped with this project's TS lib config is too narrow here.
+  return { body, init: { method: 'POST', headers: { 'content-type': 'application/json' }, body, duplex: 'half' } };
+};
+
+test('captureRequestDump captures partial request bytes and surfaces request body read failure on meta.error', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/x', async c => {
+    // Intentionally do not consume c.req.raw — Node's Request.clone() teeing
+    // collapses both branches if the source pulls and errors with a consumer
+    // on the original side, masking the partial bytes the clone would otherwise
+    // see. The handler returns immediately so finalize's readAllBytes is the
+    // only consumer of the request body.
+    c.set('dumpAccounting', plainDumpAccounting);
+    return c.json({ ok: 1 });
+  });
+
+  const { init } = failingRequestBody('{"a":', 'request body pipe broke');
+  const response = await app.request('/v1/x', init);
+  await response.text();
+  await flushBackground();
+
+  assertEquals(stubs.stored.length, 1);
+  const record = stubs.stored[0]!.record;
+  assertEquals(record.request.body, '{"a":');
+  assertEquals(record.meta.error?.includes('request body read failed'), true);
+});
+
+test('captureRequestDump surfaces response body read failure on meta.error when the stream errors', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/y', async c => {
+    c.set('dumpAccounting', plainDumpAccounting);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error('response pipe broke'));
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+
+  await app.request('/v1/y', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await flushBackground();
+
+  assertEquals(stubs.stored.length, 1);
+  const record = stubs.stored[0]!.record;
+  // The streamError must surface on meta.error so a viewer can explain why
+  // the body looks short — this is the contract `readAllBytes` and
+  // `collectResponse` share. Partial-bytes preservation is exercised in the
+  // request-body test and at the impl level; tee semantics in test runners
+  // can drop the buffered chunk, so we only assert the error surfacing here.
+  assertEquals(record.meta.error?.includes('response body read failed'), true);
+});
+
+test('captureRequestDump surfaces SSE parse failure on meta.error when the stream errors', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/sse-err', async c => {
+    c.set('dumpAccounting', plainDumpAccounting);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error('sse pipe broke'));
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  });
+
+  await app.request('/v1/sse-err', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await flushBackground();
+
+  assertEquals(stubs.stored.length, 1);
+  const record = stubs.stored[0]!.record;
+  assertEquals(record.meta.error?.includes('SSE parse failed'), true);
+});
+
+test('captureRequestDump propagates DumpStore.put failures through the background scheduler', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+  stubs.failPut(new Error('put exploded'));
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/put-fail', async c => {
+    c.set('dumpAccounting', plainDumpAccounting);
+    return c.json({ ok: 1 });
+  });
+  const response = await app.request('/v1/put-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await response.text();
+  await flushBackground();
+
+  // put threw, so neither side wrote: no stored row, no published meta.
+  assertEquals(stubs.stored.length, 0);
+  assertEquals(stubs.published.length, 0);
+});
+
+test('captureRequestDump stores the row even when broker.publish fails', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  const stubs = installStubs();
+  stubs.failPublish(new Error('publish exploded'));
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/publish-fail', async c => {
+    c.set('dumpAccounting', plainDumpAccounting);
+    return c.json({ ok: 1 });
+  });
+  const response = await app.request('/v1/publish-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await response.text();
+  await flushBackground();
+
+  // Put succeeded; publish threw and the failure bubbled up to the background
+  // scheduler (logged, doesn't crash the request).
+  assertEquals(stubs.stored.length, 1);
+  assertEquals(stubs.published.length, 0);
 });

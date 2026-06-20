@@ -1,11 +1,10 @@
 import { DurableObjectDumpBroker, type KeyDumpNamespace } from './dump/broker.ts';
-import { createCloudflareDumpStore } from './dump/store.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
-import { setDumpBroker, setDumpStore } from '@floway-dev/gateway';
+import { FileDumpStore, setDumpBroker, setDumpStore } from '@floway-dev/gateway';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
@@ -58,7 +57,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
-  setDumpStore(createCloudflareDumpStore(env.DB, env.DUMP_BLOBS));
+  setDumpStore(new FileDumpStore(env.DB, new R2FileProvider(env.DUMP_BLOBS)));
   setDumpBroker(new DurableObjectDumpBroker(env.KEY_DUMP_DO));
   return { db: env.DB };
 };

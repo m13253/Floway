@@ -73,6 +73,10 @@ export const deleteKey = async (c: Context) => {
   // retriable, still-owned key rather than a half-deleted row whose dump
   // records are orphaned beyond the operator's reach.
   await getDumpStore().purgeAll(id);
+  // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
+  // Broker availability shouldn't block the soft-delete — clients reconcile
+  // on the next keys refetch regardless.
+  try { await getDumpBroker().notifyDisabled(id); } catch (err) { console.error('[dump] notifyDisabled failed during deleteKey', id, err); }
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };

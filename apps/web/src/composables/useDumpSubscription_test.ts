@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { effectScope, ref } from 'vue';
+import { effectScope, nextTick, ref } from 'vue';
 
 import { useDumpSubscription } from './useDumpSubscription.ts';
 import { useAuthStore } from '../stores/auth.ts';
@@ -234,6 +234,55 @@ describe('useDumpSubscription', () => {
     expect(sub.records.value.map(r => r.id)).toEqual(['r-005', 'r-003', 'r-002', 'r-001']);
     await sub.loadOlder();
     expect(sub.records.value.map(r => r.id)).toEqual(['r-005', 'r-003', 'r-002', 'r-001']);
+    scope.stop();
+  });
+
+  it('server-sent error frame closes the EventSource and re-watching the same keyId opens a fresh one', async () => {
+    const { scope } = setup();
+    const keyId = ref('key1');
+    scope.run(() => useDumpSubscription(keyId, {
+      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
+    }))!;
+    await nextTick();
+
+    const first = FakeEventSource.instances[0]!;
+    first.emit('error', JSON.stringify({ message: 'broker exploded' }));
+    expect(first.closed).toBe(true);
+
+    // Force-fire the watcher: bounce through '' (which triggers reset() to
+    // clear currentKeyId) then back to 'key1'. open() must close any prior
+    // socket (no-op here, already closed) and create a fresh EventSource.
+    keyId.value = '';
+    await nextTick();
+    keyId.value = 'key1';
+    await nextTick();
+    expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(2);
+    const reopened = FakeEventSource.instances[FakeEventSource.instances.length - 1]!;
+    expect(reopened.closed).toBe(false);
+    scope.stop();
+  });
+
+  it('dedup rebuild past DEDUP_REBUILD_THRESHOLD preserves the just-added id', () => {
+    const { scope } = setup();
+    const keyId = ref('key1');
+    const sub = scope.run(() => useDumpSubscription(keyId, {
+      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
+    }))!;
+
+    const es = FakeEventSource.instances[0]!;
+    // Seed past the 10k threshold so the next appended event triggers rebuild
+    // on the same tick the id is prepended. If rebuild ran BEFORE the prepend
+    // the just-added id would fall out of `seen` and a duplicate would slip
+    // through. Build the snapshot in one shot for speed.
+    const seed: DumpMetadata[] = [];
+    for (let i = 0; i < 10_001; i++) seed.push(meta(`r-seed-${i.toString().padStart(6, '0')}`));
+    es.emit('snapshot', JSON.stringify({ records: seed }));
+
+    const finalId = 'r-tail';
+    es.emit('appended', JSON.stringify(meta(finalId)));
+    es.emit('appended', JSON.stringify(meta(finalId)));
+    const tailMatches = sub.records.value.filter(r => r.id === finalId).length;
+    expect(tailMatches).toBe(1);
     scope.stop();
   });
 });

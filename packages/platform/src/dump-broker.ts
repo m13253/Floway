@@ -23,10 +23,9 @@ export interface DumpBroker {
   // their SSE stream and bail on iterator completion.
   subscribe(keyId: string, signal: AbortSignal): AsyncIterable<DumpMetadata>;
 
-  // Optional: notify subscribers that the key no longer has dump retention
-  // enabled (caller is api-key PATCH retention=null / key delete / user
-  // delete cascade). The DO/EventTarget closes its open sockets so clients
-  // see a clean disconnect and the dashboard's reconcile-on-keys-refetch
-  // path tears down the now-orphan stream.
+  // Disable-side notification hook. Called from api-key PATCH retention=null,
+  // api-key delete, and the user-delete cascade. The DO/EventTarget closes its
+  // open sockets so clients see a clean disconnect and the dashboard's
+  // reconcile-on-keys-refetch path tears down the now-orphan stream.
   notifyDisabled(keyId: string): Promise<void>;
 }

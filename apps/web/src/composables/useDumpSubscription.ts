@@ -147,6 +147,11 @@ export const useDumpSubscription = (
           error.value = ev.data;
         }
         loading.value = false;
+        // A server-sent error frame is a terminal signal — stop the EventSource
+        // so the browser doesn't keep auto-reconnecting against a stream the
+        // gateway already gave up on. The user recovers by selecting the key
+        // again, which the keyId watcher reopens unconditionally.
+        close();
         return;
       }
       // `EventSource.CLOSED === 2`; use the literal so the composable doesn't
@@ -184,7 +189,9 @@ export const useDumpSubscription = (
       reset();
       return;
     }
-    if (id === currentKeyId) return;
+    // No id-stability guard: open() already closes any prior socket via
+    // close(), so a same-id watch fire reopens the stream (the recovery path
+    // after a server-sent terminal error frame).
     records.value = [];
     seen.clear();
     open(id);

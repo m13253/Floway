@@ -6,11 +6,7 @@ import { z } from 'zod';
 import { ownedKeyOr404 } from './shared/owned-key.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getDumpBroker, getDumpStore } from '../runtime/dump.ts';
-import type { DumpRecordId } from '@floway-dev/protocols/dump';
 
-// Browsers cannot set custom headers on EventSource, so the SSE stream
-// accepts the session token via `?session=` (path-pinned in authMiddleware).
-// Other dump routes inherit the standard `x-floway-session` / `x-api-key` flow.
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;
 
@@ -36,7 +32,7 @@ export const dumpRoutes = new Hono()
     const { limit, before } = c.req.valid('query');
     const records = await getDumpStore().list(owned, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
-      ...(before !== undefined ? { before: before as DumpRecordId } : {}),
+      ...(before !== undefined ? { before } : {}),
     });
     return c.json({ records });
   })
@@ -48,6 +44,10 @@ export const dumpRoutes = new Hono()
     return c.json(record);
   })
   .get('/keys/:keyId/stream', async c => {
+    // Browsers cannot set custom headers on EventSource, so this SSE route
+    // accepts the session token via `?session=` (path-pinned in
+    // authMiddleware). The other dump routes inherit the standard
+    // `x-floway-session` / `x-api-key` flow.
     const owned = await ownedKey(c);
     if (owned instanceof Response) return owned;
 

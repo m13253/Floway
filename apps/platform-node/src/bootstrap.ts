@@ -1,12 +1,11 @@
 import { InProcessDumpBroker } from './dump/broker.ts';
-import { createNodeDumpStore } from './dump/store.ts';
 import { FsFileProvider } from './fs-file-provider.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { createSharpImageProcessor } from './sharp-image-processor.ts';
 import { nodeSocketDial } from './socket-dial.ts';
 import { SqliteImageCache } from './sqlite-image-cache.ts';
 import { nodeRuntimeRootCAs } from './tls-trust.ts';
-import { setDumpBroker, setDumpStore } from '@floway-dev/gateway';
+import { FileDumpStore, setDumpBroker, setDumpStore } from '@floway-dev/gateway';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
@@ -42,7 +41,7 @@ export const bootstrapNodePlatform = (
   // Their `dumps/v1/{keyId}/...` key prefix keeps them isolated from the
   // other tenants (responses-item payloads, image cache) without needing a
   // second FileProvider.
-  setDumpStore(createNodeDumpStore(db, files));
+  setDumpStore(new FileDumpStore(db, files));
   setDumpBroker(new InProcessDumpBroker());
   return { db };
 };

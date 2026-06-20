@@ -49,8 +49,6 @@ const fetchRecord = async () => {
 
 watch(() => [props.keyId, props.recordId], () => { void fetchRecord(); }, { immediate: true });
 
-// --- Header rendering ---------------------------------------------------
-
 const SENSITIVE_HEADERS = new Set(['x-api-key', 'authorization']);
 
 const isSensitiveHeader = (key: string) => SENSITIVE_HEADERS.has(key.toLowerCase());
@@ -72,8 +70,6 @@ const toggleHeaderReveal = (kind: 'req' | 'res', index: number) => {
 
 const isRevealed = (kind: 'req' | 'res', index: number) => revealedHeaders.value.has(`${kind}:${index}`);
 
-// --- Body rendering -----------------------------------------------------
-
 const contentTypeOf = (headers: Array<[string, string]>): string => {
   for (const [k, v] of headers) {
     if (k.toLowerCase() === 'content-type') return v;
@@ -90,7 +86,6 @@ const stripBase64Suffix = (contentType: string): { contentType: string; isBase64
 };
 
 const decodeBase64Utf8 = (b64: string): { text: string; ok: boolean } => {
-  // atob → binary string → Uint8Array → TextDecoder('utf-8', { fatal: true })
   try {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
@@ -146,8 +141,6 @@ const requestBody = computed<RenderedBody | null>(() => {
   return renderBody(record.value.request.body, contentTypeOf(record.value.request.headers));
 });
 
-// --- Response body ------------------------------------------------------
-
 const streamView = ref<'collected' | 'events'>('collected');
 
 const responseBodyRendered = computed<RenderedBody | null>(() => {
@@ -170,8 +163,6 @@ const collected = computed<CollectOutcome | null>(() => {
   return collectByKind(collectKind.value, streamEvents.value);
 });
 
-// --- Copy to clipboard --------------------------------------------------
-
 const copiedSection = ref<string | null>(null);
 const copy = async (text: string, section: string) => {
   try {
@@ -182,8 +173,6 @@ const copy = async (text: string, section: string) => {
     /* clipboard denied — ignore so the operator can still drag-select. */
   }
 };
-
-// --- Status badge -------------------------------------------------------
 
 const statusBadgeClass = (status: number, errorText: string | null): string => {
   if (status === 0 || errorText !== null) return 'bg-accent-rose/15 text-accent-rose border-accent-rose/30';
@@ -218,7 +207,6 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
     </div>
 
     <OverlayScrollbars v-else-if="record" class="min-h-0 flex-1">
-      <!-- Request headers -->
       <section>
         <header :class="stickyHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request</span>
@@ -260,7 +248,6 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
         </div>
       </section>
 
-      <!-- Request body -->
       <section class="border-t border-white/[0.06]">
         <header :class="stickyHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request body</span>
@@ -284,7 +271,6 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
         </div>
       </section>
 
-      <!-- Response headers -->
       <section class="border-t border-white/[0.06]">
         <header :class="stickyHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response</span>
@@ -309,7 +295,6 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
         </div>
       </section>
 
-      <!-- Response body -->
       <section class="border-t border-white/[0.06]">
         <header :class="stickyHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response body</span>

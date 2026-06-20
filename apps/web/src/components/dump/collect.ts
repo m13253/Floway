@@ -92,7 +92,6 @@ export const collectResponsesStream = (events: DumpStreamEvent[]): CollectOutcom
       const delta = get(parsed, 'delta');
       if (typeof delta === 'string') out.text += delta;
     } else if (name === 'response.completed') {
-      // Walk `response.output[].content[].text` and concatenate text parts.
       const output = get(parsed, 'response', 'output');
       if (Array.isArray(output)) {
         let collected = '';

@@ -14,11 +14,10 @@ import type {
   DumpStreamEvent,
 } from '@floway-dev/protocols/dump';
 
-// Both the Cloudflare and Node DumpStore impls share this storage layout:
-// metadata + headers + per-side descriptors in D1; gzipped body bytes in
-// the FileProvider at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
-// The hour bucket lets the cron sweep `deletePrefix` whole expired hours
-// instead of enumerating each record's two files individually.
+// File-backed `DumpStore` impl shared between deployment targets. See the
+// interface contract in `packages/platform/src/dump-store.ts` for the
+// storage layout (metadata in D1, gzipped bodies under hour-bucketed
+// FileProvider keys) and the put-side ordering invariant.
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
@@ -241,38 +240,43 @@ export class FileDumpStore implements DumpStore {
     };
 
     let responseBody: DumpResponseBody;
+    let responseHeadersFinal: Array<[string, string]>;
     if (responseDescriptor === null || responseHeaders === null) {
       responseBody = { type: 'none' };
+      responseHeadersFinal = responseHeaders ?? [];
     } else if (responseDescriptor.type === 'events') {
       responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
+      responseHeadersFinal = responseHeaders;
     } else {
       const encoded = encodeWireBody(await fetchBody(this.files, responseDescriptor), responseDescriptor.contentType);
       // The stored content-type stays canonical on the wire response headers;
       // the encoder only stamps `;base64` on byte bodies that needed it, so we
       // re-stamp the matching response header pair to keep the dashboard
       // decoder branch in sync.
-      const adjustedHeaders = adjustContentType(responseHeaders, encoded.contentType);
+      responseHeadersFinal = adjustContentType(responseHeaders, encoded.contentType);
       responseBody = { type: 'bytes', body: encoded.body };
-      const response: DumpResponse & DumpResponseBody = { status: meta.status, headers: adjustedHeaders, ...responseBody };
-      return { meta, request, response };
     }
 
     const response: DumpResponse & DumpResponseBody = {
       status: meta.status,
-      headers: responseHeaders ?? [],
+      headers: responseHeadersFinal,
       ...responseBody,
     };
     return { meta, request, response };
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
+    // Files-first then DB matches `put`'s ordering invariant: a partial failure
+    // leaves rows pointing at gone files (detail-fetch throws `dump body missing`,
+    // the documented loud-failure path) and the next sweep retries cleanly.
+    // Row-first risked orphan files that no row referenced, so the cron sweep
+    // (which iterates by key from D1) could never reach them.
     await this.files.deletePrefix(keyPrefix(keyId));
+    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
   }
 
   async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
     const cutoff = Date.now() - retentionSeconds * 1000;
-    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
 
     // Enumerate the immediate hour-bucket subprefixes by listing every file
     // under the key root and grouping by the bucket segment. R2 doesn't ship a
@@ -294,6 +298,8 @@ export class FileDumpStore implements DumpStore {
       const bucketEnd = bucketStart + HOUR_MS;
       if (bucketEnd <= cutoff) await this.files.deletePrefix(bucketPrefix(keyId, bucket));
     }
+
+    await this.db.prepare('DELETE FROM dump_records WHERE key_id = ? AND created_at < ?').bind(keyId, cutoff).run();
   }
 }
 

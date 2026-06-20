@@ -90,6 +90,16 @@ const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
 const onRowKey = (id: string) => { selectedId.value = id; };
 
+const moveSelection = (event: KeyboardEvent, delta: 1 | -1): void => {
+  const current = event.currentTarget as HTMLElement | null;
+  if (!current) return;
+  const sibling = (delta === 1 ? current.nextElementSibling : current.previousElementSibling) as HTMLElement | null;
+  if (!sibling) return;
+  sibling.focus();
+  const id = sibling.getAttribute('data-record-id');
+  if (id !== null) selectedId.value = id;
+};
+
 const showEmpty = computed(() => !props.loading && props.records.length === 0 && props.error === null);
 </script>
 
@@ -109,13 +119,14 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
     </div>
 
     <OverlayScrollbars v-else class="min-h-0 flex-1">
-      <ul class="divide-y divide-white/[0.03]">
+      <ul class="divide-y divide-white/[0.03]" role="listbox" aria-label="Captured requests">
         <li
           v-for="record in records"
           :key="record.id"
           tabindex="0"
-          role="button"
-          :aria-pressed="selectedId === record.id"
+          role="option"
+          :aria-selected="selectedId === record.id"
+          :data-record-id="record.id"
           class="cursor-pointer px-3 py-2.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent-cyan/60"
           :class="[
             selectedId === record.id
@@ -127,6 +138,8 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           @click="onRowKey(record.id)"
           @keydown.enter.prevent="onRowKey(record.id)"
           @keydown.space.prevent="onRowKey(record.id)"
+          @keydown.up.prevent="moveSelection($event, -1)"
+          @keydown.down.prevent="moveSelection($event, 1)"
         >
           <div class="flex items-center gap-2 text-xs">
             <span

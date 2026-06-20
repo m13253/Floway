@@ -72,8 +72,8 @@ const tokenUsageInput = (usage: TokenUsage | null): number | null => {
 };
 
 const oneLineError = (err: unknown): string => {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.replace(/\s+/g, ' ').trim().slice(0, 500);
+  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
 };
 
 // Hono middleware factory. Mounted on the data plane in `mountDataPlane` so
@@ -122,8 +122,8 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
   // the runtime's own error sink (CF waitUntil swallows + we log; Node logs
   // explicitly) — we let them propagate rather than wrapping in try/catch.
   const finalize = async (): Promise<void> => {
-    const requestBytes = await readAllBytes(requestClone.body);
-    const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0, streamError: null };
+    const { bytes: requestBytes, streamError: requestStreamError } = await readAllBytes(requestClone.body);
+    const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0 };
     const captureError = captured.kind !== 'none' ? captured.streamError : null;
 
     const recordId = ulid(startedAt);
@@ -141,7 +141,7 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       requestBytes: requestBytes.byteLength,
       responseBytes: captured.byteLength,
       durationMs: completedAt - startedAt,
-      error: accounting.error ?? captureError,
+      error: accounting.error ?? requestStreamError ?? captureError,
     };
 
     const request: DumpRequest = {
@@ -187,10 +187,11 @@ const pathWithQuery = (rawUrl: string): string => {
   return `${url.pathname}${url.search}`;
 };
 
-const readAllBytes = async (body: ReadableStream<Uint8Array> | null): Promise<Uint8Array> => {
-  if (!body) return new Uint8Array(0);
+const readAllBytes = async (body: ReadableStream<Uint8Array> | null): Promise<{ bytes: Uint8Array; streamError: string | null }> => {
+  if (!body) return { bytes: new Uint8Array(0), streamError: null };
   const chunks: Uint8Array[] = [];
   const reader = body.getReader();
+  let streamError: string | null = null;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -199,12 +200,11 @@ const readAllBytes = async (body: ReadableStream<Uint8Array> | null): Promise<Ui
     }
   } catch (err) {
     // Partial body is still useful — return what we got, then surface the
-    // error through the caller's `streamError` channel so meta.error can
-    // explain why the bytes look short.
-    const partial = concatChunks(chunks);
-    throw Object.assign(new Error(`request body read failed: ${err instanceof Error ? err.message : String(err)}`), { partial });
+    // error through `streamError` so meta.error can explain why the bytes
+    // look short. Mirrors `collectResponse`'s response-side contract.
+    streamError = `request body read failed: ${oneLineError(err)}`;
   }
-  return concatChunks(chunks);
+  return { bytes: concatChunks(chunks), streamError };
 };
 
 const concatChunks = (chunks: readonly Uint8Array[]): Uint8Array => {
@@ -222,7 +222,7 @@ const concatChunks = (chunks: readonly Uint8Array[]): Uint8Array => {
 type CapturedResponse =
   | { kind: 'bytes'; bytes: Uint8Array; byteLength: number; streamError: string | null }
   | { kind: 'events'; events: DumpStreamEvent[]; byteLength: number; streamError: string | null }
-  | { kind: 'none'; byteLength: 0; streamError: null };
+  | { kind: 'none'; byteLength: 0 };
 
 const collectResponse = async (
   body: ReadableStream<Uint8Array>,
@@ -307,12 +307,7 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
 
 const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | null> => {
   if (!id) return null;
-  try {
-    const upstream = await getRepo().upstreams.getById(id);
-    if (!upstream) return { id, name: id, kind: 'unknown' };
-    return { id: upstream.id, name: upstream.name, kind: upstream.provider };
-  } catch (err) {
-    console.error('[dump] upstream lookup failed', id, err);
-    return { id, name: id, kind: 'unknown' };
-  }
+  const upstream = await getRepo().upstreams.getById(id);
+  if (!upstream) return { id, name: id, kind: 'unknown' };
+  return { id: upstream.id, name: upstream.name, kind: upstream.provider };
 };

@@ -34,6 +34,16 @@ const selectedRecordId = useHashRef();
 
 const subscription = useDumpSubscription(selectedKeyId);
 
+// Single setter for swapping the active key: the selected record id belongs
+// to the previous key and would 404 against the new one, so we null it in
+// the same tick. This eliminates the transient (newKeyId, oldRecordId) pair
+// the child detail component would otherwise see if Vue's watcher order
+// changed.
+const selectKey = (id: string) => {
+  selectedKeyId.value = id;
+  selectedRecordId.value = null;
+};
+
 // Refetch the keys list when the operator switches back to this tab so a
 // retention toggle made elsewhere reflects without a full reload.
 const reloadKeys = async () => {
@@ -52,17 +62,13 @@ useEventListener(window, 'focus', () => { void reloadKeys(); });
 // pick is no longer in the list, fall back to the first available (or '').
 watch(dumpKeys, next => {
   if (selectedKeyId.value === '') {
-    selectedKeyId.value = next[0]?.id ?? '';
+    selectKey(next[0]?.id ?? '');
     return;
   }
   if (!next.some(k => k.id === selectedKeyId.value)) {
-    selectedKeyId.value = next[0]?.id ?? '';
+    selectKey(next[0]?.id ?? '');
   }
 });
-
-// Switching keys must invalidate the selected record — that id belongs to the
-// previous key and would 404 against the new one.
-watch(selectedKeyId, () => { selectedRecordId.value = null; });
 </script>
 
 <template>
@@ -76,8 +82,9 @@ watch(selectedKeyId, () => { selectedRecordId.value = null; });
         <div class="border-b border-white/[0.06] p-3">
           <select
             v-if="dumpKeys.length > 0"
-            v-model="selectedKeyId"
+            :value="selectedKeyId"
             class="w-full bg-transparent text-xs text-gray-200 focus:outline-none"
+            @change="selectKey(($event.target as HTMLSelectElement).value)"
           >
             <option v-for="k in dumpKeys" :key="k.id" :value="k.id">
               {{ k.name }} ({{ k.key.slice(-4) }})

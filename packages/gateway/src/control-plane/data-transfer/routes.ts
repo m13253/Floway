@@ -20,6 +20,7 @@ import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -674,7 +675,15 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performance = performanceResult.records;
 
   const repo = getRepo();
-  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [], mode);
+  // Snapshot pre-import key state once and reuse it for identity validation
+  // and the dump-purge transitions below. Replace mode also needs to purge
+  // each pre-existing key's dumps (otherwise the new owner of a reused id
+  // silently inherits the old owner's captures); merge mode needs the prior
+  // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
+  // imported payload triggers the same purge transition `updateKey` would.
+  const preImportKeys = await repo.apiKeys.listIncludingDeleted();
+  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
+  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
   // Merge mode keeps the existing proxies table alongside the imported rows,
@@ -685,6 +694,14 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
 
   if (mode === 'replace') {
+    // Wipe each existing key's dump capture before the replace deletes wave so
+    // a reused id in the imported payload cannot inherit the previous owner's
+    // captures, and any live SSE subscriber is told the key went away.
+    for (const k of preImportKeys) {
+      try { await getDumpStore().purgeAll(k.id); } catch (err) { console.error('[dump] purgeAll failed during replace-mode import', k.id, err); }
+      try { await getDumpBroker().notifyDisabled(k.id); } catch (err) { console.error('[dump] notifyDisabled failed during replace-mode import', k.id, err); }
+    }
+
     // Replace mode is intentionally non-atomic across repos: D1 binding does not expose multi-repo
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
@@ -722,7 +739,21 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       dialTimeoutSeconds: proxy.dial_timeout_seconds,
     });
   }
-  for (const key of apiKeys) await repo.apiKeys.save(key);
+  for (const key of apiKeys) {
+    // Merge mode: a flipped/shrunk dump retention must trigger the same purge
+    // transition `updateKey` applies. Replace mode wiped the table above, so
+    // `preImportRetentionById` is empty there and the transition is a no-op.
+    const previous = preImportRetentionById.get(key.id) ?? null;
+    await repo.apiKeys.save(key);
+    if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
+      if (key.dumpRetentionSeconds === null && previous !== null) {
+        try { await getDumpStore().purgeAll(key.id); } catch (err) { console.error('[dump] purgeAll failed during merge-mode retention transition', key.id, err); }
+        try { await getDumpBroker().notifyDisabled(key.id); } catch (err) { console.error('[dump] notifyDisabled failed during merge-mode retention transition', key.id, err); }
+      } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
+        try { await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds); } catch (err) { console.error('[dump] purgeExpired failed during merge-mode retention transition', key.id, err); }
+      }
+    }
+  }
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
   for (const upstream of upstreams) await repo.upstreams.save(upstream);
