@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
@@ -34,7 +34,7 @@ const kindOptions: { value: ModelKind; label: string }[] = [
   { value: 'image', label: 'Image' },
 ];
 
-const PRICING_LABELS: Record<string, string> = {
+const PRICING_LABELS: Record<BillingDimension, string> = {
   input: 'Input ($/MTok)',
   input_cache_read: 'Cache Read ($/MTok)',
   input_cache_write: 'Cache Write 5m ($/MTok)',
@@ -82,7 +82,7 @@ const updateLimit = (
   patch({ limits: Object.keys(limits).length > 0 ? limits : undefined });
 };
 
-const updateCost = (key: keyof ModelPricing, raw: string | number | null | undefined) => {
+const updateCost = (key: BillingDimension, raw: string | number | null | undefined) => {
   if (!config.value) return;
   const cost = { ...(config.value.cost ?? {}) } as Record<string, unknown>;
   const num = parseOptionalNumber(raw);
@@ -92,6 +92,87 @@ const updateCost = (key: keyof ModelPricing, raw: string | number | null | undef
   // whole object so the row stores `cost: undefined` rather than an empty stub.
   const hasAny = Object.values(cost).some(v => v !== undefined);
   patch({ cost: hasAny ? (cost as ModelPricing) : undefined });
+};
+
+// Per-tier overlays. A tier overlay is a sparse pricing snapshot keyed by
+// dimension; declared fields shadow the base rate, absent fields fall
+// through. We hold drafts in local state (rather than recomputing from the
+// stored cost on every keystroke) so an in-progress tier whose name is still
+// empty stays on screen — `writeTierDrafts` skips empty-name entries, so a
+// purely-derived list would lose newly-added rows.
+interface TierDraft { name: string; rates: Partial<Record<BillingDimension, number>> }
+
+const tierDraftsFor = (cost: ModelPricing | undefined): TierDraft[] => {
+  const tiers = cost?.tiers;
+  if (!tiers) return [];
+  return Object.entries(tiers).map(([name, rates]) => ({ name, rates: { ...rates } }));
+};
+
+const tierDrafts = ref<TierDraft[]>(tierDraftsFor(config.value?.cost));
+
+// Resync the local drafts whenever the active row changes (a different model's
+// cost replaces the working set). Edits within the same row leave the drafts
+// alone — `writeTierDrafts` writes both local state and stored cost in lockstep.
+watch(() => props.row?.uiId, () => {
+  tierDrafts.value = tierDraftsFor(config.value?.cost);
+});
+
+const writeTierDrafts = (drafts: readonly TierDraft[]) => {
+  if (!config.value) return;
+  tierDrafts.value = drafts.map(d => ({ name: d.name, rates: { ...d.rates } }));
+  const base = { ...(config.value.cost ?? {}) } as ModelPricing;
+  delete base.tiers;
+  const tiers: Record<string, Partial<Record<BillingDimension, number>>> = {};
+  for (const draft of drafts) {
+    const trimmed = draft.name.trim();
+    if (!trimmed) continue;
+    // Last write wins on duplicate names — the validation message in the
+    // template tells the operator to rename collisions.
+    const rates: Partial<Record<BillingDimension, number>> = {};
+    for (const [k, v] of Object.entries(draft.rates)) {
+      if (typeof v === 'number' && Number.isFinite(v)) rates[k as BillingDimension] = v;
+    }
+    if (Object.keys(rates).length > 0) tiers[trimmed] = rates;
+  }
+  const next: ModelPricing = { ...base };
+  if (Object.keys(tiers).length > 0) next.tiers = tiers;
+  const hasAny = Object.entries(next).some(([k, v]) => k === 'tiers' ? Object.keys(v as object).length > 0 : v !== undefined);
+  patch({ cost: hasAny ? next : undefined });
+};
+
+const duplicateTierNames = computed<Set<string>>(() => {
+  const seen = new Map<string, number>();
+  for (const draft of tierDrafts.value) {
+    const name = draft.name.trim();
+    if (!name) continue;
+    seen.set(name, (seen.get(name) ?? 0) + 1);
+  }
+  return new Set([...seen.entries()].filter(([, count]) => count > 1).map(([name]) => name));
+});
+
+const updateTierName = (index: number, name: string) => {
+  const next = tierDrafts.value.map((draft, i) => i === index ? { ...draft, name } : draft);
+  writeTierDrafts(next);
+};
+
+const updateTierRate = (index: number, dim: BillingDimension, raw: string | number | null | undefined) => {
+  const num = parseOptionalNumber(raw);
+  const next = tierDrafts.value.map((draft, i) => {
+    if (i !== index) return draft;
+    const rates = { ...draft.rates };
+    if (num === undefined) delete rates[dim];
+    else rates[dim] = num;
+    return { ...draft, rates };
+  });
+  writeTierDrafts(next);
+};
+
+const addTier = () => {
+  writeTierDrafts([...tierDrafts.value, { name: '', rates: {} }]);
+};
+
+const removeTier = (index: number) => {
+  writeTierDrafts(tierDrafts.value.filter((_, i) => i !== index));
 };
 
 const toggleFlagOverridesEnabled = () => {
@@ -270,6 +351,70 @@ const updateFlagOverrides = (values: Record<string, boolean>) => {
                 @update:model-value="v => updateCost(dim, v)"
               />
             </label>
+          </div>
+        </section>
+
+        <section>
+          <div class="mb-3 flex items-baseline gap-3">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Per-Tier Pricing Overrides</h3>
+            <span class="text-[11px] text-gray-500">
+              tier names match the wire value the upstream stamps onto usage
+              (<code class="font-mono">fast</code>, <code class="font-mono">flex</code>, <code class="font-mono">priority</code>, ...) — blank rates fall through to base
+            </span>
+            <Button
+              v-if="editable"
+              variant="secondary"
+              size="sm"
+              class="ml-auto"
+              @click="addTier"
+            >+ Add Tier</Button>
+          </div>
+          <div v-if="tierDrafts.length === 0" class="text-[11px] text-gray-600">
+            <template v-if="editable">No tiers defined. Add one to override pricing for requests stamped with a service tier.</template>
+            <template v-else>No tier overrides on this model.</template>
+          </div>
+          <div v-else class="space-y-3">
+            <div
+              v-for="(draft, index) in tierDrafts"
+              :key="index"
+              class="rounded border border-white/[0.06] bg-white/[0.02] p-3"
+            >
+              <div class="mb-3 flex items-end gap-3">
+                <label class="block flex-1 space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">Tier Name</span>
+                  <Input
+                    :model-value="draft.name"
+                    :readonly="!editable"
+                    :invalid="duplicateTierNames.has(draft.name.trim())"
+                    placeholder="e.g. fast"
+                    class="font-mono"
+                    @update:model-value="v => updateTierName(index, v)"
+                  />
+                </label>
+                <Button
+                  v-if="editable"
+                  variant="danger"
+                  size="sm"
+                  @click="removeTier(index)"
+                >Remove</Button>
+              </div>
+              <p v-if="duplicateTierNames.has(draft.name.trim())" class="mb-2 text-[11px] text-accent-rose">
+                Duplicate tier name — only the last entry with this name is saved.
+              </p>
+              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
+                  <Input
+                    type="number"
+                    :model-value="draft.rates[dim]"
+                    :readonly="!editable"
+                    placeholder="inherit"
+                    class="font-mono"
+                    @update:model-value="v => updateTierRate(index, dim, v)"
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </section>
 

@@ -23,7 +23,13 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 
 // USD per million tokens, keyed by billing dimension.
 export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_cache_write_1h' | 'input_image' | 'output' | 'output_image';
-export type ModelPricing = Partial<Record<BillingDimension, number>>;
+
+// Base rates plus per-tier overlays for OpenAI service tiers (`flex`,
+// `priority`, ...) and Anthropic fast mode. Each overlay is a partial that
+// shadows individual dimensions; absent keys fall through to the base rate.
+export interface ModelPricing extends Partial<Record<BillingDimension, number>> {
+  tiers?: Record<string, Partial<Record<BillingDimension, number>>>;
+}
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;
