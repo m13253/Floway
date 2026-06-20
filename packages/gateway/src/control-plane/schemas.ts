@@ -187,7 +187,8 @@ export const changeOwnPasswordBody = z.object({
 // which has no sensible behavior, so it is rejected at the schema layer.
 // The 10-year upper bound rejects absurd inputs as a clean validation error
 // rather than letting them through as de-facto "never expire".
-const dumpRetentionSecondsSchema = z.number().int().positive().max(10 * 365 * 24 * 60 * 60).nullable();
+export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
+const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
 
 export const createKeyBody = z.object({
   name: z.string().min(1),

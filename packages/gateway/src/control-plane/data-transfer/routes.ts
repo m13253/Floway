@@ -24,7 +24,7 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../runtime/dump.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
-import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
+import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
@@ -238,8 +238,6 @@ const validateProxyFallbackReferences = (
   }
   return null;
 };
-
-const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 
 const parseImportedDumpRetention = (value: unknown): number | null => {
   if (value === undefined || value === null) return null;

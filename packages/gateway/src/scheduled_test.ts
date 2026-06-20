@@ -14,8 +14,10 @@ const noopImageCache = {
 
 test('runScheduledMaintenance continues sweeping the next key when one key throws', async () => {
   // Per-key isolation inside the dump sweep: a slow or broken per-key purge
-  // must not poison the sweep for sibling keys on the same tick. Inject a
-  // throw and confirm the sweep still recorded the second key's purge.
+  // must not poison the sweep for sibling keys on the same tick. The stub's
+  // purgeExpired records the attempt before throwing, so we can distinguish
+  // "the inner try/catch worked and key B was visited" from "the outer
+  // runSweep wrapper swallowed the throw before key B got a turn".
   const { repo, apiKey: keyA } = await setupAppTest();
   await repo.apiKeys.save({ ...keyA, dumpRetentionSeconds: 3600 });
   const keyB = {
@@ -28,16 +30,33 @@ test('runScheduledMaintenance continues sweeping the next key when one key throw
 
   initImageCacheStore(noopImageCache);
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  // Throw on every purgeExpired call. Each iteration of the sweep catches
-  // and logs, so both keys still get visited even though neither purge
-  // completes successfully — the contract is "do not abort the rest", not
-  // "succeed on a poisoned key".
   stubs.failOn('purgeExpired', new Error('purge exploded'));
 
-  // The sweep itself must not propagate the per-key throw — the outer
-  // `runSweep` wrapper would log it too, but the per-key try/catch handles
-  // each iteration first.
-  await runScheduledMaintenance();
+  const errors: unknown[][] = [];
+  const origError = console.error;
+  console.error = (...args: unknown[]): void => { errors.push(args); };
+  try {
+    await runScheduledMaintenance();
+  } finally {
+    console.error = origError;
+  }
+
+  // The sweep continued past key A's throw and reached key B — the only
+  // signal that proves the per-key try/catch did its job. The outer
+  // runSweep wrapper alone could not produce this: it sits outside the
+  // for-loop, so an uncaught per-key throw would abort the loop entirely.
+  assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
+  assertEquals(stubs.purgedExpired.some(c => c.keyId === keyB.id), true);
+  // And the log line is the per-key one (with the key id as a positional
+  // argument), not the outer wrapper's single-name form.
+  assertEquals(
+    errors.some(args => args[0] === '[scheduled] dump sweep failed' && args[1] === keyA.id),
+    true,
+  );
+  assertEquals(
+    errors.some(args => args[0] === '[scheduled] dump sweep failed' && args[1] === keyB.id),
+    true,
+  );
 });
 
 test('runScheduledMaintenance keeps subsequent sweeps running when one top-level sweep throws', async () => {

@@ -5,9 +5,9 @@ import type { DumpMetadata } from '@floway-dev/protocols/dump';
 // target only ever runs one worker process per gateway instance, so a Map
 // of plain emitters is enough — no IPC, no cross-process broadcast.
 //
-// EventTargets stick around per keyId forever once created; that's fine for
-// the bounded number of distinct keys in any single floway install (each
-// row in api_keys is a separate target, never more than a few thousand).
+// Entries live until `notifyDisabled` drops them; a re-enable allocates a
+// fresh EventTarget on demand. The total number of distinct keys held at
+// any moment is bounded by the active subset of `api_keys` rows.
 export class InProcessDumpBroker implements DumpBroker {
   private readonly targets = new Map<string, EventTarget>();
 
@@ -28,9 +28,9 @@ export class InProcessDumpBroker implements DumpBroker {
     const target = this.targets.get(keyId);
     if (!target) return;
     target.dispatchEvent(new Event('disabled'));
-    // Drop the target entry; a future re-enable on the same keyId allocates a
-    // fresh EventTarget. Leaving it in place would let a publish that races
-    // a re-enable land on the old target's (already-detached) subscribers.
+    // Drop the target entry so the map size stays bounded across repeated
+    // enable/disable cycles; a future re-enable on the same keyId allocates
+    // a fresh EventTarget on demand.
     this.targets.delete(keyId);
   }
 

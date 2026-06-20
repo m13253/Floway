@@ -52,7 +52,7 @@ export interface DumpStubHandle {
   failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 
-export const createDumpStubs = (): DumpStubHandle => {
+const createDumpStubs = (): DumpStubHandle => {
   const records = new Map<string, DumpRecord[]>();
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
   const stored: Array<{ keyId: string; record: DumpRecord }> = [];
@@ -90,8 +90,10 @@ export const createDumpStubs = (): DumpStubHandle => {
       records.delete(keyId);
     },
     async purgeExpired(keyId, retentionSeconds) {
-      if (throws.purgeExpired) throw throws.purgeExpired;
+      // Record before throwing so tests asserting per-key sweep isolation can
+      // observe that key B was visited even when key A's purge threw.
       purgedExpired.push({ keyId, retentionSeconds });
+      if (throws.purgeExpired) throw throws.purgeExpired;
     },
   };
 
