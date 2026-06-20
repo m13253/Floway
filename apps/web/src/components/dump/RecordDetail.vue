@@ -3,6 +3,7 @@ import { computed, ref, shallowRef, watch } from 'vue';
 
 import { statusBadgeClass } from './badge.ts';
 import { collectByKind, detectCollectKind, type CollectOutcome } from './collect.ts';
+import HeaderTable from './HeaderTable.vue';
 import { authFetch } from '../../api/client.ts';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
@@ -15,11 +16,6 @@ const props = defineProps<{
 const record = shallowRef<DumpRecord | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-
-// Reveal state for sensitive request/response headers, keyed by
-// `${kind}:${index}`. Declared up here so the keyId/recordId watcher can
-// reset it on every transition.
-const revealedHeaders = ref<Set<string>>(new Set());
 
 // Per-fetch token: only the latest call is allowed to commit. Stale A→B clicks
 // must not paint A's response on top of B's.
@@ -54,45 +50,8 @@ const fetchRecord = async () => {
 };
 
 watch(() => [props.keyId, props.recordId], () => {
-  // Headers reveal state keys by `${kind}:${index}` — those indices are
-  // meaningful only inside one record. Reset on every record transition so
-  // revealing position N on record A cannot leak into a different header at
-  // position N on record B.
-  revealedHeaders.value = new Set();
   void fetchRecord();
 }, { immediate: true });
-
-// Default-redacted headers. `cookie` / `set-cookie` / `proxy-authorization`
-// are added on top of the obvious bearer-style headers — a leaked cookie
-// value is just as bad as a leaked bearer token.
-const SENSITIVE_HEADERS = new Set([
-  'authorization',
-  'cookie',
-  'proxy-authorization',
-  'set-cookie',
-  'x-api-key',
-  'x-goog-api-key',
-]);
-
-const isSensitiveHeader = (key: string) => SENSITIVE_HEADERS.has(key.toLowerCase());
-
-// Fixed-width mask: do not leak the secret's length. Keep up to the last four
-// characters so an operator can recognize *which* credential they're looking
-// at without revealing the bulk of it.
-const redact = (value: string): string => {
-  const tail = value.length >= 4 ? value.slice(-4) : value;
-  return `${'•'.repeat(8)}${tail}`;
-};
-
-const toggleHeaderReveal = (kind: 'req' | 'res', index: number) => {
-  const key = `${kind}:${index}`;
-  const next = new Set(revealedHeaders.value);
-  if (next.has(key)) next.delete(key);
-  else next.add(key);
-  revealedHeaders.value = next;
-};
-
-const isRevealed = (kind: 'req' | 'res', index: number) => revealedHeaders.value.has(`${kind}:${index}`);
 
 const contentTypeOf = (headers: Array<[string, string]>): string => {
   for (const [k, v] of headers) {
@@ -228,35 +187,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
             <span class="text-accent-cyan">{{ record.request.method }}</span>
             <span class="ml-2 break-all">{{ record.request.path }}</span>
           </p>
-          <table class="w-full text-xs">
-            <tbody class="divide-y divide-white/[0.03]">
-              <tr v-for="(pair, i) in record.request.headers" :key="i">
-                <td class="w-44 py-1.5 pr-3 align-top font-mono text-gray-500">{{ pair[0] }}</td>
-                <td class="py-1.5 align-top font-mono text-gray-300">
-                  <span class="break-all">
-                    {{ isSensitiveHeader(pair[0]) && !isRevealed('req', i) ? redact(pair[1]) : pair[1] }}
-                  </span>
-                  <button
-                    v-if="isSensitiveHeader(pair[0])"
-                    type="button"
-                    class="ml-2 inline-flex h-5 w-5 items-center justify-center rounded text-gray-500 hover:bg-white/[0.06] hover:text-gray-200"
-                    :title="isRevealed('req', i) ? 'Hide value' : 'Reveal value'"
-                    @click="toggleHeaderReveal('req', i)"
-                  >
-                    <svg v-if="isRevealed('req', i)" class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <path d="m1 1 22 22" />
-                    </svg>
-                    <svg v-else class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <HeaderTable :key="`req:${record.meta.id}`" :headers="record.request.headers" />
         </div>
       </section>
 
@@ -295,14 +226,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
           <span v-if="record.meta.error" class="ml-2 truncate text-[11px] text-accent-rose" :title="record.meta.error">{{ record.meta.error }}</span>
         </header>
         <div class="px-4 py-3">
-          <table v-if="record.response.headers.length > 0" class="w-full text-xs">
-            <tbody class="divide-y divide-white/[0.03]">
-              <tr v-for="(pair, i) in record.response.headers" :key="i">
-                <td class="w-44 py-1.5 pr-3 align-top font-mono text-gray-500">{{ pair[0] }}</td>
-                <td class="py-1.5 align-top font-mono text-gray-300 break-all">{{ pair[1] }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <HeaderTable v-if="record.response.headers.length > 0" :key="`res:${record.meta.id}`" :headers="record.response.headers" />
           <p v-else class="text-xs text-gray-600">No response headers.</p>
         </div>
       </section>

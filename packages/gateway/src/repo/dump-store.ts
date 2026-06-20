@@ -24,7 +24,6 @@ const HOUR_MS = 60 * 60 * 1000;
 
 interface BodyDescriptor {
   key: string;
-  byteLength: number;
   contentType: string;
   // 'bytes' for non-SSE responses, 'events' for SSE-parsed responses (the
   // body file holds the JSON array of DumpStreamEvent). Absent on request-
@@ -100,7 +99,6 @@ const putBody = async (
   await files.put(key, gz);
   const descriptor: BodyDescriptor = {
     key,
-    byteLength: rawBytes.byteLength,
     contentType,
   };
   if (type !== undefined) descriptor.type = type;
@@ -227,7 +225,7 @@ export class FileDumpStore implements DumpStore {
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    // Files first, then the row — matches `put`'s ordering invariant. A
+    // Files first, then the rows — matches `put`'s ordering invariant. A
     // partial failure leaves rows pointing at gone files (detail-fetch then
     // throws `dump body missing`, the documented loud-failure path) and the
     // next sweep retries cleanly. The reverse order would orphan files no

@@ -2,14 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { assertEquals, assertExists, createDumpStubs } from '@floway-dev/test-utils';
-
-const installDumpStubs = () => {
-  const stubs = createDumpStubs();
-  initDumpStore(stubs.store);
-  initDumpBroker(stubs.broker);
-  return stubs;
-};
+import { assertEquals, assertExists, installDumpStubs } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
   requestApp(`/api/keys/${id}`, {
@@ -197,7 +190,7 @@ test('DELETE /api/keys/:id soft-deletes the key', async () => {
 test('DELETE /api/keys/:id succeeds when notifyDisabled throws — broker outage must not block soft-delete', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failNotifyDisabled(new Error('broker down'));
 
   const response = await requestApp(`/api/keys/${apiKey.id}`, {
@@ -214,7 +207,7 @@ test('DELETE /api/keys/:id succeeds when notifyDisabled throws — broker outage
 test('PATCH /api/keys/:id positive→null retention purges + notifies disabled', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
@@ -225,7 +218,7 @@ test('PATCH /api/keys/:id positive→null retention purges + notifies disabled',
 test('PATCH /api/keys/:id positive→null succeeds when notifyDisabled throws', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failNotifyDisabled(new Error('broker down'));
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
@@ -236,7 +229,7 @@ test('PATCH /api/keys/:id positive→null succeeds when notifyDisabled throws', 
 test('PATCH /api/keys/:id positive→smaller positive purges expired with the new window', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 7200 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
   assertEquals(response.status, 200);

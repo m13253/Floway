@@ -26,12 +26,21 @@ export interface DumpAccounting {
   error: string | null;
 }
 
-export const plainDumpAccounting: DumpAccounting = {
+// The "no upstream identified" accounting shape used by handlers that
+// completed without producing a model identity (plain echoes, non-LLM
+// routes, etc.). Kept module-private so the `'dumpAccounting'` Hono context
+// key only ever lives inside this file — call `setPlainDumpAccounting(c)`
+// from the respond paths instead of leaking the key name.
+const plainDumpAccounting: DumpAccounting = {
   upstreamId: null,
   model: null,
   inputTokens: null,
   outputTokens: null,
   error: null,
+};
+
+export const setPlainDumpAccounting = (c: Context): void => {
+  c.set('dumpAccounting', plainDumpAccounting);
 };
 
 export const setDumpAccountingFromIdentity = (
@@ -223,10 +232,17 @@ const drainBody = async (
       if (value) chunks.push(value);
     }
   } catch (err) {
-    streamError = `${label} body read failed: ${oneLineError(err)}`;
+    streamError = streamErrorMessage(`${label} body read`, err);
   }
   return { bytes: concatChunks(chunks), streamError };
 };
+
+// Shared error-message shape so every stream-failure surface routes through
+// the same `"<label> failed: <one-line cause>"` format. The SSE branch and
+// the body-drain branch both feed `meta.error`; a divergent free-form prefix
+// here would surface as inconsistent dashboard text.
+const streamErrorMessage = (label: string, err: unknown): string =>
+  `${label} failed: ${oneLineError(err)}`;
 
 const concatChunks = (chunks: readonly Uint8Array[]): Uint8Array => {
   let total = 0;
@@ -284,7 +300,7 @@ const collectResponse = async (
       });
     }
   } catch (err) {
-    streamError = `SSE parse failed: ${oneLineError(err)}`;
+    streamError = streamErrorMessage('response SSE parse', err);
   }
   await countingPromise;
   return { kind: 'events', events, byteLength, streamError };

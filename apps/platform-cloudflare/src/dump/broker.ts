@@ -88,7 +88,7 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
         deliver({ value: frame.data, done: false });
       } catch (err) {
         pendingError = err;
-        closeAndEnd(socket);
+        void closeAndEnd();
       }
     });
     socket.addEventListener('close', () => {
@@ -100,7 +100,7 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
       // beyond "the runtime decided this socket is unusable". Convey what we
       // can; if the message-side parse already populated pendingError, keep it.
       if (pendingError === null) pendingError = new Error('KeyDumpDO socket error');
-      closeAndEnd(socket);
+      void closeAndEnd();
     });
     return socket;
   })();
@@ -112,23 +112,23 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
 
   // Symmetric termination — every path that flips `closed` also has to close
   // the upstream socket, otherwise an abort or parse-error leaks one WS in
-  // the DO's hibernation registry per subscriber session.
-  const closeSocketIfOpened = async (): Promise<void> => {
+  // the DO's hibernation registry per subscriber session. Awaiting
+  // `openPromise` covers the still-handshaking case: a teardown that races
+  // the open still gets to close the socket once it materializes.
+  const closeAndEnd = async (): Promise<void> => {
+    if (closed) {
+      const s = await openPromise.catch(() => null);
+      if (s) s.close(1000, 'subscriber done');
+      return;
+    }
+    closed = true;
     const s = await openPromise.catch(() => null);
     if (s) s.close(1000, 'subscriber done');
-  };
-  const closeAndEnd = (socket: WebSocket): void => {
-    if (closed) return;
-    closed = true;
-    socket.close(1000, 'subscriber done');
     deliver({ value: undefined as never, done: true });
   };
 
   signal.addEventListener('abort', () => {
-    if (closed) return;
-    closed = true;
-    deliver({ value: undefined as never, done: true });
-    void closeSocketIfOpened();
+    void closeAndEnd();
   }, { once: true });
 
   return {
@@ -144,8 +144,7 @@ const iterateFromDoSocket = (stub: KeyDumpStub, signal: AbortSignal): AsyncItera
         return result;
       },
       async return(): Promise<IteratorResult<DumpMetadata>> {
-        closed = true;
-        await closeSocketIfOpened();
+        await closeAndEnd();
         return { value: undefined as never, done: true };
       },
     }),

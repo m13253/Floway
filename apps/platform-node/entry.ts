@@ -11,6 +11,7 @@ import {
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
+import { getEnvOptional } from '@floway-dev/platform';
 
 // In Node we don't have Workers' executionCtx.waitUntil — there's no request
 // lifecycle to attach background work to — so the resolver fire-and-forgets
@@ -23,13 +24,13 @@ initBackgroundSchedulerResolver(_c => promise => {
 initResponsesWebSocketUpgradeResolver((c, events) =>
   upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
 
-const dbPath = process.env.FLOWAY_DB_PATH ?? './data/floway.db';
-const filesDir = process.env.FLOWAY_FILES_DIR ?? './data/files';
-const port = Number(process.env.PORT ?? 8788);
+// `bootstrapNodePlatform` installs `initEnv` first, so `getEnvOptional`
+// reads route through the same platform contract as every other env consumer.
+const { db } = bootstrapNodePlatform();
+const port = Number(getEnvOptional('PORT', '8788'));
 
 const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
-const { db } = bootstrapNodePlatform({ dbPath, filesDir });
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 

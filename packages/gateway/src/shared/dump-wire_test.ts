@@ -22,9 +22,8 @@ test('looksTextual rejects binary content-types', () => {
 });
 
 test('looksTextual strips content-type parameters before matching', () => {
-  // The base type wins; trailing parameters (charset, boundary, base64, …) are
-  // ignored. The earlier per-file copies in capture-dump and dump-store
-  // disagreed on this, so the test pins the unified behavior.
+  // The base type wins; trailing content-type parameters (charset, boundary, …)
+  // are ignored.
   assertEquals(looksTextual('text/plain;something'), true);
   assertEquals(looksTextual('image/png;base64'), false);
 });

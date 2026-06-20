@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './events/to-result.ts';
 import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from '../../middleware/capture-dump.ts';
+import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -38,7 +38,7 @@ export const respondGemini = async (
   }
 
   if (result.type === 'plain') {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return { success: true, response: plainResultToResponse(result) };
   }
 

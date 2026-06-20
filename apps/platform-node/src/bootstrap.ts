@@ -8,6 +8,7 @@ import { nodeRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
+  getEnvOptional,
   IMAGE_CACHE_POLICY,
   initEnv,
   initFileProvider,
@@ -18,27 +19,25 @@ import {
   type SqlDatabase,
 } from '@floway-dev/platform';
 
-export interface NodePlatformOptions {
-  dbPath: string;
-  filesDir: string;
-}
-
-// Trust set is seeded here, before any data-plane request can fire a
-// userspace-TLS handshake.
-export const bootstrapNodePlatform = (
-  opts: NodePlatformOptions,
-): { db: SqlDatabase } => {
+// Bootstraps `initEnv` against `process.env` first so every subsequent read
+// — including the runtime paths below — routes through the same contract as
+// every other env consumer (auth, performance telemetry, etc).
+export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initEnv(name => {
     const value = process.env[name];
     if (value === undefined) throw new Error(`Missing required env var: ${name}`);
     return value;
   });
   initRuntimeKind('node');
-  const files = new FsFileProvider(opts.filesDir);
+
+  const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');
+  const dbPath = getEnvOptional('FLOWAY_DB_PATH', './data/floway.db');
+
+  const files = new FsFileProvider(filesDir);
   initFileProvider(files);
   initSocketDial(nodeSocketDial);
   addTrustedRootCAs(nodeRuntimeRootCAs);
-  const db = createNodeSqliteDatabase(opts.dbPath);
+  const db = createNodeSqliteDatabase(dbPath);
   initImageCacheStore(new SqliteImageCache(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());
   // Dumps live in the same filesystem provider as every other spilled file.

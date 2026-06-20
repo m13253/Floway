@@ -24,7 +24,7 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from '../middleware/capture-dump.ts';
+import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../middleware/capture-dump.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -178,7 +178,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) {
-        c.set('dumpAccounting', plainDumpAccounting);
+        setPlainDumpAccounting(c);
         return forwarded;
       }
     }

@@ -2,25 +2,18 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import { type DumpAccounting, captureRequestDump, errorDumpAccounting, plainDumpAccounting, setDumpAccountingFromIdentity } from './capture-dump.ts';
+import { type DumpAccounting, captureRequestDump, errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from './capture-dump.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/platform';
-import { assertEquals, assertExists, createDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, installDumpStubs } from '@floway-dev/test-utils';
 
 // The capture middleware reads `apiKey` and `dumpAccounting` off the Hono
 // context. The default Hono Variables map is empty; widen it locally so
 // `c.set(...)` typechecks in the test wiring.
 type TestVars = { apiKey: ApiKey; dumpAccounting: DumpAccounting };
-
-const installStubs = () => {
-  const stubs = createDumpStubs();
-  initDumpStore(stubs.store);
-  initDumpBroker(stubs.broker);
-  return stubs;
-};
 
 const buildApp = (setApiKey: (c: Context<{ Variables: TestVars }>) => void) => {
   const app = new Hono<{ Variables: TestVars }>();
@@ -37,7 +30,7 @@ const buildApp = (setApiKey: (c: Context<{ Variables: TestVars }>) => void) => {
 
 test('captureRequestDump short-circuits when the key has no retention', async () => {
   const { apiKey } = await setupAppTest();
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', apiKey));
   app.get('/v1/test', c => c.json({ ok: true }));
@@ -53,11 +46,11 @@ test('captureRequestDump records a JSON request and JSON response on a retention
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/chat/completions', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return c.json({ id: 'resp', choices: [] });
   });
 
@@ -103,7 +96,7 @@ test('captureRequestDump publishes only after store.put resolves', async () => {
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/x', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/x', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -117,7 +110,7 @@ test('captureRequestDump surfaces accounting.error onto meta.error', async () =>
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/err', async c => {
@@ -141,7 +134,7 @@ test('captureRequestDump captures the request with plain accounting when the rou
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/no-acct', c => c.json({ ok: 1 }));
@@ -167,7 +160,7 @@ test('captureRequestDump records identity-derived model + upstream on success', 
     config: { baseUrl: 'https://x', bearerToken: 't', endpoints: { chatCompletions: {} } },
     state: null, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [],
   });
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/y', async c => {
@@ -193,7 +186,7 @@ test('captureRequestDump emits a null upstream ref when the upstream row no long
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/gone', async c => {
@@ -212,11 +205,11 @@ test('captureRequestDump captures SSE response as parsed events', async () => {
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/stream', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return new Response('event: ping\ndata: hello\n\nevent: ping\ndata: world\n\n', {
       status: 200,
       headers: { 'content-type': 'text/event-stream' },
@@ -257,7 +250,7 @@ test('captureRequestDump captures partial request bytes and surfaces request bod
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/x', async c => {
@@ -266,7 +259,7 @@ test('captureRequestDump captures partial request bytes and surfaces request bod
     // on the original side, masking the partial bytes the clone would otherwise
     // see. The handler returns immediately so finalize's drainBody is the only
     // consumer of the request body.
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return c.json({ ok: 1 });
   });
 
@@ -286,11 +279,11 @@ test('captureRequestDump surfaces response body read failure on meta.error when 
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/y', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         controller.error(new Error('response pipe broke'));
@@ -315,11 +308,11 @@ test('captureRequestDump surfaces SSE parse failure on meta.error when the strea
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/sse-err', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         controller.error(new Error('sse pipe broke'));
@@ -340,12 +333,12 @@ test('captureRequestDump propagates DumpStore.put failures through the backgroun
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failPut(new Error('put exploded'));
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/put-fail', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/put-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -361,12 +354,12 @@ test('captureRequestDump stores the row even when broker.publish fails', async (
   const { repo, apiKey } = await setupAppTest();
   const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
   await repo.apiKeys.save(enabledKey);
-  const stubs = installStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failPublish(new Error('publish exploded'));
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/publish-fail', async c => {
-    c.set('dumpAccounting', plainDumpAccounting);
+    setPlainDumpAccounting(c);
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/publish-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });

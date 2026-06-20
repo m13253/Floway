@@ -32,8 +32,9 @@ export interface DumpStore {
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
 
   // Full record fetch: rehydrates body files from the FileProvider, ungzips,
-  // base64-encodes non-text bytes (with `;base64` content-type suffix), and
-  // assembles the wire-shape `DumpRecord`. Returns null when the record
+  // and assembles the wire-shape `DumpRecord` (wraps each body in a `DumpBody`
+  // discriminated union — utf8 for text, base64 otherwise; the captured
+  // content-type header is preserved verbatim). Returns null when the record
   // does not exist (deleted, expired, or never existed).
   get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null>;
 

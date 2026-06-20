@@ -698,7 +698,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     // a reused id in the imported payload cannot inherit the previous owner's
     // captures, and any live SSE subscriber is told the key went away.
     for (const k of preImportKeys) {
-      try { await getDumpStore().purgeAll(k.id); } catch (err) { console.error('[dump] purgeAll failed during replace-mode import', k.id, err); }
+      await getDumpStore().purgeAll(k.id);
       try { await getDumpBroker().notifyDisabled(k.id); } catch (err) { console.error('[dump] notifyDisabled failed during replace-mode import', k.id, err); }
     }
 
@@ -747,10 +747,10 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     await repo.apiKeys.save(key);
     if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
       if (key.dumpRetentionSeconds === null && previous !== null) {
-        try { await getDumpStore().purgeAll(key.id); } catch (err) { console.error('[dump] purgeAll failed during merge-mode retention transition', key.id, err); }
+        await getDumpStore().purgeAll(key.id);
         try { await getDumpBroker().notifyDisabled(key.id); } catch (err) { console.error('[dump] notifyDisabled failed during merge-mode retention transition', key.id, err); }
       } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
-        try { await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds); } catch (err) { console.error('[dump] purgeExpired failed during merge-mode retention transition', key.id, err); }
+        await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
       }
     }
   }

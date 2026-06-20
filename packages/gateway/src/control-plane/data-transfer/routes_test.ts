@@ -21,7 +21,7 @@ import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, createDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, installDumpStubs } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 
@@ -1107,18 +1107,11 @@ test('any data bearing a historical version is rejected on the version gate, bef
   assertEquals((await repo.upstreams.list()).map(u => u.id), ['up_custom_a']);
 });
 
-const installDumpStubs = () => {
-  const stubs = createDumpStubs();
-  initDumpStore(stubs.store);
-  initDumpBroker(stubs.broker);
-  return stubs;
-};
-
 test('replace-mode import purges every pre-existing key dump and cuts SSE subscribers', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   await repo.apiKeys.save({ ...KEY_B, dumpRetentionSeconds: 1800 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
@@ -1133,7 +1126,7 @@ test('replace-mode import purges every pre-existing key dump and cuts SSE subscr
 test('replace-mode import succeeds when notifyDisabled throws', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failNotifyDisabled(new Error('broker down'));
 
   const result = await doImport(app, 'replace', latestImportData({
@@ -1146,7 +1139,7 @@ test('replace-mode import succeeds when notifyDisabled throws', async () => {
 test('merge-mode import flipping retention to null purges + notifies', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
@@ -1159,7 +1152,7 @@ test('merge-mode import flipping retention to null purges + notifies', async () 
 test('merge-mode import shrinking retention purges expired with the new window', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 7200 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 1800 }],
@@ -1173,7 +1166,7 @@ test('merge-mode import shrinking retention purges expired with the new window',
 test('merge-mode retention transition tolerates dump-broker failure', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs();
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
   stubs.failNotifyDisabled(new Error('broker down'));
 
   const result = await doImport(app, 'merge', latestImportData({
@@ -1181,4 +1174,40 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
   }));
   assertEquals(result.status, 200);
   assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
+});
+
+test('replace-mode import surfaces a purgeAll failure', async () => {
+  // Replace mode promises data isolation: a reused key id in the imported
+  // payload cannot inherit the previous owner's captures. A swallowed
+  // purgeAll failure would defeat that — let the throw propagate so the
+  // operator sees a 500 instead of silently importing on top of stale dumps.
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  stubs.failPurgeAll(new Error('store down'));
+
+  const resp = await app.request('/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'replace', version: 6, data: latestImportData({
+      apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
+    }) }),
+  });
+  assertEquals(resp.status, 500);
+});
+
+test('merge-mode retention transition surfaces a purgeAll failure', async () => {
+  const { app, repo } = setup();
+  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  stubs.failPurgeAll(new Error('store down'));
+
+  const resp = await app.request('/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: 'merge', version: 6, data: latestImportData({
+      apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],
+    }) }),
+  });
+  assertEquals(resp.status, 500);
 });

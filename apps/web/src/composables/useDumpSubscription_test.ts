@@ -125,11 +125,11 @@ describe('useDumpSubscription', () => {
   });
 
   it('snapshot rebuild preserves paged-in older records when the snapshot tail is no longer in memory', async () => {
-    // The C2 scenario: after a long disconnect during which the operator paged
-    // backward, the reconnect snapshot covers a strictly-newer range than what
-    // memory holds. The paged-in tail (older than the new snapshot's oldest)
-    // must survive — id-comparison is the source of truth, since ULIDs sort
-    // lexically by creation time.
+    // After a long disconnect during which the operator paged backward, the
+    // reconnect snapshot covers a strictly-newer range than what memory holds.
+    // The paged-in tail (older than the new snapshot's oldest) must survive —
+    // id-comparison is the source of truth, since ULIDs sort lexically by
+    // creation time.
     const { scope } = setup();
     const keyId = ref('key1');
     const sub = scope.run(() => useDumpSubscription(keyId, {

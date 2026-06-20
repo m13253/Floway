@@ -37,11 +37,9 @@ export interface DumpStubHandle {
   purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
   notifiedDisabled: ReadonlyArray<string>;
   seed: (keyId: string, record: DumpRecord) => void;
-  publish: (keyId: string, meta: DumpMetadata) => Promise<void>;
   failPut: (err: Error) => void;
   failPublish: (err: Error) => void;
   failPurgeAll: (err: Error) => void;
-  failPurgeExpired: (err: Error) => void;
   failNotifyDisabled: (err: Error) => void;
 }
 
@@ -56,7 +54,6 @@ export const createDumpStubs = (): DumpStubHandle => {
   let putThrows: Error | null = null;
   let publishThrows: Error | null = null;
   let purgeAllThrows: Error | null = null;
-  let purgeExpiredThrows: Error | null = null;
   let notifyDisabledThrows: Error | null = null;
 
   const store: DumpStore = {
@@ -85,7 +82,6 @@ export const createDumpStubs = (): DumpStubHandle => {
       records.delete(keyId);
     },
     async purgeExpired(keyId, retentionSeconds) {
-      if (purgeExpiredThrows) throw purgeExpiredThrows;
       purgedExpired.push({ keyId, retentionSeconds });
     },
   };
@@ -153,11 +149,23 @@ export const createDumpStubs = (): DumpStubHandle => {
       list.unshift(record);
       records.set(keyId, list);
     },
-    publish: (keyId, meta) => broker.publish(keyId, meta),
     failPut: err => { putThrows = err; },
     failPublish: err => { publishThrows = err; },
     failPurgeAll: err => { purgeAllThrows = err; },
-    failPurgeExpired: err => { purgeExpiredThrows = err; },
     failNotifyDisabled: err => { notifyDisabledThrows = err; },
   };
+};
+
+// Convenience wrapper: create the stubs and wire them through the gateway's
+// init pair in one call. Every dump-related test reaches for the same pattern,
+// and threading the init functions in as parameters keeps this helper out of
+// the gateway-package dependency graph.
+export const installDumpStubs = (
+  initStore: (store: DumpStore) => void,
+  initBroker: (broker: DumpBroker) => void,
+): DumpStubHandle => {
+  const stubs = createDumpStubs();
+  initStore(stubs.store);
+  initBroker(stubs.broker);
+  return stubs;
 };

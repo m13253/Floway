@@ -20,7 +20,10 @@ export interface DumpBroker {
   // Returns an async iterable that yields each `meta` published while the
   // iterator is active. The iterator ends when `signal` aborts or the
   // underlying transport closes. Subscribers must wire the iterator into
-  // their SSE stream and bail on iterator completion.
+  // their SSE stream and bail on iterator completion. Implementations may
+  // surface transport failures by throwing from `.next()`; callers must
+  // catch and translate to an SSE `event: error` frame so the dashboard
+  // sees a structured signal instead of a torn TCP socket.
   subscribe(keyId: string, signal: AbortSignal): AsyncIterable<DumpMetadata>;
 
   // Disable-side notification hook. Called from api-key PATCH retention=null,

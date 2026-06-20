@@ -92,8 +92,15 @@ test('KeyDumpDO.webSocketClose calls ws.close to complete the close handshake', 
 });
 
 test('KeyDumpDO.webSocketError exists so the runtime delivers close events', async () => {
-  // The hook's mere presence is what gates close-event delivery. The body is
-  // a no-op — the runtime drops the socket from getWebSockets() on its own.
+  // The hook's mere presence is what gates close-event delivery; without it
+  // a deleted method would still satisfy the call via prototype inheritance.
+  // Assert the method is declared on the class itself so the gating contract
+  // survives a refactor that mistakes the no-op body for dead code.
+  assertEquals(typeof KeyDumpDO.prototype.webSocketError, 'function');
+  assertEquals(Object.prototype.hasOwnProperty.call(KeyDumpDO.prototype, 'webSocketError'), true);
   const actor = new KeyDumpDO(new FakeState(), {});
-  await actor.webSocketError(new FakeWebSocket(), new Error('whatever'));
+  const ws = new FakeWebSocket();
+  await actor.webSocketError(ws, new Error('whatever'));
+  // No side effect — the runtime drops the socket from getWebSockets() on its own.
+  assertEquals(ws.closed, null);
 });

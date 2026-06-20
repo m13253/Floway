@@ -10,7 +10,7 @@ import {
 } from '@floway-dev/gateway';
 
 // Re-exported here because the CF runtime resolves the DO class by its
-// exported name on the Worker module. The wrangler `migrations.new_classes`
+// exported name on the Worker module. The wrangler `migrations.new_sqlite_classes`
 // entry must match this export.
 export { KeyDumpDO } from './src/dump/key-dump-do.ts';
 
