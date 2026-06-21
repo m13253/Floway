@@ -1,10 +1,10 @@
+import type { DumpStreamEvent } from '@floway-dev/protocols/dump';
 import {
   collectChatCompletionsStream,
   collectGeminiStream,
   collectMessagesStream,
   collectResponsesStream,
 } from '@floway-dev/protocols/dump-collect';
-import type { DumpStreamEvent } from '@floway-dev/protocols/dump';
 
 // Structured collected view of a streaming response. `result` is the
 // fully-reconstructed non-streaming payload (envelope + content blocks +
