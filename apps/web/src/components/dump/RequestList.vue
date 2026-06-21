@@ -46,21 +46,32 @@ onBeforeUnmount(() => {
 
 const formatBytes = (n: number): string => {
   if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  // One decimal under 10 KB, integer above so the dense row doesn't carry
+  // a noisy trailing `.0` once the value is already round-ish. Same step
+  // at MB and GB boundaries.
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 };
 
 const formatDuration = (ms: number): string => {
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+  // Keep the tenth-of-a-second precision up to a full minute — the
+  // 10–60s bucket is the most operator-actionable latency band, and
+  // rounding it to whole seconds throws away one significant figure
+  // exactly where it matters.
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms / 1000)}s`;
 };
 
 const formatTokens = (n: number): string => {
   if (n < 1000) return n.toString();
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  // The space + uppercase `K` matches how the usage page and key dialogs
+  // render token counts; bucket at 10 K so a single noisy ".0" decimal
+  // drops off once the value is comfortably in thousands.
+  if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)} K`;
+  return `${(n / 1_000_000).toFixed(1)} M`;
 };
 
 const upstreamKindTextClass = (kind: string | undefined): string => {
@@ -169,32 +180,27 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
             </span>
             <span class="flex shrink-0 items-center gap-2.5 text-gray-500">
               <span class="inline-flex items-center gap-0.5" :title="`Duration ${record.durationMs}ms`">
-                <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="13" r="8" />
-                  <path d="M12 9v4l2 2" />
-                  <path d="M9 2h6" />
-                </svg>
+                <i class="i-lucide-timer size-3" />
                 {{ formatDuration(record.durationMs) }}
               </span>
-              <span class="inline-flex items-center gap-0.5" title="Request bytes">
-                <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 19V5" />
-                  <path d="m5 12 7-7 7 7" />
-                </svg>
+              <span class="inline-flex items-center gap-0.5" :title="`Request body ${record.requestBytes} bytes`">
+                <i class="i-lucide-arrow-up size-3" />
                 {{ formatBytes(record.requestBytes) }}
               </span>
-              <span class="inline-flex items-center gap-0.5" title="Response bytes">
-                <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 5v14" />
-                  <path d="m19 12-7 7-7-7" />
-                </svg>
+              <span class="inline-flex items-center gap-0.5" :title="`Response body ${record.responseBytes} bytes`">
+                <i class="i-lucide-arrow-down size-3" />
                 {{ formatBytes(record.responseBytes) }}
               </span>
             </span>
           </div>
 
           <div class="mt-1 flex items-center gap-2 text-[11px]">
-            <span v-if="record.upstream" :class="upstreamKindTextClass(record.upstream.kind)" class="min-w-0 truncate">
+            <span
+              v-if="record.upstream"
+              :class="upstreamKindTextClass(record.upstream.kind)"
+              class="min-w-0 truncate"
+              :title="`${record.upstream.kind} · ${record.upstream.id}`"
+            >
               {{ record.upstream.name }}
             </span>
             <span

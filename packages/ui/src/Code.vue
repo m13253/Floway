@@ -51,7 +51,9 @@ const highlighted = computed(() => {
 
 <template>
   <div v-if="flush" class="code-block relative group">
-    <pre class="min-w-max overflow-x-auto px-4 py-3 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
+    <OverlayScrollbars no-tabindex>
+      <pre class="min-w-max px-4 py-3 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
+    </OverlayScrollbars>
     <button
       v-if="copyable"
       type="button"
