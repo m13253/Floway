@@ -1,10 +1,7 @@
 import type { ChannelBroker, Codec } from '../runtime/channel-broker-contract.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Cloudflare uses a Durable-Object–backed ChannelBroker<DumpMetadata>; Node
-// uses an in-process EventTarget-backed one. Both compose with `dumpCodec`
-// below — the dump producer and dump subscriber are the only sides that know
-// about `event: 'appended'` and the `DumpMetadata` shape.
+// Composes with `dumpCodec` below; concrete brokers live in apps/platform-*.
 export type DumpBroker = ChannelBroker<DumpMetadata>;
 
 const APPENDED_EVENT = 'appended';
@@ -25,7 +22,5 @@ export const dumpCodec: Codec<DumpMetadata> = {
   },
 };
 
-// `closeChannel` cuts any live SSE subscriber. The reason string is the one
-// dashboard subscribers see on a clean close — the broker contract is
-// transport-shape only, so the dump domain owns this string.
+// Reason string surfaced to dashboard subscribers on a clean close.
 export const DUMP_DISABLED_REASON = 'dump retention disabled';

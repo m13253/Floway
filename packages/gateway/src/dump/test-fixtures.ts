@@ -28,8 +28,10 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): DumpRecord =>
 
 // Shared in-memory stubs for the dump store + broker. Used by every dump
 // test that needs a controllable pair: the control-plane SSE route tests,
-// the capture middleware tests, the cascade-safety tests.
-export type DumpStubFailMethod =
+// the capture middleware tests, the cascade-safety tests. Threading the
+// gateway's init functions in as parameters keeps this helper out of the
+// gateway-package dependency graph.
+type DumpStubFailMethod =
   | 'put'
   | 'list'
   | 'get'
@@ -53,7 +55,10 @@ export interface DumpStubHandle {
   failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 
-const createDumpStubs = (): DumpStubHandle => {
+export const installDumpStubs = (
+  initStore: (store: DumpStore) => void,
+  initBroker: (broker: DumpBroker) => void,
+): DumpStubHandle => {
   const records = new Map<string, DumpRecord[]>();
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
   const stored: Array<{ keyId: string; record: DumpRecord }> = [];
@@ -148,6 +153,9 @@ const createDumpStubs = (): DumpStubHandle => {
     },
   };
 
+  initStore(store);
+  initBroker(broker);
+
   return {
     store,
     broker,
@@ -163,18 +171,4 @@ const createDumpStubs = (): DumpStubHandle => {
     },
     failOn: (method, err) => { throws[method] = err; },
   };
-};
-
-// Convenience wrapper: create the stubs and wire them through the gateway's
-// init pair in one call. Every dump-related test reaches for the same pattern,
-// and threading the init functions in as parameters keeps this helper out of
-// the gateway-package dependency graph.
-export const installDumpStubs = (
-  initStore: (store: DumpStore) => void,
-  initBroker: (broker: DumpBroker) => void,
-): DumpStubHandle => {
-  const stubs = createDumpStubs();
-  initStore(stubs.store);
-  initBroker(stubs.broker);
-  return stubs;
 };
