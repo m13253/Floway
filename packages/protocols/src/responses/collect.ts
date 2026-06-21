@@ -57,8 +57,9 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       break;
     case 'response.output_item.added':
     case 'response.output_item.done':
-      // `.done` carries the authoritative item shape (status, results, etc.);
-      // it overrides anything the per-event accumulators built.
+      // Both events carry the full item; `.done` happens to override
+      // anything the per-event accumulators built, which is exactly what
+      // we want for the terminal case.
       output[event.output_index] = cloneOutputItem(event.item);
       break;
     case 'response.content_part.added':
