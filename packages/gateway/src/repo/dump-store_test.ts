@@ -16,10 +16,24 @@ import { assertEquals, assertExists } from '@floway-dev/test-utils';
 // test file because the production gateway core never needs it — node-only
 // production code lives in apps/platform-node. Mirrors the shape of the
 // Node app's wrapper just enough to back the dump-store schema.
+//
+// `dump_records` LEFT JOINs `upstreams` to resolve each row's current
+// upstream name and kind at read time. The test schema therefore needs
+// both tables present; we synthesise a minimal `upstreams` shape (only
+// the columns the join reads) so the test stays decoupled from the full
+// production upstreams migration.
 const MIGRATION_PATH = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'migrations', '0037_dump_records.sql');
+const UPSTREAMS_STUB_SQL = `
+  CREATE TABLE upstreams (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL
+  );
+`;
 
 const openDb = async (): Promise<SqlDatabase> => {
   const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(UPSTREAMS_STUB_SQL);
   sqlite.exec(await readFile(MIGRATION_PATH, 'utf8'));
   return {
     prepare(query): SqlPreparedStatement {

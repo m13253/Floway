@@ -7,10 +7,19 @@
 -- only metadata + headers + per-side body descriptors that point at the
 -- files. The split avoids JSON-in-blob base64 inflation and keeps bodies
 -- out of the row so the DB stays small and fast to scan.
+--
+-- `upstream_id` is stored as its own column rather than embedded in
+-- `meta_json`. The dashboard wants to display the upstream's current name
+-- and kind, so list/get queries LEFT JOIN against `upstreams` to resolve
+-- them at read time. Freezing those values into `meta_json` would let an
+-- admin rename go silently un-honored on every historical record. A
+-- delete drops the join row, which the list/get codecs surface as a null
+-- upstream — the same shape used when no upstream was identified.
 CREATE TABLE dump_records (
   key_id TEXT NOT NULL,
   id TEXT NOT NULL,            -- ULID; lexically sortable, time-ordered
   created_at INTEGER NOT NULL, -- unix ms; mirrors meta_json.completedAt
+  upstream_id TEXT,            -- NULL when no upstream was identified
   meta_json TEXT NOT NULL,
   request_headers_json TEXT NOT NULL,
   response_headers_json TEXT,  -- NULL when no response was produced

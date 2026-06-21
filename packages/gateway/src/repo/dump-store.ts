@@ -35,12 +35,34 @@ interface BodyDescriptor {
 interface DumpRow {
   id: string;
   created_at: number;
+  upstream_id: string | null;
+  upstream_name: string | null;
+  upstream_kind: string | null;
   meta_json: string;
   request_headers_json: string;
   response_headers_json: string | null;
   request_body_descriptor: string | null;
   response_body_descriptor: string | null;
 }
+
+// The JOIN against `upstreams` provides three nullable columns: a null
+// `upstream_id` means the row was captured without an identified upstream
+// (auth error, validation rejection, no candidate matched); a non-null
+// `upstream_id` with a null `upstream_name` means the referenced upstream
+// has since been deleted. Both surface as a null DumpUpstreamRef so the
+// dashboard's "no upstream" branch handles them uniformly.
+const hydrateUpstream = (row: { upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }) => {
+  if (row.upstream_id === null || row.upstream_name === null || row.upstream_kind === null) return null;
+  return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind };
+};
+
+// Strip the in-memory `upstream` field before storage. The ref is rebuilt
+// from the join at read time so an admin rename (or delete) is honored on
+// every historical record, not only on future captures.
+const metaForStorage = (meta: DumpMetadata): Omit<DumpMetadata, 'upstream'> => {
+  const { upstream: _drop, ...rest } = meta;
+  return rest;
+};
 
 const hourBucket = (ms: number): string => {
   const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
@@ -145,13 +167,14 @@ export class FileDumpStore implements DumpStore {
     // would 404 after a successful list.
     await this.db.prepare(
       `INSERT INTO dump_records
-       (key_id, id, created_at, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       keyId,
       record.meta.id,
       record.meta.completedAt,
-      JSON.stringify(record.meta),
+      record.meta.upstream?.id ?? null,
+      JSON.stringify(metaForStorage(record.meta)),
       JSON.stringify(record.request.headers),
       record.response.type === 'none' ? null : JSON.stringify(record.response.headers),
       requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
@@ -169,24 +192,39 @@ export class FileDumpStore implements DumpStore {
 
     // Newest-first with a compound (created_at, id) cursor so two rows that
     // share a millisecond still page deterministically. ULID lex order
-    // matches creation order within the millisecond.
+    // matches creation order within the millisecond. The LEFT JOIN brings
+    // each row's current upstream name+kind in one round trip; a deleted
+    // upstream resolves to null columns and the codec hands back a null
+    // ref.
+    const select
+      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind '
+      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id';
     const sql = beforeTs === null
-      ? 'SELECT meta_json FROM dump_records WHERE key_id = ? ORDER BY created_at DESC, id DESC LIMIT ?'
-      : 'SELECT meta_json FROM dump_records WHERE key_id = ? AND (created_at < ? OR (created_at = ? AND id < ?)) ORDER BY created_at DESC, id DESC LIMIT ?';
+      ? `${select} WHERE d.key_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
+      : `${select} WHERE d.key_id = ? AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, opts.limit)
       : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, opts.before!, opts.limit);
-    const { results } = await stmt.all<{ meta_json: string }>();
-    return results.map(row => JSON.parse(row.meta_json) as DumpMetadata);
+    const { results } = await stmt.all<{ meta_json: string; upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }>();
+    return results.map(row => ({
+      ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
+      upstream: hydrateUpstream(row),
+    }));
   }
 
   async get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT id, created_at, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?',
+      'SELECT d.id, d.created_at, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, '
+      + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
+      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
+      + 'WHERE d.key_id = ? AND d.id = ?',
     ).bind(keyId, recordId).first<DumpRow>();
     if (!row) return null;
 
-    const meta = JSON.parse(row.meta_json) as DumpMetadata;
+    const meta: DumpMetadata = {
+      ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
+      upstream: hydrateUpstream(row),
+    };
     const requestHeaders = JSON.parse(row.request_headers_json) as Array<[string, string]>;
     const requestDescriptor = row.request_body_descriptor ? JSON.parse(row.request_body_descriptor) as BodyDescriptor : null;
     const responseHeaders = row.response_headers_json ? JSON.parse(row.response_headers_json) as Array<[string, string]> : null;
