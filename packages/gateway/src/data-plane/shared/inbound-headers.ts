@@ -11,6 +11,17 @@ import type { Context } from 'hono';
 // the same reason: each provider sets it from the wire-body shape it
 // builds, and a FormData passthrough additionally needs the runtime to
 // derive a fresh multipart boundary on the outbound request.
+//
+// `content-length`, `content-encoding`, and `transfer-encoding` describe
+// the inbound body's wire shape, not the outbound body the provider
+// rebuilds. Forwarding the inbound `content-length` is actively unsafe:
+// every provider that re-serialises the JSON payload (Copilot adds
+// `copilot_cache_control`, Codex pins `stream`, Azure rewrites `model`,
+// translation pairs reshape the body entirely) emits a different number
+// of bytes; the runtime then trusts the leaked length header over the
+// real body, ships exactly that many bytes, and the upstream hangs on
+// the missing tail until it gives up and resets the connection. Drop
+// these so the outbound fetch derives them from the actual body it sees.
 // Forwarded-* / `cf-*` / `x-real-ip` and similar non-secret diagnostic
 // signals stay in the bag — they identify the client at the upstream and
 // have no clobber risk. Copilot and Codex clone before they merge, so
@@ -18,10 +29,13 @@ import type { Context } from 'hono';
 const GATEWAY_PRIVATE_INBOUND_HEADERS = [
   'api-key',
   'authorization',
+  'content-encoding',
+  'content-length',
   'content-type',
   'cookie',
   'host',
   'proxy-authorization',
+  'transfer-encoding',
   'x-api-key',
   'x-floway-session',
   'x-goog-api-key',
