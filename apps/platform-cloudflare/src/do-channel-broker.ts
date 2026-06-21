@@ -1,4 +1,4 @@
-import type { ChannelBroker, Codec } from '@floway-dev/gateway/dump';
+import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 
 // Minimal namespace surface from the worker's BROADCAST_DO binding. Matches
 // the subset of `DurableObjectNamespace` we actually call — keeps this file

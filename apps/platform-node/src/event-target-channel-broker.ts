@@ -1,4 +1,4 @@
-import type { ChannelBroker, Codec } from '@floway-dev/gateway/dump';
+import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 
 // In-process per-channel fan-out backed by EventTarget. The Node deployment
 // target only ever runs one worker process per gateway instance, so a Map of

@@ -1,10 +1,6 @@
 import type { ChannelBroker, Codec } from '../runtime/channel-broker-contract.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Re-export the generic transport types so platform-target apps can wire a
-// `ChannelBroker<T>` implementation and the dump-typed codec in one import.
-export type { ChannelBroker, Codec };
-
 // Cloudflare uses a Durable-Object–backed ChannelBroker<DumpMetadata>; Node
 // uses an in-process EventTarget-backed one. Both compose with `dumpCodec`
 // below — the dump producer and dump subscriber are the only sides that know

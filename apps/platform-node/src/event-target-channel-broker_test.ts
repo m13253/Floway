@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
-import type { Codec } from '@floway-dev/gateway/dump';
+import type { Codec } from '@floway-dev/gateway/channel-broker';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode is identity. Every test below

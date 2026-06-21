@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
-import type { Codec } from '@floway-dev/gateway/dump';
+import type { Codec } from '@floway-dev/gateway/channel-broker';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // String codec: encode passes through, decode rejects payloads prefixed with
